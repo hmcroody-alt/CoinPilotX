@@ -71,6 +71,8 @@ const mockResolveScope = jest.fn();
 const mockListConnections = jest.fn();
 const mockGetCart = jest.fn();
 const mockImportSelected = jest.fn();
+const mockGetStorePolicy = jest.fn();
+const mockUpdateStorePolicy = jest.fn();
 const mockGetImportedProduct = jest.fn();
 const mockListImportedProducts = jest.fn();
 const mockPreviewPricing = jest.fn();
@@ -88,6 +90,8 @@ jest.mock("../../../api/dropshipping", () => ({
   listSupplierConnections: (...args: unknown[]) => mockListConnections(...args),
   getImportCart: (...args: unknown[]) => mockGetCart(...args),
   importSelected: (...args: unknown[]) => mockImportSelected(...args),
+  getStoreImportPolicy: (...args: unknown[]) => mockGetStorePolicy(...args),
+  updateStoreImportPolicy: (...args: unknown[]) => mockUpdateStorePolicy(...args),
   getImportedProduct: (...args: unknown[]) => mockGetImportedProduct(...args),
   listImportedProducts: (...args: unknown[]) => mockListImportedProducts(...args),
   previewPricing: (...args: unknown[]) => mockPreviewPricing(...args),
@@ -109,7 +113,10 @@ import {
   connectionNeedsAttention,
   type DropshippingState,
   type ImportCartItem,
+  type ImportItemResult,
+  type ImportRunResult,
   type ImportedDraft,
+  type StoreImportPolicy,
   type SupplierConnection,
   type SupplierObligation
 } from "../../../api/dropshipping";
@@ -120,6 +127,7 @@ import { DropshippingOrdersScreen } from "../DropshippingOrdersScreen";
 import { DropshippingProductsScreen } from "../DropshippingProductsScreen";
 import { DropshippingSyncScreen } from "../DropshippingSyncScreen";
 import { ImportCartScreen } from "../ImportCartScreen";
+import { ImportPolicyScreen } from "../ImportPolicyScreen";
 import { ReviewImportedProductScreen } from "../ReviewImportedProductScreen";
 import { SupplierCatalogScreen } from "../SupplierCatalogScreen";
 import { SuppliersScreen } from "../SuppliersScreen";
@@ -241,7 +249,30 @@ beforeEach(() => {
   // Nothing under test asks for a live preview quote; a screen that does gets a
   // resolved promise rather than an unhandled rejection in the background.
   mockPreviewPricing.mockResolvedValue({ quotes: [], currency: "USD" });
+  // The default store: auto-publish on, store-wide only, no saved rule. Which is
+  // what the server answers for a store that has never configured one, so the
+  // default case in these tests is the default case in production.
+  mockGetStorePolicy.mockResolvedValue(storePolicy());
 });
+
+/**
+ * A store's import policy, defaulting to the platform's own answer.
+ *
+ * Given its own fixture because the cart screen's copy is now derived from it:
+ * "Import & publish" and "Import as drafts" are the same button under two
+ * policies, and a test that could not set the policy could only ever check one
+ * of them.
+ */
+function storePolicy(over: Partial<StoreImportPolicy> = {}): StoreImportPolicy {
+  return {
+    pricingRule: { type: "TARGET_MARGIN", value: 45 },
+    pricingSource: "PLATFORM_DEFAULT",
+    autoPublish: true,
+    marketplaceAutolist: false,
+    configured: false,
+    ...over
+  };
+}
 
 async function settle() {
   await act(async () => {
@@ -421,26 +452,42 @@ describe("DropshippingStateView", () => {
  * which is always the empty branch. Every one of them shipped a permanently
  * blank READY state, and typecheck and lint were both perfectly happy. There is
  * no render assertion that catches this on a screen nobody wrote a harness for,
- * so the shape is pinned directly across all eight.
+ * so the shape is pinned directly.
+ *
+ * The list is read from the directory rather than written out here, and that is
+ * not tidiness. It *was* written out here, eight names long, and it had already
+ * fallen behind by one: `DropshippingOrdersScreen` renders a state view and was
+ * never added, so the one screen most likely to be missing a harness was the one
+ * this guard did not cover. A hand-kept enumeration of files in a directory falls
+ * behind the directory, exactly like `PUBLISH_PROBLEMS` fell behind the server.
+ *
+ * A screen that renders no `DropshippingStateView` at all has no state block to
+ * gate — `ConnectSupplierScreen` is a form — so the filter is the presence of the
+ * component, which is the thing the rule is actually about.
  */
 describe("no screen tests a JSX element for truthiness", () => {
-  const SCREENS = [
-    "DropshippingHubScreen",
-    "DropshippingProductsScreen",
-    "DropshippingSyncScreen",
-    "ImportCartScreen",
-    "ReviewImportedProductScreen",
-    "SupplierCatalogScreen",
-    "SupplierProductScreen",
-    "SuppliersScreen"
-  ];
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs");
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const path = require("path");
+  const dir = path.join(__dirname, "..");
+  const SCREENS: string[] = fs
+    .readdirSync(dir)
+    .filter((name: string) => name.endsWith("Screen.tsx"))
+    .filter((name: string) => fs.readFileSync(path.join(dir, name), "utf8").includes("DropshippingStateView"))
+    .map((name: string) => name.replace(/\.tsx$/, ""));
+
+  it("found the screens to check, so a rename cannot quietly shrink this suite", () => {
+    // Jest 29 throws on `it.each([])`, so a filter that matches *nothing* is caught
+    // without this. What it does not catch is a filter that matches *less*: changing
+    // the suffix to "sScreen.tsx" leaves three screens, and those three tests go
+    // green while seven screens silently stop being checked. That is the failure
+    // this count is here for — a partial match is indistinguishable from a pass.
+    expect(SCREENS.length).toBeGreaterThanOrEqual(9);
+  });
 
   it.each(SCREENS)("%s gates its state block on the state, not the element", (screen) => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const source: string = require("fs").readFileSync(
-      require("path").join(__dirname, "..", `${screen}.tsx`),
-      "utf8"
-    );
+    const source: string = fs.readFileSync(path.join(dir, `${screen}.tsx`), "utf8");
     expect(source).toContain("stateOwnsScreen(state) ? (");
     expect(source).not.toContain("const stateBlock = (");
   });
@@ -1324,13 +1371,71 @@ describe("SuppliersScreen — choosing a fulfilment shop", () => {
 describe("ImportCartScreen", () => {
   const route = { params: { connectionId: "conn-1" } };
 
-  async function renderCart(items: ImportCartItem[], staleCount = 0) {
+  /** One row of an import run, defaulting to the ordinary outcome: live. */
+  function itemResult(over: Partial<ImportItemResult> = {}): ImportItemResult {
+    return {
+      itemId: "item-1",
+      externalProductId: "ext-1",
+      provider: "cj",
+      outcome: "PUBLISHED",
+      listingId: 5,
+      detail: null,
+      variantCount: 3,
+      published: true,
+      problems: [],
+      priceLabel: "$18.00",
+      quantity: 12,
+      ...over
+    };
+  }
+
+  /**
+   * A whole run, with its counts derived from the rows rather than passed in.
+   *
+   * Derived on purpose: a fixture that let a test state "3 published" alongside
+   * one published row could make the summary line say anything, and the summary
+   * line is the §30 claim under test.
+   */
+  function runResult(results: ImportItemResult[], over: Partial<ImportRunResult> = {}): ImportRunResult {
+    const publishedCount = results.filter((item) => item.published).length;
+    return {
+      results,
+      requested: results.length,
+      imported: results.filter((item) => item.listingId !== null).length,
+      counts: {},
+      published: publishedCount === results.length,
+      publishedCount,
+      needsAttention: results.filter((item) => item.outcome === "NEEDS_ATTENTION").length,
+      pricingRule: { type: "TARGET_MARGIN", value: 45 },
+      pricingSource: "PLATFORM_DEFAULT",
+      autoPublish: true,
+      marketplaceAutolist: false,
+      ...over
+    };
+  }
+
+  /**
+   * `"unavailable"` rather than a mock set by the caller beforehand: the screen
+   * reads the policy during this function's own `render`, so a rejection set
+   * outside it is overwritten by the line below before it is ever used. That is
+   * how the failed-read test first passed while proving nothing.
+   */
+  async function renderCart(
+    items: ImportCartItem[],
+    staleCount = 0,
+    policy: StoreImportPolicy | "unavailable" = storePolicy()
+  ) {
     mockGetCart.mockResolvedValue({
       items,
       count: items.length,
       staleCount,
       maxItems: 200
     });
+    if (policy === "unavailable") {
+      mockGetStorePolicy.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
+    } else {
+      mockGetStorePolicy.mockResolvedValue(policy);
+    }
     const nav = navigation();
     const view = render(<ImportCartScreen navigation={nav} route={route} />);
     await settle();
@@ -1338,36 +1443,44 @@ describe("ImportCartScreen", () => {
     return { view, nav };
   }
 
-  it("calls the import as drafts, on the button and on the screen", async () => {
+  it("calls it import and publish, because that is what it does now", async () => {
     const { view } = await renderCart([cartItem()]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
-    expect(view.getByText(/Import .* as drafts/)).toBeTruthy();
+    expect(view.getByText("Import & publish 1")).toBeTruthy();
+    expect(view.getByText(/go live in your store, priced and ready to sell/)).toBeTruthy();
+    // The old copy is the specific lie this screen must not tell: a merchant told
+    // their products are drafts will not go looking at a live storefront.
+    expect(view.queryByText(/Nothing appears in your store until you publish/)).toBeNull();
+    expect(view.queryByText(/as drafts/)).toBeNull();
+  });
+
+  it("says drafts when the store's policy really is drafts", async () => {
+    // Both labels are reachable and neither is hardcoded. A merchant who turned
+    // auto-publish off is getting drafts, and §44's rule is that the app does not
+    // force publishing onto someone who said no.
+    const { view } = await renderCart([cartItem()], 0, storePolicy({ autoPublish: false }));
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    expect(view.getByText("Import 1 as drafts")).toBeTruthy();
     expect(
       view.getByText("Imported products are drafts. Nothing appears in your store until you publish it.")
     ).toBeTruthy();
-    // There is no publish control here. Publishing is a separate deliberate act
-    // on a separate screen.
-    expect(view.queryByText(/^Publish/)).toBeNull();
+    expect(view.queryByText(/Import & publish/)).toBeNull();
   });
 
-  it("sends ids and a rule, and nothing that looks like a price", async () => {
+  it("does not send a pricing rule the merchant never chose", async () => {
+    // The §8 inversion, at the only place it can be observed. The picker is on
+    // screen showing 45%, and that number is the *store's* answer being displayed
+    // back — sending it would record a per-request override on every import and
+    // permanently outrank the policy the merchant saves later.
     const { view } = await renderCart([cartItem()]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
-    mockImportSelected.mockResolvedValue({
-      results: [
-        { itemId: "item-1", externalProductId: "ext-1", provider: "cj", outcome: "IMPORTED", listingId: 5, detail: null, variantCount: 3 }
-      ],
-      requested: 1,
-      imported: 1,
-      counts: { IMPORTED: 1 },
-      published: false,
-      pricingRule: { type: "COST_PLUS_PERCENT", value: 60 }
-    });
+    mockImportSelected.mockResolvedValue(runResult([itemResult()]));
 
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Import 1 products as drafts"));
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
     });
     await settle();
 
@@ -1377,6 +1490,7 @@ describe("ImportCartScreen", () => {
     // The rule is a policy the server applies to a cost it fetched itself. Any
     // other key here would be the client asserting supplier economics.
     expect(Object.keys(input).sort()).toEqual(["itemIds", "pricingRule"]);
+    expect(input.pricingRule).toBeNull();
   });
 
   it("reports every per-item outcome instead of one verdict", async () => {
@@ -1387,54 +1501,235 @@ describe("ImportCartScreen", () => {
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
-    mockImportSelected.mockResolvedValue({
-      results: [
-        { itemId: "item-1", externalProductId: "ext-1", provider: "cj", outcome: "IMPORTED", listingId: 5, detail: null, variantCount: 3 },
-        { itemId: "item-2", externalProductId: "ext-2", provider: "cj", outcome: "ALREADY_EXISTS", listingId: 6, detail: null, variantCount: null },
-        { itemId: "item-3", externalProductId: "ext-3", provider: "cj", outcome: "PROVIDER_UNAVAILABLE", listingId: null, detail: null, variantCount: null }
-      ],
-      requested: 3,
-      imported: 1,
-      counts: { IMPORTED: 1, ALREADY_EXISTS: 1, PROVIDER_UNAVAILABLE: 1 },
-      published: false,
-      pricingRule: { type: "COST_PLUS_PERCENT", value: 60 }
-    });
+    mockImportSelected.mockResolvedValue(
+      runResult([
+        itemResult(),
+        itemResult({
+          itemId: "item-2",
+          externalProductId: "ext-2",
+          outcome: "NEEDS_ATTENTION",
+          listingId: 6,
+          published: false,
+          problems: ["SUPPLIER_VARIANT_UNBOUND"],
+          priceLabel: null
+        }),
+        itemResult({
+          itemId: "item-3",
+          externalProductId: "ext-3",
+          outcome: "PROVIDER_UNAVAILABLE",
+          listingId: null,
+          published: false,
+          variantCount: null,
+          priceLabel: null
+        })
+      ])
+    );
 
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Import 3 products as drafts"));
+      fireEvent.press(view.getByLabelText("Import and publish 3 products to your store"));
     });
     await settle();
 
-    // The one that failed is the only one the merchant has to do anything
-    // about, so it cannot be rounded away into "1 of 3 imported".
-    await waitFor(() => expect(view.getByText("1 of 3 imported as drafts.")).toBeTruthy());
-    expect(view.getByText(/Imported as a draft/)).toBeTruthy();
-    expect(view.getByText("Already in your store")).toBeTruthy();
+    // Three different things happened and the summary says all three. Rounding to
+    // "1 of 3 imported" loses the row that needs the merchant, and rounding the
+    // other way reports a live product as a failure.
+    await waitFor(() =>
+      expect(view.getByText("1 published, 1 need attention, 1 couldn't be imported.")).toBeTruthy()
+    );
+    expect(view.getByText(/Published — live and ready to sell/)).toBeTruthy();
+    expect(view.getByText(/needs one fix before it can go live/)).toBeTruthy();
     expect(view.getByText(/didn't respond — try this one again/)).toBeTruthy();
+  });
+
+  it("says so plainly when the whole run went live", async () => {
+    const { view } = await renderCart([
+      cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null })
+    ]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockImportSelected.mockResolvedValue(
+      runResult([itemResult(), itemResult({ itemId: "item-2", externalProductId: "ext-2", listingId: 6 })])
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 2 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() =>
+      expect(view.getByText("All 2 are published and ready to sell.")).toBeTruthy()
+    );
+  });
+
+  it("gives a product that needs a fix somewhere to go", async () => {
+    // §27. A reason with no remedy is where this screen used to leave the
+    // merchant: the sheet named an outcome and nothing on it was pressable.
+    const { view, nav } = await renderCart([cartItem()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockImportSelected.mockResolvedValue(
+      runResult([
+        itemResult({
+          outcome: "NEEDS_ATTENTION",
+          listingId: 42,
+          published: false,
+          problems: ["SUPPLIER_VARIANT_UNBOUND"],
+          priceLabel: null
+        })
+      ])
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
+    });
+    await settle();
+
+    // The reason is in words on the row, not a code.
+    await waitFor(() => expect(view.getByText(/Choose which variant you're selling/)).toBeTruthy());
+    expect(view.queryByText("SUPPLIER_VARIANT_UNBOUND")).toBeNull();
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Fix this product so it can go live"));
+    });
+    // The listing id, not the cart item id. The draft editor is the only place
+    // this problem can be solved, and it needs the listing.
+    expect(nav.navigate).toHaveBeenCalledWith(
+      "DropshippingDraft",
+      expect.objectContaining({ connectionId: "conn-1", listingId: 42 })
+    );
+  });
+
+  it("offers no fix for a problem that is not the merchant's to fix", async () => {
+    const { view } = await renderCart([cartItem()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockImportSelected.mockResolvedValue(
+      runResult([
+        itemResult({
+          outcome: "NEEDS_ATTENTION",
+          listingId: 42,
+          published: false,
+          problems: ["PROVIDER_PRODUCT_UNAVAILABLE"],
+          priceLabel: null
+        })
+      ])
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText(/no longer offers this product/)).toBeTruthy());
+    // A button opening an editor where nothing can be changed is worse than none:
+    // it says the supplier's decision is the merchant's mistake.
+    expect(view.queryByLabelText("Fix this product so it can go live")).toBeNull();
+  });
+
+  it("only points at the store for a product that is actually in it", async () => {
+    const { view, nav } = await renderCart([
+      cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null })
+    ]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockImportSelected.mockResolvedValue(
+      runResult([
+        itemResult({ listingId: 7 }),
+        // Says PUBLISHED but the server did not set `published`. Liveness comes
+        // from the field, so this row gets no store link.
+        itemResult({
+          itemId: "item-2",
+          externalProductId: "ext-2",
+          listingId: 8,
+          published: false,
+          priceLabel: null
+        })
+      ])
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 2 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() =>
+      expect(view.getAllByLabelText("View this product in your store")).toHaveLength(1)
+    );
+    await act(async () => {
+      fireEvent.press(view.getAllByLabelText("View this product in your store")[0]);
+    });
+    expect(nav.navigate).toHaveBeenCalledWith(
+      "SellerStore",
+      expect.objectContaining({ mode: "product", listingId: 7 })
+    );
+  });
+
+  it("shows the price a buyer will pay on a row that went live", async () => {
+    // The first question an auto-priced import raises. The label is the server's
+    // formatting — this screen does no arithmetic on money.
+    const { view } = await renderCart([cartItem()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockImportSelected.mockResolvedValue(runResult([itemResult({ priceLabel: "$18.00" })]));
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText(/\$18\.00/)).toBeTruthy());
+  });
+
+  it("says whether an import goes beyond this store", async () => {
+    // §19/§20. One tap publishing to the merchant's own store is the feature;
+    // one tap broadcasting across PulseSoc is a distribution decision, and the
+    // merchant is told which one they are about to make.
+    const store = await renderCart([cartItem()]);
+    await waitFor(() => expect(store.view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(store.view.getByText(/They stay in your store/)).toBeTruthy();
+
+    const wide = await renderCart([cartItem()], 0, storePolicy({ marketplaceAutolist: true }));
+    await waitFor(() => expect(wide.view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(wide.view.getByText(/also offered across the PulseSoc Marketplace/)).toBeTruthy();
   });
 
   it("does not report an unknown outcome as a success", async () => {
     const { view } = await renderCart([cartItem()]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
-    mockImportSelected.mockResolvedValue({
-      results: [
-        { itemId: "item-1", externalProductId: "ext-1", provider: "cj", outcome: "SOME_NEW_CODE", listingId: null, detail: null, variantCount: null }
-      ],
-      requested: 1,
-      imported: 0,
-      counts: { SOME_NEW_CODE: 1 },
-      published: false,
-      pricingRule: { type: "COST_PLUS_PERCENT", value: 60 }
-    });
+    mockImportSelected.mockResolvedValue(
+      runResult([
+        itemResult({
+          outcome: "SOME_NEW_CODE",
+          listingId: null,
+          published: false,
+          variantCount: null,
+          priceLabel: null
+        })
+      ])
+    );
 
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Import 1 products as drafts"));
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
     });
     await settle();
 
     await waitFor(() => expect(view.getByText("This one couldn't be imported")).toBeTruthy());
+    expect(view.queryByText(/Published/)).toBeNull();
     expect(view.queryByText("Imported as a draft")).toBeNull();
+  });
+
+  it("keeps its pricing claim honest when it could not read the policy", async () => {
+    // A failed policy read must not cost the merchant the ability to import, and
+    // must not present the platform default as though it were their store's
+    // setting. The server resolves the real policy either way.
+    const { view } = await renderCart([cartItem()], 0, "unavailable");
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    expect(view.getByText(/couldn't read your store's pricing rule/)).toBeTruthy();
+    expect(view.getByLabelText("Import and publish 1 products to your store").props.accessibilityState.disabled).toBe(false);
   });
 
   it("says nothing was imported when the run itself failed", async () => {
@@ -1446,7 +1741,7 @@ describe("ImportCartScreen", () => {
     );
 
     await act(async () => {
-      fireEvent.press(view.getByLabelText("Import 1 products as drafts"));
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
     });
     await settle();
 
@@ -1455,8 +1750,13 @@ describe("ImportCartScreen", () => {
         view.getByText("Your supplier didn't respond. Nothing was imported — your cart is unchanged.")
       ).toBeTruthy()
     );
-    // No result sheet, because there were no results.
-    expect(view.queryByText(/imported as drafts\./)).toBeNull();
+    // No result sheet, because there were no results. Asserted on the sheet's own
+    // button and its outcome rows — a text regex like /ready to sell/ matches the
+    // footer note that is on screen before any import runs, so it would have
+    // passed whether the sheet was drawn or not.
+    expect(view.queryByLabelText("Open your imported products")).toBeNull();
+    expect(view.queryByText(/Published — live and ready to sell/)).toBeNull();
+    expect(view.queryByText("This one couldn't be imported")).toBeNull();
   });
 
   it("says a cost is unknown rather than printing a zero", async () => {
@@ -1486,8 +1786,114 @@ describe("ImportCartScreen", () => {
       fireEvent.press(view.getByLabelText("Ceramic Mug, selected for import"));
     });
 
-    const button = view.getByLabelText("Import 0 products as drafts");
+    const button = view.getByLabelText("Import and publish 0 products to your store");
     expect(button.props.accessibilityState.disabled).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 3b — Import settings
+ *
+ * The three values the server consults on every import. Before this screen they
+ * were readable and writable over HTTP and unreachable from the app, which is the
+ * same defect as `SUPPLIER_VARIANT_UNBOUND` having no remedy: a setting nobody can
+ * change is a hardcoded constant wearing a table, and the import cart's line about
+ * turning Marketplace listing on was a promise about a control that did not exist.
+ * ------------------------------------------------------------------ */
+
+describe("ImportPolicyScreen", () => {
+  const route = { params: {} };
+
+  async function renderPolicy(policy: StoreImportPolicy | "unavailable" = storePolicy()) {
+    if (policy === "unavailable") {
+      mockGetStorePolicy.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
+    } else {
+      mockGetStorePolicy.mockResolvedValue(policy);
+    }
+    const nav = navigation();
+    const view = render(<ImportPolicyScreen navigation={nav} route={route} />);
+    await settle();
+    await waitFor(() => expect(mockGetStorePolicy).toHaveBeenCalled());
+    return { view, nav };
+  }
+
+  it("shows each setting in the state the server says it is in", async () => {
+    const { view } = await renderPolicy(
+      storePolicy({ autoPublish: true, marketplaceAutolist: false })
+    );
+    await waitFor(() => expect(view.getByTestId("import-policy-auto-publish")).toBeTruthy());
+
+    expect(view.getByTestId("import-policy-auto-publish").props.value).toBe(true);
+    expect(view.getByTestId("import-policy-marketplace-autolist").props.value).toBe(false);
+  });
+
+  it("writes only the field that changed", async () => {
+    // The PATCH claim, at the screen. Three settings share one row, so a writer
+    // that sent the whole policy would overwrite a margin the merchant changed on
+    // the import cart thirty seconds ago with this screen's stale copy of it.
+    const { view } = await renderPolicy();
+    await waitFor(() => expect(view.getByTestId("import-policy-marketplace-autolist")).toBeTruthy());
+
+    mockUpdateStorePolicy.mockResolvedValue(storePolicy({ marketplaceAutolist: true }));
+    await act(async () => {
+      fireEvent(view.getByTestId("import-policy-marketplace-autolist"), "valueChange", true);
+    });
+
+    expect(mockUpdateStorePolicy).toHaveBeenCalledTimes(1);
+    const [, changes] = mockUpdateStorePolicy.mock.calls[0];
+    expect(Object.keys(changes)).toEqual(["marketplaceAutolist"]);
+    expect(changes.marketplaceAutolist).toBe(true);
+  });
+
+  it("takes the server's answer rather than assuming the write landed", async () => {
+    // `configured` and `pricingSource` are computed server-side. A screen that
+    // assumed its own optimistic value would go on saying "PulseSoc's default"
+    // after the merchant had just configured one.
+    const { view } = await renderPolicy(storePolicy({ configured: false }));
+    await waitFor(() => expect(view.getByText(/You haven't set a rule/)).toBeTruthy());
+
+    mockUpdateStorePolicy.mockResolvedValue(
+      storePolicy({ configured: true, pricingSource: "STORE", autoPublish: false })
+    );
+    await act(async () => {
+      fireEvent(view.getByTestId("import-policy-auto-publish"), "valueChange", false);
+    });
+
+    await waitFor(() => expect(view.getByText(/Every product you import is priced by this rule/)).toBeTruthy());
+    expect(view.getByTestId("import-policy-auto-publish").props.value).toBe(false);
+  });
+
+  it("puts a failed toggle back where it was, and says so", async () => {
+    // The worst available outcome is a toggle that stays where the merchant left
+    // it after the write failed: the app then disagrees with the server about
+    // whether every future import goes marketplace-wide, silently.
+    const { view } = await renderPolicy(storePolicy({ marketplaceAutolist: false }));
+    await waitFor(() => expect(view.getByTestId("import-policy-marketplace-autolist")).toBeTruthy());
+
+    mockUpdateStorePolicy.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
+    await act(async () => {
+      fireEvent(view.getByTestId("import-policy-marketplace-autolist"), "valueChange", true);
+    });
+
+    await waitFor(() => expect(view.getByText("That didn't save. Your settings are unchanged.")).toBeTruthy());
+    expect(view.getByTestId("import-policy-marketplace-autolist").props.value).toBe(false);
+  });
+
+  it("draws a failed read as a failure, never as no settings", async () => {
+    const { view } = await renderPolicy("unavailable");
+
+    await waitFor(() => expect(view.queryByTestId("import-policy-auto-publish")).toBeNull());
+    // The EMPTY copy belongs to a merchant with no store. Showing it here would
+    // tell someone whose request timed out that they have nothing to configure.
+    expect(view.queryByText(/You need a store before you can set import rules/)).toBeNull();
+  });
+
+  it("says publishing and marketplace distribution are two decisions", async () => {
+    // §19/§20's whole point, and the reason these are two switches and not one.
+    const { view } = await renderPolicy();
+    await waitFor(() => expect(view.getByTestId("import-policy-auto-publish")).toBeTruthy());
+
+    expect(view.getByText(/Marketplace listing is a separate decision/)).toBeTruthy();
   });
 });
 

@@ -274,6 +274,26 @@ export type PricingRuleType = (typeof PRICING_RULES)[number];
 export type PricingRule = { type: PricingRuleType; value?: number };
 
 /**
+ * Where the rule an import priced with came from. Mirrors `store_policy.SOURCE_*`.
+ *
+ * Worth rendering rather than hiding. An auto-priced import raises exactly one
+ * question — "why is this $14.91" — and the three answers need three different
+ * replies: you asked for this rule, your store is set to this, or nobody has set
+ * anything and PulseSoc used its default. Only the third is an invitation to go
+ * and configure something.
+ */
+export const PRICING_SOURCES = ["REQUEST", "STORE", "PLATFORM_DEFAULT"] as const;
+export type PricingSource = (typeof PRICING_SOURCES)[number];
+
+function normalizePricingSource(raw: unknown): PricingSource {
+  const value = text(raw) as PricingSource;
+  // Defaults to the platform, not to `STORE`. An unreadable source is one nobody
+  // has verifiably configured, and claiming the merchant chose it is the worse
+  // of the two mistakes: it hides the settings screen they need.
+  return PRICING_SOURCES.includes(value) ? value : "PLATFORM_DEFAULT";
+}
+
+/**
  * Per-item outcomes of a bulk import. A bulk import reports each item honestly
  * rather than collapsing to one verdict: nine successes and one refusal is not
  * a failed import, and it is not a clean one either.
@@ -286,7 +306,18 @@ export const IMPORT_OUTCOMES = [
   "NO_VARIANTS",
   "NO_MEDIA",
   "RESTRICTED",
-  "NEEDS_REVIEW"
+  "NEEDS_REVIEW",
+  // The two outcomes "Import to Store" added. `PUBLISHED` is the ordinary one
+  // now — the product is priced, live and sellable with no further tap — and
+  // `NEEDS_ATTENTION` is its counterpart: the listing exists in the store as a
+  // draft, and `problems` says what stopped it going live.
+  //
+  // `NEEDS_ATTENTION` is distinct from `NEEDS_REVIEW` on purpose. Review is the
+  // *platform's* pending moderation, which the merchant can do nothing about and
+  // must not be asked to. Attention is the merchant's own: a missing price, an
+  // unbound variant, something they can go and fix.
+  "PUBLISHED",
+  "NEEDS_ATTENTION"
 ] as const;
 export type ImportOutcome = (typeof IMPORT_OUTCOMES)[number];
 
@@ -319,7 +350,12 @@ export const PUBLISH_PROBLEMS = [
   "RESTRICTED_PRODUCT",
   "VARIANT_PRICE_SPREAD",
   "PRICE_ABOVE_CHECKOUT_LIMIT",
-  "SUPPLIER_VARIANT_UNBOUND"
+  "SUPPLIER_VARIANT_UNBOUND",
+  // The two the publish read-back can emit. Not gate refusals — the gate passed
+  // and the row then failed to say so — but they arrive in the same `problems`
+  // field, on the same import result, and render through the same table.
+  "PUBLISH_NOT_PERSISTED",
+  "SUPPLIER_MAPPING_MISSING"
 ] as const;
 export type PublishProblem = (typeof PUBLISH_PROBLEMS)[number];
 
@@ -881,6 +917,86 @@ export async function removeImportCartItem(
 }
 
 /* ------------------------------------------------------------------ *
+ * Store import policy
+ * ------------------------------------------------------------------ */
+
+/**
+ * How a store imports: what it prices at, whether imports finish themselves,
+ * and whether finished imports are offered beyond the store.
+ *
+ * Scoped to the storefront, not the supplier connection. A merchant with two
+ * suppliers prices both the same way unless they say otherwise, so this is read
+ * and written without a connection id.
+ */
+export type StoreImportPolicy = {
+  pricingRule: PricingRule;
+  pricingSource: PricingSource;
+  /** Imports publish themselves when they are safe to publish. */
+  autoPublish: boolean;
+  /**
+   * Imported products are offered marketplace-wide, not just in this store.
+   *
+   * Off by default and deliberately separate from `autoPublish`: one tap should
+   * finish a listing in the merchant's own store without broadcasting every
+   * sourced product across PulseSoc. Turning it on is a distribution decision,
+   * and it is theirs to make.
+   */
+  marketplaceAutolist: boolean;
+  /**
+   * Whether this store has ever saved a policy.
+   *
+   * `false` does not mean "no policy" — the values above are the platform's and
+   * are what an import would really use. It means nobody has chosen, which is the
+   * difference between "your store is set to 45%" and "PulseSoc is using 45%
+   * because you haven't said".
+   */
+  configured: boolean;
+};
+
+function normalizeStorePolicy(raw: unknown): StoreImportPolicy {
+  const value = (raw || {}) as Record<string, unknown>;
+  return {
+    pricingRule: normalizePricingRule(value.pricing_rule),
+    pricingSource: normalizePricingSource(value.pricing_source),
+    autoPublish: value.auto_publish === undefined ? true : value.auto_publish === true,
+    marketplaceAutolist: value.marketplace_autolist === true,
+    configured: value.configured === true
+  };
+}
+
+export async function getStoreImportPolicy(scope: DropshippingScope): Promise<StoreImportPolicy> {
+  const response = await pulseApi<Record<string, unknown>>(`${BASE}/store-policy${scopeQuery(scope)}`);
+  return normalizeStorePolicy(response.policy);
+}
+
+/**
+ * Change one or more policy fields. Anything omitted is left alone.
+ *
+ * PATCH semantics all the way down, and the reason is a real bug rather than a
+ * preference: three independent controls share one row, and a writer that sent a
+ * whole policy object would overwrite whichever field the merchant changed on the
+ * other screen with the stale copy this one is holding.
+ */
+export async function updateStoreImportPolicy(
+  scope: DropshippingScope,
+  changes: {
+    pricingRule?: PricingRule;
+    autoPublish?: boolean;
+    marketplaceAutolist?: boolean;
+  }
+): Promise<StoreImportPolicy> {
+  const response = await pulseApi<Record<string, unknown>>(`${BASE}/store-policy`, {
+    method: "PATCH",
+    body: scopeBody(scope, {
+      pricing_rule: changes.pricingRule,
+      auto_publish: changes.autoPublish,
+      marketplace_autolist: changes.marketplaceAutolist
+    })
+  });
+  return normalizeStorePolicy(response.policy);
+}
+
+/* ------------------------------------------------------------------ *
  * Import
  * ------------------------------------------------------------------ */
 
@@ -889,7 +1005,7 @@ export type ImportItemResult = {
   externalProductId: string;
   provider: string;
   outcome: ImportOutcome | string;
-  /** Set only on `IMPORTED` and `ALREADY_EXISTS`. */
+  /** Set whenever a listing was created: `IMPORTED`, `PUBLISHED`, `NEEDS_ATTENTION`, `ALREADY_EXISTS`. */
   listingId: number | null;
   /**
    * A machine code narrowing why an item was refused, when the server had one.
@@ -897,8 +1013,30 @@ export type ImportItemResult = {
    * to a merchant, and not something to put in a log either.
    */
   detail: string | null;
-  /** How many variants were written. Only meaningful on `IMPORTED`. */
+  /** How many variants were written. Only meaningful where a listing exists. */
   variantCount: number | null;
+  /**
+   * Whether this product is live in the merchant's store.
+   *
+   * Read from the server's own field rather than inferred from `outcome`. The two
+   * agree, and they have to keep agreeing — but a screen that derives liveness
+   * from a string it may not recognise will call an unknown outcome published,
+   * and telling a merchant a product is live when it is a draft is the one
+   * mistake here that costs them sales silently.
+   */
+  published: boolean;
+  /**
+   * Why this product is not live, when it is not. Empty otherwise.
+   *
+   * The same vocabulary as a publish refusal (`PUBLISH_PROBLEMS`), because it is
+   * the same gate: the importer publishes through the identical code path the
+   * merchant's own Publish button uses, so the reasons cannot diverge.
+   */
+  problems: PublishProblem[];
+  /** The price a buyer sees, formatted by the server. Only set on a published item. */
+  priceLabel: string | null;
+  /** Sellable stock at publication. */
+  quantity: number | null;
 };
 
 function normalizeImportResult(raw: Record<string, unknown>): ImportItemResult {
@@ -911,23 +1049,46 @@ function normalizeImportResult(raw: Record<string, unknown>): ImportItemResult {
     outcome: text(raw.outcome) || "INVALID_PRODUCT",
     listingId: centsOrNull(raw.listing_id),
     detail: textOrNull(raw.detail),
-    variantCount: centsOrNull(raw.variant_count)
+    variantCount: centsOrNull(raw.variant_count),
+    published: raw.published === true,
+    problems: list<unknown>(raw.problems).map((problem) => text(problem) as PublishProblem),
+    priceLabel: textOrNull(raw.price_label),
+    quantity: centsOrNull(raw.quantity)
   };
 }
 
 export type ImportRunResult = {
   results: ImportItemResult[];
   requested: number;
+  /** Listings created, whether they went live or not. */
   imported: number;
   /** Only the outcomes that actually occurred, so a zero never needs rendering. */
   counts: Partial<Record<ImportOutcome | string, number>>;
   /**
-   * Always false. Import creates drafts; publishing is a separate, deliberate
-   * merchant act. Kept on the type because the server states it explicitly and
-   * a screen that reads it cannot drift into assuming otherwise.
+   * True only when *every* listing this run created is live.
+   *
+   * Not "at least one published". A run of twenty that publishes one and leaves
+   * nineteen needing attention is not a published run, and a banner that said so
+   * would be the §30 failure the brief names: one success speaking for nineteen
+   * drafts the merchant has not been told about.
    */
   published: boolean;
+  /** How many went live, for the summary line. */
+  publishedCount: number;
+  /** How many landed as drafts with something for the merchant to fix. */
+  needsAttention: number;
+  /** The rule the run actually priced with. */
   pricingRule: PricingRule;
+  /**
+   * Where that rule came from: this request, the store's saved policy, or the
+   * platform default. Rendered, because "why is this priced at $14.91" is the
+   * first question an auto-priced import raises.
+   */
+  pricingSource: PricingSource;
+  /** Whether the store's policy has imports finish themselves. */
+  autoPublish: boolean;
+  /** Whether products imported in this run are offered marketplace-wide (§19/§20). */
+  marketplaceAutolist: boolean;
 };
 
 /**
@@ -936,20 +1097,31 @@ export type ImportRunResult = {
  * Takes ids and an optional pricing rule — nothing else. The rule is arithmetic
  * the server applies to a cost *it* fetched, so it cannot be used to assert one.
  *
- * Idempotent per product: re-running returns `ALREADY_IMPORTED` for anything the
+ * `pricingRule` is an override and omitting it is meaningful: the server then
+ * resolves the store's own policy, and failing that the platform default. Sending
+ * a rule the merchant did not choose — a screen's initial state, say — silently
+ * outranks the policy they configured, which is §8's priority order inverted by
+ * a `useState` default.
+ *
+ * Idempotent per product: re-running returns `ALREADY_EXISTS` for anything the
  * merchant already has, rather than a second listing. That is why a retry after
  * a dropped connection is safe.
  */
 export async function importSelected(
   scope: DropshippingScope,
   connectionId: string,
-  input: { itemIds: string[]; pricingRule?: PricingRule }
+  input: { itemIds: string[]; pricingRule?: PricingRule | null }
 ): Promise<ImportRunResult> {
   const response = await pulseApi<Record<string, unknown>>(
     `${BASE}/connections/${encodeURIComponent(connectionId)}/import`,
     {
       method: "POST",
-      body: scopeBody(scope, { item_ids: input.itemIds, pricing_rule: input.pricingRule })
+      // `undefined` is dropped by JSON serialisation, which is what "let the
+      // store decide" has to look like on the wire. `null` would be a value.
+      body: scopeBody(scope, {
+        item_ids: input.itemIds,
+        pricing_rule: input.pricingRule ?? undefined
+      })
     }
   );
   const results = list<Record<string, unknown>>(response.results).map(normalizeImportResult);
@@ -962,12 +1134,21 @@ export async function importSelected(
       ? (counts as Partial<Record<string, number>>)
       : {},
     published: response.published === true,
-    pricingRule: normalizePricingRule(response.pricing_rule)
+    publishedCount: centsOrNull(response.published_count) ?? 0,
+    needsAttention: centsOrNull(response.needs_attention) ?? 0,
+    pricingRule: normalizePricingRule(response.pricing_rule),
+    pricingSource: normalizePricingSource(response.pricing_source),
+    // Defaulted to the server's own default rather than to `false`. A response
+    // from an older build that does not send these fields describes a store that
+    // does auto-publish and does not distribute, because that is what the server
+    // that omits them does.
+    autoPublish: response.auto_publish === undefined ? true : response.auto_publish === true,
+    marketplaceAutolist: response.marketplace_autolist === true
   };
 }
 
 /** Outcomes the merchant does not need to act on. */
-const BENIGN_OUTCOMES = ["IMPORTED", "ALREADY_EXISTS"];
+const BENIGN_OUTCOMES = ["IMPORTED", "PUBLISHED", "ALREADY_EXISTS"];
 
 /**
  * Whether a bulk import needs the merchant's attention.

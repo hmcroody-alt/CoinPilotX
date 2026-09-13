@@ -776,17 +776,61 @@ describe("connections are values, not a CJ shape", () => {
  * ------------------------------------------------------------------ */
 
 describe("the vocabularies are closed and complete", () => {
-  it("covers every import outcome the server can send", () => {
-    expect([...IMPORT_OUTCOMES]).toEqual([
-      "IMPORTED",
-      "ALREADY_EXISTS",
-      "PROVIDER_UNAVAILABLE",
-      "INVALID_PRODUCT",
-      "NO_VARIANTS",
-      "NO_MEDIA",
-      "RESTRICTED",
-      "NEEDS_REVIEW"
-    ]);
+  // This used to spell the whole list out and call itself "covers every import
+  // outcome the server can send", which it could not know. The list it pinned was
+  // the eight pre-auto-publish outcomes, and it went on passing after the server
+  // grew `PUBLISHED` and `NEEDS_ATTENTION` — then failed on the commit that added
+  // them here, reporting the fix as the break. Exactly the mistake documented
+  // below for `PUBLISH_PROBLEMS`, one enumeration along.
+  //
+  // Completeness against the server is measured in
+  // `tests/dropshipping/test_publish_problem_copy.py`, which reads `importer.OUTCOMES`
+  // on the Python side and this array on the TypeScript side. What is left here is
+  // the part that is about *this* file's behaviour.
+  it("names each import outcome once", () => {
+    expect([...new Set(IMPORT_OUTCOMES)]).toHaveLength(IMPORT_OUTCOMES.length);
+  });
+
+  it("knows the two outcomes auto-publish introduced", () => {
+    // Named rather than counted. These are the two whose absence made a live
+    // product render as "couldn't be imported" in the cart's result sheet, and a
+    // length assertion would have been satisfied by any two strings.
+    expect(IMPORT_OUTCOMES).toContain("PUBLISHED");
+    expect(IMPORT_OUTCOMES).toContain("NEEDS_ATTENTION");
+  });
+
+  it("reads liveness from the server's field, not from the outcome word", async () => {
+    // The failure this guards is one-directional and silent: a build that inferred
+    // `published` from an outcome string it did not recognise would tell a merchant
+    // a draft is live, and they would stop looking at it. An unreadable outcome
+    // therefore lands on `INVALID_PRODUCT` and `published: false`, while a row the
+    // server explicitly marks published is published whatever its outcome says.
+    mockPulseApi.mockResolvedValue({
+      requested: 2,
+      imported: 2,
+      results: [
+        { item_id: "i1", outcome: "AN_OUTCOME_FROM_A_NEWER_SERVER", published: true, listing_id: 5 },
+        { item_id: "i2", outcome: "PUBLISHED", listing_id: 6 }
+      ]
+    });
+    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] });
+    expect(run.results[0].outcome).toBe("AN_OUTCOME_FROM_A_NEWER_SERVER");
+    expect(run.results[0].published).toBe(true);
+    // Says PUBLISHED, but the server did not set the field. Not live.
+    expect(run.results[1].published).toBe(false);
+  });
+
+  it("omits the pricing rule entirely when the merchant did not choose one", async () => {
+    // §8's priority order is request → store → platform, and it is expressed on
+    // the wire by the key being *absent*. A `null` would be a value, and a screen
+    // sending its own initial state would outrank the policy the merchant saved.
+    mockPulseApi.mockResolvedValue({ results: [], imported: 0, requested: 1 });
+    await importSelected(SCOPE, "c1", { itemIds: ["i1"] });
+    await importSelected(SCOPE, "c1", { itemIds: ["i1"], pricingRule: null });
+    // Indexed, because `bodyOf()` reads the *first* call — asserting it twice
+    // would have measured the omitted case twice and never the explicit null.
+    expect("pricing_rule" in bodyOf(0)).toBe(false);
+    expect("pricing_rule" in bodyOf(1)).toBe(false);
   });
 
   // This used to be `expect(PUBLISH_PROBLEMS).toHaveLength(10)` under the title

@@ -33,7 +33,7 @@ from services import db
 from services.business_os_commerce_routes import _bot, _csrf_ok, _json
 from services.business_os.commerce_gateway import context_from_user
 from services.business_os.suppliers import (discovery, drafts, import_cart, importer,
-                                            merchant_scope, policy, pricing)
+                                            merchant_scope, policy, pricing, store_policy)
 from services.business_os.suppliers.errors import SupplierError
 
 
@@ -157,6 +157,64 @@ def merchant_scope_route():
         finally:
             conn.close()
         return _respond({"ok": True, **result})
+    except Exception as exc:
+        return _error(exc)
+
+
+# ---------------------------------------------------------------------------
+# Layer 1 — how this store imports
+# ---------------------------------------------------------------------------
+
+@dropshipping_blueprint.route(PREFIX + "/store-policy", methods=["GET"])
+def get_store_policy():
+    """How this store prices imports, whether they publish, whether they distribute.
+
+    Scoped to the store rather than the connection: the policy is a property of
+    the storefront, and a merchant with two supplier connections prices both the
+    same way unless they say otherwise. It therefore lives outside
+    ``/connections/<id>/`` and needs no connection to read.
+    """
+    try:
+        actor, context = _request_context()
+        business_id, store_id = _scope(request.args)
+        result = store_policy.read(business_id, store_id, actor, context=context)
+        return _respond({"ok": True, "policy": result})
+    except Exception as exc:
+        return _error(exc)
+
+
+@dropshipping_blueprint.route(PREFIX + "/store-policy", methods=["PATCH"])
+def set_store_policy():
+    """Change one or more policy fields. Omitted fields are untouched.
+
+    PATCH, not PUT, and the distinction is load-bearing: the settings screen has
+    three independent controls, and a PUT would make the Marketplace toggle send
+    a whole policy object it may have read minutes earlier — overwriting a margin
+    the merchant changed in between with a stale copy of itself.
+
+    The booleans are checked for being booleans. JSON ``"false"`` and ``0`` are
+    both truthy or falsy in ways that do not survive a round trip through a
+    client, and ``marketplace_autolist`` is the one field where guessing wrong
+    broadcasts a merchant's whole catalogue network-wide.
+    """
+    try:
+        actor, context = _request_context(write=True)
+        body = _body()
+        business_id, store_id = _scope(body)
+        fields = {}
+        for name in ("auto_publish", "marketplace_autolist"):
+            if name in body and body[name] is not None:
+                if body[name] is not True and body[name] is not False:
+                    raise SupplierError("invalid_input", http_status=400)
+                fields[name] = body[name]
+        rule = body.get("pricing_rule")
+        if rule is not None and not isinstance(rule, dict):
+            raise SupplierError("invalid_input", http_status=400)
+        if rule is None and not fields:
+            raise SupplierError("invalid_input", http_status=400)
+        result = store_policy.write(business_id, store_id, actor, pricing_rule=rule,
+                                    context=context, **fields)
+        return _respond({"ok": True, "policy": result})
     except Exception as exc:
         return _error(exc)
 

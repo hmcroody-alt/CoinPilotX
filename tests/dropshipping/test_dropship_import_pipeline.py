@@ -63,7 +63,7 @@ from services import db  # noqa: E402
 from services import marketplace_supplier_schema as supplier_schema  # noqa: E402
 from services import marketplace_variants as variants  # noqa: E402
 from services.business_os.suppliers import (  # noqa: E402
-    drafts, gateway, import_cart, importer, normalize, pricing)
+    drafts, gateway, import_cart, importer, normalize, pricing, store_policy)
 from services.business_os.suppliers import schema as connection_schema  # noqa: E402
 from services.business_os.suppliers.errors import SupplierError  # noqa: E402
 from tests.marketplace_production_listings import seed_production_listings  # noqa: E402
@@ -242,6 +242,17 @@ def run_import(*, item_ids=None, rule=None, business=BUSINESS, store=STORE,
                                     item_ids=item_ids, pricing_rule=rule, context=CONTEXT)
 
 
+def set_store_policy(business=BUSINESS, store=STORE, **fields):
+    """Write one store's import policy, the way the settings screen does."""
+    conn = db.connect()
+    try:
+        result = store_policy.set_policy(conn, business, store, **fields)
+        conn.commit()
+        return result
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Import Cart
 # ---------------------------------------------------------------------------
@@ -301,17 +312,25 @@ def test_cart_cache_is_display_only(provider):
 
 
 # ---------------------------------------------------------------------------
-# Import creates a draft, never a published listing
+# Import creates the listing. Whether it publishes is the gate's answer.
 # ---------------------------------------------------------------------------
 
-def test_import_creates_a_draft_listing(provider):
+def test_import_creates_the_listing_in_the_merchants_store(provider):
+    # `cj_product`'s default is two in-stock variants at different costs, which is
+    # a real question about which one a buyer receives. Nothing here can answer it,
+    # so this product needs attention -- and the listing exists regardless, with
+    # the provider's facts on it. See `test_dropship_autopublish.py` for the
+    # ordinary product that goes all the way.
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
     result = run_import()
 
     assert result["imported"] == 1
+    assert result["results"][0]["outcome"] == importer.NEEDS_ATTENTION
+    assert drafts.SUPPLIER_VARIANT_UNBOUND in result["results"][0]["problems"]
+    # Not a published batch. One needs-attention item is enough to make the
+    # summary false, and the merchant is the one who would go looking.
     assert result["published"] is False
-    assert result["results"][0]["outcome"] == importer.IMPORTED
 
     listing = rows("SELECT * FROM marketplace_listings")[0]
     assert listing["status"] == "draft"
@@ -320,10 +339,21 @@ def test_import_creates_a_draft_listing(provider):
     assert listing["seller_user_id"] in (int(OWNER_ID), OWNER_ID)
 
 
-def test_import_never_produces_a_public_listing(provider):
+def test_the_insert_itself_never_produces_a_public_listing(provider):
+    """`_create_draft_listing` writes a draft. That did not change. §33.
+
+    Auto-publish off, so the only thing that runs here is the insert. Publication
+    is now something the importer *asks for* -- from `drafts.autopublish`, which
+    runs the same gate the merchant's own Publish button does -- and this asserts
+    the asking is the only way to get it. If the literal in the INSERT ever became
+    a parameter, this test is what notices.
+    """
+    set_store_policy(auto_publish=False)
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
-    run_import()
+    result = run_import()
+
+    assert result["results"][0]["outcome"] == importer.IMPORTED
     statuses = {r["status"] for r in rows("SELECT status FROM marketplace_listings")}
     assert statuses == {"draft"}
     assert not (statuses & {"published", "live", "active"})
@@ -597,7 +627,7 @@ def test_importing_the_same_supplier_product_twice_reopens_one_listing(provider)
     add_to_cart("PID-1")
     second = run_import()
 
-    assert first["results"][0]["outcome"] == importer.IMPORTED
+    assert first["results"][0]["outcome"] in importer.CREATED_LISTING
     assert second["results"][0]["outcome"] == importer.ALREADY_EXISTS
     assert second["results"][0]["listing_id"] == first["results"][0]["listing_id"]
     assert len(rows("SELECT id FROM marketplace_listings")) == 1
@@ -625,7 +655,7 @@ def test_two_tenants_may_import_the_same_supplier_product(provider):
                 connection=OTHER_CONNECTION, actor=OTHER_OWNER_ID)
     result = run_import(business=OTHER_BUSINESS, store=OTHER_STORE,
                         connection=OTHER_CONNECTION, actor=OTHER_OWNER_ID)
-    assert result["results"][0]["outcome"] == importer.IMPORTED
+    assert result["results"][0]["outcome"] in importer.CREATED_LISTING
     assert len(rows("SELECT id FROM marketplace_listings")) == 2
 
 
@@ -642,9 +672,12 @@ def test_one_provider_failure_does_not_discard_its_neighbours(provider):
     result = run_import()
 
     outcomes = {r["external_product_id"]: r["outcome"] for r in result["results"]}
-    assert outcomes["PID-1"] == importer.IMPORTED
+    assert outcomes["PID-1"] in importer.CREATED_LISTING
     assert outcomes["PID-2"] == importer.PROVIDER_UNAVAILABLE
-    assert outcomes["PID-3"] == importer.IMPORTED
+    assert outcomes["PID-3"] in importer.CREATED_LISTING
+    # `imported` counts every item that produced a listing, not only the ones that
+    # stopped at a draft -- otherwise a merchant whose products all published would
+    # be told nothing imported.
     assert result["imported"] == 2
     # The neighbours survived the failure's rollback. A shared transaction here
     # would leave zero listings and still report two imports.
@@ -717,12 +750,68 @@ def test_a_pricing_rule_proposes_retail_but_cost_is_still_recorded(provider):
     assert variant["price_cents"] == 1640
 
 
-def test_no_pricing_rule_leaves_variants_unpriced(provider):
+def test_no_pricing_rule_falls_to_the_platform_default_not_to_no_price(provider):
+    """§8's third tier. The bug this whole change is about, as one assertion.
+
+    An absent ``pricing_rule`` used to mean :data:`pricing.MANUAL_PRICE`, which
+    proposes nothing, so every variant of every import was written
+    ``price_cents = None`` and the draft was then correctly reported
+    ``MISSING_PRICE`` -- for a product nobody had declined to price. The merchant's
+    next action was always to open an editor and type a number the store could have
+    supplied. Silence is not a refusal.
+    """
     provider.add(cj_product("PID-1"))
     add_to_cart("PID-1")
-    run_import()
+    result = run_import()
+
+    assert result["pricing_source"] == store_policy.SOURCE_PLATFORM
+    prices = [v["price_cents"] for v in
+              rows("SELECT price_cents FROM marketplace_listing_variants ORDER BY id")]
+    assert all(p is not None for p in prices)
+    # 820 and 860 at a 45% target margin.
+    assert prices == [1491, 1564]
+
+
+def test_a_store_policy_outranks_the_platform_default(provider):
+    set_store_policy(pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    result = run_import()
+
+    assert result["pricing_source"] == store_policy.SOURCE_STORE
+    assert rows("SELECT price_cents FROM marketplace_listing_variants "
+                "ORDER BY id")[0]["price_cents"] == 2460
+
+
+def test_an_explicit_request_outranks_the_store_policy(provider):
+    set_store_policy(pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    result = run_import(rule={"type": pricing.MULTIPLIER, "value": 2})
+
+    assert result["pricing_source"] == store_policy.SOURCE_REQUEST
+    assert rows("SELECT price_cents FROM marketplace_listing_variants "
+                "ORDER BY id")[0]["price_cents"] == 1640
+
+
+def test_a_merchant_who_asked_to_price_it_themselves_still_gets_no_price(provider):
+    """§44. An explicit MANUAL_PRICE is a decision, not an absence.
+
+    The store default must not quietly overrule a merchant who just picked "I'll
+    price these myself" in the cart. That import lands unpriced and stops at
+    needs-attention, which is the correct outcome for someone who asked to set the
+    prices -- and is the one case where the old behaviour was right.
+    """
+    set_store_policy(pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
+    provider.add(cj_product("PID-1"))
+    add_to_cart("PID-1")
+    result = run_import(rule={"type": pricing.MANUAL_PRICE})
+
+    assert result["pricing_source"] == store_policy.SOURCE_REQUEST
     assert all(v["price_cents"] is None
                for v in rows("SELECT price_cents FROM marketplace_listing_variants"))
+    assert result["results"][0]["outcome"] == importer.NEEDS_ATTENTION
+    assert drafts.MISSING_PRICE in result["results"][0]["problems"]
 
 
 def test_a_rule_cannot_price_a_variant_whose_cost_is_unknown(provider):

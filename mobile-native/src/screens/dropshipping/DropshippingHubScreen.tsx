@@ -204,8 +204,9 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
               : {
                   title: "Sell products you don't have to stock.",
                   body:
-                    "Connect a supplier, browse their catalogue, and import products as drafts. " +
-                    "You set your own price and nothing goes live until you publish it."
+                    "Connect a supplier, browse their catalogue, and import what you want to sell. " +
+                    "PulseSoc prices it by your rule and publishes it to your store — anything it " +
+                    "can't publish safely stays a draft and tells you why."
                 }
       }
     />
@@ -276,6 +277,16 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
           label: "Sync & issues",
           subtitle: "What needs your attention",
           onPress: withConnection("DropshippingSync", "Sync & issues"),
+          reducedMotion
+        },
+        {
+          icon: "options-outline",
+          label: "Import settings",
+          subtitle: "Pricing, publishing, Marketplace",
+          // Not `withConnection`: the policy belongs to the storefront, so this is
+          // the one tile here that is reachable and useful with no supplier chosen.
+          onPress: () =>
+            navigation.navigate("DropshippingImportPolicy", { title: "Import settings" }),
           reducedMotion
         }
       ]}

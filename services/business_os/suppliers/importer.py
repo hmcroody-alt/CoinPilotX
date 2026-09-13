@@ -1,4 +1,4 @@
-"""Import Cart items become DRAFT listings. The client supplies ids, nothing else.
+"""Import Cart items become listings in the merchant's store. Ids in, facts out.
 
 The trust boundary
 ------------------
@@ -17,13 +17,36 @@ settable margin, and any customer with a proxy becomes able to make a merchant's
 storefront claim a profit that does not exist. The Import Cart's ``cached_json``
 is *display* state for exactly this reason — it is never read here.
 
-Import never publishes
-----------------------
-Everything created lands as ``status='draft'`` with ``approval_status``
-``'pending_review'``. There is no argument to this module that can produce a
-public listing, and :func:`_create_draft_listing` hard-codes both columns rather
-than accepting them. Publication is a separate, explicit merchant action in
-``publication.py`` with its own validation.
+"Import to Store" finishes the job
+---------------------------------
+This module used to stop at a draft on principle, and the principle was wrong for
+the button the merchant actually taps. "Import to Store" is a request for a
+listing that sells, and what it produced was a product with no price, no stock
+figure and a MISSING_PRICE badge -- so the merchant's next action was always to
+open an editor and type a number the store could have supplied. An import that
+reliably needs a second step is an import that did not happen.
+
+So the pipeline now runs to the end: authoritative read, normalize, select
+variants, price from the store's own policy (:mod:`store_policy`), write the
+listing and its variants, bind the supplier mapping, then hand the listing to
+:func:`drafts.autopublish`, which runs the publish gate and reads the row back.
+An ordinary product comes out ``PUBLISHED``. One that genuinely cannot be sold
+safely comes out ``NEEDS_ATTENTION`` carrying the specific codes that stopped it.
+
+What did *not* change is who decides. :func:`_create_draft_listing` still writes
+``status='draft'`` as a SQL literal, and this module still contains no publish
+rule of its own: every question about whether a buyer may see something is
+answered by :mod:`drafts`, in the same function the merchant's explicit Publish
+button calls. The insert cannot publish, the gate can, and the gate is one
+implementation shared by both entry points (§32). A refusal is therefore never
+"the importer disagreed with the publisher" -- there is only one publisher.
+
+The trust boundary above is unaffected by any of it. Auto-publishing widens what
+the server *does* with supplier facts; it does not widen what the client may
+assert. There is still no parameter here through which a phone can name a price,
+a stock level, or a published state -- ``pricing_rule`` names a *strategy* whose
+inputs are all server-read, and §33's "the client must not construct a ready
+listing" is enforced by there being nothing to construct with.
 
 Partial success is the honest shape
 -----------------------------------
@@ -40,8 +63,9 @@ import time
 
 from services import db, marketplace_variants as variants
 from services import marketplace_supplier_schema as supplier_schema
-from services.business_os.suppliers import (connections, gateway, import_cart,
-                                            normalize, policy, pricing)
+from services.business_os.suppliers import (connections, drafts, gateway,
+                                            import_cart, normalize, policy,
+                                            pricing, store_policy)
 from services.business_os.suppliers.errors import SupplierError
 
 #: Per-item outcomes. A bulk import returns one of these per requested item.
@@ -53,14 +77,39 @@ NO_VARIANTS = "NO_VARIANTS"
 NO_MEDIA = "NO_MEDIA"
 RESTRICTED = "RESTRICTED"
 NEEDS_REVIEW = "NEEDS_REVIEW"
+#: Imported, completed, validated and now live in the merchant's store. The
+#: normal outcome of "Import to Store" for an ordinary product, and the one this
+#: module previously had no way to report because it always stopped at a draft.
+PUBLISHED = "PUBLISHED"
+#: Imported and left as a draft because publishing it would not have been safe.
+#: Carries ``problems`` -- :mod:`drafts`' own validation codes, unmodified -- so
+#: the merchant is told the actual reason rather than "needs attention".
+#:
+#: Distinct from the refusals above, and the distinction is the merchant's:
+#: ``NO_MEDIA`` and friends mean *nothing was created*, while this means the
+#: product is in their store and is one specific fix away from selling.
+NEEDS_ATTENTION = "NEEDS_ATTENTION"
 
 OUTCOMES = (IMPORTED, ALREADY_EXISTS, PROVIDER_UNAVAILABLE, INVALID_PRODUCT,
-            NO_VARIANTS, NO_MEDIA, RESTRICTED, NEEDS_REVIEW)
+            NO_VARIANTS, NO_MEDIA, RESTRICTED, NEEDS_REVIEW, PUBLISHED,
+            NEEDS_ATTENTION)
 
 #: Outcomes after which the cart row is cleared. ``ALREADY_EXISTS`` clears too:
 #: the merchant's intent — "this product should be in my store" — is satisfied,
 #: and leaving the row would make the cart un-emptiable by repeated tapping.
-CLEARS_CART = frozenset({IMPORTED, ALREADY_EXISTS})
+#:
+#: ``NEEDS_ATTENTION`` clears for the same reason and it is worth being explicit
+#: about why, because it reads like a failure: the listing *was* created and is in
+#: the store. Keeping the cart row would leave the merchant holding two copies of
+#: one intent — a product on their shelf and a cart item for it — and tapping
+#: Import again would answer ``ALREADY_EXISTS`` forever without ever clearing.
+#: The fix for a needs-attention product is in the editor, not in the cart.
+CLEARS_CART = frozenset({IMPORTED, ALREADY_EXISTS, PUBLISHED, NEEDS_ATTENTION})
+
+#: Outcomes that mean a listing now exists in the merchant's store. The honest
+#: denominator for "imported", which ``IMPORTED`` alone stopped being the moment
+#: the same run could also answer ``PUBLISHED``.
+CREATED_LISTING = frozenset({IMPORTED, PUBLISHED, NEEDS_ATTENTION})
 
 #: Terms that force a draft to NEEDS_REVIEW instead of importing clean. This is
 #: a coarse first pass, not a compliance system: it exists so that the obvious
@@ -210,7 +259,7 @@ def _existing_listing(cur, seller_user_id, provider, connection_id, external_pro
         return int(row[0])
 
 
-def _create_draft_listing(cur, seller_user_id, product):
+def _create_draft_listing(cur, seller_user_id, product, *, marketplace_autolist=False):
     """Insert one DRAFT listing. Status and approval are not parameters.
 
     Both are literals in the SQL rather than arguments with draft defaults. A
@@ -241,6 +290,18 @@ def _create_draft_listing(cur, seller_user_id, product):
     difference between telling a merchant "you are sold out" and "nobody has
     counted this yet".
 
+    ``marketplace_autolist`` records the store's Marketplace-distribution setting
+    *on the product*, at the moment the merchant imported it. Publishing to their
+    store already does not broadcast anything -- ``approval_status`` stays
+    ``pending_review`` and every buyer surface gates on it -- so this is not a
+    second visibility switch. It is the merchant's answer to "and may this one go
+    into the wider PulseSoc Marketplace when it clears review", captured per
+    listing rather than read from the store's current setting later. A merchant who
+    imports fifty products with distribution off and then turns it on has said
+    something about their *next* imports; silently back-dating that to fifty
+    products they chose to keep to their own store would be the single broadcast
+    this split exists to prevent.
+
     ``cover_image_url`` is written from the same list that goes into the
     metadata, rather than left for a reader to derive. `_validate` already
     refuses a product with no media — "better to refuse than to ship a black
@@ -263,7 +324,8 @@ def _create_draft_listing(cur, seller_user_id, product):
         (int(seller_user_id), product.get("title"), product.get("description"),
          product.get("category"), "", now, now, product.get("currency") or "USD", None,
          media[0] if media else None,
-         json.dumps({"source": "dropship", "media": media},
+         json.dumps({"source": "dropship", "media": media,
+                     "marketplace_autolist": bool(marketplace_autolist)},
                     separators=(",", ":"))))
     cur.execute(
         "SELECT id FROM marketplace_listings WHERE seller_user_id=? AND status='draft' "
@@ -314,9 +376,56 @@ def _write_variants(cur, listing_id, seller_user_id, chosen, rule):
     return written
 
 
+def _sole_orderable(chosen):
+    """The supplier variant this listing can only be, or ``None`` if there is a choice.
+
+    ``marketplace_product_sources.provider_variant_id`` is the variant an order
+    will actually be placed for -- ``fulfillment.create_intent`` can order no other
+    -- so an unbound dropship listing is one nothing can ship, and
+    :data:`drafts.SUPPLIER_VARIANT_UNBOUND` correctly refuses to publish it.
+
+    This function answers that guard in the only two cases where answering it is
+    not choosing on the merchant's behalf:
+
+    * **One variant was chosen.** Already the old rule. Not a choice; the only
+      thing the listing can be.
+    * **One chosen variant is not confirmed unavailable.** The siblings are
+      known-negative -- ``availability`` returned ``UNAVAILABLE``, meaning the
+      provider said out of stock or the variant is archived -- and an order for one
+      of them would be refused at the supplier anyway. Binding the survivor
+      substitutes nothing, because nothing else was orderable to begin with.
+
+    What it deliberately does **not** do is break a genuine tie. Three colours all
+    in stock is a real question about which one a buyer receives, this import has
+    no answer to it, and §1 forbids inventing product identity. Those land
+    ``NEEDS_ATTENTION`` with ``SUPPLIER_VARIANT_UNBOUND`` and the merchant picks.
+
+    ``UNKNOWN`` is not a negative and is not treated as one. A variant the provider
+    declined to report on might be perfectly orderable, so one ``IN_STOCK`` variant
+    beside two unreadable ones is still a choice -- narrowing it here would let an
+    inventory outage decide what a merchant sells. Same asymmetry
+    :func:`_authoritative` keeps for the shelf, applied to the binding.
+
+    Availability is asked of :func:`marketplace_variants.availability` rather than
+    reimplemented from ``stock_state``, so this cannot drift from the reading
+    ``drafts`` will apply to the same rows one transaction later.
+    """
+    if len(chosen) == 1:
+        return chosen[0].get("external_variant_id")
+    shippable = [v for v in chosen if variants.availability({
+        "status": "active",
+        "stock_state": normalize.storage_stock_state(v.get("stock_state")),
+        "stock_quantity": v.get("stock_quantity"),
+    }) != variants.UNAVAILABLE]
+    if len(shippable) == 1:
+        return shippable[0].get("external_variant_id")
+    return None
+
+
 def _import_one(conn, *, seller_user_id, business_id, store_id,
                 actor_user_id, connection_id, provider, external_product_id,
-                selection, rule, context, adapter):
+                selection, rule, auto_publish, marketplace_autolist,
+                context, adapter):
     """One cart item, one transaction. Returns (outcome, payload).
 
     No `merchant_id`. It used to take one and never read it: `merchant_id` is
@@ -346,7 +455,8 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         # they already have, with its merchant edits intact.
         return ALREADY_EXISTS, {"listing_id": existing}
 
-    listing_id = _create_draft_listing(cur, seller_user_id, product)
+    listing_id = _create_draft_listing(cur, seller_user_id, product,
+                                       marketplace_autolist=marketplace_autolist)
     _write_variants(cur, listing_id, seller_user_id, chosen, rule)
 
     low, high = normalize.cost_range(chosen)
@@ -368,14 +478,13 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         # listing without one is a listing nothing can ship.
         #
         # Recorded here, and only when the merchant's selection leaves no room
-        # for interpretation. One chosen variant is not a choice we are making on
-        # their behalf -- it is the only thing this listing can be. With several
-        # chosen there genuinely is a question, this import has no answer to it,
-        # and inventing one would ship a buyer whichever variant we guessed.
-        # `link_source` refuses to re-point an existing binding, so this cannot
-        # silently override a merchant's later explicit choice either.
-        provider_variant_id=(chosen[0].get("external_variant_id")
-                             if len(chosen) == 1 else None),
+        # for interpretation -- see `_sole_orderable` for what "no room" means and
+        # for the ties it refuses to break. With several orderable variants there
+        # genuinely is a question, this import has no answer to it, and inventing
+        # one would ship a buyer whichever variant we guessed. `link_source`
+        # refuses to re-point an existing binding, so this cannot silently
+        # override a merchant's later explicit choice either.
+        provider_variant_id=_sole_orderable(chosen),
         # The low end of the range, and ``None`` when no variant had a readable
         # cost. Never 0 — see ``normalize.cost_range``.
         supplier_cost_cents=low,
@@ -384,14 +493,50 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         inventory_reference=external_product_id,
         sync_state=supplier_schema.SYNC_SYNCED,
     )
-    return IMPORTED, {
+
+    payload = {
         "listing_id": listing_id,
         "snapshot_id": snapshot_id,
         "variant_count": len(chosen),
         "cost_low_cents": low,
         "cost_high_cents": high,
-        "status": "DRAFT",
-        "published": False,
+    }
+
+    if not auto_publish:
+        # The store asked for drafts. A merchant who turns auto-publish off has
+        # said they want to look at each product first, and finishing the listing
+        # anyway would be this module overruling a setting they went and changed.
+        return IMPORTED, {**payload, "status": "DRAFT", "published": False}
+
+    # Everything above wrote facts. This asks the one authority on buyer
+    # visibility whether those facts add up to something sellable, inside the
+    # same transaction, so there is no window in which a half-finished listing
+    # is visible to another reader and no outcome that is committed before it is
+    # known. `autopublish` does the read-back (§35) and returns codes, not prose.
+    finish = drafts.autopublish(cur, listing_id, seller_user_id)
+    if not finish["published"]:
+        return NEEDS_ATTENTION, {
+            **payload,
+            "status": "DRAFT",
+            "published": False,
+            # `drafts`' own codes, passed through unmodified. Translating them
+            # here would give the merchant a second, less precise vocabulary for
+            # the same refusal, and the editor deep-link that fixes each one is
+            # keyed on the code.
+            "problems": finish["problems"],
+        }
+    return PUBLISHED, {
+        **payload,
+        "status": "PUBLISHED",
+        "published": True,
+        "price_label": finish.get("price_label"),
+        "quantity": finish.get("quantity"),
+        "sellable_variants": finish.get("sellable_variants"),
+        # Published to the merchant's store is not the same as discoverable
+        # across PulseSoc. Reported so the success screen can say "live in your
+        # store" without implying a marketplace placement moderation has not
+        # granted yet.
+        "awaiting_moderation": finish.get("awaiting_moderation", True),
     }
 
 
@@ -401,16 +546,21 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
 
 def import_selected(business_id, store_id, actor_user_id, connection_id, *,
                     item_ids=None, pricing_rule=None, context=None, adapter=None):
-    """Import cart items as DRAFT listings. Per-item outcomes, never all-or-nothing.
+    """Import cart items into the merchant's store. Per-item outcomes, never all-or-nothing.
 
     ``item_ids`` names rows in the merchant's own Import Cart. Absent, the whole
     cart is imported. Nothing else about the products is accepted from the
     caller — see the module docstring.
+
+    ``pricing_rule`` is optional and remains an *override*. Its absence used to
+    mean :data:`pricing.MANUAL_PRICE`, which proposes no price at all, which is why
+    every import landed unpriced. It now means "the store has not been asked" and
+    resolution falls to :func:`store_policy.resolve_rule`. The Import Cart's rule
+    picker is unaffected and still wins.
     """
     policy.require_enabled()
     import_cart.ensure_schema()
     gateway.ensure_schema()
-    rule = pricing.normalize_rule(pricing_rule)
 
     if item_ids is not None:
         if not isinstance(item_ids, (list, tuple)):
@@ -426,6 +576,13 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
         connections._row(conn, connection_id, business_id, store_id, merchant_id)
         rows = import_cart.items_for_import(conn, merchant_id, business_id, store_id,
                                             connection_id, item_ids)
+        # Resolved once, for the whole batch, on the connection that just proved
+        # the caller owns this store. Per item would be the same answer plus N
+        # reads, and would let a policy edited mid-batch price the first half of
+        # one import differently from the second.
+        store = store_policy.get_policy(conn, business_id, store_id)
+        rule, pricing_source = store_policy.resolve_rule(
+            conn, business_id, store_id, pricing_rule)
     finally:
         conn.close()
 
@@ -461,7 +618,9 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
                 business_id=business_id, store_id=store_id, actor_user_id=actor_user_id,
                 connection_id=connection_id, provider=provider,
                 external_product_id=external_product_id, selection=selection,
-                rule=rule, context=context, adapter=adapter)
+                rule=rule, auto_publish=store["auto_publish"],
+                marketplace_autolist=store["marketplace_autolist"],
+                context=context, adapter=adapter)
             conn.commit()
         except _ItemFailure as failure:
             conn.rollback()
@@ -499,8 +658,24 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
     return {
         "results": results,
         "requested": len(rows),
-        "imported": counts[IMPORTED],
+        # Every item that produced a listing, not only the ones that stopped at a
+        # draft. Reporting `counts[IMPORTED]` here after auto-publish arrived would
+        # have told a merchant who published twenty products that none imported.
+        "imported": sum(counts[o] for o in CREATED_LISTING),
         "counts": {k: v for k, v in counts.items() if v},
-        "published": False,
+        # True only when every listing this run created is live. §30's "be honest"
+        # applies to the summary as much as to the rows: a batch of twenty with one
+        # needs-attention is not a published batch, and `any()` here would let one
+        # success speak for nineteen drafts.
+        "published": counts[PUBLISHED] > 0 and counts[PUBLISHED] == sum(
+            counts[o] for o in CREATED_LISTING),
+        "published_count": counts[PUBLISHED],
+        "needs_attention": counts[NEEDS_ATTENTION],
         "pricing_rule": rule,
+        # Which of §8's three tiers answered. The merchant's import result can say
+        # *why* their products are priced the way they are, and a test can tell
+        # "the store chose 45%" from "nobody chose and the platform did".
+        "pricing_source": pricing_source,
+        "auto_publish": store["auto_publish"],
+        "marketplace_autolist": store["marketplace_autolist"],
     }

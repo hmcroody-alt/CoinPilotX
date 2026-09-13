@@ -67,6 +67,20 @@ PRICE_ABOVE_CHECKOUT_LIMIT = "PRICE_ABOVE_CHECKOUT_LIMIT"
 #: contract exists to prevent. Measured on production listing 14: published,
 #: moderator-approved, on sale, and unbound.
 SUPPLIER_VARIANT_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
+#: The publish write did not land, discovered by reading the row back. §35.
+#:
+#: Not a validation failure -- validation passed, and then the database did not
+#: end up in the state the write asked for. The realistic cause is an UPDATE
+#: whose ``WHERE`` matched nothing (a seller identity that does not own the row),
+#: which raises no error and affects no rows. Distinct from every other code here
+#: because the merchant cannot fix it and should not be asked to.
+PUBLISH_NOT_PERSISTED = "PUBLISH_NOT_PERSISTED"
+#: The listing has no ``marketplace_product_sources`` row, so nothing records
+#: which supplier product it came from. Fulfilment reads that row to place the
+#: order, so a listing without one is unshippable in the same way an unbound one
+#: is -- checked at read-back because it is a precondition the publish gate
+#: assumes rather than asserts.
+SUPPLIER_MAPPING_MISSING = "SUPPLIER_MAPPING_MISSING"
 
 #: The checkout's ceiling, mirrored from ``bot.MAX_PRICE_LABEL_CENTS``.
 #:
@@ -604,6 +618,123 @@ def _validate(listing, priced, source, media):
     return {"publishable": not problems, "problems": problems}
 
 
+def _publish_core(cur, listing_id, seller_user_id, listing):
+    """The publish gate and the write it guards, against an open cursor.
+
+    Extracted so that the merchant's explicit Publish and the importer's
+    automatic finish are the *same* code rather than two implementations that
+    agree today. §32 asks for one pipeline, and the reason is specific: every
+    rule in :func:`_validate` is a rule about what a buyer may be shown, so a
+    second publisher is a second, unreviewed answer to "may this be sold". The
+    automatic path is the one that will run thousands of times without a human
+    looking at the result, which makes it the worse of the two to let drift.
+
+    Returns ``(verdict, result)``. ``result`` is ``None`` exactly when the
+    verdict refused, so the caller decides whether a refusal is a 422 (the
+    merchant asked to publish this specific product) or a per-item needs-attention
+    outcome (the merchant asked to import twenty and this one could not finish).
+    That is the only difference between the two callers, and it is a difference
+    in reporting, not in rules.
+
+    Commits nothing. The caller owns the transaction, which is what lets the
+    importer publish inside the same transaction that created the listing: a
+    listing that cannot be published and a listing that was never created are
+    both recoverable, but a committed listing whose publish half rolled back is
+    the unpriced orphan this whole mission is about.
+    """
+    source = variants.source_for(cur, listing_id)
+    if source is None:
+        raise SupplierError("not_a_supplier_product", http_status=404)
+    rows = variants.variants_for(cur, listing_id)
+    priced = [{
+        "provider_variant_id": v.get("provider_variant_id"),
+        "stock_quantity": v.get("stock_quantity"),
+        "retail_cents": _retail_of(v),
+        "availability": variants.availability(v),
+        "margin_state": pricing.margin_state(_retail_of(v), v.get("cost_cents")),
+    } for v in rows]
+    media = _media_of(listing)
+    verdict = _validate(listing, priced, source, media)
+    if not verdict["publishable"]:
+        return verdict, None
+
+    # Two numbers, deliberately kept apart. `sellable` counts *variants* and
+    # is what the merchant's draft screen renders as "N variants are on sale";
+    # `units` is the buyer's stock ledger. They were one integer until now,
+    # which is why a product with 132 units in the warehouse offered one.
+    sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
+    offered = _offered(priced, source)
+    units = _sellable_units(offered[0])
+    # `_validate` has just established that every offered variant carries the
+    # same price, so there is exactly one number here and it is the merchant's
+    # own -- nothing is being chosen on their behalf.
+    label = _checkout_price_label(offered[0]["retail_cents"], listing.get("currency"))
+    # `_validate` has just established `media` is non-empty. `media[0]` is the
+    # cover by this package's own definition, and it is what `_cover_of`
+    # answers for a listing with media -- so nothing is being chosen on the
+    # merchant's behalf here either. This does *not* go through `_cover_of`:
+    # that function exists to reconcile two stores for a reader, and a writer
+    # reconciling with the store it is about to overwrite would preserve
+    # whatever stale value was already there.
+    cover = media[0]
+    cur.execute(
+        "UPDATE marketplace_listings SET status='published', quantity=?, "
+        "price_label=?, cover_image_url=?, published_at=?, updated_at=? "
+        "WHERE id=? AND seller_user_id=?",
+        (units, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
+    return verdict, {
+        "listing_id": listing_id,
+        "status": "published",
+        # Published is not the same as publicly discoverable. Moderation still
+        # has to approve, and saying otherwise here would have the merchant
+        # looking for their product in a marketplace that is correctly hiding it.
+        "awaiting_moderation": True,
+        "sellable_variants": sellable,
+        "price_label": label,
+        "quantity": units,
+    }
+
+
+def verify_published(cur, listing_id, seller_user_id) -> dict:
+    """Read the listing back and confirm it is really sellable. §35.
+
+    The publish write is not the evidence that a publish happened -- it is the
+    thing whose effect needs checking. This re-reads the row from the database
+    after the UPDATE and re-derives the facts the caller is about to *claim* to
+    the merchant, so "PUBLISHED" is a measurement rather than an assumption.
+
+    That distinction has teeth on this path. The importer reports an outcome per
+    product across a batch, and a wrong ``UPDATE ... WHERE seller_user_id=?``
+    (mismatched identity, a listing id from the wrong row) updates zero rows and
+    raises nothing at all. Without this read the merchant would be told twenty
+    products published while the store still held twenty drafts.
+
+    Returns the same problem-code vocabulary as :func:`_validate` so a caller
+    never has to switch on where a refusal came from.
+    """
+    cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1",
+                (listing_id, int(seller_user_id)))
+    row = cur.fetchone()
+    if row is None:
+        # The row is gone, or never belonged to this seller. Either way the
+        # publish did not happen to the merchant's product.
+        return {"verified": False, "problems": [PUBLISH_NOT_PERSISTED]}
+    listing = dict(row)
+    problems = []
+    if str(listing.get("status") or "").lower() != "published":
+        problems.append(PUBLISH_NOT_PERSISTED)
+    if not (listing.get("price_label") or "").strip():
+        problems.append(MISSING_PRICE)
+    if _cover_of(listing) is None:
+        problems.append(NO_VALID_MEDIA)
+    source = variants.source_for(cur, listing_id)
+    if source is None:
+        problems.append(SUPPLIER_MAPPING_MISSING)
+    if not variants.variants_for(cur, listing_id):
+        problems.append(NO_VARIANTS_SELECTED)
+    return {"verified": not problems, "problems": problems}
+
+
 def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, context=None):
     """Move a validated draft to ``published``. Moderation state is untouched.
 
@@ -651,60 +782,65 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
                                    connection_id, context=context, write=True)
         cur = conn.cursor()
         listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
-        source = variants.source_for(cur, listing_id)
-        if source is None:
-            raise SupplierError("not_a_supplier_product", http_status=404)
-        rows = variants.variants_for(cur, listing_id)
-        priced = [{
-            "provider_variant_id": v.get("provider_variant_id"),
-            "stock_quantity": v.get("stock_quantity"),
-            "retail_cents": _retail_of(v),
-            "availability": variants.availability(v),
-            "margin_state": pricing.margin_state(_retail_of(v), v.get("cost_cents")),
-        } for v in rows]
-        media = _media_of(listing)
-        verdict = _validate(listing, priced, source, media)
-        if not verdict["publishable"]:
+        _, result = _publish_core(cur, listing_id, seller_user_id, listing)
+        if result is None:
             raise SupplierError("publication_blocked", http_status=422)
-
-        # Two numbers, deliberately kept apart. `sellable` counts *variants* and
-        # is what the merchant's draft screen renders as "N variants are on sale";
-        # `units` is the buyer's stock ledger. They were one integer until now,
-        # which is why a product with 132 units in the warehouse offered one.
-        sellable = sum(1 for v in rows if variants.availability(v) == variants.AVAILABLE)
-        offered = _offered(priced, source)
-        units = _sellable_units(offered[0])
-        # `_validate` has just established that every offered variant carries the
-        # same price, so there is exactly one number here and it is the merchant's
-        # own -- nothing is being chosen on their behalf.
-        label = _checkout_price_label(offered[0]["retail_cents"],
-                                      listing.get("currency"))
-        # `_validate` has just established `media` is non-empty. `media[0]` is the
-        # cover by this package's own definition, and it is what `_cover_of`
-        # answers for a listing with media -- so nothing is being chosen on the
-        # merchant's behalf here either. This does *not* go through `_cover_of`:
-        # that function exists to reconcile two stores for a reader, and a writer
-        # reconciling with the store it is about to overwrite would preserve
-        # whatever stale value was already there.
-        cover = media[0]
-        cur.execute(
-            "UPDATE marketplace_listings SET status='published', quantity=?, "
-            "price_label=?, cover_image_url=?, published_at=?, updated_at=? "
-            "WHERE id=? AND seller_user_id=?",
-            (units, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
+        # The same read-back the automatic path performs. A merchant who tapped
+        # Publish deserves the same standard of evidence as one who tapped
+        # Import: both are told the product is live, and neither should be told
+        # it on the strength of an UPDATE nobody checked.
+        readback = verify_published(cur, listing_id, seller_user_id)
+        if not readback["verified"]:
+            conn.rollback()
+            raise SupplierError("publication_not_verified", http_status=409)
         conn.commit()
     finally:
         conn.close()
-    return {
-        "listing_id": listing_id,
-        "status": "published",
-        # Published is not the same as publicly discoverable. Moderation still
-        # has to approve, and saying otherwise here would have the merchant
-        # looking for their product in a marketplace that is correctly hiding it.
-        "awaiting_moderation": True,
-        "sellable_variants": sellable,
-        "price_label": label,
-    }
+    return result
+
+
+def autopublish(cur, listing_id, seller_user_id) -> dict:
+    """Finish a freshly imported listing: run the gate, publish, read it back.
+
+    The importer's half of §18. It exists so that :mod:`importer` never contains
+    a publish rule of its own -- it hands a listing id to this function and is
+    told either "published" or exactly which of :func:`_validate`'s codes stopped
+    it. Every rule about buyer-visibility therefore still lives in one file.
+
+    Takes a cursor rather than opening its own connection, because the importer
+    is mid-transaction with the listing it just created. Publishing on a second
+    connection would have to read a row the first has not committed.
+
+    Never raises for a refusal. A batch of twenty imports where three cannot be
+    finished is not an error -- it is three products that need attention, and
+    :func:`import_selected` reports them per item. It *does* let
+    ``not_a_supplier_product`` out, because that one means the caller passed a
+    listing this module has no business publishing, which is a programming error
+    rather than a merchant-facing outcome.
+    """
+    listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
+    verdict, result = _publish_core(cur, listing_id, seller_user_id, listing)
+    if result is None:
+        return {"published": False, "problems": verdict["problems"]}
+    readback = verify_published(cur, listing_id, seller_user_id)
+    if not readback["verified"]:
+        # Publishing "succeeded" and the row does not say so. Report the read-back
+        # rather than the write.
+        #
+        # And undo the write, explicitly, rather than leaving it for the caller to
+        # roll back. The caller is mid-transaction with the listing it just
+        # created: a `rollback` here would discard the import as well, so the
+        # merchant would lose a product that imported perfectly well over a
+        # publish that did not stick. Writing the row back to `draft` keeps the
+        # import and makes the committed state match what this function is about
+        # to report -- a needs-attention draft. Anything else commits a row
+        # claiming `published` while the merchant is told it is not.
+        cur.execute(
+            "UPDATE marketplace_listings SET status='draft', published_at=NULL, "
+            "updated_at=? WHERE id=? AND seller_user_id=?",
+            (_iso(), listing_id, int(seller_user_id)))
+        return {"published": False, "problems": readback["problems"]}
+    return {"published": True, "problems": [], **result}
 
 
 def validate(business_id, store_id, actor_user_id, connection_id, listing_id, *, context=None):

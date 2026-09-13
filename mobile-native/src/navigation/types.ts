@@ -400,6 +400,12 @@ export type RootStackParamList = {
   DropshippingCatalog: { connectionId: string; title?: string };
   DropshippingProduct: { connectionId: string; externalProductId: string; title?: string };
   DropshippingCart: { connectionId: string; title?: string };
+  /**
+   * Import settings. No `connectionId`, and that is the design: the pricing rule,
+   * auto-publish and Marketplace distribution are properties of the *storefront*,
+   * so a merchant with two suppliers sets them once.
+   */
+  DropshippingImportPolicy: { title?: string } | undefined;
   DropshippingProducts: { connectionId: string; title?: string };
   /** `listingId` is a PulseSoc listing id — the draft, not the supplier product. */
   DropshippingDraft: { connectionId: string; listingId: number; title?: string };

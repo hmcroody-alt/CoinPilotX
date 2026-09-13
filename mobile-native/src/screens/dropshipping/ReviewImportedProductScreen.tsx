@@ -63,9 +63,9 @@ import {
   type DraftVariant,
   type DropshippingState,
   type ImportedDraft,
-  type PublishProblem,
   type PublishResult
 } from "../../api/dropshipping";
+import { publishProblemCopy } from "./publishProblems";
 import { StoreHeader, StoreSectionError } from "../../components/store";
 import {
   DropshippingStateView,
@@ -88,68 +88,6 @@ type Props = {
   navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
 };
 
-/**
- * Every publish problem, in the merchant's words, with what to do about it.
- *
- * The ones marked `fixable: false` are not the merchant's to fix, and say so —
- * telling someone to "add a price" when their supplier has delisted the product
- * wastes their afternoon.
- *
- * Keyed by `PublishProblem`, not by `string`, and that is the load-bearing part.
- * As a `Record<string, …>` this table could fall behind `PUBLISH_PROBLEMS`
- * without anything noticing, and it did: three codes the backend had been
- * emitting for some time — `VARIANT_PRICE_SPREAD`, `PRICE_ABOVE_CHECKOUT_LIMIT`
- * and `SUPPLIER_VARIANT_UNBOUND` — had no entry, and the fallthrough below
- * renders an unknown code verbatim. A merchant whose import could not be
- * published read the words "SUPPLIER_VARIANT_UNBOUND". Total over the union, the
- * next added code fails the typecheck instead.
- */
-const PROBLEM_COPY: Record<PublishProblem, { text: string; fixable: boolean }> = {
-  MISSING_TITLE: { text: "Give this product a title.", fixable: true },
-  MISSING_CATEGORY: { text: "Choose a category so buyers can find it.", fixable: true },
-  NO_VALID_MEDIA: {
-    text: "This product has no usable images. Your supplier's images couldn't be used.",
-    fixable: true
-  },
-  NO_VARIANTS_SELECTED: { text: "No variants are set up to sell.", fixable: true },
-  MISSING_PRICE: { text: "Set a price for every variant you want to sell.", fixable: true },
-  NEGATIVE_MARGIN: {
-    text: "At least one variant costs more than you're charging for it.",
-    fixable: true
-  },
-  UNKNOWN_INVENTORY: {
-    text: "We couldn't read stock levels from your supplier. Check the connection and try again.",
-    fixable: false
-  },
-  SUPPLIER_DISCONNECTED: {
-    text: "Your supplier connection needs attention before this can go live.",
-    fixable: false
-  },
-  PROVIDER_PRODUCT_UNAVAILABLE: {
-    text: "Your supplier no longer offers this product.",
-    fixable: false
-  },
-  RESTRICTED_PRODUCT: { text: "This product can't be sold on PulseSoc.", fixable: false },
-  // Checkout charges one price for the whole listing and shows buyers no variant
-  // picker, so two different prices cannot both be honoured. Named as a pricing
-  // problem rather than a checkout limitation because the merchant's action is
-  // the same either way: make them match.
-  VARIANT_PRICE_SPREAD: {
-    text: "Your variants have different prices. Checkout charges one price per product, so set them all to the same amount.",
-    fixable: true
-  },
-  PRICE_ABOVE_CHECKOUT_LIMIT: {
-    text: "That price is above what checkout can charge. Lower it to $999,999.99 or less.",
-    fixable: true
-  },
-  // Fixable, and fixable *here* — see the variant chooser below. Before that
-  // existed this was the one problem in this table with no remedy anywhere in
-  // the app, which is why it is worded as a question rather than an error.
-  SUPPLIER_VARIANT_UNBOUND: {
-    text: "Choose which variant you're selling, below. A product sells one variant, and orders go to your supplier for that one.",
-    fixable: true
-  }
-};
 
 /** Merchant-editable keys, mirroring `DraftEdits`. Nothing else is a field. */
 type EditableKey = "title" | "description" | "category" | "currency";
@@ -476,12 +414,12 @@ export function ReviewImportedProductScreen({ route, navigation }: Props) {
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Before this can go live</Text>
                   {problems.map((problem) => {
-                    // Still guarded at runtime even though the table is total
-                    // over `PublishProblem`: the union is this app's copy of a
-                    // list the server owns, and a server ahead of this build can
-                    // name a code the union has never heard of. The typecheck
-                    // stops the table drifting; this stops a blank line.
-                    const copy = PROBLEM_COPY[String(problem).toUpperCase() as PublishProblem];
+                    // `null` for a code this build has never heard of — the
+                    // union is this app's copy of a list the server owns, and a
+                    // server ahead of this build can name a code it has not. The
+                    // raw code is then rendered, which is ugly and is better than
+                    // a blank line.
+                    const copy = publishProblemCopy(String(problem));
                     return (
                       <Text
                         key={String(problem)}

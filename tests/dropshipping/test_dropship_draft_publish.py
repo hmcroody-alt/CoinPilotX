@@ -47,7 +47,7 @@ from services import marketplace_listing_lifecycle as lifecycle  # noqa: E402
 from services import marketplace_supplier_schema as supplier_schema  # noqa: E402
 from services import marketplace_variants as variants  # noqa: E402
 from services.business_os.suppliers import (  # noqa: E402
-    drafts, gateway, import_cart, importer, pricing)
+    drafts, gateway, import_cart, importer, pricing, store_policy)
 from services.business_os.suppliers import schema as connection_schema  # noqa: E402
 from services.business_os.suppliers.errors import SupplierError  # noqa: E402
 from tests.marketplace_production_listings import seed_production_listings  # noqa: E402
@@ -82,6 +82,21 @@ def database():
         connection_schema.ensure_schema(conn)
         _seed_connection(conn, CONNECTION, BUSINESS, STORE, OWNER_ID)
         _seed_connection(conn, OTHER_CONNECTION, OTHER_BUSINESS, OTHER_STORE, OTHER_OWNER_ID)
+        # Auto-publish off, for both tenants, deliberately.
+        #
+        # This file is about `drafts.publish` -- the gate, and the merchant's
+        # explicit decision to pass through it. Since "Import to Store" began
+        # finishing listings by itself, the ordinary import arrives *already
+        # published*, and a test that publishes an already-published listing is
+        # testing nothing. Turning the store setting off is how a merchant reaches
+        # the state these tests are about, so it is how the fixture reaches it too.
+        #
+        # The automatic path is not left untested by this: it has its own file
+        # (`test_dropship_autopublish.py`), which exercises the same gate through
+        # `autopublish`. Splitting them this way means neither file has to assert
+        # both philosophies at once, and a change to the gate still fails in both.
+        store_policy.set_policy(conn, BUSINESS, STORE, auto_publish=False)
+        store_policy.set_policy(conn, OTHER_BUSINESS, OTHER_STORE, auto_publish=False)
         conn.commit()
     finally:
         conn.close()
@@ -126,6 +141,30 @@ def imported(provider, pid="PID-1", selection=None, **product_kwargs):
     entry = result["results"][0]
     assert entry["outcome"] == importer.IMPORTED, entry
     return entry["listing_id"]
+
+
+def unpriced(provider, pid="PID-1", selection=None, **product_kwargs):
+    """Import one product that nobody has priced, and return its listing id.
+
+    Every import used to land here, because the absence of a ``pricing_rule`` meant
+    :data:`pricing.MANUAL_PRICE`. It no longer does -- silence now resolves to the
+    store's policy, and the store's policy to the platform default -- so an
+    unpriced draft has to be *asked for*, and the only thing that asks for one is a
+    merchant who chose "I'll price these myself".
+
+    Which is what this writes: MANUAL_PRICE as the store's own rule. The tests
+    below that need a blank price are about what the gate does with one, and they
+    should reach it the way the single merchant who has one does, rather than by
+    relying on a default that no longer exists.
+    """
+    conn = db.connect()
+    try:
+        store_policy.set_policy(conn, BUSINESS, STORE,
+                                pricing_rule={"type": pricing.MANUAL_PRICE})
+        conn.commit()
+    finally:
+        conn.close()
+    return imported(provider, pid=pid, selection=selection, **product_kwargs)
 
 
 def sellable(provider, pid="PID-1", vid=None, **product_kwargs):
@@ -182,11 +221,29 @@ def price_every_variant(listing_id, amount=2000):
 # ---------------------------------------------------------------------------
 
 def test_a_draft_shows_cost_retail_and_margin_per_variant(provider):
-    draft = draft_of(imported(provider))
+    draft = draft_of(unpriced(provider))
     variant = draft["variants"][0]
     assert variant["cost_cents"] == 820
-    assert variant["retail_cents"] is None      # merchant has not priced it yet
+    assert variant["retail_cents"] is None      # merchant declined to price it
     assert variant["margin_state"] == pricing.UNKNOWN
+
+
+def test_an_ordinary_import_arrives_priced_against_its_cost(provider):
+    """The same three fields, without a merchant who declined. §8.
+
+    The counterpart to the test above, and the reason that one now has to ask for
+    manual pricing. An import used to land with ``retail_cents = None`` on every
+    variant because no rule reached it; the draft was then correctly reported
+    ``MISSING_PRICE``, for a product nobody had refused to price. Asserting the
+    blank in isolation would keep passing if the store policy stopped resolving.
+    """
+    variant = draft_of(imported(provider))["variants"][0]
+    assert variant["cost_cents"] == 820
+    # 820 at the platform's 45% target margin: 820 / 0.55, rounded.
+    assert variant["retail_cents"] == 1491
+    # And the number clears `pricing.LOW_BELOW`, so an automatically priced product
+    # does not arrive wearing a LOW_MARGIN badge it did not earn.
+    assert variant["margin_state"] == pricing.HEALTHY
 
 
 def test_a_draft_says_which_supplier_variant_it_sells(provider):
@@ -252,7 +309,10 @@ def test_a_draft_lists_its_publication_problems_all_at_once(provider):
     # draft here is broken in two independent ways and both codes must be there.
     # The supplier dropping out while the merchant is still pricing is the
     # ordinary way two problems coexist.
-    listing_id = imported(provider)
+    #
+    # `unpriced`, not `imported`: MISSING_PRICE is one of the two, and an import
+    # against a store with a pricing policy does not produce it.
+    listing_id = unpriced(provider)
     conn = db.connect()
     try:
         conn.execute("UPDATE marketplace_product_sources SET sync_state=? WHERE listing_id=?",
@@ -1164,7 +1224,7 @@ def test_an_unpriced_variant_is_not_sold_at_another_variants_price(provider):
     # The buyer cannot choose a variant, so publishing this would have sold the
     # blank one for whatever the priced one cost. The old gate asked only whether
     # *something* was priced, and let it through.
-    listing_id = imported(provider)
+    listing_id = unpriced(provider)
     draft = draft_of(listing_id)
     drafts.update_draft(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
                         fields={"price_cents": {str(draft["variants"][0]["variant_id"]): 2000}},

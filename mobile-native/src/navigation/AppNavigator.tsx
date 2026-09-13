@@ -74,6 +74,7 @@ import { DropshippingOrdersScreen } from "../screens/dropshipping/DropshippingOr
 import { DropshippingProductsScreen } from "../screens/dropshipping/DropshippingProductsScreen";
 import { DropshippingSyncScreen } from "../screens/dropshipping/DropshippingSyncScreen";
 import { ImportCartScreen } from "../screens/dropshipping/ImportCartScreen";
+import { ImportPolicyScreen } from "../screens/dropshipping/ImportPolicyScreen";
 import { ReviewImportedProductScreen } from "../screens/dropshipping/ReviewImportedProductScreen";
 import { SupplierCatalogScreen } from "../screens/dropshipping/SupplierCatalogScreen";
 import { SupplierProductScreen } from "../screens/dropshipping/SupplierProductScreen";
@@ -554,6 +555,7 @@ export function AppNavigator() {
       <Stack.Screen name="DropshippingCatalog" component={SupplierCatalogScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingProduct" component={SupplierProductScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingCart" component={ImportCartScreen} options={{ headerShown: false }} />
+      <Stack.Screen name="DropshippingImportPolicy" component={ImportPolicyScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingProducts" component={DropshippingProductsScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingDraft" component={ReviewImportedProductScreen} options={{ headerShown: false }} />
       <Stack.Screen name="DropshippingOrders" component={DropshippingOrdersScreen} options={{ headerShown: false }} />
