@@ -35,6 +35,7 @@ from services.business_os.commerce_gateway import context_from_user
 from services.business_os.suppliers import (discovery, drafts, import_cart, importer,
                                             merchant_scope, policy, pricing, store_policy)
 from services.business_os.suppliers.errors import SupplierError
+from services.route_auth import auth_required
 
 
 dropshipping_blueprint = Blueprint("business_os_dropshipping", __name__)
@@ -166,6 +167,7 @@ def merchant_scope_route():
 # ---------------------------------------------------------------------------
 
 @dropshipping_blueprint.route(PREFIX + "/store-policy", methods=["GET"])
+@auth_required
 def get_store_policy():
     """How this store prices imports, whether they publish, whether they distribute.
 
@@ -184,6 +186,7 @@ def get_store_policy():
 
 
 @dropshipping_blueprint.route(PREFIX + "/store-policy", methods=["PATCH"])
+@auth_required
 def set_store_policy():
     """Change one or more policy fields. Omitted fields are untouched.
 
