@@ -1,0 +1,163 @@
+/**
+ * Structure and motion for the PulseSoc backdrop.
+ *
+ * Every *value* the composition is made of -- coordinates, sizes, colours,
+ * opacities, cycle times -- comes from `src/theme/pulseBackground.ts` as an
+ * inline style. This file holds only the things that are not data: what is
+ * absolutely positioned, what is clipped, what animates, and what stops
+ * animating. A coordinate written here would be a second copy of the node
+ * table that the parity gate cannot see, which is the exact failure this
+ * whole layer is built to avoid.
+ *
+ * Native drives motion with three shared `Animated.Value`s. Here it is three
+ * CSS animations on the two layer elements plus one on breathing nodes, which
+ * means the compositor owns them and no JavaScript runs per frame. That also
+ * buys the "not foregrounded" rule for free: browsers do not composite
+ * animations in a hidden tab, so native's `AppState` check has no web
+ * counterpart to write.
+ */
+
+.pulse-bg {
+  position: absolute;
+  inset: 0;
+  /* Below every content layer. Decorative, and never a scroll container. */
+  z-index: var(--z-backdrop);
+  /* Drifting nodes must not spill past the surface they belong to. */
+  overflow: hidden;
+  /* A backdrop that swallows one gesture is worse than no backdrop. */
+  pointer-events: none;
+}
+
+.pulse-bg--fixed {
+  position: fixed;
+}
+
+/* With children the component is a wrapper rather than a detached layer. The
+ * wrapper is the positioned ancestor the backdrop's `inset: 0` resolves
+ * against, and the content sits above it in the normal flow -- no z-index on
+ * the content, because the backdrop already took a negative one. */
+.pulse-bg-wrapper {
+  position: relative;
+}
+
+.pulse-bg-wrapper__content {
+  position: relative;
+}
+
+/* The whole field carries the theme profile's intensity as one opacity, which
+ * is how Black gets the same composition at a little over half strength
+ * instead of a second set of dimmed values. */
+.pulse-bg__field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.pulse-bg__gradient,
+.pulse-bg__layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pulse-bg__node,
+.pulse-bg__halo,
+.pulse-bg__line {
+  position: absolute;
+  pointer-events: none;
+}
+
+.pulse-bg__node,
+.pulse-bg__halo {
+  border-radius: 50%;
+}
+
+/* Rotation is about the element's own centre in both platforms: CSS defaults
+ * to `transform-origin: 50% 50%` and React Native's `rotate` does the same, so
+ * the angle table transfers without an origin correction. */
+.pulse-bg__line {
+  transform-origin: 50% 50%;
+}
+
+.pulse-bg__glow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+/* --- Motion ------------------------------------------------------------- */
+/* Cycle times are full round trips, so each leg runs for half of one and
+ * `alternate` supplies the return. `--ease-loop` is the cubic-bezier form of
+ * native's `Easing.inOut(Easing.sin)`; the built-in `ease-in-out` is a
+ * different curve and would drift out of phase with the app over a 30s cycle. */
+
+@keyframes pulse-bg-drift {
+  from {
+    transform: translate3d(calc(var(--pulse-drift) * -1), var(--pulse-drift), 0);
+  }
+  to {
+    transform: translate3d(var(--pulse-drift), calc(var(--pulse-drift) * -1), 0);
+  }
+}
+
+@keyframes pulse-bg-travel {
+  from {
+    transform: translate3d(calc(var(--pulse-travel) * -1), 0, 0);
+  }
+  to {
+    transform: translate3d(var(--pulse-travel), 0, 0);
+  }
+}
+
+@keyframes pulse-bg-breath {
+  from {
+    opacity: var(--pulse-dim);
+  }
+  to {
+    opacity: var(--pulse-bright);
+  }
+}
+
+.pulse-bg--animated .pulse-bg__layer--nodes {
+  animation: pulse-bg-drift var(--pulse-cycle-drift) var(--ease-loop) infinite alternate;
+}
+
+.pulse-bg--animated .pulse-bg__layer--lines {
+  animation: pulse-bg-travel var(--pulse-cycle-travel) var(--ease-loop) infinite alternate;
+}
+
+.pulse-bg--animated .pulse-bg__node--pulse {
+  animation: pulse-bg-breath var(--pulse-cycle-pulse) var(--ease-loop) infinite alternate;
+}
+
+/* Reduce Motion settles the composition mid-cycle rather than at an endpoint,
+ * so the still field is the one the eye was already looking at. The resting
+ * transform is supplied as an inline style from the same `restingProgress`
+ * native uses; here we only have to stop the loop. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-bg--animated .pulse-bg__layer--nodes,
+  .pulse-bg--animated .pulse-bg__layer--lines,
+  .pulse-bg--animated .pulse-bg__node--pulse {
+    animation: none;
+  }
+}
+
+/* --- Reduce Transparency ------------------------------------------------ */
+/* Reduce Transparency asks for opaque fills, so the two translucent flourishes
+ * -- node halos and the bottom lift -- come off entirely rather than thicken.
+ * Native drops them from the tree; `display: none` is the same result, and
+ * keeping it in CSS means it also honours the OS setting directly for a member
+ * who never opened our own control. */
+[data-reduce-transparency="1"] .pulse-bg__halo,
+[data-reduce-transparency="1"] .pulse-bg__glow {
+  display: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .pulse-bg__halo,
+  .pulse-bg__glow {
+    display: none;
+  }
+}

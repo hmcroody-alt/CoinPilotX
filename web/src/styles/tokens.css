@@ -142,6 +142,10 @@
   /* Stepped in 8s so there is always room to insert a layer between two
    * existing ones without renumbering. Native has a `9000` overlay z-order
    * hack; it does not come forward. */
+  /* The backdrop is the one layer that belongs below the baseline, so the
+   * scale continues one step in the other direction rather than pushing every
+   * other layer up by one to make room. */
+  --z-backdrop: -8;
   --z-base: 0;
   --z-raised: 8;
   --z-sticky: 16;
