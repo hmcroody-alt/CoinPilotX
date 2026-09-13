@@ -52,6 +52,27 @@ def css_var_refs(text: str):
     return re.findall(r"var\((--[a-z0-9-]+)", text)
 
 
+def base_unit(text: str) -> int:
+    m = re.search(r"--pulse-base-unit:\s*(\d+)px", text)
+    assert m, "--pulse-base-unit is the seed of every dimension; it must be a literal px"
+    return int(m.group(1))
+
+
+def resolve_px(text: str, name: str) -> int:
+    """Resolve a token that is either a literal px or a multiple of the base unit."""
+    literal = re.search(rf"{re.escape(name)}:\s*(\d+(?:\.\d+)?)px", text)
+    if literal:
+        return float(literal.group(1))
+    if re.search(rf"{re.escape(name)}:\s*var\(--pulse-base-unit\)\s*;", text):
+        return float(base_unit(text))
+    grid = re.search(
+        rf"{re.escape(name)}:\s*calc\(\s*var\(--pulse-base-unit\)\s*\*\s*(\d+(?:\.\d+)?)\s*\)",
+        text,
+    )
+    assert grid, f"{name} must be a px literal or a multiple of --pulse-base-unit"
+    return base_unit(text) * float(grid.group(1))
+
+
 # =========================================================================
 # Token layer integrity
 # =========================================================================
@@ -75,6 +96,56 @@ def test_no_dangling_var_references():
     defined = set(css_var_defs(t))
     dangling = sorted(set(css_var_refs(t)) - defined)
     assert not dangling, f"token layer references undefined vars: {dangling}"
+
+
+# =========================================================================
+# The eight-point grid
+#
+# Every dimension derives from one base unit. Material Design and the Apple HIG
+# both use this grid, and native parity depends on it: the RN theme's spacing
+# scale is the same multiples, so a control that is 6 units tall on the phone is
+# 6 units tall in the browser without anyone converting by hand.
+# =========================================================================
+
+GRID_TOKENS = [
+    "--spacing-2xs", "--spacing-xs", "--spacing-sm", "--spacing-md",
+    "--spacing-lg", "--spacing-xl", "--spacing-2xl", "--spacing-section",
+    "--radius-xs", "--radius-sm", "--radius-card", "--radius-lg",
+    "--touch-target-min", "--topbar-h", "--sidebar-w", "--bottom-nav-h",
+]
+
+
+def test_base_unit_is_eight():
+    assert base_unit(read(TOKENS)) == 8, (
+        "the grid is seeded by a single 8px unit. Changing it rescales every "
+        "dimension on the site at once, which is the point — but it is never "
+        "the fix for one control being the wrong size."
+    )
+
+
+@pytest.mark.parametrize("token", GRID_TOKENS)
+def test_dimension_is_on_the_grid(token):
+    """
+    A dimension must be a multiple of the base unit, not a hand-picked px value.
+    Half-units (4px) are allowed; anything finer is drift.
+    """
+    t = read(TOKENS)
+    px = resolve_px(t, token)
+    units = px / base_unit(t)
+    assert units * 2 == int(units * 2), (
+        f"{token} = {px}px is {units} units — off the grid. Express it as "
+        f"calc(var(--pulse-base-unit) * N) with N a whole or half number."
+    )
+
+
+def test_motion_durations_are_on_the_grid():
+    """Motion is the grid in time: 8ms steps."""
+    t = read(TOKENS)
+    for name in ("--motion-fast", "--motion-base", "--motion-slow"):
+        m = re.search(rf"{name}:\s*(\d+)ms", t)
+        assert m, f"{name} must be defined in ms"
+        ms = int(m.group(1))
+        assert ms % 8 == 0, f"{name} = {ms}ms is not a multiple of 8ms"
 
 
 # =========================================================================
@@ -174,6 +245,42 @@ def test_conflicting_css_vars_do_not_increase():
     )
 
 
+def root_declarations(text):
+    for block in re.finditer(r":root[^{]*\{(.*?)\}", text, re.S):
+        for d in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;]+);", block.group(1)):
+            yield d.group(1), d.group(2).strip()
+
+
+def test_no_stylesheet_shadows_the_token_layer():
+    """
+    The token layer loads FIRST (bot.py's stylesheet order), and `:root`
+    declarations of equal specificity are won by whichever loads LAST. So any
+    later stylesheet that re-declares a token-layer name silently overrides it —
+    72 declarations did, which made the token layer's own "load-bearing" alias
+    section inert.
+
+    A later stylesheet may still declare the name, but only in the self-healing
+    form `--x: var(--token, <old value>);` — that keeps the file usable
+    standalone while deferring to the token layer whenever it is present.
+    """
+    tokens = dict(root_declarations(read(TOKENS)))
+    offenders = []
+    for f in sorted(CSS_DIR.glob("*.css")):
+        if f.name == "pulsesoc-tokens.css":
+            continue
+        for name, value in root_declarations(read(f)):
+            if name not in tokens or value == tokens[name]:
+                continue
+            defers = re.match(r"(calc\()?\s*var\(--[a-z0-9-]+\s*,", value)
+            if not defers:
+                offenders.append(f"{f.name}: {name}: {value};")
+    assert not offenders, (
+        "these declarations override the token layer instead of deferring to "
+        "it. Rewrite each as `--x: var(--token, <current value>);`:\n  "
+        + "\n  ".join(offenders)
+    )
+
+
 @pytest.mark.skipif(not BOT.exists(), reason="bot.py not present")
 def test_hardcoded_colour_budget_in_bot_py():
     """
@@ -215,9 +322,10 @@ def test_reduced_motion_is_honoured():
 
 def test_touch_target_minimum_is_defined():
     t = read(TOKENS)
-    m = re.search(r"--touch-target-min:\s*(\d+)px", t)
-    assert m, "--touch-target-min must be defined"
-    assert int(m.group(1)) >= 44, "WCAG 2.5.5 requires at least 44px"
+    assert re.search(r"--touch-target-min:", t), "--touch-target-min must be defined"
+    assert resolve_px(t, "--touch-target-min") >= 44, (
+        "WCAG 2.5.5 requires at least 44px"
+    )
 
 
 def test_focus_visible_ring_exists():

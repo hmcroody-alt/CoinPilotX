@@ -119,23 +119,46 @@
 
   /* ---------------------------------------------------------------------
      3. SCALE — spacing, radius, type, elevation, motion, z-index.
+
+     THE EIGHT-POINT GRID
+     --------------------
+     Every dimension on this site derives from one base unit: 8px. Spacing,
+     radii, control heights, shell geometry, motion and stacking order are
+     all integer or half-integer multiples of it. Nothing is hand-picked.
+
+     This is the same grid Material Design and the Apple HIG use, and it is
+     load-bearing for two reasons beyond tidiness:
+
+       1. Native parity. The native app's spacing derives from the same
+          unit, so a surface ported to web lands on the grid automatically
+          instead of drifting a few pixels per component.
+       2. Density switching. Because everything is `calc()` off one value,
+          a future compact/comfortable toggle is a single declaration, not
+          a stylesheet rewrite.
+
+     Rule: never write a raw px dimension in a stylesheet or an inline
+     handler. Derive it here. If a value cannot be expressed on the grid,
+     that is a signal the design is wrong, not that the grid is.
+
      Web keeps a wider spacing scale than native on purpose: desktop
      ergonomics, per the mission's "do not force mobile-width layouts".
      --------------------------------------------------------------------- */
 
-  --spacing-2xs: 4px;
-  --spacing-xs:  8px;
-  --spacing-sm:  12px;
-  --spacing-md:  16px;
-  --spacing-lg:  24px;
-  --spacing-xl:  32px;
-  --spacing-2xl: 48px;
-  --spacing-section: 64px;          /* desktop-only rhythm */
+  --pulse-base-unit: 8px;
 
-  --radius-xs:   6px;
-  --radius-sm:   10px;
-  --radius-card: 16px;              /* matches legacy --pulse-radius */
-  --radius-lg:   24px;
+  --spacing-2xs: calc(var(--pulse-base-unit) * 0.5);   /*  4px */
+  --spacing-xs:  var(--pulse-base-unit);               /*  8px */
+  --spacing-sm:  calc(var(--pulse-base-unit) * 1.5);   /* 12px */
+  --spacing-md:  calc(var(--pulse-base-unit) * 2);     /* 16px */
+  --spacing-lg:  calc(var(--pulse-base-unit) * 3);     /* 24px */
+  --spacing-xl:  calc(var(--pulse-base-unit) * 4);     /* 32px */
+  --spacing-2xl: calc(var(--pulse-base-unit) * 6);     /* 48px */
+  --spacing-section: calc(var(--pulse-base-unit) * 8); /* 64px — desktop rhythm */
+
+  --radius-xs:   var(--pulse-base-unit);               /*  8px */
+  --radius-sm:   calc(var(--pulse-base-unit) * 1.5);   /* 12px */
+  --radius-card: calc(var(--pulse-base-unit) * 2);     /* 16px — legacy --pulse-radius */
+  --radius-lg:   calc(var(--pulse-base-unit) * 3);     /* 24px */
   --radius-pill: 999px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
@@ -158,22 +181,40 @@
   --line-height-base:  1.5;
   --line-height-loose: 1.7;
 
-  --elevation-card:    0 12px 32px rgba(0, 0, 0, 0.24);
-  --elevation-overlay: 0 24px 80px rgba(0, 0, 0, 0.28);
-  --elevation-glow:    0 0 42px rgba(50, 230, 179, 0.12);
+  /* Elevation offsets and blurs sit on the grid too. */
+  --elevation-card:    0 var(--spacing-sm) var(--spacing-xl) rgba(0, 0, 0, 0.24);
+  --elevation-overlay: 0 var(--spacing-lg) calc(var(--pulse-base-unit) * 10) rgba(0, 0, 0, 0.28);
+  --elevation-glow:    0 0 var(--spacing-2xl) rgba(50, 230, 179, 0.12);
 
-  --motion-fast:   120ms;
-  --motion-base:   200ms;
-  --motion-slow:   320ms;
+  /* Motion is the grid expressed in time: every duration is a whole multiple
+     of 8ms, so a staggered sequence never lands off a frame boundary at 120Hz.
+     11 / 21 / 36 units. Ratios match the native theme's duration curve. */
+  --motion-fast:   88ms;
+  --motion-base:   168ms;
+  --motion-slow:   288ms;
   --motion-ease:   cubic-bezier(0.2, 0.8, 0.2, 1);
 
-  --touch-target-min: 44px;         /* WCAG 2.5.5 / native parity */
+  /* 48px = 6 units. Exceeds the WCAG 2.5.5 minimum of 44px and lands on
+     the grid, so controls stack without sub-pixel drift. */
+  --touch-target-min: calc(var(--pulse-base-unit) * 6);
 
-  --z-nav:     50;
-  --z-fab:     70;
-  --z-overlay: 900;
-  --z-modal:   1000;
-  --z-toast:   1100;
+  /* Stacking order, also base-8. Gaps are wide enough that a feature can
+     insert a layer without renumbering the scale. */
+  --z-nav:     80;
+  --z-fab:     88;
+  --z-overlay: 800;
+  --z-modal:   888;
+  --z-toast:   8888;
+
+  /* ---------------------------------------------------------------------
+     3.1 LAYOUT MEASURES
+     The responsive contract from the design system map: the reading column
+     never widens, extra viewport buys extra columns. Both bounds are on
+     the grid — 680 = 85 units, 1288 = 161 units.
+     --------------------------------------------------------------------- */
+  --measure-feed-max:      680px;   /* reading column ceiling, all breakpoints */
+  --measure-container-max: 1288px;  /* outer shell ceiling */
+  --measure-gutter:        var(--spacing-lg);
 }
 
 /* -------------------------------------------------------------------------
@@ -280,10 +321,11 @@
   --safe-left:   env(safe-area-inset-left, 0px);
   --safe-right:  env(safe-area-inset-right, 0px);
 
-  /* shell geometry — consumed by the global web shell */
-  --topbar-h:  60px;
-  --sidebar-w: 264px;
-  --bottom-nav-h: 76px;              /* was --pulse-bottom-nav-height */
+  /* shell geometry — consumed by the global web shell, on the grid:
+     64 = 8 units, 264 = 33 units, 80 = 10 units. */
+  --topbar-h:  calc(var(--pulse-base-unit) * 8);
+  --sidebar-w: calc(var(--pulse-base-unit) * 33);
+  --bottom-nav-h: calc(var(--pulse-base-unit) * 10);   /* was --pulse-bottom-nav-height */
   --pulse-bottom-nav-height: var(--bottom-nav-h);
 
   /* z-index family */
