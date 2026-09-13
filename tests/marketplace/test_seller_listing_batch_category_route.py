@@ -516,6 +516,109 @@ class SellerListingBatchCategoryRouteTestCase(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "INVALID_CATEGORY")
         self.assertEqual(self.stored(listing_id)["category"], "Education")
 
+    # -- settings that belong to another action -------------------------------
+    #
+    # Found by driving the real HTTP flow, not by these tests, and the gap is
+    # worth naming because it is the shape that keeps recurring: the validator
+    # refused a payload on `hide` and had a unit test proving it, the route read
+    # a payload key and had tests proving that, and nothing tested the seam. The
+    # route picked the key *by action* —
+    #
+    #     settings = body.get("category") if action == "category" else body.get("pricing_rule")
+    #
+    # — so `{"action": "hide", "category": {...}}` did not reach the refusal at
+    # all. It looked for a `pricing_rule`, found none, and ran as a plain hide:
+    # every selected product pulled from sale, `succeeded` for each one. The
+    # equivalent with `pricing_rule` *was* caught, which is why the hole survived
+    # a mutation run and a green suite — the one key the else-branch happened to
+    # read was the one key under test.
+    #
+    # A client cannot send these by accident, but it can send them by regression,
+    # and the failure is silent and destructive in the same breath: the seller
+    # meant to re-file forty listings and is told forty things worked.
+
+    def test_a_category_sent_with_hide_is_refused_not_quietly_hidden(self):
+        listing_id = self.insert_listing()
+
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            data=json.dumps({"action": "hide", "listing_ids": [listing_id],
+                             "idempotency_key": "hide-cat", "category": {"category": "Garden"}}),
+            content_type="application/json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "UNSUPPORTED_ACTION")
+        row = self.stored(listing_id)
+        self.assertEqual(row["status"], "active", "the listing was hidden by a refused request")
+        self.assertEqual(row["category"], "Education")
+
+    def test_a_category_sent_with_publish_is_refused(self):
+        listing_id = self.insert_listing(status="draft", approval_status="draft")
+
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            data=json.dumps({"action": "publish", "listing_ids": [listing_id],
+                             "idempotency_key": "pub-cat", "category": {"category": "Garden"}}),
+            content_type="application/json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "UNSUPPORTED_ACTION")
+        row = self.stored(listing_id)
+        self.assertEqual(row["status"], "draft")
+        self.assertEqual(row["category"], "Education")
+
+    def test_a_pricing_rule_sent_alongside_a_category_is_refused(self):
+        """Two settings for one action is a client asking for two things. The
+        batch does one, and answering `succeeded` would confirm both."""
+        listing_id = self.insert_listing()
+
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            data=json.dumps({"action": "category", "listing_ids": [listing_id],
+                             "idempotency_key": "cat-and-rule",
+                             "category": {"category": "Garden"},
+                             "pricing_rule": {"type": "COST_PLUS_PERCENT", "value": 20}}),
+            content_type="application/json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "UNSUPPORTED_ACTION")
+        row = self.stored(listing_id)
+        self.assertEqual(row["category"], "Education")
+        self.assertEqual(row["price_label"], "$49.00")
+
+    def test_a_category_sent_alongside_a_pricing_rule_is_refused(self):
+        listing_id = self.insert_listing()
+
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            data=json.dumps({"action": "price", "listing_ids": [listing_id],
+                             "idempotency_key": "rule-and-cat",
+                             "pricing_rule": {"type": "COST_PLUS_PERCENT", "value": 20},
+                             "category": {"category": "Garden"}}),
+            content_type="application/json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()["error"], "UNSUPPORTED_ACTION")
+        row = self.stored(listing_id)
+        self.assertEqual(row["price_label"], "$49.00")
+        self.assertEqual(row["category"], "Education")
+
+    def test_a_null_setting_is_absent_rather_than_a_second_request(self):
+        """A JSON `null` cannot be told apart from an omitted key by anyone
+        reading the body, so it must not be a different outcome. The re-file
+        proceeds; it is the `pricing_rule` that is absent, not empty."""
+        listing_id = self.insert_listing()
+
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            data=json.dumps({"action": "category", "listing_ids": [listing_id],
+                             "idempotency_key": "cat-null-rule",
+                             "category": {"category": "Garden"}, "pricing_rule": None}),
+            content_type="application/json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.stored(listing_id)["category"], "Garden")
+
     def test_an_unapproved_seller_cannot_re_file_in_bulk(self):
         """Otherwise this endpoint is the one way to edit a listing without
         merchant approval."""

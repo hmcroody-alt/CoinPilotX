@@ -71,6 +71,13 @@ ACTIONS = ("publish", "hide", "price", "category")
 #: Actions that take a payload, and are meaningless without one.
 PAYLOAD_ACTIONS = ("price", "category")
 
+#: Which request key carries each payload action's settings.
+#:
+#: Each action reads its own key rather than sharing one generic ``settings``
+#: object, so that "reprice these forty" and "re-file these forty" are not the
+#: same request shape with the action field as the only thing telling them apart.
+PAYLOAD_KEYS = {"price": "pricing_rule", "category": "category"}
+
 #: The single-listing edit route's own column limit, mirrored rather than
 #: re-chosen. A category a seller may set one at a time but not forty at a time
 #: — or the reverse — is two answers to one question (§21).
@@ -141,6 +148,50 @@ def _utc_now_iso() -> str:
 
 
 # --- request validation ------------------------------------------------------
+
+
+def settings_for(action: Any, body: Any) -> Any:
+    """The settings this action takes, read out of the raw request body.
+
+    Lives here rather than in the route because "which key belongs to which
+    action" is half of the rule whose other half is :func:`normalize_request`,
+    and splitting them is what let a real hole open: the route used to pick the
+    key by action —
+
+        settings = body.get("category") if action == "category" else body.get("pricing_rule")
+
+    — which means a request naming a *different* action's key was not refused,
+    it was **unread**. ``{"action": "hide", "category": {...}}`` looked for a
+    ``pricing_rule``, found none, and became a plain hide: fourteen products the
+    seller meant to re-file were pulled from sale instead, and the reply said
+    succeeded fourteen times. The refusal below the payload actions in
+    ``normalize_request`` was written for exactly that case and could never fire,
+    because it only ever saw the one key the else-branch happened to read.
+
+    So presence is checked across *every* payload key, not just the action's own.
+    A key belonging to another action is a client that believes it is asking for
+    something, and the only safe answer is to refuse the batch — the seller can
+    be told the request was malformed, but they cannot be untold that forty live
+    products were hidden.
+
+    ``None`` counts as absent, because a JSON ``null`` is indistinguishable from
+    an omitted key to anyone reading the body and should not be a different
+    outcome. The payload actions then refuse the missing settings themselves,
+    with the message that names the field.
+    """
+    if not isinstance(body, dict):
+        return None
+    mine = PAYLOAD_KEYS.get(action if isinstance(action, str) else "")
+    foreign = [
+        key for owner, key in PAYLOAD_KEYS.items()
+        if key != mine and body.get(key) is not None
+    ]
+    if foreign:
+        raise BatchError(
+            "UNSUPPORTED_ACTION",
+            "That bulk action does not take those settings.",
+        )
+    return body.get(mine) if mine else None
 
 
 def normalize_request(

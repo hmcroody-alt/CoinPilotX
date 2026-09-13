@@ -98,8 +98,11 @@ describe("the bulk write body", () => {
   });
 
   it("omits the payload an action does not take, rather than sending null", async () => {
-    // The route refuses a setting the action ignores — that check is deliberate,
-    // and a client that sends `pricing_rule: null` on a publish trips it.
+    // What "this action takes no settings" looks like on the wire: neither key
+    // present at all. The server reads a JSON `null` as absent — it cannot be
+    // told from an omitted key by anyone reading the body — so a null would be
+    // tolerated rather than refused, which is exactly why it is not worth
+    // sending: it would be a field in the request that means nothing.
     await batchMarketplaceSellerListings({
       action: "hide",
       listingIds: [1],
@@ -109,6 +112,30 @@ describe("the bulk write body", () => {
     const { body } = posted();
     expect(body).not.toHaveProperty("pricing_rule");
     expect(body).not.toHaveProperty("category");
+  });
+
+  it("carries settings that do not match the action rather than quietly dropping them", async () => {
+    // Nothing in the app builds this request. It is pinned because the tidy-up
+    // is so inviting — gate each key on `action === "price"` / `"category"` and
+    // the body can never carry a mismatched one — and that tidy-up is the bug
+    // this whole rule exists for, moved one layer out.
+    //
+    // The server used to pick the settings key *by action*, so a category sent
+    // with `hide` was not refused, it was unread: the batch ran as a plain hide
+    // and reported every row succeeded. Dropping the key here reproduces that
+    // exactly, and from the client side it is worse, because the request that
+    // reaches the server is then a perfectly well-formed hide and there is
+    // nothing left for it to object to.
+    //
+    // Sent, the server answers 400 UNSUPPORTED_ACTION and no product moves.
+    await batchMarketplaceSellerListings({
+      action: "hide",
+      listingIds: [1],
+      idempotencyKey: "k-5b",
+      categoryTarget: TO_HOME
+    });
+
+    expect(posted().body.category).toEqual(TO_HOME);
   });
 
   it("never claims to be a dry run", async () => {

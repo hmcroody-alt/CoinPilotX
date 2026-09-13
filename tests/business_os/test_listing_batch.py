@@ -567,6 +567,61 @@ def test_a_payload_on_an_action_that_ignores_it_is_refused(action):
     assert exc.value.code == "UNSUPPORTED_ACTION"
 
 
+@pytest.mark.parametrize(
+    "action,body",
+    [
+        # The one that shipped broken: the route read the key belonging to the
+        # *action*, so a category sent with `hide` was never seen, let alone
+        # refused, and the batch ran as a plain hide reporting success.
+        ("hide", {"category": {"category": "Garden"}}),
+        ("publish", {"category": {"category": "Garden"}}),
+        ("hide", {"pricing_rule": {"type": "MULTIPLIER", "value": 2}}),
+        ("publish", {"pricing_rule": {"type": "MULTIPLIER", "value": 2}}),
+        # Both keys at once: a client asking for two things when the batch does
+        # one. Which one it would have done is not the point — the seller would
+        # be told it did both.
+        ("category", {"category": {"category": "Garden"},
+                      "pricing_rule": {"type": "MULTIPLIER", "value": 2}}),
+        ("price", {"pricing_rule": {"type": "MULTIPLIER", "value": 2},
+                   "category": {"category": "Garden"}}),
+    ],
+)
+def test_settings_belonging_to_another_action_are_refused(action, body):
+    with pytest.raises(b.BatchError) as exc:
+        b.settings_for(action, body)
+    assert exc.value.code == "UNSUPPORTED_ACTION"
+
+
+def test_settings_are_read_from_the_key_that_belongs_to_the_action():
+    rule = {"type": "MULTIPLIER", "value": 2}
+    target = {"category": "Garden"}
+    assert b.settings_for("price", {"pricing_rule": rule}) == rule
+    assert b.settings_for("category", {"category": target}) == target
+    # The name-only actions take nothing, and an empty body is not a refusal.
+    assert b.settings_for("hide", {"listing_ids": [1]}) is None
+    assert b.settings_for("publish", {}) is None
+
+
+def test_a_null_setting_is_absent_rather_than_a_request_for_something():
+    """A JSON `null` is indistinguishable from an omitted key to anyone reading
+    the body, so it cannot be a different outcome. The payload actions then
+    refuse the missing settings themselves, with the message that names the
+    field — which is a better error than "does not take those settings"."""
+    assert b.settings_for("hide", {"category": None, "pricing_rule": None}) is None
+    assert b.settings_for("category", {"category": None}) is None
+    with pytest.raises(b.BatchError) as exc:
+        b.normalize_request("category", [1], "key-n", b.settings_for("category", {"category": None}))
+    assert exc.value.code == "INVALID_CATEGORY"
+
+
+def test_every_payload_action_has_a_request_key_and_no_other_action_does():
+    """The two tuples and the map cannot drift apart: an action added to
+    `PAYLOAD_ACTIONS` without a key here would read `None` settings forever, and
+    a key for a name-only action would make its settings unrefusable."""
+    assert set(b.PAYLOAD_KEYS) == set(b.PAYLOAD_ACTIONS)
+    assert len(set(b.PAYLOAD_KEYS.values())) == len(b.PAYLOAD_KEYS)
+
+
 def test_no_payload_action_is_precomputable():
     """A rule-dependent verdict must never be attached to a listing payload.
 

@@ -56027,15 +56027,15 @@ def api_pulse_marketplace_seller_listings_batch():
 
     payload = request.get_json(silent=True) or {}
     # Each payload action reads its own key rather than sharing one generic
-    # `settings` object. A shared key would make "reprice these forty" and
-    # "re-file these forty" the same request shape, and the action field the only
-    # thing distinguishing them — so a client that sent the wrong action with the
-    # right settings would be told it succeeded at the other thing. The name also
-    # tells `normalize_request` nothing: it validates by action, and an unknown
-    # action never reaches here.
+    # `settings` object, so that "reprice these forty" and "re-file these forty"
+    # are not one request shape with the action field as the only thing telling
+    # them apart. Which key that is, and what a *foreign* key means, is
+    # `settings_for`'s to decide — picking the key here with a conditional left
+    # `{"action": "hide", "category": {...}}` unread rather than refused, and a
+    # bulk re-file arrived as a bulk hide reporting success.
     action = payload.get("action")
-    settings = payload.get("category") if action == "category" else payload.get("pricing_rule")
     try:
+        settings = _batch.settings_for(action, payload)
         normalized = _batch.normalize_request(
             action, payload.get("listing_ids"),
             payload.get("idempotency_key"), settings)
