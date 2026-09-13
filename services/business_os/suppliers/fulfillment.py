@@ -125,9 +125,13 @@ DRAIN_STALL_SECONDS = 7200
 #:
 #: ``NO_DRAIN_HAS_EVER_RUN`` is the state this deployment is actually in, and it
 #: is the reason this enumeration exists. `worker.run_once` is the only caller
-#: of `claim`/`dispatch`, its only entry point is `supplier_worker.py`, and that
-#: is absent from the `Procfile` -- so every intent ever created here sits at
-#: ``READY`` forever while the merchant reads "Queued to send to your supplier".
+#: of `claim`/`dispatch`, and its only entry point is `supplier_worker.py`. That
+#: now has a `Procfile` entry, but the entry only starts a process: `run_tick`
+#: returns ``disabled`` without ``CJ_RECONCILIATION_ENABLED``, and `run_once` --
+#: which is what calls `record_drain_tick` -- is additionally behind
+#: `policy.require_network()`. Both env gates are unset in production, so every
+#: intent created here still sits at ``READY`` forever while the merchant reads
+#: "Queued to send to your supplier".
 #:
 #: That copy was not a bug in the wording. It was unfalsifiable: `run_once`
 #: returned its counts to stdout and persisted nothing about itself, so no read

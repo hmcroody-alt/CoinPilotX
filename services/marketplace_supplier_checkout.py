@@ -34,10 +34,18 @@ is the worker's job; judging it is this one's.
 
 The honest problem with freshness in *this* deployment
 ------------------------------------------------------
-``supplier_worker`` is not in the Procfile, ``CJ_RECONCILIATION_ENABLED`` is not
-set, and ``link_source`` never writes ``last_synced_at`` — so on this deployment
-every drop-shipped listing has a NULL confirmation and always will, until the
-reconciler is actually deployed.
+``supplier_worker`` now has a Procfile entry, but a process existing is not the
+same as a reconciler running. ``run_tick`` returns ``{"status": "disabled"}``
+until ``CJ_RECONCILIATION_ENABLED`` is set, and ``worker.run_once`` — the only
+thing that writes the drain latch — sits behind ``policy.require_network()`` as
+well, so with ``CJ_NETWORK_ENABLED`` unset the tick returns ``deferred`` and the
+latch still never moves. Both are unset in production. ``link_source`` also never
+writes ``last_synced_at``.
+
+So on this deployment every drop-shipped listing has a NULL confirmation and a
+latch that reads ``NO_DRAIN_HAS_EVER_RUN``, exactly as before the Procfile entry
+existed. The entry removes one of three preconditions; it does not give this gate
+teeth, and anyone reading the Procfile alone will conclude otherwise.
 
 A gate that demanded freshness anyway would take every drop-shipped listing off
 sale the moment it shipped. That is not this gate catching a real problem; it is

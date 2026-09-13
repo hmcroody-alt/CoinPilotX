@@ -631,8 +631,10 @@ def test_every_country_this_platform_can_name_is_keyed_by_an_alpha_2_code():
 # `fulfillment.DRAIN_STATES` on one side, `SUPPLIER_DRAIN_STATES` on the other,
 # and the same seam as every block above. This one guards a claim rather than a
 # vocabulary: each queued row says "Queued to send to your supplier", and
-# `run_once` -- the only thing that sends them -- has no entry point in the
-# Procfile. The notice these states drive is the only thing on the screen that
+# `run_once` -- the only thing that sends them -- has a Procfile entry that stays
+# dark until `CJ_RECONCILIATION_ENABLED` and `CJ_NETWORK_ENABLED` are both set,
+# neither of which is. The notice these states drive is the only thing on the
+# screen that
 # can contradict that sentence, so a drain state the backend can report and
 # mobile cannot name is a merchant left waiting on nothing.
 # ---------------------------------------------------------------------------

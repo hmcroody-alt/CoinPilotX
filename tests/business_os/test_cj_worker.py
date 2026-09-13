@@ -124,10 +124,13 @@ def test_successful_selected_read_persists_snapshot_and_sync_time(ready, monkeyp
 # ---------------------------------------------------------------------------
 # Is anything draining the outbox?
 #
-# `run_once` is the only caller of `fulfillment.claim`/`dispatch`. Its only
-# entry point is `supplier_worker.py`, which is not in the Procfile -- so in
-# this deployment nothing drains, every intent stays at READY forever, and the
-# merchant reads "Queued to send to your supplier" permanently.
+# `run_once` is the only caller of `fulfillment.claim`/`dispatch`. Its only entry
+# point is `supplier_worker.py`, which now has a Procfile entry -- but the entry
+# only starts a process. `run_tick` returns `disabled` without
+# `CJ_RECONCILIATION_ENABLED`, and `run_once` is additionally behind
+# `policy.require_network()`; both are unset in production. So in this deployment
+# nothing drains, every intent stays at READY forever, and the merchant reads
+# "Queued to send to your supplier" permanently.
 #
 # The tests above could not have caught that, and neither could any test, for a
 # reason worth naming: `run_once` returned its counts to the caller and
@@ -141,8 +144,10 @@ def test_a_deployment_that_has_never_drained_says_so(ready):
     """The state this repo is actually in, asserted rather than assumed.
 
     No `run_once` call anywhere above this line in the fixture, which is exactly
-    production's situation: the worker is not in the Procfile. Before the drain
-    latch existed this was indistinguishable from a healthy queue.
+    production's situation: the worker has a Procfile entry but is gated off by
+    `CJ_RECONCILIATION_ENABLED` and `CJ_NETWORK_ENABLED`, and the latch is only
+    written past both. Before the drain latch existed this was indistinguishable
+    from a healthy queue.
     """
     status = fulfillment.drain_status()
     assert status["state"] == "NO_DRAIN_HAS_EVER_RUN"

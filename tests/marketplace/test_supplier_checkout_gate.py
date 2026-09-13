@@ -19,9 +19,11 @@ The three ways this gate goes quietly wrong
 Each of these passes an obvious test suite and is the reason a specific test
 below exists:
 
-* **It refuses everything.** ``supplier_worker`` is not in the Procfile and
-  ``link_source`` never writes ``last_synced_at``, so on this deployment every
-  drop-shipped listing has a NULL confirmation. A gate that demanded freshness
+* **It refuses everything.** ``supplier_worker`` has a Procfile entry but runs
+  dark — ``CJ_RECONCILIATION_ENABLED`` and ``CJ_NETWORK_ENABLED`` are both unset,
+  and the drain latch is only written past both gates — and ``link_source`` never
+  writes ``last_synced_at``, so on this deployment every drop-shipped listing has
+  a NULL confirmation. A gate that demanded freshness
   anyway would take the whole drop-shipped catalogue off sale on deploy and call
   it a safety feature. The strictness is therefore derived from the reconciler's
   own drain latch, and the latch has *four* states — the draft of this module had
