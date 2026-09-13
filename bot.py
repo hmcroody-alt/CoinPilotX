@@ -33,6 +33,29 @@ import xml.etree.ElementTree as ET
 LOCAL_ENV_FILES_LOADED = []
 
 
+def script_json(value):
+    """json.dumps for a value that will be embedded inside a <script> element.
+
+    `json.dumps` escapes `"` and `\\` but has no opinion about `<`, so a string
+    containing `</script>` survives encoding intact and the HTML parser ends the
+    script element there -- everything the attacker wrote after it is parsed as
+    markup. html_escape is not the fix either: it would corrupt the JSON. The
+    answer is to encode the three characters as JSON unicode escapes, which no
+    parser can mistake for a tag and which decode back to the original string.
+
+    U+2028/U+2029 are escaped too: they are legal in JSON but are line
+    terminators in JavaScript, so an unescaped one is a syntax error.
+    """
+    return (
+        json.dumps(value, default=str)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+        .replace(" ", "\\u2028")
+        .replace(" ", "\\u2029")
+    )
+
+
 def _load_local_env_file(path):
     if not os.path.exists(path):
         return
@@ -1575,7 +1598,7 @@ def google_tag_script():
     }
     ga_config = f'gtag("config", "{ga_id}", {{ anonymize_ip: true }});' if ga_id else ""
     ads_config = f'gtag("config", "{ads_id}", {{ anonymize_ip: true }});' if ads_id else ""
-    return f"""<script async src="https://www.googletagmanager.com/gtag/js?id={clean_html(loader_id)}"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){{dataLayer.push(arguments);}}gtag("js",new Date());window.CPX_ADS_CONFIG={{googleAdsId:"{clean_html(ads_id)}",conversions:{json.dumps(conversions)}}};{ads_config}{ga_config}</script>"""
+    return f"""<script async src="https://www.googletagmanager.com/gtag/js?id={html_escape(clean_html(loader_id))}"></script><script>window.dataLayer=window.dataLayer||[];function gtag(){{dataLayer.push(arguments);}}gtag("js",new Date());window.CPX_ADS_CONFIG={{googleAdsId:"{html_escape(clean_html(ads_id))}",conversions:{json.dumps(conversions)}}};{ads_config}{ga_config}</script>"""
 
 
 def render_ads_landing_page(slug):
@@ -1599,7 +1622,7 @@ def render_ads_landing_page(slug):
         "description": page["description"],
         "publisher": {"@type": "Organization", "name": "CoinPlotXAI Inc.", "url": "https://pulsesoc.com"},
     }
-    proof = "".join(f"<span>{clean_html(item)}</span>" for item in page["proof"])
+    proof = "".join(f"<span>{html_escape(clean_html(item))}</span>" for item in page["proof"])
     related = "".join(
         f"<a href='{path}'>{label}</a>"
         for label, path in [
@@ -1610,7 +1633,7 @@ def render_ads_landing_page(slug):
         ]
         if path != f"/{slug}"
     )
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(page['title'])}</title><meta name="description" content="{clean_html(page['description'])}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{clean_html(page['title'])}"><meta property="og:description" content="{clean_html(page['description'])}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260813.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(page['title'])}"><meta name="twitter:description" content="{clean_html(page['description'])}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260813.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-logo-20260813.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260813.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="PulseSoc logo" width="38" height="38">CoinPlotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{clean_html(headline)}</h1><p>{clean_html(page['description'])}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{clean_html(page['analytics'])}">{clean_html(cta)}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{clean_html(page['secondary'])}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPlotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPlotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-logo-20260813.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{clean_html(cta)}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(page['title']))}</title><meta name="description" content="{html_escape(clean_html(page['description']))}"><meta name="robots" content="index,follow,max-image-preview:large"><link rel="canonical" href="{canonical}"><meta property="og:title" content="{html_escape(clean_html(page['title']))}"><meta property="og:description" content="{html_escape(clean_html(page['description']))}"><meta property="og:url" content="{canonical}"><meta property="og:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260813.png"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{html_escape(clean_html(page['title']))}"><meta name="twitter:description" content="{html_escape(clean_html(page['description']))}"><meta name="twitter:image" content="https://pulsesoc.com/static/brand/pulsesoc-logo-20260813.png"><link rel="icon" type="image/png" href="/static/brand/pulsesoc-logo-20260813.png"><link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260813.png"><link rel="manifest" href="/manifest.json"><meta name="theme-color" content="#020817">{google_tag_script()}<script type="application/ld+json">{json.dumps(schema)}</script><style>:root{{--bg:#050b14;--text:#f6fbff;--muted:#a8b8c8;--line:rgba(255,255,255,.13);--accent:{page['accent']};--green:#36e58f;--cyan:#6edff6}}*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;overflow-x:hidden}}body{{background:radial-gradient(circle at 18% 0,color-mix(in srgb,var(--accent) 24%,transparent),transparent 24rem),radial-gradient(circle at 90% 8%,rgba(54,229,143,.12),transparent 23rem),linear-gradient(180deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}}.wrap{{width:min(100% - 28px,1120px);margin:auto;padding:22px 0 76px}}nav{{min-height:62px;display:flex;align-items:center;justify-content:space-between;gap:14px}}.brand{{display:inline-flex;align-items:center;gap:10px;color:var(--text);text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{min-height:calc(100dvh - 82px);display:grid;grid-template-columns:minmax(0,1.05fr) minmax(300px,.95fr);gap:22px;align-items:center}}.kicker{{color:var(--green);font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}h1{{font-size:clamp(42px,7.5vw,82px);line-height:.95;margin:10px 0 14px;letter-spacing:0}}p{{color:var(--muted);font-size:17px;line-height:1.58}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0}}.button{{min-height:50px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;text-decoration:none;font-weight:950;border:1px solid rgba(255,255,255,.16);color:var(--text);background:rgba(255,255,255,.065)}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0;box-shadow:0 0 28px color-mix(in srgb,var(--accent) 35%,transparent)}}.stage{{position:relative;border:1px solid color-mix(in srgb,var(--accent) 42%,rgba(255,255,255,.12));border-radius:18px;overflow:hidden;background:linear-gradient(150deg,rgba(255,255,255,.09),rgba(255,255,255,.035));box-shadow:0 26px 90px rgba(0,0,0,.34);padding:20px;min-height:360px}}.stage:before{{content:"";position:absolute;inset:-35%;background:conic-gradient(from 120deg,transparent,color-mix(in srgb,var(--accent) 25%,transparent),transparent 38%,rgba(54,229,143,.16),transparent 68%);animation:sweep 10s linear infinite;pointer-events:none}}.stage>*{{position:relative}}.logo{{width:84px;height:84px;border-radius:22px;filter:drop-shadow(0 0 26px color-mix(in srgb,var(--accent) 38%,transparent))}}.metric{{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}}.metric div,.proof span{{border:1px solid var(--line);border-radius:12px;background:rgba(0,0,0,.18);padding:12px}}.proof{{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}}.trust{{border-top:1px solid var(--line);padding-top:18px;margin-top:18px;font-size:14px;color:var(--muted)}}.related{{display:flex;gap:8px;flex-wrap:wrap;margin-top:18px}}.related a{{color:#dff9ff;border:1px solid var(--line);border-radius:999px;padding:8px 11px;text-decoration:none;font-weight:850}}@keyframes sweep{{from{{transform:rotate(0deg)}}to{{transform:rotate(360deg)}}}}@media(max-width:820px){{.wrap{{width:min(100% - 24px,1120px);padding-bottom:44px}}.hero{{grid-template-columns:1fr;min-height:auto;padding-top:24px}}h1{{font-size:clamp(34px,10vw,54px)}}.button{{width:100%}}.stage{{min-height:280px;padding:16px}}.stage:before{{animation-duration:18s}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="PulseSoc logo" width="38" height="38">CoinPlotXAI</a><a class="button" href="/privacy">Privacy</a></nav><section class="hero"><article><div class="kicker">Controlled Google Ads landing page · Variant {variant.upper()}</div><h1>{html_escape(clean_html(headline))}</h1><p>{html_escape(clean_html(page['description']))}</p><div class="actions"><a class="button primary" href="{signup_url}" data-analytics="{html_escape(clean_html(page['analytics']))}">{html_escape(clean_html(cta))}</a><a class="button" href="{secondary_url}" data-analytics="landing_secondary_click">{html_escape(clean_html(page['secondary']))}</a></div><div class="proof">{proof}</div><p class="trust">Educational platform only. Alpha Arena uses simulated trading and virtual dollars. Roast Battle virtual dollars are entertainment scoring only and have no real-money value. CoinPlotXAI never asks for seed phrases or private keys.</p><div class="related">{related}</div></article><aside class="stage" aria-label="CoinPlotXAI live preview"><img class="logo" src="/static/brand/pulsesoc-logo-20260813.png" alt="PulseSoc logo" width="84" height="84"><h2>Live command-center preview</h2><p>Fast mobile pages, clear CTAs, moderated social energy, and privacy-first behavioral analytics.</p><div class="metric"><div><strong>CTA</strong><br>{html_escape(clean_html(cta))}</div><div><strong>Trust</strong><br>Safety-first copy</div><div><strong>Tracking</strong><br>GA4 + Ads ready</div><div><strong>Speed</strong><br>Deferred scripts</div></div></aside></section></main><script src="/static/analytics.js" defer></script></body></html>"""
     response = Response(html)
     response.headers["Cache-Control"] = "public, max-age=300"
     return response
@@ -1683,7 +1706,7 @@ def send_support_ticket_emails(reference, name, email, issue_type, subject, mess
         send_channel_email(
             "support@pulsesoc.com",
             f"PulseSoc Support Ticket {reference}: {subject}",
-            f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {clean_html(name)} &lt;{clean_html(email)}&gt;</p><p><strong>Issue:</strong> {clean_html(issue_type)}</p><p>{clean_html(message)}</p>",
+            f"<p><strong>Reference:</strong> {reference}</p><p><strong>From:</strong> {html_escape(clean_html(name))} &lt;{html_escape(clean_html(email))}&gt;</p><p><strong>Issue:</strong> {html_escape(clean_html(issue_type))}</p><p>{html_escape(clean_html(message))}</p>",
             f"Reference: {reference}\nFrom: {name} <{email}>\nIssue: {issue_type}\n\n{message}",
             user_id=user_id or 0,
             email_type="support_ticket",
@@ -1880,7 +1903,7 @@ def api_security_report():
     send_channel_email(
         "security@pulsesoc.com",
         f"PulseSoc Security Report: {report_type}",
-        f"<p><strong>Email:</strong> {clean_html(email)}</p><p><strong>Target:</strong> {clean_html(target)}</p><p>{clean_html(description)}</p>",
+        f"<p><strong>Email:</strong> {html_escape(clean_html(email))}</p><p><strong>Target:</strong> {html_escape(clean_html(target))}</p><p>{html_escape(clean_html(description))}</p>",
         f"Email: {email}\nTarget: {target}\n\n{description}",
         user_id=(user or {}).get("user_id") or 0,
         email_type="security_report",
@@ -1932,7 +1955,7 @@ def scam_shield_scan_page():
         except Exception:
             recent_rows = []
     recent_html = "".join(
-        f"<div class='history-item'><strong>{clean_html(row.get('risk_level') or 'Low')} · {int(row.get('risk_score') or 0)}/100</strong><span>{clean_html(row.get('scan_type') or 'auto')} · {clean_html(row.get('created_at') or '')}</span><p>{clean_html(row.get('summary') or '')}</p></div>"
+        f"<div class='history-item'><strong>{html_escape(clean_html(row.get('risk_level') or 'Low'))} · {int(row.get('risk_score') or 0)}/100</strong><span>{html_escape(clean_html(row.get('scan_type') or 'auto'))} · {html_escape(clean_html(row.get('created_at') or ''))}</span><p>{html_escape(clean_html(row.get('summary') or ''))}</p></div>"
         for row in recent_rows
     ) or "<p class='muted'>Recent scans will appear here after you run the scanner.</p>"
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Suspicious Crypto Link Scanner | CoinPlotXAI</title><meta name="description" content="Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPlotXAI will inspect it for scam risk."><meta name="robots" content="noindex,nofollow"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260813.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(54,229,143,.18),transparent 28rem),radial-gradient(circle at 90% 6%,rgba(110,223,246,.14),transparent 24rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:24px 0 calc(84px + env(safe-area-inset-bottom))}}a{{color:var(--cyan)}}.hero{{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,.85fr);gap:16px;align-items:start}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}h1{{font-size:clamp(34px,7vw,64px);line-height:.98;margin:12px 0}}p,.muted{{color:var(--muted)}}textarea,select{{width:100%;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}textarea{{min-height:190px;resize:vertical}}select{{min-height:46px}}.actions{{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px}}button,.button{{min-height:48px;border:1px solid var(--line);border-radius:10px;padding:11px 15px;font-weight:950;cursor:pointer;background:rgba(255,255,255,.06);color:var(--text);text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}button.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border:0}}button:disabled{{opacity:.5;cursor:not-allowed}}.result{{display:none;margin-top:16px}}.result.show{{display:block}}.score{{font-size:clamp(38px,8vw,72px);font-weight:950}}.badge{{display:inline-flex;border-radius:999px;padding:7px 11px;border:1px solid var(--line);font-weight:950}}.badge.Low{{border-color:rgba(54,229,143,.4);color:#c8ffe2}}.badge.Medium{{border-color:rgba(255,209,102,.45);color:#ffe6a6}}.badge.High,.badge.Critical{{border-color:rgba(255,107,122,.5);color:#ffd6dc}}.warning{{border:1px solid rgba(255,107,122,.38);background:rgba(255,107,122,.1);border-radius:12px;padding:12px;color:#ffd6dc}}ul{{padding-left:20px}}li{{margin:7px 0}}.history{{display:grid;gap:10px}}.history-item{{border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.04);padding:12px}}.history-item span{{display:block;color:var(--muted);font-size:13px}}.toast{{min-height:22px;color:#ffe6a6;margin-top:8px}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.actions{{display:grid;grid-template-columns:1fr}}.card{{padding:14px}}textarea{{min-height:170px}}}}</style></head><body><main class="wrap"><a href="/dashboard">Back to Dashboard</a><section class="hero"><article class="card"><div class="muted">Scam Shield</div><h1>Suspicious Crypto Link Scanner</h1><p>Paste a suspicious crypto link, wallet address, token contract, DM, email, or message. CoinPlotXAI will inspect it for scam risk.</p><form id="scanForm"><label>Scan type<select name="scan_type"><option value="auto">Auto Detect</option><option value="crypto_link">Crypto Link</option><option value="wallet_address">Wallet Address</option><option value="token_contract">Token Contract</option><option value="telegram_dm">Telegram/DM Message</option><option value="email_text">Email/Text</option><option value="website_url">Website URL</option></select></label><label>Paste suspicious content<textarea name="input" placeholder="Paste suspicious link, message, wallet address, token contract, or email text..."></textarea></label><div class="actions"><button class="primary" id="scanBtn" type="submit" disabled>Scan Now</button><button type="button" id="clearBtn">Clear</button><button type="button" id="copyBtn" disabled>Copy Report</button></div><div class="toast" id="scanMsg"></div></form><section class="result card" id="resultPanel" aria-live="polite"></section></article><aside class="card"><h2>Recent Scan History</h2><p class="muted">History never exposes your full pasted content here. Only risk summaries and timestamps are shown.</p><div class="history" id="historyPanel">{recent_html}</div></aside></section></main><script>const form=document.getElementById('scanForm'),input=form.elements.input,btn=document.getElementById('scanBtn'),msg=document.getElementById('scanMsg'),panel=document.getElementById('resultPanel'),copyBtn=document.getElementById('copyBtn'),historyPanel=document.getElementById('historyPanel');let lastReport='';function esc(s){{return String(s||'').replace(/[&<>"']/g,m=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[m]))}}function setReady(){{btn.disabled=!input.value.trim();}}input.addEventListener('input',setReady);document.getElementById('clearBtn').addEventListener('click',()=>{{input.value='';panel.classList.remove('show');panel.innerHTML='';msg.textContent='';copyBtn.disabled=true;lastReport='';setReady();}});copyBtn.addEventListener('click',async()=>{{if(!lastReport)return;try{{await navigator.clipboard.writeText(lastReport);msg.textContent='Report copied.'}}catch(e){{msg.textContent='Copy failed. Select the report text manually.'}}}});function render(data){{const flags=(data.red_flags||[]).map(x=>`<li>${{esc(x)}}</li>`).join('')||'<li>No obvious high-risk pattern detected. Still verify independently.</li>';const actions=(data.safe_actions||[]).map(x=>`<li>${{esc(x)}}</li>`).join('');const warn=['High','Critical'].includes(data.risk_level)?'<p class="warning">Do not connect your wallet, sign approvals, share seed phrases, or send funds until independently verified.</p>':'';panel.innerHTML=`<h2>Scan Result</h2><span class="badge ${{esc(data.risk_level)}}">${{esc(data.risk_level)}} Risk</span><div class="score">${{Number(data.risk_score||0)}}/100</div>${{warn}}<p><strong>Summary:</strong> ${{esc(data.summary)}}</p><p><strong>Why it matters:</strong> ${{esc(data.why_it_matters)}}</p><h3>Red flags</h3><ul>${{flags}}</ul><h3>Safe next steps</h3><ul>${{actions}}</ul><p class="muted">Confidence: ${{Number(data.confidence||0).toFixed(2)}} · Source: ${{esc(data.source||data.source_status||'Local rules + AI review')}} · ${{new Date().toLocaleString()}}</p>`;panel.classList.add('show');lastReport=panel.innerText;copyBtn.disabled=false;historyPanel.insertAdjacentHTML('afterbegin',`<div class="history-item"><strong>${{esc(data.risk_level)}} · ${{Number(data.risk_score||0)}}/100</strong><span>${{esc(data.scan_type||'auto')}} · just now</span><p>${{esc(data.summary)}}</p></div>`);}}form.addEventListener('submit',async e=>{{e.preventDefault();const text=input.value.trim();if(!text){{msg.textContent='Paste a suspicious crypto link, wallet address, token contract, or message to scan.';return;}}btn.disabled=true;btn.textContent='Scanning...';msg.textContent='Inspecting scam patterns...';try{{const r=await fetch('/api/scam-shield/scan',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{input:text,scan_type:form.elements.scan_type.value}})}});const data=await r.json();if(!r.ok||!data.ok)throw new Error(data.message||'Scan failed.');render(data);msg.textContent='Scan complete.';if(window.coinPilotXTrack)window.coinPilotXTrack('scam_shield_scan',{{risk_level:data.risk_level,scan_type:data.scan_type}})}}catch(err){{msg.textContent=err.message||'Could not scan right now.'}}finally{{btn.textContent='Scan Now';setReady();}}}});setReady();</script></body></html>"""
@@ -1952,7 +1975,7 @@ def terms_page():
 
 
 def legal_money_page(title, body):
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{clean_html(title)} | PulseSoc</title><style>body{{margin:0;background:#07101d;color:#f4fbff;font-family:Inter,system-ui,sans-serif;line-height:1.6}}main{{width:min(100% - 32px,920px);margin:auto;padding:48px 0}}a{{color:#78e7ff}}.card{{border:1px solid rgba(120,231,255,.22);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}}</style></head><body><main><a href='/pulse'>PulseSoc</a><section class='card'><h1>{clean_html(title)}</h1>{body}</section></main></body></html>""", mimetype="text/html")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html_escape(clean_html(title))} | PulseSoc</title><style>body{{margin:0;background:#07101d;color:#f4fbff;font-family:Inter,system-ui,sans-serif;line-height:1.6}}main{{width:min(100% - 32px,920px);margin:auto;padding:48px 0}}a{{color:#78e7ff}}.card{{border:1px solid rgba(120,231,255,.22);border-radius:18px;background:rgba(255,255,255,.045);padding:22px}}</style></head><body><main><a href='/pulse'>PulseSoc</a><section class='card'><h1>{html_escape(clean_html(title))}</h1>{body}</section></main></body></html>""", mimetype="text/html")
 
 
 @webhook_app.route("/legal/payments", methods=["GET"])
@@ -1989,7 +2012,7 @@ def about_page():
         ("Continuous Innovation", "CoinPlotXAI is evolving into a realtime intelligence operating system: live market context, social Arena presence, push-ready alerts, education paths, and AI coaching continue to improve without promising profits."),
         ("Educational Disclaimer", "CoinPlotXAI Inc. provides educational AI intelligence and simulations only. It is not financial, investment, legal, betting, or tax advice. No real-money trading execution occurs inside Arena."),
     ]
-    cards = "".join(f"<article class='card'><h2>{clean_html(title)}</h2><p>{clean_html(text)}</p></article>" for title, text in sections)
+    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(title))}</h2><p>{html_escape(clean_html(text))}</p></article>" for title, text in sections)
     return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About CoinPlotXAI | AI Crypto Intelligence, Scam Protection and Arena Training</title><meta name="description" content="CoinPlotXAI is an educational AI crypto intelligence platform with Scam Shield, live market context, Pro Arena simulations, virtual portfolio battles, psychology training, and privacy-safe social learning."><link rel="canonical" href="https://pulsesoc.com/about"><meta property="og:title" content="About CoinPlotXAI"><meta property="og:description" content="AI crypto intelligence, Scam Shield, risk psychology education, and Pro Arena virtual-dollar training."><meta property="og:url" content="https://pulsesoc.com/about"><meta property="og:image" content="https://pulsesoc.com/static/og/coinpilotxai-og.png"><meta name="twitter:card" content="summary_large_image"><script type="application/ld+json">{json.dumps(schema)}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 30px,1120px);margin:auto;padding:28px 0 90px}}a{{color:#6edff6}}.hero{{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;margin:30px 0}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.28);padding:20px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}h1{{font-size:clamp(42px,7vw,78px);line-height:.96;margin:0 0 14px}}p{{color:#9fb5c0}}.kicker{{color:#36e58f;font-weight:950;text-transform:uppercase;letter-spacing:.08em;font-size:12px}}.button{{display:inline-flex;min-height:44px;align-items:center;justify-content:center;border-radius:10px;border:1px solid rgba(110,223,246,.24);padding:10px 14px;font-weight:900;text-decoration:none;color:#f2fbff}}.primary{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}@media(max-width:820px){{.hero{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><section class="hero"><article class="card"><div class="kicker">About CoinPlotXAI</div><h1>A safer AI command center for crypto learning, risk awareness, and simulation.</h1><p>CoinPlotXAI is built for people who want sharper market awareness without hype, gambling language, or fake profit promises.</p><div class="actions"><a class="button primary" href="/signup">Start Free</a><a class="button" href="/arena-preview">Preview Arena</a><a class="button" href="/scam-shield/scan">Open Scam Shield</a></div></article><article class="card"><h2>What We Optimize For</h2><p>Clarity, emotional control, scam defense, privacy-safe social learning, and educational practice before real-world risk.</p></article></section><section class="grid">{cards}</section></main></body></html>""")
 
 
@@ -2040,10 +2063,10 @@ def education_shell(title, h1, intro, body):
     return f"""<!doctype html>
 <html lang="en"><head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{clean_html(title)}</title>
-  <meta name="description" content="{clean_html(intro)[:155]}">
-  <link rel="canonical" href="https://pulsesoc.com{clean_html(request.path)}">
-  <meta property="og:title" content="{clean_html(title)}"><meta property="og:description" content="{clean_html(intro)[:155]}">
+  <title>{html_escape(clean_html(title))}</title>
+  <meta name="description" content="{html_escape(clean_html(intro)[:155])}">
+  <link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}">
+  <meta property="og:title" content="{html_escape(clean_html(title))}"><meta property="og:description" content="{html_escape(clean_html(intro)[:155])}">
   <style>
     :root {{ color-scheme:dark; --bg:#050b14; --panel:#0d1627; --line:rgba(110,223,246,.22); --text:#f2fbff; --muted:#9fb5c0; --cyan:#6edff6; --green:#36e58f; --gold:#ffd166; }}
     *{{box-sizing:border-box}} body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);line-height:1.65;overflow-x:hidden}} a{{color:inherit;text-decoration:none}}
@@ -2052,7 +2075,7 @@ def education_shell(title, h1, intro, body):
 		    </style>
 </head><body>
   <header><div class="wrap"><nav><a href="/" data-edu-nav="show_edu_nav_home">CoinPlotXAI</a><div class="edu-actions"><a href="/dashboard" data-edu-nav="show_edu_nav_dashboard">Dashboard</a><a href="/education" data-edu-nav="show_edu_nav_education">Education</a><a href="/scam-shield" data-edu-nav="show_edu_nav_scam_shield">Scam Shield</a><div class="edu-customize"><button class="edu-customize-button" type="button" data-edu-customize>Customize</button><div class="edu-customize-panel" data-edu-customize-panel hidden><strong>Customize Education Navigation</strong><label class="edu-toggle">Show CoinPlotXAI <input type="checkbox" data-edu-pref="show_edu_nav_home" checked></label><label class="edu-toggle">Show Dashboard <input type="checkbox" data-edu-pref="show_edu_nav_dashboard" checked></label><label class="edu-toggle">Show Education <input type="checkbox" data-edu-pref="show_edu_nav_education" checked></label><label class="edu-toggle">Show Scam Shield <input type="checkbox" data-edu-pref="show_edu_nav_scam_shield" checked></label><button class="edu-cta" type="button" data-edu-reset>Reset defaults</button></div></div></div></nav></div></header>
-  <main class="wrap"><section class="hero"><div class="radar" aria-hidden="true"></div><h1>{clean_html(h1)}</h1><p>{clean_html(intro)}</p></section>{body}<p class="muted">Educational market intelligence only. Not financial, investment, legal, betting, or tax advice. Never share seed phrases or private keys.</p></main>
+  <main class="wrap"><section class="hero"><div class="radar" aria-hidden="true"></div><h1>{html_escape(clean_html(h1))}</h1><p>{html_escape(clean_html(intro))}</p></section>{body}<p class="muted">Educational market intelligence only. Not financial, investment, legal, betting, or tax advice. Never share seed phrases or private keys.</p></main>
   <script>
     (function () {{
       function applyPrefs(prefs) {{
@@ -2096,7 +2119,7 @@ def education_shell(title, h1, intro, body):
 
 
 def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
-    concepts = "".join(f"<article class='concept'><h3>{clean_html(title)}</h3><p>{clean_html(body)}</p></article>" for title, body in sections)
+    concepts = "".join(f"<article class='concept'><h3>{html_escape(clean_html(title))}</h3><p>{html_escape(clean_html(body))}</p></article>" for title, body in sections)
     quiz = """
       <div class='edu-panel'><h2>Quick Quiz</h2>
         <p><strong>Question:</strong> Should an app or support agent ever ask for your seed phrase?</p>
@@ -2117,7 +2140,7 @@ def education_feature_page(h1, intro, sections, lesson_slug, cta=""):
         }});
       </script>
     """
-    return education_shell(f"{h1} | CoinPlotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{clean_html(lesson_slug)}'>Open Full Lesson</a></section>")
+    return education_shell(f"{h1} | CoinPlotXAI Education", h1, intro, f"<section class='edu-panel'><div class='concepts'>{concepts}</div>{cta}</section>{quiz}{tutor}<section class='edu-panel'><a class='edu-cta' href='/education/lesson/{html_escape(clean_html(lesson_slug))}'>Open Full Lesson</a></section>")
 
 
 @webhook_app.route("/education", methods=["GET"])
@@ -2137,11 +2160,11 @@ def education_hub_page():
     lessons = [dict(row) for row in cur.fetchall()]
     conn.close()
     cards = "".join(
-        f"<a class='edu-card' href='/education/{clean_html(c['slug'])}'><span>{clean_html(c['title'])}</span><p>{clean_html(c.get('summary') or '')}</p></a>"
+        f"<a class='edu-card' href='/education/{html_escape(clean_html(c['slug']))}'><span>{html_escape(clean_html(c['title']))}</span><p>{html_escape(clean_html(c.get('summary') or ''))}</p></a>"
         for c in categories
     )
     lesson_cards = "".join(
-        f"<a class='edu-card lesson' href='/education/lesson/{clean_html(l['slug'])}'><strong>{clean_html(l['title'])}</strong><small>{clean_html(l['difficulty'])} · {clean_html(l['estimated_time'])}</small><p>{clean_html(l['summary'])}</p></a>"
+        f"<a class='edu-card lesson' href='/education/lesson/{html_escape(clean_html(l['slug']))}'><strong>{html_escape(clean_html(l['title']))}</strong><small>{html_escape(clean_html(l['difficulty']))} · {html_escape(clean_html(l['estimated_time']))}</small><p>{html_escape(clean_html(l['summary']))}</p></a>"
         for l in lessons
     )
     return education_shell(
@@ -2259,7 +2282,7 @@ def education_category_page(category_slug):
     cur.execute("SELECT * FROM education_lessons WHERE category_slug=? AND active=1 ORDER BY id ASC", (category_slug,))
     lessons = [dict(row) for row in cur.fetchall()]
     conn.close()
-    cards = "".join(f"<a class='edu-card' href='/education/lesson/{clean_html(l['slug'])}'><strong>{clean_html(l['title'])}</strong><small>{clean_html(l['difficulty'])} · {clean_html(l['estimated_time'])}</small><p>{clean_html(l['summary'])}</p></a>" for l in lessons)
+    cards = "".join(f"<a class='edu-card' href='/education/lesson/{html_escape(clean_html(l['slug']))}'><strong>{html_escape(clean_html(l['title']))}</strong><small>{html_escape(clean_html(l['difficulty']))} · {html_escape(clean_html(l['estimated_time']))}</small><p>{html_escape(clean_html(l['summary']))}</p></a>" for l in lessons)
     return education_shell(
         f"{category['title']} Lessons | CoinPlotXAI",
         category["title"],
@@ -2286,13 +2309,13 @@ def education_lesson_page(lesson_slug):
         conn.close()
     except Exception:
         pass
-    sections = "".join(f"<article class='concept'><h3>{clean_html(s['heading'])}</h3><p>{clean_html(s['body'])}</p></article>" for s in lesson.get("sections", []))
+    sections = "".join(f"<article class='concept'><h3>{html_escape(clean_html(s['heading']))}</h3><p>{html_escape(clean_html(s['body']))}</p></article>" for s in lesson.get("sections", []))
     quiz = "".join(
-        f"<article class='concept'><h3>{clean_html(q['question'])}</h3><p>Options: {', '.join(json.loads(q.get('options') or '[]'))}</p><p><strong>Answer:</strong> {clean_html(q['answer'])}. {clean_html(q['explanation'])}</p></article>"
+        f"<article class='concept'><h3>{html_escape(clean_html(q['question']))}</h3><p>Options: {', '.join(json.loads(q.get('options') or '[]'))}</p><p><strong>Answer:</strong> {html_escape(clean_html(q['answer']))}. {html_escape(clean_html(q['explanation']))}</p></article>"
         for q in lesson.get("quiz", [])
     )
     body = f"""
-    <section class='edu-panel'><p><strong>{clean_html(lesson.get('difficulty'))}</strong> · {clean_html(lesson.get('estimated_time'))}</p><p>{clean_html(lesson.get('content'))}</p></section>
+    <section class='edu-panel'><p><strong>{html_escape(clean_html(lesson.get('difficulty')))}</strong> · {html_escape(clean_html(lesson.get('estimated_time')))}</p><p>{html_escape(clean_html(lesson.get('content')))}</p></section>
     <section class='edu-panel'><h2>Knowledge Map</h2><div class='concepts'>{sections}</div></section>
     <section class='edu-panel'><h2>Quiz</h2><div class='concepts'>{quiz}</div><button class='edu-cta' data-complete-lesson>Mark Complete</button><p class='muted' data-progress-message></p></section>
     <section class='edu-panel'><h2>Ask CoinPlotXAI Tutor</h2><form data-tutor-form><input name='question' placeholder='Ask about this lesson...' style='width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:#081323;color:var(--text);padding:10px'><button class='edu-cta' type='submit'>Ask Tutor</button></form><p class='muted' data-tutor-response></p></section>
@@ -5390,7 +5413,7 @@ def pro_locked_response(user, feature_name="AI Command Center"):
         body = f"""
       <div class='grid'>
         <div class='profile-card'>
-          <h2>{clean_html(feature_name)} is not available in this iOS build.</h2>
+          <h2>{html_escape(clean_html(feature_name))} is not available in this iOS build.</h2>
           <p>PulseSoc core social features remain available. Apple in-app purchase support must be completed before paid digital access can be offered in the iOS app.</p>
           <div class='actions'>
             <a class='button primary' href='/pulse'>Open PulseSoc</a>
@@ -5404,7 +5427,7 @@ def pro_locked_response(user, feature_name="AI Command Center"):
         body = f"""
       <div class='grid'>
         <div class='profile-card'>
-          <h2>{clean_html(feature_name)} is available in the free core ecosystem.</h2>
+          <h2>{html_escape(clean_html(feature_name))} is available in the free core ecosystem.</h2>
           <p>PulseSoc Premium adds prestige identity, creator cosmetics, elite profile effects, and advanced creator enhancements. Core tools stay free for authenticated users.</p>
           <div class='actions'>
             <a class='button gold' href='/pulse/premium'>PulseSoc Premium</a>
@@ -8351,8 +8374,8 @@ def dashboard_system_shell(title, subtitle, body, script=""):
     <section class="system-command-shell">
       <section class="system-command-hero">
         <span class="system-command-status">PulseSoc Mission Control</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="system-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="system-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="system-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/system">System Mission Control</a>
@@ -8385,7 +8408,7 @@ def _system_metric_cards(state):
         ("Platform Readiness", f"{int(core.get('platform_readiness') or 0)}%"),
     ]
     return "".join(
-        f"<article class='system-command-card'><strong>{clean_html(label)}</strong><div class='system-command-metric'>{clean_html(str(value))}</div></article>"
+        f"<article class='system-command-card'><strong>{html_escape(clean_html(label))}</strong><div class='system-command-metric'>{html_escape(clean_html(str(value)))}</div></article>"
         for label, value in metrics
     )
 
@@ -8398,10 +8421,10 @@ def _system_module_cards(state, admin=False):
             "<article class='system-command-card'>"
             f"{_system_pill(module.get('state'))}"
             f"<div class='system-command-metric'>{int(module.get('score') or 0)}%</div>"
-            f"<strong>{clean_html(module.get('label') or '')}</strong>"
-            f"<small>{clean_html(module.get('recommendation') or '')}</small>"
+            f"<strong>{html_escape(clean_html(module.get('label') or ''))}</strong>"
+            f"<small>{html_escape(clean_html(module.get('recommendation') or ''))}</small>"
             f"<p class='system-command-muted'>Signals {int(module.get('signal_count') or 0)} · Tables {int(module.get('available_tables') or 0)}/{int(module.get('required_tables') or 0)} · Latency {int(module.get('latency_ms') or 0)}ms</p>"
-            f"<div class='system-command-actions'><a class='button primary' href='{clean_html(route or '/dashboard/system')}'>Review System</a></div>"
+            f"<div class='system-command-actions'><a class='button primary' href='{html_escape(clean_html(route or '/dashboard/system'))}'>Review System</a></div>"
             "</article>"
         )
     return "".join(cards)
@@ -8414,7 +8437,7 @@ def _system_network_map(state):
     for idx, module in enumerate(modules):
         x, y = positions[idx % len(positions)]
         label = clean_html((module.get("label") or "").replace(" Intelligence", ""))
-        nodes.append(f"<div class='system-node' data-state='{clean_html(module.get('state') or 'READY')}' style='left:{x}%;top:{y}%'>{label}</div>")
+        nodes.append(f"<div class='system-node' data-state='{html_escape(clean_html(module.get('state') or 'READY'))}' style='left:{x}%;top:{y}%'>{label}</div>")
     links = [
         "<div class='system-link' style='left:25%;top:48%;width:50%;transform:rotate(0deg)'></div>",
         "<div class='system-link' style='left:50%;top:22%;width:36%;transform:rotate(54deg)'></div>",
@@ -8427,7 +8450,7 @@ def _system_network_map(state):
 
 def _system_timeline(state):
     rows = "".join(
-        f"<tr><td>{clean_html(item.get('time') or '')}</td><td>{clean_html(item.get('event') or '')}</td><td>{_system_pill(item.get('state'))}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('time') or ''))}</td><td>{html_escape(clean_html(item.get('event') or ''))}</td><td>{_system_pill(item.get('state'))}</td></tr>"
         for item in state.get("timeline") or []
     )
     return f"<table class='system-command-table'><tr><th>Time</th><th>Event</th><th>State</th></tr>{rows}</table>"
@@ -8436,7 +8459,7 @@ def _system_timeline(state):
 def _system_prediction(state):
     prediction = state.get("prediction") or {}
     return "".join(
-        f"<article class='system-command-card'><strong>{clean_html(str(key).replace('_',' ').title())}</strong><p class='system-command-muted'>{clean_html(str(value))}</p></article>"
+        f"<article class='system-command-card'><strong>{html_escape(clean_html(str(key).replace('_',' ').title()))}</strong><p class='system-command-muted'>{html_escape(clean_html(str(value)))}</p></article>"
         for key, value in prediction.items()
     )
 
@@ -8471,9 +8494,9 @@ def dashboard_system_module_page(module_key):
         return redirect("/dashboard/system")
     body = f"""
     <section class="system-command-grid">
-      <article class="system-command-card">{_system_pill(module.get('state'))}<div class="system-command-metric">{int(module.get('score') or 0)}%</div><strong>{clean_html(module.get('label') or '')}</strong><small>{clean_html(module.get('prediction') or '')}</small></article>
+      <article class="system-command-card">{_system_pill(module.get('state'))}<div class="system-command-metric">{int(module.get('score') or 0)}%</div><strong>{html_escape(clean_html(module.get('label') or ''))}</strong><small>{html_escape(clean_html(module.get('prediction') or ''))}</small></article>
       <article class="system-command-card"><strong>What is happening</strong><p class="system-command-muted">PulseSoc is tracking {int(module.get('signal_count') or 0)} aggregate signals across this subsystem.</p></article>
-      <article class="system-command-card"><strong>What should improve</strong><p class="system-command-muted">{clean_html(module.get('recommendation') or 'Keep monitoring.')}</p></article>
+      <article class="system-command-card"><strong>What should improve</strong><p class="system-command-muted">{html_escape(clean_html(module.get('recommendation') or 'Keep monitoring.'))}</p></article>
     </section>
     <section class="system-command-card">
       <strong>Privacy boundary</strong>
@@ -8515,8 +8538,8 @@ def dashboard_account_shell(title, subtitle, body, script=""):
     <section class="account-command-shell">
       <section class="account-command-hero">
         <span class="account-command-status">Account Intelligence</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="account-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="account-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="account-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/account">Account Intelligence</a>
@@ -8557,16 +8580,16 @@ def _account_state_pill(state):
 
 def _account_subsystem_card_html(subsystem):
     recommendations = subsystem.get("recommendations") or []
-    recommendation_html = "".join(f"<li>{clean_html(item)}</li>" for item in recommendations[:3])
+    recommendation_html = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in recommendations[:3])
     recommendation_block = f"<ul class='account-command-list'>{recommendation_html}</ul>" if recommendation_html else ""
     return (
         "<article class='account-command-card'>"
         f"{_account_state_pill(subsystem.get('state'))}"
         f"<div class='account-command-metric'>{int(subsystem.get('score') or 0)}%</div>"
-        f"<strong>{clean_html(subsystem.get('label') or '')}</strong>"
-        f"<small>{clean_html(str(subsystem.get('status') or '').replace('_', ' ').title())}</small>"
+        f"<strong>{html_escape(clean_html(subsystem.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(str(subsystem.get('status') or '').replace('_', ' ').title()))}</small>"
         f"{recommendation_block}"
-        f"<div class='account-command-actions'><a class='button primary' href='{clean_html(subsystem.get('route') or '/dashboard/account')}'>{clean_html(subsystem.get('cta_label') or 'Manage Account')}</a></div>"
+        f"<div class='account-command-actions'><a class='button primary' href='{html_escape(clean_html(subsystem.get('route') or '/dashboard/account'))}'>{html_escape(clean_html(subsystem.get('cta_label') or 'Manage Account'))}</a></div>"
         "</article>"
     )
 
@@ -8587,21 +8610,21 @@ def _account_subsystem_detail_html(subsystem):
         "url",
     )
     metric_rows = "".join(
-        f"<tr><td>{clean_html(str(key).replace('_', ' ').title())}</td><td>{clean_html(str(value))}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(str(key).replace('_', ' ').title()))}</td><td>{html_escape(clean_html(str(value)))}</td></tr>"
         for key, value in metrics.items()
         if key != "settings" and not any(fragment in str(key).lower() for fragment in blocked_metric_fragments)
     )
     actions = "".join(
-        f"<a class='button' href='{clean_html(subsystem.get('route') or '/dashboard/account')}'>{clean_html(action)}</a>"
+        f"<a class='button' href='{html_escape(clean_html(subsystem.get('route') or '/dashboard/account'))}'>{html_escape(clean_html(action))}</a>"
         for action in (subsystem.get("actions") or [])[:4]
     )
-    monitors = "".join(f"<li>{clean_html(str(item).replace('_', ' ').title())}</li>" for item in subsystem.get("monitors") or [])
-    protections = "".join(f"<li>{clean_html(str(item).replace('_', ' ').title())}</li>" for item in subsystem.get("protections") or [])
-    recovery = "".join(f"<li>{clean_html(str(item).replace('_', ' ').title())}</li>" for item in subsystem.get("recovery") or [])
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or ["No urgent action. Review periodically."])
+    monitors = "".join(f"<li>{html_escape(clean_html(str(item).replace('_', ' ').title()))}</li>" for item in subsystem.get("monitors") or [])
+    protections = "".join(f"<li>{html_escape(clean_html(str(item).replace('_', ' ').title()))}</li>" for item in subsystem.get("protections") or [])
+    recovery = "".join(f"<li>{html_escape(clean_html(str(item).replace('_', ' ').title()))}</li>" for item in subsystem.get("recovery") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or ["No urgent action. Review periodically."])
     return f"""
     <section class="account-command-grid">
-      <article class="account-command-card">{_account_state_pill(subsystem.get('state'))}<div class="account-command-metric">{int(subsystem.get('score') or 0)}%</div><strong>{clean_html(subsystem.get('label') or '')}</strong><small>{clean_html(str(subsystem.get('status') or '').replace('_',' ').title())}</small></article>
+      <article class="account-command-card">{_account_state_pill(subsystem.get('state'))}<div class="account-command-metric">{int(subsystem.get('score') or 0)}%</div><strong>{html_escape(clean_html(subsystem.get('label') or ''))}</strong><small>{html_escape(clean_html(str(subsystem.get('status') or '').replace('_',' ').title()))}</small></article>
       <article class="account-command-card"><strong>Recommended next actions</strong><ul class="account-command-list">{recs}</ul></article>
       <article class="account-command-card"><strong>Account actions</strong><small>Actions resolve to secure PulseSoc account workflows. Sensitive changes require permission checks.</small><div class="account-command-actions">{actions}</div></article>
     </section>
@@ -8629,10 +8652,10 @@ def _ps_progress(checklist):
 def _ps_checklist_html(checklist, title="Readiness Checklist"):
     items = (checklist or {}).get("items") or []
     rows = "".join(
-        f"<li><a href='{clean_html(item.get('route') or '/dashboard')}'><strong>{'OK' if item.get('complete') else 'TODO'}</strong> {clean_html(item.get('label') or '')}</a></li>"
+        f"<li><a href='{html_escape(clean_html(item.get('route') or '/dashboard'))}'><strong>{'OK' if item.get('complete') else 'TODO'}</strong> {html_escape(clean_html(item.get('label') or ''))}</a></li>"
         for item in items
     )
-    return f"<article class='account-command-card'><strong>{clean_html(title)}</strong>{_ps_progress(checklist)}<ul class='account-command-list'>{rows}</ul></article>"
+    return f"<article class='account-command-card'><strong>{html_escape(clean_html(title))}</strong>{_ps_progress(checklist)}<ul class='account-command-list'>{rows}</ul></article>"
 
 
 def _ps_recommendations_html(recommendations):
@@ -8641,13 +8664,13 @@ def _ps_recommendations_html(recommendations):
         limited = "Limited data" if rec.get("limited_data") else "Source-backed"
         cards.append(
             "<article class='account-command-card'>"
-            f"<span class='account-command-pill' data-state='ACTION'>{clean_html(limited)}</span>"
-            f"<strong>{clean_html(rec.get('title') or '')}</strong>"
-            f"<p>{clean_html(rec.get('what_to_do') or '')}</p>"
-            f"<small><strong>Why:</strong> {clean_html(rec.get('why_it_matters') or '')}</small><br>"
-            f"<small><strong>Expected benefit:</strong> {clean_html(rec.get('expected_benefit') or '')}</small><br>"
-            f"<small><strong>Confidence:</strong> {clean_html(rec.get('confidence') or 'medium')} · <strong>Source:</strong> {clean_html(rec.get('source_data_used') or 'available state')}</small>"
-            f"<div class='account-command-actions'><a class='button primary' href='{clean_html(rec.get('route') or '/dashboard')}'>Review Recommendation</a><button data-save-pref='reviewed_{clean_html(rec.get('title') or 'recommendation').lower().replace(' ','_')}'>Mark Reviewed</button></div>"
+            f"<span class='account-command-pill' data-state='ACTION'>{html_escape(clean_html(limited))}</span>"
+            f"<strong>{html_escape(clean_html(rec.get('title') or ''))}</strong>"
+            f"<p>{html_escape(clean_html(rec.get('what_to_do') or ''))}</p>"
+            f"<small><strong>Why:</strong> {html_escape(clean_html(rec.get('why_it_matters') or ''))}</small><br>"
+            f"<small><strong>Expected benefit:</strong> {html_escape(clean_html(rec.get('expected_benefit') or ''))}</small><br>"
+            f"<small><strong>Confidence:</strong> {html_escape(clean_html(rec.get('confidence') or 'medium'))} · <strong>Source:</strong> {html_escape(clean_html(rec.get('source_data_used') or 'available state'))}</small>"
+            f"<div class='account-command-actions'><a class='button primary' href='{html_escape(clean_html(rec.get('route') or '/dashboard'))}'>Review Recommendation</a><button data-save-pref='reviewed_{html_escape(clean_html(rec.get('title') or 'recommendation').lower().replace(' ','_'))}'>Mark Reviewed</button></div>"
             "</article>"
         )
     return "".join(cards) or "<article class='account-command-card'><strong>No recommendations</strong><small>No safe recommendation is available right now.</small></article>"
@@ -8655,7 +8678,7 @@ def _ps_recommendations_html(recommendations):
 
 def _ps_metric_grid(metrics):
     return "".join(
-        f"<article class='account-command-card'><strong>{clean_html(str(key).replace('_',' ').title())}</strong><div class='account-command-metric'>{clean_html(str(value))}</div></article>"
+        f"<article class='account-command-card'><strong>{html_escape(clean_html(str(key).replace('_',' ').title()))}</strong><div class='account-command-metric'>{html_escape(clean_html(str(value)))}</div></article>"
         for key, value in (metrics or {}).items()
     )
 
@@ -8678,32 +8701,32 @@ def _ps_center_script():
 def _verification_center_html(state):
     tracks = []
     for track in state.get("tracks") or []:
-        steps = "".join(f"<li>{'OK' if step.get('complete') else 'TODO'} {clean_html(step.get('label') or '')}</li>" for step in track.get("steps") or [])
-        unlocks = "".join(f"<li>{clean_html(item)}</li>" for item in track.get("unlocks") or [])
+        steps = "".join(f"<li>{'OK' if step.get('complete') else 'TODO'} {html_escape(clean_html(step.get('label') or ''))}</li>" for step in track.get("steps") or [])
+        unlocks = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in track.get("unlocks") or [])
         action = clean_html(track.get("next_action") or "Start Verification")
-        button = f"<button data-start-verification-track='{clean_html(track.get('track') or '')}'>{action}</button>"
+        button = f"<button data-start-verification-track='{html_escape(clean_html(track.get('track') or ''))}'>{action}</button>"
         if track.get("status") in {"approved", "in_review", "submitted"}:
             button = f"<a class='button primary' href='/dashboard/account/verification'>{action}</a>"
         locked_html = ""
         if track.get("locked_reason"):
-            locked_html = f"<p class='account-command-muted'>{clean_html(track.get('locked_reason') or '')}</p>"
+            locked_html = f"<p class='account-command-muted'>{html_escape(clean_html(track.get('locked_reason') or ''))}</p>"
         tracks.append(
             "<article class='account-command-card'>"
-            f"<span class='account-command-pill' data-state='{clean_html(str(track.get('status') or '').upper())}'>{clean_html(str(track.get('status') or '').replace('_',' ').title())}</span>"
+            f"<span class='account-command-pill' data-state='{html_escape(clean_html(str(track.get('status') or '').upper()))}'>{html_escape(clean_html(str(track.get('status') or '').replace('_',' ').title()))}</span>"
             f"<div class='account-command-metric'>{int(track.get('progress_percent') or 0)}%</div>"
-            f"<strong>{clean_html(track.get('label') or '')}</strong>"
-            f"<small>Badge result: {clean_html(track.get('badge_result') or '')}. Documents: {int(track.get('submitted_documents') or 0)}.</small>"
+            f"<strong>{html_escape(clean_html(track.get('label') or ''))}</strong>"
+            f"<small>Badge result: {html_escape(clean_html(track.get('badge_result') or ''))}. Documents: {int(track.get('submitted_documents') or 0)}.</small>"
             f"{locked_html}"
             f"<ul class='account-command-list'>{steps}</ul><strong>Unlocks</strong><ul class='account-command-list'>{unlocks}</ul>"
             f"<div class='account-command-actions'>{button}</div>"
             "</article>"
         )
     badges = "".join(
-        f"<span class='account-command-pill' data-state='READY' title='{clean_html(badge.get('tooltip') or '')}'>{clean_html(badge.get('label') or '')}</span>"
+        f"<span class='account-command-pill' data-state='READY' title='{html_escape(clean_html(badge.get('tooltip') or ''))}'>{html_escape(clean_html(badge.get('label') or ''))}</span>"
         for badge in state.get("badges") or []
     ) or "<span class='account-command-muted'>No approved public badges yet.</span>"
     request_options = "".join(
-        f"<option value='{int(track.get('request_id') or 0)}'>{clean_html(track.get('label') or '')} · {clean_html(track.get('status') or '')}</option>"
+        f"<option value='{int(track.get('request_id') or 0)}'>{html_escape(clean_html(track.get('label') or ''))} · {html_escape(clean_html(track.get('status') or ''))}</option>"
         for track in state.get("tracks") or []
         if int(track.get("request_id") or 0) > 0
     )
@@ -8723,10 +8746,10 @@ def _verification_center_html(state):
         """
     return f"""
     <section class="account-command-grid">
-      <article class="account-command-card"><strong>Verification Readiness</strong><div class="account-command-metric">{int(state.get('readiness') or 0)}%</div><small>{clean_html(state.get('summary') or '')}</small></article>
+      <article class="account-command-card"><strong>Verification Readiness</strong><div class="account-command-metric">{int(state.get('readiness') or 0)}%</div><small>{html_escape(clean_html(state.get('summary') or ''))}</small></article>
       <article class="account-command-card"><strong>Pending Reviews</strong><div class="account-command-metric">{int(state.get('pending_reviews') or 0)}</div><small>Backend review queue only.</small></article>
-      <article class="account-command-card"><strong>Risk Level</strong><div class="account-command-metric">{clean_html(state.get('risk_level') or 'Low')}</div><small>No frontend self-approval is allowed.</small></article>
-      <article class="account-command-card"><strong>Next Best Action</strong><p>{clean_html(state.get('next_best_action') or '')}</p></article>
+      <article class="account-command-card"><strong>Risk Level</strong><div class="account-command-metric">{html_escape(clean_html(state.get('risk_level') or 'Low'))}</div><small>No frontend self-approval is allowed.</small></article>
+      <article class="account-command-card"><strong>Next Best Action</strong><p>{html_escape(clean_html(state.get('next_best_action') or ''))}</p></article>
     </section>
     <section class="account-command-card"><strong>Verification Checklist Completion</strong><p class="account-command-muted">Each track card below shows checked and unchecked requirements from backend request, account, and document state. Completion percentages are not frontend-only.</p></section>
     <section class="account-command-card"><strong>Badge Status</strong><div class="account-command-actions">{badges}</div></section>
@@ -8739,9 +8762,9 @@ def _verification_center_html(state):
 def _ai_advisor_html(state):
     return f"""
     <section class="account-command-grid">{_ps_metric_grid(state.get('metrics') or {})}</section>
-    <section class="account-command-grid">{_ps_checklist_html(state.get('checklist'), 'Advisor Completion System')}<article class="account-command-card"><strong>Goal Advisor</strong><form id="advisorGoalForm"><input name="title" placeholder="Grow followers, improve security, sell products..." required><select name="goal_type"><option value="grow_followers">Grow Followers</option><option value="post_consistently">Post Consistently</option><option value="sell_products">Sell Products</option><option value="improve_security">Improve Security</option><option value="manage_crypto_alerts">Manage Crypto Alerts</option></select><div class="account-command-actions"><button>Create Goal</button></div></form><ul class="account-command-list">{''.join(f'<li>{clean_html(goal.get("title") or "")} · {clean_html(goal.get("status") or "")}</li>' for goal in state.get('goals') or []) or '<li>No goals yet.</li>'}</ul></article></section>
-    <section class="account-command-card"><strong>Account Health Score</strong><p>{clean_html(state.get('score_explanation') or '')}</p></section>
-    <section class="account-command-card account-command-danger"><strong>Crypto Advisor</strong><p>{clean_html(state.get('crypto_disclaimer') or '')}</p><p class="account-command-muted">Alerts and watchlists use available crypto data only. This page will not say buy, sell, hold, or invest.</p><div class="account-command-actions"><a class="button" href="/dashboard/crypto/alerts">Review Crypto Alerts</a></div></section>
+    <section class="account-command-grid">{_ps_checklist_html(state.get('checklist'), 'Advisor Completion System')}<article class="account-command-card"><strong>Goal Advisor</strong><form id="advisorGoalForm"><input name="title" placeholder="Grow followers, improve security, sell products..." required><select name="goal_type"><option value="grow_followers">Grow Followers</option><option value="post_consistently">Post Consistently</option><option value="sell_products">Sell Products</option><option value="improve_security">Improve Security</option><option value="manage_crypto_alerts">Manage Crypto Alerts</option></select><div class="account-command-actions"><button>Create Goal</button></div></form><ul class="account-command-list">{''.join(f'<li>{html_escape(clean_html(goal.get("title") or ""))} · {html_escape(clean_html(goal.get("status") or ""))}</li>' for goal in state.get('goals') or []) or '<li>No goals yet.</li>'}</ul></article></section>
+    <section class="account-command-card"><strong>Account Health Score</strong><p>{html_escape(clean_html(state.get('score_explanation') or ''))}</p></section>
+    <section class="account-command-card account-command-danger"><strong>Crypto Advisor</strong><p>{html_escape(clean_html(state.get('crypto_disclaimer') or ''))}</p><p class="account-command-muted">Alerts and watchlists use available crypto data only. This page will not say buy, sell, hold, or invest.</p><div class="account-command-actions"><a class="button" href="/dashboard/crypto/alerts">Review Crypto Alerts</a></div></section>
     <section class="account-command-grid">{_ps_recommendations_html(state.get('recommendations'))}</section>
     <section class="account-command-card"><strong>Mission Control View</strong><p class="account-command-muted">Top priorities are derived from real checklist gaps, messages, goals, security review state, marketplace setup, and alert availability. Missing systems stay labeled as limited data.</p></section>
     <script>document.getElementById('advisorGoalForm')?.addEventListener('submit',async e=>{{e.preventDefault();const fd=new FormData(e.target);const r=await fetch('/api/dashboard/ai-advisor/goals',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{title:fd.get('title'),goal_type:fd.get('goal_type')}})}});const d=await r.json();if(!r.ok||d.ok===false){{toast(d.message||'Goal save failed.');return}}toast(d.message||'Goal saved.');setTimeout(()=>location.reload(),500);}});</script>
@@ -8753,7 +8776,7 @@ def _seller_tools_html(state):
     <section class="account-command-grid">{_ps_metric_grid(state.get('metrics') or {})}</section>
     <section class="account-command-grid">{_ps_checklist_html(state.get('store_checklist'), 'Store Readiness Checklist')}{_ps_checklist_html(state.get('product_checklist'), 'Product Readiness Checklist')}</section>
     <section class="account-command-grid">
-      <article class="account-command-card"><strong>Store Manager</strong><form id="sellerStoreForm"><input name="store_name" placeholder="Store name" value="{clean_html((state.get('store') or {}).get('store_name') or '')}" required><textarea name="description" placeholder="Store description">{clean_html((state.get('store') or {}).get('description') or '')}</textarea><input name="contact_email" placeholder="Contact email" value="{clean_html((state.get('store') or {}).get('contact_email') or '')}"><textarea name="policies" placeholder="Store policies">{clean_html((state.get('store') or {}).get('policies') or '')}</textarea><textarea name="shipping_policy" placeholder="Shipping policy">{clean_html((state.get('store') or {}).get('shipping_policy') or '')}</textarea><textarea name="return_policy" placeholder="Return policy">{clean_html((state.get('store') or {}).get('return_policy') or '')}</textarea><select name="visibility"><option value="draft">Draft</option><option value="private">Private</option><option value="public">Public after approval</option></select><div class="account-command-actions"><button>Save Store Changes</button><a class="button" href="/dashboard/account/verification">Submit Verification</a></div></form></article>
+      <article class="account-command-card"><strong>Store Manager</strong><form id="sellerStoreForm"><input name="store_name" placeholder="Store name" value="{html_escape(clean_html((state.get('store') or {}).get('store_name') or ''))}" required><textarea name="description" placeholder="Store description">{html_escape(clean_html((state.get('store') or {}).get('description') or ''))}</textarea><input name="contact_email" placeholder="Contact email" value="{html_escape(clean_html((state.get('store') or {}).get('contact_email') or ''))}"><textarea name="policies" placeholder="Store policies">{html_escape(clean_html((state.get('store') or {}).get('policies') or ''))}</textarea><textarea name="shipping_policy" placeholder="Shipping policy">{html_escape(clean_html((state.get('store') or {}).get('shipping_policy') or ''))}</textarea><textarea name="return_policy" placeholder="Return policy">{html_escape(clean_html((state.get('store') or {}).get('return_policy') or ''))}</textarea><select name="visibility"><option value="draft">Draft</option><option value="private">Private</option><option value="public">Public after approval</option></select><div class="account-command-actions"><button>Save Store Changes</button><a class="button" href="/dashboard/account/verification">Submit Verification</a></div></form></article>
       <article class="account-command-card"><strong>Product Manager</strong><form id="sellerProductForm"><input name="name" placeholder="Product name" required><textarea name="description" placeholder="Description"></textarea><select name="product_type"><option value="physical">Physical Product</option><option value="digital">Digital Product</option><option value="service">Service</option><option value="music">Music</option><option value="course">Course</option><option value="membership">Membership</option></select><input name="category" placeholder="Category"><input name="price" type="number" min="0" step="0.01" placeholder="Price"><input name="inventory" type="number" min="0" placeholder="Inventory"><select name="visibility"><option value="draft">Draft</option><option value="private">Private</option><option value="public">Public after readiness</option></select><label><input type="checkbox" name="return_eligible"> Return eligible</label><div class="account-command-actions"><button>Save Product Draft</button><button type="button" disabled title="Publish is blocked until required readiness checks pass.">Publish Listing</button></div></form></article>
     </section>
     <section class="account-command-grid">{_ps_recommendations_html(state.get('recommendations'))}</section>
@@ -8780,7 +8803,7 @@ def _subscriptions_html(state):
     return f"""
     <section class="account-command-card" id="subscriptionActionStatus" data-subscription-status>
       <strong>Subscription Action Status</strong>
-      <p class="account-command-muted">{clean_html(status.get('summary') or 'Subscription state is loaded from the backend. Actions do not claim success unless the backend confirms them.')}</p>
+      <p class="account-command-muted">{html_escape(clean_html(status.get('summary') or 'Subscription state is loaded from the backend. Actions do not claim success unless the backend confirms them.'))}</p>
     </section>
     <section class="account-command-grid">{_ps_metric_grid(state.get('metrics') or {})}</section>
     <section class="account-command-grid">{_ps_checklist_html(state.get('checklist'), 'User Subscription Checklist')}</section>
@@ -8801,7 +8824,7 @@ def _subscriptions_html(state):
       </div>
     </section>
     <section class="account-command-card"><strong>Creator Memberships, Seller Subscriptions, Invoices, Payment History</strong><p class="account-command-muted">No memberships, subscribers, invoices, payment methods, receipts, or failed-payment reasons are fabricated. Missing provider data is shown as unavailable.</p></section>
-    <section class="account-command-card"><strong>Subscription Health Score</strong><p>{clean_html(state.get('score_explanation') or '')}</p></section>
+    <section class="account-command-card"><strong>Subscription Health Score</strong><p>{html_escape(clean_html(state.get('score_explanation') or ''))}</p></section>
     <section class="account-command-grid">{_ps_recommendations_html(state.get('recommendations'))}</section>
     """
 
@@ -8901,7 +8924,7 @@ def _subscriptions_script():
 
 def _premium_center_html(state):
     benefits = "".join(
-        f"<article class='account-command-card'><span class='account-command-pill' data-state='{clean_html(item.get('status') or '')}'>{clean_html(item.get('status') or '')}</span><strong>{clean_html(item.get('label') or '')}</strong><small>{'Unlocked by current entitlement.' if item.get('status') == 'Active' else 'Requires '+clean_html(item.get('unlock_plan') or 'Premium')+'.'}</small><div class='account-command-actions'><a class='button primary' data-premium-explore='{clean_html(item.get('key') or '')}' href='{clean_html(item.get('route') or '/dashboard/economy/premium')}'>Open</a></div></article>"
+        f"<article class='account-command-card'><span class='account-command-pill' data-state='{html_escape(clean_html(item.get('status') or ''))}'>{html_escape(clean_html(item.get('status') or ''))}</span><strong>{html_escape(clean_html(item.get('label') or ''))}</strong><small>{'Unlocked by current entitlement.' if item.get('status') == 'Active' else 'Requires '+html_escape(clean_html(item.get('unlock_plan') or 'Premium'))+'.'}</small><div class='account-command-actions'><a class='button primary' data-premium-explore='{html_escape(clean_html(item.get('key') or ''))}' href='{html_escape(clean_html(item.get('route') or '/dashboard/economy/premium'))}'>Open</a></div></article>"
         for item in state.get("benefits") or []
     )
     return f"""
@@ -8917,7 +8940,7 @@ def _premium_center_html(state):
 def _content_planner_html(state):
     stages = ("Ideas", "Research", "Drafting", "Editing", "AI Review", "Media Ready", "Scheduled", "Published", "Performance Review", "Archived")
     stage_cards = "".join(f"<article class='creator-command-card'><strong>{stage}</strong><p class='creator-command-muted'>{sum(1 for item in state.get('items') or [] if str(item.get('stage') or '').lower().replace('_',' ') == stage.lower())} items</p></article>" for stage in stages)
-    item_rows = "".join(f"<tr><td>{clean_html(item.get('title') or item.get('caption') or 'Untitled')}</td><td>{clean_html(item.get('content_type') or '')}</td><td>{clean_html(item.get('stage') or '')}</td><td>{clean_html(item.get('status') or '')}</td><td>{clean_html(item.get('scheduled_at') or 'Not scheduled')}</td></tr>" for item in state.get("items") or [])
+    item_rows = "".join(f"<tr><td>{html_escape(clean_html(item.get('title') or item.get('caption') or 'Untitled'))}</td><td>{html_escape(clean_html(item.get('content_type') or ''))}</td><td>{html_escape(clean_html(item.get('stage') or ''))}</td><td>{html_escape(clean_html(item.get('status') or ''))}</td><td>{html_escape(clean_html(item.get('scheduled_at') or 'Not scheduled'))}</td></tr>" for item in state.get("items") or [])
     return f"""
     <section class="creator-command-grid">{_ps_metric_grid(state.get('metrics') or {})}</section>
     <section class="creator-command-grid">{_ps_checklist_html(state.get('checklist'), 'Content Completion System')}</section>
@@ -8932,7 +8955,7 @@ def _content_planner_html(state):
 
 
 def _post_scheduler_html(state):
-    rows = "".join(f"<tr><td>{clean_html(item.get('title') or item.get('caption') or 'Untitled')}</td><td>{clean_html(item.get('content_type') or '')}</td><td>{clean_html(item.get('status') or '')}</td><td>{clean_html(item.get('scheduled_at') or 'Not scheduled')}</td><td>{clean_html(item.get('audience') or 'Audience missing')}</td></tr>" for item in state.get("items") or [])
+    rows = "".join(f"<tr><td>{html_escape(clean_html(item.get('title') or item.get('caption') or 'Untitled'))}</td><td>{html_escape(clean_html(item.get('content_type') or ''))}</td><td>{html_escape(clean_html(item.get('status') or ''))}</td><td>{html_escape(clean_html(item.get('scheduled_at') or 'Not scheduled'))}</td><td>{html_escape(clean_html(item.get('audience') or 'Audience missing'))}</td></tr>" for item in state.get("items") or [])
     return f"""
     <section class="creator-command-grid">{_ps_metric_grid(state.get('metrics') or {})}</section>
     <section class="creator-command-grid">{_ps_checklist_html(state.get('checklist'), 'Post Scheduler Checklist')}</section>
@@ -8945,7 +8968,7 @@ def _post_scheduler_html(state):
 
 
 def _draft_studio_html(state):
-    rows = "".join(f"<tr><td>{clean_html(item.get('title') or 'Untitled')}</td><td>{clean_html((item.get('caption') or '')[:120])}</td><td>{clean_html(item.get('content_type') or '')}</td><td>{clean_html(item.get('updated_at') or item.get('created_at') or '')}</td></tr>" for item in state.get("items") or [])
+    rows = "".join(f"<tr><td>{html_escape(clean_html(item.get('title') or 'Untitled'))}</td><td>{html_escape(clean_html((item.get('caption') or '')[:120]))}</td><td>{html_escape(clean_html(item.get('content_type') or ''))}</td><td>{html_escape(clean_html(item.get('updated_at') or item.get('created_at') or ''))}</td></tr>" for item in state.get("items") or [])
     return f"""
     <section class="creator-command-grid">{_ps_metric_grid(state.get('metrics') or {})}</section>
     <section class="creator-command-grid">{_ps_checklist_html(state.get('checklist'), 'Draft Studio Checklist')}</section>
@@ -8975,7 +8998,7 @@ def dashboard_account_command_page():
         return redirect(url_for("login_page", next=request.path))
     intelligence = state.get("intelligence") or {}
     metric_cards = "".join(
-        f"<article class='account-command-card'><strong>{clean_html(label)}</strong><div class='account-command-metric'>{clean_html(str(value))}</div></article>"
+        f"<article class='account-command-card'><strong>{html_escape(clean_html(label))}</strong><div class='account-command-metric'>{html_escape(clean_html(str(value)))}</div></article>"
         for label, value in (
             ("Trust Score", f"{int(intelligence.get('trust_score') or 0)}%"),
             ("Account Score", f"{int(intelligence.get('account_score') or 0)}%"),
@@ -8987,10 +9010,10 @@ def dashboard_account_command_page():
             ("Active Alerts", intelligence.get("active_alerts") or 0),
         )
     )
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in intelligence.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in intelligence.get("recommended_next_actions") or [])
     subsystem_cards = "".join(_account_subsystem_card_html(item) for item in (state.get("subsystems") or {}).values())
     events = "".join(
-        f"<tr><td>{clean_html(item.get('action') or '')}</td><td>{clean_html(item.get('target_type') or '')}</td><td>{clean_html(item.get('created_at') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('action') or ''))}</td><td>{html_escape(clean_html(item.get('target_type') or ''))}</td><td>{html_escape(clean_html(item.get('created_at') or ''))}</td></tr>"
         for item in state.get("recent_events") or []
     )
     body = f"""
@@ -9065,8 +9088,8 @@ def dashboard_network_shell(title, subtitle, body, script=""):
     <section class="network-command-shell">
       <section class="network-command-hero">
         <span class="network-command-status">PulseSoc Network</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="network-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="network-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="network-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/network">Network</a>
@@ -9116,8 +9139,8 @@ def dashboard_creator_shell(title, subtitle, body, script=""):
     <section class="creator-command-shell">
       <section class="creator-command-hero">
         <span class="creator-command-status">PulseSoc Creator</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="creator-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="creator-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="creator-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/creator">Creator</a>
@@ -9165,8 +9188,8 @@ def dashboard_intelligence_shell(title, subtitle, body, script=""):
     <section class="intel-command-shell">
       <section class="intel-command-hero">
         <span class="intel-command-status">PulseSoc Intelligence</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="intel-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="intel-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="intel-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/intelligence">Intelligence</a>
@@ -9203,22 +9226,22 @@ def _network_card_html(card):
         "<article class='network-command-card'>"
         f"<span class='network-command-pill{state_class}'>{state}</span>"
         f"<div class='network-command-metric'>{int(card.get('count') or 0)}</div>"
-        f"<strong>{clean_html(card.get('label') or '')}</strong>"
-        f"<small>{clean_html(card.get('detail') or '')}</small>"
-        f"<div class='network-command-actions'><a class='button primary' href='{clean_html(card.get('route') or '/dashboard/network')}'>{clean_html(card.get('action') or 'Review Network')}</a></div>"
+        f"<strong>{html_escape(clean_html(card.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(card.get('detail') or ''))}</small>"
+        f"<div class='network-command-actions'><a class='button primary' href='{html_escape(clean_html(card.get('route') or '/dashboard/network'))}'>{html_escape(clean_html(card.get('action') or 'Review Network'))}</a></div>"
         "</article>"
     )
 
 
 def _network_metric_cards(items):
     return "".join(
-        f"<article class='network-command-card'><strong>{clean_html(label)}</strong><p class='network-command-metric'>{clean_html(value)}</p><small>{clean_html(detail)}</small></article>"
+        f"<article class='network-command-card'><strong>{html_escape(clean_html(label))}</strong><p class='network-command-metric'>{html_escape(clean_html(value))}</p><small>{html_escape(clean_html(detail))}</small></article>"
         for label, value, detail in items
     )
 
 
 def _network_subsystem_detail_html(subsystem):
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
         ("What this watches", subsystem.get("intelligence") or "Reads safe network signals and explains what matters."),
         ("What you can manage", subsystem.get("description") or "Routes you to the correct PulseSoc network tools."),
@@ -9227,12 +9250,12 @@ def _network_subsystem_detail_html(subsystem):
         ("Recovery", subsystem.get("recovery") or "Keeps user-visible failures recoverable where policy permits."),
     ]
     layer_html = "".join(
-        f"<article class='network-command-card'><strong>{clean_html(title)}</strong><small>{clean_html(text)}</small></article>"
+        f"<article class='network-command-card'><strong>{html_escape(clean_html(title))}</strong><small>{html_escape(clean_html(text))}</small></article>"
         for title, text in layers
     )
     return f"""
     <section class="network-command-grid">
-      <article class="network-command-card"><strong>State</strong><p class="network-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
+      <article class="network-command-card"><strong>State</strong><p class="network-command-metric">{html_escape(clean_html(subsystem.get('state') or 'READY'))}</p><small>{html_escape(clean_html(subsystem.get('detail') or ''))}</small></article>
       <article class="network-command-card"><strong>Signals</strong><p class="network-command-metric">{int(subsystem.get('count') or 0)}</p><small>Owner-scoped aggregate signal count.</small></article>
       <article class="network-command-card"><strong>Reliability</strong><p class="network-command-metric">READY</p><small>This surface is connected to live PulseSoc network tools.</small></article>
     </section>
@@ -9241,7 +9264,7 @@ def _network_subsystem_detail_html(subsystem):
       <strong>Recommended next actions</strong>
       <ul class="network-command-muted">{recs or '<li>No urgent action. Keep networking normally.</li>'}</ul>
       <div class="network-command-actions">
-        <a class="button primary" href="{clean_html(subsystem.get('route') or '/dashboard/network')}">{clean_html(subsystem.get('cta_label') or subsystem.get('action') or 'Review Network')}</a>
+        <a class="button primary" href="{html_escape(clean_html(subsystem.get('route') or '/dashboard/network'))}">{html_escape(clean_html(subsystem.get('cta_label') or subsystem.get('action') or 'Review Network'))}</a>
         <a class="button" href="/dashboard/network">Network Intelligence</a>
       </div>
     </section>
@@ -9274,9 +9297,9 @@ def _creator_card_html(card):
         "<article class='creator-command-card'>"
         f"<span class='creator-command-pill{state_class}'>{state}</span>"
         f"<div class='creator-command-metric'>{int(card.get('count') or 0)}</div>"
-        f"<strong>{clean_html(card.get('label') or '')}</strong>"
-        f"<small>{clean_html(card.get('detail') or '')}</small>"
-        f"<div class='creator-command-actions'><a class='button primary' href='{clean_html(card.get('route') or '/dashboard/creator')}'>{clean_html(card.get('action') or 'Review Creator')}</a></div>"
+        f"<strong>{html_escape(clean_html(card.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(card.get('detail') or ''))}</small>"
+        f"<div class='creator-command-actions'><a class='button primary' href='{html_escape(clean_html(card.get('route') or '/dashboard/creator'))}'>{html_escape(clean_html(card.get('action') or 'Review Creator'))}</a></div>"
         "</article>"
     )
 
@@ -9286,11 +9309,11 @@ def _creator_recent_table(items):
         return "<p class='creator-command-muted'>No owner-scoped content records found yet.</p>"
     rows = "".join(
         "<tr>"
-        f"<td>{clean_html(item.get('title') or '')}<br><small>#{int(item.get('id') or 0)}</small></td>"
-        f"<td>{clean_html(item.get('status') or '')}</td>"
-        f"<td>{clean_html(item.get('moderation_status') or '')}</td>"
-        f"<td>{clean_html(item.get('visibility') or '')}</td>"
-        f"<td>{clean_html(item.get('created_at') or '')}</td>"
+        f"<td>{html_escape(clean_html(item.get('title') or ''))}<br><small>#{int(item.get('id') or 0)}</small></td>"
+        f"<td>{html_escape(clean_html(item.get('status') or ''))}</td>"
+        f"<td>{html_escape(clean_html(item.get('moderation_status') or ''))}</td>"
+        f"<td>{html_escape(clean_html(item.get('visibility') or ''))}</td>"
+        f"<td>{html_escape(clean_html(item.get('created_at') or ''))}</td>"
         "</tr>"
         for item in items
     )
@@ -9298,7 +9321,7 @@ def _creator_recent_table(items):
 
 
 def _creator_subsystem_detail_html(subsystem):
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
         ("What this watches", subsystem.get("intelligence") or "Reads owner-scoped creator signals and explains what matters."),
         ("What you can manage", subsystem.get("command") or subsystem.get("description") or "Routes creators to the correct managed tools."),
@@ -9309,12 +9332,12 @@ def _creator_subsystem_detail_html(subsystem):
         ("Guidance", subsystem.get("ai_guidance") or "Provides safe guidance only when enabled."),
     ]
     layer_html = "".join(
-        f"<article class='creator-command-card'><strong>{clean_html(title)}</strong><small>{clean_html(text)}</small></article>"
+        f"<article class='creator-command-card'><strong>{html_escape(clean_html(title))}</strong><small>{html_escape(clean_html(text))}</small></article>"
         for title, text in layers
     )
     return f"""
     <section class="creator-command-grid">
-      <article class="creator-command-card"><strong>State</strong><p class="creator-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
+      <article class="creator-command-card"><strong>State</strong><p class="creator-command-metric">{html_escape(clean_html(subsystem.get('state') or 'READY'))}</p><small>{html_escape(clean_html(subsystem.get('detail') or ''))}</small></article>
       <article class="creator-command-card"><strong>Signals</strong><p class="creator-command-metric">{int(subsystem.get('count') or 0)}</p><small>Owner-scoped aggregate creator signals.</small></article>
       <article class="creator-command-card"><strong>Reliability</strong><p class="creator-command-metric">READY</p><small>This surface is connected to PulseSoc creator tools.</small></article>
     </section>
@@ -9323,7 +9346,7 @@ def _creator_subsystem_detail_html(subsystem):
       <strong>Recommended next actions</strong>
       <ul class="creator-command-muted">{recs or '<li>No urgent action. Keep creating consistently.</li>'}</ul>
       <div class="creator-command-actions">
-        <a class="button primary" href="{clean_html(subsystem.get('route') or '/dashboard/creator')}">{clean_html(subsystem.get('action') or 'Review Creator')}</a>
+        <a class="button primary" href="{html_escape(clean_html(subsystem.get('route') or '/dashboard/creator'))}">{html_escape(clean_html(subsystem.get('action') or 'Review Creator'))}</a>
         <a class="button" href="/dashboard/creator">Creator Intelligence Hub</a>
       </div>
     </section>
@@ -9357,23 +9380,23 @@ def _intelligence_card_html(card):
         "<article class='intel-command-card'>"
         f"<span class='intel-command-pill{state_class}'>{state}</span>"
         f"<div class='intel-command-metric'>{int(card.get('count') or 0)}</div>"
-        f"<strong>{clean_html(card.get('label') or '')}</strong>"
-        f"<small>{clean_html(card.get('detail') or '')}</small>"
+        f"<strong>{html_escape(clean_html(card.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(card.get('detail') or ''))}</small>"
         f"<small>Confidence {confidence}%</small>"
-        f"<div class='intel-command-actions'><a class='button primary' href='{clean_html(card.get('route') or '/dashboard/intelligence')}'>{clean_html(card.get('action') or 'Review Intelligence')}</a></div>"
+        f"<div class='intel-command-actions'><a class='button primary' href='{html_escape(clean_html(card.get('route') or '/dashboard/intelligence'))}'>{html_escape(clean_html(card.get('action') or 'Review Intelligence'))}</a></div>"
         "</article>"
     )
 
 
 def _intelligence_metric_cards(items):
     return "".join(
-        f"<article class='intel-command-card'><strong>{clean_html(label)}</strong><p class='intel-command-metric'>{clean_html(value)}</p><small>{clean_html(detail)}</small></article>"
+        f"<article class='intel-command-card'><strong>{html_escape(clean_html(label))}</strong><p class='intel-command-metric'>{html_escape(clean_html(value))}</p><small>{html_escape(clean_html(detail))}</small></article>"
         for label, value, detail in items
     )
 
 
 def _intelligence_subsystem_detail_html(subsystem):
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
         ("What this checks", subsystem.get("intelligence") or "Reads privacy-safe signals and explains what matters."),
         ("Prediction", subsystem.get("prediction") or "Uses confidence-scored indicators without exposing private data."),
@@ -9382,12 +9405,12 @@ def _intelligence_subsystem_detail_html(subsystem):
         ("Why it matters", subsystem.get("explainability") or "Shows clear reasons, confidence, and next actions where safe."),
     ]
     layer_html = "".join(
-        f"<article class='intel-command-card'><strong>{clean_html(title)}</strong><small>{clean_html(text)}</small></article>"
+        f"<article class='intel-command-card'><strong>{html_escape(clean_html(title))}</strong><small>{html_escape(clean_html(text))}</small></article>"
         for title, text in layers
     )
     return f"""
     <section class="intel-command-grid">
-      <article class="intel-command-card"><strong>State</strong><p class="intel-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
+      <article class="intel-command-card"><strong>State</strong><p class="intel-command-metric">{html_escape(clean_html(subsystem.get('state') or 'READY'))}</p><small>{html_escape(clean_html(subsystem.get('detail') or ''))}</small></article>
       <article class="intel-command-card"><strong>Signals</strong><p class="intel-command-metric">{int(subsystem.get('count') or 0)}</p><small>Owner-scoped aggregate intelligence signals.</small></article>
       <article class="intel-command-card"><strong>Confidence</strong><p class="intel-command-metric">{int(subsystem.get('confidence') or 0)}%</p><small>Confidence score from available safe data.</small></article>
       <article class="intel-command-card"><strong>Reliability</strong><p class="intel-command-metric">READY</p><small>This surface is connected to PulseSoc safety and guidance tools.</small></article>
@@ -9397,7 +9420,7 @@ def _intelligence_subsystem_detail_html(subsystem):
       <strong>Recommended next actions</strong>
       <ul class="intel-command-muted">{recs or '<li>No urgent action. Keep using PulseSoc normally.</li>'}</ul>
       <div class="intel-command-actions">
-        <a class="button primary" href="{clean_html(subsystem.get('route') or '/dashboard/intelligence')}">{clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review Intelligence')}</a>
+        <a class="button primary" href="{html_escape(clean_html(subsystem.get('route') or '/dashboard/intelligence'))}">{html_escape(clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review Intelligence'))}</a>
         <a class="button" href="/dashboard/intelligence">Intelligence Hub</a>
       </div>
     </section>
@@ -9412,7 +9435,7 @@ def dashboard_intelligence_page():
         return redirect(url_for("login_page", next=request.path))
     hub = state.get("hub") or {}
     metrics = state.get("metrics") or {}
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in hub.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in hub.get("recommended_next_actions") or [])
     cards = "".join(_intelligence_card_html(card) for card in state.get("cards") or [])
     body = f"""
     <section class="intel-command-grid">
@@ -9423,7 +9446,7 @@ def dashboard_intelligence_page():
       <article class="intel-command-card"><strong>Prediction Confidence</strong><p class="intel-command-metric">{int(hub.get('prediction_confidence') or 0)}%</p><small>Confidence in available prediction and recommendation signals.</small></article>
       <article class="intel-command-card"><strong>New Opportunities</strong><p class="intel-command-metric">{int(hub.get('new_opportunities') or 0)}</p><small>Recommended creator, community, safety, and discovery actions.</small></article>
     </section>
-    <section class="intel-command-card"><strong>Personalized Daily Brief</strong><p class="intel-command-muted">{clean_html(hub.get('personalized_daily_brief') or '')}</p><ul class="intel-command-muted">{recs}</ul></section>
+    <section class="intel-command-card"><strong>Personalized Daily Brief</strong><p class="intel-command-muted">{html_escape(clean_html(hub.get('personalized_daily_brief') or ''))}</p><ul class="intel-command-muted">{recs}</ul></section>
     <section class="intel-command-grid">{cards}</section>
     <section class="intel-command-card">
       <strong>Privacy protections</strong>
@@ -9495,8 +9518,8 @@ def dashboard_economy_shell(title, subtitle, body, script=""):
     <section class="economy-command-shell">
       <section class="economy-command-hero">
         <span class="economy-command-status">PulseSoc Economy</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="economy-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="economy-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="economy-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/economy">Economy</a>
@@ -9564,8 +9587,8 @@ def dashboard_crypto_shell(title, subtitle, body, script=""):
     <section class="crypto-command-shell">
       <section class="crypto-command-hero">
         <span class="crypto-command-status">Crypto Command Center</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="crypto-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="crypto-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="crypto-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/crypto">Crypto</a>
@@ -9748,12 +9771,12 @@ def _crypto_detail_body(module_key, state, user):
             favorites = dashboard_crypto_command_center.list_favorite_assets(conn, user["user_id"])
             body = "<section class='crypto-command-card'><strong>Favorite Coins</strong>"
             body += "<p class='crypto-command-muted'>Favorite asset controls are prepared and owner-scoped. Add assets through watchlists while favorites expand.</p>"
-            body += "".join(f"<p>{clean_html(item.get('asset_symbol') or '')}</p>" for item in favorites) or "<p class='crypto-command-muted'>No favorites yet.</p>"
+            body += "".join(f"<p>{html_escape(clean_html(item.get('asset_symbol') or ''))}</p>" for item in favorites) or "<p class='crypto-command-muted'>No favorites yet.</p>"
             body += "</section>"
             return body, ""
         if module_key == "recently_viewed":
             recent = dashboard_crypto_command_center.list_recent_assets(conn, user["user_id"])
-            rows = "".join(f"<tr><td>{clean_html(item.get('asset_symbol') or '')}</td><td>{clean_html(item.get('last_viewed_at') or '')}</td><td><a class='button' href='/dashboard/crypto/alerts/create?asset={clean_html(item.get('asset_symbol') or '')}'>Create Alert</a></td></tr>" for item in recent)
+            rows = "".join(f"<tr><td>{html_escape(clean_html(item.get('asset_symbol') or ''))}</td><td>{html_escape(clean_html(item.get('last_viewed_at') or ''))}</td><td><a class='button' href='/dashboard/crypto/alerts/create?asset={html_escape(clean_html(item.get('asset_symbol') or ''))}'>Create Alert</a></td></tr>" for item in recent)
             if not rows:
                 rows = "<tr><td colspan='3'>No recently viewed assets yet.</td></tr>"
             return "<section class='crypto-command-card'><strong>Recently Viewed Assets</strong><table class='crypto-command-table'><tbody>" + rows + "</tbody></table></section>", ""
@@ -9776,7 +9799,7 @@ def _crypto_detail_body(module_key, state, user):
         elif module_key == "top_losers":
             category = "losers"
         board = dashboard_crypto_command_center.market_board(category=category, limit=30)
-        return f"<section class='crypto-command-card'><strong>{clean_html(module.get('label') or 'Market')}</strong><p class='crypto-command-muted'>{clean_html(board.get('warning') or module.get('detail') or '')}</p>{_crypto_market_table(board.get('markets') or [], 30)}</section>", ""
+        return f"<section class='crypto-command-card'><strong>{html_escape(clean_html(module.get('label') or 'Market'))}</strong><p class='crypto-command-muted'>{html_escape(clean_html(board.get('warning') or module.get('detail') or ''))}</p>{_crypto_market_table(board.get('markets') or [], 30)}</section>", ""
     if module_key == "whale_alerts":
         return "<section class='crypto-command-card'><strong>Whale Alerts</strong><p class='crypto-command-muted'>Whale intelligence is prepared but not connected to a live provider yet. This module stays PARTIAL until a provider is wired.</p></section>", ""
     if module_key == "crypto_news":
@@ -9785,7 +9808,7 @@ def _crypto_detail_body(module_key, state, user):
         return "<section class='crypto-command-card'><strong>Economic Calendar</strong><p class='crypto-command-muted'>Macro and crypto event reminders are prepared. CPI, FOMC, ETF, unlock, and major event sources still need provider wiring.</p></section>", ""
     if module_key == "ai_market_analysis":
         return "<section class='crypto-command-card'><strong>AI Market Analysis</strong><p class='crypto-command-muted'>AI market analysis is in safe preview. It will not give guaranteed financial advice or buy/sell certainty.</p></section>", ""
-    return f"<section class='crypto-command-card'><strong>{clean_html(module.get('label') or 'Crypto')}</strong><p class='crypto-command-muted'>{clean_html(module.get('detail') or module.get('description') or '')}</p></section>", ""
+    return f"<section class='crypto-command-card'><strong>{html_escape(clean_html(module.get('label') or 'Crypto'))}</strong><p class='crypto-command-muted'>{html_escape(clean_html(module.get('detail') or module.get('description') or ''))}</p></section>", ""
 
 
 def _crypto_create_alert_body():
@@ -9819,22 +9842,22 @@ def _crypto_ai_body(ai_status=None):
     data_enabled = "1" if enabled else "0"
     prompts = ("Why is Bitcoin moving today?", "Compare BTC and ETH.", "Is this token suspicious?", "Summarize the crypto market.")
     buttons = "".join(
-        f"<button type='button' {'data-prompt=' + json.dumps(prompt) if enabled else 'data-disabled-prompt=' + json.dumps(prompt)}{disabled_attr}>{clean_html(prompt)}</button>"
+        f"<button type='button' {'data-prompt=' + json.dumps(prompt) if enabled else 'data-disabled-prompt=' + json.dumps(prompt)}{disabled_attr}>{html_escape(clean_html(prompt))}</button>"
         for prompt in prompts
     )
     return f"""
     <section class="crypto-command-card">
       <strong>Ask Crypto AI</strong>
-      <span class="crypto-command-pill{_crypto_state_class(ai_status.get('state'))}">{clean_html(ai_status.get('status_label') or 'Unavailable')}</span>
-      <p class="crypto-command-muted">{clean_html(ai_status.get('message') or '')}</p>
+      <span class="crypto-command-pill{_crypto_state_class(ai_status.get('state'))}">{html_escape(clean_html(ai_status.get('status_label') or 'Unavailable'))}</span>
+      <p class="crypto-command-muted">{html_escape(clean_html(ai_status.get('message') or ''))}</p>
       <p class="crypto-command-muted">Educational only. No guaranteed financial advice, return promises, or buy/sell certainty.</p>
-      <form class="crypto-command-form" id="cryptoAiForm" data-crypto-ai-form data-crypto-ai-enabled="{data_enabled}" data-crypto-ai-state="{clean_html(ai_status.get('state') or '')}">
+      <form class="crypto-command-form" id="cryptoAiForm" data-crypto-ai-form data-crypto-ai-enabled="{data_enabled}" data-crypto-ai-state="{html_escape(clean_html(ai_status.get('state') or ''))}">
         <label>Question<textarea name="question" placeholder="What risks should I know before buying this token?" required{disabled_attr}></textarea></label>
         <label>Optional asset<input name="asset" placeholder="BTC"{disabled_attr}></label>
         <button type="submit"{disabled_attr}>Ask Crypto AI</button>
       </form>
       <div class="crypto-command-actions">{buttons}</div>
-      <div id="cryptoAiResult" class="crypto-command-muted" aria-live="polite">{'' if enabled else clean_html(ai_status.get('message') or 'AI not enabled yet')}</div>
+      <div id="cryptoAiResult" class="crypto-command-muted" aria-live="polite">{'' if enabled else html_escape(clean_html(ai_status.get('message') or 'AI not enabled yet'))}</div>
     </section>
     """
 
@@ -10004,7 +10027,7 @@ def dashboard_crypto_page():
     </section>
     <section class="crypto-command-card">
       <strong>AI Market Summary</strong>
-      <p class="crypto-command-muted">{clean_html(hub.get('ai_market_summary') or '')}</p>
+      <p class="crypto-command-muted">{html_escape(clean_html(hub.get('ai_market_summary') or ''))}</p>
       <div class="crypto-command-actions">
         <a class="button primary" href="/dashboard/crypto/alerts/create">Create Alert</a>
         <a class="button" href="/dashboard/crypto/watchlists">Watchlists</a>
@@ -10013,7 +10036,7 @@ def dashboard_crypto_page():
         <a class="button" href="/dashboard/crypto/wallet">Wallet</a>
       </div>
     </section>
-    <section class="crypto-command-card"><strong>Market Pulse</strong><p class="crypto-command-muted">{clean_html(market.get('warning') or 'Live market data is available.')}</p>{_crypto_market_table(market.get('markets') or [], 12)}</section>
+    <section class="crypto-command-card"><strong>Market Pulse</strong><p class="crypto-command-muted">{html_escape(clean_html(market.get('warning') or 'Live market data is available.'))}</p>{_crypto_market_table(market.get('markets') or [], 12)}</section>
     <section class="crypto-command-grid">{cards}</section>
     <section class="crypto-command-card"><strong>Privacy Boundary</strong><p class="crypto-command-muted">Crypto alerts, watchlists, recent assets, portfolio, and wallet views are scoped to your account. PulseSoc never displays private keys, seed phrases, raw wallet secrets, or provider credentials.</p></section>
     """
@@ -10067,23 +10090,23 @@ def _economy_card_html(card):
         "<article class='economy-command-card'>"
         f"<span class='economy-command-pill{state_class}'>{state}</span>"
         f"<div class='economy-command-metric'>{count_display}</div>"
-        f"<strong>{clean_html(card.get('label') or '')}</strong>"
-        f"<small>{clean_html(card.get('detail') or '')}</small>"
+        f"<strong>{html_escape(clean_html(card.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(card.get('detail') or ''))}</small>"
         f"<small>Confidence {confidence}%</small>"
-        f"<div class='economy-command-actions'><a class='button primary' href='{clean_html(card.get('route') or '/dashboard/economy')}'>{clean_html(card.get('action') or 'Manage Economy')}</a></div>"
+        f"<div class='economy-command-actions'><a class='button primary' href='{html_escape(clean_html(card.get('route') or '/dashboard/economy'))}'>{html_escape(clean_html(card.get('action') or 'Manage Economy'))}</a></div>"
         "</article>"
     )
 
 
 def _economy_metric_cards(items):
     return "".join(
-        f"<article class='economy-command-card'><strong>{clean_html(label)}</strong><p class='economy-command-metric'>{clean_html(value)}</p><small>{clean_html(detail)}</small></article>"
+        f"<article class='economy-command-card'><strong>{html_escape(clean_html(label))}</strong><p class='economy-command-metric'>{html_escape(clean_html(value))}</p><small>{html_escape(clean_html(detail))}</small></article>"
         for label, value, detail in items
     )
 
 
 def _economy_subsystem_detail_html(subsystem):
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
         ("What this watches", subsystem.get("intelligence") or "Reads owner-scoped financial signals and explains what matters."),
         ("What you can manage", subsystem.get("description") or "Routes you to safe finance tools for your own account."),
@@ -10092,13 +10115,13 @@ def _economy_subsystem_detail_html(subsystem):
         ("Recovery", subsystem.get("recovery") or "Keeps failed, refunded, held, and review states recoverable where supported."),
     ]
     layer_html = "".join(
-        f"<article class='economy-command-card'><strong>{clean_html(title)}</strong><small>{clean_html(text)}</small></article>"
+        f"<article class='economy-command-card'><strong>{html_escape(clean_html(title))}</strong><small>{html_escape(clean_html(text))}</small></article>"
         for title, text in layers
     )
     return f"""
     <section class="economy-command-grid">
-      <article class="economy-command-card"><strong>State</strong><p class="economy-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
-      <article class="economy-command-card"><strong>Signals</strong><p class="economy-command-metric">{clean_html(subsystem.get('count_display') or subsystem.get('count') or 0)}</p><small>Owner-scoped aggregate finance signals.</small></article>
+      <article class="economy-command-card"><strong>State</strong><p class="economy-command-metric">{html_escape(clean_html(subsystem.get('state') or 'READY'))}</p><small>{html_escape(clean_html(subsystem.get('detail') or ''))}</small></article>
+      <article class="economy-command-card"><strong>Signals</strong><p class="economy-command-metric">{html_escape(clean_html(subsystem.get('count_display') or subsystem.get('count') or 0))}</p><small>Owner-scoped aggregate finance signals.</small></article>
       <article class="economy-command-card"><strong>Confidence</strong><p class="economy-command-metric">{int(subsystem.get('confidence') or 0)}%</p><small>Confidence score from available safe data.</small></article>
       <article class="economy-command-card"><strong>Reliability</strong><p class="economy-command-metric">READY</p><small>This surface is connected to PulseSoc finance tools.</small></article>
     </section>
@@ -10107,7 +10130,7 @@ def _economy_subsystem_detail_html(subsystem):
       <strong>Recommended next actions</strong>
       <ul class="economy-command-muted">{recs or '<li>No urgent finance action. Keep using PulseSoc normally.</li>'}</ul>
       <div class="economy-command-actions">
-        <a class="button primary" href="{clean_html(subsystem.get('route') or '/dashboard/economy')}">{clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Manage Economy')}</a>
+        <a class="button primary" href="{html_escape(clean_html(subsystem.get('route') or '/dashboard/economy'))}">{html_escape(clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Manage Economy'))}</a>
         <a class="button" href="/dashboard/economy">Economy Hub</a>
       </div>
     </section>
@@ -10121,7 +10144,7 @@ def dashboard_economy_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     hub = state.get("hub") or {}
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in hub.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in hub.get("recommended_next_actions") or [])
     cards = "".join(_economy_card_html(card) for card in state.get("cards") or [])
     body = f"""
     <section class="economy-command-grid">
@@ -10151,7 +10174,7 @@ def dashboard_economy_page():
         ("Revenue Trend", f"{int(hub.get('revenue_trend') or 0)}%", "Directional trend score from available revenue signals."),
       ])}
     </section>
-    <section class="economy-command-card"><strong>Financial Summary</strong><p class="economy-command-muted">{clean_html(hub.get('ai_financial_summary') or '')}</p><ul class="economy-command-muted">{recs}</ul></section>
+    <section class="economy-command-card"><strong>Financial Summary</strong><p class="economy-command-muted">{html_escape(clean_html(hub.get('ai_financial_summary') or ''))}</p><ul class="economy-command-muted">{recs}</ul></section>
     <section class="economy-command-grid">{cards}</section>
     <section class="economy-command-card">
       <strong>Compliance protections</strong>
@@ -10247,8 +10270,8 @@ def dashboard_ads_shell(title, subtitle, body, script=""):
     <section class="ads-command-shell">
       <section class="ads-command-hero">
         <span class="ads-command-status">PulseSoc Commerce</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="ads-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="ads-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="ads-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/ads">Growth Hub</a>
@@ -10289,24 +10312,24 @@ def _ads_card_html(card):
     return (
         "<article class='ads-command-card'>"
         f"<span class='ads-command-pill{state_class}'>{state}</span>"
-        f"<div class='ads-command-metric'>{clean_html(card.get('count_display') or card.get('count') or 0)}</div>"
-        f"<strong>{clean_html(card.get('label') or '')}</strong>"
-        f"<small>{clean_html(card.get('detail') or '')}</small>"
+        f"<div class='ads-command-metric'>{html_escape(clean_html(card.get('count_display') or card.get('count') or 0))}</div>"
+        f"<strong>{html_escape(clean_html(card.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(card.get('detail') or ''))}</small>"
         f"<small>Confidence {int(card.get('confidence') or 0)}%</small>"
-        f"<div class='ads-command-actions'><a class='button primary' href='{clean_html(card.get('route') or '/dashboard/ads')}'>{clean_html(card.get('action') or 'Review Commerce')}</a></div>"
+        f"<div class='ads-command-actions'><a class='button primary' href='{html_escape(clean_html(card.get('route') or '/dashboard/ads'))}'>{html_escape(clean_html(card.get('action') or 'Review Commerce'))}</a></div>"
         "</article>"
     )
 
 
 def _ads_metric_cards(items):
     return "".join(
-        f"<article class='ads-command-card'><strong>{clean_html(label)}</strong><p class='ads-command-metric'>{clean_html(value)}</p><small>{clean_html(detail)}</small></article>"
+        f"<article class='ads-command-card'><strong>{html_escape(clean_html(label))}</strong><p class='ads-command-metric'>{html_escape(clean_html(value))}</p><small>{html_escape(clean_html(detail))}</small></article>"
         for label, value, detail in items
     )
 
 
 def _ads_subsystem_detail_html(subsystem):
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
         ("What this monitors", subsystem.get("intelligence") or "Reads owner-scoped campaign, creative, wallet, and delivery signals."),
         ("Prediction", subsystem.get("prediction") or "Scores readiness from available privacy-safe commercial signals."),
@@ -10315,13 +10338,13 @@ def _ads_subsystem_detail_html(subsystem):
         ("Recovery", subsystem.get("recovery") or "Keeps draft, review, failed, hidden, reported, and paused states recoverable where supported."),
     ]
     layer_html = "".join(
-        f"<article class='ads-command-card'><strong>{clean_html(title)}</strong><small>{clean_html(text)}</small></article>"
+        f"<article class='ads-command-card'><strong>{html_escape(clean_html(title))}</strong><small>{html_escape(clean_html(text))}</small></article>"
         for title, text in layers
     )
     return f"""
     <section class="ads-command-grid">
-      <article class="ads-command-card"><strong>State</strong><p class="ads-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
-      <article class="ads-command-card"><strong>Signals</strong><p class="ads-command-metric">{clean_html(subsystem.get('count_display') or subsystem.get('count') or 0)}</p><small>Owner-scoped aggregate growth signals.</small></article>
+      <article class="ads-command-card"><strong>State</strong><p class="ads-command-metric">{html_escape(clean_html(subsystem.get('state') or 'READY'))}</p><small>{html_escape(clean_html(subsystem.get('detail') or ''))}</small></article>
+      <article class="ads-command-card"><strong>Signals</strong><p class="ads-command-metric">{html_escape(clean_html(subsystem.get('count_display') or subsystem.get('count') or 0))}</p><small>Owner-scoped aggregate growth signals.</small></article>
       <article class="ads-command-card"><strong>Confidence</strong><p class="ads-command-metric">{int(subsystem.get('confidence') or 0)}%</p><small>Confidence from available campaign, creative, placement, wallet, and tracking data.</small></article>
       <article class="ads-command-card"><strong>Delivery Boundary</strong><p class="ads-command-metric">SAFE</p><small>Only approved, eligible, frequency-capped ads can serve.</small></article>
     </section>
@@ -10331,7 +10354,7 @@ def _ads_subsystem_detail_html(subsystem):
       <ul class="ads-command-muted">{recs or '<li>No urgent commercial action. Keep monitoring campaign health.</li>'}</ul>
       <div class="ads-command-actions">
         <a class="button primary" href="/pulse/growth">Growth Center</a>
-        <a class="button" href="{clean_html(subsystem.get('route') or '/dashboard/ads')}">{clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review Commerce')}</a>
+        <a class="button" href="{html_escape(clean_html(subsystem.get('route') or '/dashboard/ads'))}">{html_escape(clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review Commerce'))}</a>
         <a class="button" href="/dashboard/ads">Commercial Hub</a>
       </div>
     </section>
@@ -10346,7 +10369,7 @@ def dashboard_ads_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     hub = state.get("hub") or {}
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in hub.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in hub.get("recommended_next_actions") or [])
     cards = "".join(_ads_card_html(card) for card in state.get("cards") or [])
     body = f"""
     <section class="ads-command-grid">
@@ -10361,11 +10384,11 @@ def dashboard_ads_page():
         ("Delivery Health", f"{int(hub.get('delivery_health') or 0)}%", "Placement, campaign, tracking, and moderation health."),
       ])}
     </section>
-    <section class="ads-command-card"><strong>Commercial Summary</strong><p class="ads-command-muted">{clean_html(hub.get('commercial_summary') or '')}</p><ul class="ads-command-muted">{recs}</ul></section>
+    <section class="ads-command-card"><strong>Commercial Summary</strong><p class="ads-command-muted">{html_escape(clean_html(hub.get('commercial_summary') or ''))}</p><ul class="ads-command-muted">{recs}</ul></section>
     <section class="ads-command-grid">{cards}</section>
     <section class="ads-command-card">
       <strong>Who sees your ads</strong>
-      <p class="ads-command-muted">{clean_html(hub.get('targeting_summary') or '')}</p>
+      <p class="ads-command-muted">{html_escape(clean_html(hub.get('targeting_summary') or ''))}</p>
     </section>
     <section class="ads-command-card">
       <strong>Privacy and delivery protections</strong>
@@ -10420,8 +10443,8 @@ def dashboard_ai_shell(title, subtitle, body, script=""):
     <section class="ai-command-shell">
       <section class="ai-command-hero">
         <span class="ai-command-status">PulseSoc AI</span>
-        <h1>{clean_html(title)}</h1>
-        <p class="ai-command-muted">{clean_html(subtitle)}</p>
+        <h1>{html_escape(clean_html(title))}</h1>
+        <p class="ai-command-muted">{html_escape(clean_html(subtitle))}</p>
         <div class="ai-command-actions">
           <a class="button" href="/dashboard">Mission Control</a>
           <a class="button" href="/dashboard/ai">AI Mission Control</a>
@@ -10462,24 +10485,24 @@ def _ai_card_html(card):
     return (
         "<article class='ai-command-card'>"
         f"<span class='ai-command-pill{state_class}'>{state}</span>"
-        f"<div class='ai-command-metric'>{clean_html(card.get('count_display') or card.get('count') or 0)}</div>"
-        f"<strong>{clean_html(card.get('label') or '')}</strong>"
-        f"<small>{clean_html(card.get('detail') or '')}</small>"
+        f"<div class='ai-command-metric'>{html_escape(clean_html(card.get('count_display') or card.get('count') or 0))}</div>"
+        f"<strong>{html_escape(clean_html(card.get('label') or ''))}</strong>"
+        f"<small>{html_escape(clean_html(card.get('detail') or ''))}</small>"
         f"<small>Confidence {int(card.get('confidence') or 0)}%</small>"
-        f"<div class='ai-command-actions'><a class='button primary' href='{clean_html(card.get('route') or '/dashboard/ai')}'>{clean_html(card.get('action') or 'Review AI')}</a></div>"
+        f"<div class='ai-command-actions'><a class='button primary' href='{html_escape(clean_html(card.get('route') or '/dashboard/ai'))}'>{html_escape(clean_html(card.get('action') or 'Review AI'))}</a></div>"
         "</article>"
     )
 
 
 def _ai_metric_cards(items):
     return "".join(
-        f"<article class='ai-command-card'><strong>{clean_html(label)}</strong><p class='ai-command-metric'>{clean_html(value)}</p><small>{clean_html(detail)}</small></article>"
+        f"<article class='ai-command-card'><strong>{html_escape(clean_html(label))}</strong><p class='ai-command-metric'>{html_escape(clean_html(value))}</p><small>{html_escape(clean_html(detail))}</small></article>"
         for label, value, detail in items
     )
 
 
 def _ai_subsystem_detail_html(subsystem):
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in subsystem.get("recommendations") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in subsystem.get("recommendations") or [])
     layers = [
         ("What this understands", subsystem.get("intelligence") or "Reads permitted account, creator, network, media, and safety summaries."),
         ("Prediction", subsystem.get("prediction") or "Scores readiness from available privacy-safe signals."),
@@ -10488,13 +10511,13 @@ def _ai_subsystem_detail_html(subsystem):
         ("Recovery", subsystem.get("recovery") or "Falls back safely when providers, memory, media, or automation are unavailable."),
     ]
     layer_html = "".join(
-        f"<article class='ai-command-card'><strong>{clean_html(title)}</strong><small>{clean_html(text)}</small></article>"
+        f"<article class='ai-command-card'><strong>{html_escape(clean_html(title))}</strong><small>{html_escape(clean_html(text))}</small></article>"
         for title, text in layers
     )
     return f"""
     <section class="ai-command-grid">
-      <article class="ai-command-card"><strong>State</strong><p class="ai-command-metric">{clean_html(subsystem.get('state') or 'READY')}</p><small>{clean_html(subsystem.get('detail') or '')}</small></article>
-      <article class="ai-command-card"><strong>Signals</strong><p class="ai-command-metric">{clean_html(subsystem.get('count_display') or subsystem.get('count') or 0)}</p><small>Owner-scoped AI and mission signals.</small></article>
+      <article class="ai-command-card"><strong>State</strong><p class="ai-command-metric">{html_escape(clean_html(subsystem.get('state') or 'READY'))}</p><small>{html_escape(clean_html(subsystem.get('detail') or ''))}</small></article>
+      <article class="ai-command-card"><strong>Signals</strong><p class="ai-command-metric">{html_escape(clean_html(subsystem.get('count_display') or subsystem.get('count') or 0))}</p><small>Owner-scoped AI and mission signals.</small></article>
       <article class="ai-command-card"><strong>Confidence</strong><p class="ai-command-metric">{int(subsystem.get('confidence') or 0)}%</p><small>Confidence from available AI, recommendation, research, and automation data.</small></article>
       <article class="ai-command-card"><strong>Privacy Boundary</strong><p class="ai-command-metric">SAFE</p><small>Private content, provider keys, and internal tokens are redacted.</small></article>
     </section>
@@ -10504,7 +10527,7 @@ def _ai_subsystem_detail_html(subsystem):
       <ul class="ai-command-muted">{recs or '<li>No urgent AI action. Keep automation review-gated.</li>'}</ul>
       <div class="ai-command-actions">
         <a class="button primary" href="/pulse/premium/undx">Enter UNDX</a>
-        <a class="button" href="{clean_html(subsystem.get('route') or '/dashboard/ai')}">{clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review AI')}</a>
+        <a class="button" href="{html_escape(clean_html(subsystem.get('route') or '/dashboard/ai'))}">{html_escape(clean_html(subsystem.get('action') or subsystem.get('cta_label') or 'Review AI'))}</a>
         <a class="button" href="/dashboard/ai">AI Mission Control</a>
       </div>
     </section>
@@ -10519,7 +10542,7 @@ def dashboard_ai_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     hub = state.get("hub") or {}
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in hub.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in hub.get("recommended_next_actions") or [])
     cards = "".join(_ai_card_html(card) for card in state.get("cards") or [])
     body = f"""
     <section class="ai-command-grid">
@@ -10534,7 +10557,7 @@ def dashboard_ai_page():
         ("Creative Tasks", f"{int(hub.get('creative_tasks') or 0):,}", "Creator, media, script, caption, and planning signals."),
       ])}
     </section>
-    <section class="ai-command-card"><strong>Daily Brief</strong><p class="ai-command-muted">{clean_html(hub.get('daily_brief') or '')}</p><ul class="ai-command-muted">{recs}</ul></section>
+    <section class="ai-command-card"><strong>Daily Brief</strong><p class="ai-command-muted">{html_escape(clean_html(hub.get('daily_brief') or ''))}</p><ul class="ai-command-muted">{recs}</ul></section>
     <section class="ai-command-grid">{cards}</section>
     <section class="ai-command-card">
       <strong>Security and privacy boundary</strong>
@@ -10573,7 +10596,7 @@ def dashboard_network_page():
         return redirect(url_for("login_page", next=request.path))
     metrics = state.get("metrics") or {}
     intelligence = state.get("intelligence") or {}
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in intelligence.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in intelligence.get("recommended_next_actions") or [])
     cards = "".join(_network_card_html(card) for card in state.get("cards") or [])
     body = f"""
     <section class="network-command-grid">
@@ -10651,7 +10674,7 @@ def dashboard_network_messages_page():
     </section>
     <section class="network-command-card">
       <strong>Messenger privacy</strong>
-      <p class="network-command-muted">{clean_html(data.get('privacy') or 'Message bodies are redacted from dashboard diagnostics.')}</p>
+      <p class="network-command-muted">{html_escape(clean_html(data.get('privacy') or 'Message bodies are redacted from dashboard diagnostics.'))}</p>
       <div class="network-command-actions">
         <a class="button primary" href="/pulse/messages">Open Messenger</a>
         <a class="button" href="/pulse/settings/notifications">Message Notifications</a>
@@ -10762,7 +10785,7 @@ def dashboard_creator_page():
         return redirect(url_for("login_page", next=request.path))
     metrics = state.get("metrics") or {}
     intelligence = state.get("intelligence") or {}
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in intelligence.get("recommended_next_actions") or [])
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in intelligence.get("recommended_next_actions") or [])
     cards = "".join(_creator_card_html(card) for card in state.get("cards") or [])
     body = f"""
     <section class="creator-command-grid">
@@ -10770,8 +10793,8 @@ def dashboard_creator_page():
       <article class="creator-command-card"><strong>Creator Score</strong><p class="creator-command-metric">{int(intelligence.get('creator_score') or metrics.get('creator_score') or 0)}%</p><small>Content, audience, timing, media, and trust signal.</small></article>
       <article class="creator-command-card"><strong>Today Reach</strong><p class="creator-command-metric">{int(intelligence.get('today_reach') or metrics.get('today_reach') or 0)}</p><small>Owner-safe views and reach signals available today.</small></article>
       <article class="creator-command-card"><strong>Content Queue</strong><p class="creator-command-metric">{int(intelligence.get('content_queue') or metrics.get('content_queue') or 0)}</p><small>Processing, review, draft, and scheduled work needing attention.</small></article>
-      <article class="creator-command-card"><strong>Best Time</strong><p class="creator-command-metric">{clean_html(intelligence.get('best_time_to_post') or 'Learning')}</p><small>Timing engine uses real creator activity when available.</small></article>
-      <article class="creator-command-card"><strong>Reputation</strong><p class="creator-command-metric">{int(intelligence.get('reputation_score') or metrics.get('reputation_score') or 0)}%</p><small>{clean_html(intelligence.get('community_guideline_status') or 'Clear')}</small></article>
+      <article class="creator-command-card"><strong>Best Time</strong><p class="creator-command-metric">{html_escape(clean_html(intelligence.get('best_time_to_post') or 'Learning'))}</p><small>Timing engine uses real creator activity when available.</small></article>
+      <article class="creator-command-card"><strong>Reputation</strong><p class="creator-command-metric">{int(intelligence.get('reputation_score') or metrics.get('reputation_score') or 0)}%</p><small>{html_escape(clean_html(intelligence.get('community_guideline_status') or 'Clear'))}</small></article>
     </section>
     <section class="creator-command-card"><strong>Creator Intelligence Hub</strong><ul class="creator-command-muted">{recs}</ul></section>
     <section class="creator-command-grid">{cards}</section>
@@ -11157,10 +11180,10 @@ def dashboard_account_health_page():
     finally:
         conn.close()
     def rows(items, label_key):
-        return "".join(f"<article class='account-command-card'><strong>{clean_html(item.get(label_key) or 'Account event')}</strong><small>{clean_html(item.get('status') or '')} · {clean_html(item.get('created_at') or '')}</small><p>{clean_html(item.get('public_summary') or 'No public summary.')}</p></article>" for item in items)
+        return "".join(f"<article class='account-command-card'><strong>{html_escape(clean_html(item.get(label_key) or 'Account event'))}</strong><small>{html_escape(clean_html(item.get('status') or ''))} · {html_escape(clean_html(item.get('created_at') or ''))}</small><p>{html_escape(clean_html(item.get('public_summary') or 'No public summary.'))}</p></article>" for item in items)
     body = f"""
     <section class="account-command-grid">
-      <article class="account-command-card"><strong>Health status</strong><p class="metric">{clean_html(str(health.get('score') or 0))}%</p><small>{clean_html(str(health.get('status') or 'secure')).title()}</small></article>
+      <article class="account-command-card"><strong>Health status</strong><p class="metric">{html_escape(clean_html(str(health.get('score') or 0)))}%</p><small>{html_escape(clean_html(str(health.get('status') or 'secure')).title())}</small></article>
       <article class="account-command-card"><strong>Warnings</strong><p class="metric">{int(health.get('warnings') or 0)}</p></article>
       <article class="account-command-card"><strong>Strikes</strong><p class="metric">{int(health.get('strikes') or 0)}</p></article>
       <article class="account-command-card"><strong>Restrictions</strong><p class="metric">{int(health.get('restrictions') or 0)}</p></article>
@@ -11403,20 +11426,20 @@ def admin_account_command_page():
     subsystem_cards = "".join(
         (
             "<article class='card'>"
-            f"<span class='badge'>{clean_html(spec.get('state') or 'READY')}</span>"
-            f"<h3>{clean_html(spec.get('label') or spec.get('key') or '')}</h3>"
-            f"<p class='muted'>{clean_html(spec.get('admin_summary') or 'Backend-managed account subsystem.')}</p>"
-            f"<p><a class='button' href='{clean_html(spec.get('admin_route') or '/admin/account-command')}'>Admin Review</a></p>"
+            f"<span class='badge'>{html_escape(clean_html(spec.get('state') or 'READY'))}</span>"
+            f"<h3>{html_escape(clean_html(spec.get('label') or spec.get('key') or ''))}</h3>"
+            f"<p class='muted'>{html_escape(clean_html(spec.get('admin_summary') or 'Backend-managed account subsystem.'))}</p>"
+            f"<p><a class='button' href='{html_escape(clean_html(spec.get('admin_route') or '/admin/account-command'))}'>Admin Review</a></p>"
             "</article>"
         )
         for spec in dashboard_account_command_center.ACCOUNT_SUBSYSTEMS
     )
     verification_rows = "".join(
-        f"<tr><td>{int(row.get('id') or 0)}</td><td>{clean_html(row.get('name') or '')}<br><small>{mask_email_address(row.get('email') or '')}</small></td><td>{clean_html(row.get('verification_type') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td><form method='post' action='/admin/account-command/verifications/{int(row.get('id') or 0)}/decision'><input name='reason' placeholder='Public reason'><button name='decision' value='approved'>Approve</button><button name='decision' value='rejected'>Reject</button><button name='decision' value='needs_more_info'>Needs Info</button><button name='decision' value='suspended'>Suspend</button></form></td></tr>"
+        f"<tr><td>{int(row.get('id') or 0)}</td><td>{html_escape(clean_html(row.get('name') or ''))}<br><small>{mask_email_address(row.get('email') or '')}</small></td><td>{html_escape(clean_html(row.get('verification_type') or ''))}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td><form method='post' action='/admin/account-command/verifications/{int(row.get('id') or 0)}/decision'><input name='reason' placeholder='Public reason'><button name='decision' value='approved'>Approve</button><button name='decision' value='rejected'>Reject</button><button name='decision' value='needs_more_info'>Needs Info</button><button name='decision' value='suspended'>Suspend</button></form></td></tr>"
         for row in verifications
     )
-    profile_rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{clean_html(row.get('name') or '')}<br><small>{mask_email_address(row.get('email') or '')}</small></td><td>{clean_html(row.get('action') or '')}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>" for row in profile_logs)
-    health_rows = "".join(f"<tr><td>{int(row.get('user_id') or 0)}</td><td>{clean_html(row.get('event_type') or '')}</td><td>{clean_html(row.get('severity') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>" for row in health_events)
+    profile_rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{html_escape(clean_html(row.get('name') or ''))}<br><small>{mask_email_address(row.get('email') or '')}</small></td><td>{html_escape(clean_html(row.get('action') or ''))}</td><td>{html_escape(clean_html(row.get('created_at') or ''))}</td></tr>" for row in profile_logs)
+    health_rows = "".join(f"<tr><td>{int(row.get('user_id') or 0)}</td><td>{html_escape(clean_html(row.get('event_type') or ''))}</td><td>{html_escape(clean_html(row.get('severity') or ''))}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html(row.get('created_at') or ''))}</td></tr>" for row in health_events)
     body = f"""
     <h1>Account Command Center</h1>
     <p class="muted">Admin-only profile history, verification review, and account health controls. Sensitive documents are not exposed on this overview.</p>
@@ -11567,21 +11590,21 @@ def admin_account_command_section_page(section_key):
     q = request.args.get("q", "")
     metrics, rows = _admin_account_management_payload(cur, key, q)
     conn.close()
-    metric_cards = "".join(f"<article class='card'><h3>{clean_html(str(label))}</h3><p class='metric'>{clean_html(str(value))}</p></article>" for label, value in metrics.items())
+    metric_cards = "".join(f"<article class='card'><h3>{html_escape(clean_html(str(label)))}</h3><p class='metric'>{html_escape(clean_html(str(value)))}</p></article>" for label, value in metrics.items())
     row_html = ""
     for row in rows:
-        cells = "".join(f"<td>{clean_html(mask_email_address(value) if '@' in str(value) else str(value))}</td>" for value in row.values())
+        cells = "".join(f"<td>{html_escape(clean_html(mask_email_address(value) if '@' in str(value) else str(value)))}</td>" for value in row.values())
         row_html += f"<tr>{cells}</tr>"
-    header = "".join(f"<th>{clean_html(str(column).replace('_',' ').title())}</th>" for column in (rows[0].keys() if rows else ("Status", "Details")))
+    header = "".join(f"<th>{html_escape(clean_html(str(column).replace('_',' ').title()))}</th>" for column in (rows[0].keys() if rows else ("Status", "Details")))
     if not row_html:
         row_html = "<tr><td colspan='6'>No matching backend records. The subsystem is still wired and ready for new events.</td></tr>"
     action_panel = ""
     if key == "verification":
         action_panel = "<p class='muted'>Verification decisions are available from the main Account Command Center review queue where public reasons are required.</p><p><a class='button' href='/admin/account-command'>Open Verification Queue</a></p>"
     body = f"""
-    <h1>{clean_html(spec.get('label') or 'Account Manager')}</h1>
-    <p class="muted">{clean_html(spec.get('admin_summary') or 'Backend-managed account subsystem. Sensitive fields are redacted.')}</p>
-    <form method="get" class="card"><label>Search user id or safe event text<input name="q" value="{clean_html(str(q or ''))}" placeholder="Search"></label><button>Search</button><a class="button" href="/admin/account-command/{clean_html(normalized)}">Clear</a></form>
+    <h1>{html_escape(clean_html(spec.get('label') or 'Account Manager'))}</h1>
+    <p class="muted">{html_escape(clean_html(spec.get('admin_summary') or 'Backend-managed account subsystem. Sensitive fields are redacted.'))}</p>
+    <form method="get" class="card"><label>Search user id or safe event text<input name="q" value="{html_escape(clean_html(str(q or '')))}" placeholder="Search"></label><button>Search</button><a class="button" href="/admin/account-command/{html_escape(clean_html(normalized))}">Clear</a></form>
     <section class="grid">{metric_cards}</section>
     <section class="card"><h2>Management Surface</h2>{action_panel}<table><tr>{header}</tr>{row_html}</table></section>
     <section class="card"><h2>Security Boundary</h2><p class="muted">This page never displays raw push tokens, private verification documents, secrets, session tokens, private keys, raw passwords, or internal-only moderator notes. Sensitive reads and writes are role-gated and audited through the account audit tables.</p></section>
@@ -11623,7 +11646,7 @@ def admin_account_command_verification_decision(request_id):
             conn.commit()
     except ValueError as exc:
         conn.close()
-        return admin_page_html("Verification Decision", f"<h1>Verification decision failed</h1><p>{clean_html(str(exc))}</p><p><a class='button' href='/admin/account-command'>Back</a></p>", admin), 400
+        return admin_page_html("Verification Decision", f"<h1>Verification decision failed</h1><p>{html_escape(clean_html(str(exc)))}</p><p><a class='button' href='/admin/account-command'>Back</a></p>", admin), 400
     conn.close()
     return redirect("/admin/account-command")
 
@@ -11774,7 +11797,7 @@ def private_chat_thread_page(thread_id):
         )
     other = payload.get("other") or {}
     other_name = clean_html(other.get("display_name") or "CoinPlotXAI user")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPlotXAI</title><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{clean_html(other.get("rank") or "PulseSoc contact")} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Chat with {other_name} | CoinPlotXAI</title><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#071527);color:var(--text);font-family:Inter,system-ui,sans-serif;overflow:hidden}}a{{color:inherit}}.shell{{height:100dvh;display:grid;grid-template-rows:auto 1fr auto;width:min(100%,980px);margin:auto;border-inline:1px solid rgba(110,223,246,.12)}}header{{padding:calc(14px + env(safe-area-inset-top)) 16px 14px;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.92);backdrop-filter:blur(18px);display:flex;justify-content:space-between;gap:12px;align-items:center}}.button,button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:10px 14px;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}}.primary{{color:#06101b;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.meta{{color:var(--muted);font-size:13px}}.thread{{min-height:0;overflow:auto;padding:16px;display:grid;gap:9px;background:radial-gradient(circle at 80% 10%,rgba(54,229,143,.08),transparent 22rem)}}.bubble{{max-width:min(78%,620px);padding:11px 13px;border:1px solid rgba(255,255,255,.09);border-radius:15px;background:rgba(255,255,255,.07);box-shadow:0 12px 36px rgba(0,0,0,.16)}}.bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,#6edff6,#77a7ff)}}.bubble small{{display:block;margin-top:5px;opacity:.72}}.composer{{display:grid;grid-template-columns:1fr auto;gap:8px;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.96)}}textarea{{resize:none;min-height:48px;max-height:120px;border:1px solid var(--line);border-radius:12px;background:#081323;color:var(--text);padding:12px;font:inherit}}.toast{{position:fixed;left:50%;bottom:calc(82px + env(safe-area-inset-bottom));transform:translateX(-50%);padding:10px 13px;border:1px solid var(--line);border-radius:12px;background:#071321;box-shadow:0 18px 50px rgba(0,0,0,.4);display:none}}.toast.show{{display:block}}@media(max-width:720px){{.shell{{border:0}}.composer{{grid-template-columns:1fr}}.button,button{{width:100%}}.bubble{{max-width:88%}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important;scroll-behavior:auto!important}}}}</style></head><body><main class="shell" data-thread-id="{int(thread_id)}"><header><div><strong>{other_name}</strong><div class="meta">{html_escape(clean_html(other.get("rank") or "PulseSoc contact"))} · private thread</div></div><a class="button" href="/dashboard">Dashboard</a></header><section class="thread" data-chat-thread></section><form class="composer" data-chat-form><textarea name="message" placeholder="Write a reply..." autocomplete="off"></textarea><button class="button primary" type="submit">Send</button></form></main><div class="toast" data-toast></div><script>const threadId={int(thread_id)};let lastMessageId=0;let loading=false;const box=document.querySelector('[data-chat-thread]');const form=document.querySelector('[data-chat-form]');const input=form.elements.message;const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[c]));function toast(message){{const t=document.querySelector('[data-toast]');t.textContent=message;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2600)}}function bubble(m,temp=false){{return `<div class="bubble ${{m.is_mine?'me':'them'}}" data-message-id="${{m.message_id||m.id||''}}"><span>${{esc(m.body)}}</span><small>${{temp?'sending...':esc(m.delivery_status||'delivered')}}</small></div>`}}function append(items){{const seen=new Set([...box.querySelectorAll('[data-message-id]')].map(n=>n.dataset.messageId));(items||[]).forEach(m=>{{const id=String(m.message_id||m.id||'');if(id&&seen.has(id))return;box.insertAdjacentHTML('beforeend',bubble(m));lastMessageId=Math.max(lastMessageId,Number(m.message_id||m.id||0));}});box.scrollTop=box.scrollHeight;}}function render(items){{box.innerHTML=(items||[]).map(m=>bubble(m)).join('')||'<p class="meta">No messages yet.</p>';lastMessageId=Math.max(0,...(items||[]).map(m=>Number(m.message_id||m.id||0)));box.scrollTop=box.scrollHeight;}}async function load(initial=false){{if(loading||document.hidden)return;loading=true;try{{const url=initial?`/api/chat/thread/${{threadId}}`:`/api/chat/thread/${{threadId}}/new?after_id=${{lastMessageId}}`;const d=await fetch(url,{{cache:'no-store',credentials:'same-origin'}}).then(r=>r.json());if(d.ok)initial?render(d.messages):append(d.messages);if(d.last_message_id)lastMessageId=Math.max(lastMessageId,Number(d.last_message_id));}}catch(e){{}}finally{{loading=false;}}}}form.addEventListener('submit',async e=>{{e.preventDefault();const body=input.value.trim();if(!body)return;input.value='';const button=form.querySelector('button');button.disabled=true;const tempId='temp-'+Date.now();box.insertAdjacentHTML('beforeend',`<div class="bubble me" data-message-id="${{tempId}}"><span>${{esc(body)}}</span><small>sending...</small></div>`);box.scrollTop=box.scrollHeight;try{{const d=await fetch(`/api/chat/thread/${{threadId}}/send`,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{message:body}})}}).then(r=>r.json());const temp=box.querySelector(`[data-message-id="${{tempId}}"]`);if(d.ok&&d.message){{if(temp)temp.outerHTML=bubble(d.message);lastMessageId=Math.max(lastMessageId,Number(d.message.message_id||d.message.id||0));if(navigator.vibrate)navigator.vibrate(20);}}else{{if(temp)temp.querySelector('small').textContent='failed';input.value=body;toast(d.message||'Could not send this message.');}}}}catch(err){{input.value=body;toast('Could not send this message.')}}finally{{button.disabled=false;input.focus();}}}});input.addEventListener('keydown',e=>{{if(e.key==='Enter'&&!e.shiftKey){{e.preventDefault();form.requestSubmit();}}}});load(true);setInterval(()=>load(false),1500);document.addEventListener('visibilitychange',()=>{{if(!document.hidden)load(false)}});input.focus();</script></body></html>""")
 
 
 @webhook_app.route("/chat/fan-messages", methods=["GET"])
@@ -11785,7 +11808,7 @@ def fan_messages_page():
         return redirect(url_for("signup_page", next="/chat/fan-messages"))
     payload = chat_realtime_service.list_threads(user["user_id"], limit=80)
     cards = "".join(
-        f"<article class='card'><h3>{clean_html(item.get('title') or 'Arena Member')}</h3><p class='muted'>{clean_html(item.get('latest_message') or 'No message preview yet.')}</p><p class='muted'>{int(item.get('unread_count') or 0)} unread</p><div class='actions'><a class='button primary' href='/chat/thread/{int(item.get('id') or 0)}'>Reply</a><button data-chat-block='{int(item.get('other_user_id') or 0)}'>Block</button><button data-chat-report='{int(item.get('other_user_id') or 0)}'>Report</button></div></article>"
+        f"<article class='card'><h3>{html_escape(clean_html(item.get('title') or 'Arena Member'))}</h3><p class='muted'>{html_escape(clean_html(item.get('latest_message') or 'No message preview yet.'))}</p><p class='muted'>{int(item.get('unread_count') or 0)} unread</p><div class='actions'><a class='button primary' href='/chat/thread/{int(item.get('id') or 0)}'>Reply</a><button data-chat-block='{int(item.get('other_user_id') or 0)}'>Block</button><button data-chat-report='{int(item.get('other_user_id') or 0)}'>Report</button></div></article>"
         for item in payload.get("conversations", [])
     ) or "<article class='card'><h3>No fan messages yet</h3><p class='muted'>Messages from leaderboards, profiles, and Roast Battle will appear here with call signs only.</p></article>"
     body = f"<section class='hero'><article class='card wide'><div class='kicker'>Fan Messages</div><h1>Reply to Arena players fast.</h1><p>Only public call signs and Arena IDs are shown. Real names, emails, phone numbers, and billing data stay private.</p></article></section><section class='grid'>{cards}</section>"
@@ -11948,7 +11971,7 @@ def notifications_page():
         return redirect(url_for("login_page", next="/notifications"))
     payload = pulsesoc_notification_system.list_notifications(user["user_id"])
     rows = "".join(
-        f"<article class='profile-card'><h3>{clean_html(item.get('title') or 'Notification')}</h3><p>{clean_html(item.get('message') or '')}</p><p class='muted'>{smart_time_html(item.get('created_at'))}</p></article>"
+        f"<article class='profile-card'><h3>{html_escape(clean_html(item.get('title') or 'Notification'))}</h3><p>{html_escape(clean_html(item.get('message') or ''))}</p><p class='muted'>{smart_time_html(item.get('created_at'))}</p></article>"
         for item in payload.get("notifications", [])
     ) or "<p class='muted'>No notifications yet.</p>"
     setup = """
@@ -12699,7 +12722,7 @@ def billing_portal_page():
     <section class='card premium-promo-card'>
       <span class='premium-badge'>Billing</span>
       <h2>Billing portal unavailable.</h2>
-      <p>{clean_html(reason)}</p>
+      <p>{html_escape(clean_html(reason))}</p>
       <p class='muted'>Your PulseSoc access is still loaded from backend subscription records. Billing changes require a connected Stripe customer profile.</p>
       <div class='actions'>
         <a class='button primary' href='/pulse/premium'>Back to Premium</a>
@@ -12905,7 +12928,7 @@ def pulse_premium_success_page():
       <h2>{'Founder Premium is active.' if is_active else 'Checkout returned to PulseSoc.'}</h2>
       <p data-premium-success-message>{'Your backend subscription record is active.' if is_active else 'Stripe verification is still in progress. Founder/Premium access appears after the verified webhook updates your account.'}</p>
       <p class='muted'>This page never grants access from the URL alone. Server-side Stripe confirmation controls Premium state.</p>
-      <p class='muted'>Session: {clean_html(session_id) if session_id else 'pending webhook confirmation'}</p>
+      <p class='muted'>Session: {html_escape(clean_html(session_id)) if session_id else 'pending webhook confirmation'}</p>
       <div class='actions'>
         <a class='button primary' href='/pulse/premium'>Back to Premium</a>
         <a class='button' href='/pulse/profile'>Profile</a>
@@ -13395,7 +13418,7 @@ def admin_users_page():
             parts.append(" · " + clean_html(access_type))
         source = u.get("access_source")
         if source:
-            parts.append(" <span class='muted'>(" + clean_html(source) + ")</span>")
+            parts.append(" <span class='muted'>(" + html_escape(clean_html(source)) + ")</span>")
         return "".join(parts)
 
     def _pill(status):
@@ -13406,7 +13429,7 @@ def admin_users_page():
             dot = "status-dot"
         else:
             dot = "status-dot status-warn"
-        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
+        return f"<span class='pill'><span class='{dot}'></span>{html_escape(clean_html(status or 'active'))}</span>"
 
     total = len(users)
     pro_n = sum(1 for u in users if u.get("pro_access_type") == "paid")
@@ -13435,7 +13458,7 @@ def admin_users_page():
     search_form = (
         "<form method='get' action='/admin/users' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
         f"<input type='hidden' name='filter' value='{current_filter}'/>"
-        f"<input type='text' name='q' value='{clean_html(q)}' placeholder='Search name, email, ID, phone, Stripe customer…' style='flex:1'/>"
+        f"<input type='text' name='q' value='{html_escape(clean_html(q))}' placeholder='Search name, email, ID, phone, Stripe customer…' style='flex:1'/>"
         "<button type='submit' style='max-width:150px'>Search</button>"
         "</form>"
     )
@@ -13450,14 +13473,14 @@ def admin_users_page():
 
     rows = "".join(
         "<tr>"
-        f"<td><a href='/admin/users/{u.get('user_id')}'>{clean_html(u.get('name') or 'User')}</a></td>"
-        f"<td class='muted'>{clean_html(u.get('email') or '')}</td>"
-        f"<td class='muted'>{clean_html(str(u.get('user_id')))}</td>"
+        f"<td><a href='/admin/users/{u.get('user_id')}'>{html_escape(clean_html(u.get('name') or 'User'))}</a></td>"
+        f"<td class='muted'>{html_escape(clean_html(u.get('email') or ''))}</td>"
+        f"<td class='muted'>{html_escape(clean_html(str(u.get('user_id'))))}</td>"
         f"<td>{_pill(u.get('account_status'))}</td>"
-        f"<td class='muted'>{clean_html(u.get('plan') or '')}</td>"
+        f"<td class='muted'>{html_escape(clean_html(u.get('plan') or ''))}</td>"
         f"<td>{_pro_cell(u)}</td>"
         f"<td>{_revenue_cell(u)}</td>"
-        f"<td class='muted'>{clean_html(u.get('created_at') or '')}</td>"
+        f"<td class='muted'>{html_escape(clean_html(u.get('created_at') or ''))}</td>"
         "</tr>"
         for u in users
     )
@@ -14030,7 +14053,7 @@ def admin_user_set_password_page(user_id):
     except ValueError as exc:
         conn.rollback()
         conn.close()
-        return admin_page_html("Password Repair Failed", f"<h1>Password repair failed</h1><p>{clean_html(str(exc))}</p>", admin), 400
+        return admin_page_html("Password Repair Failed", f"<h1>Password repair failed</h1><p>{html_escape(clean_html(str(exc)))}</p>", admin), 400
     except Exception as exc:
         conn.rollback()
         conn.close()
@@ -14076,7 +14099,7 @@ def admin_user_set_password_by_email_page():
     except ValueError as exc:
         conn.rollback()
         conn.close()
-        return admin_page_html("Password Repair Failed", f"<h1>Password repair failed</h1><p>{clean_html(str(exc))}</p>", admin), 400
+        return admin_page_html("Password Repair Failed", f"<h1>Password repair failed</h1><p>{html_escape(clean_html(str(exc)))}</p>", admin), 400
     except Exception as exc:
         conn.rollback()
         conn.close()
@@ -15115,7 +15138,7 @@ def _verification_admin_or_redirect():
 
 
 def _verification_admin_shell(title, body):
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc Admin</title><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--gold:var(--status-warning,#ffd166);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 26rem),linear-gradient(135deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}main{{width:min(100% - 28px,1240px);margin:auto;padding:24px 0 90px}}.nav,.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:9px 12px;text-decoration:none;cursor:pointer}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.card{{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.045);padding:14px;margin:12px 0;overflow:auto}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;padding:10px;border-bottom:1px solid rgba(255,255,255,.09);vertical-align:top}}.pill{{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:5px 9px;color:var(--cyan);font-weight:900;text-transform:uppercase}}textarea,input,select{{width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;background:#071322;color:var(--text);padding:9px}}@media(max-width:760px){{.actions,.nav{{display:grid}}table{{display:block;overflow-x:auto}}}}</style></head><body><main><div class="nav"><a class="button" href="/admin/dashboard">Admin</a><a class="button" href="/admin/command-center/account/verification">Verification Queue</a><a class="button" href="/admin/verification/badges">Badges</a><a class="button" href="/admin/verification/appeals">Appeals</a></div><h1>{clean_html(title)}</h1>{body}</main><script>document.addEventListener('submit',async e=>{{const form=e.target.closest('[data-admin-verification-action]');if(!form)return;e.preventDefault();const fd=new FormData(form);const r=await fetch('/api/admin/verification/action',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(Object.fromEntries(fd.entries()))}});const d=await r.json();alert(d.message||'Action recorded.');if(d.ok)location.reload();}});</script></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc Admin</title><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--gold:var(--status-warning,#ffd166);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 26rem),linear-gradient(135deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}main{{width:min(100% - 28px,1240px);margin:auto;padding:24px 0 90px}}.nav,.actions{{display:flex;gap:10px;flex-wrap:wrap}}.button,button{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:var(--text);font-weight:900;padding:9px 12px;text-decoration:none;cursor:pointer}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.card{{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.045);padding:14px;margin:12px 0;overflow:auto}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;padding:10px;border-bottom:1px solid rgba(255,255,255,.09);vertical-align:top}}.pill{{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:5px 9px;color:var(--cyan);font-weight:900;text-transform:uppercase}}textarea,input,select{{width:100%;min-height:40px;border:1px solid var(--line);border-radius:10px;background:#071322;color:var(--text);padding:9px}}@media(max-width:760px){{.actions,.nav{{display:grid}}table{{display:block;overflow-x:auto}}}}</style></head><body><main><div class="nav"><a class="button" href="/admin/dashboard">Admin</a><a class="button" href="/admin/command-center/account/verification">Verification Queue</a><a class="button" href="/admin/verification/badges">Badges</a><a class="button" href="/admin/verification/appeals">Appeals</a></div><h1>{html_escape(clean_html(title))}</h1>{body}</main><script>document.addEventListener('submit',async e=>{{const form=e.target.closest('[data-admin-verification-action]');if(!form)return;e.preventDefault();const fd=new FormData(form);const r=await fetch('/api/admin/verification/action',{{method:'POST',credentials:'same-origin',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(Object.fromEntries(fd.entries()))}});const d=await r.json();alert(d.message||'Action recorded.');if(d.ok)location.reload();}});</script></body></html>"""
     return Response(html, mimetype="text/html")
 
 
@@ -15138,14 +15161,14 @@ def admin_verification_command_center_page():
     for item in queue.get("requests") or []:
         allowed = bool(item.get("review_allowed"))
         doc_links = "".join(
-            f"<a class='button' href='/admin/verification/document/{int(doc.get('id') or 0)}' target='_blank'>{clean_html(doc.get('document_type') or 'Document')} · {clean_html(doc.get('review_status') or 'pending')}</a>"
+            f"<a class='button' href='/admin/verification/document/{int(doc.get('id') or 0)}' target='_blank'>{html_escape(clean_html(doc.get('document_type') or 'Document'))} · {html_escape(clean_html(doc.get('review_status') or 'pending'))}</a>"
             for doc in item.get("document_refs") or []
         ) or f"{int(item.get('documents') or 0)} private docs"
         actions = "<span class='pill'>Readonly</span>"
         if allowed:
             actions = f"""<form data-admin-verification-action><input type="hidden" name="request_id" value="{int(item.get('id') or 0)}"><select name="action"><option value="approve">Approve</option><option value="needs_more_info">Request More Info</option><option value="reject">Reject</option><option value="suspend">Suspend</option><option value="revoke">Revoke</option></select><textarea name="reason" placeholder="Safe reviewer note or decision reason"></textarea><button class="primary">Save Decision</button></form>"""
         rows.append(
-            f"<tr><td>{int(item.get('id') or 0)}</td><td>{int(item.get('user_id') or 0)}</td><td>{clean_html(item.get('track') or '')}</td><td><span class='pill'>{clean_html(item.get('status') or '')}</span></td><td>{int(item.get('progress_percent') or 0)}%</td><td><div class='actions'>{doc_links}</div></td><td>{actions}</td></tr>"
+            f"<tr><td>{int(item.get('id') or 0)}</td><td>{int(item.get('user_id') or 0)}</td><td>{html_escape(clean_html(item.get('track') or ''))}</td><td><span class='pill'>{html_escape(clean_html(item.get('status') or ''))}</span></td><td>{int(item.get('progress_percent') or 0)}%</td><td><div class='actions'>{doc_links}</div></td><td>{actions}</td></tr>"
         )
     empty = "<tr><td colspan='7'>No verification requests.</td></tr>"
     body = f"""
@@ -15207,7 +15230,7 @@ def admin_verification_badges_page():
         badges = [dict(row) for row in cur.fetchall()]
     finally:
         conn.close()
-    rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{int(row.get('user_id') or 0)}</td><td>{clean_html(row.get('badge_type') or '')}</td><td>{clean_html(row.get('source_track') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('approved_at') or '')}</td><td>{clean_html(row.get('revoked_at') or '')}</td></tr>" for row in badges)
+    rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{int(row.get('user_id') or 0)}</td><td>{html_escape(clean_html(row.get('badge_type') or ''))}</td><td>{html_escape(clean_html(row.get('source_track') or ''))}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html(row.get('approved_at') or ''))}</td><td>{html_escape(clean_html(row.get('revoked_at') or ''))}</td></tr>" for row in badges)
     empty = "<tr><td colspan='7'>No badges yet.</td></tr>"
     return _verification_admin_shell("Verification Badge Manager", f"<section class='card'><table><thead><tr><th>ID</th><th>User</th><th>Badge</th><th>Source</th><th>Status</th><th>Approved</th><th>Revoked</th></tr></thead><tbody>{rows or empty}</tbody></table></section>")
 
@@ -15241,7 +15264,7 @@ def admin_verification_appeals_page():
             "<button>Decide</button></form>"
         )
 
-    rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{int(row.get('request_id') or 0)}</td><td>{int(row.get('user_id') or 0)}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html((row.get('appeal_text') or '')[:160])}</td><td>{clean_html(row.get('created_at') or '')}</td><td>{_appeal_action_cell(row)}</td></tr>" for row in appeals)
+    rows = "".join(f"<tr><td>{int(row.get('id') or 0)}</td><td>{int(row.get('request_id') or 0)}</td><td>{int(row.get('user_id') or 0)}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html((row.get('appeal_text') or '')[:160]))}</td><td>{html_escape(clean_html(row.get('created_at') or ''))}</td><td>{_appeal_action_cell(row)}</td></tr>" for row in appeals)
     empty = "<tr><td colspan='7'>No appeals yet.</td></tr>"
     return _verification_admin_shell("Verification Appeals", f"<section class='card'><table><thead><tr><th>ID</th><th>Request</th><th>User</th><th>Status</th><th>Appeal</th><th>Created</th><th>Actions</th></tr></thead><tbody>{rows or empty}</tbody></table></section>")
 
@@ -15743,7 +15766,7 @@ def admin_page_html(title, body, admin=None):
             rows.append(
                 f"<a class='{cls}' href='{href}'>"
                 f"<span class='ico' aria-hidden='true'>{icon}</span>"
-                f"<span>{clean_html(label)}</span></a>"
+                f"<span>{html_escape(clean_html(label))}</span></a>"
             )
             index_items.append({"label": label, "href": href, "group": group_label, "icon": icon})
         if not rows:
@@ -15751,14 +15774,14 @@ def admin_page_html(title, body, admin=None):
         open_attr = " open" if open_count < 4 else ""
         open_count += 1
         sidebar_parts.append(
-            f"<details class='ops-group' data-key='{clean_html(group_label)}'{open_attr}>"
-            f"<summary>{clean_html(group_label)}<span class='chev' aria-hidden='true'>&#9656;</span></summary>"
+            f"<details class='ops-group' data-key='{html_escape(clean_html(group_label))}'{open_attr}>"
+            f"<summary>{html_escape(clean_html(group_label))}<span class='chev' aria-hidden='true'>&#9656;</span></summary>"
             + "".join(rows) +
             "</details>"
         )
     index_items.append({"label": "Logout", "href": "/admin/logout", "group": "Session", "icon": "⏏"})
     sidebar_html = "".join(sidebar_parts)
-    nav_index_json = json.dumps(index_items)
+    nav_index_json = script_json(index_items)
 
     email = clean_html((admin or {}).get('email') or '')
     initial = email[:1].upper() if email else "A"
@@ -15780,7 +15803,7 @@ def admin_page_html(title, body, admin=None):
         "<meta charset='utf-8'/>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'/>"
         "<meta name='robots' content='noindex,nofollow'/>"
-        f"<title>{clean_html(title)} | CoinPlotXAI Admin</title>"
+        f"<title>{html_escape(clean_html(title))} | CoinPlotXAI Admin</title>"
         "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=shell-nav-20260909a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
@@ -15802,7 +15825,7 @@ def admin_page_html(title, body, admin=None):
         f"{status_strip}"
         "<div class='ops-whoami'>"
         f"<span class='email'>{email}</span>"
-        f"<span class='ops-avatar' aria-hidden='true'>{clean_html(initial)}</span>"
+        f"<span class='ops-avatar' aria-hidden='true'>{html_escape(clean_html(initial))}</span>"
         "<a class='ops-logout' href='/admin/logout'>Logout</a></div>"
         "</header>"
         f"<main id='ops-main' class='ops-content wrap'>{body}</main>"
@@ -16118,17 +16141,17 @@ def admin_bootstrap_owner_page():
         OWNER_BOOTSTRAP_TEMP["display_available"] = False
         body = f"""
           <p>This temporary password is shown once. Store it securely, log in, then change it immediately.</p>
-          <p><strong>Email:</strong> {clean_html(OWNER_ADMIN_EMAIL)}</p>
+          <p><strong>Email:</strong> {html_escape(clean_html(OWNER_ADMIN_EMAIL))}</p>
           <p><strong>Temporary password:</strong></p>
-          <p style="font-size:1.15rem"><code>{clean_html(temp_password)}</code></p>
-          <p><strong>Reason:</strong> {clean_html(reason)}</p>
+          <p style="font-size:1.15rem"><code>{html_escape(clean_html(temp_password))}</code></p>
+          <p><strong>Reason:</strong> {html_escape(clean_html(reason))}</p>
           <p>The account must change this password before continuing.</p>
           <p><a href="/admin/login" style="color:#2ce8c4">Go to secure login</a></p>
         """
         title = "Owner Bootstrap Created"
     else:
         body = f"""
-          <p>Owner admin exists for {clean_html(OWNER_ADMIN_EMAIL)}.</p>
+          <p>Owner admin exists for {html_escape(clean_html(OWNER_ADMIN_EMAIL))}.</p>
           <p>No temporary password is available to display. Set <code>ADMIN_RESET_OWNER_PASSWORD=true</code> and reload this route with the bootstrap token if you need a one-time reset.</p>
           <p><a href="/admin/login" style="color:#2ce8c4">Go to secure login</a></p>
         """
@@ -16180,8 +16203,8 @@ def admin_change_password_page():
     <section class="card" style="max-width:620px;margin:5vh auto">
       <h1>Change Temporary Password</h1>
       <p class="muted">Before accessing the admin dashboard, create a permanent password for your CoinPlotXAI Inc. owner account.</p>
-      {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
-      {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+      {f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
+      {f"<p style='color:#ff9aa8'>{html_escape(clean_html(error))}</p>" if error else ""}
       <form method="post">
         <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
         <p><input name="current_password" type="password" autocomplete="current-password" placeholder="Current temporary password" required /></p>
@@ -16241,9 +16264,9 @@ def admin_dashboard_page():
             return clean_html(str(v))
 
     def _stat_card(label, value, href=None, cls="", sub=""):
-        inner = f"<div class='muted'>{clean_html(label)}</div><div class='metric'>{_n(value)}</div>"
+        inner = f"<div class='muted'>{html_escape(clean_html(label))}</div><div class='metric'>{_n(value)}</div>"
         if sub:
-            inner += f"<div class='muted' style='font-size:.82rem'>{clean_html(sub)}</div>"
+            inner += f"<div class='muted' style='font-size:.82rem'>{html_escape(clean_html(sub))}</div>"
         if href:
             return f"<a class='card ops-stat-card {cls}' href='{href}'>{inner}</a>"
         return f"<div class='card ops-stat-card {cls}'>{inner}</div>"
@@ -16253,7 +16276,7 @@ def admin_dashboard_page():
         profile_prompt = (
             "<div class='card' style='border-color:rgba(255,209,102,.45)'>"
             "<strong>Complete owner profile</strong>"
-            f"<p class='muted'>Missing: {clean_html(', '.join(missing).replace('_', ' '))}</p>"
+            f"<p class='muted'>Missing: {html_escape(clean_html(', '.join(missing).replace('_', ' ')))}</p>"
             "<p><a class='button' href='/admin/profile'>Complete Profile</a></p>"
             "</div>"
         )
@@ -16364,10 +16387,10 @@ def admin_live_ops_page():
     body = (
         "<h1>Live Ops</h1><p class='muted'>Daily operational plan for the Enter → Play → React → Earn Status → Share → Return loop.</p>"
         "<div class='grid'>"
-        f"<div class='card'><strong>Featured Mode</strong><p class='metric'>{clean_html(plan.get('featured_mode') or '')}</p></div>"
-        f"<div class='card'><strong>Daily Reward</strong><p>{clean_html(plan.get('daily_reward') or '')}</p></div>"
-        f"<div class='card'><strong>Roast Theme</strong><p>{clean_html(plan.get('roast_theme') or '')}</p></div>"
-        f"<div class='card'><strong>Scam Lesson</strong><p>{clean_html(plan.get('scam_lesson') or '')}</p></div>"
+        f"<div class='card'><strong>Featured Mode</strong><p class='metric'>{html_escape(clean_html(plan.get('featured_mode') or ''))}</p></div>"
+        f"<div class='card'><strong>Daily Reward</strong><p>{html_escape(clean_html(plan.get('daily_reward') or ''))}</p></div>"
+        f"<div class='card'><strong>Roast Theme</strong><p>{html_escape(clean_html(plan.get('roast_theme') or ''))}</p></div>"
+        f"<div class='card'><strong>Scam Lesson</strong><p>{html_escape(clean_html(plan.get('scam_lesson') or ''))}</p></div>"
         "</div><h2>Start Here Path</h2><div class='card'>"
         f"{admin_rows_table(steps, [('title','Step'),('url','Route'),('xp','XP')])}</div>"
     )
@@ -16454,7 +16477,7 @@ def admin_system_page():
     """
     core = mission_state.get("core") or {}
     mission_cards = "".join(
-        f"<div class='card'><strong>{clean_html(label)}</strong><p class='metric'>{clean_html(str(value))}</p></div>"
+        f"<div class='card'><strong>{html_escape(clean_html(label))}</strong><p class='metric'>{html_escape(clean_html(str(value)))}</p></div>"
         for label, value in (
             ("Overall Health", f"{int(core.get('overall_health') or 0)}%"),
             ("Learning Activity", core.get("learning_activity") or 0),
@@ -16473,28 +16496,28 @@ def admin_system_page():
     map_nodes = ""
     for idx, module in enumerate((mission_state.get("modules") or [])[:10]):
         x, y = positions[idx % len(positions)]
-        map_nodes += f"<div class='system-admin-node' data-state='{clean_html(module.get('state') or 'READY')}' style='left:{x}%;top:{y}%'>{clean_html((module.get('label') or '').replace(' Intelligence',''))}</div>"
+        map_nodes += f"<div class='system-admin-node' data-state='{html_escape(clean_html(module.get('state') or 'READY'))}' style='left:{x}%;top:{y}%'>{html_escape(clean_html((module.get('label') or '').replace(' Intelligence','')))}</div>"
     module_rows = "".join(
         "<tr>"
-        f"<td>{clean_html(module.get('label') or '')}</td>"
-        f"<td>{clean_html(module.get('state') or '')}</td>"
+        f"<td>{html_escape(clean_html(module.get('label') or ''))}</td>"
+        f"<td>{html_escape(clean_html(module.get('state') or ''))}</td>"
         f"<td>{int(module.get('score') or 0)}%</td>"
         f"<td>{int(module.get('signal_count') or 0)}</td>"
-        f"<td>{clean_html(module.get('recommendation') or '')}</td>"
-        f"<td><a class='button' href='{clean_html(module.get('admin_route') or '/admin/system')}'>Review</a></td>"
+        f"<td>{html_escape(clean_html(module.get('recommendation') or ''))}</td>"
+        f"<td><a class='button' href='{html_escape(clean_html(module.get('admin_route') or '/admin/system'))}'>Review</a></td>"
         "</tr>"
         for module in mission_state.get("modules") or []
     )
     timeline_rows = "".join(
-        f"<tr><td>{clean_html(item.get('time') or '')}</td><td>{clean_html(item.get('event') or '')}</td><td>{clean_html(item.get('state') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('time') or ''))}</td><td>{html_escape(clean_html(item.get('event') or ''))}</td><td>{html_escape(clean_html(item.get('state') or ''))}</td></tr>"
         for item in mission_state.get("timeline") or []
     )
     prediction_cards = "".join(
-        f"<div class='card'><strong>{clean_html(str(key).replace('_',' ').title())}</strong><p>{clean_html(str(value))}</p></div>"
+        f"<div class='card'><strong>{html_escape(clean_html(str(key).replace('_',' ').title()))}</strong><p>{html_escape(clean_html(str(value)))}</p></div>"
         for key, value in (mission_state.get("prediction") or {}).items()
     )
     quick_actions = "".join(
-        f"<a class='button' href='{clean_html(item.get('route') or '/admin/system')}'>{clean_html(item.get('label') or 'Review')}</a>"
+        f"<a class='button' href='{html_escape(clean_html(item.get('route') or '/admin/system'))}'>{html_escape(clean_html(item.get('label') or 'Review'))}</a>"
         for item in mission_state.get("quick_actions") or []
     )
     body = mission_css + (
@@ -16517,23 +16540,23 @@ def admin_system_page():
         f"{timeline_rows}</table></div>"
     )
     body += "<h2>Legacy Readiness Checks</h2><div class='grid'>" + "".join(
-        f"<div class='card'><strong>{clean_html(name)}</strong><p class='metric'>{'OK' if ok else 'Missing'}</p></div>" for name, ok in checks.items()
+        f"<div class='card'><strong>{html_escape(clean_html(name))}</strong><p class='metric'>{'OK' if ok else 'Missing'}</p></div>" for name, ok in checks.items()
     ) + (
         "</div><h2>Database Diagnostics</h2><div class='grid'>"
-        f"<div class='card'><strong>Active DB engine</strong><p class='metric'>{clean_html(db_diag.get('db_engine') or '')}</p></div>"
+        f"<div class='card'><strong>Active DB engine</strong><p class='metric'>{html_escape(clean_html(db_diag.get('db_engine') or ''))}</p></div>"
         f"<div class='card'><strong>Primary database endpoint loaded</strong><p class='metric'>{'Yes' if db_diag.get('database_url_loaded') else 'No'}</p></div>"
-        f"<div class='card'><strong>Latency</strong><p>{clean_html(str(db_diag.get('latency_ms') or ''))} ms</p></div>"
+        f"<div class='card'><strong>Latency</strong><p>{html_escape(clean_html(str(db_diag.get('latency_ms') or '')))} ms</p></div>"
         "</div><h2>Command Center Readiness</h2><div class='grid'>"
-        f"<div class='card'><strong>Main App status</strong><p class='metric'>{clean_html(command_center_diag.get('service_name') or '')}</p><p class='muted'>{clean_html(command_center_diag.get('service_role') or '')}</p></div>"
+        f"<div class='card'><strong>Main App status</strong><p class='metric'>{html_escape(clean_html(command_center_diag.get('service_name') or ''))}</p><p class='muted'>{html_escape(clean_html(command_center_diag.get('service_role') or ''))}</p></div>"
         f"<div class='card'><strong>Command Center</strong><p class='metric'>{'Enabled' if command_center_diag.get('enabled') else 'Disabled'}</p><p class='muted'>Current app behavior is unchanged while disabled.</p></div>"
         f"<div class='card'><strong>Internal URL configured</strong><p class='metric'>{'Yes' if command_center_diag.get('url_configured') else 'No'}</p><p class='muted'>Endpoint value is never displayed.</p></div>"
         f"<div class='card'><strong>Internal token configured</strong><p class='metric'>{'Yes' if command_center_diag.get('token_configured') else 'No'}</p><p class='muted'>Token value is never displayed.</p></div>"
-        f"<div class='card'><strong>Last dispatch test</strong><p class='metric'>{clean_html(command_center_last.get('reason') or 'not_run')}</p><p class='muted'>{clean_html(command_center_last.get('kind') or 'none')} · {clean_html(command_center_last.get('timestamp') or 'not run')}</p></div>"
-        f"<div class='card'><strong>Realtime transport</strong><p class='metric'>{clean_html(command_center_realtime.get('transport') or 'polling_fallback')}</p><p class='muted'>Active {int(command_center_realtime.get('active_connections') or 0)} · Users {int(command_center_realtime.get('connected_users') or 0)} · Events/min {int(command_center_realtime.get('events_per_minute') or 0)}</p></div>"
+        f"<div class='card'><strong>Last dispatch test</strong><p class='metric'>{html_escape(clean_html(command_center_last.get('reason') or 'not_run'))}</p><p class='muted'>{html_escape(clean_html(command_center_last.get('kind') or 'none'))} · {html_escape(clean_html(command_center_last.get('timestamp') or 'not run'))}</p></div>"
+        f"<div class='card'><strong>Realtime transport</strong><p class='metric'>{html_escape(clean_html(command_center_realtime.get('transport') or 'polling_fallback'))}</p><p class='muted'>Active {int(command_center_realtime.get('active_connections') or 0)} · Users {int(command_center_realtime.get('connected_users') or 0)} · Events/min {int(command_center_realtime.get('events_per_minute') or 0)}</p></div>"
         f"<div class='card'><strong>Realtime delivery health</strong><p class='metric'>{int(command_center_realtime.get('failed_sends') or 0)} failed</p><p class='muted'>Reconnects {int(command_center_realtime.get('reconnect_count') or 0)}</p></div>"
         "</div><h2>Stripe Checkout Diagnostics</h2><div class='grid'>"
-        f"<div class='card'><strong>Last successful checkout session</strong><p>{clean_html(last_success.get('stripe_session_id') or 'None recorded')}</p><p class='muted'>{clean_html(last_success.get('created_at') or '')}</p></div>"
-        f"<div class='card'><strong>Last Stripe error</strong><p>{clean_html(last_error.get('error_message') or 'None recorded')}</p><p class='muted'>{clean_html(last_error.get('created_at') or '')}</p></div>"
+        f"<div class='card'><strong>Last successful checkout session</strong><p>{html_escape(clean_html(last_success.get('stripe_session_id') or 'None recorded'))}</p><p class='muted'>{html_escape(clean_html(last_success.get('created_at') or ''))}</p></div>"
+        f"<div class='card'><strong>Last Stripe error</strong><p>{html_escape(clean_html(last_error.get('error_message') or 'None recorded'))}</p><p class='muted'>{html_escape(clean_html(last_error.get('created_at') or ''))}</p></div>"
         "</div><p class='muted'>Missing optional keys produce honest fallbacks instead of fake data. Missing Stripe secret or price ID blocks checkout creation.</p>"
     )
     return admin_page_html("System Health", body, admin)
@@ -16571,14 +16594,14 @@ def admin_system_module_page(module_key):
         "advertising": [("/admin/ads-review", "Ads Review"), ("/admin/ad-delivery", "Ad Delivery")],
         "creator": [("/admin/creator-command-center", "Creator Command Center"), ("/admin/moderation", "Moderation")],
     }.get(normalized, [("/admin/system", "System")])
-    actions = "".join(f"<a class='button' href='{clean_html(route)}'>{clean_html(label)}</a>" for route, label in action_routes)
+    actions = "".join(f"<a class='button' href='{html_escape(clean_html(route))}'>{html_escape(clean_html(label))}</a>" for route, label in action_routes)
     body = (
-        f"<h1>{clean_html(module.get('label') or 'System')}</h1>"
+        f"<h1>{html_escape(clean_html(module.get('label') or 'System'))}</h1>"
         "<p class='muted'>Admin-only aggregate diagnostics. This page intentionally avoids raw secrets, raw push tokens, private message bodies, and provider credential values.</p>"
         f"<div class='actions'>{actions}<a class='button' href='/admin/system'>System Mission Control</a></div>"
         f"<div class='card'>{admin_rows_table(rows, [('signal','Signal'),('value','Value')])}</div>"
         "<h2>Operational Guidance</h2>"
-        f"<div class='card'><p>{clean_html(module.get('recommendation') or 'Keep monitoring.')}</p></div>"
+        f"<div class='card'><p>{html_escape(clean_html(module.get('recommendation') or 'Keep monitoring.'))}</p></div>"
     )
     return admin_page_html(clean_html(module.get("label") or "System"), body, admin)
 
@@ -16649,10 +16672,10 @@ def admin_pulse_infrastructure_page():
     cards = "".join(
         (
             "<article class='card'>"
-            f"<h2>{clean_html(name)}</h2>"
+            f"<h2>{html_escape(clean_html(name))}</h2>"
             f"<p class='metric'>{'Ready' if ready else 'Setup'}</p>"
-            f"<p><span class='pill'>{clean_html(label)}</span></p>"
-            f"<p class='muted'>{clean_html(detail)}</p>"
+            f"<p><span class='pill'>{html_escape(clean_html(label))}</span></p>"
+            f"<p class='muted'>{html_escape(clean_html(detail))}</p>"
             "</article>"
         )
         for name, label, ready, detail in groups
@@ -17194,12 +17217,12 @@ def admin_transactions_page():
             dot = "status-dot"
         else:
             dot = "status-dot status-warn"
-        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or '—')}</span>"
+        return f"<span class='pill'><span class='{dot}'></span>{html_escape(clean_html(status or '—'))}</span>"
 
     def _user_cell(uid):
         if not uid:
             return "<td class='muted'>unlinked</td>"
-        return f"<td><a href='/admin/users/{clean_html(str(uid))}'>#{clean_html(str(uid))}</a></td>"
+        return f"<td><a href='/admin/users/{html_escape(clean_html(str(uid)))}'>#{html_escape(clean_html(str(uid)))}</a></td>"
 
     tiles = (
         "<div class='ops-kpis'>"
@@ -17218,19 +17241,19 @@ def admin_transactions_page():
         "<tr>"
         + _user_cell(r.get("user_id"))
         + f"<td>{_m(r.get('amount'), r.get('currency') or '')}</td>"
-        + f"<td class='muted'>{clean_html(r.get('payment_type') or '')}</td>"
+        + f"<td class='muted'>{html_escape(clean_html(r.get('payment_type') or ''))}</td>"
         + f"<td>{_pill(r.get('status'))}</td>"
-        + f"<td class='muted'>{clean_html(str(r.get('created_at') or ''))}</td>"
+        + f"<td class='muted'>{html_escape(clean_html(str(r.get('created_at') or '')))}</td>"
         + "</tr>"
         for r in records
     )
     sub_rows = "".join(
         "<tr>"
         + _user_cell(s.get("user_id"))
-        + f"<td>{clean_html(s.get('plan') or '')}</td>"
+        + f"<td>{html_escape(clean_html(s.get('plan') or ''))}</td>"
         + f"<td>{_pill(s.get('status'))}</td>"
-        + f"<td class='muted'>{clean_html(s.get('stripe_subscription_id') or '')}</td>"
-        + f"<td class='muted'>{clean_html(s.get('created_at') or '')}</td>"
+        + f"<td class='muted'>{html_escape(clean_html(s.get('stripe_subscription_id') or ''))}</td>"
+        + f"<td class='muted'>{html_escape(clean_html(s.get('created_at') or ''))}</td>"
         + "</tr>"
         for s in subs
     )
@@ -17423,7 +17446,7 @@ def admin_emails_page():
         if latest_brevo_sent_at and (not latest_not_configured_at or latest_brevo_sent_at >= latest_not_configured_at):
             notice = "<div class='email-notice ok'>Brevo is currently sending. Older Not Configured rows are historical; resend or retry those emails if needed.</div>"
         else:
-            notice = f"<div class='email-notice'>Brevo is not fully configured. Add missing Railway environment variables: {clean_html(', '.join(missing_fields))}.</div>"
+            notice = f"<div class='email-notice'>Brevo is not fully configured. Add missing Railway environment variables: {html_escape(clean_html(', '.join(missing_fields)))}.</div>"
     else:
         notice = "<div class='email-notice ok'>Brevo is configured for the current runtime. Secrets are hidden.</div>"
 
@@ -17447,7 +17470,7 @@ def admin_emails_page():
             label, cls = "Queued", "queued"
         else:
             label, cls = raw or "Unknown", "neutral"
-        return f"<span class='email-badge {cls}'>{clean_html(label)}</span>"
+        return f"<span class='email-badge {cls}'>{html_escape(clean_html(label))}</span>"
 
     def displayed_email_error(row):
         reason = row.get("safe_error_reason") or row.get("error_message") or row.get("provider_message_id") or ""
@@ -17461,24 +17484,24 @@ def admin_emails_page():
 
     rows = "".join(
         "<tr>"
-        f"<td>{clean_html(str(r.get('user_id') or ''))}</td>"
-        f"<td>{clean_html(mask_email(r.get('recipient_email') or r.get('email') or ''))}</td>"
-        f"<td>{clean_html(r.get('email_type') or 'transactional')}</td>"
-        f"<td class='email-subject'>{clean_html(r.get('subject') or '')}</td>"
-        f"<td>{clean_html(r.get('provider') or 'brevo')}</td>"
+        f"<td>{html_escape(clean_html(str(r.get('user_id') or '')))}</td>"
+        f"<td>{html_escape(clean_html(mask_email(r.get('recipient_email') or r.get('email') or '')))}</td>"
+        f"<td>{html_escape(clean_html(r.get('email_type') or 'transactional'))}</td>"
+        f"<td class='email-subject'>{html_escape(clean_html(r.get('subject') or ''))}</td>"
+        f"<td>{html_escape(clean_html(r.get('provider') or 'brevo'))}</td>"
         f"<td>{status_badge(r.get('status'), r.get('provider_status_code'))}</td>"
-        f"<td>{clean_html(str(r.get('provider_status_code') or ''))}</td>"
-        f"<td>{clean_html(r.get('provider_message_id') or '')}</td>"
-        f"<td>{clean_html(displayed_email_error(r))}</td>"
-        f"<td>{clean_html(str(r.get('retry_count') or 0))}</td>"
-        f"<td>{clean_html(r.get('trace_id') or '')}</td>"
-        f"<td>{clean_html(r.get('delivery_status') or r.get('last_webhook_event') or '')}</td>"
-        f"<td>{clean_html(r.get('created_at') or '')}</td>"
+        f"<td>{html_escape(clean_html(str(r.get('provider_status_code') or '')))}</td>"
+        f"<td>{html_escape(clean_html(r.get('provider_message_id') or ''))}</td>"
+        f"<td>{html_escape(clean_html(displayed_email_error(r)))}</td>"
+        f"<td>{html_escape(clean_html(str(r.get('retry_count') or 0)))}</td>"
+        f"<td>{html_escape(clean_html(r.get('trace_id') or ''))}</td>"
+        f"<td>{html_escape(clean_html(r.get('delivery_status') or r.get('last_webhook_event') or ''))}</td>"
+        f"<td>{html_escape(clean_html(r.get('created_at') or ''))}</td>"
         "</tr>"
         for r in logs
     ) or "<tr><td colspan='13'>No email logs found for this filter.</td></tr>"
     filter_links = " ".join(
-        f"<a class='email-filter {'active' if key == selected_filter else ''}' href='/admin/emails?filter={key}'>{clean_html(label)}</a>"
+        f"<a class='email-filter {'active' if key == selected_filter else ''}' href='/admin/emails?filter={key}'>{html_escape(clean_html(label))}</a>"
         for key, (label, _sql) in filters.items()
     )
     total_pages = max(1, (filtered_total + per_page - 1) // per_page)
@@ -17522,12 +17545,12 @@ def admin_emails_page():
         <div class="email-admin-card"><strong>Support email configured</strong><span>{'Yes' if brevo_diag.get('support_email_configured') else 'No'}</span></div>
         <div class="email-admin-card"><strong>Security email configured</strong><span>{'Yes' if brevo_diag.get('security_email_configured') else 'No'}</span></div>
         <div class="email-admin-card"><strong>Public base URL configured</strong><span>{'Yes' if brevo_diag.get('public_base_url_configured') else 'No'}</span></div>
-        <div class="email-admin-card"><strong>API key source</strong><span>{clean_html(brevo_diag.get('api_key_source') or 'n/a')}</span></div>
-        <div class="email-admin-card"><strong>Sender source</strong><span>{clean_html(brevo_diag.get('sender_email_source') or 'n/a')}</span></div>
-        <div class="email-admin-card"><strong>Sender domain</strong><span>{clean_html(brevo_diag.get('sender_domain') or 'n/a')}</span></div>
+        <div class="email-admin-card"><strong>API key source</strong><span>{html_escape(clean_html(brevo_diag.get('api_key_source') or 'n/a'))}</span></div>
+        <div class="email-admin-card"><strong>Sender source</strong><span>{html_escape(clean_html(brevo_diag.get('sender_email_source') or 'n/a'))}</span></div>
+        <div class="email-admin-card"><strong>Sender domain</strong><span>{html_escape(clean_html(brevo_diag.get('sender_domain') or 'n/a'))}</span></div>
         <div class="email-admin-card"><strong>Reply-to configured</strong><span>{'Yes' if brevo_diag.get('reply_to_email_masked') else 'No'}</span></div>
       </div>
-      <p class="muted">Sender: {clean_html(brevo_diag.get('sender_email_masked') or 'not available')} · Reply-to: {clean_html(brevo_diag.get('reply_to_email_masked') or 'not available')} · Public links use: {clean_html(brevo_diag.get('public_base_url') or '')}</p>
+      <p class="muted">Sender: {html_escape(clean_html(brevo_diag.get('sender_email_masked') or 'not available'))} · Reply-to: {html_escape(clean_html(brevo_diag.get('reply_to_email_masked') or 'not available'))} · Public links use: {html_escape(clean_html(brevo_diag.get('public_base_url') or ''))}</p>
       <p><a class="button" href="/api/admin/email/outbound-ip">Check Railway Outbound IP</a></p>
       {'<p class="muted">PulseSoc is using its built-in support sender fallback. Set BREVO_SENDER_EMAIL, BREVO_REPLY_TO, and DEFAULT_FROM_EMAIL in Railway to support@pulsesoc.com after the sender is verified in Brevo.</p>' if brevo_diag.get('using_default_sender') else ''}
     </div>
@@ -17929,28 +17952,28 @@ def admin_data_recovery_page():
     conn.close()
     sqlite_snapshot = sqlite_recovery_snapshot()
     count_cards = "".join(
-        f"<div class='card'><strong>{clean_html(table)}</strong><p class='metric'>{value if value is not None else 'missing'}</p></div>"
+        f"<div class='card'><strong>{html_escape(clean_html(table))}</strong><p class='metric'>{value if value is not None else 'missing'}</p></div>"
         for table, value in current_counts.items()
     )
     sqlite_cards = "".join(
-        f"<div class='card'><strong>{clean_html(table)}</strong><p class='metric'>{value if value is not None else 'missing'}</p></div>"
+        f"<div class='card'><strong>{html_escape(clean_html(table))}</strong><p class='metric'>{value if value is not None else 'missing'}</p></div>"
         for table, value in (sqlite_snapshot.get("counts") or {}).items()
     ) or "<p class='muted'>No local SQLite comparison counts available.</p>"
     body = f"""
     <h1>Data Recovery</h1>
     <p class="muted">Non-destructive recovery tools for PostgreSQL migration checks, owner restoration, payment repair, and old SQLite comparison. This page never wipes production data.</p>
-    {f"<p class='card'>{clean_html(message)}</p>" if message else ""}
+    {f"<p class='card'>{html_escape(clean_html(message))}</p>" if message else ""}
     <div class="grid">
-      <div class="card"><strong>Active DB Engine</strong><p class="metric">{clean_html(db_service.ENGINE_NAME)}</p></div>
+      <div class="card"><strong>Active DB Engine</strong><p class="metric">{html_escape(clean_html(db_service.ENGINE_NAME))}</p></div>
       <div class="card"><strong>DATABASE_URL Loaded</strong><p class="metric">{'yes' if db_service.DATABASE_URL_LOADED else 'no'}</p></div>
       <div class="card"><strong>DB Connected</strong><p class="metric">{'yes' if diagnostics.get('connected') else 'no'}</p></div>
-      <div class="card"><strong>Database</strong><p>{clean_html(diagnostics.get('database_name') or '')}</p></div>
-      <div class="card"><strong>Owner Admin</strong><p>{'present' if owner else 'missing'} · role {clean_html((owner or {}).get('role') or '')} · status {clean_html((owner or {}).get('status') or '')}</p></div>
+      <div class="card"><strong>Database</strong><p>{html_escape(clean_html(diagnostics.get('database_name') or ''))}</p></div>
+      <div class="card"><strong>Owner Admin</strong><p>{'present' if owner else 'missing'} · role {html_escape(clean_html((owner or {}).get('role') or ''))} · status {html_escape(clean_html((owner or {}).get('status') or ''))}</p></div>
     </div>
     <h2>Current Database Counts</h2>
     <div class="grid">{count_cards}</div>
     <h2>Old Local SQLite Snapshot</h2>
-    <p class="muted">Path checked: {clean_html(sqlite_snapshot.get('path') or '')}. {clean_html(sqlite_snapshot.get('error') or '')}</p>
+    <p class="muted">Path checked: {html_escape(clean_html(sqlite_snapshot.get('path') or ''))}. {html_escape(clean_html(sqlite_snapshot.get('error') or ''))}</p>
     <div class="grid">{sqlite_cards}</div>
     <div class="grid">
       <form method="post" class="card">
@@ -18050,14 +18073,14 @@ def admin_payment_emails_page():
             "<tr>"
             f"<td>{row.get('id')}</td>"
             f"<td>{row.get('user_id')}</td>"
-            f"<td>{clean_html(mask_email(row.get('email') or ''))}</td>"
-            f"<td>{clean_html(row.get('email_type') or '')}</td>"
-            f"<td>{clean_html(row.get('status') or '')}</td>"
-            f"<td>{clean_html(row.get('stripe_event_id') or '')}</td>"
-            f"<td>{clean_html(row.get('payment_id') or '')}</td>"
-            f"<td>{clean_html(str(row.get('retry_count') or 0))}</td>"
-            f"<td>{clean_html((row.get('provider_response') or row.get('error_message') or '')[:280])}</td>"
-            f"<td>{clean_html(row.get('created_at') or '')}</td>"
+            f"<td>{html_escape(clean_html(mask_email(row.get('email') or '')))}</td>"
+            f"<td>{html_escape(clean_html(row.get('email_type') or ''))}</td>"
+            f"<td>{html_escape(clean_html(row.get('status') or ''))}</td>"
+            f"<td>{html_escape(clean_html(row.get('stripe_event_id') or ''))}</td>"
+            f"<td>{html_escape(clean_html(row.get('payment_id') or ''))}</td>"
+            f"<td>{html_escape(clean_html(str(row.get('retry_count') or 0)))}</td>"
+            f"<td>{html_escape(clean_html((row.get('provider_response') or row.get('error_message') or '')[:280]))}</td>"
+            f"<td>{html_escape(clean_html(row.get('created_at') or ''))}</td>"
             "<td>"
             f"<form method='post'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><input type='hidden' name='log_id' value='{row.get('id')}' /><button type='submit'>Resend</button></form>"
             "</td>"
@@ -18066,12 +18089,12 @@ def admin_payment_emails_page():
     body = f"""
     <h1>Payment Emails</h1>
     <p class="muted">Billing transactional email delivery for Pro activation, payment success, and receipts.</p>
-    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    {f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
     <form method="get" class="card">
       <div class="grid">
-        <label>Status<input name="status" value="{clean_html(status)}" placeholder="sent, failed, pending, retried" /></label>
-        <label>Email<input name="email" value="{clean_html(search)}" placeholder="customer@email.com" /></label>
-        <label>Stripe payment/event<input name="payment_id" value="{clean_html(payment_id)}" placeholder="event, invoice, session" /></label>
+        <label>Status<input name="status" value="{html_escape(clean_html(status))}" placeholder="sent, failed, pending, retried" /></label>
+        <label>Email<input name="email" value="{html_escape(clean_html(search))}" placeholder="customer@email.com" /></label>
+        <label>Stripe payment/event<input name="payment_id" value="{html_escape(clean_html(payment_id))}" placeholder="event, invoice, session" /></label>
       </div>
       <button type="submit">Filter</button>
       <p><a class="button" href="/admin/emails/payment?export=csv">Export CSV</a></p>
@@ -18134,7 +18157,7 @@ def admin_unmatched_payments_page():
     cur.execute("SELECT * FROM unmatched_payments ORDER BY created_at DESC LIMIT 100")
     rows_data = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{clean_html(str(r.get('stripe_event_id') or ''))}</td><td>{clean_html(str(r.get('customer_email') or ''))}</td><td>{clean_html(str(r.get('amount') or ''))}</td><td>{clean_html(str(r.get('reason') or ''))}</td><td>{clean_html(str(r.get('created_at') or ''))}</td></tr>" for r in rows_data)
+    rows = "".join(f"<tr><td>{html_escape(clean_html(str(r.get('stripe_event_id') or '')))}</td><td>{html_escape(clean_html(str(r.get('customer_email') or '')))}</td><td>{html_escape(clean_html(str(r.get('amount') or '')))}</td><td>{html_escape(clean_html(str(r.get('reason') or '')))}</td><td>{html_escape(clean_html(str(r.get('created_at') or '')))}</td></tr>" for r in rows_data)
     body = f"<h1>Unmatched Payments</h1><p class='muted'>Payments Stripe confirmed but CoinPlotXAI could not safely match to a website account.</p><div class='card'><table><tr><th>Event</th><th>Email</th><th>Amount</th><th>Reason</th><th>Date</th></tr>{rows}</table></div>"
     return admin_page_html("Unmatched Payments", body, admin)
 
@@ -18175,7 +18198,7 @@ def admin_audit_logs_page():
     audit_clear_link = '<a class="button" href="/admin/audit-logs" style="max-width:90px">Clear</a>' if action_q else ''
     search_form = (
         "<form method='get' action='/admin/audit-logs' class='card' style='display:flex;gap:10px;align-items:center;margin-bottom:14px'>"
-        f"<input type='text' name='action' value='{clean_html(action_q)}' placeholder='Filter by action (e.g. permission_denied, login, grant)…' style='flex:1'/>"
+        f"<input type='text' name='action' value='{html_escape(clean_html(action_q))}' placeholder='Filter by action (e.g. permission_denied, login, grant)…' style='flex:1'/>"
         "<button type='submit' style='max-width:130px'>Filter</button>"
         f"{audit_clear_link}"
         "</form>"
@@ -18189,13 +18212,13 @@ def admin_audit_logs_page():
             dot = "status-dot"
         else:
             dot = "status-dot status-warn"
-        return f"<span class='pill'><span class='{dot}'></span>{clean_html(action or '')}</span>"
+        return f"<span class='pill'><span class='{dot}'></span>{html_escape(clean_html(action or ''))}</span>"
 
     rows = "".join(
-        f"<tr><td class='muted'>{clean_html(r.get('admin_email') or ('#'+str(r.get('admin_user_id'))) or '')}</td><td>{_action_pill(r.get('action'))}</td><td class='muted'>{clean_html(r.get('target_type') or '')}</td><td class='muted'>{clean_html(str(r.get('target_id') or ''))}</td><td class='muted'>{clean_html(r.get('created_at') or '')}</td></tr>"
+        f"<tr><td class='muted'>{html_escape(clean_html(r.get('admin_email') or ('#'+str(r.get('admin_user_id'))) or ''))}</td><td>{_action_pill(r.get('action'))}</td><td class='muted'>{html_escape(clean_html(r.get('target_type') or ''))}</td><td class='muted'>{html_escape(clean_html(str(r.get('target_id') or '')))}</td><td class='muted'>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>"
         for r in logs
     ) or "<tr><td colspan='5' class='muted'>No matching audit entries.</td></tr>"
-    activity_rows = "".join(f"<tr><td class='muted'>{a.get('admin_user_id') or ''}</td><td>{clean_html(a.get('action') or '')}</td><td class='muted'>{clean_html(a.get('route') or '')}</td><td class='muted'>{clean_html(a.get('target_type') or '')}</td><td class='muted'>{clean_html(a.get('created_at') or '')}</td></tr>" for a in activity)
+    activity_rows = "".join(f"<tr><td class='muted'>{a.get('admin_user_id') or ''}</td><td>{html_escape(clean_html(a.get('action') or ''))}</td><td class='muted'>{html_escape(clean_html(a.get('route') or ''))}</td><td class='muted'>{html_escape(clean_html(a.get('target_type') or ''))}</td><td class='muted'>{html_escape(clean_html(a.get('created_at') or ''))}</td></tr>" for a in activity)
     body = (
         "<h1>Audit Logs</h1>"
         "<p class='muted'>Owner, super admin, and security-only review of administrative actions. Denials are highlighted.</p>"
@@ -18284,12 +18307,12 @@ def admin_profile_page():
             message = "Profile saved."
     def input_field(name, label, input_type="text"):
         value = clean_html((admin or {}).get(name) or "")
-        return f"<label>{clean_html(label)}<input name='{name}' type='{input_type}' value='{value}' /></label>"
+        return f"<label>{html_escape(clean_html(label))}<input name='{name}' type='{input_type}' value='{value}' /></label>"
     body = f"""
     <h1>Admin Profile</h1>
     <p class="muted">Owner profile information is private and only available inside protected admin routes.</p>
-    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
-    {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+    {f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
+    {f"<p style='color:#ff9aa8'>{html_escape(clean_html(error))}</p>" if error else ""}
     <form method="post" class="card">
       <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
       <div class="grid">
@@ -18304,7 +18327,7 @@ def admin_profile_page():
         {input_field("emergency_contact_name", "Emergency contact name")}
         {input_field("emergency_contact_phone", "Emergency contact phone")}
       </div>
-      <p><label>Notes<textarea name="notes">{clean_html((admin or {}).get("notes") or "")}</textarea></label></p>
+      <p><label>Notes<textarea name="notes">{html_escape(clean_html((admin or {}).get("notes") or ""))}</textarea></label></p>
       <button type="submit">Save Profile</button>
     </form>
     """
@@ -21286,10 +21309,10 @@ def admin_pulse_ads_review_board_page():
         conn.close()
     status_cards = (
         "<div class='grid'>"
-        f"<div class='card'><div class='muted'>Wallet Balances</div><div class='metric'>{clean_html(finance.get('total_wallet'))}</div></div>"
-        f"<div class='card'><div class='muted'>Lifetime Funded</div><div class='metric'>{clean_html(finance.get('lifetime_funded'))}</div></div>"
-        f"<div class='card'><div class='muted'>Lifetime Spent</div><div class='metric'>{clean_html(finance.get('lifetime_spent'))}</div></div>"
-        f"<div class='card'><div class='muted'>Reserved</div><div class='metric'>{clean_html(finance.get('reserved'))}</div></div>"
+        f"<div class='card'><div class='muted'>Wallet Balances</div><div class='metric'>{html_escape(clean_html(finance.get('total_wallet')))}</div></div>"
+        f"<div class='card'><div class='muted'>Lifetime Funded</div><div class='metric'>{html_escape(clean_html(finance.get('lifetime_funded')))}</div></div>"
+        f"<div class='card'><div class='muted'>Lifetime Spent</div><div class='metric'>{html_escape(clean_html(finance.get('lifetime_spent')))}</div></div>"
+        f"<div class='card'><div class='muted'>Reserved</div><div class='metric'>{html_escape(clean_html(finance.get('reserved')))}</div></div>"
         "</div>"
     )
     rows = ""
@@ -21302,24 +21325,24 @@ def admin_pulse_ads_review_board_page():
         thumb_url = clean_html((item.get("thumbnail_asset") or {}).get("thumbnail_url") or media_asset.get("thumbnail_url") or "")
         media_type = clean_html(media_asset.get("media_type") or item.get("creative_type") or "text")
         if media_url and media_type == "video":
-            preview_html = f"<video src='{media_url}' poster='{thumb_url}' controls muted playsinline preload='metadata' style='max-width:180px;max-height:110px;border-radius:12px'></video>"
+            preview_html = f"<video src='{html_escape(media_url)}' poster='{html_escape(thumb_url)}' controls muted playsinline preload='metadata' style='max-width:180px;max-height:110px;border-radius:12px'></video>"
         elif media_url and media_type == "audio":
-            preview_html = f"<audio src='{media_url}' controls preload='metadata' style='max-width:220px'></audio>"
+            preview_html = f"<audio src='{html_escape(media_url)}' controls preload='metadata' style='max-width:220px'></audio>"
         elif media_url or thumb_url:
-            preview_html = f"<img src='{thumb_url or media_url}' alt='Ad creative preview' loading='lazy' style='max-width:180px;max-height:110px;border-radius:12px;object-fit:cover'>"
+            preview_html = f"<img src='{html_escape(thumb_url or media_url)}' alt='Ad creative preview' loading='lazy' style='max-width:180px;max-height:110px;border-radius:12px;object-fit:cover'>"
         else:
             preview_html = "<span class='muted'>Text creative</span>"
         metadata_html = (
-            f"<span class='muted'>{media_type}</span><br>"
+            f"<span class='muted'>{html_escape(media_type)}</span><br>"
             f"<span class='muted'>{safe_int(media_asset.get('width'), 0)}x{safe_int(media_asset.get('height'), 0)} · {safe_int(media_asset.get('file_size'), 0)} bytes</span><br>"
-            f"<span class='pill'>{clean_html(media_asset.get('security_status') or 'scan pending')}</span>"
+            f"<span class='pill'>{html_escape(clean_html(media_asset.get('security_status') or 'scan pending'))}</span>"
         )
         rows += (
             "<tr>"
-            f"<td>{clean_html(item.get('business_name') or '')}</td>"
-            f"<td>{clean_html(item.get('title') or '')}<br><span class='muted'>{clean_html(item.get('campaign_name') or '')}</span></td>"
+            f"<td>{html_escape(clean_html(item.get('business_name') or ''))}</td>"
+            f"<td>{html_escape(clean_html(item.get('title') or ''))}<br><span class='muted'>{html_escape(clean_html(item.get('campaign_name') or ''))}</span></td>"
             f"<td>{preview_html}<br>{metadata_html}</td>"
-            f"<td><span class='pill'>{clean_html(item.get('review_status') or 'pending')}</span></td>"
+            f"<td><span class='pill'>{html_escape(clean_html(item.get('review_status') or 'pending'))}</span></td>"
             f"<td>{safe_int(item.get('risk_score'), 0)}</td>"
             "<td>"
             f"<form method='post' action='/admin/pulse-ads-review-board/action'><input type='hidden' name='csrf_token' value='{token}'><input type='hidden' name='creative_id' value='{creative_id}'><input type='hidden' name='action' value='approve'><button>Approve</button></form>"
@@ -21415,11 +21438,11 @@ def admin_pulse_ads_verification_page():
         count = safe_int(counts.get(key if key != "all" else "all"), 0)
         badge = f" ({count})" if key in counts else ""
         style = "font-weight:700;text-decoration:underline" if key == active_filter else ""
-        filter_tabs += f"<a href='/admin/pulse-ads-verification?filter={key}' style='{style}'>{clean_html(label)}{badge}</a>"
+        filter_tabs += f"<a href='/admin/pulse-ads-verification?filter={key}' style='{style}'>{html_escape(clean_html(label))}{badge}</a>"
     filter_tabs += (
         "<form method='get' action='/admin/pulse-ads-verification' style='margin-left:auto;display:flex;gap:6px'>"
-        f"<input type='hidden' name='filter' value='{clean_html(active_filter)}'>"
-        f"<input name='q' value='{clean_html(search)}' placeholder='Name, email, account or owner ID'>"
+        f"<input type='hidden' name='filter' value='{html_escape(clean_html(active_filter))}'>"
+        f"<input name='q' value='{html_escape(clean_html(search))}' placeholder='Name, email, account or owner ID'>"
         "<button>Search</button></form></div>"
     )
     token = get_csrf_token()
@@ -21433,8 +21456,8 @@ def admin_pulse_ads_verification_page():
         owner = safe_int(account.get("owner_user_id"), 0)
         detail = (
             f"<span class='muted'>Owner #{owner}</span><br>"
-            f"<span class='muted'>{clean_html(account.get('business_email') or '')}</span><br>"
-            f"<span class='muted'>{clean_html(account.get('business_type') or '')}</span>"
+            f"<span class='muted'>{html_escape(clean_html(account.get('business_email') or ''))}</span><br>"
+            f"<span class='muted'>{html_escape(clean_html(account.get('business_type') or ''))}</span>"
         )
         reason_html = f"<br><span class='muted'>Last note: {reason}</span>" if reason else ""
         actions = (
@@ -21446,7 +21469,7 @@ def admin_pulse_ads_verification_page():
         )
         rows += (
             "<tr>"
-            f"<td>{clean_html(account.get('business_name') or 'Unnamed account')}<br>{detail}</td>"
+            f"<td>{html_escape(clean_html(account.get('business_name') or 'Unnamed account'))}<br>{detail}</td>"
             f"<td><span class='pill'>{state}</span><br><span class='muted'>account: {acct_status}</span>{reason_html}</td>"
             f"<td>{submitted}</td>"
             f"<td>{actions}</td>"
@@ -21891,11 +21914,11 @@ def admin_super_users_page():
     rows = "".join(
         "<tr>"
         f"<td>{safe_int(row.get('user_id'), 0)}</td>"
-        f"<td>{clean_html(row.get('email') or '')}</td>"
-        f"<td>{clean_html(row.get('full_name') or row.get('display_name') or row.get('username') or 'User')}</td>"
+        f"<td>{html_escape(clean_html(row.get('email') or ''))}</td>"
+        f"<td>{html_escape(clean_html(row.get('full_name') or row.get('display_name') or row.get('username') or 'User'))}</td>"
         f"<td><span class='pill'>{'Super User' if user_is_super_user(row) else 'Regular'}</span></td>"
         "<td><form method='post' class='actions'>"
-        f"<input type='hidden' name='csrf_token' value='{clean_html(get_csrf_token())}'>"
+        f"<input type='hidden' name='csrf_token' value='{html_escape(clean_html(get_csrf_token()))}'>"
         f"<input type='hidden' name='user_id' value='{safe_int(row.get('user_id'), 0)}'>"
         "<button class='primary' name='action' value='enable'>Enable</button>"
         "<button name='action' value='disable'>Disable</button>"
@@ -21910,8 +21933,8 @@ def admin_super_users_page():
         <section class='card'>
           <h2>Owner Super User Access</h2>
           <p class='muted'>Only the configured owner account can change this access. Max one super user is enforced unless OWNER_ALLOW_MULTIPLE_SUPER_USERS is enabled.</p>
-          {'<p class="pill">'+clean_html(message)+'</p>' if message else ''}
-          {'<p class="pill" style="border-color:#ff6b7a;color:#ffd4d9">'+clean_html(error)+'</p>' if error else ''}
+          {'<p class="pill">'+html_escape(clean_html(message))+'</p>' if message else ''}
+          {'<p class="pill" style="border-color:#ff6b7a;color:#ffd4d9">'+html_escape(clean_html(error))+'</p>' if error else ''}
           <table class='table'><thead><tr><th>User ID</th><th>Email</th><th>Name</th><th>Status</th><th>Control</th></tr></thead><tbody>{rows}</tbody></table>
         </section>
         """,
@@ -22049,17 +22072,33 @@ def get_user_full_profile(user_id):
 
 
 def admin_rows_table(rows, columns):
-    header = "".join(f"<th>{clean_html(label)}</th>" for _, label in columns)
+    """Generic admin table. Every cell is escaped, not tag-stripped.
+
+    `clean_html` used to be applied here and is not a defence: it is
+    `re.sub(r"<[^>]+>", " ")`, which removes only *complete* tags. An
+    unterminated `<img src=x onmouseover=alert(1)` passes through whole and the
+    browser closes it against the next `>` in the document.
+
+    This helper renders raw database values for ~60 admin pages, and several of
+    the columns it is pointed at are written by anonymous requests —
+    `support_tickets.name` and `.subject` (POST /support), `security_events.path`,
+    `auth_events.email`. Callers pass `(key, label)` pairs and plain row dicts,
+    never prebuilt markup, so escaping every cell is safe here.
+    """
+    header = "".join(f"<th>{html_escape(str(label))}</th>" for _, label in columns)
     if not rows:
         return f"<table><tr>{header}</tr><tr><td colspan='{len(columns)}'>No records yet.</td></tr></table>"
     body = ""
     for row in rows:
-        body += "<tr>" + "".join(f"<td>{clean_html(str(row.get(key) or ''))}</td>" for key, _ in columns) + "</tr>"
+        body += "<tr>" + "".join(f"<td>{html_escape(str(row.get(key) or ''))}</td>" for key, _ in columns) + "</tr>"
     return f"<table><tr>{header}</tr>{body}</table>"
 
 
 def admin_input(name, label, value="", input_type="text"):
-    return f"<label>{clean_html(label)}<input name='{name}' type='{input_type}' value='{clean_html(str(value or ''))}' /></label>"
+    # `value` lands inside a single-quoted attribute. `clean_html` leaves quotes
+    # untouched, so a value containing `' onmouseover=...` broke out of the
+    # attribute entirely; html_escape covers `'` and `"` as well as `<`.
+    return f"<label>{html_escape(str(label))}<input name='{name}' type='{input_type}' value='{html_escape(str(value or ''))}' /></label>"
 
 
 @webhook_app.route("/admin/users/new", methods=["GET", "POST"])
@@ -22085,7 +22124,7 @@ def admin_user_new_page():
                     message = f"User created. Temporary password was generated only for this admin session: {clean_html(password)}"
     body = f"""
     <h1>Add User</h1>
-    {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
+    {f"<p style='color:#ff9aa8'>{html_escape(clean_html(error))}</p>" if error else ""}
     {f"<p class='muted'>{message}</p>" if message else ""}
     <form method="post" class="card">
       <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
@@ -22151,9 +22190,9 @@ def admin_user_detail_page(user_id):
         "Latest Stripe payload": (latest_payment.get("stripe_payload") or "")[:240] or "none",
         "Latest payment email": f"{latest_payment_email.get('email_type') or latest_payment_email.get('template') or 'none'} {latest_payment_email.get('status') or ''} {latest_payment_email.get('created_at') or ''}",
     }
-    diagnostic = "".join(f"<div class='card'><strong>{clean_html(str(label))}</strong><p>{clean_html(str(value))}</p></div>" for label, value in diagnostic_rows.items())
+    diagnostic = "".join(f"<div class='card'><strong>{html_escape(clean_html(str(label)))}</strong><p>{html_escape(clean_html(str(value)))}</p></div>" for label, value in diagnostic_rows.items())
     summary = "".join(
-        f"<div class='card'><strong>{clean_html(label)}</strong><p>{clean_html(str(value or ''))}</p></div>"
+        f"<div class='card'><strong>{html_escape(clean_html(label))}</strong><p>{html_escape(clean_html(str(value or '')))}</p></div>"
         for label, value in {
             "Name": user.get("full_name") or user.get("display_name"),
             "Email": mask_email(user.get("email")),
@@ -22175,14 +22214,14 @@ def admin_user_detail_page(user_id):
     _header = (
         "<div class='card ops-userhead'>"
         "<div class='ops-userhead__id'>"
-        f"<div class='ops-userhead__name'>{clean_html(user.get('full_name') or user.get('display_name') or ('User #' + str(user_id)))}</div>"
-        f"<div class='muted'>{clean_html(mask_email(user.get('email')))} &middot; #{user_id}</div>"
+        f"<div class='ops-userhead__name'>{html_escape(clean_html(user.get('full_name') or user.get('display_name') or ('User #' + str(user_id))))}</div>"
+        f"<div class='muted'>{html_escape(clean_html(mask_email(user.get('email'))))} &middot; #{user_id}</div>"
         "</div>"
         "<div class='ops-userhead__stats'>"
-        f"<div class='ops-userhead__stat'><span class='muted'>Status</span><span class='pill'><span class='{_sdot}'></span>{clean_html(user.get('account_status') or 'active')}</span></div>"
-        f"<div class='ops-userhead__stat'><span class='muted'>Class</span><strong>{clean_html(paid_class)}</strong></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Status</span><span class='pill'><span class='{_sdot}'></span>{html_escape(clean_html(user.get('account_status') or 'active'))}</span></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Class</span><strong>{html_escape(clean_html(paid_class))}</strong></div>"
         f"<div class='ops-userhead__stat'><span class='muted'>Lifetime Revenue</span><strong>{_rev_amt}</strong><span class='muted' style='font-size:.78rem'>{int(_rev.get('c') or 0)} payments</span></div>"
-        f"<div class='ops-userhead__stat'><span class='muted'>Plan</span><strong>{clean_html(user.get('plan') or 'free')}</strong></div>"
+        f"<div class='ops-userhead__stat'><span class='muted'>Plan</span><strong>{html_escape(clean_html(user.get('plan') or 'free'))}</strong></div>"
         "</div>"
         f"<div class='ops-userhead__actions'><a class='button' href='/admin/users/{user_id}/edit'>Edit User</a></div>"
         "</div>"
@@ -22193,7 +22232,7 @@ def admin_user_detail_page(user_id):
     _actions = (
         f"<form method='post' action='/admin/users/{user_id}/convert-paid-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Convert Trial to PulseSoc Premium</button><p class='muted'>Use only after confirming a successful Stripe payment for this user.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/force-sync-pro' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Force Sync Premium From Stripe/Payment</button><p class='muted'>Repairs this user only when a successful local payment record or Stripe event exists.</p></form>"
-        f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or '')}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates PulseSoc Premium if paid.</p></form>"
+        f"<form method='post' action='/admin/users/{user_id}/retry-stripe-session' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><label>Stripe Session ID<input name='session_id' value='{html_escape(clean_html(user.get('stripe_session_id') or latest_checkout_attempt.get('stripe_session_id') or latest_payment.get('stripe_session_id') or ''))}' placeholder='cs_live_...' /></label><button type='submit'>Retry Stripe Session Lookup</button><p class='muted'>Retrieves the checkout session from Stripe and activates PulseSoc Premium if paid.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/reprocess-latest-webhook' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Reprocess Latest Webhook</button><p class='muted'>Retries local payment/email repair from the latest processed Stripe event.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/send-pro-email' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Send Confirmation Email</button><p class='muted'>Sends the PulseSoc Premium activation/payment confirmation email bundle again.</p></form>"
         f"<form method='post' action='/admin/users/{user_id}/resend-confirmation' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Resend Account Confirmation Email</button><p class='muted'>Generates a fresh verification link for unconfirmed accounts.</p></form>"
@@ -22207,7 +22246,7 @@ def admin_user_detail_page(user_id):
         f"<h2>Backend Premium Status</h2><div class='grid'>{diagnostic}</div>"
         f"<div class='grid'>{summary}</div>"
         f"<h2>Payment History</h2><div class='card'>{admin_rows_table(payments, [('amount','Amount'),('currency','Currency'),('status','Status'),('stripe_event_id','Event'),('invoice_id','Invoice'),('created_at','Date')])}</div>"
-        f"<h2>Activity Timeline</h2><div class='card'><p class='muted'>Latest activity: {clean_html((activity[0] or {}).get('event_type') if activity else 'none')} · {len(activity)} recent items.</p><button type='button' onclick=\"var p=document.getElementById('activityPanel');p.hidden=!p.hidden;this.textContent=p.hidden?'View Activity Timeline':'Hide Timeline';\">View Activity Timeline</button><div id='activityPanel' hidden style='max-height:400px;overflow:auto;margin-top:12px'>{admin_rows_table(activity[:25], [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div></div>"
+        f"<h2>Activity Timeline</h2><div class='card'><p class='muted'>Latest activity: {html_escape(clean_html((activity[0] or {}).get('event_type') if activity else 'none'))} · {len(activity)} recent items.</p><button type='button' onclick=\"var p=document.getElementById('activityPanel');p.hidden=!p.hidden;this.textContent=p.hidden?'View Activity Timeline':'Hide Timeline';\">View Activity Timeline</button><div id='activityPanel' hidden style='max-height:400px;overflow:auto;margin-top:12px'>{admin_rows_table(activity[:25], [('event_type','Event'),('event_label','Label'),('created_at','Date')])}</div></div>"
         f"<h2>Email Logs</h2><div class='card'>{admin_rows_table(emails, [('email_type','Type'),('subject','Subject'),('status','Status'),('created_at','Date')])}</div>"
     )
     return admin_page_html("User Detail", body, admin)
@@ -22259,7 +22298,7 @@ def admin_user_edit_page(user_id):
             message = "User saved."
     body = f"""
     <h1>Edit User</h1>
-    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    {f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
     <form method="post" class="card">
       <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
       <div class="grid">
@@ -22419,7 +22458,7 @@ def admin_user_retry_stripe_session(user_id):
         log_admin_audit(admin["id"], "admin_retry_stripe_session", "user", str(user_id), {"session_id": session_id, "ok": bool(result.get("ok"))})
     except Exception as exc:
         logging.exception("ADMIN_RETRY_STRIPE_SESSION_FAILED user_id=%s session_id=%s error=%s", user_id, session_id, safe_stripe_error(exc))
-        return admin_page_html("Stripe Lookup Failed", f"<h1>Stripe lookup failed</h1><p>{clean_html(safe_stripe_error(exc))}</p>", admin), 502
+        return admin_page_html("Stripe Lookup Failed", f"<h1>Stripe lookup failed</h1><p>{html_escape(clean_html(safe_stripe_error(exc)))}</p>", admin), 502
     return redirect(url_for("admin_user_detail_page", user_id=user_id))
 
 
@@ -27336,26 +27375,26 @@ def admin_admins_page():
         if locked:
             return "<span class='pill'><span class='status-dot status-danger'></span>locked</span>"
         dot = "status-dot" if s == "active" else "status-dot status-warn"
-        return f"<span class='pill'><span class='{dot}'></span>{clean_html(r.get('status') or 'active')}</span>"
+        return f"<span class='pill'><span class='{dot}'></span>{html_escape(clean_html(r.get('status') or 'active'))}</span>"
 
     def _row(r):
         role = (r.get("role") or "").lower()
-        role_chip = f"<a class='ops-chip' href='/admin/roles'>{clean_html(r.get('role') or '—')}</a>" if r.get("role") else "<span class='muted'>—</span>"
+        role_chip = f"<a class='ops-chip' href='/admin/roles'>{html_escape(clean_html(r.get('role') or '—'))}</a>" if r.get("role") else "<span class='muted'>—</span>"
         pc = "all" if role == "owner" else perm_count.get(role, 0)
         flags = ""
         if r.get("must_change_password"):
             flags += "<span class='ops-chip' style='border-color:var(--warn,#f5c451)'>must reset pw</span>"
-        job_title_html = ('<div class="muted" style="font-size:.8rem">' + clean_html(r.get('job_title')) + '</div>') if r.get('job_title') else ''
+        job_title_html = ('<div class="muted" style="font-size:.8rem">' + html_escape(clean_html(r.get('job_title'))) + '</div>') if r.get('job_title') else ''
         return (
             "<tr>"
-            f"<td class='muted'>{clean_html(str(r.get('id')))}</td>"
-            f"<td><a href='/admin/admins/{r.get('id')}/edit'>{clean_html(r.get('full_name') or 'Admin')}</a>"
+            f"<td class='muted'>{html_escape(clean_html(str(r.get('id'))))}</td>"
+            f"<td><a href='/admin/admins/{r.get('id')}/edit'>{html_escape(clean_html(r.get('full_name') or 'Admin'))}</a>"
             f"{job_title_html}</td>"
-            f"<td class='muted'>{clean_html(mask_email(r.get('email')))}</td>"
+            f"<td class='muted'>{html_escape(clean_html(mask_email(r.get('email'))))}</td>"
             f"<td>{role_chip}</td>"
             f"<td>{pc}</td>"
             f"<td>{_status_pill(r)}{flags}</td>"
-            f"<td class='muted'>{clean_html(r.get('last_login_at') or 'never')}</td>"
+            f"<td class='muted'>{html_escape(clean_html(r.get('last_login_at') or 'never'))}</td>"
             "</tr>"
         )
 
@@ -27415,9 +27454,9 @@ def admin_admin_new_page():
                 message = "Admin created. Temporary password is shown once below."
     body = f"""
     <h1>Create Admin</h1>
-    {f"<p style='color:#ff9aa8'>{clean_html(error)}</p>" if error else ""}
-    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
-    {f"<div class='card'><strong>Temporary password</strong><p><code>{clean_html(temp_password)}</code></p></div>" if temp_password else ""}
+    {f"<p style='color:#ff9aa8'>{html_escape(clean_html(error))}</p>" if error else ""}
+    {f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
+    {f"<div class='card'><strong>Temporary password</strong><p><code>{html_escape(clean_html(temp_password))}</code></p></div>" if temp_password else ""}
     <form method="post" class="card">
       <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
       <div class="grid">
@@ -27474,7 +27513,7 @@ def admin_admin_edit_page(admin_id):
             message = "Admin saved."
     body = f"""
     <h1>Edit Admin</h1>
-    {f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    {f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
     <form method="post" class="card">
       <input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
       <div class="grid">
@@ -27541,7 +27580,7 @@ def admin_employee_new_page():
         log_admin_audit(admin["id"], "admin_created_employee", "employee", "", {})
         message = "Employee created."
     body = f"""
-    <h1>Add Employee</h1>{f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    <h1>Add Employee</h1>{f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
     <form method="post" class="card"><input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
       <div class="grid">
         {admin_input("employee_id", "Employee ID")}
@@ -27596,7 +27635,7 @@ def admin_employee_edit_page(employee_id):
         message = "Employee saved."
         employee = {**employee, "full_name": request.form.get("full_name", employee.get("full_name"))}
     body = f"""
-    <h1>Edit Employee</h1>{f"<p class='muted'>{clean_html(message)}</p>" if message else ""}
+    <h1>Edit Employee</h1>{f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""}
     <form method="post" class="card"><input type="hidden" name="csrf_token" value="{get_csrf_token()}" />
       <div class="grid">
         {admin_input("full_name", "Full name", employee.get("full_name"))}
@@ -27605,7 +27644,7 @@ def admin_employee_edit_page(employee_id):
         {admin_input("role", "Role", employee.get("role"))}
         {admin_input("status", "Status", employee.get("status"))}
       </div>
-      <p><label>Notes<textarea name="notes">{clean_html(employee.get("notes") or "")}</textarea></label></p>
+      <p><label>Notes<textarea name="notes">{html_escape(clean_html(employee.get("notes") or ""))}</textarea></label></p>
       <button type="submit">Save Employee</button>
     </form>
     """
@@ -27645,7 +27684,7 @@ def admin_department_new_page():
         conn.close()
         log_admin_audit(admin["id"], "admin_created_department", "department", request.form.get("name", ""), {})
         message = "Department created."
-    message_html = f"<p class='muted'>{clean_html(message)}</p>" if message else ""
+    message_html = f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""
     body = f"<h1>Add Department</h1>{message_html}<form method='post' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' />{admin_input('name','Name')}{admin_input('description','Description')}<button type='submit'>Create Department</button></form>"
     return admin_page_html("Add Department", body, admin)
 
@@ -27682,7 +27721,7 @@ def admin_department_edit_page(department_id):
         conn.close()
         log_admin_audit(admin["id"], "admin_edited_department", "department", str(department_id), {})
         message = "Department saved."
-    message_html = f"<p class='muted'>{clean_html(message)}</p>" if message else ""
+    message_html = f"<p class='muted'>{html_escape(clean_html(message))}</p>" if message else ""
     body = f"<h1>Edit Department</h1>{message_html}<form method='post' class='card'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' />{admin_input('name','Name',department.get('name'))}{admin_input('description','Description',department.get('description'))}{admin_input('status','Status',department.get('status'))}<button type='submit'>Save Department</button></form>"
     return admin_page_html("Edit Department", body, admin)
 
@@ -27713,7 +27752,7 @@ def admin_roles_page():
     def _pill(status):
         s = (status or "active").lower()
         dot = "status-dot" if s in ("active", "enabled", "") else "status-dot status-warn"
-        return f"<span class='pill'><span class='{dot}'></span>{clean_html(status or 'active')}</span>"
+        return f"<span class='pill'><span class='{dot}'></span>{html_escape(clean_html(status or 'active'))}</span>"
 
     tiles = (
         "<div class='ops-kpis'>"
@@ -27735,17 +27774,17 @@ def admin_roles_page():
         for dom in sorted(by_domain):
             keys = by_domain[dom]
             chips += (
-                f"<div class='ops-rbac__domain'><span class='ops-rbac__domname'>{clean_html(dom)}</span>"
-                + "".join(f"<span class='ops-chip'>{clean_html(k.split('.', 1)[1] if '.' in k else k)}</span>" for k in keys)
+                f"<div class='ops-rbac__domain'><span class='ops-rbac__domname'>{html_escape(clean_html(dom))}</span>"
+                + "".join(f"<span class='ops-chip'>{html_escape(clean_html(k.split('.', 1)[1] if '.' in k else k))}</span>" for k in keys)
                 + "</div>"
             )
         if not perms:
             chips = "<p class='muted'>No permissions granted.</p>"
         return (
             "<div class='card ops-rbac__role'>"
-            f"<div class='ops-rbac__rolehead'><div><strong>{clean_html(r.get('name'))}</strong> {_pill(r.get('status'))}</div>"
+            f"<div class='ops-rbac__rolehead'><div><strong>{html_escape(clean_html(r.get('name')))}</strong> {_pill(r.get('status'))}</div>"
             f"<div class='muted'>{len(perms)} perms &middot; {held} admin{'s' if held != 1 else ''}</div></div>"
-            f"<p class='muted'>{clean_html(r.get('description') or '')}</p>"
+            f"<p class='muted'>{html_escape(clean_html(r.get('description') or ''))}</p>"
             f"<details class='ops-rbac__perms'><summary>{len(perms)} permission{'s' if len(perms) != 1 else ''}</summary>{chips}</details>"
             "</div>"
         )
@@ -27792,17 +27831,17 @@ def admin_permissions_page():
         rows = ""
         for p in by_domain[dom]:
             roles = sorted(perm_roles.get(p.get("key"), set()))
-            role_chips = "".join(f"<span class='ops-chip'>{clean_html(r)}</span>" for r in roles) or "<span class='muted'>no roles</span>"
+            role_chips = "".join(f"<span class='ops-chip'>{html_escape(clean_html(r))}</span>" for r in roles) or "<span class='muted'>no roles</span>"
             rows += (
                 "<tr>"
-                f"<td><code>{clean_html(p.get('key'))}</code></td>"
-                f"<td class='muted'>{clean_html(p.get('description') or '')}</td>"
+                f"<td><code>{html_escape(clean_html(p.get('key')))}</code></td>"
+                f"<td class='muted'>{html_escape(clean_html(p.get('description') or ''))}</td>"
                 f"<td>{len(roles)}</td>"
                 f"<td>{role_chips}</td>"
                 "</tr>"
             )
         sections += (
-            f"<div class='card'><h2 style='margin-top:0'>{clean_html(dom)} <span class='muted' style='font-size:.9rem'>({len(by_domain[dom])})</span></h2>"
+            f"<div class='card'><h2 style='margin-top:0'>{html_escape(clean_html(dom))} <span class='muted' style='font-size:.9rem'>({len(by_domain[dom])})</span></h2>"
             "<table><tr><th>Permission</th><th>Description</th><th>Roles</th><th>Granted To</th></tr>"
             f"{rows}</table></div>"
         )
@@ -27904,7 +27943,7 @@ def admin_telegram_health_page():
         {"name": "Text handler registered", "value": bool(metadata.get("text_handler_registered", TELEGRAM_RUNTIME_STATE.get("text_handler_registered"))), "detail": "filters.TEXT & ~filters.COMMAND"},
     ]
     event_rows = "".join(
-        f"<tr><td>{clean_html(e.get('created_at') or '')}</td><td>{clean_html(e.get('event_type') or '')}</td><td>{clean_html(e.get('telegram_user_id') or '')}</td><td>{clean_html(e.get('username') or '')}</td><td>{clean_html(e.get('handler') or '')}</td><td>{int(e.get('latency_ms') or 0)}</td><td>{clean_html((e.get('message_text') or '')[:160])}</td><td>{clean_html((e.get('exception_text') or '')[:160])}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(e.get('created_at') or ''))}</td><td>{html_escape(clean_html(e.get('event_type') or ''))}</td><td>{html_escape(clean_html(e.get('telegram_user_id') or ''))}</td><td>{html_escape(clean_html(e.get('username') or ''))}</td><td>{html_escape(clean_html(e.get('handler') or ''))}</td><td>{int(e.get('latency_ms') or 0)}</td><td>{html_escape(clean_html((e.get('message_text') or '')[:160]))}</td><td>{html_escape(clean_html((e.get('exception_text') or '')[:160]))}</td></tr>"
         for e in debug_events
     )
     body = f"""
@@ -28059,9 +28098,9 @@ def admin_notifications_page():
     health = notification_health_engine.health_snapshot(conn)
     conn.close()
     provider_cards = "".join(
-        f"<div class='card'><h2>{clean_html(name.title())}</h2>"
-        f"<p><span class='pill'>{clean_html((info or {}).get('status') or 'unknown')}</span></p>"
-        f"<p>{clean_html((info or {}).get('message') or '')}</p>"
+        f"<div class='card'><h2>{html_escape(clean_html(name.title()))}</h2>"
+        f"<p><span class='pill'>{html_escape(clean_html((info or {}).get('status') or 'unknown'))}</span></p>"
+        f"<p>{html_escape(clean_html((info or {}).get('message') or ''))}</p>"
         f"<p class='muted'>Sent 24h: {int((info or {}).get('sent_24h') or 0)} · Failed 24h: {int((info or {}).get('failed_24h') or 0)}</p></div>"
         for name, info in (health.get("providers") or {}).items()
     )
@@ -28087,7 +28126,7 @@ def admin_notifications_email_page():
     if denied:
         return denied
     status = email_service_service.provider_status()
-    body = f"<h1>Email Notification Health</h1><p class='muted'>Brevo transactional email status. Missing config is reported honestly.</p><div class='card'><pre>{clean_html(json.dumps(status, indent=2, default=str))}</pre></div><form class='card' method='post' action='/admin/notifications/test-email'><h2>Send Test Email</h2><input name='recipient' placeholder='Recipient email'><button class='button primary'>Send Test Email</button></form>"
+    body = f"<h1>Email Notification Health</h1><p class='muted'>Brevo transactional email status. Missing config is reported honestly.</p><div class='card'><pre>{html_escape(clean_html(json.dumps(status, indent=2, default=str)))}</pre></div><form class='card' method='post' action='/admin/notifications/test-email'><h2>Send Test Email</h2><input name='recipient' placeholder='Recipient email'><button class='button primary'>Send Test Email</button></form>"
     return admin_page_html("Email Notifications", body, admin)
 
 
@@ -28099,7 +28138,7 @@ def admin_notifications_test_email_page():
     recipient = (request.form.get("recipient") or admin.get("email") or "").strip()
     result = email_service_service.send_email(recipient, "PulseSoc notification test", "<p>PulseSoc email notifications are connected.</p>", "PulseSoc email notifications are connected.")
     log_admin_audit(admin.get("id"), "notification_test_email", "email", mask_email(recipient), {"ok": result.get("ok"), "error": result.get("error")})
-    body = f"<h1>Test Email Result</h1><div class='card'><pre>{clean_html(json.dumps(result, indent=2, default=str))}</pre></div><p><a class='button' href='/admin/notifications/email'>Back to Email Health</a></p>"
+    body = f"<h1>Test Email Result</h1><div class='card'><pre>{html_escape(clean_html(json.dumps(result, indent=2, default=str)))}</pre></div><p><a class='button' href='/admin/notifications/email'>Back to Email Health</a></p>"
     return admin_page_html("Test Email", body, admin)
 
 
@@ -28136,7 +28175,7 @@ def admin_alerts_page():
     <div class="grid">
       <div class="card"><h2>Active Alerts</h2><div class="metric">{summary.get('active_alert_count', 0)}</div></div>
       <div class="card"><h2>Triggered Today</h2><div class="metric">{summary.get('triggered_today', 0)}</div></div>
-      <div class="card"><h2>Worker</h2><div class="metric">{clean_html(worker_status)}</div><p class="muted">Last run: {clean_html(heartbeat.get('last_run_at') or 'never')}</p></div>
+      <div class="card"><h2>Worker</h2><div class="metric">{html_escape(clean_html(worker_status))}</div><p class="muted">Last run: {html_escape(clean_html(heartbeat.get('last_run_at') or 'never'))}</p></div>
       <div class="card"><h2>Auto Signals Active</h2><div class="metric">{auto_active}</div><p class="muted">Created today: {auto_created_today} · Triggered today: {auto_triggered_today}</p></div>
     </div>
     <div class="card">
@@ -28201,8 +28240,8 @@ def admin_private_chat_reports_page():
     conn.close()
     rows = "".join(
         f"<tr><td>{r.get('id')}</td><td>{r.get('reporter_user_id')}</td><td>{r.get('reported_user_id')}</td>"
-        f"<td>{r.get('conversation_id')}</td><td>{r.get('message_id')}</td><td>{clean_html((r.get('reason') or '')[:180])}</td>"
-        f"<td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td>"
+        f"<td>{r.get('conversation_id')}</td><td>{r.get('message_id')}</td><td>{html_escape(clean_html((r.get('reason') or '')[:180]))}</td>"
+        f"<td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td>"
         + ("<td><form method='post'>"
            f"<input type='hidden' name='report_id' value='{r.get('id')}'>"
            "<button name='action' value='resolve'>Resolve</button>"
@@ -28211,7 +28250,7 @@ def admin_private_chat_reports_page():
         for r in reports
     )
     body = (
-        f"<h1>Private Chat Reports</h1><p>{clean_html(message)}</p><div class='card'>"
+        f"<h1>Private Chat Reports</h1><p>{html_escape(clean_html(message))}</p><div class='card'>"
         "<table><tr><th>ID</th><th>Reporter</th><th>Reported</th><th>Conversation</th><th>Message</th>"
         "<th>Reason</th><th>Status</th><th>Created</th><th>Action</th></tr>"
         f"{rows or '<tr><td colspan=9>No chat reports.</td></tr>'}</table></div>"
@@ -28297,7 +28336,7 @@ def admin_moderation_page():
         for r in rows:
             s = (r["s"] or "").lower()
             dot = "status-dot status-warn" if s in warn_keys else ("status-dot status-danger" if s in ("blocked", "rejected", "removed") else "status-dot")
-            out += f"<tr><td><span class='pill'><span class='{dot}'></span>{clean_html(r['s'])}</span></td><td>{int(r['total'] or 0):,}</td></tr>"
+            out += f"<tr><td><span class='pill'><span class='{dot}'></span>{html_escape(clean_html(r['s']))}</span></td><td>{int(r['total'] or 0):,}</td></tr>"
         return out or "<tr><td colspan='2' class='muted'>None.</td></tr>"
 
     body = (
@@ -28337,11 +28376,11 @@ def admin_security_action_form(action, value, label, event_id=0):
         return ""
     return (
         "<form method='post' style='display:inline-flex;margin:2px'>"
-        f"<input type='hidden' name='csrf_token' value='{clean_html(get_csrf_token())}' />"
-        f"<input type='hidden' name='security_action' value='{clean_html(action)}' />"
-        f"<input type='hidden' name='control_value' value='{clean_html(value)}' />"
+        f"<input type='hidden' name='csrf_token' value='{html_escape(clean_html(get_csrf_token()))}' />"
+        f"<input type='hidden' name='security_action' value='{html_escape(clean_html(action))}' />"
+        f"<input type='hidden' name='control_value' value='{html_escape(clean_html(value))}' />"
         f"<input type='hidden' name='event_id' value='{int(event_id or 0)}' />"
-        f"<button class='button' type='submit'>{clean_html(label)}</button>"
+        f"<button class='button' type='submit'>{html_escape(clean_html(label))}</button>"
         "</form>"
     )
 
@@ -28473,16 +28512,16 @@ def admin_security_page():
             body_rows.append(
                 "<tr>"
                 f"<td>{security_label_html(row.get('severity') or details.get('severity') or 'Low')}</td>"
-                f"<td>{clean_html(row.get('event_type') or '')}</td>"
-                f"<td>{clean_html(row.get('email') or details.get('masked_email') or '')}</td>"
-                f"<td>{clean_html(ip)}</td>"
-                f"<td>{clean_html(row.get('country') or details.get('country') or '')}</td>"
-                f"<td>{clean_html(row.get('device') or details.get('device') or '')}</td>"
-                f"<td>{clean_html((row.get('user_agent') or details.get('user_agent') or '')[:180])}</td>"
-                f"<td>{clean_html(row.get('route') or details.get('route') or '')}</td>"
-                f"<td>{clean_html(row.get('status') or '')}</td>"
+                f"<td>{html_escape(clean_html(row.get('event_type') or ''))}</td>"
+                f"<td>{html_escape(clean_html(row.get('email') or details.get('masked_email') or ''))}</td>"
+                f"<td>{html_escape(clean_html(ip))}</td>"
+                f"<td>{html_escape(clean_html(row.get('country') or details.get('country') or ''))}</td>"
+                f"<td>{html_escape(clean_html(row.get('device') or details.get('device') or ''))}</td>"
+                f"<td>{html_escape(clean_html((row.get('user_agent') or details.get('user_agent') or '')[:180]))}</td>"
+                f"<td>{html_escape(clean_html(row.get('route') or details.get('route') or ''))}</td>"
+                f"<td>{html_escape(clean_html(row.get('status') or ''))}</td>"
                 f"<td>{actions}</td>"
-                f"<td>{clean_html(row.get('created_at') or '')}</td>"
+                f"<td>{html_escape(clean_html(row.get('created_at') or ''))}</td>"
                 "</tr>"
             )
         return "<table><tr><th>Severity</th><th>Event</th><th>Email</th><th>IP</th><th>Country</th><th>Device</th><th>User Agent</th><th>Route</th><th>Status</th><th>Actions</th><th>Date</th></tr>" + "".join(body_rows) + "</table>"
@@ -28495,11 +28534,11 @@ def admin_security_page():
             value = row.get("control_value") or ""
             body_rows.append(
                 "<tr>"
-                f"<td>{clean_html(row.get('control_type') or '')}</td>"
-                f"<td>{clean_html(value)}</td>"
-                f"<td>{clean_html(row.get('status') or '')}</td>"
-                f"<td>{clean_html(row.get('reason') or '')}</td>"
-                f"<td>{clean_html(row.get('expires_at') or '')}</td>"
+                f"<td>{html_escape(clean_html(row.get('control_type') or ''))}</td>"
+                f"<td>{html_escape(clean_html(value))}</td>"
+                f"<td>{html_escape(clean_html(row.get('status') or ''))}</td>"
+                f"<td>{html_escape(clean_html(row.get('reason') or ''))}</td>"
+                f"<td>{html_escape(clean_html(row.get('expires_at') or ''))}</td>"
                 f"<td>{admin_security_action_form('mark_safe', value, 'Mark Safe')}</td>"
                 "</tr>"
             )
@@ -28513,10 +28552,10 @@ def admin_security_page():
             domain = row.get("domain") or ""
             body_rows.append(
                 "<tr>"
-                f"<td>{clean_html(domain)}</td>"
-                f"<td>{clean_html(str(row.get('failures') or 0))}</td>"
+                f"<td>{html_escape(clean_html(domain))}</td>"
+                f"<td>{html_escape(clean_html(str(row.get('failures') or 0)))}</td>"
                 f"<td>{security_label_html(row.get('severity') or 'Medium')}</td>"
-                f"<td>{clean_html(row.get('latest') or '')}</td>"
+                f"<td>{html_escape(clean_html(row.get('latest') or ''))}</td>"
                 f"<td>{admin_security_action_form('block_domain', domain, 'Block Domain')}{admin_security_action_form('mark_safe', domain, 'Mark Safe')}</td>"
                 "</tr>"
             )
@@ -28538,13 +28577,13 @@ def admin_security_page():
             )
             body_rows.append(
                 "<tr>"
-                f"<td>{clean_html(str(event.get('score') or 0))}</td>"
+                f"<td>{html_escape(clean_html(str(event.get('score') or 0)))}</td>"
                 f"<td>{security_label_html(event.get('severity') or 'Low')}</td>"
-                f"<td>{clean_html(event.get('event_type') or '')}</td>"
-                f"<td>{clean_html(str(user_id or ''))}</td>"
-                f"<td>{clean_html(event.get('status') or '')}</td>"
+                f"<td>{html_escape(clean_html(event.get('event_type') or ''))}</td>"
+                f"<td>{html_escape(clean_html(str(user_id or '')))}</td>"
+                f"<td>{html_escape(clean_html(event.get('status') or ''))}</td>"
                 f"<td>{ai_action}</td>"
-                f"<td>{clean_html(event.get('created_at') or '')}</td>"
+                f"<td>{html_escape(clean_html(event.get('created_at') or ''))}</td>"
                 "</tr>"
             )
         return "<table><tr><th>Risk</th><th>Severity</th><th>Event Type</th><th>User</th><th>Status</th><th>AI</th><th>Date</th></tr>" + "".join(body_rows) + "</table>"
@@ -28571,7 +28610,7 @@ def admin_security_page():
     body = (
         "<h1>Security Center</h1>"
         "<p class='muted'>Failed-login monitoring and Command Center scam-shield scoring with IP, country, user-agent, device, route, severity, cooldowns, challenges, and reversible admin controls. Emails remain masked.</p>"
-        + (f"<div class='card'>{clean_html(message)}</div>" if message else "")
+        + (f"<div class='card'>{html_escape(clean_html(message))}</div>" if message else "")
         + f"<div class='grid'><div class='card'><strong>Security Engine</strong><p class='metric'>{'Online' if pipeline_recent.get('available') else 'Disabled'}</p></div><div class='card'><strong>Recent Risk Events</strong><p class='metric'>{len(pipeline_recent.get('events') or [])}</p></div></div>"
         + tab_html
         + f"<div class='card'>{main_panel}</div>"
@@ -28612,7 +28651,7 @@ def admin_settings_page():
         "OpenAI": bool(os.getenv("OPENAI_API_KEY")),
         "Telegram": bool(BOT_TOKEN),
     }
-    body = "<h1>Settings</h1><div class='grid'>" + "".join(f"<div class='card'><strong>{clean_html(k)}</strong><p class='metric'>{'OK' if v else 'Missing'}</p></div>" for k, v in checks.items()) + "</div>"
+    body = "<h1>Settings</h1><div class='grid'>" + "".join(f"<div class='card'><strong>{html_escape(clean_html(k))}</strong><p class='metric'>{'OK' if v else 'Missing'}</p></div>" for k, v in checks.items()) + "</div>"
     return admin_page_html("Settings", body, admin)
 
 
@@ -28646,7 +28685,7 @@ def admin_support_page():
             send_channel_email(
                 request.form.get("ticket_email") or "support@pulsesoc.com",
                 "CoinPlotXAI Support Reply",
-                f"<p>{clean_html(reply_message)}</p>",
+                f"<p>{html_escape(clean_html(reply_message))}</p>",
                 reply_message,
                 user_id=0,
                 email_type="support_reply",
@@ -29270,9 +29309,9 @@ def public_learn_page(slug):
         "roast-battle-rules": ["Call signs", "Clean intensity", "Virtual-dollar scoring", "Crowd heat"],
         "arena-ranking-system": ["XP", "Ranks", "Badges", "Streaks"],
     }.get(safe_slug, ["Safety", "Education", "Practice", "Review"])
-    cards = "".join(f"<article class='card'><h2>{clean_html(topic)}</h2><p>CoinPlotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
+    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(topic))}</h2><p>CoinPlotXAI teaches this through guided examples, live context, and clear next actions. Keep learning educational, simulated, and risk-aware.</p></article>" for topic in topics)
     schema_json = json.dumps(seo_engine.json_ld(path))
-    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(meta['title'])}</title><meta name="description" content="{clean_html(meta['description'])}"><link rel="canonical" href="{clean_html(meta['canonical'])}"><meta property="og:title" content="{clean_html(title)} | CoinPlotXAI"><meta property="og:description" content="{clean_html(meta['description'])}"><meta property="og:image" content="{clean_html(meta['og_image'])}"><meta property="og:url" content="{clean_html(meta['canonical'])}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{clean_html(title)} | CoinPlotXAI"><meta name="twitter:description" content="{clean_html(meta['description'])}"><meta name="twitter:image" content="{clean_html(meta['og_image'])}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPlotXAI</a><h1>{clean_html(title)}</h1><p>{clean_html(meta['description'])}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
+    html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(meta['title']))}</title><meta name="description" content="{html_escape(clean_html(meta['description']))}"><link rel="canonical" href="{html_escape(clean_html(meta['canonical']))}"><meta property="og:title" content="{html_escape(clean_html(title))} | CoinPlotXAI"><meta property="og:description" content="{html_escape(clean_html(meta['description']))}"><meta property="og:image" content="{html_escape(clean_html(meta['og_image']))}"><meta property="og:url" content="{html_escape(clean_html(meta['canonical']))}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{html_escape(clean_html(title))} | CoinPlotXAI"><meta name="twitter:description" content="{html_escape(clean_html(meta['description']))}"><meta name="twitter:image" content="{html_escape(clean_html(meta['og_image']))}"><script type="application/ld+json">{schema_json}</script><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:34px 0 90px}}.hero{{padding:22px 0}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}}.card{{border:1px solid rgba(110,223,246,.22);border-radius:14px;background:rgba(255,255,255,.055);padding:16px}}a,.button{{color:#06101b;background:linear-gradient(135deg,#36e58f,#6edff6);padding:10px 13px;border-radius:8px;text-decoration:none;font-weight:900;display:inline-flex}}p{{color:#9fb5c0;line-height:1.6}}</style></head><body><main class="wrap"><section class="hero"><a href="/">CoinPlotXAI</a><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(meta['description']))}</p><a class="button" href="/arena/play">Start Training</a></section><section class="grid">{cards}</section></main></body></html>"""
     return Response(html)
 
 
@@ -30209,8 +30248,8 @@ def sports_edge_landing_page():
         "Risk Score", "Betting Discipline Coach", "Sports News Intelligence", "Crypto + Sports Market Connection",
         "Alerts and Notifications", "Training/Education Mode",
     ]
-    feature_cards = "".join(f"<article class='card mini'><h3>{clean_html(item)}</h3><p>Educational intelligence with risk context, source status, and no guaranteed-outcome claims.</p></article>" for item in features)
-    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPlotXAI</title><meta name='description' content='Use CoinPlotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://pulsesoc.com/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPlotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPlotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPlotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPlotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{clean_html(source_note)}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
+    feature_cards = "".join(f"<article class='card mini'><h3>{html_escape(clean_html(item))}</h3><p>Educational intelligence with risk context, source status, and no guaranteed-outcome claims.</p></article>" for item in features)
+    body = f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Sports Edge AI Intelligence | CoinPlotXAI</title><meta name='description' content='Use CoinPlotXAI Sports Edge to track sports data, AI signals, risk psychology, and crypto market intelligence in one web and mobile command center.'><link rel='canonical' href='https://pulsesoc.com/sports-edge'><meta property='og:title' content='Sports Edge AI Intelligence | CoinPlotXAI'><meta property='og:description' content='Track sports data, AI signals, discipline coaching, and risk intelligence.'><style>body{{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 32px,1180px);margin:auto}}header{{position:sticky;top:0;background:rgba(5,11,20,.9);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.18)}}nav{{min-height:68px;display:flex;justify-content:space-between;align-items:center;gap:12px}}a{{color:inherit;text-decoration:none}}.hero{{padding:72px 0 32px;display:grid;grid-template-columns:1.15fr .85fr;gap:20px;align-items:center}}h1{{font-size:clamp(40px,7vw,76px);line-height:.96;margin:0 0 16px}}p{{color:#9fb5c0}}.button{{display:inline-flex;min-height:46px;align-items:center;justify-content:center;border-radius:10px;padding:12px 16px;background:rgba(255,255,255,.06);border:1px solid rgba(110,223,246,.24);font-weight:900}}.primary{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#06101b}}.gold{{background:linear-gradient(135deg,#ffd166,#b6ff4f);color:#1c1303}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.card{{border:1px solid rgba(110,223,246,.2);border-radius:18px;background:rgba(255,255,255,.05);padding:20px;box-shadow:0 24px 80px rgba(0,0,0,.24)}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:18px 0 50px}}.mini:hover{{box-shadow:0 0 34px rgba(110,223,246,.18)}}.status{{color:#36e58f;font-weight:900}}@media(max-width:820px){{.hero{{grid-template-columns:1fr;padding-top:36px}}.actions .button{{width:100%}}}}</style></head><body><header><div class='wrap'><nav><a href='/'>CoinPlotXAI</a><a href='/dashboard'>Dashboard</a></nav></div></header><main class='wrap'><section class='hero'><div><p class='status'>Sports Edge Intelligence</p><h1>Sports Edge Intelligence Meets Crypto Market Discipline</h1><p>Track live sports data, market psychology, odds movement, AI insights, and risk signals from one CoinPlotXAI command center.</p><div class='actions'><a class='button primary' href='/app#sports-edge'>Open Sports Edge</a><a class='button gold' href='/sports-edge/trade' target='_blank' rel='noopener sponsored' data-analytics='gemini_trade_redirect_clicked'>Sign In to Trade</a></div><p><small>External trading platform. CoinPlotXAI may use affiliate links. Trading involves risk.</small></p></div><aside class='card'><h2>Live Status</h2><p>{html_escape(clean_html(source_note))}</p><p>Educational intelligence only. Not financial advice. Not betting advice. No guaranteed outcomes. Follow local laws.</p></aside></section><section class='grid'>{feature_cards}</section></main></body></html>"""
     log_product_event(account_user_id(), "sports_edge_opened", {})
     return Response(body)
 
@@ -30426,7 +30465,7 @@ async function load(){{const d=await fetch('/api/predictions?category=crypto&sta
 document.addEventListener('click',async e=>{{const filter=e.target.closest('[data-filter]');if(filter){{currentFilter=filter.dataset.filter;render();return}}const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}if(btn.dataset.action==='ai'){{location.href='/chat?context=prediction&symbol='+encodeURIComponent(btn.dataset.symbol||'CRYPTO')+'&id='+encodeURIComponent(btn.dataset.id);return}}if(btn.dataset.action==='simulate'){{location.href='/simulator?prediction='+encodeURIComponent(btn.dataset.id);return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent=btn.dataset.action==='watch'?'Watching ✓':'Prediction alert activated'}});
 load();
 </script></body></html>""")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPlotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPlotXAI.'><link rel='canonical' href='https://pulsesoc.com/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPlotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPlotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url())}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>Live Crypto Predictions Intelligence | CoinPlotXAI</title><meta name='description' content='Track active crypto prediction scenarios, market probabilities, AI explanations, and risk intelligence with CoinPlotXAI.'><link rel='canonical' href='https://pulsesoc.com/predictions/crypto'><meta property='og:title' content='Live Crypto Predictions Intelligence | CoinPlotXAI'><meta property='og:description' content='Crypto prediction scenarios with AI explanations, probability context, and educational risk intelligence.'><script type='application/ld+json'>{{"@context":"https://schema.org","@type":"WebPage","name":"Live Crypto Predictions Intelligence","description":"Educational crypto prediction scenarios, probability tracking, and AI risk intelligence from CoinPlotXAI."}}</script><style>:root{{color-scheme:dark;--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 26rem),radial-gradient(circle at 88% 16%,rgba(54,229,143,.11),transparent 23rem),#050b14;color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}body:before{{content:'';position:fixed;inset:0;background-image:linear-gradient(rgba(110,223,246,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.045) 1px,transparent 1px);background-size:54px 54px;mask-image:radial-gradient(circle at 50% 10%,black,transparent 72%);pointer-events:none}}.wrap{{position:relative;width:min(100% - 28px,1180px);margin:auto;padding:34px 0 90px}}a{{color:inherit;text-decoration:none}}.hero{{padding:34px 0 20px}}.kicker{{color:var(--green);font-weight:950;letter-spacing:.08em;text-transform:uppercase;font-size:12px}}h1{{font-size:clamp(38px,7vw,72px);line-height:.98;margin:10px 0 14px}}p{{color:var(--muted)}}.filters{{display:flex;gap:8px;overflow:auto;padding:10px 0 18px}}.pill{{white-space:nowrap;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.055);color:#dff7ff;padding:9px 12px;font-weight:850}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,rgba(110,223,246,.1),rgba(54,229,143,.045) 42%,rgba(255,209,102,.055)),rgba(13,22,39,.84);box-shadow:0 28px 90px rgba(0,0,0,.26),inset 0 1px 0 rgba(255,255,255,.06);padding:18px}}.status{{display:inline-flex;gap:8px;align-items:center;color:var(--green);font-weight:900}}.status:before{{content:'';width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 16px var(--green)}}.prob{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;margin:12px 0}}.prob span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}.button{{min-height:42px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 12px;font-weight:900;cursor:pointer}}.button.secondary{{background:rgba(255,255,255,.055);color:#f2fbff}}.disclaimer{{margin-top:22px;border:1px solid rgba(255,209,102,.22);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#ffe7a6}}@media(max-width:720px){{.actions .button{{width:100%}}.tactical-head{{align-items:flex-start;flex-direction:column}}.tactical-grid{{grid-template-columns:1fr}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}}}</style></head><body><main class='wrap'><section class='hero'><div class='kicker'>Crypto Predictions Intelligence</div><h1>Active crypto prediction scenarios with AI risk context.</h1><p>Track scenario probabilities, close dates, liquidity context, and market psychology without guaranteed-outcome claims. Live provider data appears when legally configured; sample scenarios are clearly labeled.</p><div class='filters'><span class='pill'>Active</span><span class='pill'>Trending</span><span class='pill'>Closing Soon</span><span class='pill'>Bitcoin</span><span class='pill'>Ethereum</span><span class='pill'>Altcoins</span><span class='pill'>Macro Crypto</span><span class='pill'>High Volume</span></div></section><section id='cards' class='grid' aria-live='polite'></section><p class='disclaimer'>Prediction intelligence is educational only. Event contracts and trading involve risk and may be restricted by location. CoinPlotXAI does not guarantee outcomes.</p></main><script>const actionUrl='{action_url}';const externalUrl='{html_escape(clean_html(os.getenv("PREDICTIONS_EXTERNAL_TRADE_URL") or get_gemini_trade_url()))}';function card(m){{const p=Number(m.probability||m.yes_probability||0);return `<article class='card'><span class='status'>${{m.status||'active'}} · ${{m.source||'source pending'}}</span><h2>${{m.title}}</h2><p>${{m.category}} · Risk: ${{m.risk_level||'Unknown'}}</p><div class='prob'><span style='width:${{Math.max(0,Math.min(100,p))}}%'></span></div><p><strong>${{p}}%</strong> Yes probability · Volume ${{Number(m.volume||0).toLocaleString()}} · Liquidity ${{Number(m.liquidity||0).toLocaleString()}}</p><p>Closes: ${{(m.close_time||'').slice(0,10)}} · Resolves: ${{(m.resolve_time||'').slice(0,10)}}</p><div class='actions'><button class='button' data-action='watch' data-id='${{m.id}}'>Watch Prediction</button><button class='button secondary' data-action='alert' data-id='${{m.id}}'>Create Alert</button><button class='button secondary' data-action='ai' data-id='${{m.id}}'>Ask AI</button><button class='button secondary' data-action='simulate' data-id='${{m.id}}'>Simulate Outcome</button><a class='button secondary' href='${{externalUrl}}' target='_blank' rel='noopener sponsored'>Open External Trade</a></div></article>`}}async function load(){{const d=await fetch('/api/predictions?category=crypto&status=active',{{cache:'no-store'}}).then(r=>r.json());document.getElementById('cards').innerHTML=(d.markets||[]).map(card).join('')||'<article class=card>Predictions source reconnecting. No live crypto scenarios are available right now.</article>'}}document.addEventListener('click',async e=>{{const btn=e.target.closest('button[data-action]');if(!btn)return;if(actionUrl.startsWith('/signup')){{location.href=actionUrl;return}}const endpoint=btn.dataset.action==='alert'?'/api/predictions/alert':btn.dataset.action==='simulate'?'/api/predictions/simulate':'/api/predictions/watch';await fetch(endpoint,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{market_id:btn.dataset.id}})}});btn.textContent='Saved'}});load()</script></body></html>""")
 
 
 @webhook_app.route("/predictions/<market_id>", methods=["GET"])
@@ -30487,10 +30526,10 @@ def admin_predictions_page():
     body = (
         f"<h1>Predictions Intelligence</h1><div class='grid'>"
         f"<div class='card'><div class='metric'>{status.get('active_crypto_markets', len(prediction_samples()))}</div><p>active crypto markets fetched</p></div>"
-        f"<div class='card'><div class='metric'>{clean_html(status.get('provider') or 'polymarket')}</div><p>provider selected</p></div>"
+        f"<div class='card'><div class='metric'>{html_escape(clean_html(status.get('provider') or 'polymarket'))}</div><p>provider selected</p></div>"
         f"<div class='card'><div class='metric'>{'yes' if status.get('reachable') else 'no'}</div><p>provider reachable</p></div>"
         f"<div class='card'><div class='metric'>{'yes' if status.get('fallback') else 'no'}</div><p>fallback mode</p></div>"
-        f"</div><p class='muted'>Last successful fetch: {clean_html(status.get('last_successful_fetch') or 'not yet')} · Cache age: {status.get('cache_age_seconds', 0)}s · Error: {clean_html(status.get('error') or 'none')}</p>"
+        f"</div><p class='muted'>Last successful fetch: {html_escape(clean_html(status.get('last_successful_fetch') or 'not yet'))} · Cache age: {status.get('cache_age_seconds', 0)}s · Error: {html_escape(clean_html(status.get('error') or 'none'))}</p>"
         "<p class='muted'>No fake live data is shown as live. Educational samples are labeled when provider data is unavailable.</p>"
     )
     return admin_page_html("Predictions Intelligence", body, admin)
@@ -30524,8 +30563,8 @@ def admin_email_health_page():
       <div class="card"><div class="metric">{failed_count}</div><p>failed emails</p></div>
       <div class="card"><div class="metric">{queued_count}</div><p>queued retries</p></div>
     </div>
-    <div class="card"><h2>Latest Email</h2><pre>{clean_html(json.dumps(last_email or {}, indent=2))}</pre></div>
-    <div class="card"><h2>Latest Payment Email</h2><pre>{clean_html(json.dumps(last_payment_email or {}, indent=2))}</pre></div>
+    <div class="card"><h2>Latest Email</h2><pre>{html_escape(clean_html(json.dumps(last_email or {}, indent=2)))}</pre></div>
+    <div class="card"><h2>Latest Payment Email</h2><pre>{html_escape(clean_html(json.dumps(last_payment_email or {}, indent=2)))}</pre></div>
     <p class="muted">Secrets are never shown here. Sender values are checked from MAIL_FROM_ADDRESS/BREVO_SENDER_EMAIL and MAIL_FROM_NAME/BREVO_SENDER_NAME.</p>
     """
     return admin_page_html("Email Health", body, admin)
@@ -30550,10 +30589,10 @@ def admin_system_health_page():
         ("PWA push/VAPID", bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY"))),
         ("Telegram optional", bool(os.getenv("BOT_TOKEN"))),
     ]
-    cards = "".join(f"<div class='card'><div class='metric'>{'OK' if ok else 'Missing'}</div><p>{clean_html(name)}</p></div>" for name, ok in checks)
+    cards = "".join(f"<div class='card'><div class='metric'>{'OK' if ok else 'Missing'}</div><p>{html_escape(clean_html(name))}</p></div>" for name, ok in checks)
     provider_health = live_market_service.health()
     notification_health = notification_orchestrator_service.health()
-    body = f"<h1>System Health</h1><div class='grid'>{cards}</div><div class='card'><h2>Database</h2><pre>{clean_html(json.dumps(db_health, indent=2))}</pre></div><div class='card'><h2>Provider Health</h2><pre>{clean_html(json.dumps(provider_health, indent=2))}</pre></div><div class='card'><h2>Notification Health</h2><pre>{clean_html(json.dumps(notification_health, indent=2))}</pre></div>"
+    body = f"<h1>System Health</h1><div class='grid'>{cards}</div><div class='card'><h2>Database</h2><pre>{html_escape(clean_html(json.dumps(db_health, indent=2)))}</pre></div><div class='card'><h2>Provider Health</h2><pre>{html_escape(clean_html(json.dumps(provider_health, indent=2)))}</pre></div><div class='card'><h2>Notification Health</h2><pre>{html_escape(clean_html(json.dumps(notification_health, indent=2)))}</pre></div>"
     return admin_page_html("System Health", body, admin)
 
 
@@ -30565,7 +30604,7 @@ def admin_provider_health_page():
         return denied
     health = live_market_service.health()
     cards = "".join(
-        f"<div class='card'><h2>{clean_html(name)}</h2><pre>{clean_html(json.dumps(payload, indent=2))}</pre></div>"
+        f"<div class='card'><h2>{html_escape(clean_html(name))}</h2><pre>{html_escape(clean_html(json.dumps(payload, indent=2)))}</pre></div>"
         for name, payload in health.get("providers", {}).items()
     )
     return admin_page_html("Provider Health", f"<h1>Provider Health</h1><p class='muted'>Live data failover, stale detection, cache status, and configured provider readiness.</p><div class='grid'>{cards}</div>", admin)
@@ -30593,7 +30632,7 @@ def admin_notification_health_page():
             "ready": True,
         },
     }
-    return admin_page_html("Notification Health", f"<h1>Notification Health</h1><div class='card'><pre>{clean_html(json.dumps(health, indent=2))}</pre></div>", admin)
+    return admin_page_html("Notification Health", f"<h1>Notification Health</h1><div class='card'><pre>{html_escape(clean_html(json.dumps(health, indent=2)))}</pre></div>", admin)
 
 
 @webhook_app.route("/admin/system/errors", methods=["GET"])
@@ -30606,7 +30645,7 @@ def admin_system_errors_page():
     cur.execute("SELECT created_at, event_name, metadata FROM analytics_events WHERE lower(event_name) LIKE '%error%' ORDER BY created_at DESC LIMIT 50")
     rows = cur.fetchall()
     conn.close()
-    items = "".join(f"<tr><td>{clean_html(row.get('created_at'))}</td><td>{clean_html(row.get('event_name'))}</td><td><code>{clean_html(row.get('metadata'))}</code></td></tr>" for row in rows)
+    items = "".join(f"<tr><td>{html_escape(clean_html(row.get('created_at')))}</td><td>{html_escape(clean_html(row.get('event_name')))}</td><td><code>{html_escape(clean_html(row.get('metadata')))}</code></td></tr>" for row in rows)
     body = f"<h1>System Errors</h1><div class='card'><table><thead><tr><th>Time</th><th>Event</th><th>Details</th></tr></thead><tbody>{items or '<tr><td colspan=3>No recent tracked errors.</td></tr>'}</tbody></table></div>"
     return admin_page_html("System Errors", body, admin)
 
@@ -30839,13 +30878,13 @@ def day_signal_page():
     def render_day_signal_field(item):
         key = clean_html(item["key"])
         if item.get("type") == "hidden":
-            return f"<input type='hidden' name='{key}' value='{clean_html(item.get('value', ''))}'>"
+            return f"<input type='hidden' name='{key}' value='{html_escape(clean_html(item.get('value', '')))}'>"
         label = clean_html(item["label"])
         error = f"<small class='field-error' data-error-for='{key}'></small>"
         if item.get("type") == "select":
-            options = "".join(f"<option value='{clean_html(value)}'>{clean_html(text)}</option>" for value, text in item.get("options", []))
+            options = "".join(f"<option value='{html_escape(clean_html(value))}'>{html_escape(clean_html(text))}</option>" for value, text in item.get("options", []))
             return f"<label data-question='{key}'>{label}<select name='{key}' required>{options}</select>{error}</label>"
-        return f"<label data-question='{key}'>{label}<input name='{key}' placeholder='{clean_html(item.get('placeholder', 'short answer'))}' required>{error}</label>"
+        return f"<label data-question='{key}'>{label}<input name='{key}' placeholder='{html_escape(clean_html(item.get('placeholder', 'short answer')))}' required>{error}</label>"
     fields = "".join(render_day_signal_field(item) for item in questions)
     return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><meta name='robots' content='noindex,nofollow'><title>Day Signal | CoinPlotXAI</title><style>:root{{color-scheme:dark;--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;overflow-x:hidden}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:calc(24px + env(safe-area-inset-top)) 0 90px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));box-shadow:0 24px 80px rgba(0,0,0,.28);padding:18px}}label{{display:block;margin:12px 0;color:var(--muted);font-weight:850;scroll-margin-top:24px}}input,select{{width:100%;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#081323;color:#fff;padding:10px;margin-top:6px}}label.is-missing input,label.is-missing select{{border-color:#ff6b7a;box-shadow:0 0 0 3px rgba(255,107,122,.16)}}.field-error{{display:block;min-height:18px;color:#ffb7bf;margin-top:5px}}button,.button{{min-height:44px;border-radius:10px;border:1px solid var(--line);background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;padding:10px 14px;font-weight:900;cursor:pointer;text-decoration:none;display:inline-flex}}pre{{white-space:pre-wrap;color:#dff7ff}}</style></head><body><main class='wrap'><a class='button' href='/dashboard'>Dashboard</a><section class='card'><h1>{'Pro Psychological Day Signal' if pro else 'Basic Day Signal'}</h1><p>Educational readiness check only. Not financial, trading, betting, or investment advice.</p><form id='form' novalidate>{fields}<button>Generate Day Signal</button></form><pre id='result'></pre></section></main><script>const form=document.getElementById('form');function clearErrors(){{document.querySelectorAll('.is-missing').forEach(n=>n.classList.remove('is-missing'));document.querySelectorAll('[data-error-for]').forEach(n=>n.textContent='')}}function markMissing(name,message){{const q=document.querySelector(`[data-question="${{name}}"]`);if(!q)return false;q.classList.add('is-missing');const err=q.querySelector('[data-error-for]');if(err)err.textContent=message||'Please answer this question.';q.scrollIntoView({{behavior:'smooth',block:'center'}});return true}}form.addEventListener('submit',async e=>{{e.preventDefault();clearErrors();const answers=Object.fromEntries(new FormData(e.target).entries());for(const element of form.querySelectorAll('[required]')){{if(!String(element.value||'').trim()){{markMissing(element.name,'Please answer this question.');return;}}}}document.getElementById('result').textContent='CoinPlotXAI is thinking...';const r=await fetch('/api/day-signal',{{method:'POST',headers:{{'Content-Type':'application/json'}},credentials:'same-origin',body:JSON.stringify({{answers}})}});const d=await r.json();if(!r.ok||d.ok===false){{const text=d.response||d.message||'Day Signal unavailable right now.';document.getElementById('result').textContent=text;const match=text.match(/Please answer: (.+)$/);if(match){{const label=[...document.querySelectorAll('[data-question]')].find(node=>node.firstChild&&node.firstChild.textContent.trim()===match[1]);if(label)markMissing(label.dataset.question,'Required for Day Signal.')}}return}}document.getElementById('result').textContent=d.response||d.message||'Day Signal unavailable right now.'}})</script></body></html>""")
 
@@ -33440,15 +33479,15 @@ def arena_page_shell(title, body, user=None, public=False, meta_tags=""):
     setInterval(loadArenaInboxPulse,15000);
     </script>""" if user else ""
     logo_url = url_for("static", filename="brand/pulsesoc-logo-20260813.png")
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a);--purple:var(--domain-intelligence,#9b5cff)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="CoinPlotXAI Arena is an educational AI crypto intelligence game with virtual dollars, daily missions, scam defense, and skill-based leaderboards."><meta name="robots" content="{'index,follow' if public else 'noindex,nofollow'}">{meta_tags}<style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166);--red:var(--status-error,#ff6b7a);--purple:var(--domain-intelligence,#9b5cff)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;color:var(--text);background:radial-gradient(circle at 12% 4%,rgba(110,223,246,.20),transparent 28rem),radial-gradient(circle at 90% 8%,rgba(155,92,255,.14),transparent 26rem),linear-gradient(145deg,#050b14,#071527 62%,#03060b);line-height:1.55;overflow-x:hidden}}body:before{{content:"";position:fixed;inset:0;pointer-events:none;opacity:.18;background-image:linear-gradient(rgba(110,223,246,.16) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.16) 1px,transparent 1px);background-size:42px 42px}}body.arena-drawer-open{{overflow:hidden}}.wrap{{width:min(100% - 30px,1180px);margin:auto;padding:24px 0 80px}}header{{position:sticky;top:0;z-index:5;border-bottom:1px solid rgba(255,255,255,.08);background:rgba(5,11,20,.88);backdrop-filter:blur(18px)}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}}a{{color:inherit}}.brand{{font-weight:950;text-decoration:none;display:inline-flex;align-items:center;gap:10px}}.brand img{{width:34px;height:34px;border-radius:10px;object-fit:contain;box-shadow:0 0 22px rgba(110,223,246,.22)}}.actions{{display:flex;gap:10px;flex-wrap:wrap}}.arena-mobile-drawer-toggle,.arena-mobile-drawer,.arena-mobile-drawer-backdrop{{display:none}}.arena-bg,.arena-effects,.arena-particles,.arena-glow,.emoji-storm-layer,.emoji-storm,.cinematic-layer:not(.active),.victory-layer:not(.active),.arena-intro{{pointer-events:none!important}}.button,button{{min-height:44px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.055);color:var(--text);padding:10px 14px;font-weight:900;text-decoration:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}}.button:hover,button:hover{{transform:translateY(-2px);box-shadow:0 0 28px rgba(110,223,246,.22);border-color:rgba(110,223,246,.48)}}.button.primary,button.primary{{color:#04111c;background:linear-gradient(135deg,var(--green),var(--cyan));border-color:transparent}}.button.gold{{color:#1c1303;background:linear-gradient(135deg,var(--gold),#ffaf37);border-color:transparent}}.hero{{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:16px;margin-top:24px}}.card{{border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.82));box-shadow:0 26px 80px rgba(0,0,0,.30),0 0 30px rgba(110,223,246,.08);padding:18px;position:relative;overflow:hidden;transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}}.card:hover{{transform:translateY(-2px);box-shadow:0 30px 90px rgba(0,0,0,.34),0 0 38px rgba(110,223,246,.14)}}.card:after{{content:"";position:absolute;inset:auto -20% -50% 20%;height:120px;background:radial-gradient(circle,rgba(54,229,143,.12),transparent 62%);pointer-events:none}}.kicker{{color:var(--green);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:950}}h1{{font-size:clamp(38px,7vw,72px);line-height:.96;margin:8px 0}}h2{{margin:0 0 10px;font-size:clamp(22px,3vw,34px)}}h3{{margin:.1rem 0}}p,.muted{{color:var(--muted)}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:16px}}.wide{{grid-column:span 2}}.metric{{font-size:clamp(30px,5vw,50px);font-weight:950}}.rank{{display:inline-flex;padding:6px 10px;border-radius:999px;background:rgba(255,209,102,.14);color:#ffe2a0;font-weight:950}}.xpbar{{height:12px;border-radius:999px;background:#081323;overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.xpbar span{{display:block;height:100%;background:linear-gradient(90deg,var(--green),var(--cyan),var(--purple));box-shadow:0 0 20px rgba(110,223,246,.45)}}.player-card{{display:grid;gap:6px;border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:12px;background:rgba(255,255,255,.04);animation:arenaCardIn .42s ease both}}.presence-ribbon{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 0}}.presence-pill{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.22);border-radius:999px;background:rgba(255,255,255,.045);padding:7px 10px;color:#dff7ff;font-size:13px}}.presence-pill i{{width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.8);animation:presencePulse 2.4s ease-in-out infinite}}.arena-intro{{position:fixed;inset:0;z-index:80;display:grid;place-items:center;background:radial-gradient(circle,rgba(110,223,246,.16),rgba(5,11,20,.94));animation:introFade 2.2s ease forwards;pointer-events:none}}.arena-intro-card{{border:1px solid rgba(110,223,246,.35);border-radius:24px;padding:24px;background:rgba(8,19,35,.86);box-shadow:0 0 60px rgba(110,223,246,.24);text-align:center;animation:vsPulse 1.4s ease-in-out infinite alternate}}.victory-overlay{{position:fixed;inset:0;z-index:120;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(54,229,143,.28),transparent 20rem),rgba(2,7,14,.74);backdrop-filter:blur(8px);animation:victoryFlash 1.6s ease both}}.victory-card{{width:min(92vw,620px);border:1px solid rgba(110,223,246,.42);border-radius:24px;background:linear-gradient(180deg,rgba(17,29,50,.96),rgba(5,11,20,.94));box-shadow:0 0 80px rgba(54,229,143,.26),0 30px 120px rgba(0,0,0,.55);padding:24px;text-align:center;transform:translateZ(0)}}.victory-title{{font-size:clamp(44px,10vw,96px);line-height:.9;margin:0;background:linear-gradient(135deg,var(--green),var(--cyan),var(--gold));-webkit-background-clip:text;color:transparent}}.emoji-storm{{position:fixed;inset:0;z-index:121;pointer-events:none;overflow:hidden}}.emoji-storm span{{position:absolute;top:-32px;font-size:clamp(24px,5vw,46px);animation:emojiRain 2.8s linear forwards;will-change:transform,opacity}}.crowd-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden;border:1px solid rgba(255,255,255,.08)}}.crowd-meter span{{display:block;height:100%;background:linear-gradient(90deg,var(--cyan),var(--green),var(--gold))}}.live-arena-card{{border-color:rgba(54,229,143,.34);background:radial-gradient(circle at 15% 10%,rgba(54,229,143,.18),transparent 16rem),radial-gradient(circle at 80% 0,rgba(110,223,246,.18),transparent 18rem),linear-gradient(160deg,rgba(10,28,48,.94),rgba(5,11,20,.92));box-shadow:0 30px 100px rgba(0,0,0,.36),0 0 44px rgba(54,229,143,.12)}}.live-arena-card:before{{content:"";position:absolute;inset:-40%;background:conic-gradient(from 180deg,transparent,rgba(54,229,143,.12),transparent 36%,rgba(110,223,246,.14),transparent 68%);pointer-events:none}}.live-arena-card>*{{position:relative;z-index:1}}.live-arena-cta{{font-size:16px;letter-spacing:.04em;box-shadow:0 0 28px rgba(54,229,143,.28)}}.player-card.elite{{border-color:rgba(255,209,102,.35);box-shadow:0 0 24px rgba(255,209,102,.12)}}.mission-options{{display:grid;gap:9px}}label.option{{display:flex;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:12px;padding:10px;background:rgba(255,255,255,.04);color:var(--text)}}input,select,textarea{{width:100%;min-height:44px;border:1px solid var(--line);border-radius:10px;background:#081323;color:var(--text);padding:10px;font:inherit}}.notice{{border:1px solid rgba(255,209,102,.24);background:rgba(255,209,102,.08);color:#ffe6ad;border-radius:12px;padding:12px}}.feed{{display:grid;gap:9px}}.feed div{{border-left:3px solid var(--cyan);padding:8px 10px;background:rgba(255,255,255,.035);border-radius:8px}}.share-modal{{position:fixed;inset:auto 16px 16px auto;z-index:70;max-width:360px;border:1px solid var(--line);border-radius:18px;background:rgba(8,19,35,.97);box-shadow:0 24px 80px rgba(0,0,0,.5);padding:16px}}.online-dot{{display:inline-flex;gap:8px;align-items:center}}.online-dot:before{{content:"";width:8px;height:8px;border-radius:999px;background:var(--green);box-shadow:0 0 14px rgba(54,229,143,.75)}}.chat-thread{{display:grid;gap:9px;max-height:56vh;overflow:auto}}.chat-bubble{{max-width:82%;padding:10px 12px;border-radius:14px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}}.chat-bubble.me{{justify-self:end;color:#06101b;background:linear-gradient(135deg,var(--cyan),#77a7ff)}}@keyframes arenaCardIn{{from{{opacity:0;transform:translateY(10px)}}to{{opacity:1;transform:none}}}}@keyframes presencePulse{{0%,100%{{transform:scale(1);opacity:.75}}50%{{transform:scale(1.35);opacity:1}}}}@keyframes introFade{{0%,70%{{opacity:1}}100%{{opacity:0;visibility:hidden}}}}@keyframes vsPulse{{from{{transform:scale(.985);box-shadow:0 0 34px rgba(110,223,246,.16)}}to{{transform:scale(1);box-shadow:0 0 72px rgba(54,229,143,.18)}}}}@keyframes victoryFlash{{0%{{opacity:0;transform:scale(1.04)}}18%{{opacity:1}}100%{{opacity:1;transform:scale(1)}}}}@keyframes emojiRain{{0%{{transform:translate3d(0,-20px,0) rotate(0deg);opacity:0}}12%{{opacity:1}}100%{{transform:translate3d(var(--drift,0),105vh,0) rotate(420deg);opacity:0}}}}@media(max-width:860px){{.hero,.grid{{grid-template-columns:1fr}}.wide{{grid-column:auto}}.actions,.button,button{{width:100%}}.wrap{{width:min(100% - 24px,1180px)}}.share-modal{{left:12px;right:12px;bottom:12px;max-width:none}}}}@media(max-width:768px){{header nav>.actions{{display:none}}header{{position:relative}}.wrap{{padding:12px 0 calc(84px + env(safe-area-inset-bottom))}}h1{{font-size:clamp(28px,9vw,42px)}}h2{{font-size:clamp(20px,6vw,26px)}}.hero{{gap:12px;margin-top:12px}}.grid{{gap:12px;margin-top:12px}}.card{{border-radius:14px;padding:14px;box-shadow:0 14px 36px rgba(0,0,0,.26)}}.card:after,.live-arena-card:before{{display:none}}.arena-intro{{display:none}}.player-card{{padding:10px}}.arena-mobile-drawer-toggle{{display:inline-flex;position:fixed;left:max(8px,env(safe-area-inset-left));top:calc(74px + env(safe-area-inset-top));z-index:74;width:auto;min-height:38px;padding:8px 10px;border-radius:0 12px 12px 0;background:rgba(6,18,31,.92);backdrop-filter:blur(14px);box-shadow:0 0 22px rgba(110,223,246,.18);font-size:13px}}.arena-mobile-drawer-backdrop{{display:none;position:fixed;inset:0;z-index:72;background:rgba(0,0,0,.38);pointer-events:none}}.arena-mobile-drawer-backdrop:not([hidden]){{display:block;pointer-events:auto}}.arena-mobile-drawer{{display:block;position:fixed;top:0;left:0;bottom:0;width:min(82vw,340px);z-index:73;transform:translateX(-104%);transition:transform .22s ease;background:linear-gradient(180deg,rgba(7,19,34,.98),rgba(4,9,18,.98));border-right:1px solid rgba(110,223,246,.24);box-shadow:24px 0 70px rgba(0,0,0,.46);padding:calc(16px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));overflow:auto;pointer-events:none}}.arena-mobile-drawer.open{{transform:translateX(0);pointer-events:auto}}.drawer-head{{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}}.drawer-head button{{width:40px;min-height:40px;padding:0;font-size:22px}}.drawer-actions{{display:grid;gap:10px}}.drawer-actions .card{{position:static!important;max-width:none!important}}.drawer-actions label.option{{justify-content:space-between}}.victory-card{{padding:18px}}.emoji-storm span{{font-size:26px}}}}@media(prefers-reduced-motion:reduce){{*{{animation:none!important;transition:none!important}}.victory-overlay,.emoji-storm span{{animation:none!important}}}}</style></head><body>{drawer_html}<header><div class="wrap"><nav><a class="brand" href="/arena"><img src="{logo_url}" alt="PulseSoc logo" width="34" height="34" loading="lazy" onerror="this.style.display='none'"><span>Alpha Arena</span></a><div class="actions">{nav_html}{customize}</div></nav></div></header><main class="wrap">{'<div class="presence-ribbon" data-arena-presence-panel><span class="presence-pill"><i></i>Connecting Arena presence</span></div>' if user else ''}{body}<p class="notice">{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></main>{script}</body></html>""")
 
 
 def arena_simple_page(title, heading, intro, cards=None, script=""):
     cards_html = "".join(
-        f"<article class='card'><h3>{clean_html(card.get('title'))}</h3><p>{clean_html(card.get('body'))}</p><details class='notice'><summary>How it works</summary><p>{clean_html(card.get('details') or card.get('body') or 'Complete the objective, earn XP, and use the result screen to choose the next mission.')}</p><p class='muted'>{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></details>{card.get('action','')}</article>"
+        f"<article class='card'><h3>{html_escape(clean_html(card.get('title')))}</h3><p>{html_escape(clean_html(card.get('body')))}</p><details class='notice'><summary>How it works</summary><p>{html_escape(clean_html(card.get('details') or card.get('body') or 'Complete the objective, earn XP, and use the result screen to choose the next mission.'))}</p><p class='muted'>{arena_victory_engine.EDUCATIONAL_DISCLAIMER}</p></details>{card.get('action','')}</article>"
         for card in (cards or [])
     )
-    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Universe</div><h1>{clean_html(heading)}</h1><p>{clean_html(intro)}</p></article><article class='card'><h2>Alive System</h2><p>Progress, identity, world state, and AI coaching update as you train.</p></article></section><section class='grid'>{cards_html}</section>{script}"
+    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Universe</div><h1>{html_escape(clean_html(heading))}</h1><p>{html_escape(clean_html(intro))}</p></article><article class='card'><h2>Alive System</h2><p>Progress, identity, world state, and AI coaching update as you train.</p></article></section><section class='grid'>{cards_html}</section>{script}"
     return body
 
 
@@ -33482,9 +33521,9 @@ def arena_commentator_studio(active_battles=0, active_rooms=0, crowd_level=72):
         <div><strong>Crowd energy</strong><div class="crowd-meter"><span data-studio-crowd style="width:{max(8, min(100, int(crowd_level or 72)))}%"></span></div><p class="muted">{int(active_rooms or 0)} live rooms · emotional intensity tracking</p></div>
       </div>
       <div class="feed studio-feed" data-commentary-feed>
-        <div><strong>Tactical Analyst</strong><p>{clean_html(messages[0])}</p><span class="waveform"><span></span><span></span><span></span></span></div>
+        <div><strong>Tactical Analyst</strong><p>{html_escape(clean_html(messages[0]))}</p><span class="waveform"><span></span><span></span><span></span></span></div>
       </div>
-      <script type="application/json" data-commentary-seed>{json.dumps(messages)}</script>
+      <script type="application/json" data-commentary-seed>{script_json(messages)}</script>
       <script>
       (()=>{{
         const studio=document.currentScript.closest('[data-commentator-studio]');
@@ -33537,20 +33576,20 @@ def arena_os_page():
     feed = arena_live_feed(limit=8).get("feed", [])
     quests = arena_quests_payload(user["user_id"]).get("quests", [])[:4]
     recs = arena_coach_recommendations(user["user_id"]).get("recommendations", [])
-    feed_html = "".join(f"<div><strong>{clean_html(item.get('title'))}</strong><p>{clean_html(item.get('body'))}</p></div>" for item in feed)
-    quest_html = "".join(f"<div class='player-card'><strong>{clean_html(q.get('title'))}</strong><p>{clean_html(q.get('description'))}</p><span class='rank'>{int(q.get('reward_xp') or 0)} XP</span></div>" for q in quests)
-    rec_html = "".join(f"<div><strong>{clean_html(r.get('title'))}</strong><p>{clean_html(r.get('reason'))}</p></div>" for r in recs)
+    feed_html = "".join(f"<div><strong>{html_escape(clean_html(item.get('title')))}</strong><p>{html_escape(clean_html(item.get('body')))}</p></div>" for item in feed)
+    quest_html = "".join(f"<div class='player-card'><strong>{html_escape(clean_html(q.get('title')))}</strong><p>{html_escape(clean_html(q.get('description')))}</p><span class='rank'>{int(q.get('reward_xp') or 0)} XP</span></div>" for q in quests)
+    rec_html = "".join(f"<div><strong>{html_escape(clean_html(r.get('title')))}</strong><p>{html_escape(clean_html(r.get('reason')))}</p></div>" for r in recs)
     body = f"""
     <section class="hero">
-      <article class="card wide"><div class="kicker">Arena OS</div><h1>Your living AI intelligence command center</h1><p>{clean_html((world.get('world') or {}).get('narrative'))}</p><div class="actions"><a class="button primary" href="/arena/daily">Today’s Mission</a><a class="button" href="/arena/quests">Quests</a><a class="button gold" href="/arena/bosses">Boss Training</a></div></article>
-      <article class="card"><h2>{clean_html(profile.get('rank') or 'Rookie')}</h2><div class="metric">{int(profile.get('arena_iq') or 50)}</div><p>Arena IQ · {int(profile.get('xp') or 0)} XP</p><div class="xpbar"><span style="width:{min(100, int(profile.get('arena_iq') or 50))}%"></span></div></article>
+      <article class="card wide"><div class="kicker">Arena OS</div><h1>Your living AI intelligence command center</h1><p>{html_escape(clean_html((world.get('world') or {}).get('narrative')))}</p><div class="actions"><a class="button primary" href="/arena/daily">Today’s Mission</a><a class="button" href="/arena/quests">Quests</a><a class="button gold" href="/arena/bosses">Boss Training</a></div></article>
+      <article class="card"><h2>{html_escape(clean_html(profile.get('rank') or 'Rookie'))}</h2><div class="metric">{int(profile.get('arena_iq') or 50)}</div><p>Arena IQ · {int(profile.get('xp') or 0)} XP</p><div class="xpbar"><span style="width:{min(100, int(profile.get('arena_iq') or 50))}%"></span></div></article>
     </section>
     <section class="grid">
-      <article class="card"><h2>World State</h2><span class="rank">{clean_html((world.get('world') or {}).get('title'))}</span><p>Intensity {int((world.get('world') or {}).get('intensity') or 0)} · XP modifier {world.get('world',{}).get('xp_modifier')}x</p></article>
+      <article class="card"><h2>World State</h2><span class="rank">{html_escape(clean_html((world.get('world') or {}).get('title')))}</span><p>Intensity {int((world.get('world') or {}).get('intensity') or 0)} · XP modifier {world.get('world',{}).get('xp_modifier')}x</p></article>
       <article class="card"><h2>Active Quests</h2>{quest_html or '<p class="muted">Quests are warming up.</p>'}</article>
       <article class="card"><h2>AI Coach Briefing</h2><div class="feed">{rec_html}</div></article>
       <article class="card wide"><h2>Arena Live Feed</h2><div class="feed">{feed_html}</div></article>
-      <article class="card"><h2>Faction Status</h2><p>{clean_html((world.get('factions') or [{}])[0].get('name') or 'Factions active')} leads symbolic influence today.</p><a class="button" href="/arena/world">Open World</a></article>
+      <article class="card"><h2>Faction Status</h2><p>{html_escape(clean_html((world.get('factions') or [{}])[0].get('name') or 'Factions active'))} leads symbolic influence today.</p><a class="button" href="/arena/world">Open World</a></article>
     </section>
     """
     return arena_page_shell("Arena OS", body, user=user)
@@ -33686,7 +33725,7 @@ def arena_playbook_page(playbook_id):
     playbook = payload.get("playbook")
     if not playbook:
         return arena_page_shell("Arena Playbook", "<section class='card'><h1>Playbook not found</h1></section>", user=user), 404
-    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Playbook</div><h1>{clean_html(playbook.get('title'))}</h1><p>{clean_html(playbook.get('body'))}</p><p class='notice'>{clean_html(playbook.get('ai_review') or 'Educational review pending.')}</p></article><article class='card'><h2>{clean_html(playbook.get('category'))}</h2><button data-vote='1'>Helpful</button></article></section><script>document.addEventListener('click',async e=>{{if(e.target.closest('[data-vote]')){{await fetch('/api/arena/playbooks/vote',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{playbook_id:{playbook_id},vote:1}})}});alert('Vote saved.')}}}})</script>"
+    body = f"<section class='hero'><article class='card wide'><div class='kicker'>Arena Playbook</div><h1>{html_escape(clean_html(playbook.get('title')))}</h1><p>{html_escape(clean_html(playbook.get('body')))}</p><p class='notice'>{html_escape(clean_html(playbook.get('ai_review') or 'Educational review pending.'))}</p></article><article class='card'><h2>{html_escape(clean_html(playbook.get('category')))}</h2><button data-vote='1'>Helpful</button></article></section><script>document.addEventListener('click',async e=>{{if(e.target.closest('[data-vote]')){{await fetch('/api/arena/playbooks/vote',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{playbook_id:{playbook_id},vote:1}})}});alert('Vote saved.')}}}})</script>"
     return arena_page_shell("Arena Playbook", body, user=user)
 
 
@@ -33750,11 +33789,11 @@ def arena_home_page():
     xp_next = next((threshold for threshold, _ in ARENA_RANKS if threshold > int(profile.get("xp") or 0)), 6500)
     xp_pct = min(100, int((int(profile.get("xp") or 0) / max(1, xp_next)) * 100))
     top_html = "".join(
-        f"<div class='player-card elite'><strong>#{p.get('leaderboard_rank')} {clean_html(p.get('display_name'))}</strong><span class='rank'>{clean_html(p.get('rank'))}</span><span>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)}</span><p>{clean_html(p.get('ai_summary'))}</p><div class='actions'><a class='button' href='/arena/player/{clean_html(p.get('public_player_id'))}'>View</a><button data-challenge='{clean_html(p.get('public_player_id'))}'>Challenge</button></div></div>"
+        f"<div class='player-card elite'><strong>#{p.get('leaderboard_rank')} {html_escape(clean_html(p.get('display_name')))}</strong><span class='rank'>{html_escape(clean_html(p.get('rank')))}</span><span>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)}</span><p>{html_escape(clean_html(p.get('ai_summary')))}</p><div class='actions'><a class='button' href='/arena/player/{html_escape(clean_html(p.get('public_player_id')))}'>View</a><button data-challenge='{html_escape(clean_html(p.get('public_player_id')))}'>Challenge</button></div></div>"
         for p in leaderboard
     ) or "<p class='muted'>Complete a mission to become the first ranked competitor.</p>"
     activity_items = "".join(
-        f"<div><strong>{clean_html((item.get('sender') or {}).get('display_name') or 'Arena Member')}</strong><p>{clean_html(item.get('message_preview') or 'Arena request')}</p><div class='actions'><a class='button' href='/arena/inbox'>Respond</a><a class='button' href='/arena/player/{clean_html((item.get('sender') or {}).get('public_player_id') or '')}'>Profile</a></div></div>"
+        f"<div><strong>{html_escape(clean_html((item.get('sender') or {}).get('display_name') or 'Arena Member'))}</strong><p>{html_escape(clean_html(item.get('message_preview') or 'Arena request'))}</p><div class='actions'><a class='button' href='/arena/inbox'>Respond</a><a class='button' href='/arena/player/{html_escape(clean_html((item.get('sender') or {}).get('public_player_id') or ''))}'>Profile</a></div></div>"
         for item in (inbox.get("requests") or [])[:4]
     ) or "<div><strong>All clear</strong><p>No pending Arena requests. Challenge a top player or start a quick battle anytime.</p><a class='button' href='/arena/players'>Find Players</a></div>"
     body = f"""
@@ -33767,14 +33806,14 @@ def arena_home_page():
       </article>
       <article class="card">
         <div class="kicker">Your Rank</div>
-        <h2>{clean_html(profile.get('rank'))}</h2>
+        <h2>{html_escape(clean_html(profile.get('rank')))}</h2>
         <div class="metric">{int(profile.get('arena_iq') or 50)}</div>
         <p>Arena IQ · {int(profile.get('xp') or 0)} XP · {int(profile.get('streak_count') or 0)} day streak</p>
         <div class="xpbar"><span style="width:{xp_pct}%"></span></div>
       </article>
     </section>
     <section class="grid">
-      <article class="card"><h3>Daily Intelligence Mission</h3><p>{clean_html(mission.get('description'))}</p><a class="button primary" href="/arena/daily">Play Today's Mission</a></article>
+      <article class="card"><h3>Daily Intelligence Mission</h3><p>{html_escape(clean_html(mission.get('description')))}</p><a class="button primary" href="/arena/daily">Play Today's Mission</a></article>
       <article class="card"><h3>Solo Market Survival</h3><p>Practice simulated market decisions with discipline-first scoring. Phase 2 simulated trades are ready in the data model.</p><button data-start-solo>Start Solo Simulation</button></article>
       <article class="card"><h3>Friend Battle</h3><p>Challenge another user to a virtual $10,000 portfolio battle. No real-money trading occurs inside Arena matches.</p><a class="button" href="/arena/leaderboard">Find Opponent</a></article>
       <article class="card"><h3>Scam Hunter</h3><p>Identify red flags, protect wallets, and earn Scam Defense XP.</p><a class="button" href="/arena/scam-hunter">Open Scam Hunter</a></article>
@@ -33837,12 +33876,12 @@ def arena_daily_page():
     question_html = "".join(
         "<article class='card'><h3>{}</h3><div class='mission-options'>{}</div></article>".format(
             clean_html(q.get("label")),
-            "".join(f"<label class='option'><input type='radio' name='{clean_html(q.get('key'))}' value='{clean_html(option)}' required> {clean_html(option)}</label>" for option in q.get("options", [])),
+            "".join(f"<label class='option'><input type='radio' name='{html_escape(clean_html(q.get('key')))}' value='{html_escape(clean_html(option))}' required> {html_escape(clean_html(option))}</label>" for option in q.get("options", [])),
         )
         for q in questions
     )
     body = f"""
-    <section class="hero"><article class="card wide"><div class="kicker">Daily Intelligence Mission</div><h1>{clean_html(mission.get('title'))}</h1><p>{clean_html(payload.get('scenario'))}</p></article><article class="card"><h2>Reward</h2><p>Earn XP, discipline score, scam defense XP, and badges.</p></article></section>
+    <section class="hero"><article class="card wide"><div class="kicker">Daily Intelligence Mission</div><h1>{html_escape(clean_html(mission.get('title')))}</h1><p>{html_escape(clean_html(payload.get('scenario')))}</p></article><article class="card"><h2>Reward</h2><p>Earn XP, discipline score, scam defense XP, and badges.</p></article></section>
     <form id="arenaDailyForm" class="grid">{question_html}<article class="card wide"><button class="primary" type="submit">Submit Mission</button><pre id="arenaDailyResult" class="notice" style="white-space:pre-wrap"></pre></article></form>
     <script>
     document.getElementById('arenaDailyForm').addEventListener('submit', async (event) => {{
@@ -33881,7 +33920,7 @@ def arena_leaderboard_page():
         return redirect(url_for("signup_page", next="/arena/leaderboard"))
     payload = arena_leaderboard_payload(limit=30, sort_key=request.args.get("sort") or "arena_iq")
     rows = "".join(
-        f"<div class='player-card {'elite' if index <= 3 else ''}'><strong>#{index} {clean_html(p.get('display_name'))}</strong><span class='rank'>{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)} · Streak {int(p.get('streak_count') or 0)}</p><p>{clean_html(p.get('ai_summary'))}</p><div class='actions'><a class='button' href='/arena/player/{clean_html(p.get('public_player_id'))}'>Profile</a><button data-challenge='{clean_html(p.get('public_player_id'))}'>Challenge</button><button data-follow='{clean_html(p.get('public_player_id'))}'>Follow</button><button data-message='{clean_html(p.get('public_player_id'))}'>Message</button></div></div>"
+        f"<div class='player-card {'elite' if index <= 3 else ''}'><strong>#{index} {html_escape(clean_html(p.get('display_name')))}</strong><span class='rank'>{html_escape(clean_html(p.get('rank')))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)} · XP {int(p.get('xp') or 0)} · Streak {int(p.get('streak_count') or 0)}</p><p>{html_escape(clean_html(p.get('ai_summary')))}</p><div class='actions'><a class='button' href='/arena/player/{html_escape(clean_html(p.get('public_player_id')))}'>Profile</a><button data-challenge='{html_escape(clean_html(p.get('public_player_id')))}'>Challenge</button><button data-follow='{html_escape(clean_html(p.get('public_player_id')))}'>Follow</button><button data-message='{html_escape(clean_html(p.get('public_player_id')))}'>Message</button></div></div>"
         for index, p in enumerate(payload.get("players", []), start=1)
     ) or "<p class='muted'>No leaderboard entries yet.</p>"
     body = f"""
@@ -33932,16 +33971,16 @@ def arena_player_page(public_player_id):
     display = public_profile.get("display_name")
     share_url = f"https://pulsesoc.com/arena/player/{clean_html(public_profile.get('public_player_id'))}"
     actions = (
-        f"""<button data-challenge="{clean_html(public_profile.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(public_profile.get('public_player_id'))}">Follow Player</button><button data-message="{clean_html(public_profile.get('public_player_id'))}">Message Player</button><button data-report="{clean_html(public_profile.get('public_player_id'))}">Report</button><button data-block="{clean_html(public_profile.get('public_player_id'))}">Block</button><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{clean_html(public_profile.get('public_player_id'))}">Share</button>"""
+        f"""<button data-challenge="{html_escape(clean_html(public_profile.get('public_player_id')))}">Challenge</button><button data-follow="{html_escape(clean_html(public_profile.get('public_player_id')))}">Follow Player</button><button data-message="{html_escape(clean_html(public_profile.get('public_player_id')))}">Message Player</button><button data-report="{html_escape(clean_html(public_profile.get('public_player_id')))}">Report</button><button data-block="{html_escape(clean_html(public_profile.get('public_player_id')))}">Block</button><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{html_escape(clean_html(public_profile.get('public_player_id')))}">Share</button>"""
         if user else
-        f"""<a class="button primary" href="/signup?next={clean_html(request.path)}">Create Free Account</a><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{clean_html(public_profile.get('public_player_id'))}">Share</button>"""
+        f"""<a class="button primary" href="/signup?next={html_escape(clean_html(request.path))}">Create Free Account</a><button class="arena-share-btn" data-share-url="{share_url}" data-public-player-id="{html_escape(clean_html(public_profile.get('public_player_id')))}">Share</button>"""
     )
     og_title = f"{clean_html(display)} | CoinPlotXAI Arena Player"
     og_desc = clean_html(arena_player_style_summary(profile))
     og_image = f"https://pulsesoc.com/api/arena/share/profile/{clean_html(public_profile.get('public_player_id'))}?format=svg"
     meta_tags = f"""<link rel="canonical" href="{share_url}"><meta property="og:title" content="{og_title}"><meta property="og:description" content="{og_desc}"><meta property="og:image" content="{og_image}"><meta property="og:url" content="{share_url}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{og_title}"><meta name="twitter:description" content="{og_desc}"><meta name="twitter:image" content="{og_image}">"""
     body = f"""
-    <section class="hero"><article class="card wide"><div class="kicker">Arena Player Profile</div><h1>{clean_html(display)}</h1><p>{clean_html(arena_player_style_summary(profile))}</p><div class="actions">{actions}</div></article><article class="card"><span class="rank">{clean_html(profile.get('rank'))}</span><div class="metric">{int(profile.get('arena_iq') or 0)}</div><p>Arena IQ</p></article></section>
+    <section class="hero"><article class="card wide"><div class="kicker">Arena Player Profile</div><h1>{html_escape(clean_html(display))}</h1><p>{html_escape(clean_html(arena_player_style_summary(profile)))}</p><div class="actions">{actions}</div></article><article class="card"><span class="rank">{html_escape(clean_html(profile.get('rank')))}</span><div class="metric">{int(profile.get('arena_iq') or 0)}</div><p>Arena IQ</p></article></section>
     <section class="grid"><article class="card"><h3>Discipline</h3><div class="metric">{int(profile.get('discipline_score') or 0)}</div></article><article class="card"><h3>Scam Defense</h3><div class="metric">{int(profile.get('scam_defense_score') or 0)}</div></article><article class="card"><h3>XP</h3><div class="metric">{int(profile.get('xp') or 0)}</div></article></section>
     <div class="share-modal" data-share-modal hidden><h3>Share Arena Player</h3><p class="muted">Public Arena profile only. No email, internal ID, or account data.</p><div class="actions"><button data-copy-share>Copy Link</button><a class="button" data-share-x target="_blank" rel="noopener">X</a><a class="button" data-share-facebook target="_blank" rel="noopener">Facebook</a><a class="button" data-share-whatsapp target="_blank" rel="noopener">WhatsApp</a><a class="button" data-share-telegram target="_blank" rel="noopener">Telegram</a><button data-close-share>Close</button></div><p class="muted" data-share-toast></p></div>
     <script>
@@ -33974,7 +34013,7 @@ def arena_players_page():
         # No ` · training` fallback. arena_profiles.online_status is written on
         # activity and never cleared, and defaulting the empty case to
         # "training" invented an activity for players who had none.
-        f"""<article class="player-card elite"><strong>{clean_html(p.get('display_name'))}</strong><span class="rank">{clean_html(p.get('rank'))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)}</p><div class="actions"><a class="button" href="/arena/player/{clean_html(p.get('public_player_id'))}">Profile</a><button data-message="{clean_html(p.get('public_player_id'))}">Message</button><button data-challenge="{clean_html(p.get('public_player_id'))}">Challenge</button><button data-follow="{clean_html(p.get('public_player_id'))}">Follow</button></div></article>"""
+        f"""<article class="player-card elite"><strong>{html_escape(clean_html(p.get('display_name')))}</strong><span class="rank">{html_escape(clean_html(p.get('rank')))}</span><p>Arena IQ {int(p.get('arena_iq') or 0)}</p><div class="actions"><a class="button" href="/arena/player/{html_escape(clean_html(p.get('public_player_id')))}">Profile</a><button data-message="{html_escape(clean_html(p.get('public_player_id')))}">Message</button><button data-challenge="{html_escape(clean_html(p.get('public_player_id')))}">Challenge</button><button data-follow="{html_escape(clean_html(p.get('public_player_id')))}">Follow</button></div></article>"""
         for p in players
     )
     body = f"""
@@ -34013,11 +34052,11 @@ def arena_chat_page(thread_id):
     other = payload.get("other") or {}
     body = f"""
     <section class="hero">
-      <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{clean_html(other.get('display_name') or 'Arena Member')}</h1><p><span class="rank">{clean_html(other.get('rank') or 'Rookie')}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
+      <article class="card wide"><div class="kicker">Arena Live Chat</div><h1>{html_escape(clean_html(other.get('display_name') or 'Arena Member'))}</h1><p><span class="rank">{html_escape(clean_html(other.get('rank') or 'Rookie'))}</span> <span class="muted">· live thread · public Arena identity only</span></p></article>
       <article class="card"><h2>Presence</h2><p class="muted" data-arena-chat-presence>Checking presence...</p></article>
     </section>
     <section class="card" style="min-height:58vh;display:grid;grid-template-rows:auto 1fr auto;gap:12px">
-      <div class="actions"><a class="button" href="/arena/inbox">Inbox</a><a class="button" href="/arena/player/{clean_html(other.get('public_player_id') or '')}">View Profile</a><button data-sound-toggle>Sound</button></div>
+      <div class="actions"><a class="button" href="/arena/inbox">Inbox</a><a class="button" href="/arena/player/{html_escape(clean_html(other.get('public_player_id') or ''))}">View Profile</a><button data-sound-toggle>Sound</button></div>
       <div class="chat-thread" data-arena-chat-thread></div>
       <form class="private-chat-form" data-arena-chat-form><input name="body" placeholder="Reply in Arena..." maxlength="1200" autocomplete="off"><button class="button primary">Send</button></form>
     </section>
@@ -34072,18 +34111,18 @@ def arena_inbox_page():
             accept_url, reject_url, key, accept_text = "/api/arena/challenge/accept", "/api/arena/challenge/reject", "challenge_id", "Accept Challenge"
             details_html = f"""
             <div class="arena-request-details">
-              <strong>{clean_html(item.get('challenge_label') or 'Arena Challenge')}</strong>
-              <p>{clean_html(item.get('mode_description') or '')}</p>
-              <p class="muted">Duration: {clean_html(item.get('duration') or 'Flexible')} · Reward: {clean_html(item.get('xp_reward') or 'XP only')} · Difficulty: {clean_html(item.get('difficulty') or 'Adaptive')}</p>
+              <strong>{html_escape(clean_html(item.get('challenge_label') or 'Arena Challenge'))}</strong>
+              <p>{html_escape(clean_html(item.get('mode_description') or ''))}</p>
+              <p class="muted">Duration: {html_escape(clean_html(item.get('duration') or 'Flexible'))} · Reward: {html_escape(clean_html(item.get('xp_reward') or 'XP only'))} · Difficulty: {html_escape(clean_html(item.get('difficulty') or 'Adaptive'))}</p>
               <p class="muted">Virtual balance: ${int(item.get('fake_balance') or 0):,} · Expires in {int(item.get('expires_in_days') or 0)} days</p>
-              <p class="muted">Rules: {clean_html(', '.join(item.get('rules') or ['XP only', 'No real money']))}</p>
+              <p class="muted">Rules: {html_escape(clean_html(', '.join(item.get('rules') or ['XP only', 'No real money'])))}</p>
             </div>
             """
         elif kind == "friend_request":
             accept_url, reject_url, key, accept_text = "/api/arena/friend-request/accept", "/api/arena/friend-request/reject", "request_id", "Accept Friend"
         else:
             accept_url, reject_url, key, accept_text = "/api/arena/message/accept", "/api/arena/message/reject", "request_id", "Accept Chat"
-        stats = f"<p class='muted'>{rank} · {faction} · {clean_html(item.get('stakes') or 'XP only')}</p>" if kind == "challenge" else f"<p class='muted'>{rank} · {faction}</p>"
+        stats = f"<p class='muted'>{rank} · {faction} · {html_escape(clean_html(item.get('stakes') or 'XP only'))}</p>" if kind == "challenge" else f"<p class='muted'>{rank} · {faction}</p>"
         reply_form = ""
         if kind == "message":
             thread_id = int(item.get("thread_id") or 0)
@@ -34091,14 +34130,14 @@ def arena_inbox_page():
           <form data-inline-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{thread_id}" hidden>
             <label class="muted">Reply to {name}</label>
             <textarea name="message" rows="3" placeholder="Type a fast Arena reply..."></textarea>
-            <div class="actions"><button class="primary" type="submit">Send Reply</button><a class="button" href="{clean_html(item.get('chat_url') or item.get('next_url') or '#')}">Open Chat</a></div>
+            <div class="actions"><button class="primary" type="submit">Send Reply</button><a class="button" href="{html_escape(clean_html(item.get('chat_url') or item.get('next_url') or '#'))}">Open Chat</a></div>
             <p class="muted" data-reply-status></p>
           </form>
             """
         if status == "pending":
             if kind == "message":
                 primary_actions = f"""
-            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('next_url') or '')}">Reply</button>
+            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{html_escape(clean_html(item.get('next_url') or ''))}">Reply</button>
             <button data-arena-action="{accept_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">{accept_text}</button>
             <button data-arena-action="{reject_url}" data-key="{key}" data-id="{int(item.get('id') or 0)}">Decline</button>
                 """
@@ -34109,11 +34148,11 @@ def arena_inbox_page():
                 """
         elif kind == "message" and status == "accepted" and item.get("chat_url"):
             primary_actions = f"""
-            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{clean_html(item.get('chat_url') or '')}">Reply</button>
+            <button class="primary" data-arena-reply data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}" data-next-url="{html_escape(clean_html(item.get('chat_url') or ''))}">Reply</button>
             <button class='primary' data-arena-reply data-open-chat-direct="1" data-request-id="{int(item.get('id') or 0)}" data-public-player-id="{public_id}" data-thread-id="{int(item.get('thread_id') or 0)}">Open Chat</button>
             """
         elif kind == "challenge" and status == "accepted" and item.get("next_url"):
-            primary_actions = f"<a class='button primary' href='{clean_html(item.get('next_url'))}'>Open Match</a>"
+            primary_actions = f"<a class='button primary' href='{html_escape(clean_html(item.get('next_url')))}'>Open Match</a>"
         else:
             primary_actions = f"<span class='rank'>{status.title()}</span>"
         return f"""
@@ -34121,7 +34160,7 @@ def arena_inbox_page():
           <strong>{name}</strong>{stats}
           <p>“{preview}”</p>
           {details_html}
-          <small class="muted">{clean_html(item.get('created_at') or '')} · {status}</small>
+          <small class="muted">{html_escape(clean_html(item.get('created_at') or ''))} · {status}</small>
           <div class="actions">
             {primary_actions}
             <a class="button" href="/arena/player/{public_id}">View Profile</a>
@@ -34334,7 +34373,7 @@ def arena_continuous_play_page():
     <section class="card live-arena-card">
       <div class="kicker">Recommended Next Move</div>
       <h2>Continue your Arena climb</h2>
-      <p>Rank: {clean_html(profile.get('rank') or 'Rookie')} · XP: {int(profile.get('xp') or 0)} · Streak: {int(profile.get('streak_count') or 0)} missions</p>
+      <p>Rank: {html_escape(clean_html(profile.get('rank') or 'Rookie'))} · XP: {int(profile.get('xp') or 0)} · Streak: {int(profile.get('streak_count') or 0)} missions</p>
       <p class="muted">Best next step: start with Training Missions, sharpen Scam Hunter, then enter Quick Battle when you are warm.</p>
       <div class="actions"><a class="button primary" href="/arena/daily" data-game-launch="training">Start Here</a><a class="button" href="/arena/scam-rush" data-game-launch="scam_hunter">Start Scam Hunt</a><a class="button" href="/arena/live" data-game-launch="live_rooms">Join Live Room</a></div>
     </section>
@@ -34531,7 +34570,7 @@ def arena_creator_mode_page():
     <section class="creator-stage">
       <article class="creator-preview">
         <div class="kicker">Creator Mode</div>
-        <h1 class="creator-big">{clean_html(title)}</h1>
+        <h1 class="creator-big">{html_escape(clean_html(title))}</h1>
         <p class="creator-card">Clean fullscreen stage, large commentator cards, audience reaction meter, spotlight mode, and reduced clutter for streaming or screen recording.</p>
         <div class="crowd-meter"><span style="width:76%"></span></div>
         <div class="actions"><a class="button primary" href="{primary_url}">Open Live Stage</a><button data-copy-overlay>Copy Overlay Link</button></div>
@@ -34580,8 +34619,8 @@ def arena_phase_two_page(room_id=None, match_id=None):
         body = f"""
         <div class="arena-intro"><div class="arena-intro-card"><div class="kicker">Match Opening</div><h2>{match_label}</h2><p>AI commentator online · market simulation pressure rising</p></div></div>
         <section class="hero">
-          <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Virtual-dollar match. Live updates refresh every few seconds. No real orders or trading execution.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{clean_html((live.get('match') or {}).get('status') or 'active')}</span></p></article>
-          <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{clean_html(live.get('ai_commentary'))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p><div class="crowd-meter"><span data-crowd-meter style="width:24%"></span></div><p class="muted">Crowd pressure · live Arena energy</p></article>
+          <article class="card wide"><div class="kicker">Live Battle Room</div><h1>{match_label}</h1><p>Simulation only. Virtual-dollar match. Live updates refresh every few seconds. No real orders or trading execution.</p><div class="actions"><button data-match-watch="{match_id}">Watch Live</button><button data-match-cheer="🔥">Cheer</button><button data-challenge-winner>Challenge Winner</button><button data-join-battle hidden>Join This Battle</button><a class="button" href="/arena/inbox">Back to Inbox</a></div><p class="muted">Room #{match_id} · <span data-match-state>{html_escape(clean_html((live.get('match') or {}).get('status') or 'active'))}</span></p></article>
+          <article class="card"><h2>AI Commentator</h2><p data-match-commentary>{html_escape(clean_html(live.get('ai_commentary')))}</p><p class="muted">Spectators: <span data-spectators>{int(live.get('spectator_count') or live.get('spectators') or 0)}</span> · Cheers: <span data-cheers>{int(live.get('cheer_count') or 0)}</span></p><div class="crowd-meter"><span data-crowd-meter style="width:24%"></span></div><p class="muted">Crowd pressure · live Arena energy</p></article>
         </section>
         {arena_commentator_studio(active_battles=1, active_rooms=1, crowd_level=52)}
         <section class="grid">
@@ -34715,7 +34754,7 @@ def admin_arena_page():
     events = cur.fetchone()[0]
     conn.close()
     cards = f"<div class='grid'><div class='card'><div class='metric'>{profiles}</div><p>Profiles</p></div><div class='card'><div class='metric'>{attempts}</div><p>Mission attempts</p></div><div class='card'><div class='metric'>{pending}</div><p>Pending challenges</p></div><div class='card'><div class='metric'>{rooms}</div><p>Active rooms</p></div><div class='card'><div class='metric'>{active_matches}</div><p>Live battles</p></div><div class='card'><div class='metric'>{spectators}</div><p>Spectators</p></div><div class='card'><div class='metric'>{events}</div><p>Active events</p></div></div>"
-    rows = "".join(f"<tr><td>{clean_html(p.get('display_name'))}</td><td>{clean_html(p.get('rank'))}</td><td>{int(p.get('arena_iq') or 0)}</td><td>{int(p.get('xp') or 0)}</td></tr>" for p in leaderboard)
+    rows = "".join(f"<tr><td>{html_escape(clean_html(p.get('display_name')))}</td><td>{html_escape(clean_html(p.get('rank')))}</td><td>{int(p.get('arena_iq') or 0)}</td><td>{int(p.get('xp') or 0)}</td></tr>" for p in leaderboard)
     tools = """
     <div class='card'><h2>Create Seasonal Arena Event</h2>
       <form method='post' action='/admin/arena/events'>
@@ -34751,7 +34790,7 @@ def admin_arena_games_page():
         ("training", "/arena/daily", "Training"),
     ]
     rows = "".join(
-        f"<tr><td>{clean_html(key.replace('_',' ').title())}</td><td><a href='{clean_html(route)}'>{clean_html(route)}</a></td><td>{clean_html(status)}</td><td><span class='rank'>200 expected</span></td><td><span class='rank'>Launcher supported</span></td><td><span class='rank'>Explanation present</span></td><td><span class='rank'>Result ready</span></td><td>~150ms target</td><td class='muted'>No launch error recorded</td></tr>"
+        f"<tr><td>{html_escape(clean_html(key.replace('_',' ').title()))}</td><td><a href='{html_escape(clean_html(route))}'>{html_escape(clean_html(route))}</a></td><td>{html_escape(clean_html(status))}</td><td><span class='rank'>200 expected</span></td><td><span class='rank'>Launcher supported</span></td><td><span class='rank'>Explanation present</span></td><td><span class='rank'>Result ready</span></td><td>~150ms target</td><td class='muted'>No launch error recorded</td></tr>"
         for key, route, status in games
     )
     body = f"""
@@ -34804,8 +34843,8 @@ def admin_roast_battle_page():
     )
     unsafe_rows = cur.fetchall()
     conn.close()
-    top = "".join(f"<tr><td>{clean_html(row['call_sign'] or 'Arena Member')}</td><td>${float(row['balance'] or 0):,.0f}</td><td>{float(row['crowd'] or 0):.0f}</td></tr>" for row in top_rows)
-    unsafe = "".join(f"<tr><td>{clean_html(row['message'] or '')}</td><td>{clean_html(row['impact_label'] or '')}</td><td>{clean_html(row['moderation_reason'] or '')}</td><td>{clean_html(row['created_at'] or '')}</td></tr>" for row in unsafe_rows)
+    top = "".join(f"<tr><td>{html_escape(clean_html(row['call_sign'] or 'Arena Member'))}</td><td>${float(row['balance'] or 0):,.0f}</td><td>{float(row['crowd'] or 0):.0f}</td></tr>" for row in top_rows)
+    unsafe = "".join(f"<tr><td>{html_escape(clean_html(row['message'] or ''))}</td><td>{html_escape(clean_html(row['impact_label'] or ''))}</td><td>{html_escape(clean_html(row['moderation_reason'] or ''))}</td><td>{html_escape(clean_html(row['created_at'] or ''))}</td></tr>" for row in unsafe_rows)
     body = f"""
     <div class='grid'>
       <div class='card'><div class='metric'>{active_matches}</div><p>Active roast matches</p></div>
@@ -34880,7 +34919,7 @@ def admin_chat_health_page():
         recent_error_rows = []
     conn.close()
     errors = "".join(
-        f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('channel') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('error_message') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(row.get('created_at') or ''))}</td><td>{html_escape(clean_html(row.get('channel') or ''))}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html(row.get('error_message') or ''))}</td></tr>"
         for row in recent_error_rows
     ) or "<tr><td colspan='4' class='muted'>No recent delivery errors recorded.</td></tr>"
     body = f"""
@@ -34946,7 +34985,7 @@ def admin_arena_world_page():
     conn.close()
     body = f"""
     <div class='grid'>
-      <div class='card'><div class='metric'>{clean_html((world.get('world') or {}).get('title'))}</div><p>World state</p></div>
+      <div class='card'><div class='metric'>{html_escape(clean_html((world.get('world') or {}).get('title')))}</div><p>World state</p></div>
       <div class='card'><div class='metric'>{int((world.get('world') or {}).get('intensity') or 0)}</div><p>World intensity</p></div>
       <div class='card'><div class='metric'>{factions}</div><p>Factions</p></div>
       <div class='card'><div class='metric'>{events}</div><p>World events</p></div>
@@ -34954,7 +34993,7 @@ def admin_arena_world_page():
       <div class='card'><div class='metric'>{playbooks}</div><p>Playbooks</p></div>
       <div class='card'><div class='metric'>{boss_attempts}</div><p>Boss attempts</p></div>
     </div>
-    <div class='card'><h2>AI World Narrative</h2><p>{clean_html((world.get('world') or {}).get('narrative'))}</p></div>
+    <div class='card'><h2>AI World Narrative</h2><p>{html_escape(clean_html((world.get('world') or {}).get('narrative')))}</p></div>
     """
     return admin_page_html("Arena World", body, admin=admin)
 
@@ -39604,12 +39643,12 @@ def admin_notification_delivery_page():
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
     table = "".join(
-        f"<tr><td>{r.get('user_id')}</td><td>{clean_html(r.get('pipeline') or '')}</td><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>"
+        f"<tr><td>{r.get('user_id')}</td><td>{html_escape(clean_html(r.get('pipeline') or ''))}</td><td>{html_escape(clean_html(r.get('channel') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('error_message') or ''))}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>"
         for r in rows
     )
     body = (
         "<h1>Notification Delivery</h1><p class='muted'>Recent delivery evidence by pipeline. Missing optional providers are setup states, not retryable failures.</p>"
-        f"<form class='card actions' method='post' action='/admin/notifications/queue-action'><input type='hidden' name='csrf_token' value='{clean_html(get_csrf_token())}'>"
+        f"<form class='card actions' method='post' action='/admin/notifications/queue-action'><input type='hidden' name='csrf_token' value='{html_escape(clean_html(get_csrf_token()))}'>"
         "<button name='action' value='retry_failed'>Retry Failed Jobs</button><button name='action' value='quarantine_failed'>Quarantine Broken Jobs</button>"
         "<button name='action' value='purge_dead'>Purge Dead Jobs</button><button name='action' value='rebuild_subscriptions'>Rebuild Subscriptions</button></form>"
         f"<div class='card'><table><tr><th>User</th><th>Pipeline</th><th>Channel</th><th>Status</th><th>Error</th><th>Created</th></tr>{table}</table></div>"
@@ -39643,7 +39682,7 @@ def admin_notifications_queue_action():
         result = push_service.cleanup_invalid_subscriptions()
     conn.close()
     log_admin_audit(admin.get("id"), "notification_queue_action", "notifications", action, result)
-    body = f"<h1>Notification Queue Action</h1><div class='card'><pre>{clean_html(json.dumps(result, indent=2, default=str))}</pre></div><p><a class='button' href='/admin/notification-delivery'>Back to Delivery</a></p>"
+    body = f"<h1>Notification Queue Action</h1><div class='card'><pre>{html_escape(clean_html(json.dumps(result, indent=2, default=str)))}</pre></div><p><a class='button' href='/admin/notification-delivery'>Back to Delivery</a></p>"
     return admin_page_html("Notification Queue Action", body, admin)
 
 
@@ -39672,17 +39711,17 @@ def admin_alert_delivery_page():
     recent_rows = [dict(row) for row in cur.fetchall()]
     conn.close()
     worker = summary.get("worker") or {}
-    status_table = "".join(f"<tr><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in status_rows)
-    channel_table = "".join(f"<tr><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in channel_rows)
+    status_table = "".join(f"<tr><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in status_rows)
+    channel_table = "".join(f"<tr><td>{html_escape(clean_html(r.get('channel') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in channel_rows)
     recent_table = "".join(
-        f"<tr><td>{clean_html(r.get('created_at') or '')}</td><td>{r.get('user_id') or ''}</td><td>{r.get('alert_id') or ''}</td><td>{clean_html(r.get('channel') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('provider') or '')}</td><td>{clean_html(r.get('error_message') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(r.get('created_at') or ''))}</td><td>{r.get('user_id') or ''}</td><td>{r.get('alert_id') or ''}</td><td>{html_escape(clean_html(r.get('channel') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('provider') or ''))}</td><td>{html_escape(clean_html(r.get('error_message') or ''))}</td></tr>"
         for r in recent_rows
     )
     body = f"""
     <h1>Alert Delivery</h1>
     <p class='muted'>Every triggered alert creates per-channel delivery jobs and provider logs. Ready states should be backed by real tests or delivery success.</p>
     <div class='grid'>
-      <div class='card'><h2>Worker</h2><p><strong>{'Healthy' if not worker.get('stale') else 'Stale / Offline'}</strong></p><p class='muted'>Last seen: {clean_html(worker.get('last_seen_at') or 'never')}</p><p class='muted'>Last error: {clean_html(worker.get('last_error') or 'none')}</p></div>
+      <div class='card'><h2>Worker</h2><p><strong>{'Healthy' if not worker.get('stale') else 'Stale / Offline'}</strong></p><p class='muted'>Last seen: {html_escape(clean_html(worker.get('last_seen_at') or 'never'))}</p><p class='muted'>Last error: {html_escape(clean_html(worker.get('last_error') or 'none'))}</p></div>
       <div class='card'><h2>Triggered Today</h2><p style='font-size:34px;font-weight:900'>{int(summary.get('triggered_today') or 0)}</p><p class='muted'>Active alerts: {int(summary.get('active_alert_count') or 0)}</p></div>
     </div>
     <div class='grid'>
@@ -39713,7 +39752,7 @@ def admin_test_notification_page():
         log_admin_audit(admin.get("id"), "admin_test_notification_sent", "user", str(user_id), result)
         if request.is_json:
             return jsonify({"ok": True, "delivery": result})
-        return admin_page_html("Test Notification", f"<h1>Test Notification</h1><pre>{clean_html(json.dumps(result, indent=2))}</pre><p><a class='button' href='/admin/test-notification'>Send another</a></p>", admin)
+        return admin_page_html("Test Notification", f"<h1>Test Notification</h1><pre>{html_escape(clean_html(json.dumps(result, indent=2)))}</pre><p><a class='button' href='/admin/test-notification'>Send another</a></p>", admin)
     body = """
     <h1>Send Test Notification</h1>
     <div class="card"><form method="post">
@@ -39740,7 +39779,7 @@ def admin_watch_rules_page():
     cur.execute("SELECT * FROM watch_rules ORDER BY id DESC LIMIT 250")
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    table = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('user_id')}</td><td>{clean_html(r.get('watch_type') or '')}</td><td>{clean_html(r.get('target_value') or '')}</td><td>{clean_html(r.get('channels') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('last_triggered_at') or '')}</td></tr>" for r in rows)
+    table = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('user_id')}</td><td>{html_escape(clean_html(r.get('watch_type') or ''))}</td><td>{html_escape(clean_html(r.get('target_value') or ''))}</td><td>{html_escape(clean_html(r.get('channels') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('last_triggered_at') or ''))}</td></tr>" for r in rows)
     body = f"<h1>Watch Rules</h1><div class='card'><table><tr><th>ID</th><th>User</th><th>Type</th><th>Target</th><th>Channels</th><th>Status</th><th>Last Triggered</th></tr>{table}</table></div>"
     return admin_page_html("Watch Rules", body, admin)
 
@@ -39758,8 +39797,8 @@ def admin_education_page():
     cur.execute("SELECT lesson_slug, COUNT(*) AS views FROM education_lesson_views GROUP BY lesson_slug ORDER BY views DESC LIMIT 20")
     views = [dict(row) for row in cur.fetchall()]
     conn.close()
-    count_rows = "".join(f"<tr><td>{clean_html(r.get('category_slug') or '')}</td><td>{r.get('count')}</td></tr>" for r in counts)
-    view_rows = "".join(f"<tr><td>{clean_html(r.get('lesson_slug') or '')}</td><td>{r.get('views')}</td></tr>" for r in views)
+    count_rows = "".join(f"<tr><td>{html_escape(clean_html(r.get('category_slug') or ''))}</td><td>{r.get('count')}</td></tr>" for r in counts)
+    view_rows = "".join(f"<tr><td>{html_escape(clean_html(r.get('lesson_slug') or ''))}</td><td>{r.get('views')}</td></tr>" for r in views)
     body = f"<h1>Education Manager</h1><p class='muted'>Starter knowledge bank seeded and active. Editing UI can be expanded here without touching public lesson URLs.</p><div class='grid'><div class='card'><h2>Lessons by Category</h2><table>{count_rows}</table></div><div class='card'><h2>Popular Lessons</h2><table>{view_rows}</table></div></div>"
     return admin_page_html("Education Manager", body, admin)
 
@@ -39772,7 +39811,7 @@ def admin_seo_page():
     public_paths = all_public_paths()
     noindex = ["/app", "/chat", "/command-center", "/dashboard", "/account", "/admin", "/api/*", "/stripe/*"]
     schema_types = ["Organization", "SoftwareApplication", "Product", "FAQPage", "BreadcrumbList", "WebSite", "Course", "LearningResource"]
-    rows = "".join(f"<tr><td>{clean_html(path)}</td><td>crawlable</td><td>canonical expected</td></tr>" for path in public_paths[:80])
+    rows = "".join(f"<tr><td>{html_escape(clean_html(path))}</td><td>crawlable</td><td>canonical expected</td></tr>" for path in public_paths[:80])
     body = f"<h1>SEO Intelligence Center</h1><div class='grid'><div class='card'><div class='metric'>{len(public_paths)}</div><p>public indexable paths tracked</p></div><div class='card'><div class='metric'>{len(noindex)}</div><p>private/noindex patterns protected</p></div><div class='card'><div class='metric'>{len(schema_types)}</div><p>schema families active/planned</p></div></div><div class='card'><h2>Noindex Protection</h2><p>{', '.join(noindex)}</p></div><div class='card'><h2>Public Crawl Targets</h2><table><tr><th>Path</th><th>Status</th><th>Metadata</th></tr>{rows}</table></div>"
     return admin_page_html("SEO Intelligence Center", body, admin)
 
@@ -40005,7 +40044,7 @@ def pulse_desktop_top_nav_html(user=None):
     avatar_url = _profile_cache_busted_url(avatar_url, shell_user.get("updated_at") or "") if avatar_url else ""
     display_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
     initials = "".join(part[:1] for part in str(display_name).strip().split()[:2]).upper() or "ME"
-    avatar_html = f"<img src='{clean_html(avatar_url)}' alt='Profile picture'>" if avatar_url else clean_html(initials[:2])
+    avatar_html = f"<img src='{html_escape(clean_html(avatar_url))}' alt='Profile picture'>" if avatar_url else clean_html(initials[:2])
     # The top bar used to be a feed-only ornament, so nothing marked the current
     # page and a stylesheet lit Home unconditionally. It now renders on every
     # shell page, where a fixed highlight is simply wrong, so the current
@@ -40015,11 +40054,11 @@ def pulse_desktop_top_nav_html(user=None):
     for label, href in nav:
         badge = "<span class='pulse-notification-badge' data-chat-unread hidden>0</span>" if href == "/pulse/messages" else ""
         current = " aria-current='page'" if pulse_nav_is_current(href, active_path) else ""
-        nav_html += f"<a{current} href='{clean_html(href)}'>{clean_html(label)}{badge}</a>"
+        nav_html += f"<a{current} href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}{badge}</a>"
     apps_html = ""
     for label, href in apps:
         current = " aria-current='page'" if pulse_nav_is_current(href, active_path) else ""
-        apps_html += f"<a{current} href='{clean_html(href)}'>{clean_html(label)}</a>"
+        apps_html += f"<a{current} href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>"
     return (
         "<header class='pulse-desktop-topbar' data-desktop-feed-nav>"
         "<a class='pulse-desktop-brand' href='/pulse'><img src='/static/brand/pulsesoc-logo-20260813.png' alt='PulseSoc logo'>PulseSoc</a>"
@@ -40033,7 +40072,7 @@ def pulse_desktop_top_nav_html(user=None):
         "<a class='pulse-topnav-control pulse-topnav-search' href='/pulse/search' aria-label='Open PulseSoc search'><span aria-hidden='true'>⌕</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'><span class='pulse-alert-radar' aria-hidden='true'></span><span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a>"
         "<a class='pulse-topnav-control pulse-topnav-live' href='/pulse/live' aria-label='Open Live Network'><span aria-hidden='true'>LIVE</span></a>"
-        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{clean_html(display_name)}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/account/settings' role='menuitem'>Account Settings</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
+        f"<details class='pulse-topnav-profile-menu'><summary class='pulse-topnav-avatar' aria-label='Open account menu'>{avatar_html}<span class='pulse-topnav-presence' aria-hidden='true'></span></summary><div class='pulse-topnav-profile-panel' role='menu' aria-label='Account menu'><strong>{html_escape(clean_html(display_name))}</strong><a href='/pulse/profile' role='menuitem'>Profile</a><a href='/dashboard' role='menuitem'>Dashboard</a><a href='/account/settings' role='menuitem'>Account Settings</a><a class='logout' href='/logout' role='menuitem'>Log Out</a></div></details>"
         "<a class='button primary pulse-create-strong' href='#create' data-pulse-create-trigger='1'>Create</a></div>"
         "</header>"
     )
@@ -40147,9 +40186,9 @@ def pulse_rail_nav_links_html(user=None, is_admin=False, active_path=""):
         cls = "desktop-rail-link is-active" if selected else "desktop-rail-link"
         current = " aria-current='page'" if selected else ""
         out += (
-            f"<a class='{cls}'{current} href='{clean_html(href)}'>"
-            f"<span class='desktop-rail-ico'>{clean_html(icon)}</span>"
-            f"<span>{clean_html(label)}</span></a>"
+            f"<a class='{cls}'{current} href='{html_escape(clean_html(href))}'>"
+            f"<span class='desktop-rail-ico'>{html_escape(clean_html(icon))}</span>"
+            f"<span>{html_escape(clean_html(label))}</span></a>"
         )
     return out
 
@@ -40188,7 +40227,7 @@ def pulse_desktop_left_rail_html(is_admin=False, user=None):
     return (
         "<aside class='pulse-desktop-left' aria-label='PulseSoc navigation rail'>"
         "<section class='desktop-rail-card desktop-rail-profile'>"
-        f"<span class='avatar'>{clean_html(rail_initials[:2])}</span><span><strong>Your PulseSoc OS</strong><small class='muted'>Navigate, create, learn, and connect.</small></span>"
+        f"<span class='avatar'>{html_escape(clean_html(rail_initials[:2]))}</span><span><strong>Your PulseSoc OS</strong><small class='muted'>Navigate, create, learn, and connect.</small></span>"
         "</section>"
         "<section class='desktop-rail-card pulse-rail-today' aria-label='PulseSoc today dashboard'>"
         "<h3>Today</h3>"
@@ -40377,9 +40416,9 @@ def pulse_status_home_preview_html(item):
     kind = str(media.get("media_type") or item.get("status_type") or "text").lower()
     title = clean_html(item.get("body") or (item.get("music") or {}).get("title") or item.get("status_type") or "PulseSoc Status")
     if src and kind == "video":
-        return f"<span class='status-preview-layer'><video class='pulse-status-card-media status-preview-video' src='{clean_html(src)}' poster='{clean_html(poster)}' muted loop playsinline webkit-playsinline preload='metadata' data-status-home-video data-status-preview-seconds='10'></video></span><span class='status-preview-overlay'></span><strong>{title}</strong>"
+        return f"<span class='status-preview-layer'><video class='pulse-status-card-media status-preview-video' src='{html_escape(clean_html(src))}' poster='{html_escape(clean_html(poster))}' muted loop playsinline webkit-playsinline preload='metadata' data-status-home-video data-status-preview-seconds='10'></video></span><span class='status-preview-overlay'></span><strong>{title}</strong>"
     if poster:
-        return f"<span class='status-preview-layer'><img class='pulse-status-card-media status-preview-image' src='{clean_html(poster)}' alt='{title}' loading='lazy' decoding='async'></span><span class='status-preview-overlay'></span><strong>{title}</strong>"
+        return f"<span class='status-preview-layer'><img class='pulse-status-card-media status-preview-image' src='{html_escape(clean_html(poster))}' alt='{title}' loading='lazy' decoding='async'></span><span class='status-preview-overlay'></span><strong>{title}</strong>"
     return f"<span class='status-preview-layer'><span class='status-preview-text'>{title}</span></span><span class='status-preview-overlay'></span><strong>{title}</strong>"
 
 
@@ -40403,7 +40442,7 @@ def pulse_status_home_card_html(item):
         classes.append("has-unseen")
     return (
         f"<button class='{' '.join(classes)}' type='button' data-status-dynamic data-open-status-id='{status_id}' data-status-id='{status_id}' data-status-open-url='/pulse/status?status={status_id}' data-story-count='{story_count}' data-unseen-count='{unseen_count}' data-author-live='{live}' aria-label='Open {author} Status' "
-        f"data-status-title='{author}' data-status-meta='{clean_html(item.get('body') or item.get('status_type') or 'Tap to view')}'>"
+        f"data-status-title='{author}' data-status-meta='{html_escape(clean_html(item.get('body') or item.get('status_type') or 'Tap to view'))}'>"
         f"<span class='pulse-status-avatar-ring'><i class='pulse-status-ring-progress' aria-hidden='true'></i>{avatar_html}{'<b>LIVE</b>' if live else ''}</span>"
         f"<span class='pulse-status-home-preview'>{pulse_status_home_preview_html(item)}<small>{author} · {state}{count_label}{live_label}</small></span>"
         "</button>"
@@ -40481,8 +40520,8 @@ def pulse_status_type_buttons_html():
         ("Live", "live", "Live", "is-placeholder"),
     ]
     return "".join(
-        f"<button class='pulse-status2-type {clean_html(extra)}' type='button' data-status2-type='{clean_html(mode)}'>"
-        f"<span>{clean_html(icon)}</span><strong>{clean_html(title)}</strong></button>"
+        f"<button class='pulse-status2-type {html_escape(clean_html(extra))}' type='button' data-status2-type='{html_escape(clean_html(mode))}'>"
+        f"<span>{html_escape(clean_html(icon))}</span><strong>{html_escape(clean_html(title))}</strong></button>"
         for title, mode, icon, extra in cards
     )
 
@@ -40568,10 +40607,10 @@ def pulse_status_home_creator_html():
 def promotion_card(title, body, href, cta, icon="✦", kind="intelligence", compact=False):
     compact_class = " is-compact" if compact else ""
     return (
-        f"<section class='desktop-rail-card pulse-promo-card promo-{clean_html(kind)}{compact_class}' data-promotion-card='{clean_html(kind)}' loading='lazy'>"
-        f"<span class='desktop-signal-pill'><span>{clean_html(icon)}</span>{clean_html(title)}</span>"
-        f"<p class='muted'>{clean_html(body)}</p>"
-        f"<a class='button primary pulse-promo-cta' href='{clean_html(href)}'>{clean_html(cta)}</a>"
+        f"<section class='desktop-rail-card pulse-promo-card promo-{html_escape(clean_html(kind))}{compact_class}' data-promotion-card='{html_escape(clean_html(kind))}' loading='lazy'>"
+        f"<span class='desktop-signal-pill'><span>{html_escape(clean_html(icon))}</span>{html_escape(clean_html(title))}</span>"
+        f"<p class='muted'>{html_escape(clean_html(body))}</p>"
+        f"<a class='button primary pulse-promo-cta' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(cta))}</a>"
         "</section>"
     )
 
@@ -40684,17 +40723,17 @@ def pulse_signal_ad_card(kind="creator"):
     }
     item = configs.get(kind, configs["premium"])
     return (
-        f"<section class='desktop-rail-card pulse-signal-ad pulse-signal-ad-{clean_html(item['accent'])} pulse-sponsored-ad-zone' "
-        f"data-sponsored-signal='{clean_html(kind)}' data-pulse-ad-zone data-ad-context='{clean_html(item['context'])}' "
-        f"data-ad-placement='{clean_html(item['placement'])}' data-ad-limit='1' data-ad-replace='true'>"
+        f"<section class='desktop-rail-card pulse-signal-ad pulse-signal-ad-{html_escape(clean_html(item['accent']))} pulse-sponsored-ad-zone' "
+        f"data-sponsored-signal='{html_escape(clean_html(kind))}' data-pulse-ad-zone data-ad-context='{html_escape(clean_html(item['context']))}' "
+        f"data-ad-placement='{html_escape(clean_html(item['placement']))}' data-ad-limit='1' data-ad-replace='true'>"
         "<div class='pulse-sponsored-placeholder' data-sponsored-placeholder>"
         "<div class='pulse-signal-ad-scan' aria-hidden='true'></div>"
         "<div class='pulse-signal-ad-head'>"
-        f"<span class='pulse-signal-ad-label'>{clean_html(item['label'])}</span>"
+        f"<span class='pulse-signal-ad-label'>{html_escape(clean_html(item['label']))}</span>"
         "<button type='button' data-hide-sponsored-signal aria-label='Hide sponsored signal'>×</button>"
         "</div>"
-        f"<h3>{clean_html(item['title'])}</h3>"
-        f"<p class='muted'>{clean_html(item['body'])}</p>"
+        f"<h3>{html_escape(clean_html(item['title']))}</h3>"
+        f"<p class='muted'>{html_escape(clean_html(item['body']))}</p>"
         "<div class='pulse-signal-ad-visual' aria-hidden='true'><span></span><span></span><span></span><span></span></div>"
         "<div class='pulse-signal-ad-actions'>"
         "<details><summary>Why this signal?</summary><p>Only approved ads from the delivery engine can replace this loading state. PulseSoc uses clear labels, hide controls, frequency caps, and no sensitive personal data.</p></details></div>"
@@ -40805,9 +40844,9 @@ def pulse_live_now_homepage_html(user_id=0):
     cards = pulse_live_now_cards(limit=8)
     card_html = "".join(
         f"<article class='pulse-live-now-card {'' if int(card.get('id') or 0) else 'is-empty'}' data-live-now-card data-live-id='{int(card.get('id') or 0)}'>"
-        f"<div class='pulse-live-preview'><span class='live-dot'>LIVE</span><strong>{clean_html(card.get('ai_rating') or 'Ready')}</strong></div>"
-        f"<div><h3>{clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live')}</h3><p>{clean_html(card.get('creator_name') or 'CoinPlotXAI')} · {clean_html(card.get('category') or 'Community')}</p>"
-        f"<p><span>{int(card.get('viewer_count') or 0)} viewers</span><span>{clean_html(card.get('momentum') or 'warming')}</span><span>AI {clean_html(card.get('ai_rating') or 'Ready')}</span></p></div>"
+        f"<div class='pulse-live-preview'><span class='live-dot'>LIVE</span><strong>{html_escape(clean_html(card.get('ai_rating') or 'Ready'))}</strong></div>"
+        f"<div><h3>{html_escape(clean_html('No creators live yet. Start the first broadcast.' if not int(card.get('id') or 0) else card.get('title') or 'PulseSoc Live'))}</h3><p>{html_escape(clean_html(card.get('creator_name') or 'CoinPlotXAI'))} · {html_escape(clean_html(card.get('category') or 'Community'))}</p>"
+        f"<p><span>{int(card.get('viewer_count') or 0)} viewers</span><span>{html_escape(clean_html(card.get('momentum') or 'warming'))}</span><span>AI {html_escape(clean_html(card.get('ai_rating') or 'Ready'))}</span></p></div>"
         f"<a class='button primary' href='{pulse_live_watch_url(int(card.get('id') or 0)) if int(card.get('id') or 0) else '/pulse/live/studio?context_type=home'}' data-open-live-in-reels='{int(card.get('id') or 0)}'>{'Join Live in Reels' if int(card.get('id') or 0) else 'Start Live'}</a>"
         "</article>"
         for card in cards
@@ -40865,8 +40904,8 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     shell_avatar_url = _profile_cache_busted_url(shell_avatar_url, shell_user.get("updated_at") or "") if shell_avatar_url else ""
     shell_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
     shell_initials = "".join(part[:1] for part in str(shell_name).strip().split()[:2]).upper() or "ME"
-    shell_avatar_html = f"<img src='{clean_html(shell_avatar_url)}' alt='Profile picture'>" if shell_avatar_url else clean_html(shell_initials[:2])
-    nav_html = "".join(f"<a class='pulse-nav-link' href='{clean_html(href)}'>{clean_html(label)}</a>" for label, href in nav_items)
+    shell_avatar_html = f"<img src='{html_escape(clean_html(shell_avatar_url))}' alt='Profile picture'>" if shell_avatar_url else clean_html(shell_initials[:2])
+    nav_html = "".join(f"<a class='pulse-nav-link' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for label, href in nav_items)
     drawer_groups = [
         ("Primary", [("Home", "/pulse"), ("Discover", "/pulse/discover"), ("Create Status", "/pulse?create_status=1"), ("Reels", "/pulse/reels"), ("Videos", "/pulse/videos"), ("Live", "/pulse/live"), ("PulseSoc Music", "/pulse/music"), ("Pulse Radio", "/pulse/music#pulse-radio"), *([("PulseSoc Labs", "/pulse/labs")] if user_is_super_user(user) else [])]),
         ("Social", [("Friends", "/pulse/friends"), ("Communities", "/pulse/communities"), ("Groups", "/pulse/groups"), ("Messenger", "/pulse/messages"), ("Notifications", "/pulse/notifications"), ("My Posts", "/pulse/my-posts"), ("Profile", "/pulse/profile")]),
@@ -40882,7 +40921,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     drawer_html = "".join(
         "<section><h3>{}</h3>{}</section>".format(
             clean_html(group),
-            "".join(f"<a class='drawer-link' href='{clean_html(href)}'>{clean_html(label)}</a>" for label, href in links),
+            "".join(f"<a class='drawer-link' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for label, href in links),
         )
         for group, links in drawer_groups
     )
@@ -40905,9 +40944,9 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
             badge = "<span class='pulse-notification-badge nav-badge' data-chat-unread hidden>0</span>"
         create_attr = " data-pulse-create-trigger='1'" if label == "Create" else ""
         mobile_bottom_html += (
-            f"<a href='{clean_html(href)}'{create_attr} data-pulse-dock-item data-dock-action='{clean_html(action)}' "
-            f"aria-label='{clean_html(label)}'><span class='nav-ico' aria-hidden='true'>{mobile_bottom_icons.get(icon, clean_html(icon))}</span>"
-            f"<span class='nav-label'>{clean_html(label)}</span>{badge}</a>"
+            f"<a href='{html_escape(clean_html(href))}'{create_attr} data-pulse-dock-item data-dock-action='{html_escape(clean_html(action))}' "
+            f"aria-label='{html_escape(clean_html(label))}'><span class='nav-ico' aria-hidden='true'>{mobile_bottom_icons.get(icon, html_escape(clean_html(icon)))}</span>"
+            f"<span class='nav-label'>{html_escape(clean_html(label))}</span>{badge}</a>"
         )
     desktop_top_nav_html = pulse_desktop_top_nav_html(user)
     desktop_left_rail_html = pulse_desktop_left_rail_html(bool(admin_current_user()), user)
@@ -41670,7 +41709,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
     body_class = 'pulse-home-os' if request.path == '/pulse' else ''
     rendered_html = rendered_html.replace(
         "<body>",
-        f'<body class="{body_class}" data-pulse-boot-profile="{clean_html(boot_profile)}">',
+        f'<body class="{body_class}" data-pulse-boot-profile="{html_escape(clean_html(boot_profile))}">',
         1,
     )
     return Response(rendered_html)
@@ -42150,16 +42189,16 @@ def pulse_search_page():
             )
             for item in items
         )
-        sections.append(f"<section class='card'><h2>{clean_html(label)}</h2><div class='intel-list'>{cards}</div></section>")
+        sections.append(f"<section class='card'><h2>{html_escape(clean_html(label))}</h2><div class='intel-list'>{cards}</div></section>")
     empty = ""
     if q and not sections and status_code < 400:
         empty = "<section class='card'><h2>No PulseSoc results found.</h2><p class='muted'>Try another creator, topic, video, sound, listing, room, reel, or signal.</p></section>"
     error = ""
     if status_code >= 400 or payload.get("ok") is False:
-        error = f"<section class='card'><h2>Search cooling down</h2><p class='muted'>{clean_html(payload.get('message') or payload.get('error') or 'Search could not load. Try again in a moment.')}</p></section>"
+        error = f"<section class='card'><h2>Search cooling down</h2><p class='muted'>{html_escape(clean_html(payload.get('message') or payload.get('error') or 'Search could not load. Try again in a moment.'))}</p></section>"
     starter = ""
     if not q:
-        chips = "".join(f"<a class='pulse-nav-link' href='/pulse/search?q={quote(term)}'>{clean_html(term)}</a>" for term in (payload.get("trending") or ["scam alerts", "AI builders", "creator economy", "wallet safety", "marketplace", "music"]))
+        chips = "".join(f"<a class='pulse-nav-link' href='/pulse/search?q={quote(term)}'>{html_escape(clean_html(term))}</a>" for term in (payload.get("trending") or ["scam alerts", "AI builders", "creator economy", "wallet safety", "marketplace", "music"]))
         starter = f"<section class='card'><h2>Rising searches</h2><div class='pulse-nav'>{chips}</div></section>"
     main_html = f"""
     <section class='card hero'>
@@ -42169,7 +42208,7 @@ def pulse_search_page():
         <p class='muted'>Find public creators, posts, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments without exposing private content.</p>
       </div>
       <form class='composer' action='/pulse/search' method='get' role='search'>
-        <input name='q' type='search' value='{clean_html(q)}' placeholder='Search PulseSoc' autocomplete='off' aria-label='Search PulseSoc'>
+        <input name='q' type='search' value='{html_escape(clean_html(q))}' placeholder='Search PulseSoc' autocomplete='off' aria-label='Search PulseSoc'>
         <button class='primary' type='submit'>Search</button>
       </form>
     </section>
@@ -43116,7 +43155,7 @@ def pulse_music_page():
             <label>Audio file<input name="audio" type="file" accept="audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/aac,audio/m4a,.mp3,.wav,.m4a,.aac" required {'disabled' if not can_upload else ''}></label>
             <label>Cover artwork<input name="cover" type="file" accept="image/jpeg,image/png,image/webp" {'disabled' if not can_upload else ''}></label>
             <label>Song title<input name="title" required {'disabled' if not can_upload else ''}></label>
-            <label>Artist name<input name="artist" value="{clean_html(user.get('display_name') or user.get('username') or '')}" required {'disabled' if not can_upload else ''}></label>
+            <label>Artist name<input name="artist" value="{html_escape(clean_html(user.get('display_name') or user.get('username') or ''))}" required {'disabled' if not can_upload else ''}></label>
             <div class="grid">
               <label>Genre<input name="genre" {'disabled' if not can_upload else ''}></label>
               <label>Language<input name="language" {'disabled' if not can_upload else ''}></label>
@@ -43538,11 +43577,11 @@ def admin_pulse_music_track_card(track):
         <span><strong>Commercial</strong>{commercial}</span>
         <span><strong>Edit/remix</strong>{remix}</span>
         <span><strong>Source</strong>{source_type or source_provider or 'unknown'}</span>
-        <span><strong>Public</strong>{clean_html(public_state)}</span>
+        <span><strong>Public</strong>{html_escape(clean_html(public_state))}</span>
       </div>
       <div class='music-review-proof'>
         <p><strong>License:</strong> {license_type or 'Not provided'}</p>
-        <p><strong>Public visibility:</strong> {clean_html(public_detail)}</p>
+        <p><strong>Public visibility:</strong> {html_escape(clean_html(public_detail))}</p>
         <p><strong>Rights statement:</strong> {rights_statement or 'Not provided'}</p>
         <p><strong>Admin notes:</strong> {notes or 'None yet'}</p>
         {proof_link}
@@ -43655,7 +43694,7 @@ def admin_pulse_music_review_page():
         public_reasons = music_service.public_visibility_reasons(r)
         public_state = "yes" if not public_reasons else "hidden"
         public_title = clean_html("; ".join(public_reasons) if public_reasons else "Visible in PulseSoc Music.")
-        recent_rows += f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('title') or '')}</td><td>{clean_html(r.get('artist') or '')}</td><td>{clean_html(r.get('uploader_name') or r.get('uploader_email') or '')}</td><td>{clean_html(r.get('safety_status') or '')}</td><td>{'yes' if safe_int(r.get('approved_by_admin'), 0) else 'no'}</td><td>{'yes' if safe_int(r.get('active'), 0) else 'no'}</td><td title='{public_title}'>{public_state}</td><td>{clean_html(r.get('updated_at') or r.get('created_at') or '')}</td></tr>"
+        recent_rows += f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('title') or ''))}</td><td>{html_escape(clean_html(r.get('artist') or ''))}</td><td>{html_escape(clean_html(r.get('uploader_name') or r.get('uploader_email') or ''))}</td><td>{html_escape(clean_html(r.get('safety_status') or ''))}</td><td>{'yes' if safe_int(r.get('approved_by_admin'), 0) else 'no'}</td><td>{'yes' if safe_int(r.get('active'), 0) else 'no'}</td><td title='{public_title}'>{public_state}</td><td>{html_escape(clean_html(r.get('updated_at') or r.get('created_at') or ''))}</td></tr>"
     body = f"""
     <style>
       .music-review-card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:linear-gradient(145deg,rgba(13,22,39,.96),rgba(5,11,20,.92));padding:16px;margin:14px 0;box-shadow:0 22px 80px rgba(0,0,0,.25)}}
@@ -43671,7 +43710,7 @@ def admin_pulse_music_review_page():
     </style>
     <h1>PulseSoc Music Review</h1>
     <p class='muted'>Review creator-uploaded music before it can appear in Reels, Status, Composer, or public music search. Approvals require recorded rights and commercial/edit permission.</p>
-    <p>{clean_html(message)}</p>
+    <p>{html_escape(clean_html(message))}</p>
     <section class='grid'><div class='card'><h2>Pending Review</h2><p class='metric'>{pending_count}</p></div><div class='card'><h2>Approved Active</h2><p class='metric'>{approved_count}</p></div><div class='card'><h2>Open Music Reports</h2><p class='metric'>{open_reports}</p></div></section>
     <section><h2>Pending Uploads</h2>{pending_html}</section>
     <section class='card'><h2>Recent Music Inventory</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Artist</th><th>Uploader</th><th>Status</th><th>Approved</th><th>Active</th><th>Public</th><th>Updated</th></tr>{recent_rows or '<tr><td colspan=9>No tracks yet.</td></tr>'}</table></section>
@@ -44413,13 +44452,13 @@ def pulse_section_shell(title, description, cards=None, primary_href="/pulse#cre
     if not user:
         return redirect(url_for("login_page", next=request.path))
     card_html = "".join(
-        f"<article class='card'><h2>{clean_html(card.get('title') or '')}</h2><p>{clean_html(card.get('description') or '')}</p><div class='actions'><a class='button primary' href='{clean_html(card.get('href') or primary_href)}'>{clean_html(card.get('cta') or primary_label)}</a></div></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(card.get('title') or ''))}</h2><p>{html_escape(clean_html(card.get('description') or ''))}</p><div class='actions'><a class='button primary' href='{html_escape(clean_html(card.get('href') or primary_href))}'>{html_escape(clean_html(card.get('cta') or primary_label))}</a></div></article>"
         for card in (cards or [])
     )
     if not card_html:
-        card_html = f"<article class='card'><h2>Ready when the community is.</h2><p>{clean_html(description)}</p><a class='button primary' href='{clean_html(primary_href)}'>{clean_html(primary_label)}</a></article>"
+        card_html = f"<article class='card'><h2>Ready when the community is.</h2><p>{html_escape(clean_html(description))}</p><a class='button primary' href='{html_escape(clean_html(primary_href))}'>{html_escape(clean_html(primary_label))}</a></article>"
     nav_html = "".join(f"<a class='button' href='{href}'>{label}</a>" for label, href in [("PulseSoc", "/pulse"), ("Create", "/pulse#create"), ("My Posts", "/pulse/my-posts"), ("Spaces", "/pulse/spaces")])
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1100px);margin:auto;padding:20px 0 calc(88px + env(safe-area-inset-bottom))}}.actions,.grid{{display:flex;gap:10px;flex-wrap:wrap}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24)}}h1{{font-size:clamp(36px,7vw,68px);line-height:.96;margin:12px 0}}p{{color:var(--muted);line-height:1.55}}a{{color:inherit}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="actions">{nav_html}</nav><section class="card"><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section><section class="grid">{card_html}</section></main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1100px);margin:auto;padding:20px 0 calc(88px + env(safe-area-inset-bottom))}}.actions,.grid{{display:flex;gap:10px;flex-wrap:wrap}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:16px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24)}}h1{{font-size:clamp(36px,7vw,68px);line-height:.96;margin:12px 0}}p{{color:var(--muted);line-height:1.55}}a{{color:inherit}}.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}@media(max-width:820px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav class="actions">{nav_html}</nav><section class="card"><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(description))}</p><p>{html_escape(clean_html(PULSE_DISCLAIMER))}</p></section><section class="grid">{card_html}</section></main></body></html>""")
 
 
 def _pulse_primary_label(row=None, badge_keys=None, badge_labels=None):
@@ -44609,9 +44648,15 @@ def pulse_premium_mark_html(mark):
 
 
 def smart_time_html(timestamp, suffix=""):
+    # `timestamp` lands in two single-quoted attributes. clean_html strips tags
+    # but leaves quotes alone, so a value containing `' onmouseover=...` closed
+    # the attribute and added its own. This helper renders every timestamp
+    # column on the admin pages, so it is the single site that covers them.
     timestamp = clean_html(timestamp or "")
-    tail = f" <span class='time-dot'>•</span> {clean_html(suffix)}" if suffix else ""
-    return f"<time class='smart-time' datetime='{timestamp}' data-timestamp='{timestamp}'>{clean_html(smart_time_text(timestamp))}</time>{tail}"
+    label = html_escape(clean_html(smart_time_text(timestamp)))
+    attr = html_escape(timestamp)
+    tail = f" <span class='time-dot'>•</span> {html_escape(clean_html(suffix))}" if suffix else ""
+    return f"<time class='smart-time' datetime='{attr}' data-timestamp='{attr}'>{label}</time>{tail}"
 
 
 def smart_time_text(timestamp):
@@ -47079,7 +47124,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     shell_avatar_url = _profile_cache_busted_url(shell_avatar_url, shell_user.get("updated_at") or "") if shell_avatar_url else ""
     shell_name = shell_user.get("display_name") or shell_user.get("username") or "Me"
     shell_initials = "".join(part[:1] for part in str(shell_name).strip().split()[:2]).upper() or "ME"
-    shell_avatar_html = f"<img src='{clean_html(shell_avatar_url)}' alt='Profile picture'>" if shell_avatar_url else clean_html(shell_initials[:2])
+    shell_avatar_html = f"<img src='{html_escape(clean_html(shell_avatar_url))}' alt='Profile picture'>" if shell_avatar_url else clean_html(shell_initials[:2])
     shell_avatar_script = f"document.querySelectorAll('.mobile-topbar .avatar[href=\"/pulse/profile\"],.mobile-topbar .pulse-topnav-avatar[href=\"/pulse/profile\"]').forEach(el=>{{if(!el.querySelector('img')&&!el.dataset.avatarHydrated){{el.dataset.avatarHydrated='1';el.innerHTML={json.dumps(shell_avatar_html)} + '<span class=\"pulse-topnav-presence\" aria-hidden=\"true\"></span>';}}}});"
     script_html = shell_avatar_script + pulse_universal_dock_runtime_script() + (script_html or "")
     nav = [
@@ -47131,9 +47176,9 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         active_attr = " class='is-active' aria-current='page'" if active else ""
         badge = "<span class='nav-badge pulse-notification-badge' data-chat-unread hidden>0</span>" if action == "messages" else ""
         if action == "create":
-            mobile_bottom_html += f"<button type='button'{active_attr} data-pulse-create-trigger='1' data-pulse-dock-item data-dock-action='{clean_html(action)}' aria-label='Create PulseSoc content'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>Create</span></button>"
+            mobile_bottom_html += f"<button type='button'{active_attr} data-pulse-create-trigger='1' data-pulse-dock-item data-dock-action='{html_escape(clean_html(action))}' aria-label='Create PulseSoc content'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>Create</span></button>"
         else:
-            mobile_bottom_html += f"<a href='{clean_html(href)}'{active_attr} data-pulse-dock-item data-dock-action='{clean_html(action)}' aria-label='{clean_html(label)}'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>{clean_html(label)}</span>{badge}</a>"
+            mobile_bottom_html += f"<a href='{html_escape(clean_html(href))}'{active_attr} data-pulse-dock-item data-dock-action='{html_escape(clean_html(action))}' aria-label='{html_escape(clean_html(label))}'><span class='nav-ico' aria-hidden='true'>{icon_html}</span><span class='nav-label'>{html_escape(clean_html(label))}</span>{badge}</a>"
     # R3.3: the shell upsell card must reflect *currently usable* premium, not raw
     # ownership, so a suspended owner is not told premium is "enabled across PulseSoc".
     # Under flag off/shadow this equals ownership, so the rendered HTML is unchanged.
@@ -47159,7 +47204,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     desktop_rail_html = "" if live_shell_mode else pulse_desktop_rail_nav_html(user, bool(admin_current_user()))
     shell_intro_html = ""
     if show_intro and not live_shell_mode:
-        shell_intro_html = f"<section class=\"card\"><span class=\"pill\">PulseSoc Social Ecosystem</span><h1>{clean_html(title)}</h1><p>{clean_html(description)}</p><p>{clean_html(PULSE_DISCLAIMER)}</p></section>"
+        shell_intro_html = f"<section class=\"card\"><span class=\"pill\">PulseSoc Social Ecosystem</span><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(description))}</p><p>{html_escape(clean_html(PULSE_DISCLAIMER))}</p></section>"
     create_sheet_html = """
 <section class="create-sheet" id="createSheet" aria-hidden="true" role="dialog" aria-modal="false" aria-label="Create PulseSoc content">
   <h3>Create Signal</h3>
@@ -47177,7 +47222,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
   </div>
 </section>
 """
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{clean_html(title)} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=brand-20260813" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>{html_escape(clean_html(title))} | PulseSoc</title><link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a"><link rel="stylesheet" href="/static/css/pulse_desktop_feed.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_design_system.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_mobile_system.css"><link rel="stylesheet" href="/static/css/pulse_reels_experience.css"><link rel="stylesheet" href="/static/css/pulse_cinematic_media.css?v=static-bg-20260806a"><link rel="stylesheet" href="/static/css/pulse_home_os.css?v=shell-nav-20260909a"><link rel="stylesheet" href="/static/css/pulse_reaction_system.css?v=status-v3-20260629b"><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box;max-width:100%}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif;word-break:break-word}}.wrap{{width:min(100% - 28px,1180px);margin:auto;padding:max(18px,env(safe-area-inset-top)) 0 calc(90px + env(safe-area-inset-bottom))}}.nav,.actions{{display:flex;gap:8px;flex-wrap:wrap}}.nav{{overflow-x:auto;flex-wrap:nowrap;padding-bottom:6px;margin-bottom:12px;scrollbar-width:thin}}.layout{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;align-items:start}}.layout>div,.layout>aside{{min-width:0}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.92),rgba(13,22,39,.88));padding:15px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);min-width:0;overflow-wrap:anywhere}}h1{{font-size:clamp(28px,7vw,56px);line-height:1;margin:8px 0}}p,.muted,small{{color:var(--muted);line-height:1.55}}a{{color:inherit}}button,.button,input,select,textarea{{font:inherit}}button,.button{{min-height:44px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:10px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px;cursor:pointer;white-space:nowrap}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;background:#081323;color:#f2fbff;padding:10px}}textarea{{min-height:96px;resize:vertical}}.avatar,.pulse-topnav-avatar{{width:44px;height:44px;border-radius:14px;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);display:grid;place-items:center;color:#f2fbff;font-weight:950;overflow:hidden;flex:0 0 auto;text-decoration:none;position:relative;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.avatar img,.pulse-topnav-avatar img{{width:100%;height:100%;object-fit:cover}}.pulse-topnav-control{{position:relative;width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;display:grid;place-items:center;background:rgba(5,15,28,.46);border:1px solid rgba(110,230,255,.28);color:#f2fbff;text-decoration:none;box-shadow:inset 0 0 18px rgba(255,255,255,.04),0 0 20px rgba(0,220,255,.12)}}.pulse-bell-icon{{width:21px;height:21px;stroke:currentColor;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round}}.pulse-topnav-presence{{position:absolute;right:4px;bottom:4px;width:10px;height:10px;border-radius:999px;background:#36e58f;box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 14px rgba(54,229,143,.72)}}.mobile-actions{{display:flex;align-items:center;gap:6px}}.pill{{display:inline-flex;max-width:100%;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:4px 8px;font-size:12px;color:#dffcff;background:rgba(110,223,246,.08);white-space:normal}}.toast{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:40;display:none;min-width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;background:#071321;padding:12px;box-shadow:0 18px 60px rgba(0,0,0,.4)}}.toast.show{{display:block}}.mobile-topbar,.mobile-bottom-nav,.drawer-backdrop,.pulse-drawer,.pulse-fab{{display:none}}.mobile-topbar{{align-items:center;justify-content:space-between;gap:8px;position:sticky;top:0;z-index:24;margin:calc(-1 * max(18px,env(safe-area-inset-top))) -12px 12px;padding:max(24px,env(safe-area-inset-top)) 12px 10px;background:rgba(5,11,20,.88);backdrop-filter:blur(16px);border-bottom:1px solid rgba(110,223,246,.14)}}.icon-btn{{width:46px;height:46px;min-height:46px;border-radius:14px;padding:0;font-size:21px}}.mobile-brand{{display:flex;align-items:center;gap:8px;font-weight:950;text-decoration:none}}.mobile-brand img{{width:34px;height:34px;border-radius:10px}}.drawer-backdrop{{position:fixed;inset:0;background:rgba(1,6,14,.54);backdrop-filter:blur(8px);z-index:48;opacity:0;pointer-events:none;transition:opacity .22s ease}}.pulse-drawer{{position:fixed;inset:0 auto 0 0;width:min(86vw,356px);z-index:49;background:linear-gradient(180deg,rgba(8,19,35,.98),rgba(5,11,20,.98));border-right:1px solid rgba(110,223,246,.18);box-shadow:24px 0 80px rgba(0,0,0,.45);transform:translate3d(-104%,0,0);transition:transform .24s ease;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 14px calc(28px + env(safe-area-inset-bottom));will-change:transform}}.drawer-link{{min-height:46px;border:1px solid rgba(110,223,246,.13);border-radius:12px;background:rgba(255,255,255,.045);padding:10px 12px;text-decoration:none;display:flex;align-items:center;font-weight:900;margin:7px 0}}.drawer-open .drawer-backdrop{{display:block;opacity:1;pointer-events:auto}}.drawer-open .pulse-drawer{{display:block;transform:translate3d(0,0,0)}}.mobile-bottom-nav{{position:fixed;left:0;right:0;bottom:0;z-index:23;min-height:calc(64px + env(safe-area-inset-bottom));padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:rgba(5,11,20,.94);backdrop-filter:blur(10px);border-top:1px solid rgba(110,223,246,.16);grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;overflow:hidden}}.mobile-bottom-nav a,.mobile-bottom-nav button{{min-width:0;min-height:50px;border:0;border-radius:10px;text-decoration:none;display:grid;grid-template-rows:20px 14px;place-items:center;text-align:center;font-size:10px;line-height:1;font-weight:900;color:#dffcff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:transparent;padding:0}}.mobile-bottom-nav .nav-ico{{font-size:17px;line-height:1;display:grid;place-items:center}}.pulse-fab{{position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 88px);z-index:25;width:54px;height:54px;min-height:54px;border-radius:18px;border:0;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;font-size:27px;box-shadow:0 14px 38px rgba(54,229,143,.24)}}@media(max-width:900px){{.mobile-topbar{{display:flex}}.mobile-bottom-nav{{display:grid}}.pulse-fab{{display:none!important}}.nav{{display:none}}.wrap{{width:100%;max-width:100vw;padding:12px 12px calc(160px + env(safe-area-inset-bottom))}}.layout{{grid-template-columns:1fr}}.button,button{{white-space:normal;min-height:46px}}.actions .button,.actions button{{flex:1 1 150px}}}}.pulse-desktop-topbar{{display:none}}.pulse-shell-rail{{display:none}}.pulse-shell-center{{min-width:0}}.desktop-rail-link.is-active{{background:rgba(110,223,246,.14);border-color:rgba(110,223,246,.42);color:var(--text-primary)}}@media(min-width:1024px){{.pulse-social-os .pulse-desktop-topbar{{display:grid}}.pulse-social-os .wrap{{padding-top:86px}}.pulse-social-os .nav{{display:none}}}}@media(min-width:1100px){{.pulse-social-os .pulse-shell-frame{{width:min(100%,1760px);margin:0 auto;display:grid;gap:18px;align-items:start;grid-template-columns:minmax(184px,214px) minmax(0,1fr)}}.pulse-social-os .pulse-shell-rail{{display:grid;gap:12px;position:sticky;top:86px;max-height:calc(100dvh - 104px);overflow:auto;scrollbar-width:thin}}.pulse-social-os .pulse-shell-rail .desktop-rail-card{{content-visibility:visible;contain-intrinsic-size:auto}}}}</style></head><body class="{shell_body_class}"><div class="drawer-backdrop" id="drawerBackdrop"></div><aside class="pulse-drawer" id="pulseDrawer"><header><a class="mobile-brand" href="/pulse">PulseSoc</a><button class="icon-btn" id="drawerClose" type="button">×</button></header>{drawer_html}</aside>{desktop_top_nav_html}<main class="wrap"><nav class="mobile-topbar"><button class="icon-btn pulse-topnav-control" id="drawerOpen" type="button" aria-label="Open PulseSoc menu">☰</button><a class="mobile-brand" href="/pulse"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="">PulseSoc</a><div class="mobile-actions"><a class="pulse-topnav-control" href="/pulse/search" aria-label="Search PulseSoc">⌕</a><a class="pulse-topnav-control pulse-topnav-alert" data-header-notifications href="/pulse/notifications" aria-label="Notifications">{PULSE_NOTIFICATION_BELL_ICON}<span class="pulse-notification-badge" data-alert-unread data-notification-unread hidden>0</span></a><a class="pulse-topnav-avatar" href="/pulse/profile" aria-label="Profile">{shell_avatar_html}<span class="pulse-topnav-presence" aria-hidden="true"></span></a></div></nav><nav class="nav">{nav_html}</nav><section class="pulse-shell-frame">{desktop_rail_html}<div class="pulse-shell-center">{shell_intro_html}<section class="{shell_layout_class}"><div>{main_html}</div>{shell_side_html}</section></div></section></main><nav class="mobile-bottom-nav">{mobile_bottom_html}</nav><a class="pulse-fab" href="/pulse#create" aria-label="Create PulseSoc">+</a>{create_sheet_html}<div class="toast" id="toast"></div><script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=brand-20260813" defer></script><script src="/static/js/pulse_reaction_system.js?v=feed-actions-v2-20260629a"></script><script src="/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g"></script><script src="/static/js/pulse_status_viewer.js?v=status-v4-20260703b"></script><script>const toast=m=>{{const t=document.getElementById('toast');if(!t)return;t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3200)}};const drawer=document.getElementById('pulseDrawer');function setDrawer(open){{document.body.classList.toggle('drawer-open',open)}}document.getElementById('drawerOpen')?.addEventListener('click',()=>setDrawer(true));document.getElementById('drawerClose')?.addEventListener('click',()=>setDrawer(false));document.getElementById('drawerBackdrop')?.addEventListener('click',()=>setDrawer(false));drawer?.addEventListener('click',e=>{{if(e.target.closest('a'))setDrawer(false)}});async function pulseApi(url,opts={{}}){{const isForm=opts.body instanceof FormData;const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:isForm?{{}}:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{ok:false,message:'Server returned an unreadable response.'}}));if(!r.ok||d.ok===false){{const err=new Error(d.message||d.error||'Request failed.');Object.assign(err,d);throw err}}return d}}{script_html};window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);window.PulseReactionSystem?.hydrate(document);</script></body></html>""")
 
 
 def pulse_emit_event(event_type, payload=None, actor_user_id=0, post_id=0):
@@ -48082,7 +48127,7 @@ def pulse_reel_detail_page(reel_id):
     video = clean_html(mux_video or media.get("mux_hls_url") or media.get("playback_url") or media.get("valid_url") or media.get("media_url") or reel.get("video_url") or "")
     video_type = "application/vnd.apple.mpegurl" if video.endswith(".m3u8") else clean_html(media.get("playback_mime_type") or media.get("mime_type") or "")
     video_html = f'<video autoplay playsinline webkit-playsinline loop preload="metadata" controlsList="nodownload noplaybackrate noremoteplayback" disablepictureinpicture style="width:100%;max-height:72dvh;border-radius:18px;background:#020712"><source src="{video}" type="{video_type}"></video>' if video else "<div class='card'><p class='muted'>This Reel is waiting for media processing.</p></div>"
-    main = f"<section class='card'>{video_html}<h1>{clean_html(reel.get('title') or 'PulseSoc Reel')}</h1><p>{clean_html(reel.get('body') or reel.get('caption') or '')}</p><p><span class='pill'>{clean_html((reel.get('author') or {}).get('primary_label') or 'Member')}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a>{app_cta_html('reel', reel_id, source='web')}</div></section>"
+    main = f"<section class='card'>{video_html}<h1>{html_escape(clean_html(reel.get('title') or 'PulseSoc Reel'))}</h1><p>{html_escape(clean_html(reel.get('body') or reel.get('caption') or ''))}</p><p><span class='pill'>{html_escape(clean_html((reel.get('author') or {}).get('primary_label') or 'Member'))}</span> <span class='pill'>Score {safe_int(reel.get('reel_score'), 0)}</span></p><div class='actions'><button class='button' id='reelReact'>🔥 React</button><a class='button primary' href='/pulse/reels'>More Reels</a>{app_cta_html('reel', reel_id, source='web')}</div></section>"
     script = f"document.getElementById('reelReact')?.addEventListener('click',()=>pulseApi('/api/pulse/reels/react',{{method:'POST',body:JSON.stringify({{reel_id:{int(reel_id)},reaction_type:'fire'}})}}).then(()=>toast('Reaction added.')).catch(e=>toast(e.message)));"
     return pulse_social_shell("PulseSoc Reel", "Vertical PulseSoc clip with live social actions.", main, "", script)
 
@@ -48896,18 +48941,18 @@ def pulse_friends_page():
 
     def person_card(person_id, mode="suggested", request_id=""):
         ident = pulse_person_public_payload(cur, person_id)
-        avatar = f"<img src='{clean_html(ident['avatar_url'])}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("display_name") or "P")[:1])
-        username = f"<span class='pill'>@{clean_html(ident['username'])}</span>" if ident.get("username") else ""
+        avatar = f"<img src='{html_escape(clean_html(ident['avatar_url']))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("display_name") or "P")[:1])
+        username = f"<span class='pill'>@{html_escape(clean_html(ident['username']))}</span>" if ident.get("username") else ""
         mutual = "Mutual spaces: Scam Watch, Alpha Arena"
         actions = ""
         if mode == "incoming":
-            actions = f"<button class='primary' data-accept='{clean_html(request_id)}'>Accept</button><button data-decline='{clean_html(request_id)}'>Decline</button>"
+            actions = f"<button class='primary' data-accept='{html_escape(clean_html(request_id))}'>Accept</button><button data-decline='{html_escape(clean_html(request_id))}'>Decline</button>"
         elif mode == "friend":
-            actions = f"<a class='button primary' href='/pulse/profile/{clean_html(ident['public_player_id'])}'>View Profile</a>"
+            actions = f"<a class='button primary' href='/pulse/profile/{html_escape(clean_html(ident['public_player_id']))}'>View Profile</a>"
         else:
-            actions = f"<button class='primary' data-friend-public='{clean_html(ident['public_player_id'])}'>Add Friend</button><button data-follow-public='{clean_html(ident['public_player_id'])}'>Follow</button>"
-        actions += f"<button data-message-public='{clean_html(ident['public_player_id'])}'>Message</button>"
-        return f"<article class='card friend-card'><div class='person'><span class='avatar'>{avatar}</span><div><h3>{clean_html(ident['display_name'])}{pulse_premium_mark_html(ident.get('premium_mark'))}</h3><div class='actions'>{username}<span class='pill'>{clean_html(ident['rank'])}</span></div><p>{mutual}</p></div></div><div class='actions friend-actions'>{actions}</div></article>"
+            actions = f"<button class='primary' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'>Add Friend</button><button data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'>Follow</button>"
+        actions += f"<button data-message-public='{html_escape(clean_html(ident['public_player_id']))}'>Message</button>"
+        return f"<article class='card friend-card'><div class='person'><span class='avatar'>{avatar}</span><div><h3>{html_escape(clean_html(ident['display_name']))}{pulse_premium_mark_html(ident.get('premium_mark'))}</h3><div class='actions'>{username}<span class='pill'>{html_escape(clean_html(ident['rank']))}</span></div><p>{mutual}</p></div></div><div class='actions friend-actions'>{actions}</div></article>"
 
     incoming_html = "".join(person_card(int(row.get("requester_user_id") or 0), "incoming", row.get("id")) for row in graph["incoming"])
     friends_html = "".join(person_card(fid, "friend") for fid in graph["friends"])
@@ -48956,8 +49001,8 @@ def pulse_invite_page():
     conn.commit(); conn.close()
     progress = min(100, int(status["completed"] / status["required"] * 100))
     main = f"""
-    <section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {status['completed']}/{status['required']} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p><strong>Your referral link</strong></p><input id='refLink' value='{clean_html(status['referral_link'])}' readonly><div class='actions'><button class='primary' id='copyReferral'>Copy Link</button><button id='shareReferral'>Share Invite</button><a class='button' href='/pulse/live'>Live Status</a></div></section>
-    <section class='card'><h2>Creator Level</h2><p>{clean_html(profile['privileges']['current_level'])} · Trust score {int(profile['trust_score'])}/100 · {clean_html(profile['trust_band'])}</p><a class='button primary' href='/pulse/creator-status'>View Creator Status</a></section>
+    <section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {status['completed']}/{status['required']} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p><strong>Your referral link</strong></p><input id='refLink' value='{html_escape(clean_html(status['referral_link']))}' readonly><div class='actions'><button class='primary' id='copyReferral'>Copy Link</button><button id='shareReferral'>Share Invite</button><a class='button' href='/pulse/live'>Live Status</a></div></section>
+    <section class='card'><h2>Creator Level</h2><p>{html_escape(clean_html(profile['privileges']['current_level']))} · Trust score {int(profile['trust_score'])}/100 · {html_escape(clean_html(profile['trust_band']))}</p><a class='button primary' href='/pulse/creator-status'>View Creator Status</a></section>
     <section class='card'><h2>Fraud-Safe Rules</h2><p>Only real signups count. Duplicate/self-referral abuse, suspicious device patterns, and fake accounts can be flagged for review.</p></section>
     """
     script = """
@@ -48992,7 +49037,7 @@ def pulse_live_page():
     custom_studio_category = "" if studio_category in set(live_category_options[:-1]) else studio_category[:60]
     category_select_value = "Other" if custom_studio_category else studio_category
     category_options_html = "".join(
-        f"<option value='{clean_html(option)}' {'selected' if category_select_value == option else ''}>{clean_html(option)}</option>"
+        f"<option value='{html_escape(clean_html(option))}' {'selected' if category_select_value == option else ''}>{html_escape(clean_html(option))}</option>"
         for option in live_category_options
     )
     destination_cards = [
@@ -49007,10 +49052,10 @@ def pulse_live_page():
         ("custom_rtmp", "Custom RTMP", "Restream setup required", "Custom RTMP can be saved after restream infrastructure is enabled.", "setup_required", False, False),
     ]
     destination_cards_html = "".join(
-        f"""<label class='live-destination-card is-{clean_html(state)} {'is-selected' if selected else ''}' data-live-destination-card='{clean_html(platform)}' data-live-destination-state='{clean_html(state)}'>
-              <input type='checkbox' data-live-destination value='{clean_html(platform)}' {'checked' if selected else ''} {'disabled' if locked else ''}>
-              <span><strong>{clean_html(label)}</strong><small>{clean_html(detail)}</small></span>
-              <em>{clean_html(status)}</em>
+        f"""<label class='live-destination-card is-{html_escape(clean_html(state))} {'is-selected' if selected else ''}' data-live-destination-card='{html_escape(clean_html(platform))}' data-live-destination-state='{html_escape(clean_html(state))}'>
+              <input type='checkbox' data-live-destination value='{html_escape(clean_html(platform))}' {'checked' if selected else ''} {'disabled' if locked else ''}>
+              <span><strong>{html_escape(clean_html(label))}</strong><small>{html_escape(clean_html(detail))}</small></span>
+              <em>{html_escape(clean_html(status))}</em>
             </label>"""
         for platform, label, status, detail, state, selected, locked in destination_cards
     )
@@ -49023,7 +49068,7 @@ def pulse_live_page():
           <h2>Go Live Setup</h2>
           <input id='liveTitle' placeholder='Live title' value='{studio_title}'>
           <label class='live-setup-field'><span>Category</span><select id='liveCategory'>{category_options_html}</select></label>
-          <label class='live-setup-field' id='liveCustomCategoryField' {'hidden' if not custom_studio_category else ''}><span>Custom category</span><input id='liveCustomCategory' maxlength='60' placeholder='Custom category' value='{clean_html(custom_studio_category)}'></label>
+          <label class='live-setup-field' id='liveCustomCategoryField' {'hidden' if not custom_studio_category else ''}><span>Custom category</span><input id='liveCustomCategory' maxlength='60' placeholder='Custom category' value='{html_escape(clean_html(custom_studio_category))}'></label>
           <input id='liveThumb' placeholder='Optional thumbnail URL' value='{studio_thumbnail}'>
           <input id='liveContextType' type='hidden' value='{studio_context_type}'>
           <input id='liveContextId' type='hidden' value='{studio_context_id}'>
@@ -49054,9 +49099,9 @@ def pulse_live_page():
     cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'PulseSoc Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id WHERE s.status='live' AND COALESCE(s.mux_live_status,'') IN ('active','live') ORDER BY s.started_at DESC, s.id DESC LIMIT 20")
     active_streams = [dict(row) for row in cur.fetchall()]
     conn.close()
-    stream_cards = "".join(f"<article class='card' data-live-gateway-card='{int(s.get('id') or 0)}'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{clean_html(s.get('title') or 'PulseSoc Live')}</h2><p>{clean_html(s.get('creator_name') or '')} · {clean_html(s.get('category') or '')}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{clean_html(s.get('stream_health') or s.get('status') or '')}</span></p><a class='button primary' href='{pulse_live_watch_url(int(s.get('id') or 0))}' data-open-live-in-reels='{int(s.get('id') or 0)}'>Join Live in Reels</a></article>" for s in active_streams)
+    stream_cards = "".join(f"<article class='card' data-live-gateway-card='{int(s.get('id') or 0)}'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{html_escape(clean_html(s.get('title') or 'PulseSoc Live'))}</h2><p>{html_escape(clean_html(s.get('creator_name') or ''))} · {html_escape(clean_html(s.get('category') or ''))}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{html_escape(clean_html(s.get('stream_health') or s.get('status') or ''))}</span></p><a class='button primary' href='{pulse_live_watch_url(int(s.get('id') or 0))}' data-open-live-in-reels='{int(s.get('id') or 0)}'>Join Live in Reels</a></article>" for s in active_streams)
     stream_cards_empty = '<article class="card"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'
-    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {clean_html(profile.get('trust_band') or '')}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{clean_html(privileges.get('current_level') or 'New User')}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or stream_cards_empty}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {html_escape(clean_html(profile.get('trust_band') or ''))}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{html_escape(clean_html(privileges.get('current_level') or 'New User'))}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or stream_cards_empty}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
     const LIVE_ALLOWED_CATEGORIES = new Set(['Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology']);
     const LIVE_SETUP_REQUIRED_PLATFORMS = new Set(['facebook','youtube','twitch','kick','tiktok','x_twitter','linkedin','custom_rtmp']);
@@ -49202,13 +49247,13 @@ def pulse_live_studio_page(stream_id):
     playback = live_distribution_service.playback_manifest(live)
     chat_html = "".join(
         f"""<article class='live-chat-message' data-message-id='{int(c.get('id') or 0)}'>
-        <div class='live-chat-avatar'>{clean_html((c.get('display_name') or 'P')[:1].upper())}</div>
-        <div><strong>{clean_html(c.get('display_name') or 'Viewer')}</strong> <span class='pill'>{clean_html(c.get('message_type') or 'Live')}</span><p>{clean_html(c.get('body') or '')}</p></div>
+        <div class='live-chat-avatar'>{html_escape(clean_html((c.get('display_name') or 'P')[:1].upper()))}</div>
+        <div><strong>{html_escape(clean_html(c.get('display_name') or 'Viewer'))}</strong> <span class='pill'>{html_escape(clean_html(c.get('message_type') or 'Live'))}</span><p>{html_escape(clean_html(c.get('body') or ''))}</p></div>
         </article>"""
         for c in reversed(chat)
     )
     reaction_cloud = live_presence_engine.reaction_cloud(reactions)
-    reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{clean_html(r.get('emoji') or '🔥')}</span>" for r in reaction_cloud)
+    reaction_html = "".join(f"<span style='--x:{int(r.get('x') or 60)}%;--delay:{int(r.get('delay_ms') or 0)}ms'>{html_escape(clean_html(r.get('emoji') or '🔥'))}</span>" for r in reaction_cloud)
     health_score = int(health.get("score") or 0)
     live_status = clean_html(live.get("status") or "idle")
     mux_status = clean_html(live.get("mux_live_status") or live.get("stream_health") or "idle")
@@ -49244,16 +49289,16 @@ def pulse_live_studio_page(stream_id):
     support_total = clean_html(live.get("support_total_label") or "$0")
     guest_tiles_html = "".join(
         f"""<article class='live-guest-tile' data-live-guest-id='{int(g.get('id') or 0)}'>
-          <span class='live-guest-avatar'>{clean_html((g.get('display_name') or 'G')[:1].upper())}</span>
-          <div><strong>{clean_html(g.get('display_name') or 'Co-host')}</strong><small>{'Muted co-host' if g.get('audio_muted') else 'Co-host live'}</small></div>
+          <span class='live-guest-avatar'>{html_escape(clean_html((g.get('display_name') or 'G')[:1].upper()))}</span>
+          <div><strong>{html_escape(clean_html(g.get('display_name') or 'Co-host'))}</strong><small>{'Muted co-host' if g.get('audio_muted') else 'Co-host live'}</small></div>
         </article>"""
         for g in active_guests
     )
     request_rows_html = "".join(
         f"""<article class='live-join-request' data-live-request-id='{int(req.get('id') or 0)}'>
           <div class='live-join-request-main'>
-            <span class='live-guest-avatar'>{clean_html((req.get('display_name') or 'V')[:1].upper())}</span>
-            <div><strong>{clean_html(req.get('display_name') or 'Viewer')}</strong><small>Camera {'ready' if req.get('camera_ready') else 'blocked'} · Mic {'ready' if req.get('mic_ready') else 'blocked'} · {clean_html(req.get('network_quality') or 'unknown')}</small></div>
+            <span class='live-guest-avatar'>{html_escape(clean_html((req.get('display_name') or 'V')[:1].upper()))}</span>
+            <div><strong>{html_escape(clean_html(req.get('display_name') or 'Viewer'))}</strong><small>Camera {'ready' if req.get('camera_ready') else 'blocked'} · Mic {'ready' if req.get('mic_ready') else 'blocked'} · {html_escape(clean_html(req.get('network_quality') or 'unknown'))}</small></div>
           </div>
           <div class='live-join-request-actions'>
             <button type='button' data-live-request-action='accept' data-live-request-id='{int(req.get('id') or 0)}'>Accept Co-host</button>
@@ -49264,7 +49309,7 @@ def pulse_live_studio_page(stream_id):
     )
     guest_control_rows_html = "".join(
         f"""<article class='live-guest-control' data-live-guest-id='{int(g.get('id') or 0)}'>
-          <div><strong>{clean_html(g.get('display_name') or 'Co-host')}</strong><small>Co-host · {'Muted by host' if g.get('audio_muted') else 'Audio active'} · Video {'on' if g.get('video_enabled') else 'off'}</small></div>
+          <div><strong>{html_escape(clean_html(g.get('display_name') or 'Co-host'))}</strong><small>Co-host · {'Muted by host' if g.get('audio_muted') else 'Audio active'} · Video {'on' if g.get('video_enabled') else 'off'}</small></div>
           <div class='live-join-request-actions'>
             <button type='button' data-live-guest-action='{'unmute' if g.get('audio_muted') else 'mute'}' data-live-guest-id='{int(g.get('id') or 0)}'>{'Unmute' if g.get('audio_muted') else 'Mute'}</button>
             <button type='button' data-live-guest-action='remove' data-live-guest-id='{int(g.get('id') or 0)}'>Remove</button>
@@ -49276,13 +49321,13 @@ def pulse_live_studio_page(stream_id):
           <div class='live-advanced' data-mux-live-foundation>
             <details>
               <summary><strong>Advanced Streaming</strong> <span class='pill' data-mux-live-status> Status {mux_status}</span></summary>
-              <p class='muted' data-live-egress-message>{clean_html(bridge_copy)}</p>
+              <p class='muted' data-live-egress-message>{html_escape(clean_html(bridge_copy))}</p>
               <label>Viewer playback URL<code data-copy-value>{mux_playback_url or playback_url}</code><button type='button' data-copy-live-value>Copy</button></label>
               <label>Host RTMP ingest URL<code data-copy-value>{mux_ingest_url}</code><button type='button' data-copy-live-value>Copy</button></label>
-              <label>Host stream key<code data-copy-value='{mux_stream_key}' data-secret-live-value data-secret-masked='{clean_html(mux_stream_key_preview)}'>{clean_html(mux_stream_key_preview)}</code><button type='button' data-reveal-live-secret>Reveal</button><button type='button' data-copy-live-value>Copy</button></label>
+              <label>Host stream key<code data-copy-value='{mux_stream_key}' data-secret-live-value data-secret-masked='{html_escape(clean_html(mux_stream_key_preview))}'>{html_escape(clean_html(mux_stream_key_preview))}</code><button type='button' data-reveal-live-secret>Reveal</button><button type='button' data-copy-live-value>Copy</button></label>
               <label>Agora channel<code>{livekit_room}</code></label>
-              <p class='muted'>Agora service: {clean_html('ready' if agora_configured else 'not configured')}.</p>
-              <button type='button' data-check-mux-status data-mux-live-id='{clean_html(live.get("mux_live_stream_id") or live.get("stream_mux_live_stream_id") or "")}'>Check Mux Status</button>
+              <p class='muted'>Agora service: {html_escape(clean_html('ready' if agora_configured else 'not configured'))}.</p>
+              <button type='button' data-check-mux-status data-mux-live-id='{html_escape(clean_html(live.get("mux_live_stream_id") or live.get("stream_mux_live_stream_id") or ""))}'>Check Mux Status</button>
               <p class='muted'>Stream keys are visible only to the host Studio. Public viewers receive playback only.</p>
             </details>
           </div>
@@ -49300,9 +49345,9 @@ def pulse_live_studio_page(stream_id):
         player_inner = f"""
           <div class='live-ready-state'>
             <div>
-              <h2>{clean_html(live_status or 'waiting')} stream</h2>
+              <h2>{html_escape(clean_html(live_status or 'waiting'))} stream</h2>
               <p class='muted'>Stream has not started yet. Start Browser Live to publish through Agora and forward to Mux, or use OBS/RTMP in advanced mode.</p>
-              <p><span class='pill'>HLS {clean_html('ready' if playback.get('supports_hls') else 'pending')}</span> <span class='pill'>WebRTC {clean_html(live.get('webrtc_room_id') or 'ready')}</span></p>
+              <p><span class='pill'>HLS {html_escape(clean_html('ready' if playback.get('supports_hls') else 'pending'))}</span> <span class='pill'>WebRTC {html_escape(clean_html(live.get('webrtc_room_id') or 'ready'))}</span></p>
               <div class='live-waveform'><span></span><span></span><span></span><span></span><span></span></div>
             </div>
           </div>
@@ -49342,7 +49387,7 @@ def pulse_live_studio_page(stream_id):
             <span class='live-metric'>Support {support_total}</span>
           </div>
           <div class='live-status-metrics'>
-            <span class='live-health-pill' data-live-health>{clean_html(friendly_health)}</span>
+            <span class='live-health-pill' data-live-health>{html_escape(clean_html(friendly_health))}</span>
             <a class='button' href='{pulse_live_watch_url(stream_id)}' data-open-live-in-reels='{stream_id}'>View in Reels</a>
           </div>
         </div>
@@ -49354,11 +49399,11 @@ def pulse_live_studio_page(stream_id):
               <div class='studio-preview-badges'>
                 <span class='studio-chip is-live'>LIVE</span>
                 <span class='studio-chip'>HD</span>
-                <span class='studio-chip' data-live-transport-summary>{clean_html('Agora direct fallback' if direct_mode else 'Agora interactive Live')}</span>
+                <span class='studio-chip' data-live-transport-summary>{html_escape(clean_html('Agora direct fallback' if direct_mode else 'Agora interactive Live'))}</span>
               </div>
               <div class='live-host-header-card'>
-                <span class='live-chat-avatar'>{clean_html((user.get('display_name') or user.get('username') or 'P')[:1].upper())}</span>
-                <div><strong>{clean_html(user.get('display_name') or user.get('username') or 'PulseSoc Creator')}</strong><small>{clean_html(live.get('category') or 'Live')} · Host cockpit</small></div>
+                <span class='live-chat-avatar'>{html_escape(clean_html((user.get('display_name') or user.get('username') or 'P')[:1].upper()))}</span>
+                <div><strong>{html_escape(clean_html(user.get('display_name') or user.get('username') or 'PulseSoc Creator'))}</strong><small>{html_escape(clean_html(live.get('category') or 'Live'))} · Host cockpit</small></div>
               </div>
               <div class='live-guest-stack' data-live-guest-stack>{guest_tiles_html or "<article class='live-guest-tile is-empty'><span class='live-guest-avatar'>+</span><div><strong>No co-hosts</strong><small>Approved co-hosts appear here.</small></div></article>"}</div>
               <div class='live-ready-state' data-live-idle-overlay>
@@ -49384,7 +49429,7 @@ def pulse_live_studio_page(stream_id):
             </div>
 
             <section class='studio-insights-grid' id='studioAnalytics'>
-              <article><h3>Audience Overview</h3><strong><span data-live-viewers>{viewers}</span> watching</strong><p class='muted'>{clean_html((presence.get('pulse') or {}).get('label') or 'ready')}</p></article>
+              <article><h3>Audience Overview</h3><strong><span data-live-viewers>{viewers}</span> watching</strong><p class='muted'>{html_escape(clean_html((presence.get('pulse') or {}).get('label') or 'ready'))}</p></article>
               <article><h3>Top Supporters</h3><strong>{support_total}</strong><p class='muted'>Support events appear here when available.</p></article>
               <article><h3>Recent Reactions</h3><strong>{likes_count}</strong><p class='muted'>Live likes and reactions.</p></article>
               <article><h3>Stream Goals</h3><strong>{health_score}%</strong><p class='muted'>Keep quality and engagement stable.</p></article>
@@ -49423,7 +49468,7 @@ def pulse_live_studio_page(stream_id):
         <section class='studio-mobile-drawers' data-mobile-studio-drawers>
           <details data-mobile-studio-drawer='chat'><summary>Chat</summary><div class='live-chat-feed' data-live-chat-feed-mobile>{chat_html or "<article class='live-chat-message'><div class='live-chat-avatar'>P</div><div><strong>PulseSoc</strong><p>Chat is ready.</p></div></article>"}</div></details>
           <details data-mobile-studio-drawer='backstage'><summary>Backstage</summary><div data-live-join-request-list-mobile>{request_rows_html or "<p class='muted'>No co-host requests.</p>"}</div></details>
-          <details data-mobile-studio-drawer='analytics'><summary>Analytics</summary><div class='live-analytics-grid'><div><h2>Viewers</h2><p class='metric' data-live-viewers>{viewers}</p></div><div><h2>Health</h2><p class='metric' data-live-health>{clean_html(friendly_health)}</p></div></div></details>
+          <details data-mobile-studio-drawer='analytics'><summary>Analytics</summary><div class='live-analytics-grid'><div><h2>Viewers</h2><p class='metric' data-live-viewers>{viewers}</p></div><div><h2>Health</h2><p class='metric' data-live-health>{html_escape(clean_html(friendly_health))}</p></div></div></details>
           <details data-mobile-studio-drawer='settings'><summary>Settings</summary><p class='muted'>Advanced stream settings remain available from the Studio settings drawer.</p></details>
         </section>
 
@@ -49435,7 +49480,7 @@ def pulse_live_studio_page(stream_id):
             <div class='live-settings-health-grid'>
               <span>Camera <strong data-live-camera-ready>Waiting to start</strong></span>
               <span>Microphone <strong data-live-mic-ready>Waiting to start</strong></span>
-              <span>Connection <strong data-live-health>{clean_html(friendly_health)}</strong></span>
+              <span>Connection <strong data-live-health>{html_escape(clean_html(friendly_health))}</strong></span>
               <span>FPS <strong data-live-fps>{'Waiting' if not int(live.get('fps') or 0) else str(int(live.get('fps') or 0)) + ' FPS'}</strong></span>
               <span>Bitrate <strong data-live-bitrate>{'Waiting' if not int(live.get('bitrate_kbps') or 0) else str(int(live.get('bitrate_kbps') or 0)) + ' kbps'}</strong></span>
             </div>
@@ -53689,11 +53734,11 @@ def pulse_creator_status_page():
     conn.commit(); conn.close()
     privileges = profile["privileges"]
     refs = profile["referrals"]
-    unlocked = "".join(f"<li>{clean_html(k.replace('_',' ').title())}</li>" for k, v in privileges.items() if k.startswith("can_") and v is True)
-    locked = "".join(f"<li>{clean_html(step)}</li>" for step in privileges.get("required_next_steps") or [])
-    badges = "".join(f"<span class='pill'>{clean_html(badge)}</span> " for badge in privileges.get("profile_badges") or [])
+    unlocked = "".join(f"<li>{html_escape(clean_html(k.replace('_',' ').title()))}</li>" for k, v in privileges.items() if k.startswith("can_") and v is True)
+    locked = "".join(f"<li>{html_escape(clean_html(step))}</li>" for step in privileges.get("required_next_steps") or [])
+    badges = "".join(f"<span class='pill'>{html_escape(clean_html(badge))}</span> " for badge in privileges.get("profile_badges") or [])
     main = f"""
-    <section class='card'><h2>{clean_html(privileges['current_level'])}</h2><p>Trust score: {int(profile['trust_score'])}/100 · {clean_html(profile['trust_band'])}</p><p>{badges or '<span class="pill">Growing Creator</span>'}</p></section>
+    <section class='card'><h2>{html_escape(clean_html(privileges['current_level']))}</h2><p>Trust score: {int(profile['trust_score'])}/100 · {html_escape(clean_html(profile['trust_band']))}</p><p>{badges or '<span class="pill">Growing Creator</span>'}</p></section>
     <section class='card'><h2>Your Next Unlock</h2><p>Invite 30 real members for Live: {refs['completed']}/{refs['required']} completed.</p><a class='button primary' href='/pulse/invite'>Grow Creator Level</a></section>
     <section class='grid'><article class='card'><h2>Unlocked Privileges</h2><ul>{unlocked or '<li>Basic PulseSoc posting and community access.</li>'}</ul></article><article class='card'><h2>Next Steps</h2><ul>{locked or '<li>You are ready for advanced creator tools.</li>'}</ul></article></section>
     """
@@ -53707,7 +53752,7 @@ def pulse_creator_camera_page():
     if not user:
         return redirect(url_for("login_page", next=request.path))
     filters = ["Beauty Glow", "Smooth Skin", "Bright Eyes", "Cyber Neon", "Golden Trader", "Arena Energy", "Crypto Glow", "Studio Pro", "Night Vision", "Soft Portrait", "Sharp HD", "Meme Pop", "Scam Alert Red", "Teacher Clean"]
-    filter_buttons = "".join(f"<button data-filter='{clean_html(name)}'>{clean_html(name)}</button>" for name in filters)
+    filter_buttons = "".join(f"<button data-filter='{html_escape(clean_html(name))}'>{html_escape(clean_html(name))}</button>" for name in filters)
     main = f"""
     <section class='card'><h2>Creator Camera</h2><p>Take a photo, upload media, preview filters, then post to PulseSoc. If native camera is unavailable, file upload is used.</p><input id='cameraFile' type='file' accept='image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime' capture='environment'><div id='cameraPreview' class='card'><p class='muted'>Preview appears here.</p></div><div class='actions'>{filter_buttons}</div><textarea id='cameraCaption' placeholder='Add caption...'></textarea><button class='primary' id='cameraPost'>Post to PulseSoc</button></section>
     """
@@ -53733,7 +53778,7 @@ def pulse_spaces_page():
     for space in PULSE_SPACES:
         metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
         featured = " featured-space" if space.get("featured") else ""
-        cards += f"<article class='card{featured}'><span class='pill'>{clean_html(space.get('category') or 'Community')}</span><h2>{clean_html(space['name'])}</h2><p>{clean_html(space['description'])}</p><p><span class='pill'>{clean_html(space.get('region') or 'Global')}</span> <span class='pill'>{counts.get(space['slug'], space.get('member_count',0))} members</span> <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
+        cards += f"<article class='card{featured}'><span class='pill'>{html_escape(clean_html(space.get('category') or 'Community'))}</span><h2>{html_escape(clean_html(space['name']))}</h2><p>{html_escape(clean_html(space['description']))}</p><p><span class='pill'>{html_escape(clean_html(space.get('region') or 'Global'))}</span> <span class='pill'>{counts.get(space['slug'], space.get('member_count',0))} members</span> <span class='pill'>Trust {metrics['trust_score']}%</span> <span class='pill'>Energy {metrics['activity_score']}%</span></p><div class='mini-chart'><span style='width:{int(metrics['score'])}%'></span></div><div class='actions'><a class='button primary' href='/pulse/spaces/{space['slug']}'>Open Space</a><button data-join-space='{space['slug']}'>Join</button><a class='button' href='/pulse?topic={space['slug']}'>Preview</a></div></article>"
     script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-space]');if(!b)return;try{await pulseApi('/api/pulse/spaces/join',{method:'POST',body:JSON.stringify({space_slug:b.dataset.joinSpace})});toast('Joined space.')}catch(err){toast(err.message)}});"
     return pulse_social_shell("PulseSoc Spaces", "Global intelligence communities for countries, crypto, cybersecurity, creators, sports, AI, business, and education.", f"<style>.featured-space{{border-color:rgba(255,209,102,.4);box-shadow:0 0 34px rgba(255,209,102,.14)}}.mini-chart{{height:8px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}}.mini-chart span{{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166)}}</style><section class='grid'>{cards}</section>", "", script)
 
@@ -53748,13 +53793,13 @@ def pulse_space_detail_page(slug):
     cur.execute("SELECT title, body, post_type, topic, quality_score, energy_score, created_at FROM pulse_ai_posts WHERE space_slug=? AND status IN ('published','queued','pending_approval') ORDER BY id DESC LIMIT 3", (slug,))
     ai_posts = [dict(row) for row in cur.fetchall()]
     conn.close()
-    ai_html = "".join(f"<article class='card'><span class='pill'>PulseSoc Intelligence</span> <span class='pill'>{clean_html(row.get('post_type') or 'insight')}</span><h3>{clean_html(row.get('title') or 'Space intelligence')}</h3><p>{clean_html((row.get('body') or '')[:420])}{'...' if len(row.get('body') or '') > 420 else ''}</p><p><span class='pill'>Quality {int(row.get('quality_score') or 0)}%</span> <span class='pill'>Energy {int(row.get('energy_score') or 0)}%</span> <span class='pill'>{clean_html(row.get('topic') or 'topic')}</span></p></article>" for row in ai_posts)
+    ai_html = "".join(f"<article class='card'><span class='pill'>PulseSoc Intelligence</span> <span class='pill'>{html_escape(clean_html(row.get('post_type') or 'insight'))}</span><h3>{html_escape(clean_html(row.get('title') or 'Space intelligence'))}</h3><p>{html_escape(clean_html((row.get('body') or '')[:420]))}{'...' if len(row.get('body') or '') > 420 else ''}</p><p><span class='pill'>Quality {int(row.get('quality_score') or 0)}%</span> <span class='pill'>Energy {int(row.get('energy_score') or 0)}%</span> <span class='pill'>{html_escape(clean_html(row.get('topic') or 'topic'))}</span></p></article>" for row in ai_posts)
     main = f"""
-    <section class='card'><h2>Pinned Knowledge</h2><p>{clean_html(space['description'])}</p><p>Discussion prompt: What is one useful lesson, warning, question, or resource you can share with this space today?</p><div class='actions'><button class='primary' data-join-space='{clean_html(slug)}'>Join Space</button><a class='button' href='/pulse#create'>Create Full Post</a></div></section>
+    <section class='card'><h2>Pinned Knowledge</h2><p>{html_escape(clean_html(space['description']))}</p><p>Discussion prompt: What is one useful lesson, warning, question, or resource you can share with this space today?</p><div class='actions'><button class='primary' data-join-space='{html_escape(clean_html(slug))}'>Join Space</button><a class='button' href='/pulse#create'>Create Full Post</a></div></section>
     <section class='card'><h2>AI Intelligence Drops</h2><p class='muted'>This space receives morning and evening educational prompts designed to spark safer, smarter discussion.</p>{ai_html or '<p class="muted">The first AI intelligence drops are scheduled.</p>'}</section>
-    <section class='card'><h2>Create in {clean_html(space['name'])}</h2><textarea id='spacePostBody' placeholder='Share a lesson, warning, question, or update for this space.'></textarea><button class='primary' id='spacePostBtn'>Post to Space</button></section>
+    <section class='card'><h2>Create in {html_escape(clean_html(space['name']))}</h2><textarea id='spacePostBody' placeholder='Share a lesson, warning, question, or update for this space.'></textarea><button class='primary' id='spacePostBtn'>Post to Space</button></section>
     <section class='card'><h2>Space Feed</h2><p>Posts tagged for this space appear below.</p></section>
-    <iframe title='Space feed' src='/pulse?topic={clean_html(slug)}' style='width:100%;min-height:760px;border:0;border-radius:16px;background:#071321'></iframe>
+    <iframe title='Space feed' src='/pulse?topic={html_escape(clean_html(slug))}' style='width:100%;min-height:760px;border:0;border-radius:16px;background:#071321'></iframe>
     """
     script = f"""
     document.addEventListener('click',async e=>{{const b=e.target.closest('[data-join-space]');if(!b)return;try{{await pulseApi('/api/pulse/spaces/join',{{method:'POST',body:JSON.stringify({{space_slug:b.dataset.joinSpace}})}});toast('Joined {clean_html(space['name'])}.')}}catch(err){{toast(err.message)}}}});
@@ -53851,11 +53896,11 @@ def pulse_camera_studio_page():
     beauty_modes = pulse_lens_engine.beauty_catalog()
     mode_label = "Reel" if mode == "reel" else "Video" if mode == "video" else "Photo"
     lens_buttons = "".join(
-        f"<button class='pulse-lens-chip pulse-camera-glass {'is-active' if i == 0 else ''}' type='button' data-lens-key='{clean_html(lens['key'])}' {'disabled' if lens.get('locked') else ''}><span class='pulse-lens-dot'></span>{clean_html(lens['label'])}{' Locked' if lens.get('locked') else ''}</button>"
+        f"<button class='pulse-lens-chip pulse-camera-glass {'is-active' if i == 0 else ''}' type='button' data-lens-key='{html_escape(clean_html(lens['key']))}' {'disabled' if lens.get('locked') else ''}><span class='pulse-lens-dot'></span>{html_escape(clean_html(lens['label']))}{' Locked' if lens.get('locked') else ''}</button>"
         for i, lens in enumerate(lenses)
     )
     beauty_buttons = "".join(
-        f"<button class='pulse-beauty-chip pulse-camera-glass {'is-active' if i == 0 else ''}' type='button' data-beauty-key='{clean_html(item['key'])}'>{clean_html(item['label'])}</button>"
+        f"<button class='pulse-beauty-chip pulse-camera-glass {'is-active' if i == 0 else ''}' type='button' data-beauty-key='{html_escape(clean_html(item['key']))}'>{html_escape(clean_html(item['label']))}</button>"
         for i, item in enumerate(beauty_modes)
     )
     mode_buttons = "".join(
@@ -53879,7 +53924,7 @@ def pulse_camera_studio_page():
         "banuba": public_camera_config["banuba"],
         "fallback": public_camera_config["fallback"],
     }
-    camera_config_json = json.dumps(camera_config, separators=(",", ":")).replace("</", "<\\/")
+    camera_config_json = script_json(camera_config)
     message_button = (
         "<button class='button' type='button' data-publish-destination='message'>Send to Chat</button>"
         if conversation_id
@@ -53887,7 +53932,7 @@ def pulse_camera_studio_page():
     )
     main = f"""
     <link rel="stylesheet" href="/static/css/pulse_camera_engine.css">
-    <section class="pulse-camera-engine is-front" data-pulse-camera-engine data-banuba-foundation data-device-file-picker-fallback data-camera-provider="{clean_html(public_camera_config['provider'])}" data-camera-kit-ready data-mediapipe-ready data-tensorflow-fallback-ready data-webrtc-get-user-media data-webgl-effects>
+    <section class="pulse-camera-engine is-front" data-pulse-camera-engine data-banuba-foundation data-device-file-picker-fallback data-camera-provider="{html_escape(clean_html(public_camera_config['provider']))}" data-camera-kit-ready data-mediapipe-ready data-tensorflow-fallback-ready data-webrtc-get-user-media data-webgl-effects>
       <video class="pulse-camera-preview" id="pulseCameraPreview" autoplay muted playsinline></video>
       <canvas class="pulse-camera-canvas" id="pulseCameraCanvas" hidden></canvas>
       <div class="pulse-camera-overlay" aria-hidden="true"></div>
@@ -53897,7 +53942,7 @@ def pulse_camera_studio_page():
 
       <header class="pulse-camera-top">
         <button class="pulse-camera-icon pulse-camera-glass" id="pulseCameraClose" type="button" aria-label="Close camera">×</button>
-        <div class="pulse-camera-title pulse-camera-glass">PulseSoc Camera · {clean_html(mode_label)}</div>
+        <div class="pulse-camera-title pulse-camera-glass">PulseSoc Camera · {html_escape(clean_html(mode_label))}</div>
         <div class="pulse-camera-top-actions">
           <button class="pulse-camera-icon pulse-camera-glass" id="pulseCameraFlip" type="button" aria-label="Flip camera">↻</button>
         </div>
@@ -53979,7 +54024,7 @@ def pulse_camera_studio_page():
     target = clean_html(request.args.get("target") or "post")
     group = clean_html(request.args.get("group") or "")
     conversation_id = safe_int(request.args.get("conversation_id") or 0, 0)
-    filters = "".join(f"<button class='filter-chip' data-filter='{clean_html(f['key'])}' data-css='{clean_html(f['css'])}' {'disabled' if f['locked'] else ''}><span></span>{clean_html(f['label'])}{' 🔒' if f['locked'] else ''}</button>" for f in catalog)
+    filters = "".join(f"<button class='filter-chip' data-filter='{html_escape(clean_html(f['key']))}' data-css='{html_escape(clean_html(f['css']))}' {'disabled' if f['locked'] else ''}><span></span>{html_escape(clean_html(f['label']))}{' 🔒' if f['locked'] else ''}</button>" for f in catalog)
     mode_label = "Reel" if mode == "reel" else "Video" if mode == "video" else "Photo"
     camera_audio_constraint = "false" if mode == "photo" else "{echoCancellation:true,noiseSuppression:true,autoGainControl:true}"
     main = f"""
@@ -53990,7 +54035,7 @@ def pulse_camera_studio_page():
     <section class='camera-stage'>
       <video class='camera-preview' id='cameraPreview' autoplay muted playsinline></video>
       <div class='camera-vignette'></div>
-      <div class='camera-top'><div class='creator-mode camera-glass'>Creator {clean_html(mode_label)}</div><a class='button camera-close camera-glass' href='/pulse#create' aria-label='Close camera'>×</a></div>
+      <div class='camera-top'><div class='creator-mode camera-glass'>Creator {html_escape(clean_html(mode_label))}</div><a class='button camera-close camera-glass' href='/pulse#create' aria-label='Close camera'>×</a></div>
       <div class='permission-tip camera-glass' id='permissionTip'>Tap capture to allow camera and microphone. Upload stays available if your browser blocks camera access.</div>
       <div class='side-tools'><button class='tool-btn camera-glass' id='switchCamera' type='button' aria-label='Switch camera'>↻</button><button class='tool-btn camera-glass' id='micToggle' type='button' aria-label='Toggle microphone'>🎙</button><button class='tool-btn camera-glass' id='flashToggle' type='button' aria-label='Toggle flash'>⚡</button></div>
       <button class='gallery-btn camera-glass' id='galleryBtn' type='button' aria-label='Upload from gallery'>▧</button><input id='fallbackUpload' type='file' accept='image/*,video/*'>
@@ -54048,7 +54093,7 @@ def pulse_marketplace_page():
         seller_id = int(row.get("seller_user_id") or 0)
         promote = ""
         if seller_id == int(user.get("user_id") or 0):
-            promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{clean_html(row.get('title') or 'Marketplace listing')}'>Promote Listing</button>"
+            promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>Promote Listing</button>"
         # A listing with no price gets no price pill, rather than a pill filled
         # with prose. `pulse_marketplace_listing_payload` stopped inventing
         # "Request access" for the clients; this page builds its own HTML from
@@ -54071,7 +54116,7 @@ def pulse_marketplace_page():
         # because moderation approved it -- that approval is the signal. The
         # reviewer's working number stays with the reviewer (§27/§95); the admin
         # queue reads the same column as risk and is already correct.
-        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{clean_html(row.get('title'))}</a></h2><p>{clean_html(row.get('description'))}</p><p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> {price_pill}</p><p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{html_escape(clean_html(row.get('title')))}</a></h2><p>{html_escape(clean_html(row.get('description')))}</p><p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> {price_pill}</p><p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
     seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
@@ -54079,7 +54124,7 @@ def pulse_marketplace_page():
     if seller and seller.get("status") == "approved":
         listing_form = "<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='/pulse/marketplace/create'>Create Product</a></section>"
     elif seller:
-        listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{clean_html(seller.get('status') or 'pending_review')}</p><p>Products unlock after approval.</p></section>"
+        listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'pending_review'))}</p><p>Products unlock after approval.</p></section>"
     script = """
     const marketplaceResults=document.querySelector('[data-marketplace-results]');
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
@@ -54172,17 +54217,17 @@ def pulse_marketplace_listing_page(listing_id):
     seller_id = int(row.get("seller_user_id") or 0)
     owned = seller_id == int(user.get("user_id") or 0)
     gallery = "".join(
-        f"<img src='{clean_html(entry.get('media_url'))}' alt='' loading='lazy'>"
+        f"<img src='{html_escape(clean_html(entry.get('media_url')))}' alt='' loading='lazy'>"
         if (entry.get("media_type") or "image") == "image"
-        else f"<video src='{clean_html(entry.get('media_url'))}' controls preload='none'"
-             f" poster='{clean_html(entry.get('poster_url') or '')}'></video>"
+        else f"<video src='{html_escape(clean_html(entry.get('media_url')))}' controls preload='none'"
+             f" poster='{html_escape(clean_html(entry.get('poster_url') or ''))}'></video>"
         for entry in (listing.get("media") or []))
     gallery_block = f"<div class='grid'>{gallery}</div>" if gallery else ""
     promote = ""
     if owned:
         promote = (f"<button data-promote-content='marketplace_listing' "
                    f"data-content-id='{listing_id}' "
-                   f"data-content-label='{clean_html(row.get('title') or 'Marketplace listing')}'>"
+                   f"data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>"
                    f"Promote Listing</button>")
     # Same rule as the grid card: no price, no pill. This page and that one show
     # the same listing, so a phrase here would reappear as a disagreement
@@ -54192,16 +54237,16 @@ def pulse_marketplace_listing_page(listing_id):
     main = (
         f"<section class='card'>"
         f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
-        f"<h1>{clean_html(row.get('title'))}</h1>"
-        f"<p><span class='pill'>{clean_html(row.get('category') or 'Education')}</span> "
+        f"<h1>{html_escape(clean_html(row.get('title')))}</h1>"
+        f"<p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> "
         # No "Safety N" pill here either -- see `marketplace_card` on the grid
         # for the measurement. The two surfaces printed the same inverted number
         # for the same row, so fixing one would have moved the lie rather than
         # removed it.
         f"{price_pill}</p>"
-        f"<p>Seller: {clean_html(marketplace_seller_identity.display_store_name(row))}</p>"
+        f"<p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p>"
         f"{gallery_block}"
-        f"<p>{clean_html(row.get('description') or row.get('short_description') or '')}</p>"
+        f"<p>{html_escape(clean_html(row.get('description') or row.get('short_description') or ''))}</p>"
         f"<p>Safety notice: educational products only. Payments and payout release "
         f"are staged for compliance.</p>"
         f"<div class='actions'>"
@@ -55884,9 +55929,9 @@ UNDX_ACTION_CENTER_PAGE_JS = r"""
 
 def _undx_action_center_section_html(key, title, empty):
     return (
-        f"<section class='card undx-section'><h2>{clean_html(title)}</h2>"
+        f"<section class='card undx-section'><h2>{html_escape(clean_html(title))}</h2>"
         f"<div class='undx-rows' data-undx-section='{key}' "
-        f"data-undx-empty=\"{clean_html(empty)}\"></div></section>"
+        f"data-undx-empty=\"{html_escape(clean_html(empty))}\"></div></section>"
     )
 
 
@@ -56142,11 +56187,11 @@ def pulse_merchant_apply_page():
                 conn.commit()
                 conn.close()
     intents = ["Digital Products", "Courses", "Coaching", "Ebooks", "Trading Education", "Templates", "AI Tools", "Physical Products", "Livestream Selling", "Services"]
-    intent_checks = "".join(f"<label><input type='checkbox' name='intent' value='{clean_html(item)}'> {clean_html(item)}</label>" for item in intents)
+    intent_checks = "".join(f"<label><input type='checkbox' name='intent' value='{html_escape(clean_html(item))}'> {html_escape(clean_html(item))}</label>" for item in intents)
     main = f"""
     <style>.merchant-steps{{display:grid;gap:14px}}.merchant-steps section{{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:14px;background:rgba(255,255,255,.035)}}.check-grid label{{display:flex;gap:9px;align-items:flex-start;white-space:normal}}.doc-upload{{display:grid;gap:7px;margin:10px 0}}.doc-upload input{{padding:12px;background:rgba(255,255,255,.045)}}@media(max-width:620px){{.check-grid{{grid-template-columns:1fr!important}}}}</style>
     <form method='post' enctype='multipart/form-data' class='card merchant-steps'>
-      <h2>Merchant Application</h2><p>{clean_html(message)}</p><p class='muted'>Applications are reviewed before product listings unlock. Verification documents are private and visible only to authorized admins.</p>
+      <h2>Merchant Application</h2><p>{html_escape(clean_html(message))}</p><p class='muted'>Applications are reviewed before product listings unlock. Verification documents are private and visible only to authorized admins.</p>
       <section><h3>Identity</h3><input name='full_name' required placeholder='Full name'><input name='display_name' required placeholder='Seller display name'><input name='country' required placeholder='Country'><input name='state_region' placeholder='State / Region'><input name='email' type='email' required placeholder='Email'><input name='phone' placeholder='Phone number'><input name='pulse_username' placeholder='PulseSoc username'></section>
       <section><h3>Business Details</h3><input name='business_name' placeholder='Business name'><select name='seller_type' required><option>Individual</option><option>Creator</option><option>Teacher</option><option>Brand</option><option>Digital Seller</option><option>Physical Seller</option><option>Agency</option></select><input name='website' placeholder='Website'><textarea name='social_links' placeholder='Social links'></textarea><input name='years_experience' placeholder='Years experience'><textarea name='business_description' required placeholder='Describe what you sell, who it helps, and how you keep buyers safe.'></textarea></section>
       <section><h3>Selling Intent</h3><div class='grid check-grid'>{intent_checks}</div></section>
@@ -56178,9 +56223,9 @@ def pulse_merchant_dashboard_page():
             msg = "Your merchant application is still under review."
         else:
             msg = "Apply and complete verification before merchant tools unlock."
-        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{clean_html(msg)}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
-    rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(seller.get('status') or 'not applied')}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{html_escape(clean_html(msg))}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
+    rows = "".join(f"<tr><td>{l.get('id')}</td><td>{html_escape(clean_html(l.get('title') or ''))}</td><td>{html_escape(clean_html(l.get('status') or ''))}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'not applied'))}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
 
 
@@ -56201,10 +56246,10 @@ def seller_payouts_page(seller_type):
     if not approved:
         target = "/pulse/teachers" if seller_type == "teacher" else "/pulse/merchant/apply"
         return pulse_social_shell(f"{seller_type.title()} Payouts", "Approval is required before payout onboarding.", f"<section class='card'><h2>Approval Required</h2><p>Approved {seller_type}s can connect Stripe and receive net payouts after platform fees.</p><a class='button primary' href='{target}'>Open Application</a></section>")
-    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{(int(t.get('seller_net_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
-    payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{(int(p.get('amount_cents') or 0)/100):.2f} {clean_html(p.get('currency') or 'USD')}</td><td>{clean_html(p.get('status') or '')}</td><td>{clean_html(p.get('provider_payout_id') or '')}</td></tr>" for p in payouts)
+    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{html_escape(clean_html(t.get('item_type') or ''))} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {html_escape(clean_html(t.get('currency') or 'USD'))}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{(int(t.get('seller_net_cents') or 0)/100):.2f}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td></tr>" for t in transactions)
+    payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{(int(p.get('amount_cents') or 0)/100):.2f} {html_escape(clean_html(p.get('currency') or 'USD'))}</td><td>{html_escape(clean_html(p.get('status') or ''))}</td><td>{html_escape(clean_html(p.get('provider_payout_id') or ''))}</td></tr>" for p in payouts)
     main = f"""
-    <section class='grid'><div class='card'><h2>Platform Fee</h2><p class='metric'>{fee_bps/100:.0f}%</p></div><div class='card'><h2>Onboarding</h2><p class='metric'>{clean_html(account.get('onboarding_status') or 'not started')}</p></div><div class='card'><h2>Payouts</h2><p class='metric'>{'Enabled' if account.get('payouts_enabled') else 'Setup'}</p></div></section>
+    <section class='grid'><div class='card'><h2>Platform Fee</h2><p class='metric'>{fee_bps/100:.0f}%</p></div><div class='card'><h2>Onboarding</h2><p class='metric'>{html_escape(clean_html(account.get('onboarding_status') or 'not started'))}</p></div><div class='card'><h2>Payouts</h2><p class='metric'>{'Enabled' if account.get('payouts_enabled') else 'Setup'}</p></div></section>
     <section class='card'><h2>Stripe Connect Payouts</h2><p class='muted'>CoinPlotXAI collects payment, deducts the platform fee, and sends the net amount to your connected Stripe account. Card numbers are never stored by CoinPlotXAI.</p><button class='primary' id='connectPayouts'>Connect Stripe Account</button><p id='payoutStatus' class='muted'></p></section>
     <section class='card'><h2>Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Gross</th><th>Fee</th><th>Net</th><th>Status</th></tr>{tx_rows or '<tr><td colspan=6>No transactions yet.</td></tr>'}</table></section>
     <section class='card'><h2>Payout History</h2><table class='table'><tr><th>ID</th><th>Amount</th><th>Status</th><th>Provider</th></tr>{payout_rows or '<tr><td colspan=4>No payouts yet.</td></tr>'}</table></section>
@@ -56249,9 +56294,9 @@ def pulse_creator_payouts_page():
     cur.execute("SELECT * FROM creator_transactions WHERE seller_user_id=? AND seller_type='creator' ORDER BY id DESC LIMIT 30", (user["user_id"],))
     transactions = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('item_type') or '')}</td><td>{(int(t.get('gross_amount_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
+    rows = "".join(f"<tr><td>{t.get('id')}</td><td>{html_escape(clean_html(t.get('item_type') or ''))}</td><td>{(int(t.get('gross_amount_cents') or 0)/100):.2f}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td></tr>" for t in transactions)
     main = f"""
-    <section class='grid'><div class='card'><h2>Available</h2><p class='metric'>${int(wallet.get('available_balance_cents') or 0)/100:.2f}</p></div><div class='card'><h2>Pending</h2><p class='metric'>${int(wallet.get('pending_balance_cents') or 0)/100:.2f}</p></div><div class='card'><h2>Status</h2><p class='metric'>{clean_html(wallet.get('status') or 'active')}</p></div></section>
+    <section class='grid'><div class='card'><h2>Available</h2><p class='metric'>${int(wallet.get('available_balance_cents') or 0)/100:.2f}</p></div><div class='card'><h2>Pending</h2><p class='metric'>${int(wallet.get('pending_balance_cents') or 0)/100:.2f}</p></div><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(wallet.get('status') or 'active'))}</p></div></section>
     <section class='card'><h2>Creator Payout Foundation</h2><p>Creator earnings are scaffolded for premium content, tips, and subscriptions. Monetization opens only when eligibility, safety, and payout onboarding are complete.</p></section>
     <section class='card'><h2>Creator Transactions</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Gross</th><th>Status</th></tr>{rows or '<tr><td colspan=4>No creator transactions yet.</td></tr>'}</table></section>
     """
@@ -56277,9 +56322,9 @@ def pulse_merchant_profile_page(username):
     conn.close()
     if not seller:
         return pulse_social_shell("Merchant", "Merchant profile not found.", "<section class='card'><a class='button' href='/pulse/marketplace'>Back to Marketplace</a></section>")
-    cards = "".join(f"<article class='card'><h2>{clean_html(l.get('title') or '')}</h2><p>{clean_html(l.get('short_description') or l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('price_label') or '')}</span></article>" for l in listings)
+    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(l.get('title') or ''))}</h2><p>{html_escape(clean_html(l.get('short_description') or l.get('description') or ''))}</p><span class='pill'>{html_escape(clean_html(l.get('price_label') or ''))}</span></article>" for l in listings)
     cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
-    main = f"<section class='card'><h2>{clean_html(seller.get('display_name') or 'Merchant')}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{clean_html(seller.get('bio') or '')}</p></section><section class='grid'>{cards or cards_empty}</section>"
+    main = f"<section class='card'><h2>{html_escape(clean_html(seller.get('display_name') or 'Merchant'))}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{html_escape(clean_html(seller.get('bio') or ''))}</p></section><section class='grid'>{cards or cards_empty}</section>"
     return pulse_social_shell("Merchant Profile", "Verified merchant storefront with safety history, products, courses, and reviews.", main)
 
 
@@ -56296,7 +56341,7 @@ def pulse_marketplace_create_page():
     if seller.get("status") != "approved":
         return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", "<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a></section>")
     categories = ["AI Tools","Cybersecurity","Crypto Education","Trading Education","Coding","Business","Marketing","Design","Ebooks","Courses","Templates","Coaching","Livestream Access","Premium Communities","Creator Resources","Productivity","Investing Education","Scam Prevention"]
-    opts = "".join(f"<option>{clean_html(c)}</option>" for c in categories)
+    opts = "".join(f"<option>{html_escape(clean_html(c))}</option>" for c in categories)
     main = f"""
     <style>
     .product-media-board{{display:grid;gap:14px}}
@@ -56370,8 +56415,8 @@ def pulse_creator_monetization_page():
         ("Teacher Pro", "Lesson builder, course storefront, student messages, live class tools, and teacher analytics."),
         ("Enterprise", "Team dashboard, scam intelligence, reports, and priority support."),
     ]
-    product_cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><p>{clean_html(desc)}</p><span class='pill'>Transparent pricing</span></article>" for name, desc in products)
-    steps = "".join(f"<li>{clean_html(item)}</li>" for item in readiness.get("next_steps", []))
+    product_cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(name))}</h2><p>{html_escape(clean_html(desc))}</p><span class='pill'>Transparent pricing</span></article>" for name, desc in products)
+    steps = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in readiness.get("next_steps", []))
     body = f"""
     <section class='grid'><div class='card'><h2>Creator Readiness</h2><p class='metric'>{readiness['readiness_score']}%</p><p>{'Ready to prepare monetized tools.' if readiness['ready'] else 'Keep building trust before paid tools unlock.'}</p></div><div class='card'><h2>Audience Growth</h2><p class='metric'>{counts['posts']}</p><p>PulseSoc posts published.</p></div><div class='card'><h2>Revenue Placeholder</h2><p class='metric'>$0</p><p>Real payout release stays off until compliance is ready.</p></div></section>
     <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='/pulse/marketplace'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
@@ -56473,10 +56518,10 @@ def pulse_premium_page():
         ("Premium Upload Limits", "Higher creator upload capability is available as a Founder entitlement."),
         ("Creator Studio Pro", "Premium analytics, Creator Studio Pro, and AI creator assistant access."),
     ]
-    founder_benefit_html = "".join(f"<article class='founder-benefit'><strong>{clean_html(title)}</strong><span>{clean_html(desc)}</span></article>" for title, desc in founder_benefits)
+    founder_benefit_html = "".join(f"<article class='founder-benefit'><strong>{html_escape(clean_html(title))}</strong><span>{html_escape(clean_html(desc))}</span></article>" for title, desc in founder_benefits)
     founder_wall = premium_entitlement_service.founder_wall(8)
     founder_wall_html = "".join(
-        f"<article class='founder-wall-mini'><span>#{int(row.get('founder_number') or 0)}</span><strong>{clean_html(row.get('display_name') or 'PulseSoc Founder')}</strong><small>{clean_html(row.get('headline') or 'PulseSoc Founder Member')}</small></article>"
+        f"<article class='founder-wall-mini'><span>#{int(row.get('founder_number') or 0)}</span><strong>{html_escape(clean_html(row.get('display_name') or 'PulseSoc Founder'))}</strong><small>{html_escape(clean_html(row.get('headline') or 'PulseSoc Founder Member'))}</small></article>"
         for row in founder_wall
     ) or "<article class='founder-wall-mini founder-wall-empty'><span>#1</span><strong>Founder Wall opening</strong><small>The first Founder members will appear here.</small></article>"
     quick_links = [
@@ -56488,7 +56533,7 @@ def pulse_premium_page():
         ("Security", "/pulse/settings/security", "Score, 2FA, devices, recovery, and login history."),
         ("AI Studio", "/pulse/premium#premium-ai-studio", "Caption, hook, lesson, scam, and market assistants."),
     ]
-    quick_html = "".join(f"<a class='premium-quick-link' href='{clean_html(href)}'><strong>{clean_html(label)}</strong><span>{clean_html(desc)}</span></a>" for label, href, desc in quick_links)
+    quick_html = "".join(f"<a class='premium-quick-link' href='{html_escape(clean_html(href))}'><strong>{html_escape(clean_html(label))}</strong><span>{html_escape(clean_html(desc))}</span></a>" for label, href, desc in quick_links)
     ai_tools = [
         ("Viral Hook Generator", "hook", "Build a stronger opening line."),
         ("Reel Script Generator", "caption", "Turn a topic into a short Reel flow."),
@@ -56501,13 +56546,13 @@ def pulse_premium_page():
         ("Teacher Lesson Planner", "caption", "Turn a topic into a lesson outline."),
         ("Profile Optimization Assistant", "hook", "Improve your creator bio and profile pitch."),
     ]
-    ai_html = "".join(f"<article class='premium-tool-card'><h3>{clean_html(name)}</h3><p>{clean_html(desc)}</p><button type='button' data-premium-ai-tool='{clean_html(tool)}' data-premium-ai-label='{clean_html(name)}'>Run Tool</button></article>" for name, tool, desc in ai_tools)
+    ai_html = "".join(f"<article class='premium-tool-card'><h3>{html_escape(clean_html(name))}</h3><p>{html_escape(clean_html(desc))}</p><button type='button' data-premium-ai-tool='{html_escape(clean_html(tool))}' data-premium-ai-label='{html_escape(clean_html(name))}'>Run Tool</button></article>" for name, tool, desc in ai_tools)
     courses = ["Creator Growth", "AI Content Creation", "Live Streaming Mastery", "Marketplace Selling", "Community Building", "Personal Branding", "Scam Awareness", "Crypto Education", "Digital Entrepreneurship"]
-    course_html = "".join(f"<article class='premium-progress-card'><span>{idx}/9</span><h3>{clean_html(course)}</h3><p>Progress: {min(80, idx * 9)}% · Certificate track ready</p><div class='premium-meter'><i style='width:{min(80, idx * 9)}%'></i></div><a class='button' href='/pulse/teachers'>Open Lessons</a></article>" for idx, course in enumerate(courses, 1))
+    course_html = "".join(f"<article class='premium-progress-card'><span>{idx}/9</span><h3>{html_escape(clean_html(course))}</h3><p>Progress: {min(80, idx * 9)}% · Certificate track ready</p><div class='premium-meter'><i style='width:{min(80, idx * 9)}%'></i></div><a class='button' href='/pulse/teachers'>Open Lessons</a></article>" for idx, course in enumerate(courses, 1))
     vault = ["Thumbnails", "Overlays", "Transitions", "Creator Graphics", "Profile Assets", "Banners", "Stream Packages", "Premium Templates"]
-    vault_html = "".join(f"<article><strong>{clean_html(item)}</strong><span>{'Ready' if i < 4 else 'Coming Soon'}</span></article>" for i, item in enumerate(vault))
+    vault_html = "".join(f"<article><strong>{html_escape(clean_html(item))}</strong><span>{'Ready' if i < 4 else 'Coming Soon'}</span></article>" for i, item in enumerate(vault))
     rooms = ["Founder Lounge", "Creator Room", "Teacher Room", "Market Watch Room", "Scam Shield Room", "AI Lab"]
-    room_html = "".join(f"<a class='premium-room' href='/pulse/groups'><strong>{clean_html(room)}</strong><span>{'Open group discovery' if i < 3 else 'Coming Soon'}</span></a>" for i, room in enumerate(rooms))
+    room_html = "".join(f"<a class='premium-room' href='/pulse/groups'><strong>{html_escape(clean_html(room))}</strong><span>{'Open group discovery' if i < 3 else 'Coming Soon'}</span></a>" for i, room in enumerate(rooms))
     undx_entry = "<section class='premium-band premium-undx-card'><div><span class='badge'>UNDX Premium</span><h2>Owner Intelligence Workspace</h2><p>AI workspace, saved prompts, prompt library, creator assistants, automation tools, and future agent features.</p></div><a class='button primary' href='/pulse/premium/undx'>Enter UNDX</a></section>" if user_is_super_user(user) else "<section class='premium-band'><div><span class='badge'>UNDX Premium</span><h2>Creator automation layer</h2><p>Saved prompts, creator assistants, prompt library, and automation tools are preparing for Premium creators.</p></div><button disabled>Coming Soon</button></section>"
     main = f"""
     <style>
@@ -56517,7 +56562,7 @@ def pulse_premium_page():
     .premium-command-card{{display:grid;gap:10px}}.premium-state-badge{{display:inline-flex;width:max-content;border:1px solid rgba(255,209,102,.34);border-radius:999px;padding:6px 10px;background:rgba(255,209,102,.1);color:#ffe6a3;font-weight:950}}.premium-quick-grid,.premium-stat-grid,.premium-feature-grid,.premium-tool-grid,.premium-course-grid,.premium-vault-grid,.premium-analytics-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.premium-quick-grid{{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}}.premium-quick-link{{min-height:92px;border:1px solid rgba(110,223,246,.16);border-radius:16px;padding:14px;text-decoration:none;background:rgba(255,255,255,.045);display:grid;align-content:start;gap:5px}}.premium-quick-link span{{color:#9fb5c0;font-size:13px;line-height:1.35}}.premium-tool-grid{{grid-template-columns:repeat(auto-fit,minmax(210px,1fr))}}.premium-course-grid{{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}}.premium-vault-grid{{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}}.premium-vault-grid article{{min-height:110px;border:1px solid rgba(255,255,255,.11);border-radius:16px;padding:14px;background:radial-gradient(circle at 24% 10%,rgba(110,223,246,.16),transparent 10rem),rgba(255,255,255,.04);display:grid;align-content:space-between}}.premium-vault-grid span,.premium-room span{{color:#9fb5c0}}.premium-meter{{height:9px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}}.premium-meter i{{display:block;height:100%;background:linear-gradient(90deg,#ffd166,#36e58f,#6edff6)}}.premium-band{{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center}}.premium-room{{display:grid;gap:6px;text-decoration:none}}.premium-ai-console{{display:grid;gap:10px}}.premium-ai-console textarea{{min-height:100px}}.premium-output{{min-height:54px;white-space:pre-wrap}}.premium-empty-state{{border:1px dashed rgba(110,223,246,.25);border-radius:16px;padding:14px;color:#9fb5c0;background:rgba(110,223,246,.055)}}.founder-plan-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.founder-plan-card{{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.18);border-radius:22px;padding:18px;background:linear-gradient(180deg,rgba(255,255,255,.07),rgba(255,255,255,.03));box-shadow:0 22px 76px rgba(0,0,0,.26)}}.founder-plan-card.featured{{border-color:rgba(255,209,102,.5);background:radial-gradient(circle at 16% 12%,rgba(255,209,102,.2),transparent 13rem),linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.035))}}.founder-price{{font-size:clamp(32px,5vw,58px);line-height:1;font-weight:950;color:#ffe6a3}}.founder-price small{{font-size:15px;color:#9fb5c0}}.founder-benefit-grid,.founder-wall-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.founder-benefit,.founder-wall-mini{{border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:14px;background:rgba(255,255,255,.045);display:grid;gap:6px}}.founder-benefit span,.founder-wall-mini small{{color:#9fb5c0;line-height:1.35}}.founder-wall-mini span{{width:max-content;border-radius:999px;padding:4px 8px;background:rgba(255,209,102,.12);color:#ffe6a3;font-weight:950}}.founder-comparison{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}.founder-comparison ul{{margin:0;padding-left:18px;color:#cfe2ea;line-height:1.8}}@media(max-width:900px){{.premium-command-hero,.premium-band{{grid-template-columns:1fr}}.premium-stat-grid,.premium-feature-grid,.premium-analytics-grid,.founder-plan-grid,.founder-benefit-grid,.founder-wall-grid,.founder-comparison{{grid-template-columns:1fr}}.premium-command-hero{{min-height:auto}}.premium-command-hero h2{{font-size:clamp(38px,12vw,64px)}}.premium-quick-link,.premium-command-card{{min-height:auto}}}}
     </style>
     <section class='premium-platform' data-pulse-premium-platform>
-      <section class='premium-command-hero'><div><span class='badge'>PulseSoc Founder Premium</span><h2>Become a PulseSoc Founder.</h2><p>Lock in Premium for $4.99/month forever before public pricing increases to $9.99/month. Founder members get exclusive identity, early access, higher creator limits, priority support, and Premium intelligence.</p><p>Create, learn, grow, earn, and stay safer with a monthly creator operating system. Monthly tools ready inside PulseSoc Premium.</p>{checkout_notice}<div class='actions'>{founder_primary_action}{billing_action}<a class='button' href='/pulse'>Explore Free PulseSoc</a><a class='button' href='/pulse/premium/intelligence'>Open Intelligence</a><a class='button' href='/pulse/creator/dashboard'>Creator Studio</a></div></div><aside class='premium-command-card'><span class='premium-state-badge'>{clean_html(status)}</span><h3>Founder Command Center</h3><p><strong>Renewal:</strong> {clean_html(renewal)}</p><p><strong>Level:</strong> {clean_html(level)}</p><p><strong>Checkout:</strong> {'Online' if checkout_ready else 'Being connected'}</p><div class='premium-meter'><i style='width:{'100' if founder else '72' if premium else '42'}%'></i></div><p class='muted'>Benefits unlocked: {len(benefits) if founder else 8 if premium else 3}/{len(benefits)} · Entitlements are enforced backend-side.</p></aside></section>
+      <section class='premium-command-hero'><div><span class='badge'>PulseSoc Founder Premium</span><h2>Become a PulseSoc Founder.</h2><p>Lock in Premium for $4.99/month forever before public pricing increases to $9.99/month. Founder members get exclusive identity, early access, higher creator limits, priority support, and Premium intelligence.</p><p>Create, learn, grow, earn, and stay safer with a monthly creator operating system. Monthly tools ready inside PulseSoc Premium.</p>{checkout_notice}<div class='actions'>{founder_primary_action}{billing_action}<a class='button' href='/pulse'>Explore Free PulseSoc</a><a class='button' href='/pulse/premium/intelligence'>Open Intelligence</a><a class='button' href='/pulse/creator/dashboard'>Creator Studio</a></div></div><aside class='premium-command-card'><span class='premium-state-badge'>{html_escape(clean_html(status))}</span><h3>Founder Command Center</h3><p><strong>Renewal:</strong> {html_escape(clean_html(renewal))}</p><p><strong>Level:</strong> {html_escape(clean_html(level))}</p><p><strong>Checkout:</strong> {'Online' if checkout_ready else 'Being connected'}</p><div class='premium-meter'><i style='width:{'100' if founder else '72' if premium else '42'}%'></i></div><p class='muted'>Benefits unlocked: {len(benefits) if founder else 8 if premium else 3}/{len(benefits)} · Entitlements are enforced backend-side.</p></aside></section>
       <section class='founder-plan-grid'>
         <article class='founder-plan-card'><span class='badge'>Free</span><h3>Free PulseSoc</h3><p class='founder-price'>$0<small>/month</small></p><p>Normal user access for feed, status, videos, messaging, profile, and public PulseSoc features.</p><a class='button' href='/pulse'>Explore Free PulseSoc</a></article>
         <article class='founder-plan-card featured'><span class='badge'>Limited Founder Access</span><h3>Founder Premium</h3><p class='founder-price'>$4.99<small>/month forever</small></p><p>Lifetime locked Founder pricing, all Premium benefits, exclusive Founder access, and Founder number assignment.</p>{founder_primary_action}</article>
@@ -56597,7 +56642,7 @@ def pulse_premium_intelligence_page():
         ("Saved Insights", "/pulse/saved", f"{stats['saved']} items in your private PulseSoc library."),
     ]
     cards = "".join(
-        f"<a class='intelligence-module' href='{clean_html(href)}'><span class='badge'>Premium Intelligence</span><h3>{clean_html(title)}</h3><p>{clean_html(body)}</p><strong>{'Go to Portfolio' if title in {'Portfolio Tracker','Watchlist','Alerts','AI Memory'} else 'Open'} →</strong></a>"
+        f"<a class='intelligence-module' href='{html_escape(clean_html(href))}'><span class='badge'>Premium Intelligence</span><h3>{html_escape(clean_html(title))}</h3><p>{html_escape(clean_html(body))}</p><strong>{'Go to Portfolio' if title in {'Portfolio Tracker','Watchlist','Alerts','AI Memory'} else 'Open'} →</strong></a>"
         for title, href, body in modules
     )
     main = f"""
@@ -80845,13 +80890,13 @@ def pulse_creator_dashboard_page():
         ("Total Posts", posts), ("Total Reels", reels), ("Total Statuses", statuses), ("Followers", followers),
         ("Engagement Rate", f"{engagement_rate}%"), ("Views Today", views_today), ("Comments Today", comments_today), ("Saves", saves_today), ("Shares", shares_today),
     ]
-    metric_html = "".join(f"<article class='studio-metric'><span>{clean_html(label)}</span><strong>{clean_html(str(value))}</strong></article>" for label, value in metric_cards)
+    metric_html = "".join(f"<article class='studio-metric'><span>{html_escape(clean_html(label))}</span><strong>{html_escape(clean_html(str(value)))}</strong></article>" for label, value in metric_cards)
     shortcuts = [("Create Post","/pulse#create"),("Create Reel","/pulse/reels"),("Create Status","/pulse/status"),("PulseSoc Music","/pulse/music"),("Start Live","/pulse/live/studio?context_type=creator_studio"),("Upload Video","/pulse#pulseComposer"),("Drafts","/pulse/my-posts"),("Scheduled Posts","/pulse/creator/dashboard#calendar")]
-    shortcut_html = "".join(f"<a class='studio-shortcut' href='{clean_html(href)}'>{clean_html(label)}</a>" for label, href in shortcuts)
-    top_html = "".join(f"<article class='studio-list-row'><strong>{clean_html(p.get('title') or p.get('body') or 'PulseSoc post')}</strong><span>{clean_html(p.get('post_type') or 'post')} · score {int(p.get('engagement_score') or 0)}</span></article>" for p in top_posts) or "<p class='muted'>Not enough data yet. Publish a few posts and Reels to unlock stronger analytics.</p>"
-    media_html = "".join(f"<article class='studio-media-card'><span>{clean_html(m.get('media_type') or 'media')}</span><strong>{clean_html(m.get('original_filename') or 'Uploaded media')}</strong><small>{clean_html(m.get('mime_type') or '')}</small></article>" for m in media_rows) or "<p class='muted'>No uploaded media yet. Upload images or videos from PulseSoc Composer or Reels.</p>"
+    shortcut_html = "".join(f"<a class='studio-shortcut' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for label, href in shortcuts)
+    top_html = "".join(f"<article class='studio-list-row'><strong>{html_escape(clean_html(p.get('title') or p.get('body') or 'PulseSoc post'))}</strong><span>{html_escape(clean_html(p.get('post_type') or 'post'))} · score {int(p.get('engagement_score') or 0)}</span></article>" for p in top_posts) or "<p class='muted'>Not enough data yet. Publish a few posts and Reels to unlock stronger analytics.</p>"
+    media_html = "".join(f"<article class='studio-media-card'><span>{html_escape(clean_html(m.get('media_type') or 'media'))}</span><strong>{html_escape(clean_html(m.get('original_filename') or 'Uploaded media'))}</strong><small>{html_escape(clean_html(m.get('mime_type') or ''))}</small></article>" for m in media_rows) or "<p class='muted'>No uploaded media yet. Upload images or videos from PulseSoc Composer or Reels.</p>"
     tools = [("Hook generator","hook"),("Caption enhancer","caption"),("Reel idea generator","hook"),("Hashtag generator","caption"),("Scam-safe wording checker","virality"),("Education content assistant","caption"),("Live title generator","live-title"),("Community post ideas","hook")]
-    tool_html = "".join(f"<button type='button' data-ai-tool='{tool}'>{clean_html(label)}</button>" for label, tool in tools)
+    tool_html = "".join(f"<button type='button' data-ai-tool='{tool}'>{html_escape(clean_html(label))}</button>" for label, tool in tools)
     # R3.2: hold-aware "usable premium" claim for the studio side panel (off/shadow = legacy).
     _studio_premium_effective, _ = _effective_premium_access(user, premium_visibility_engine.is_premium_user(user))
     main = f"""
@@ -80884,17 +80929,17 @@ def pulse_gateway_card_html(title, body, actions=None, disabled_actions=None):
     actions = actions or []
     disabled_actions = disabled_actions or []
     action_html = "".join(
-        f"<a class='button {'primary' if i == 0 else ''}' href='{clean_html(href)}'>{clean_html(label)}</a>"
+        f"<a class='button {'primary' if i == 0 else ''}' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>"
         for i, (label, href) in enumerate(actions)
     )
     disabled_html = "".join(
-        f"<button type='button' disabled title='{clean_html(reason)}'>{clean_html(label)}</button>"
+        f"<button type='button' disabled title='{html_escape(clean_html(reason))}'>{html_escape(clean_html(label))}</button>"
         for label, reason in disabled_actions
     )
     return (
         "<section class='card pulse-gateway-card'>"
-        f"<h2>{clean_html(title)}</h2>"
-        f"<p class='muted'>{clean_html(body)}</p>"
+        f"<h2>{html_escape(clean_html(title))}</h2>"
+        f"<p class='muted'>{html_escape(clean_html(body))}</p>"
         f"<div class='actions'>{action_html}{disabled_html}</div>"
         "</section>"
     )
@@ -81047,7 +81092,7 @@ def pulse_creator_analytics_page():
         ("Sentiment Radar", "Separates helpful discussion from noisy engagement."),
         ("Trust Graph", "Keeps creator growth tied to safety and reliability."),
     ]
-    body = "<section class='grid'>" + "".join(f"<article class='card premium-analytics-preview {'locked' if not premium else ''}'><span class='premium-badge'>{clean_html(name)}</span><p>{clean_html(desc)}</p><div class='premium-energy-meter'><span style='width:{70+i*6}%'></span></div></article>" for i, (name, desc) in enumerate(cards)) + "</section>"
+    body = "<section class='grid'>" + "".join(f"<article class='card premium-analytics-preview {'locked' if not premium else ''}'><span class='premium-badge'>{html_escape(clean_html(name))}</span><p>{html_escape(clean_html(desc))}</p><div class='premium-energy-meter'><span style='width:{70+i*6}%'></span></div></article>" for i, (name, desc) in enumerate(cards)) + "</section>"
     # R3.3: keep the upsell card consistent with the locked/unlocked previews above by
     # reusing the same effective flag; off/shadow leaves it equal to ownership (unchanged).
     body += premium_visibility_engine.prompt_html("creator", user, is_premium_override=premium)
@@ -81989,7 +82034,7 @@ def pulse_web_section_shell(title, description, config):
     drifting: there is no second copy of the data, the shape, or the rules.
     """
     main = ("<section id='office-root' aria-live='polite'>"
-            "<article class='card'><h2>" + clean_html(title) +
+            "<article class='card'><h2>" + html_escape(clean_html(title)) +
             "</h2><p>Loading…</p></article></section>")
     script = ("<script>" +
               PULSE_WEB_SECTION_JS.replace("%%CONFIG%%", json.dumps(config)) +
@@ -82805,14 +82850,14 @@ def admin_premium_command_page():
     founders = [dict(row) for row in cur.fetchall()]
     conn.close()
     registry = premium_capability_engine.capability_summary()
-    caps = "".join(f"<article class='card'><h2>{clean_html(item['label'])}</h2><p><span class='pill'>{clean_html(item['status'])}</span></p><p>{clean_html(item['user_facing_availability'])}</p></article>" for item in registry["capabilities"].values())
-    user_rows = "".join(f"<tr><td>{int(u.get('user_id') or 0)}</td><td>{clean_html(u.get('display_name') or u.get('username') or u.get('email') or '')}</td><td>{clean_html(u.get('premium_status') or '')}</td><td>{int(u.get('lifetime_premium') or 0)}</td></tr>" for u in users) or "<tr><td colspan='4'>No premium grants yet.</td></tr>"
-    entitlement_rows = "".join(f"<tr><td>{int(e.get('user_id') or 0)}</td><td>{clean_html(e.get('entitlement_key') or '')}</td><td>{clean_html(e.get('status') or '')}</td><td>{clean_html(e.get('source') or '')}</td></tr>" for e in entitlements) or "<tr><td colspan='4'>No entitlements yet.</td></tr>"
-    flag_rows = "".join(f"<tr><td>{clean_html(f.get('flag_key') or '')}</td><td>{'Enabled' if int(f.get('enabled') or 0) else 'Disabled'}</td><td>{clean_html(f.get('description') or '')}</td></tr>" for f in flags)
-    founder_rows = "".join(f"<tr><td>#{int(f.get('founder_number') or 0)}</td><td>{int(f.get('user_id') or 0)}</td><td>{clean_html(f.get('display_name') or '')}</td><td>{clean_html(f.get('founder_tier') or '')}</td><td>${int(f.get('locked_price') or 0)/100:.2f}</td><td>{clean_html(f.get('status') or '')}</td><td>{clean_html(f.get('provider') or 'manual')}</td><td>{clean_html(f.get('provider_status') or '')}</td><td>{'Yes' if int(f.get('cancel_at_period_end') or 0) else 'No'}</td><td>{clean_html(f.get('stripe_customer_id') or '')}</td><td>{clean_html(f.get('stripe_subscription_id') or '')}</td><td>{clean_html(f.get('stripe_price_id') or '')}</td><td>{smart_time_html(f.get('current_period_end') or f.get('activated_at'))}</td></tr>" for f in founders) or "<tr><td colspan='13'>No Founder members yet.</td></tr>"
+    caps = "".join(f"<article class='card'><h2>{html_escape(clean_html(item['label']))}</h2><p><span class='pill'>{html_escape(clean_html(item['status']))}</span></p><p>{html_escape(clean_html(item['user_facing_availability']))}</p></article>" for item in registry["capabilities"].values())
+    user_rows = "".join(f"<tr><td>{int(u.get('user_id') or 0)}</td><td>{html_escape(clean_html(u.get('display_name') or u.get('username') or u.get('email') or ''))}</td><td>{html_escape(clean_html(u.get('premium_status') or ''))}</td><td>{int(u.get('lifetime_premium') or 0)}</td></tr>" for u in users) or "<tr><td colspan='4'>No premium grants yet.</td></tr>"
+    entitlement_rows = "".join(f"<tr><td>{int(e.get('user_id') or 0)}</td><td>{html_escape(clean_html(e.get('entitlement_key') or ''))}</td><td>{html_escape(clean_html(e.get('status') or ''))}</td><td>{html_escape(clean_html(e.get('source') or ''))}</td></tr>" for e in entitlements) or "<tr><td colspan='4'>No entitlements yet.</td></tr>"
+    flag_rows = "".join(f"<tr><td>{html_escape(clean_html(f.get('flag_key') or ''))}</td><td>{'Enabled' if int(f.get('enabled') or 0) else 'Disabled'}</td><td>{html_escape(clean_html(f.get('description') or ''))}</td></tr>" for f in flags)
+    founder_rows = "".join(f"<tr><td>#{int(f.get('founder_number') or 0)}</td><td>{int(f.get('user_id') or 0)}</td><td>{html_escape(clean_html(f.get('display_name') or ''))}</td><td>{html_escape(clean_html(f.get('founder_tier') or ''))}</td><td>${int(f.get('locked_price') or 0)/100:.2f}</td><td>{html_escape(clean_html(f.get('status') or ''))}</td><td>{html_escape(clean_html(f.get('provider') or 'manual'))}</td><td>{html_escape(clean_html(f.get('provider_status') or ''))}</td><td>{'Yes' if int(f.get('cancel_at_period_end') or 0) else 'No'}</td><td>{html_escape(clean_html(f.get('stripe_customer_id') or ''))}</td><td>{html_escape(clean_html(f.get('stripe_subscription_id') or ''))}</td><td>{html_escape(clean_html(f.get('stripe_price_id') or ''))}</td><td>{smart_time_html(f.get('current_period_end') or f.get('activated_at'))}</td></tr>" for f in founders) or "<tr><td colspan='13'>No Founder members yet.</td></tr>"
     body = f"""
-    <section class='card'><h1>Premium Command</h1><p class='muted'>Capability registry, entitlement grants, feature flags, and safely scaffolded premium promises.</p>{f"<p>{clean_html(message)}</p>" if message else ""}</section>
-    <section class='grid'><article class='card'><h2>Capabilities</h2><p class='metric'>{registry['total']}</p><p>{clean_html(json.dumps(registry['status_counts']))}</p></article><article class='card'><h2>Premium Users</h2><p class='metric'>{len(users)}</p><p>Manual and founder grants.</p></article><article class='card'><h2>Feature Flags</h2><p class='metric'>{len(flags)}</p><p>Safe visibility controls.</p></article></section>
+    <section class='card'><h1>Premium Command</h1><p class='muted'>Capability registry, entitlement grants, feature flags, and safely scaffolded premium promises.</p>{f"<p>{html_escape(clean_html(message))}</p>" if message else ""}</section>
+    <section class='grid'><article class='card'><h2>Capabilities</h2><p class='metric'>{registry['total']}</p><p>{html_escape(clean_html(json.dumps(registry['status_counts'])))}</p></article><article class='card'><h2>Premium Users</h2><p class='metric'>{len(users)}</p><p>Manual and founder grants.</p></article><article class='card'><h2>Feature Flags</h2><p class='metric'>{len(flags)}</p><p>Safe visibility controls.</p></article></section>
     <section class='card'><h2>Manual Grant / Revoke</h2><form method='post'><input type='hidden' name='csrf_token' value='{get_csrf_token()}'><p><input name='user_id' inputmode='numeric' placeholder='User ID'></p><p><select name='action'><option value='grant_founder'>Grant Founder Premium</option><option value='grant'>Grant Premium</option><option value='revoke'>Revoke Premium / Founder</option></select></p><p><input name='reason' placeholder='Reason (required)' required></p><button type='submit'>Apply</button></form><p class='muted'>Founder grants assign a unique Founder number and activate backend entitlements. Regular users cannot self-grant Founder access. Every manual change is recorded in the admin audit trail with the reason you enter.</p></section>
     <section class='card table-wrap'><h2>Founder Members</h2><table><tr><th>Founder #</th><th>User ID</th><th>Name</th><th>Tier</th><th>Locked Price</th><th>Status</th><th>Provider</th><th>Stripe Status</th><th>Canceling</th><th>Customer</th><th>Subscription</th><th>Price</th><th>Period / Activated</th></tr>{founder_rows}</table></section>
     <section class='grid'>{caps}</section>
@@ -82871,10 +82916,10 @@ def admin_performance_page():
     cur.execute("SELECT * FROM worker_heartbeats WHERE worker_name IN ('coinpilotx-media-engine','media_worker') ORDER BY last_seen_at DESC LIMIT 2")
     media_worker_heartbeats = [dict(row) for row in cur.fetchall()]
     conn.close()
-    slow_rows = "".join(f"<tr><td>{clean_html(r.get('path'))}</td><td>{int(r.get('hits') or 0)}</td><td>{int(r.get('avg_ms') or 0)}</td><td>{int(r.get('max_ms') or 0)}</td><td>{int(r.get('avg_queries') or 0)}</td><td>{int(r.get('avg_size') or 0)}</td></tr>" for r in slow) or "<tr><td colspan='6'>No slow traces recorded yet.</td></tr>"
-    trace_rows = "".join(f"<tr><td>{clean_html(t.get('trace_id'))}</td><td>{clean_html(t.get('level'))}</td><td>{clean_html(t.get('method'))}</td><td>{clean_html(t.get('path'))}</td><td>{int(t.get('duration_ms') or 0)}</td><td>{int(t.get('db_query_count') or 0)}</td><td>{int(t.get('response_size') or 0)}</td><td>{smart_time_html(t.get('created_at'))}</td></tr>" for t in traces) or "<tr><td colspan='8'>No traces yet.</td></tr>"
+    slow_rows = "".join(f"<tr><td>{html_escape(clean_html(r.get('path')))}</td><td>{int(r.get('hits') or 0)}</td><td>{int(r.get('avg_ms') or 0)}</td><td>{int(r.get('max_ms') or 0)}</td><td>{int(r.get('avg_queries') or 0)}</td><td>{int(r.get('avg_size') or 0)}</td></tr>" for r in slow) or "<tr><td colspan='6'>No slow traces recorded yet.</td></tr>"
+    trace_rows = "".join(f"<tr><td>{html_escape(clean_html(t.get('trace_id')))}</td><td>{html_escape(clean_html(t.get('level')))}</td><td>{html_escape(clean_html(t.get('method')))}</td><td>{html_escape(clean_html(t.get('path')))}</td><td>{int(t.get('duration_ms') or 0)}</td><td>{int(t.get('db_query_count') or 0)}</td><td>{int(t.get('response_size') or 0)}</td><td>{smart_time_html(t.get('created_at'))}</td></tr>" for t in traces) or "<tr><td colspan='8'>No traces yet.</td></tr>"
     media_worker_rows = "".join(
-        f"<tr><td>{clean_html(row.get('worker_name'))}</td><td>{clean_html(row.get('status'))}</td><td>{smart_time_html(row.get('last_seen_at'))}</td><td>{clean_html(row.get('last_error') or '')}</td><td><code>{clean_html((row.get('metadata_json') or '')[:320])}</code></td></tr>"
+        f"<tr><td>{html_escape(clean_html(row.get('worker_name')))}</td><td>{html_escape(clean_html(row.get('status')))}</td><td>{smart_time_html(row.get('last_seen_at'))}</td><td>{html_escape(clean_html(row.get('last_error') or ''))}</td><td><code>{html_escape(clean_html((row.get('metadata_json') or '')[:320]))}</code></td></tr>"
         for row in media_worker_heartbeats
     ) or "<tr><td colspan='5'>No media engine heartbeat has been recorded yet.</td></tr>"
     cache_status = cache_engine.cache_status()
@@ -82882,8 +82927,8 @@ def admin_performance_page():
     body = f"""
     <section class='card'><h1>Performance Command</h1><p class='muted'>Route latency, DB pressure, cache readiness, media storage readiness, and latest slow traces.</p></section>
     <section class='grid'>
-      <article class='card'><h2>Cache</h2><p class='metric'>{clean_html(cache_status.get('provider'))}</p><p>{'Ready' if cache_status.get('ok') else 'Needs attention'}</p></article>
-      <article class='card'><h2>Media Storage</h2><p class='metric'>{clean_html(media_status.get('provider'))}</p><p>{'Configured' if media_status.get('configured') else 'Configure R2/S3 env vars'}</p></article>
+      <article class='card'><h2>Cache</h2><p class='metric'>{html_escape(clean_html(cache_status.get('provider')))}</p><p>{'Ready' if cache_status.get('ok') else 'Needs attention'}</p></article>
+      <article class='card'><h2>Media Storage</h2><p class='metric'>{html_escape(clean_html(media_status.get('provider')))}</p><p>{'Configured' if media_status.get('configured') else 'Configure R2/S3 env vars'}</p></article>
       <article class='card'><h2>Slow Threshold</h2><p class='metric'>{PERFORMANCE_SLOW_MS}ms</p><p>Critical at {PERFORMANCE_CRITICAL_MS}ms.</p></article>
     </section>
     <section class='card table-wrap'><h2>Slowest Routes - 24h</h2><table><tr><th>Path</th><th>Hits</th><th>Avg ms</th><th>Max ms</th><th>Avg DB</th><th>Avg bytes</th></tr>{slow_rows}</table></section>
@@ -82906,7 +82951,7 @@ def pulse_courses_page():
     cur.execute("SELECT c.*, COALESCE(t.display_name,u.display_name,u.username,'PulseSoc Teacher') AS teacher_name FROM pulse_courses c LEFT JOIN teacher_profiles t ON t.user_id=c.teacher_user_id LEFT JOIN users u ON u.user_id=c.teacher_user_id WHERE c.status IN ('published','review_ready','approved') ORDER BY c.id DESC LIMIT 50")
     courses = [dict(row) for row in cur.fetchall()]
     conn.close()
-    cards = "".join(f"<article class='card'><h2>{clean_html(c.get('title'))}</h2><p>{clean_html(c.get('description') or '')}</p><p><span class='pill'>{clean_html(c.get('category') or 'Education')}</span> <span class='pill'>{clean_html(c.get('access_level') or 'free')}</span> <span class='pill'>{clean_html(c.get('price_label') or 'Free')}</span></p><p>Teacher: {clean_html(c.get('teacher_name') or '')}</p><a class='button' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
+    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(c.get('title')))}</h2><p>{html_escape(clean_html(c.get('description') or ''))}</p><p><span class='pill'>{html_escape(clean_html(c.get('category') or 'Education'))}</span> <span class='pill'>{html_escape(clean_html(c.get('access_level') or 'free'))}</span> <span class='pill'>{html_escape(clean_html(c.get('price_label') or 'Free'))}</span></p><p>Teacher: {html_escape(clean_html(c.get('teacher_name') or ''))}</p><a class='button' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
     courses_empty = '<article class="card"><h2>No courses yet.</h2><p>Teachers can prepare safe, educational course drafts now.</p></article>'
     return pulse_social_shell("PulseSoc Courses", "Free lessons now, paid-course-ready architecture later after trust and compliance review.", f"<section class='card'><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher-dashboard'>Teacher Dashboard</a></div></section><section class='grid'>{cards or courses_empty}</section>")
 
@@ -82942,9 +82987,9 @@ def pulse_course_detail_page(course_id):
     conn.close()
     if not course:
         return pulse_social_shell("Course", "This course is not available.", "<section class='card'><a class='button' href='/pulse/courses'>Back to Courses</a></section>")
-    lesson_html = "".join(f"<article class='card'><h2>{clean_html(l.get('title'))}</h2><p>{clean_html(l.get('description') or '')}</p><span class='pill'>{clean_html(l.get('access_level') or 'free')}</span></article>" for l in lessons)
+    lesson_html = "".join(f"<article class='card'><h2>{html_escape(clean_html(l.get('title')))}</h2><p>{html_escape(clean_html(l.get('description') or ''))}</p><span class='pill'>{html_escape(clean_html(l.get('access_level') or 'free'))}</span></article>" for l in lessons)
     lesson_empty = '<article class="card"><h2>No lessons published yet.</h2><p>The teacher can add reviewed lessons from the dashboard.</p></article>'
-    main = f"<section class='card'><h2>{clean_html(course.get('title'))}</h2><p>{clean_html(course.get('description') or '')}</p><p><span class='pill'>{clean_html(course.get('category') or '')}</span> <span class='pill'>{clean_html(course.get('status') or '')}</span></p><p>Teacher: {clean_html(course.get('teacher_name') or '')}</p></section><section>{lesson_html or lesson_empty}</section>"
+    main = f"<section class='card'><h2>{html_escape(clean_html(course.get('title')))}</h2><p>{html_escape(clean_html(course.get('description') or ''))}</p><p><span class='pill'>{html_escape(clean_html(course.get('category') or ''))}</span> <span class='pill'>{html_escape(clean_html(course.get('status') or ''))}</span></p><p>Teacher: {html_escape(clean_html(course.get('teacher_name') or ''))}</p></section><section>{lesson_html or lesson_empty}</section>"
     return pulse_social_shell(course.get("title") or "Course", "Teacher course detail and lesson foundation.", main)
 
 
@@ -82969,11 +83014,11 @@ def pulse_teacher_public_profile_page(teacher_id):
     cur.execute("SELECT * FROM pulse_teacher_reviews WHERE teacher_user_id=? AND status='visible' ORDER BY id DESC LIMIT 12", (uid,))
     reviews = [dict(row) for row in cur.fetchall()]
     conn.close()
-    course_cards = "".join(f"<article class='card'><h2>{clean_html(c.get('title') or '')}</h2><p>{clean_html(c.get('description') or '')}</p><p><span class='pill'>{clean_html(c.get('category') or '')}</span> <span class='pill'>{clean_html(c.get('price_label') or 'Free')}</span></p><a class='button primary' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
-    review_cards = "".join(f"<article class='card'><strong>{int(r.get('rating') or 0)}/5</strong><p>{clean_html(r.get('review_body') or '')}</p></article>" for r in reviews)
-    avatar = f"<img src='{clean_html(teacher.get('avatar_url') or '')}' alt=''>" if teacher.get("avatar_url") else clean_html((teacher.get("display_name") or "T")[:1])
+    course_cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(c.get('title') or ''))}</h2><p>{html_escape(clean_html(c.get('description') or ''))}</p><p><span class='pill'>{html_escape(clean_html(c.get('category') or ''))}</span> <span class='pill'>{html_escape(clean_html(c.get('price_label') or 'Free'))}</span></p><a class='button primary' href='/pulse/courses/{int(c.get('id') or 0)}'>Open Course</a></article>" for c in courses)
+    review_cards = "".join(f"<article class='card'><strong>{int(r.get('rating') or 0)}/5</strong><p>{html_escape(clean_html(r.get('review_body') or ''))}</p></article>" for r in reviews)
+    avatar = f"<img src='{html_escape(clean_html(teacher.get('avatar_url') or ''))}' alt=''>" if teacher.get("avatar_url") else clean_html((teacher.get("display_name") or "T")[:1])
     main = f"""
-    <section class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{clean_html(teacher.get('display_name') or 'PulseSoc Teacher')}</h2><p>{clean_html(teacher.get('bio') or '')}</p></div></div><p><span class='pill'>{clean_html(teacher.get('expertise') or 'Education')}</span> <span class='pill'>{clean_html(teacher.get('languages') or 'Languages pending')}</span> <span class='pill'>Safety {int(teacher.get('safety_score') or 0)}</span> <span class='pill'>Trust {int(teacher.get('trust_score') or 0)}</span></p><div class='actions'><button data-teacher-message='{uid}'>Message Teacher</button><button>Follow</button></div></section>
+    <section class='card'><div class='person'><span class='avatar'>{avatar}</span><div><h2>{html_escape(clean_html(teacher.get('display_name') or 'PulseSoc Teacher'))}</h2><p>{html_escape(clean_html(teacher.get('bio') or ''))}</p></div></div><p><span class='pill'>{html_escape(clean_html(teacher.get('expertise') or 'Education'))}</span> <span class='pill'>{html_escape(clean_html(teacher.get('languages') or 'Languages pending'))}</span> <span class='pill'>Safety {int(teacher.get('safety_score') or 0)}</span> <span class='pill'>Trust {int(teacher.get('trust_score') or 0)}</span></p><div class='actions'><button data-teacher-message='{uid}'>Message Teacher</button><button>Follow</button></div></section>
     <section class='grid'>{course_cards or '<article class="card"><h2>No courses yet.</h2><p>This approved teacher is preparing lessons.</p></article>'}</section>
     <section class='card'><h2>Reviews</h2>{review_cards or '<p class="muted">Reviews will appear after students complete lessons.</p>'}</section>
     """
@@ -83010,15 +83055,15 @@ def pulse_teacher_dashboard_page():
         <section class='grid'><div class='card'><h2>Completeness</h2><p class='metric'>{int(application.get('completeness') or 0)}%</p></div><div class='card'><h2>Safety Score</h2><p class='metric'>{int(application.get('safety_score') or 0)}</p></div><div class='card'><h2>Next Step</h2><p>Add credentials or wait for admin review.</p></div></section>
         """
         return pulse_social_shell("Teacher Dashboard", "Teacher application status and approval path.", main)
-    course_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('title') or '')}</td><td>{clean_html(c.get('status') or '')}</td><td>{clean_html(c.get('price_label') or '')}</td></tr>" for c in courses)
-    lesson_rows = "".join(f"<tr><td>{l.get('id')}</td><td>{clean_html(l.get('title') or '')}</td><td>{clean_html(l.get('status') or '')}</td><td>{clean_html(l.get('access_level') or '')}</td></tr>" for l in lessons)
-    live_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('title') or '')}</td><td>{clean_html(c.get('scheduled_at') or '')}</td><td>{clean_html(c.get('status') or '')}</td></tr>" for c in live_classes)
+    course_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{html_escape(clean_html(c.get('title') or ''))}</td><td>{html_escape(clean_html(c.get('status') or ''))}</td><td>{html_escape(clean_html(c.get('price_label') or ''))}</td></tr>" for c in courses)
+    lesson_rows = "".join(f"<tr><td>{l.get('id')}</td><td>{html_escape(clean_html(l.get('title') or ''))}</td><td>{html_escape(clean_html(l.get('status') or ''))}</td><td>{html_escape(clean_html(l.get('access_level') or ''))}</td></tr>" for l in lessons)
+    live_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{html_escape(clean_html(c.get('title') or ''))}</td><td>{html_escape(clean_html(c.get('scheduled_at') or ''))}</td><td>{html_escape(clean_html(c.get('status') or ''))}</td></tr>" for c in live_classes)
     main = f"""
     <style>.teacher-tools{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}.teacher-tools article{{border:1px solid rgba(110,223,246,.14);border-radius:18px;padding:14px;background:rgba(255,255,255,.035)}}.teacher-create{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}}@media(max-width:760px){{.teacher-create{{grid-template-columns:1fr}}}}</style>
-    <section class='grid'><div class='card'><h2>Teacher Level</h2><p class='metric'>{clean_html(teacher.get('teacher_level') or 'Approved')}</p></div><div class='card'><h2>Students</h2><p class='metric'>{student_count}</p></div><div class='card'><h2>Courses</h2><p class='metric'>{len(courses)}</p></div><div class='card'><h2>Lessons</h2><p class='metric'>{len(lessons)}</p></div><div class='card'><h2>Trust</h2><p class='metric'>{int(teacher.get('trust_score') or 0)}</p></div><div class='card'><h2>Safety</h2><p class='metric'>{int(teacher.get('safety_score') or 0)}</p></div></section>
+    <section class='grid'><div class='card'><h2>Teacher Level</h2><p class='metric'>{html_escape(clean_html(teacher.get('teacher_level') or 'Approved'))}</p></div><div class='card'><h2>Students</h2><p class='metric'>{student_count}</p></div><div class='card'><h2>Courses</h2><p class='metric'>{len(courses)}</p></div><div class='card'><h2>Lessons</h2><p class='metric'>{len(lessons)}</p></div><div class='card'><h2>Trust</h2><p class='metric'>{int(teacher.get('trust_score') or 0)}</p></div><div class='card'><h2>Safety</h2><p class='metric'>{int(teacher.get('safety_score') or 0)}</p></div></section>
     <section class='card'><h2>Teacher Command Center</h2><div class='actions'><a class='button primary' href='/pulse/courses/create'>Create Course</a><a class='button' href='/pulse/teacher/payouts'>Payouts</a><a class='button' href='/pulse/teachers/{uid}'>Public Profile</a></div></section>
     <section class='teacher-tools'><article><h3>AI Teacher Tools</h3><p>Lesson outline generator, quiz builder, title optimizer, description polish, safety checker, and student question summarizer are ready as guided tools.</p></article><article><h3>Analytics</h3><p>Lesson views, completion rate, saves, comments, ratings, and engagement will appear as students enroll.</p></article><article><h3>Safety</h3><p>Flagged lessons, student reports, and compliance reminders stay visible before content can be monetized.</p></article><article><h3>Live Classes</h3><p>Schedule live classes, start class sessions, and attach replays after review.</p></article></section>
-    <section class='card'><h2>Create Lesson</h2><div class='teacher-create'><input id='lessonTitle' placeholder='Lesson title'><select id='lessonCourse'><option value='0'>Standalone lesson</option>{''.join(f"<option value='{int(c.get('id') or 0)}'>{clean_html(c.get('title') or '')}</option>" for c in courses)}</select><textarea id='lessonDescription' placeholder='Lesson description and learning outcome'></textarea><select id='lessonType'><option>video</option><option>pdf</option><option>image</option><option>quiz</option><option>resource</option></select></div><button class='primary' id='lessonCreate'>Create Lesson Draft</button></section>
+    <section class='card'><h2>Create Lesson</h2><div class='teacher-create'><input id='lessonTitle' placeholder='Lesson title'><select id='lessonCourse'><option value='0'>Standalone lesson</option>{''.join(f"<option value='{int(c.get('id') or 0)}'>{html_escape(clean_html(c.get('title') or ''))}</option>" for c in courses)}</select><textarea id='lessonDescription' placeholder='Lesson description and learning outcome'></textarea><select id='lessonType'><option>video</option><option>pdf</option><option>image</option><option>quiz</option><option>resource</option></select></div><button class='primary' id='lessonCreate'>Create Lesson Draft</button></section>
     <section class='card'><h2>Courses</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Price</th></tr>{course_rows or '<tr><td colspan=4>No courses yet.</td></tr>'}</table></section>
     <section class='card'><h2>Lessons</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Access</th></tr>{lesson_rows or '<tr><td colspan=4>No lessons yet.</td></tr>'}</table></section>
     <section class='card'><h2>Live Classes</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Scheduled</th><th>Status</th></tr>{live_rows or '<tr><td colspan=4>No live classes scheduled yet.</td></tr>'}</table></section>
@@ -83156,20 +83201,20 @@ def pulse_notifications_page():
             group_ids = ",".join(str(int(n.get("id") or 0)) for n in group if int(n.get("id") or 0))
             open_target = pulse_notification_resolve_target(first, user["user_id"], f"render-{int(first.get('id') or 0)}").get("target_url") or PULSE_NOTIFICATION_SAFE_FALLBACK
             cards += f"""
-            <article class='card pulse-notification-card {'unread' if any(not n.get('read') for n in group) else ''}' data-note-id='{int(first.get('id') or 0)}' data-note-group='{clean_html(group_ids)}'>
-              <div class='pulse-note-head'><span class='pill'>{clean_html(first.get('category') or first.get('type') or 'PulseSoc')}</span><small>{smart_time_html(first.get('created_at'))}</small></div>
-              <h2>{clean_html(grouped_title(group))}</h2>
-              <p>{clean_html(grouped_body(group))}</p>
+            <article class='card pulse-notification-card {'unread' if any(not n.get('read') for n in group) else ''}' data-note-id='{int(first.get('id') or 0)}' data-note-group='{html_escape(clean_html(group_ids))}'>
+              <div class='pulse-note-head'><span class='pill'>{html_escape(clean_html(first.get('category') or first.get('type') or 'PulseSoc'))}</span><small>{smart_time_html(first.get('created_at'))}</small></div>
+              <h2>{html_escape(clean_html(grouped_title(group)))}</h2>
+              <p>{html_escape(clean_html(grouped_body(group)))}</p>
               <p class='pulse-note-state' data-note-state hidden></p>
               {'<span class="pulse-notification-group-count">Grouped activity</span>' if len(group) > 1 else ''}
               <div class='actions'>
-                <a class='button primary' data-open-note='{int(first.get('id') or 0)}' href='{clean_html(open_target)}'>Open</a>
+                <a class='button primary' data-open-note='{int(first.get('id') or 0)}' href='{html_escape(clean_html(open_target))}'>Open</a>
                 <button class='button' data-read-note='{int(first.get('id') or 0)}'>Mark read</button>
                 <button class='button' data-delete-note='{int(first.get('id') or 0)}'>Delete</button>
               </div>
             </article>
             """
-        note_sections.append(f"<section class='pulse-notification-section' data-notification-section='{clean_html(section)}'><h2>{clean_html(section)}</h2><div class='pulse-notification-list'>{cards}</div></section>")
+        note_sections.append(f"<section class='pulse-notification-section' data-notification-section='{html_escape(clean_html(section))}'><h2>{html_escape(clean_html(section))}</h2><div class='pulse-notification-list'>{cards}</div></section>")
     note_html = "".join(note_sections)
     empty = "<section class='card'><p>No notifications yet. Reactions, comments, follows, Live events, crypto alerts, security alerts, orders, and system updates will appear here.</p></section>"
     main = f"""
@@ -84102,7 +84147,7 @@ def pulse_profile_edit_page():
     conn.close()
     avatar = _profile_cache_busted_url(row.get("avatar_url") or "", row.get("updated_at") or "") if row.get("avatar_url") else ""
     cover = _profile_cache_busted_url(row.get("cover_url") or "", row.get("updated_at") or "") if row.get("cover_url") else ""
-    avatar_html = f"<img id='avatarPreview' src='{clean_html(avatar)}' alt='Profile picture'>" if avatar else "<span id='avatarPreview'>P</span>"
+    avatar_html = f"<img id='avatarPreview' src='{html_escape(clean_html(avatar))}' alt='Profile picture'>" if avatar else "<span id='avatarPreview'>P</span>"
     cover_style = f" style=\"background-image:linear-gradient(135deg,rgba(5,11,20,.22),rgba(5,11,20,.14)),url('{clean_html(cover)}');background-size:cover;background-position:{clean_html(row.get('cover_position') or 'center')}\"" if cover else ""
     main = f"""
     <style>.profile-edit-preview{{padding:0;overflow:hidden;position:relative}}.cover-edit-preview{{height:240px;border-radius:16px 16px 0 0;background:radial-gradient(circle at 20% 20%,rgba(255,209,102,.34),transparent 28%),radial-gradient(circle at 82% 10%,rgba(110,223,246,.32),transparent 34%),linear-gradient(135deg,#071321,#12213b);cursor:pointer;position:relative}}.profile-edit-avatar{{width:112px;height:112px;border-radius:28px;border:3px solid #050b14;margin:-54px 0 0 18px;box-shadow:0 18px 55px rgba(0,0,0,.38),0 0 28px rgba(110,223,246,.18);cursor:pointer;position:relative;z-index:3}}.profile-media-chip{{position:absolute;z-index:4;display:inline-flex;align-items:center;gap:6px;min-height:42px;padding:8px 12px;border-radius:8px;background:rgba(3,11,22,.88);border:1px solid rgba(110,223,246,.38);font-weight:850;cursor:pointer}}.cover-change-chip{{right:12px;top:12px}}.avatar-change-chip{{left:142px;top:198px}}.profile-file-input{{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}}.media-actions,.profile-edit-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}}.profile-edit-grid label{{display:grid;gap:6px}}.profile-save-row{{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}}@media(max-width:620px){{.media-actions,.profile-edit-grid{{grid-template-columns:1fr}}.cover-edit-preview{{height:190px}}.avatar-change-chip{{left:auto;right:12px;top:198px}}.profile-save-row .button,.profile-save-row button{{width:100%}}}}</style>
@@ -84116,12 +84161,12 @@ def pulse_profile_edit_page():
     <section class='card'>
       <h2>Edit Details</h2>
       <div class='profile-edit-grid'>
-        <label>Display name<input id='displayName' value='{clean_html(row.get('display_name') or '')}' placeholder='Display name'></label>
-        <label>Username / handle<input id='username' value='{clean_html(row.get('username') or '')}' placeholder='username'></label>
-        <label>Website or social links<input id='socialLinks' value='{clean_html(row.get('social_links_json') or '')}' placeholder='https://... or @handle'></label>
-        <label>Expertise tags<input id='expertiseTags' value='{clean_html(row.get('expertise_tags_json') or '')}' placeholder='Crypto, AI, security'></label>
+        <label>Display name<input id='displayName' value='{html_escape(clean_html(row.get('display_name') or ''))}' placeholder='Display name'></label>
+        <label>Username / handle<input id='username' value='{html_escape(clean_html(row.get('username') or ''))}' placeholder='username'></label>
+        <label>Website or social links<input id='socialLinks' value='{html_escape(clean_html(row.get('social_links_json') or ''))}' placeholder='https://... or @handle'></label>
+        <label>Expertise tags<input id='expertiseTags' value='{html_escape(clean_html(row.get('expertise_tags_json') or ''))}' placeholder='Crypto, AI, security'></label>
       </div>
-      <label>Bio<textarea id='bio' placeholder='Bio'>{clean_html(row.get('bio') or '')}</textarea></label>
+      <label>Bio<textarea id='bio' placeholder='Bio'>{html_escape(clean_html(row.get('bio') or ''))}</textarea></label>
       <label>Profile privacy<select id='profileVisibility'><option value='public'>Public profile</option><option value='private'>Private profile</option></select></label>
       <p class='muted' id='profileEditState' aria-live='polite'></p>
       <div class='profile-save-row'><button class='primary' id='profileSave'>Save Profile</button><a class='button' href='/pulse/profile'>Preview Profile</a></div>
@@ -84252,13 +84297,13 @@ def pulse_security_settings_page(active="security"):
     <style>.security-settings{{display:grid;gap:14px}}.security-score-card{{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:14px;align-items:center}}.security-score-meter{{height:12px;border-radius:999px;background:rgba(255,255,255,.1);overflow:hidden}}.security-score-meter i{{display:block;height:100%;width:{int(data['score'])}%;background:linear-gradient(90deg,#ff6b7a,#ffd166,#36e58f,#6edff6)}}.security-grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}}.security-item{{border:1px solid rgba(110,223,246,.16);border-radius:14px;padding:12px;background:rgba(255,255,255,.045)}}@media(max-width:760px){{.security-score-card,.security-grid{{grid-template-columns:1fr}}}}</style>
     <section class='security-settings'>
       <section class='card'><div class='actions'>{tabs_html}</div></section>
-      <section class='card security-score-card'><div><span class='badge'>Protect your PulseSoc identity</span><h2>Secure your PulseSoc account</h2><p class='muted'>Security can be improved over time. Regular PulseSoc users are not forced to provide ID.</p><div class='security-score-meter'><i></i></div></div><aside><p class='metric'>{int(data['score'])}</p><strong>{clean_html(data['label'])}</strong><p class='muted'>{clean_html(data['trust_level'])}</p></aside></section>
+      <section class='card security-score-card'><div><span class='badge'>Protect your PulseSoc identity</span><h2>Secure your PulseSoc account</h2><p class='muted'>Security can be improved over time. Regular PulseSoc users are not forced to provide ID.</p><div class='security-score-meter'><i></i></div></div><aside><p class='metric'>{int(data['score'])}</p><strong>{html_escape(clean_html(data['label']))}</strong><p class='muted'>{html_escape(clean_html(data['trust_level']))}</p></aside></section>
       <section class='security-grid'>
-        <article class='security-item'><h3>Email</h3><p>{clean_html(data['email'] or 'Not added')}</p><p class='muted'>{'Verified' if data['email_verified'] else 'Not verified'}</p><button data-security-action='verify-email'>Verify email</button></article>
-        <article class='security-item'><h3>Phone</h3><p>{clean_html(data['phone'] or 'Not added')}</p><p class='muted'>{'Verified' if data['phone_verified'] else 'Not verified'}</p><button data-security-action='verify-phone'>Verify phone</button></article>
+        <article class='security-item'><h3>Email</h3><p>{html_escape(clean_html(data['email'] or 'Not added'))}</p><p class='muted'>{'Verified' if data['email_verified'] else 'Not verified'}</p><button data-security-action='verify-email'>Verify email</button></article>
+        <article class='security-item'><h3>Phone</h3><p>{html_escape(clean_html(data['phone'] or 'Not added'))}</p><p class='muted'>{'Verified' if data['phone_verified'] else 'Not verified'}</p><button data-security-action='verify-phone'>Verify phone</button></article>
         <article class='security-item'><h3>Two-factor</h3><p>{'Enabled' if data['two_factor_enabled'] else 'Not enabled'}</p><button data-security-action='2fa-enable'>Enable 2FA</button></article>
-        <article class='security-item'><h3>Recovery email</h3><p>{clean_html(data['recovery_email'] or 'Not added')}</p><a class='button' href='/pulse/settings/recovery'>Add recovery email</a></article>
-        <article class='security-item'><h3>Recovery phone</h3><p>{clean_html(data['recovery_phone'] or 'Not added')}</p><a class='button' href='/pulse/settings/recovery'>Add recovery phone</a></article>
+        <article class='security-item'><h3>Recovery email</h3><p>{html_escape(clean_html(data['recovery_email'] or 'Not added'))}</p><a class='button' href='/pulse/settings/recovery'>Add recovery email</a></article>
+        <article class='security-item'><h3>Recovery phone</h3><p>{html_escape(clean_html(data['recovery_phone'] or 'Not added'))}</p><a class='button' href='/pulse/settings/recovery'>Add recovery phone</a></article>
         <article class='security-item'><h3>Recovery codes</h3><p>{'Saved' if data['recovery_codes_ready'] else 'Not generated'}</p><button data-security-action='recovery-codes'>Generate codes</button></article>
         <article class='security-item'><h3>Trusted devices</h3><p>{int(data['trusted_devices_count'])} trusted devices</p><a class='button' href='/pulse/settings/devices'>Manage devices</a></article>
         <article class='security-item'><h3>Active sessions</h3><p>{int(data['active_sessions_count'])} active sessions</p><button data-security-action='signout-all'>Sign out all devices</button></article>
@@ -84461,7 +84506,7 @@ def pulse_groups_page():
     cur.execute("SELECT g.*, COUNT(m.user_id) AS members FROM pulse_groups g LEFT JOIN pulse_group_members m ON m.group_id=g.id WHERE COALESCE(g.status,'active') NOT IN ('suspended','deleted','removed') GROUP BY g.id ORDER BY COALESCE(g.featured,0) DESC, g.id DESC LIMIT 80")
     groups = [dict(row) for row in cur.fetchall()]
     conn.close()
-    group_html = "".join(f"<article class='card group-list-card'><span class='pill'>{clean_html(g.get('category') or 'Community')}</span><h2>{clean_html(g.get('name'))}</h2><p>{clean_html(g.get('description') or '')}</p><p class='group-pill-row'><span class='pill'>{clean_html(g.get('group_type') or 'public')}</span> <span class='pill'>{int(g.get('members') or g.get('member_count') or 0)} members</span> <span class='pill'>{clean_html(g.get('trust_level') or 'standard')}</span></p><div class='group-card-actions'><button class='primary' data-join-group='{clean_html(g.get('slug') or str(g.get('id') or 0))}'>Join</button><a class='button' href='/pulse/groups/{clean_html(g.get('slug') or str(g.get('id') or 0))}'>Open</a></div></article>" for g in groups)
+    group_html = "".join(f"<article class='card group-list-card'><span class='pill'>{html_escape(clean_html(g.get('category') or 'Community'))}</span><h2>{html_escape(clean_html(g.get('name')))}</h2><p>{html_escape(clean_html(g.get('description') or ''))}</p><p class='group-pill-row'><span class='pill'>{html_escape(clean_html(g.get('group_type') or 'public'))}</span> <span class='pill'>{int(g.get('members') or g.get('member_count') or 0)} members</span> <span class='pill'>{html_escape(clean_html(g.get('trust_level') or 'standard'))}</span></p><div class='group-card-actions'><button class='primary' data-join-group='{html_escape(clean_html(g.get('slug') or str(g.get('id') or 0)))}'>Join</button><a class='button' href='/pulse/groups/{html_escape(clean_html(g.get('slug') or str(g.get('id') or 0)))}'>Open</a></div></article>" for g in groups)
     main = f"""<style>.group-list-card{{width:100%;overflow:hidden}}.group-pill-row{{display:flex;gap:6px;flex-wrap:wrap}}.group-card-actions{{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}}@media(min-width:768px){{.group-card-actions{{grid-template-columns:repeat(2,1fr)}}}}</style><section class='card'><h2>Create Group</h2><p class='muted'>Groups support public, private, and invite-only communities with rules, owners, members, and safe posting.</p><div class='group-card-actions'><a class='button primary' href='/pulse/groups/create'>Create Group</a></div></section><section class='grid'>{group_html or '<article class="card"><h2>No groups yet.</h2><p>Create the first PulseSoc group for your community.</p></article>'}</section>"""
     script = "document.addEventListener('click',async e=>{const b=e.target.closest('[data-join-group]');if(!b)return;try{await pulseApi(`/api/pulse/groups/${encodeURIComponent(b.dataset.joinGroup)}/join`,{method:'POST',body:JSON.stringify({})});toast('Joined group.')}catch(err){toast(err.message)}});"
     return pulse_social_shell("PulseSoc Groups", "Create focused communities, invite friends, post updates, and grow safe discussion spaces.", main, "", script)
@@ -84621,11 +84666,11 @@ def pulse_teachers_page():
     teachers = [dict(row) for row in cur.fetchall()]
     conn.close()
     cats = ["Digital Safety", "Scam Prevention", "Wallet Safety", "AI Tools", "Creator Skills", "Business Basics", "Crypto Education", "Cybersecurity Basics", "Roast Battle Performance"]
-    cat_options = "".join(f"<option>{clean_html(c)}</option>" for c in cats)
+    cat_options = "".join(f"<option>{html_escape(clean_html(c))}</option>" for c in cats)
     status_panel = ""
     if latest_app:
-        status_panel = f"<section class='card teacher-status'><h2>Application Status</h2><p class='metric'>{clean_html(latest_app.get('status') or 'submitted')}</p><p class='muted'>Completeness {int(latest_app.get('completeness') or 0)}% · Safety {int(latest_app.get('safety_score') or 0)}</p><a class='button primary' href='/pulse/teacher/dashboard'>Open Educator Dashboard</a></section>"
-    teacher_html = "".join(f"<article class='card'><h2>{clean_html(t.get('display_name') or 'PulseSoc Educator')}</h2><p>{clean_html(t.get('bio') or '')}</p><p><span class='pill'>{clean_html(t.get('expertise') or 'Education')}</span> <span class='pill'>{clean_html(t.get('teacher_level') or 'Approved Educator')}</span> <span class='pill'>Safety {int(t.get('safety_score') or 0)}</span></p><div class='actions'><a class='button primary' href='/pulse/teachers/{int(t.get('user_id') or 0)}'>View Profile</a><button data-teacher-message='{int(t.get('user_id') or 0)}'>Message</button></div></article>" for t in teachers)
+        status_panel = f"<section class='card teacher-status'><h2>Application Status</h2><p class='metric'>{html_escape(clean_html(latest_app.get('status') or 'submitted'))}</p><p class='muted'>Completeness {int(latest_app.get('completeness') or 0)}% · Safety {int(latest_app.get('safety_score') or 0)}</p><a class='button primary' href='/pulse/teacher/dashboard'>Open Educator Dashboard</a></section>"
+    teacher_html = "".join(f"<article class='card'><h2>{html_escape(clean_html(t.get('display_name') or 'PulseSoc Educator'))}</h2><p>{html_escape(clean_html(t.get('bio') or ''))}</p><p><span class='pill'>{html_escape(clean_html(t.get('expertise') or 'Education'))}</span> <span class='pill'>{html_escape(clean_html(t.get('teacher_level') or 'Approved Educator'))}</span> <span class='pill'>Safety {int(t.get('safety_score') or 0)}</span></p><div class='actions'><a class='button primary' href='/pulse/teachers/{int(t.get('user_id') or 0)}'>View Profile</a><button data-teacher-message='{int(t.get('user_id') or 0)}'>Message</button></div></article>" for t in teachers)
     main = f"""
     <style>
     .teacher-application{{display:grid;gap:14px;min-width:0;overflow-wrap:break-word;word-break:normal;white-space:normal}}.teacher-application section{{border:1px solid rgba(110,223,246,.14);border-radius:18px;padding:14px;background:rgba(255,255,255,.035);min-width:0;overflow:hidden;overflow-wrap:break-word;word-break:normal;white-space:normal}}
@@ -84637,7 +84682,7 @@ def pulse_teachers_page():
     {status_panel}
     <form class='card teacher-application' id='teacherApplicationForm' enctype='multipart/form-data'>
       <h2>Educator Application</h2><p class='muted'>PulseSoc educators are reviewed for trust, clarity, learner safety, and educational quality before full dashboard tools unlock.</p>
-      <section><h3>Basic Info</h3><div class='two'><label>Educator display name<input name='teacher_display_name' required value='{clean_html(user.get('display_name') or user.get('username') or '')}'></label><label>Legal name/private<input name='legal_name' required></label><label>Email<input name='email' type='email' required value='{clean_html(user.get('email') or '')}'></label><label>Phone optional<input name='phone'></label><label>Country<input name='country' required></label><label>Languages spoken<input name='languages' placeholder='English, Haitian Creole, French'></label><label>Timezone<input name='timezone' placeholder='America/New_York'></label></div></section>
+      <section><h3>Basic Info</h3><div class='two'><label>Educator display name<input name='teacher_display_name' required value='{html_escape(clean_html(user.get('display_name') or user.get('username') or ''))}'></label><label>Legal name/private<input name='legal_name' required></label><label>Email<input name='email' type='email' required value='{html_escape(clean_html(user.get('email') or ''))}'></label><label>Phone optional<input name='phone'></label><label>Country<input name='country' required></label><label>Languages spoken<input name='languages' placeholder='English, Haitian Creole, French'></label><label>Timezone<input name='timezone' placeholder='America/New_York'></label></div></section>
       <section><h3>Teaching Profile</h3><div class='two'><label>Teaching category<select name='teaching_category'>{cat_options}</select></label><label>Skill level taught<select name='skill_level'><option>Beginner</option><option>Intermediate</option><option>Advanced</option><option>Mixed</option></select></label><label>Teaching style<input name='teaching_style' placeholder='Calm, tactical, workshop, cohort...'></label><label>Years of experience<input name='years_experience'></label><label>Audience type<input name='audience_type' placeholder='Beginners, creators, sellers, builders...'></label><label>Sample lesson title<input name='sample_lesson_title' required></label></div><label>Sample lesson description<textarea name='sample_lesson_description' required></textarea></label><label>Why should students trust you?<textarea name='trust_reason' required></textarea></label></section>
       <section><h3>Safety + Compliance</h3><div class='check-grid'><label><input type='checkbox' name='no_financial_advice' required> I will not present lessons as financial advice.</label><label><input type='checkbox' name='no_guaranteed_profits' required> I will not promise guaranteed profits.</label><label><input type='checkbox' name='no_scam_promotion' required> I will not promote scams or deceptive products.</label><label><input type='checkbox' name='no_income_claims' required> I will not make misleading income claims.</label></div><label>How do you keep learners safe?<textarea name='learner_safety_plan' required></textarea></label></section>
       <section><h3>Credentials</h3><div class='two'><label>Certificates optional<input type='file' name='certificate' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Resume / CV optional<input type='file' name='resume' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Portfolio proof optional<input type='file' name='portfolio' accept='.jpg,.jpeg,.png,.webp,.pdf'></label><label>Website optional<input name='website'></label></div><label>Social links optional<textarea name='social_links'></textarea></label></section>
@@ -84714,14 +84759,14 @@ def pulse_message_thread_page(conversation_id):
     if conversation_type == "direct":
         other = pulse_identity_for_user(cur, other_id)
         other_name = clean_html(other.get("name") or "PulseSoc user") + pulse_premium_mark_html(other.get("premium_mark"))
-        avatar = f"<img src='{clean_html(other.get('avatar_url'))}' alt=''>" if other.get("avatar_url") else clean_html((other.get("name") or "P")[:1])
+        avatar = f"<img src='{html_escape(clean_html(other.get('avatar_url')))}' alt=''>" if other.get("avatar_url") else clean_html((other.get("name") or "P")[:1])
         subtitle = "PulseSoc Messenger"
     else:
         cur.execute("SELECT COUNT(*) AS total FROM pulse_conversation_participants WHERE conversation_id=?", (conversation_id,))
         participant_count = int(dict(cur.fetchone() or {}).get("total") or 0)
         label = conversation.get("title") or "Group Chat"
         other_name = clean_html(label)
-        avatar = f"<img src='{clean_html(conversation.get('avatar_url'))}' alt=''>" if conversation.get("avatar_url") else clean_html((label or "G")[:1])
+        avatar = f"<img src='{html_escape(clean_html(conversation.get('avatar_url')))}' alt=''>" if conversation.get("avatar_url") else clean_html((label or "G")[:1])
         subtitle = f"{participant_count} members · {clean_html(conversation_type.replace('_', ' '))}"
     cur.execute("SELECT * FROM pulse_messages WHERE conversation_id=? AND deleted_at IS NULL " + PULSE_VISIBLE_MESSAGE_FILTER + " ORDER BY id ASC LIMIT 200", (conversation_id,))
     messages = [dict(row) for row in cur.fetchall()]
@@ -84729,7 +84774,7 @@ def pulse_message_thread_page(conversation_id):
     message_html = "".join(
         f"<article class='msg {'mine' if int(m.get('sender_user_id') or 0)==int(user['user_id']) else 'theirs'}'>"
         f"{pulse_message_media_html(m)}"
-        f"{'<p>'+clean_html(m.get('body') or '')+'</p>' if (m.get('body') or '').strip() and (m.get('message_type') or 'text') not in {'post_share','reel_share','group_share','marketplace_share','live_share'} else ''}"
+        f"{'<p>'+html_escape(clean_html(m.get('body') or ''))+'</p>' if (m.get('body') or '').strip() and (m.get('message_type') or 'text') not in {'post_share','reel_share','group_share','marketplace_share','live_share'} else ''}"
         f"<small>{smart_time_html(m.get('created_at'), clean_html(m.get('delivery_status') or m.get('status') or 'sent'))}</small></article>"
         for m in messages
     )
@@ -84842,7 +84887,7 @@ def pulse_group_detail_page(group_slug):
                 return '<button data-group-comment-delete="' + str(c['id']) + '">Delete</button>'
             return ''
         preview_html = "".join(
-            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{clean_html(c['author_name'])}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{clean_html(c['body'])}</p><small>{smart_time_html(c.get('created_at'))}</small>{_preview_delete_btn(c)}<button data-group-comment-report='{c['id']}'>Report</button></div>"
+            f"<div class='group-comment' data-comment-id='{c['id']}'><strong>{html_escape(clean_html(c['author_name']))}{pulse_premium_mark_html(c.get('premium_mark'))}</strong><p>{html_escape(clean_html(c['body']))}</p><small>{smart_time_html(c.get('created_at'))}</small>{_preview_delete_btn(c)}<button data-group-comment-report='{c['id']}'>Report</button></div>"
             for c in reversed(previews)
         )
         if not groups_advanced:
@@ -84866,9 +84911,9 @@ def pulse_group_detail_page(group_slug):
             thumbnail_url = pulse_media_url(media_row.get("thumbnail_url") or "")
             media_type = clean_html(media_row.get("media_type") or media_type)
         if media_url and media_type == "video":
-            media_html = f"<div class='group-media-frame'><video controls playsinline preload='metadata' poster='{clean_html(thumbnail_url)}' data-group-media='{post_id}' onerror=\"window.reportGroupMediaFailure&&window.reportGroupMediaFailure({post_id},'{clean_html(media_url)}')\"><source src='{clean_html(media_url)}'></video></div>"
+            media_html = f"<div class='group-media-frame'><video controls playsinline preload='metadata' poster='{html_escape(clean_html(thumbnail_url))}' data-group-media='{post_id}' onerror=\"window.reportGroupMediaFailure&&window.reportGroupMediaFailure({post_id},'{html_escape(clean_html(media_url))}')\"><source src='{html_escape(clean_html(media_url))}'></video></div>"
         elif media_url:
-            media_html = f"<button class='group-media-frame' type='button' data-media-fullscreen='{clean_html(media_url)}'><img src='{clean_html(media_url)}' alt='Group post media' loading='lazy' data-group-media='{post_id}' onerror=\"window.reportGroupMediaFailure&&window.reportGroupMediaFailure({post_id},'{clean_html(media_url)}');this.closest('.group-media-frame').classList.add('is-broken');this.replaceWith(document.createTextNode('Media could not load.'))\"></button>"
+            media_html = f"<button class='group-media-frame' type='button' data-media-fullscreen='{html_escape(clean_html(media_url))}'><img src='{html_escape(clean_html(media_url))}' alt='Group post media' loading='lazy' data-group-media='{post_id}' onerror=\"window.reportGroupMediaFailure&&window.reportGroupMediaFailure({post_id},'{html_escape(clean_html(media_url))}');this.closest('.group-media-frame').classList.add('is-broken');this.replaceWith(document.createTextNode('Media could not load.'))\"></button>"
         if not groups_advanced:
             media_html = ""
         reaction_buttons = "".join(
@@ -84884,7 +84929,7 @@ def pulse_group_detail_page(group_slug):
         delete_control = f"<button data-group-post-delete='{post_id}'>Delete Post</button>" if can_delete else ""
         report_control = f"<button data-group-report-post='{post_id}'>Report Post</button>" if groups_advanced else ""
         menu_html = f"<details class='group-post-menu'><summary>...</summary><div>{report_control}{delete_control}{moderator_controls}</div></details>" if (groups_advanced or delete_control) else ""
-        author_avatar = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
+        author_avatar = f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html((ident.get("name") or "P")[:1])
         pinned_badge = "<span class='pill pinned-pill'>Pinned</span> " if is_pinned else ""
         interaction_html = (
             f"<div class='group-reaction-row'>{reaction_buttons}</div><div class='group-comments' data-comments-for='{post_id}'>{preview_html}</div><form class='group-comment-form' data-group-comment-form='{post_id}'><input name='body' placeholder='Write a comment...' autocomplete='off'><button class='primary'>Comment</button></form>"
@@ -84892,8 +84937,8 @@ def pulse_group_detail_page(group_slug):
             else "<p class='muted'>Group interactions are temporarily paused while this area is stabilized.</p>"
         )
         post_cards.append(
-            f"<article class='card group-post-card' data-group-post='{post_id}'><div class='group-post-head'><div class='person'><span class='avatar'>{author_avatar}</span><div><strong>{clean_html(ident.get('name') or p.get('author') or 'PulseSoc Member')}{pulse_premium_mark_html(ident.get('premium_mark'))}</strong><p class='muted'>{clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')} <span class='time-dot'>•</span> {smart_time_html(p.get('created_at'))}</p></div></div>{menu_html}</div>"
-        f"<p>{clean_html(p.get('body') or p.get('content') or '')}</p>{media_html}<p class='group-post-meta'>{pinned_badge}<span class='pill'>{clean_html(p.get('post_type') or 'text')}</span> <span class='pill'>{clean_html(p.get('moderation_status') or 'approved')}</span> <span class='pill'><span data-comment-count='{post_id}'>{stats['comment_count']}</span> comments</span></p>"
+            f"<article class='card group-post-card' data-group-post='{post_id}'><div class='group-post-head'><div class='person'><span class='avatar'>{author_avatar}</span><div><strong>{html_escape(clean_html(ident.get('name') or p.get('author') or 'PulseSoc Member'))}{pulse_premium_mark_html(ident.get('premium_mark'))}</strong><p class='muted'>{html_escape(clean_html(ident.get('primary_label') or ident.get('rank') or 'Member'))} <span class='time-dot'>•</span> {smart_time_html(p.get('created_at'))}</p></div></div>{menu_html}</div>"
+        f"<p>{html_escape(clean_html(p.get('body') or p.get('content') or ''))}</p>{media_html}<p class='group-post-meta'>{pinned_badge}<span class='pill'>{html_escape(clean_html(p.get('post_type') or 'text'))}</span> <span class='pill'>{html_escape(clean_html(p.get('moderation_status') or 'approved'))}</span> <span class='pill'><span data-comment-count='{post_id}'>{stats['comment_count']}</span> comments</span></p>"
             f"{interaction_html}</article>"
         )
     post_html = "".join(post_cards)
@@ -84913,9 +84958,9 @@ def pulse_group_detail_page(group_slug):
     composer_html = f"<section class='card'><h2>Share With Group</h2><textarea id='groupPostBody' placeholder='Share an update, lesson, warning, question, photo, or video caption.'></textarea><label>Attach photo or video<input id='groupMediaFile' type='file' accept='image/*,video/*'></label><div class='group-composer-actions'><a class='button' href='/pulse/camera/photo?target=group&group={slug}'>Take Photo</a><a class='button' href='/pulse/camera/video?target=group&group={slug}'>Record Video</a><button class='primary' id='groupPostBtn'>Post</button></div></section>" if groups_advanced else "<section class='card'><h2>Groups Stabilization</h2><p class='muted'>Advanced posting, media, invites, moderation, and chat controls are temporarily paused. Group browsing, creation, joining, and leaving remain available.</p></section>"
     modal_html = f"<section class='group-report-modal' id='groupReportModal'><div class='group-report-sheet'><h2 id='groupReportTitle'>Report Post</h2><select id='groupReportReason'><option value='spam'>Spam</option><option value='harassment'>Harassment</option><option value='scam'>Scam</option><option value='impersonation'>Impersonation</option><option value='misleading financial claims'>Misleading financial claims</option><option value='nudity'>Nudity</option><option value='violence'>Violence</option><option value='misinformation'>Misinformation</option><option value='illegal'>Illegal</option><option value='other'>Other</option></select><textarea id='groupReportNotes' placeholder='Add context for moderators'></textarea><div class='actions'><button type='button' id='cancelGroupReport'>Cancel</button><button class='primary' type='button' id='submitGroupReport'>Submit Report</button></div></div></section><section class='group-report-modal' id='groupInviteModal'><div class='group-report-sheet'><h2>Invite to Group</h2><form id='groupInviteSearch'><input name='q' placeholder='Search by username or display name'><button class='primary'>Search</button></form><div class='messenger-search-results' id='groupInviteResults'></div><button type='button' id='copyGroupInvite'>Copy Invite Link</button><button type='button' id='cancelGroupInvite'>Close</button></div></section>" if groups_advanced else ""
     post_empty = '<article class="card"><p>No group posts yet.</p></article>'
-    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{clean_html(group.get('name'))}</h2><p>{clean_html(group.get('description') or '')}</p><p class='group-meta-pills'><span class='pill'>{clean_html(group.get('category') or 'Community')}</span> <span class='pill'>{clean_html(group.get('group_type') or 'public')}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{clean_html(group.get('trust_level') or 'standard')}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.')}</p></section>{delete_group_html}{composer_html}<section>{post_html or post_empty}</section>{modal_html}"
+    main = f"{style}<section class='card' data-group-shell='{group_id}'><h2>{html_escape(clean_html(group.get('name')))}</h2><p>{html_escape(clean_html(group.get('description') or ''))}</p><p class='group-meta-pills'><span class='pill'>{html_escape(clean_html(group.get('category') or 'Community'))}</span> <span class='pill'>{html_escape(clean_html(group.get('group_type') or 'public'))}</span> <span class='pill'><span data-group-member-count>{members}</span> members</span> <span class='pill'>{html_escape(clean_html(group.get('trust_level') or 'standard'))}</span></p><div class='group-community-actions'>{action_html}</div></section><section class='card'><h2>Rules</h2><p>{html_escape(clean_html(group.get('rules') or 'Keep it safe, educational, and scam-free.'))}</p></section>{delete_group_html}{composer_html}<section>{post_html or post_empty}</section>{modal_html}"
     script = f"""
-    const groupSlug={json.dumps(slug)};
+    const groupSlug={script_json(slug)};
     let pendingReportPostId=null;
     let reportMode='post';
     const reportModal=document.getElementById('groupReportModal');
@@ -85005,18 +85050,18 @@ def pulse_profile_page_for_user(target_user_id):
     )
     badge_catalog = [dict(row) for row in cur.fetchall()]
     conn.close()
-    listing_html = "".join(f"<article class='card'><h3>{clean_html(l.get('title'))}</h3><p>{clean_html(l.get('description') or '')}</p></article>" for l in listings)
+    listing_html = "".join(f"<article class='card'><h3>{html_escape(clean_html(l.get('title')))}</h3><p>{html_escape(clean_html(l.get('description') or ''))}</p></article>" for l in listings)
     is_owner = int(target_user_id or 0) == int(viewer["user_id"])
     badge_priority = {"verified": 0, "founder": 1, "creator": 2, "vip": 3, "premium_verified_star": 4, "premium_verified_check": 4}
     earned_badges.sort(key=lambda badge: (badge_priority.get(str(badge.get("badge_key") or ""), 50), str(badge.get("label") or "")))
     top_badges = earned_badges[:5]
     badge_html = "".join(
-        f"<span class='profile-role-badge' title='{clean_html(badge.get('description') or '')}'>{clean_html(badge.get('label') or 'Badge')}</span>"
+        f"<span class='profile-role-badge' title='{html_escape(clean_html(badge.get('description') or ''))}'>{html_escape(clean_html(badge.get('label') or 'Badge'))}</span>"
         for badge in top_badges
     )
     earned_keys = {str(badge.get("badge_key") or "") for badge in earned_badges}
     all_badges_html = "".join(
-        f"<article class='profile-badge-row {'earned' if str(badge.get('badge_key') or '') in earned_keys else 'locked'}'><span class='profile-badge-icon'>{'✓' if str(badge.get('badge_key') or '') in earned_keys else '◇'}</span><div><strong>{clean_html(badge.get('label') or 'PulseSoc badge')}</strong><p>{clean_html(badge.get('description') or 'PulseSoc community badge.')}</p><small>{'Earned' if str(badge.get('badge_key') or '') in earned_keys else 'Locked'}</small></div></article>"
+        f"<article class='profile-badge-row {'earned' if str(badge.get('badge_key') or '') in earned_keys else 'locked'}'><span class='profile-badge-icon'>{'✓' if str(badge.get('badge_key') or '') in earned_keys else '◇'}</span><div><strong>{html_escape(clean_html(badge.get('label') or 'PulseSoc badge'))}</strong><p>{html_escape(clean_html(badge.get('description') or 'PulseSoc community badge.'))}</p><small>{'Earned' if str(badge.get('badge_key') or '') in earned_keys else 'Locked'}</small></div></article>"
         for badge in badge_catalog
     )
     premium_html = pulse_premium_mark_html(ident.get("premium_mark"))
@@ -85024,9 +85069,9 @@ def pulse_profile_page_for_user(target_user_id):
         action_html = "<a class='button primary' href='/pulse/profile/edit'>Edit Profile</a><button type='button' data-share-profile>Share Profile</button><a class='button' href='/account'>Settings</a>"
         more_tools_html = "<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
     else:
-        action_html = f"<button class='primary profile-action-primary' data-follow-public='{clean_html(ident['public_player_id'])}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{clean_html(ident['public_player_id'])}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
-        more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{clean_html(ident['public_player_id'])}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
-    avatar_html = f"<img src='{clean_html(ident.get('avatar_url'))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
+        action_html = f"<button class='primary profile-action-primary' data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
+        more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
+    avatar_html = f"<img src='{html_escape(clean_html(ident.get('avatar_url')))}' alt=''>" if ident.get("avatar_url") else clean_html(ident["name"][:1])
     cover_style = f" style=\"background-image:linear-gradient(135deg,rgba(5,11,20,.38),rgba(5,11,20,.22)),url('{clean_html(ident.get('banner_url'))}');background-size:cover;background-position:center\"" if ident.get("banner_url") else ""
     main = f"""
     <style>
@@ -85052,10 +85097,10 @@ def pulse_profile_page_for_user(target_user_id):
         <div class='pulse-profile-identity'>
           <span class='avatar pulse-profile-avatar'>{avatar_html}</span>
           <div class='pulse-profile-copy'>
-            <h1>{clean_html(ident['name'])}{premium_html}</h1>
-            <p class='pulse-profile-handle'>@{clean_html(ident.get('username') or ident['public_player_id'])}</p>
-            <p class='pulse-profile-bio'>{clean_html(ident.get('bio') or 'No bio yet.')}</p>
-            <div class='profile-badges'>{badge_html or '<span class="profile-role-badge">' + clean_html(ident.get('primary_label') or ident.get('rank') or 'Member') + '</span>'}<button class='profile-badges-more' type='button' data-open-profile-badges>View All Badges</button></div>
+            <h1>{html_escape(clean_html(ident['name']))}{premium_html}</h1>
+            <p class='pulse-profile-handle'>@{html_escape(clean_html(ident.get('username') or ident['public_player_id']))}</p>
+            <p class='pulse-profile-bio'>{html_escape(clean_html(ident.get('bio') or 'No bio yet.'))}</p>
+            <div class='profile-badges'>{badge_html or '<span class="profile-role-badge">' + html_escape(clean_html(ident.get('primary_label') or ident.get('rank') or 'Member')) + '</span>'}<button class='profile-badges-more' type='button' data-open-profile-badges>View All Badges</button></div>
           </div>
         </div>
         <div class='pulse-profile-stats' aria-label='Profile statistics'>
@@ -85063,18 +85108,18 @@ def pulse_profile_page_for_user(target_user_id):
         </div>
         <div class='pulse-profile-actions'>{action_html}{app_cta_html('profile', ident['public_player_id'], source='web', classes='button profile-action-open-app')}</div>
       </section>
-      <nav class='pulse-profile-tabs' aria-label='Profile content'><a class='active' href='#profilePosts'>Posts</a><a href='/pulse/reels?creator={clean_html(ident['public_player_id'])}'>Reels</a><a href='/pulse/videos?creator={clean_html(ident['public_player_id'])}'>Videos</a><a href='/pulse?profile={clean_html(ident['public_player_id'])}&topic=photo'>Photos</a><a href='#profileAbout'>About</a></nav>
-      <section class='card pulse-profile-feed-card' id='profilePosts'><h2>Posts</h2><iframe class='pulse-profile-feed-frame' title='{clean_html(ident['name'])} posts' src='/pulse?profile={clean_html(ident['public_player_id'])}&embed=profile' loading='eager'></iframe></section>
+      <nav class='pulse-profile-tabs' aria-label='Profile content'><a class='active' href='#profilePosts'>Posts</a><a href='/pulse/reels?creator={html_escape(clean_html(ident['public_player_id']))}'>Reels</a><a href='/pulse/videos?creator={html_escape(clean_html(ident['public_player_id']))}'>Videos</a><a href='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&topic=photo'>Photos</a><a href='#profileAbout'>About</a></nav>
+      <section class='card pulse-profile-feed-card' id='profilePosts'><h2>Posts</h2><iframe class='pulse-profile-feed-frame' title='{html_escape(clean_html(ident['name']))} posts' src='/pulse?profile={html_escape(clean_html(ident['public_player_id']))}&embed=profile' loading='eager'></iframe></section>
       <section class='pulse-profile-about-grid' id='profileAbout'>
-        <article class='card'><h2>About</h2><p>{clean_html(ident.get('bio') or 'This creator has not added a bio yet.')}</p><p class='muted'>{post_count} posts · {follower_count} followers · {group_count} groups</p></article>
-        <article class='card'><h2>Creator Activity</h2><p>{clean_html((teacher.get('category') or 'Community member'))} · {clean_html((teacher.get('verification_status') or 'No teacher status'))}</p><p>{len(listings)} active marketplace listing{'s' if len(listings) != 1 else ''}.</p></article>
+        <article class='card'><h2>About</h2><p>{html_escape(clean_html(ident.get('bio') or 'This creator has not added a bio yet.'))}</p><p class='muted'>{post_count} posts · {follower_count} followers · {group_count} groups</p></article>
+        <article class='card'><h2>Creator Activity</h2><p>{html_escape(clean_html((teacher.get('category') or 'Community member')))} · {html_escape(clean_html((teacher.get('verification_status') or 'No teacher status')))}</p><p>{len(listings)} active marketplace listing{'s' if len(listings) != 1 else ''}.</p></article>
       </section>
       <section class='card pulse-profile-secondary'><details><summary>{'Settings and creator tools' if is_owner else 'More profile options'}</summary><div class='profile-tool-links'>{more_tools_html}</div></details></section>
     </div>
-    <div class='pulse-profile-more' data-profile-more aria-hidden='true'><div class='pulse-profile-more-inner'><header class='profile-sheet-head'><span><strong>{clean_html(ident['name'])}</strong><small>Profile actions</small></span><button class='profile-sheet-close' type='button' data-close-profile-more aria-label='Close profile actions'>×</button></header>{more_tools_html}</div></div>
+    <div class='pulse-profile-more' data-profile-more aria-hidden='true'><div class='pulse-profile-more-inner'><header class='profile-sheet-head'><span><strong>{html_escape(clean_html(ident['name']))}</strong><small>Profile actions</small></span><button class='profile-sheet-close' type='button' data-close-profile-more aria-label='Close profile actions'>×</button></header>{more_tools_html}</div></div>
     <section class='profile-badges-modal' data-profile-badges-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='All profile badges'><div class='profile-badges-sheet'><header class='profile-badges-head'><div><h2>All Badges</h2><small>{len(earned_badges)} earned</small></div><button type='button' data-close-profile-badges aria-label='Close badges'>×</button></header><div class='profile-badges-list'>{all_badges_html or '<p>No badges are available yet.</p>'}</div></div></section>
     <section class='profile-safety-modal' data-profile-report-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='Report profile'><form class='profile-safety-sheet' data-profile-report-form><header class='profile-safety-head'><div><h2>Report Profile</h2><small>Private and confidential</small></div><button type='button' data-close-profile-report aria-label='Close report profile'>×</button></header><p class='profile-safety-copy'>Choose the issue that best describes this account. PulseSoc reviews reports without telling the reported user who submitted them.</p><div class='profile-report-reasons'><label class='profile-report-reason'><input type='radio' name='reason' value='Spam or misleading activity' required><span>Spam or misleading activity</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Harassment or bullying'><span>Harassment or bullying</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Scam, fraud, or impersonation'><span>Scam, fraud, or impersonation</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Hateful or inappropriate content'><span>Hateful or inappropriate content</span></label><label class='profile-report-reason'><input type='radio' name='reason' value='Other safety concern'><span>Other safety concern</span></label></div><div class='profile-safety-actions'><button type='button' data-close-profile-report>Cancel</button><button class='primary' type='submit'>Submit Report</button></div></form></section>
-    <section class='profile-safety-modal' data-profile-block-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='Block user'><div class='profile-safety-sheet'><header class='profile-safety-head'><div><h2>Block {clean_html(ident['name'])}?</h2><small>Immediate privacy protection</small></div><button type='button' data-close-profile-block aria-label='Close block user'>×</button></header><p class='profile-safety-copy'>They will no longer be able to message or interact with you, and their activity will be hidden from your PulseSoc experience. You can manage blocked accounts later in Privacy.</p><div class='profile-safety-actions'><button type='button' data-close-profile-block>Cancel</button><button class='profile-danger-confirm' type='button' data-confirm-block-profile data-public-player-id='{clean_html(ident['public_player_id'])}'>Block User</button></div></div></section>
+    <section class='profile-safety-modal' data-profile-block-modal aria-hidden='true' role='dialog' aria-modal='true' aria-label='Block user'><div class='profile-safety-sheet'><header class='profile-safety-head'><div><h2>Block {html_escape(clean_html(ident['name']))}?</h2><small>Immediate privacy protection</small></div><button type='button' data-close-profile-block aria-label='Close block user'>×</button></header><p class='profile-safety-copy'>They will no longer be able to message or interact with you, and their activity will be hidden from your PulseSoc experience. You can manage blocked accounts later in Privacy.</p><div class='profile-safety-actions'><button type='button' data-close-profile-block>Cancel</button><button class='profile-danger-confirm' type='button' data-confirm-block-profile data-public-player-id='{html_escape(clean_html(ident['public_player_id']))}'>Block User</button></div></div></section>
     """
     script = """
     const badgeModal=document.querySelector('[data-profile-badges-modal]');
@@ -85110,7 +85155,7 @@ def pulse_post_page(post_id):
     media = (post.get("media") or [{}])[0]
     image = media.get("thumbnail_url") or media.get("media_url") or "/static/brand/pulsesoc-logo-20260813.png"
     comments = pulse_feed_engine.list_comments(post_id).get("comments", [])
-    comment_html = "".join(f"<div class='comment'><strong>{clean_html(c.get('author',{}).get('display_name') or 'PulseSoc user')}{pulse_premium_mark_html(c.get('author',{}).get('premium_mark'))}</strong><p>{clean_html(c.get('body') or '')}</p><small>{smart_time_html(c.get('created_at'))}</small></div>" for c in comments)
+    comment_html = "".join(f"<div class='comment'><strong>{html_escape(clean_html(c.get('author',{}).get('display_name') or 'PulseSoc user'))}{pulse_premium_mark_html(c.get('author',{}).get('premium_mark'))}</strong><p>{html_escape(clean_html(c.get('body') or ''))}</p><small>{smart_time_html(c.get('created_at'))}</small></div>" for c in comments)
     media_html = ""
     for item in post.get("media") or []:
         media_id = clean_html(item.get("id") or "")
@@ -85137,10 +85182,10 @@ def pulse_post_page(post_id):
     counts = post.get("reaction_counts") or {}
     reaction_icons = {"fire": "🔥", "smart": "🧠", "scam_alert": "🚨", "whale": "🐋", "bullish": "📈", "bearish": "📉", "funny": "😂", "elite": "👑"}
     reaction_buttons = "".join(
-        f"<button class='reaction-pill {'active' if post.get('viewer_reaction') == key else ''}' data-react='{clean_html(key)}'><span>{icon}</span> <b>{int(counts.get(key) or 0)}</b></button>"
+        f"<button class='reaction-pill {'active' if post.get('viewer_reaction') == key else ''}' data-react='{html_escape(clean_html(key))}'><span>{icon}</span> <b>{int(counts.get(key) or 0)}</b></button>"
         for key, icon in reaction_icons.items()
     )
-    tags_html = "".join(f"<a class='tag' href='/pulse/topic/{clean_html(tag)}'>#{clean_html(tag)}</a>" for tag in post.get("tags") or [])
+    tags_html = "".join(f"<a class='tag' href='/pulse/topic/{html_escape(clean_html(tag))}'>#{html_escape(clean_html(tag))}</a>" for tag in post.get("tags") or [])
     author_public_id = (post.get("author") or {}).get("public_player_id") or ""
     author_profile_url = f"/pulse/profile/{clean_html(author_public_id)}" if author_public_id else "/pulse/profile"
     author = post.get("author") or {}
@@ -85150,7 +85195,7 @@ def pulse_post_page(post_id):
     # navigation, which stays: someone reading this page on a desktop wants the
     # rest of the site, not the App Store.
     post_app_cta = app_cta_html("post", post_id, source="web")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{clean_html(title)} | PulseSoc</title><meta name='description' content='{clean_html(description)}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://pulsesoc.com/pulse/post/{post_id}'><meta property='og:title' content='{clean_html(title)}'><meta property='og:description' content='{clean_html(description)}'><meta property='og:image' content='{clean_html(image)}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{clean_html(author.get('display_name') or 'PulseSoc creator')}{author_mark}</strong><br><span class='badge'>{clean_html(author_label or 'Member')}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{clean_html(title)}</h1><p>{clean_html(post.get('body') or '')}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {clean_html(post.get('post_type') or 'post')} · Status: {clean_html(post.get('moderation_status') or 'approved')} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://pulsesoc.com/pulse/post/{post_id}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
 
 
 def pulse_attach_video_detail_links(posts):
@@ -85738,7 +85783,7 @@ def pulse_video_not_found_response(trace_id, status_code=404):
     main = f"""
     <style>.layout:has(.pulse-video-detail-page){{grid-template-columns:1fr}}.layout:has(.pulse-video-detail-page)>aside{{display:none}}</style>
     <section class='card pulse-video-detail-page'>
-      <span class='pill'>Trace {clean_html(trace_id)}</span>
+      <span class='pill'>Trace {html_escape(clean_html(trace_id))}</span>
       <h2>Video not found</h2>
       <p>This PulseSoc video is deleted, private, or no longer available.</p>
       <div class='actions'><a class='button primary' href='/pulse/videos'>Back to Videos</a><a class='button' href='/pulse'>PulseSoc Home</a></div>
@@ -85758,8 +85803,8 @@ def pulse_videos_page():
     tabs = [("all", "For You"), ("following", "Following"), ("trending", "Trending"), ("new", "New Creators"), ("ai", "AI Picks"), ("local", "Local")]
     categories = ["All", "Entertainment", "Education", "News", "Gaming", "Sports", "Music", "Tech", "Lifestyle"]
     tab_html = "".join(f"<button type='button' data-video-tab='{key}' class='{'active' if key == 'all' else ''}'>{label}</button>" for key, label in tabs)
-    category_html = "".join(f"<button type='button' data-video-category='{clean_html(cat.lower())}' class='{'active' if cat == 'All' else ''}'>{clean_html(cat)}</button>" for cat in categories)
-    mobile_avatar = f"<img src='{clean_html(user.get('avatar_url') or user.get('avatar_thumbnail_url') or '')}' alt='Profile'>" if (user.get("avatar_url") or user.get("avatar_thumbnail_url")) else clean_html((user.get("display_name") or user.get("username") or "P")[:1])
+    category_html = "".join(f"<button type='button' data-video-category='{html_escape(clean_html(cat.lower()))}' class='{'active' if cat == 'All' else ''}'>{html_escape(clean_html(cat))}</button>" for cat in categories)
+    mobile_avatar = f"<img src='{html_escape(clean_html(user.get('avatar_url') or user.get('avatar_thumbnail_url') or ''))}' alt='Profile'>" if (user.get("avatar_url") or user.get("avatar_thumbnail_url")) else clean_html((user.get("display_name") or user.get("username") or "P")[:1])
     main = f"""
     <style>
     </style>
@@ -85969,8 +86014,8 @@ def pulse_video_detail_page(video_id):
     owner_profile_href = f"/pulse/@{owner_username}" if owner_username else f"/pulse/profile/{safe_int(video.get('owner_user_id'), 0)}"
     owner_menu = "<button class='video-detail-more' type='button' data-video-owner-menu aria-label='Creator details'>⋯</button>"
     follow_button_html = "" if video.get("is_owner") else f"<button class='video-detail-follow' type='button' data-follow-video-creator='{safe_int(video.get('owner_user_id'), 0)}'>Follow</button>"
-    source_menu_item = f"<a href='{clean_html(video.get('source_url') or '/pulse/videos')}'>Open Source</a>" if video.get("source_url") else ""
-    creator_drawer_actions = f"<a href='{clean_html(owner_profile_href)}'>View profile</a>{source_menu_item}"
+    source_menu_item = f"<a href='{html_escape(clean_html(video.get('source_url') or '/pulse/videos'))}'>Open Source</a>" if video.get("source_url") else ""
+    creator_drawer_actions = f"<a href='{html_escape(clean_html(owner_profile_href))}'>View profile</a>{source_menu_item}"
     owner_sheet_items = (
         f"{creator_drawer_actions}<button type='button' data-video-edit='{int(video_id)}'>Edit video</button><button class='danger' type='button' data-video-delete='{int(video_id)}'>Delete video</button>"
         if video.get("can_manage") else ""
@@ -85997,14 +86042,14 @@ def pulse_video_detail_page(video_id):
     video_attached_title = video.get("audio_title") or video_music.get("title") or "Approved track"
     video_attached_artist = video.get("audio_artist") or video_music.get("artist") or "PulseSoc Music"
     video_attached_attrs = (
-        f" data-audio-id='{clean_html(video.get('audio_id') or video_music.get('audio_id') or video_music.get('track_id') or '')}'"
-        f" data-music-id='{clean_html(video.get('music_id') or video_music.get('track_id') or video_music.get('audio_id') or '')}'"
-        f" data-attached-audio-url='{clean_html(video_attached_audio_url)}'"
-        f" data-audio-title='{clean_html(video_attached_title)}'"
-        f" data-audio-artist='{clean_html(video_attached_artist)}'"
-        f" data-audio-duration='{clean_html(str(video.get('audio_duration') or video_music.get('audio_duration') or video_music.get('duration_seconds') or 0))}'"
-        f" data-audio-start-time='{clean_html(str(video.get('audio_start_time') or video_music.get('audio_start_time') or 0))}'"
-        f" data-audio-volume='{clean_html(str(video.get('audio_volume') or video_music.get('audio_volume') or 1))}'"
+        f" data-audio-id='{html_escape(clean_html(video.get('audio_id') or video_music.get('audio_id') or video_music.get('track_id') or ''))}'"
+        f" data-music-id='{html_escape(clean_html(video.get('music_id') or video_music.get('track_id') or video_music.get('audio_id') or ''))}'"
+        f" data-attached-audio-url='{html_escape(clean_html(video_attached_audio_url))}'"
+        f" data-audio-title='{html_escape(clean_html(video_attached_title))}'"
+        f" data-audio-artist='{html_escape(clean_html(video_attached_artist))}'"
+        f" data-audio-duration='{html_escape(clean_html(str(video.get('audio_duration') or video_music.get('audio_duration') or video_music.get('duration_seconds') or 0)))}'"
+        f" data-audio-start-time='{html_escape(clean_html(str(video.get('audio_start_time') or video_music.get('audio_start_time') or 0)))}'"
+        f" data-audio-volume='{html_escape(clean_html(str(video.get('audio_volume') or video_music.get('audio_volume') or 1)))}'"
         " data-original-audio-muted='true'"
         if video_attached_audio_url
         else ""
@@ -86013,8 +86058,8 @@ def pulse_video_detail_page(video_id):
     video_attached_bar = (
         "<section class='post-music-player video-detail-attached-audio' data-video-detail-attached-audio>"
         "<button class='post-music-toggle' type='button' data-video-attached-play aria-label='Play attached audio'>▶</button>"
-        f"<span class='post-music-copy'><strong>{clean_html(video_attached_title)}</strong>"
-        f"<small>{clean_html(video_attached_artist)} · Using attached audio · Original audio muted</small></span>"
+        f"<span class='post-music-copy'><strong>{html_escape(clean_html(video_attached_title))}</strong>"
+        f"<small>{html_escape(clean_html(video_attached_artist))} · Using attached audio · Original audio muted</small></span>"
         "</section>"
         if video_attached_audio_url
         else ""
@@ -86032,7 +86077,7 @@ def pulse_video_detail_page(video_id):
              style='{video_aspect_style}'
              data-media-type='video' data-media-src='{playback}' data-media-url='{playback}' data-media-hls='{hls}'
              data-media-poster='{poster}' data-media-thumb='{poster}' data-media-backdrop='{poster}' data-media-processing-status='ready'
-             data-media-mux-playback-id='{clean_html(video.get('mux_playback_id') or '')}'{video_attached_attrs}>
+             data-media-mux-playback-id='{html_escape(clean_html(video.get('mux_playback_id') or ''))}'{video_attached_attrs}>
           <span class='video-player-poster-fallback'>{poster_visual}</span>
           <video data-pulse-video-player autoplay {video_attached_video_attrs} playsinline webkit-playsinline preload='auto' poster='{poster}' style='object-fit:contain!important' controlsList='nodownload noplaybackrate noremoteplayback' disablepictureinpicture>
             <source src='{playback}' type='{mime}'>
@@ -86068,8 +86113,8 @@ def pulse_video_detail_page(video_id):
         return (
             "<article class='comment video-comment'>"
             f"<span class='avatar'>{comment_avatar_markup(comment)}</span>"
-            f"<div><strong>{clean_html(comment.get('author_name') or 'PulseSoc user')}</strong>"
-            f"<p>{clean_html(comment.get('body') or '')}</p><small>{smart_time_html(comment.get('created_at'))}</small></div>"
+            f"<div><strong>{html_escape(clean_html(comment.get('author_name') or 'PulseSoc user'))}</strong>"
+            f"<p>{html_escape(clean_html(comment.get('body') or ''))}</p><small>{smart_time_html(comment.get('created_at'))}</small></div>"
             "</article>"
         )
 
@@ -86097,7 +86142,7 @@ def pulse_video_detail_page(video_id):
         f"""
         <a class='related-video' href='/pulse/videos/{int(v.get('id') or 0)}' data-related-video-card>
           {related_thumb_markup(v)}
-          <span class='related-copy'><strong>{video_card_title(v)}</strong><small>{clean_html(v.get('owner_name') or 'Creator')} · {safe_int(v.get('view_count'), 0)} views</small></span>
+          <span class='related-copy'><strong>{video_card_title(v)}</strong><small>{html_escape(clean_html(v.get('owner_name') or 'Creator'))} · {safe_int(v.get('view_count'), 0)} views</small></span>
         </a>
         """
         for v in related
@@ -86183,12 +86228,12 @@ def pulse_video_detail_page(video_id):
         </div>
         <div class='video-detail-copy'>
           <span class='video-watch-kicker'>🔥 Trending video</span>
-          <h2>{clean_html(video.get('title') or video.get('description') or 'Creator video')}</h2>
+          <h2>{html_escape(clean_html(video.get('title') or video.get('description') or 'Creator video'))}</h2>
           {description_html}
-          <div class='video-detail-meta'><span>{source_type}</span><span>{safe_int(video.get('view_count'), 0)} views</span><span>{smart_time_html(video.get('created_at'))}</span><span>{clean_html(video.get('visibility') or 'public')}</span></div>
+          <div class='video-detail-meta'><span>{source_type}</span><span>{safe_int(video.get('view_count'), 0)} views</span><span>{smart_time_html(video.get('created_at'))}</span><span>{html_escape(clean_html(video.get('visibility') or 'public'))}</span></div>
         </div>
         <div class='video-detail-header'>
-          <button class='video-detail-owner' type='button' data-video-owner-menu><span class='avatar'>{avatar_html}</span><span><strong>{clean_html(video.get('owner_name') or 'PulseSoc creator')} {owner_verified}</strong><small>{owner_role}</small></span></button>
+          <button class='video-detail-owner' type='button' data-video-owner-menu><span class='avatar'>{avatar_html}</span><span><strong>{html_escape(clean_html(video.get('owner_name') or 'PulseSoc creator'))} {owner_verified}</strong><small>{owner_role}</small></span></button>
           <div class='video-detail-owner-actions'>{follow_button_html}{owner_menu}</div>
         </div>
       </article>
@@ -86197,8 +86242,8 @@ def pulse_video_detail_page(video_id):
         </main>
         <aside class='card video-related-card video-watch-upnext'><h2>Up Next</h2><div class='related-grid'>{related_html}</div><a class='button' href='/pulse/videos'>Show more</a></aside>
       </div>
-      <section class='video-mini-player' data-video-mini-player aria-hidden='true'><span>{f"<img src='{clean_html(video.get('thumbnail_url') or '')}' alt=''>" if video.get('thumbnail_url') else ""}</span><div><strong>{clean_html(video.get('title') or video.get('description') or 'Creator video')}</strong><small>{clean_html(video.get('owner_name') or 'PulseSoc creator')}</small></div><button type='button' data-mini-toggle>Ⅱ</button><button type='button' data-mini-close>×</button></section>
-      <section class='video-owner-sheet' id='videoOwnerSheet' aria-hidden='true'><div class='video-owner-sheet-panel'><div class='video-creator-drawer-head'><span class='avatar'>{avatar_html}</span><div><strong>{clean_html(video.get('owner_name') or 'PulseSoc creator')} {owner_verified}</strong><small>{owner_role} · {owner_followers} followers</small></div></div><p>{clean_html(video.get('owner_bio') or 'No creator bio yet.')}</p>{owner_sheet_items}<button type='button' data-close-video-owner-sheet>Close</button></div></section>
+      <section class='video-mini-player' data-video-mini-player aria-hidden='true'><span>{f"<img src='{html_escape(clean_html(video.get('thumbnail_url') or ''))}' alt=''>" if video.get('thumbnail_url') else ""}</span><div><strong>{html_escape(clean_html(video.get('title') or video.get('description') or 'Creator video'))}</strong><small>{html_escape(clean_html(video.get('owner_name') or 'PulseSoc creator'))}</small></div><button type='button' data-mini-toggle>Ⅱ</button><button type='button' data-mini-close>×</button></section>
+      <section class='video-owner-sheet' id='videoOwnerSheet' aria-hidden='true'><div class='video-owner-sheet-panel'><div class='video-creator-drawer-head'><span class='avatar'>{avatar_html}</span><div><strong>{html_escape(clean_html(video.get('owner_name') or 'PulseSoc creator'))} {owner_verified}</strong><small>{owner_role} · {owner_followers} followers</small></div></div><p>{html_escape(clean_html(video.get('owner_bio') or 'No creator bio yet.'))}</p>{owner_sheet_items}<button type='button' data-close-video-owner-sheet>Close</button></div></section>
     </section>
     """
     script = """
@@ -96563,9 +96608,9 @@ def admin_pulse_moderation_page():
     cur.execute("SELECT * FROM pulse_reports WHERE status='open' ORDER BY created_at DESC LIMIT 100")
     reports = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{p.get('id')}</td><td>{clean_html(p.get('post_type') or '')}</td><td>{clean_html(p.get('moderation_status') or '')}</td><td>{int(p.get('risk_score') or 0)}</td><td>{clean_html((p.get('body') or '')[:180])}</td><td><form method='post'><input type='hidden' name='post_id' value='{p.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='block'>Block</button><button name='action' value='delete'>Delete</button></form></td></tr>" for p in posts)
-    report_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('target_type') or '')}</td><td>{r.get('target_id')}</td><td>{clean_html(r.get('reason') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in reports)
-    body = f"<h1>PulseSoc Moderation</h1><p>{clean_html(message)}</p><div class='card'><h2>Posts Needing Review</h2><table><tr><th>ID</th><th>Type</th><th>Status</th><th>Risk</th><th>Body</th><th>Action</th></tr>{rows or '<tr><td colspan=6>No pending posts.</td></tr>'}</table></div><div class='card'><h2>Open Reports</h2><table><tr><th>ID</th><th>Target</th><th>Target ID</th><th>Reason</th><th>Created</th></tr>{report_rows or '<tr><td colspan=5>No open reports.</td></tr>'}</table></div>"
+    rows = "".join(f"<tr><td>{p.get('id')}</td><td>{html_escape(clean_html(p.get('post_type') or ''))}</td><td>{html_escape(clean_html(p.get('moderation_status') or ''))}</td><td>{int(p.get('risk_score') or 0)}</td><td>{html_escape(clean_html((p.get('body') or '')[:180]))}</td><td><form method='post'><input type='hidden' name='post_id' value='{p.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='block'>Block</button><button name='action' value='delete'>Delete</button></form></td></tr>" for p in posts)
+    report_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('target_type') or ''))}</td><td>{r.get('target_id')}</td><td>{html_escape(clean_html(r.get('reason') or ''))}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>" for r in reports)
+    body = f"<h1>PulseSoc Moderation</h1><p>{html_escape(clean_html(message))}</p><div class='card'><h2>Posts Needing Review</h2><table><tr><th>ID</th><th>Type</th><th>Status</th><th>Risk</th><th>Body</th><th>Action</th></tr>{rows or '<tr><td colspan=6>No pending posts.</td></tr>'}</table></div><div class='card'><h2>Open Reports</h2><table><tr><th>ID</th><th>Target</th><th>Target ID</th><th>Reason</th><th>Created</th></tr>{report_rows or '<tr><td colspan=5>No open reports.</td></tr>'}</table></div>"
     return admin_page_html("PulseSoc Moderation", body, admin)
 
 
@@ -96659,13 +96704,13 @@ def admin_pulse_feed_health_page():
     recent_deleted = [dict(row) for row in cur.fetchall()]
     conn.close()
     body = (
-        f"<h1>PulseSoc Feed Health</h1><p class='muted'>{clean_html(message or 'Deleted posts are purged from public feed queries, live queues, and client pending-post buffers.')}</p>"
+        f"<h1>PulseSoc Feed Health</h1><p class='muted'>{html_escape(clean_html(message or 'Deleted posts are purged from public feed queries, live queues, and client pending-post buffers.'))}</p>"
         f"<div class='card'><h2>Cache + Feed Checks</h2>{admin_rows_table(checks, [('check','Check'),('value','Value'),('detail','Detail')])}</div>"
         f"<div class='card'><h2>Visibility Hidden Reasons</h2>{admin_rows_table(hidden_rows, [('reason','Reason'),('count','Count')])}</div>"
         f"<div class='card'><h2>Media Delivery</h2><p class='metric'>{broken_media}</p><p class='muted'>Recent PulseSoc media with missing local files or unreachable local URLs.</p>{admin_rows_table(media_rows[:30], [('id','ID'),('context_type','Context'),('context_id','Post/Context'),('media_type','Type'),('mime_type','MIME'),('width','W'),('height','H'),('public_url','Public URL'),('exists','Exists')])}</div>"
         f"<div class='card'><h2>Repair Actions</h2><form method='post' class='actions'><button class='primary' name='action' value='flush_deleted_cache'>Flush Deleted IDs From Live Feed Clients</button></form><p class='muted'>Feed and trending queries are read-through against canonical visibility; there is no rebuildable cache, so no rebuild controls are offered.</p></div>"
         f"<div class='card'><h2>Recent Deleted Posts</h2>{admin_rows_table(recent_deleted, [('id','ID'),('title','Title'),('moderation_status','Moderation'),('visibility','Visibility'),('deleted_at','Deleted'),('updated_at','Updated')])}</div>"
-        f"<p class='muted'>Last checked {clean_html(now)}.</p>"
+        f"<p class='muted'>Last checked {html_escape(clean_html(now))}.</p>"
     )
     return admin_page_html("PulseSoc Feed Health", body, admin)
 
@@ -96762,11 +96807,11 @@ def admin_pulse_analytics_page():
         conn.close()
     except Exception:
         social_counts = {}
-    topics = "".join(f"<li>#{clean_html(t.get('tag'))}: {int(t.get('count') or 0)}</li>" for t in data.get("intelligence", {}).get("trending_topics", []))
-    moderation = "".join(f"<tr><td>{clean_html(row.get('moderation_status') or '')}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("moderation", []))
-    jobs = "".join(f"<tr><td>{clean_html(row.get('status') or '')}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("jobs", []))
-    attempts = "".join(f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('error_reason') or '')}</td></tr>" for row in data.get("post_attempts", []))
-    social_html = "".join(f"<li>{clean_html(k)}: {int(v or 0)}</li>" for k, v in social_counts.items())
+    topics = "".join(f"<li>#{html_escape(clean_html(t.get('tag')))}: {int(t.get('count') or 0)}</li>" for t in data.get("intelligence", {}).get("trending_topics", []))
+    moderation = "".join(f"<tr><td>{html_escape(clean_html(row.get('moderation_status') or ''))}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("moderation", []))
+    jobs = "".join(f"<tr><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{int(row.get('total') or 0)}</td></tr>" for row in data.get("jobs", []))
+    attempts = "".join(f"<tr><td>{html_escape(clean_html(row.get('created_at') or ''))}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html(row.get('error_reason') or ''))}</td></tr>" for row in data.get("post_attempts", []))
+    social_html = "".join(f"<li>{html_escape(clean_html(k))}: {int(v or 0)}</li>" for k, v in social_counts.items())
     body = f"<h1>PulseSoc Analytics</h1><div class='grid'><div class='card'><h2>Posts Today</h2><p style='font-size:34px;font-weight:900'>{data.get('posts_today')}</p></div><div class='card'><h2>Comments Today</h2><p style='font-size:34px;font-weight:900'>{data.get('comments_today')}</p></div><div class='card'><h2>Reactions Today</h2><p style='font-size:34px;font-weight:900'>{data.get('reactions_today')}</p></div><div class='card'><h2>Open Reports</h2><p style='font-size:34px;font-weight:900'>{data.get('reports_open')}</p></div></div><div class='card'><h2>Social System Counts</h2><ul>{social_html or '<li>No social counts yet.</li>'}</ul></div><div class='card'><h2>Trending Topics</h2><ul>{topics}</ul></div><div class='card'><h2>Moderation</h2><table><tr><th>Status</th><th>Total</th></tr>{moderation}</table></div><div class='card'><h2>PulseSoc Worker Jobs</h2><table><tr><th>Status</th><th>Total</th></tr>{jobs or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Recent Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Error</th></tr>{attempts or '<tr><td colspan=3>No publish failures logged.</td></tr>'}</table></div>"
     return admin_page_html("PulseSoc Analytics", body, admin)
 
@@ -96796,10 +96841,10 @@ def admin_pulse_worker_health_page():
     cur.execute("SELECT id, job_type, target_id, attempts, error_message, updated_at FROM pulse_jobs WHERE status='failed' ORDER BY updated_at DESC LIMIT 50")
     failed = [dict(row) for row in cur.fetchall()]
     conn.close()
-    status_html = "".join(f"<tr><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in status_rows)
-    type_html = "".join(f"<tr><td>{clean_html(r.get('job_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in type_rows)
-    failed_html = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('job_type') or '')}</td><td>{r.get('target_id')}</td><td>{r.get('attempts')}</td><td>{clean_html(r.get('error_message') or '')}</td><td>{clean_html(r.get('updated_at') or '')}</td></tr>" for r in failed)
-    body = f"<h1>PulseSoc Worker Health</h1><p class='muted'>Railway service: coinpilotx-pulse-worker · Start command: python pulse_worker.py</p><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Jobs by Status</h2><table><tr><th>Status</th><th>Total</th></tr>{status_html or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div></div><div class='card'><h2>Jobs by Type</h2><table><tr><th>Type</th><th>Status</th><th>Total</th></tr>{type_html or '<tr><td colspan=3>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Failed Jobs</h2><form method='post'><button>Process Pending Jobs Now</button></form><table><tr><th>ID</th><th>Type</th><th>Target</th><th>Attempts</th><th>Error</th><th>Updated</th></tr>{failed_html or '<tr><td colspan=6>No failed jobs.</td></tr>'}</table></div>"
+    status_html = "".join(f"<tr><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in status_rows)
+    type_html = "".join(f"<tr><td>{html_escape(clean_html(r.get('job_type') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in type_rows)
+    failed_html = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('job_type') or ''))}</td><td>{r.get('target_id')}</td><td>{r.get('attempts')}</td><td>{html_escape(clean_html(r.get('error_message') or ''))}</td><td>{html_escape(clean_html(r.get('updated_at') or ''))}</td></tr>" for r in failed)
+    body = f"<h1>PulseSoc Worker Health</h1><p class='muted'>Railway service: coinpilotx-pulse-worker · Start command: python pulse_worker.py</p><p>{html_escape(clean_html(message))}</p><div class='grid'><div class='card'><h2>Heartbeat</h2><pre>{html_escape(clean_html(json.dumps(heartbeat, indent=2)))}</pre></div><div class='card'><h2>Jobs by Status</h2><table><tr><th>Status</th><th>Total</th></tr>{status_html or '<tr><td colspan=2>No jobs yet.</td></tr>'}</table></div></div><div class='card'><h2>Jobs by Type</h2><table><tr><th>Type</th><th>Status</th><th>Total</th></tr>{type_html or '<tr><td colspan=3>No jobs yet.</td></tr>'}</table></div><div class='card'><h2>Failed Jobs</h2><form method='post'><button>Process Pending Jobs Now</button></form><table><tr><th>ID</th><th>Type</th><th>Target</th><th>Attempts</th><th>Error</th><th>Updated</th></tr>{failed_html or '<tr><td colspan=6>No failed jobs.</td></tr>'}</table></div>"
     return admin_page_html("PulseSoc Worker Health", body, admin)
 
 
@@ -96952,11 +96997,11 @@ def admin_pulse_post_debug_page():
     conn.close()
     last_error = next((row for row in attempts if row.get("status") != "success"), {})
     attempt_rows = "".join(
-        f"<tr><td>{clean_html(row.get('created_at') or '')}</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('post_type') or '')}</td><td>{int(row.get('content_length') or 0)}</td><td>{'yes' if int(row.get('has_file') or 0) else 'no'}</td><td>{int(row.get('status_code') or 0)}</td><td>{clean_html(row.get('failing_table') or '')}</td><td>{clean_html(row.get('failing_field') or '')}</td><td>{clean_html(row.get('error_reason') or '')}</td><td>{clean_html((row.get('exception_message') or '')[:240])}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(row.get('created_at') or ''))}</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html(row.get('post_type') or ''))}</td><td>{int(row.get('content_length') or 0)}</td><td>{'yes' if int(row.get('has_file') or 0) else 'no'}</td><td>{int(row.get('status_code') or 0)}</td><td>{html_escape(clean_html(row.get('failing_table') or ''))}</td><td>{html_escape(clean_html(row.get('failing_field') or ''))}</td><td>{html_escape(clean_html(row.get('error_reason') or ''))}</td><td>{html_escape(clean_html((row.get('exception_message') or '')[:240]))}</td></tr>"
         for row in attempts
     )
     table_rows = "".join(
-        f"<tr><td>{clean_html(name)}</td><td>{'yes' if info['exists'] else 'no'}</td><td>{clean_html(', '.join(info['columns'])[:500])}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(name))}</td><td>{'yes' if info['exists'] else 'no'}</td><td>{html_escape(clean_html(', '.join(info['columns'])[:500]))}</td></tr>"
         for name, info in tables.items()
     )
     status_rows = [
@@ -96984,15 +97029,15 @@ def admin_pulse_post_debug_page():
         post_id = int(row.get("id") or 0)
         jobs = ", ".join(jobs_by_post.get(post_id, [])[:6])
         latest_row_parts.append(
-            f"<tr><td><a href='/pulse/post/{post_id}'>{post_id}</a></td><td>{clean_html(row.get('author_name') or ('User #' + str(row.get('user_id') or '')))}</td><td>{clean_html(row.get('post_type') or '')}</td><td>{clean_html(moderation_status)}</td><td>{clean_html(visibility)}</td><td>{'yes' if appears else 'no'}</td><td>{clean_html(reason)}</td><td>{clean_html(jobs or 'none')}</td><td>{clean_html(row.get('title') or '')}</td><td>{clean_html((row.get('body') or '')[:120])}</td><td>{clean_html(row.get('created_at') or '')}</td></tr>"
+            f"<tr><td><a href='/pulse/post/{post_id}'>{post_id}</a></td><td>{html_escape(clean_html(row.get('author_name') or ('User #' + str(row.get('user_id') or ''))))}</td><td>{html_escape(clean_html(row.get('post_type') or ''))}</td><td>{html_escape(clean_html(moderation_status))}</td><td>{html_escape(clean_html(visibility))}</td><td>{'yes' if appears else 'no'}</td><td>{html_escape(clean_html(reason))}</td><td>{html_escape(clean_html(jobs or 'none'))}</td><td>{html_escape(clean_html(row.get('title') or ''))}</td><td>{html_escape(clean_html((row.get('body') or '')[:120]))}</td><td>{html_escape(clean_html(row.get('created_at') or ''))}</td></tr>"
         )
     latest_rows = "".join(latest_row_parts)
-    body = f"<h1>PulseSoc Post Debug</h1><p class='muted'>Production publishing diagnostics for /pulse/questions and /api/pulse/posts.</p><form method='get' class='card'><button>Check Feed Eligibility</button></form><div class='card'>{admin_rows_table(status_rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div><div class='card'><h2>Latest Created Posts</h2><table><tr><th>ID</th><th>Author</th><th>Type</th><th>Status</th><th>Visibility</th><th>Feed</th><th>Eligibility Reason</th><th>Jobs</th><th>Title</th><th>Body</th><th>Created</th></tr>{latest_rows or '<tr><td colspan=11>No posts created yet.</td></tr>'}</table></div><div class='card'><h2>PulseSoc Tables</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{table_rows}</table></div><div class='card'><h2>Worker Heartbeat</h2><pre>{clean_html(json.dumps(heartbeat, indent=2))}</pre></div><div class='card'><h2>Last 20 Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Type</th><th>Length</th><th>File</th><th>HTTP</th><th>Table</th><th>Field</th><th>Error</th><th>Exception</th></tr>{attempt_rows or '<tr><td colspan=10>No publish attempts logged yet.</td></tr>'}</table></div>"
+    body = f"<h1>PulseSoc Post Debug</h1><p class='muted'>Production publishing diagnostics for /pulse/questions and /api/pulse/posts.</p><form method='get' class='card'><button>Check Feed Eligibility</button></form><div class='card'>{admin_rows_table(status_rows, [('name','Check'),('value','Value'),('detail','Detail')])}</div><div class='card'><h2>Latest Created Posts</h2><table><tr><th>ID</th><th>Author</th><th>Type</th><th>Status</th><th>Visibility</th><th>Feed</th><th>Eligibility Reason</th><th>Jobs</th><th>Title</th><th>Body</th><th>Created</th></tr>{latest_rows or '<tr><td colspan=11>No posts created yet.</td></tr>'}</table></div><div class='card'><h2>PulseSoc Tables</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{table_rows}</table></div><div class='card'><h2>Worker Heartbeat</h2><pre>{html_escape(clean_html(json.dumps(heartbeat, indent=2)))}</pre></div><div class='card'><h2>Last 20 Publish Attempts</h2><table><tr><th>Time</th><th>Status</th><th>Type</th><th>Length</th><th>File</th><th>HTTP</th><th>Table</th><th>Field</th><th>Error</th><th>Exception</th></tr>{attempt_rows or '<tr><td colspan=10>No publish attempts logged yet.</td></tr>'}</table></div>"
     return admin_page_html("PulseSoc Post Debug", body, admin)
 
 
 def trust_public_page(title, headline, body_html, cta="/signup"):
-    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{clean_html(title)} | PulseSoc</title><meta name="description" content="{clean_html(headline)}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{clean_html(request.path)}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260813.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="">CoinPlotXAI</a><a class="button" href="{clean_html(cta)}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{clean_html(headline)}</h1></section>{body_html}</main></body></html>""")
+    return Response(f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name="description" content="{html_escape(clean_html(headline))}"><meta name="robots" content="index,follow"><link rel="canonical" href="https://pulsesoc.com{html_escape(clean_html(request.path))}"><link rel="manifest" href="/manifest.json"><link rel="icon" href="/static/brand/pulsesoc-logo-20260813.png"><style>:root{{color-scheme:dark;--bg:var(--surface-primary,#050b14);--panel:var(--surface-raised,#0d1627);--line:var(--border-subtle,rgba(110,223,246,.22));--text:var(--text-primary,#f2fbff);--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f);--gold:var(--status-warning,#ffd166)}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 15% 0,rgba(110,223,246,.18),transparent 26rem),linear-gradient(145deg,#050b14,#081421);color:var(--text);font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,1080px);margin:auto;padding:22px 0 80px}}nav{{display:flex;align-items:center;justify-content:space-between;gap:12px}}a{{color:inherit}}.brand{{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:950}}.brand img{{width:38px;height:38px;border-radius:10px}}.hero{{padding:42px 0 18px}}h1{{font-size:clamp(38px,7vw,74px);line-height:.95;margin:8px 0}}p{{color:var(--muted);line-height:1.6}}.grid{{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}}.card{{border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,rgba(17,29,50,.9),rgba(13,22,39,.84));padding:16px}}.button{{min-height:46px;border-radius:10px;background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;text-decoration:none;font-weight:950;padding:12px 15px;display:inline-flex;align-items:center;justify-content:center}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}li{{margin:8px 0;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.button{{width:100%}}}}</style></head><body><main class="wrap"><nav><a class="brand" href="/"><img src="/static/brand/pulsesoc-logo-20260813.png" alt="">CoinPlotXAI</a><a class="button" href="{html_escape(clean_html(cta))}">Get Started</a></nav><section class="hero"><span class="badge">Trust-first platform</span><h1>{html_escape(clean_html(headline))}</h1></section>{body_html}</main></body></html>""")
 
 
 @webhook_app.route("/privacy-center", methods=["GET", "POST"])
@@ -97029,13 +97074,13 @@ def privacy_center_page():
     card_parts = []
     for name, values in [("Private / Never Sell", policy["private_never_sell"]), ("Product Improvement", policy["product_improvement"]), ("Aggregate Only", policy["monetizable_only_in_aggregate"])]:
         items = "".join("<li>{}</li>".format(clean_html(str(x).replace("_", " "))) for x in values)
-        card_parts.append(f"<article class='card'><h2>{clean_html(name.replace('_',' ').title())}</h2><ul>{items}</ul></article>")
+        card_parts.append(f"<article class='card'><h2>{html_escape(clean_html(name.replace('_',' ').title()))}</h2><ul>{items}</ul></article>")
     cards = "".join(card_parts)
     controls = ""
     if user:
         retention = f"Raw analytics: {int(os.getenv('RAW_ANALYTICS_RETENTION_DAYS', '90') or 90)} days · Security logs: {int(os.getenv('SECURITY_LOG_RETENTION_DAYS', '180') or 180)} days · Aggregate analytics: {int(os.getenv('AGGREGATE_ANALYTICS_RETENTION_DAYS', '730') or 730)} days"
-        controls = f"<section class='card'><h2>Your Controls</h2><p>{clean_html(message)}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {clean_html(retention)}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
-    return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{clean_html(policy['principle'])}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
+        controls = f"<section class='card'><h2>Your Controls</h2><p>{html_escape(clean_html(message))}</p><form method='post'><label><input type='checkbox' name='analytics_opt_out'> Opt out of optional analytics where legally required</label><br><label><input type='checkbox' name='personalized_ads_opt_out' checked> Opt out of personalized ads</label><br><label><input type='checkbox' name='public_profile' checked> Public profile visible</label><br><label><input type='checkbox' name='creator_visibility' checked> Creator visibility enabled</label><br><button class='button'>Save Privacy Controls</button></form><p><strong>Account data controls:</strong> Download account data and delete account workflows are visible here for staged rollout and support-assisted processing.</p><p><strong>Retention:</strong> {html_escape(clean_html(retention))}</p><p><a href='/terms'>Terms</a> · <a href='/community-rules'>Community Rules</a> · <a href='/advertising-policy'>Advertising Policy</a> · <a href='/creator-monetization-policy'>Creator Monetization Policy</a></p></section>"
+    return trust_public_page("Privacy Center", "Your data is not the product.", f"<p>{html_escape(clean_html(policy['principle']))}</p><section class='grid'>{cards}</section>{controls}", "/dashboard" if user else "/signup")
 
 
 @webhook_app.route("/trust-center", methods=["GET"])
@@ -97104,8 +97149,8 @@ def enterprise_page():
         conn.close()
         message = "Request received. We will review it for fit and safety."
     products = intelligence_products_engine.enterprise_products()
-    cards = "".join(f"<article class='card'><h2>{clean_html(p['name'])}</h2><p>{clean_html(p['description'])}</p><span class='badge'>{clean_html(p['privacy'])}</span></article>" for p in products)
-    form = f"<section class='card'><h2>Request Access</h2><p>{clean_html(message)}</p><form method='post'><input name='email' placeholder='Work email'><input name='company' placeholder='Company'><textarea name='use_case' placeholder='What aggregate intelligence do you need?'></textarea><button class='button'>Request Access</button></form></section>"
+    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(p['name']))}</h2><p>{html_escape(clean_html(p['description']))}</p><span class='badge'>{html_escape(clean_html(p['privacy']))}</span></article>" for p in products)
+    form = f"<section class='card'><h2>Request Access</h2><p>{html_escape(clean_html(message))}</p><form method='post'><input name='email' placeholder='Work email'><input name='company' placeholder='Company'><textarea name='use_case' placeholder='What aggregate intelligence do you need?'></textarea><button class='button'>Request Access</button></form></section>"
     return trust_public_page("Enterprise Intelligence", "Aggregate intelligence without private user identity.", f"<section class='grid'>{cards}</section>{form}", "/enterprise")
 
 
@@ -97116,7 +97161,7 @@ def pro_page():
         ("PulseSoc Premium", ["glowing premium mark", "elite profile cosmetics", "advanced creator filters", "premium livestream cosmetics", "advanced creator AI and analytics", "exclusive PulseSoc badges and prestige themes"]),
         ("Future Creator Economy", ["creator prestige upgrades", "teacher and merchant enhancements", "optional discovery boosts", "future monetization tools after trust review"]),
     ]
-    cards = "".join(f"<article class='card'><h2>{clean_html(name)}</h2><ul>{''.join(f'<li>{clean_html(item)}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
+    cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(name))}</h2><ul>{''.join(f'<li>{html_escape(clean_html(item))}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
     trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPlotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
     return trust_public_page("CoinPlotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
@@ -97311,17 +97356,17 @@ def admin_pulse_users_page():
     conn.close()
     def _avatar_cell(r):
         if r.get('avatar_url'):
-            return '<img src="' + clean_html(r.get('avatar_url') or '') + '" style="width:34px;height:34px;border-radius:999px;object-fit:cover">'
+            return '<img src="' + html_escape(clean_html(r.get('avatar_url') or '')) + '" style="width:34px;height:34px;border-radius:999px;object-fit:cover">'
         return '•'
     table = "".join(
-        f"<tr><td>{_avatar_cell(r)}</td><td><strong>{clean_html(r.get('display_name') or 'User')}</strong><br><small>{clean_html(r.get('email') or '')}</small></td><td>{clean_html(r.get('username') or '')}</td><td>{clean_html(r.get('status') or 'active')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{clean_html(r.get('live_status') or '')}</td><td>{clean_html(r.get('badges') or 'No badges')}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
+        f"<tr><td>{_avatar_cell(r)}</td><td><strong>{html_escape(clean_html(r.get('display_name') or 'User'))}</strong><br><small>{html_escape(clean_html(r.get('email') or ''))}</small></td><td>{html_escape(clean_html(r.get('username') or ''))}</td><td>{html_escape(clean_html(r.get('status') or 'active'))}</td><td>{int(r.get('trust_score') or 0)}</td><td>{html_escape(clean_html(r.get('current_level') or ''))}</td><td>{html_escape(clean_html(r.get('live_status') or ''))}</td><td>{html_escape(clean_html(r.get('badges') or 'No badges'))}</td><td><a class='button' href='/admin/pulse-users/{int(r.get('user_id') or 0)}'>Manage</a></td></tr>"
         for r in rows
     )
     body = f"""
     <h1>PulseSoc Users</h1>
     <p class='muted'>Owner-only manual control for PulseSoc privileges, badges, roles, verification, livestream, marketplace, teacher, posting, and trust status.</p>
-    {"<section class='card'><h2>Safe Mode</h2><p class='muted'>PulseSoc user data loaded with a fallback because the primary query failed: " + clean_html(query_error) + "</p><a class='button' href='/admin/pulse-users-health'>Open Health Diagnostics</a></section>" if query_error else ""}
-    <form class='card' method='get'><input name='q' value='{clean_html(q)}' placeholder='Search display name, username, email, user ID, or PulseSoc profile ID'><button class='button'>Search</button></form>
+    {"<section class='card'><h2>Safe Mode</h2><p class='muted'>PulseSoc user data loaded with a fallback because the primary query failed: " + html_escape(clean_html(query_error)) + "</p><a class='button' href='/admin/pulse-users-health'>Open Health Diagnostics</a></section>" if query_error else ""}
+    <form class='card' method='get'><input name='q' value='{html_escape(clean_html(q))}' placeholder='Search display name, username, email, user ID, or PulseSoc profile ID'><button class='button'>Search</button></form>
     <div class='card'><table><tr><th>Avatar</th><th>User</th><th>Username</th><th>Status</th><th>Trust</th><th>Level</th><th>Live</th><th>Badges</th><th>Action</th></tr>{table or '<tr><td colspan=9>No PulseSoc users found.</td></tr>'}</table></div>
     <p><a class='button' href='/admin/pulse-users-health'>PulseSoc Users Health</a></p>
     """
@@ -97343,7 +97388,7 @@ def admin_pulse_users_health_page():
         exists = migration_table_exists(cur, table)
         columns = sorted(migration_table_columns(cur, table)) if exists else []
         rows.append(
-            f"<tr><td>{clean_html(table)}</td><td>{'Yes' if exists else 'No'}</td><td>{clean_html(', '.join(columns[:18]) or 'No columns found')}</td></tr>"
+            f"<tr><td>{html_escape(clean_html(table))}</td><td>{'Yes' if exists else 'No'}</td><td>{html_escape(clean_html(', '.join(columns[:18]) or 'No columns found'))}</td></tr>"
         )
     user_count = "0"
     latest_actions = []
@@ -97367,7 +97412,7 @@ def admin_pulse_users_health_page():
     except Exception as exc:
         latest_error = latest_error or str(exc)
     action_rows = "".join(
-        f"<tr><td>{clean_html(a.get('created_at') or '')}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('target_type') or '')}</td><td>{clean_html(a.get('target_id') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(a.get('created_at') or ''))}</td><td>{html_escape(clean_html(a.get('action') or ''))}</td><td>{html_escape(clean_html(a.get('target_type') or ''))}</td><td>{html_escape(clean_html(a.get('target_id') or ''))}</td></tr>"
         for a in latest_actions
     )
     premium_columns = sorted(migration_table_columns(cur, "users")) if migration_table_exists(cur, "users") else []
@@ -97377,9 +97422,9 @@ def admin_pulse_users_health_page():
     <h1>PulseSoc Users Health</h1>
     <p class='muted'>Owner-only diagnostics for PulseSoc user control, badges, privileges, and premium identity.</p>
     <section class='grid'>
-      <article class='card'><h2>Users</h2><p class='metric'>{clean_html(user_count)}</p><p class='muted'>Total user rows visible to the app.</p></article>
-      <article class='card'><h2>Premium Mark Fields</h2><p>{'Available' if required_premium_columns <= set(premium_columns) else 'Needs migration'}</p><p class='muted'>Required fields: {clean_html(', '.join(sorted(required_premium_columns)))}</p></article>
-      <article class='card'><h2>Latest Query Error</h2><p class='muted'>{clean_html(latest_error or 'None in this local health check.')}</p></article>
+      <article class='card'><h2>Users</h2><p class='metric'>{html_escape(clean_html(user_count))}</p><p class='muted'>Total user rows visible to the app.</p></article>
+      <article class='card'><h2>Premium Mark Fields</h2><p>{'Available' if required_premium_columns <= set(premium_columns) else 'Needs migration'}</p><p class='muted'>Required fields: {html_escape(clean_html(', '.join(sorted(required_premium_columns))))}</p></article>
+      <article class='card'><h2>Latest Query Error</h2><p class='muted'>{html_escape(clean_html(latest_error or 'None in this local health check.'))}</p></article>
     </section>
     <section class='card'><h2>Table Diagnostics</h2><table><tr><th>Table</th><th>Exists</th><th>Columns</th></tr>{''.join(rows)}</table></section>
     <section class='card'><h2>Latest PulseSoc User Actions</h2><table><tr><th>Time</th><th>Action</th><th>Target Type</th><th>Target</th></tr>{action_rows or '<tr><td colspan=4>No recent PulseSoc user actions.</td></tr>'}</table></section>
@@ -97502,8 +97547,8 @@ def admin_pulse_user_detail_page(user_id):
     cur.execute("SELECT action, metadata, created_at FROM admin_audit_logs WHERE target_type='user' AND target_id=? ORDER BY id DESC LIMIT 30", (str(user_id),))
     audit = [dict(r) for r in cur.fetchall()]
     conn.close()
-    badge_grid = "".join(f"<span class='pill'>{'✓ ' if b['badge_key'] in user_badges else ''}{clean_html(b['label'])}</span>" for b in badges)
-    privilege_grid = "".join(f"<span class='pill'>{'✓ ' if p['privilege_key'] in user_privileges else ''}{clean_html(p['label'])}</span>" for p in privileges)
+    badge_grid = "".join(f"<span class='pill'>{'✓ ' if b['badge_key'] in user_badges else ''}{html_escape(clean_html(b['label']))}</span>" for b in badges)
+    privilege_grid = "".join(f"<span class='pill'>{'✓ ' if p['privilege_key'] in user_privileges else ''}{html_escape(clean_html(p['label']))}</span>" for p in privileges)
     quick_actions = "".join(f"<button name='action' value='{key}'>{label}</button>" for key, label in [
         ("grant_all", "Grant All Privileges"), ("remove_all", "Remove All Privileges"), ("grant_all_badges", "Grant All Badges"),
         ("remove_all_badges", "Remove All Badges"), ("grant_all_privileges", "Grant All Privileges Only"),
@@ -97515,27 +97560,27 @@ def admin_pulse_user_detail_page(user_id):
         ("suspend_pulse", "Suspend PulseSoc Access"), ("restore_pulse", "Restore PulseSoc Access"), ("reset_trust", "Reset Trust Score"),
         ("trust_100", "Set Trust Score to 100"),
     ])
-    audit_rows = "".join(f"<tr><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td><td><pre>{clean_html(a.get('metadata') or '')}</pre></td></tr>" for a in audit)
-    avatar_preview = f"<img src='{clean_html(row.get('avatar_url') or '')}' style='width:96px;height:96px;border-radius:24px;object-fit:cover'>" if row.get("avatar_url") else "<span class='pill'>No avatar</span>"
-    cover_preview = f"<img src='{clean_html(row.get('cover_url') or row.get('banner_url') or '')}' style='width:100%;max-height:160px;border-radius:18px;object-fit:cover'>" if (row.get("cover_url") or row.get("banner_url")) else "<span class='pill'>No cover</span>"
+    audit_rows = "".join(f"<tr><td>{html_escape(clean_html(a.get('action') or ''))}</td><td>{html_escape(clean_html(a.get('created_at') or ''))}</td><td><pre>{html_escape(clean_html(a.get('metadata') or ''))}</pre></td></tr>" for a in audit)
+    avatar_preview = f"<img src='{html_escape(clean_html(row.get('avatar_url') or ''))}' style='width:96px;height:96px;border-radius:24px;object-fit:cover'>" if row.get("avatar_url") else "<span class='pill'>No avatar</span>"
+    cover_preview = f"<img src='{html_escape(clean_html(row.get('cover_url') or row.get('banner_url') or ''))}' style='width:100%;max-height:160px;border-radius:18px;object-fit:cover'>" if (row.get("cover_url") or row.get("banner_url")) else "<span class='pill'>No cover</span>"
     body = f"""
-    <h1>PulseSoc User Control: {clean_html(row.get('display_name') or row.get('email') or str(user_id))}</h1>
-    <p class='muted'>{clean_html(message)}</p>
+    <h1>PulseSoc User Control: {html_escape(clean_html(row.get('display_name') or row.get('email') or str(user_id)))}</h1>
+    <p class='muted'>{html_escape(clean_html(message))}</p>
     <div class='grid'>
-      <section class='card'><h2>Status</h2><p><span class='pill'>Trust {int(row.get('trust_score') or 0)}</span> <span class='pill'>{clean_html(row.get('current_level') or 'New User')}</span> <span class='pill'>Live {clean_html(row.get('livestream_status') or 'locked')}</span> <span class='pill'>Premium {clean_html(row.get('premium_status') or 'inactive')}</span> <span class='pill'>Glow {'on' if row.get('premium_glow_manual_grant') else 'off'} · {clean_html(row.get('premium_mark_type') or 'star')}</span></p><p><a class='button' href='/pulse/profile'>View User Profile</a> <a class='button' href='/pulse?profile={user_id}'>View User Posts</a> <a class='button' href='/pulse/messages'>View User Messages</a> <a class='button' href='/admin/audit-logs'>View Audit Log</a></p></section>
+      <section class='card'><h2>Status</h2><p><span class='pill'>Trust {int(row.get('trust_score') or 0)}</span> <span class='pill'>{html_escape(clean_html(row.get('current_level') or 'New User'))}</span> <span class='pill'>Live {html_escape(clean_html(row.get('livestream_status') or 'locked'))}</span> <span class='pill'>Premium {html_escape(clean_html(row.get('premium_status') or 'inactive'))}</span> <span class='pill'>Glow {'on' if row.get('premium_glow_manual_grant') else 'off'} · {html_escape(clean_html(row.get('premium_mark_type') or 'star'))}</span></p><p><a class='button' href='/pulse/profile'>View User Profile</a> <a class='button' href='/pulse?profile={user_id}'>View User Posts</a> <a class='button' href='/pulse/messages'>View User Messages</a> <a class='button' href='/admin/audit-logs'>View Audit Log</a></p></section>
       <section class='card'><h2>Badges</h2>{badge_grid}</section>
       <section class='card'><h2>Privileges</h2>{privilege_grid}</section>
     </div>
     <form class='card' method='post'><h2>Profile Media Review</h2><div class='grid'><div><h3>Avatar</h3>{avatar_preview}<button name='action' value='remove_avatar'>Remove Avatar</button></div><div><h3>Cover</h3>{cover_preview}<button name='action' value='remove_cover'>Remove Cover</button></div></div></form>
     <form class='card' method='post'><h2>Edit Profile And Limits</h2>
-      <input name='display_name' value='{clean_html(row.get('display_name') or '')}' placeholder='Display name'>
-      <input name='username' value='{clean_html(row.get('username') or '')}' placeholder='Username'>
-      <input name='avatar_url' value='{clean_html(row.get('avatar_url') or '')}' placeholder='Avatar URL'>
-      <input name='cover_url' value='{clean_html(row.get('cover_url') or row.get('banner_url') or '')}' placeholder='Cover URL'>
-      <textarea name='bio' placeholder='Bio'>{clean_html(row.get('bio') or '')}</textarea>
+      <input name='display_name' value='{html_escape(clean_html(row.get('display_name') or ''))}' placeholder='Display name'>
+      <input name='username' value='{html_escape(clean_html(row.get('username') or ''))}' placeholder='Username'>
+      <input name='avatar_url' value='{html_escape(clean_html(row.get('avatar_url') or ''))}' placeholder='Avatar URL'>
+      <input name='cover_url' value='{html_escape(clean_html(row.get('cover_url') or row.get('banner_url') or ''))}' placeholder='Cover URL'>
+      <textarea name='bio' placeholder='Bio'>{html_escape(clean_html(row.get('bio') or ''))}</textarea>
       <input name='trust_score' value='{int(row.get('trust_score') or 0)}' placeholder='Trust score'>
-      <input name='current_level' value='{clean_html(row.get('current_level') or 'New User')}' placeholder='Level'>
-      <select name='livestream_status'><option>{clean_html(row.get('livestream_status') or 'locked')}</option><option>locked</option><option>progress</option><option>eligible</option><option>approved</option><option>suspended</option></select>
+      <input name='current_level' value='{html_escape(clean_html(row.get('current_level') or 'New User'))}' placeholder='Level'>
+      <select name='livestream_status'><option>{html_escape(clean_html(row.get('livestream_status') or 'locked'))}</option><option>locked</option><option>progress</option><option>eligible</option><option>approved</option><option>suspended</option></select>
       <button class='button primary' name='action' value='save'>Save Manual Changes</button>
     </form>
     <form class='card' method='post'><h2>Owner Quick Actions</h2><div class='actions'>{quick_actions}</div></form>
@@ -97585,21 +97630,21 @@ def admin_monetization_page():
         layer_parts = []
         for layer in summary.get("revenue_layers", []):
             layer_items = "".join("<li>{}</li>".format(clean_html(i)) for i in layer.get("items", []))
-            layer_parts.append(f"<article class='card'><h2>{clean_html(layer.get('layer') or '')}</h2><ul>{layer_items}</ul></article>")
+            layer_parts.append(f"<article class='card'><h2>{html_escape(clean_html(layer.get('layer') or ''))}</h2><ul>{layer_items}</ul></article>")
         layers = "".join(layer_parts)
-        creator_rows = "".join(f"<tr><td>{c.get('user_id')}</td><td>{clean_html(c.get('display_name') or '')}</td><td>{int(c.get('posts') or 0)}</td><td>{clean_html(c.get('verification_status') or '')}</td></tr>" for c in candidates)
+        creator_rows = "".join(f"<tr><td>{c.get('user_id')}</td><td>{html_escape(clean_html(c.get('display_name') or ''))}</td><td>{int(c.get('posts') or 0)}</td><td>{html_escape(clean_html(c.get('verification_status') or ''))}</td></tr>" for c in candidates)
         all_counts = {**{k: v for k, v in summary.items() if isinstance(v, int)}, **safe_counts}
-        cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p style='font-size:32px;font-weight:900'>{v}</p></div>" for k, v in all_counts.items())
+        cards = "".join(f"<div class='card'><h2>{html_escape(clean_html(k.replace('_',' ').title()))}</h2><p style='font-size:32px;font-weight:900'>{v}</p></div>" for k, v in all_counts.items())
         config = {
             "stripe": "Configured" if STRIPE_SECRET_KEY else "Not configured yet",
             "google_ads": "Configured" if os.getenv("GOOGLE_ADS_CONVERSION_ID") or os.getenv("GOOGLE_ADS_ID") else "Not configured yet",
             "marketplace": "Payment release locked until compliance review",
             "teacher_earnings": "Earnings release locked until compliance review",
         }
-        body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Premium, creator tools, courses, marketplace products, sponsorship controls, and enterprise leads. Empty providers show setup states instead of crashing.</p><p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a> <a class='button' href='/admin/payments-health'>Payments Health</a> <a class='button' href='/admin/sponsorships'>Sponsorships</a></p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Provider Setup</h2><pre>{clean_html(json.dumps(config, indent=2))}</pre></div><div class='card'><h2>Safe Sponsor Slot</h2><pre>{clean_html(json.dumps(slot, indent=2))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
+        body = f"<h1>Monetization Control</h1><p class='muted'>Trust-first monetization: Premium, creator tools, courses, marketplace products, sponsorship controls, and enterprise leads. Empty providers show setup states instead of crashing.</p><p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a> <a class='button' href='/admin/payments-health'>Payments Health</a> <a class='button' href='/admin/sponsorships'>Sponsorships</a></p><div class='grid'>{cards}</div><section class='grid'>{layers}</section><div class='card'><h2>Provider Setup</h2><pre>{html_escape(clean_html(json.dumps(config, indent=2)))}</pre></div><div class='card'><h2>Safe Sponsor Slot</h2><pre>{html_escape(clean_html(json.dumps(slot, indent=2)))}</pre></div><div class='card'><h2>Creator Candidates</h2><table><tr><th>User</th><th>Public Name</th><th>Posts</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=4>No candidates yet.</td></tr>'}</table></div>"
     except Exception as exc:
         logging.exception("ADMIN_MONETIZATION_PAGE_FAILED error=%s", exc)
-        body = f"<h1>Monetization Control</h1><div class='card'><h2>Monetization diagnostics needed</h2><p class='muted'>The page recovered safely instead of showing a raw error.</p><p>{clean_html(str(exc))}</p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a></div>"
+        body = f"<h1>Monetization Control</h1><div class='card'><h2>Monetization diagnostics needed</h2><p class='muted'>The page recovered safely instead of showing a raw error.</p><p>{html_escape(clean_html(str(exc)))}</p><a class='button' href='/admin/monetization-health'>Open Monetization Health</a></div>"
     return admin_page_html("Monetization", body, admin)
 
 
@@ -97635,7 +97680,7 @@ def admin_monetization_health_page():
         "tables": table_rows,
     }
     conn.close()
-    body = f"<h1>Monetization Health</h1><p class='muted'>No secrets are shown here. Missing providers display setup states instead of crashing admin.</p><div class='card'><pre>{clean_html(json.dumps(diagnostics, indent=2, default=str))}</pre></div>"
+    body = f"<h1>Monetization Health</h1><p class='muted'>No secrets are shown here. Missing providers display setup states instead of crashing admin.</p><div class='card'><pre>{html_escape(clean_html(json.dumps(diagnostics, indent=2, default=str)))}</pre></div>"
     return admin_page_html("Monetization Health", body, admin)
 
 
@@ -97668,7 +97713,7 @@ def admin_payments_health_page():
         "status": "ready" if STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET else "setup_required",
         "counts": counts,
     }
-    body = f"<h1>Payments Health</h1><p class='muted'>No secrets are exposed. Missing Stripe setup shows as setup required, never a crash.</p><section class='card'><pre>{clean_html(json.dumps(diagnostics, indent=2, default=str))}</pre></section>"
+    body = f"<h1>Payments Health</h1><p class='muted'>No secrets are exposed. Missing Stripe setup shows as setup required, never a crash.</p><section class='card'><pre>{html_escape(clean_html(json.dumps(diagnostics, indent=2, default=str)))}</pre></section>"
     return admin_page_html("Payments Health", body, admin)
 
 
@@ -97705,22 +97750,22 @@ def admin_payments_page():
     accounts = [dict(row) for row in cur.fetchall()]
     conn.close()
     cards = "".join(
-        f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{(f'${v/100:.2f}' if k.endswith('_cents') else v)}</p></div>"
+        f"<div class='card'><h2>{html_escape(clean_html(k.replace('_',' ').title()))}</h2><p class='metric'>{(f'${v/100:.2f}' if k.endswith('_cents') else v)}</p></div>"
         for k, v in counts.items()
     )
-    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('buyer_name') or '')}</td><td>{clean_html(marketplace_seller_identity.display_store_name(t))}<br><small>Owner: {clean_html(t.get('seller_owner_name') or '')}</small></td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {clean_html(t.get('currency') or 'USD')}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{clean_html(t.get('status') or '')}</td></tr>" for t in transactions)
-    acct_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{int(a.get('user_id') or 0)}</td><td>{clean_html(a.get('seller_type') or '')}</td><td>{clean_html(a.get('onboarding_status') or '')}</td><td>{'yes' if a.get('charges_enabled') else 'no'}</td><td>{'yes' if a.get('payouts_enabled') else 'no'}</td><td>{clean_html(a.get('connected_account_id') or '')}</td></tr>" for a in accounts)
+    tx_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{html_escape(clean_html(t.get('buyer_name') or ''))}</td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(t)))}<br><small>Owner: {html_escape(clean_html(t.get('seller_owner_name') or ''))}</small></td><td>{html_escape(clean_html(t.get('seller_type') or ''))}</td><td>{html_escape(clean_html(t.get('item_type') or ''))} #{int(t.get('item_id') or 0)}</td><td>{(int(t.get('amount_cents') or 0)/100):.2f} {html_escape(clean_html(t.get('currency') or 'USD'))}</td><td>{(int(t.get('platform_fee_cents') or 0)/100):.2f}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td></tr>" for t in transactions)
+    acct_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{int(a.get('user_id') or 0)}</td><td>{html_escape(clean_html(a.get('seller_type') or ''))}</td><td>{html_escape(clean_html(a.get('onboarding_status') or ''))}</td><td>{'yes' if a.get('charges_enabled') else 'no'}</td><td>{'yes' if a.get('payouts_enabled') else 'no'}</td><td>{html_escape(clean_html(a.get('connected_account_id') or ''))}</td></tr>" for a in accounts)
     core = creator_summary.get("summary") or {}
     core_cards = "".join(
-        f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{(f'${int(v or 0)/100:.2f}' if k.endswith('_cents') else int(v or 0))}</p></div>"
+        f"<div class='card'><h2>{html_escape(clean_html(k.replace('_',' ').title()))}</h2><p class='metric'>{(f'${int(v or 0)/100:.2f}' if k.endswith('_cents') else int(v or 0))}</p></div>"
         for k, v in core.items()
     )
-    ledger_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('item_type') or '')}</td><td>{int(t.get('buyer_user_id') or 0)}</td><td>{int(t.get('seller_user_id') or 0)}</td><td>${int(t.get('gross_amount_cents') or 0)/100:.2f}</td><td>${int(t.get('platform_fee_cents') or 0)/100:.2f}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('trace_id') or '')}</td></tr>" for t in (creator_summary.get("transactions") or []))
-    wallet_rows = "".join(f"<tr><td>{w.get('id')}</td><td>{int(w.get('user_id') or 0)}</td><td>{clean_html(w.get('wallet_type') or '')}</td><td>${int(w.get('pending_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('available_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('lifetime_fees_cents') or 0)/100:.2f}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (creator_summary.get("wallets") or []))
+    ledger_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{html_escape(clean_html(t.get('item_type') or ''))}</td><td>{int(t.get('buyer_user_id') or 0)}</td><td>{int(t.get('seller_user_id') or 0)}</td><td>${int(t.get('gross_amount_cents') or 0)/100:.2f}</td><td>${int(t.get('platform_fee_cents') or 0)/100:.2f}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td><td>{html_escape(clean_html(t.get('trace_id') or ''))}</td></tr>" for t in (creator_summary.get("transactions") or []))
+    wallet_rows = "".join(f"<tr><td>{w.get('id')}</td><td>{int(w.get('user_id') or 0)}</td><td>{html_escape(clean_html(w.get('wallet_type') or ''))}</td><td>${int(w.get('pending_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('available_balance_cents') or 0)/100:.2f}</td><td>${int(w.get('lifetime_fees_cents') or 0)/100:.2f}</td><td>{html_escape(clean_html(w.get('status') or ''))}</td></tr>" for w in (creator_summary.get("wallets") or []))
     body = f"""
     <h1>Payments Command Center</h1><p class='muted'>Stripe Connect-style marketplace payments backed by internal wallets, append-only ledger entries, webhook idempotency, entitlements, and audit logs.</p>
     <section class='card'><h2>Treasury Modules</h2><p class='muted'>Platform fee revenue now flows into the CoinPlotXAI treasury ledger and settlement system.</p><div class='actions'><a class='button primary' href='/admin/treasury'>Treasury</a><a class='button' href='/admin/platform-revenue'>Platform Revenue</a><a class='button' href='/admin/creator-payouts'>Creator Payouts</a><a class='button' href='/admin/fee-ledger'>Fee Ledger</a><a class='button' href='/admin/escrow'>Escrow</a><a class='button' href='/admin/settlements'>Settlement Engine</a><a class='button' href='/admin/stripe-connect'>Stripe Connect</a><a class='button' href='/admin/tax-center'>Tax Center</a><a class='button' href='/admin/revenue-analytics'>Revenue Analytics</a><a class='button' href='/admin/financial-audit'>Financial Audit</a><a class='button' href='/admin/refunds'>Refund Center</a><a class='button' href='/admin/disputes'>Dispute Resolution</a></div></section>
-    <section class='card'><h2>Provider Status</h2><pre>{clean_html(json.dumps(provider, indent=2, default=str))}</pre></section>
+    <section class='card'><h2>Provider Status</h2><pre>{html_escape(clean_html(json.dumps(provider, indent=2, default=str)))}</pre></section>
     <section class='grid'>{core_cards}</section>
     <section class='card'><h2>Creator Economy Ledger Transactions</h2><table class='table'><tr><th>ID</th><th>Item</th><th>Buyer</th><th>Seller</th><th>Gross</th><th>Fee</th><th>Status</th><th>Trace</th></tr>{ledger_rows or '<tr><td colspan=8>No creator economy transactions yet.</td></tr>'}</table></section>
     <section class='card'><h2>Wallet Balances</h2><table class='table'><tr><th>ID</th><th>User</th><th>Wallet</th><th>Pending</th><th>Available</th><th>Fees</th><th>Status</th></tr>{wallet_rows or '<tr><td colspan=7>No wallets yet.</td></tr>'}</table></section>
@@ -97778,7 +97823,7 @@ def admin_payments_command_center_page():
         ("Failed Payouts", int(summary.get("failed_payouts") or 0), "Payout failures requiring operator review."),
     ]
     kpi_html = "".join(
-        f"<article class='pay-kpi'><span>{clean_html(label)}</span><strong>{clean_html(str(value))}</strong><p>{clean_html(note)}</p></article>"
+        f"<article class='pay-kpi'><span>{html_escape(clean_html(label))}</span><strong>{html_escape(clean_html(str(value)))}</strong><p>{html_escape(clean_html(note))}</p></article>"
         for label, value, note in kpis
     )
 
@@ -97812,13 +97857,13 @@ def admin_payments_command_center_page():
         })
     stream_items = sorted(stream_items, key=lambda item: item.get("time") or "", reverse=True)[:14]
     stream_html = "".join(
-        f"<div class='finance-event'><span class='event-kind'>{clean_html(item['kind'])}</span><div><strong>{clean_html(item['title'])}</strong><p>{dollars(item['amount'])} · {clean_html(item['status'])} · {smart_time_html(item.get('time'))}</p></div><code>{clean_html(item.get('trace') or 'trace-ready')}</code></div>"
+        f"<div class='finance-event'><span class='event-kind'>{html_escape(clean_html(item['kind']))}</span><div><strong>{html_escape(clean_html(item['title']))}</strong><p>{dollars(item['amount'])} · {html_escape(clean_html(item['status']))} · {smart_time_html(item.get('time'))}</p></div><code>{html_escape(clean_html(item.get('trace') or 'trace-ready'))}</code></div>"
         for item in stream_items
     ) or "<p class='muted'>No financial movement yet. The command stream will populate as checkout, fee, payout, refund, and escrow events arrive.</p>"
 
     top_creators = sorted(creator_balances, key=lambda c: int(c.get("lifetime_net_cents") or 0), reverse=True)[:6]
     creator_rows = "".join(
-        f"<tr><td>{int(c.get('user_id') or 0)}</td><td>{clean_html(c.get('seller_type') or '')}</td><td>{dollars(c.get('lifetime_gross_cents'))}</td><td>{dollars(c.get('lifetime_fees_cents'))}</td><td>{dollars(c.get('available_balance_cents'))}</td><td>{'Frozen' if c.get('frozen') else 'Clear'}</td></tr>"
+        f"<tr><td>{int(c.get('user_id') or 0)}</td><td>{html_escape(clean_html(c.get('seller_type') or ''))}</td><td>{dollars(c.get('lifetime_gross_cents'))}</td><td>{dollars(c.get('lifetime_fees_cents'))}</td><td>{dollars(c.get('available_balance_cents'))}</td><td>{'Frozen' if c.get('frozen') else 'Clear'}</td></tr>"
         for c in top_creators
     )
     risk_notes = [
@@ -97828,7 +97873,7 @@ def admin_payments_command_center_page():
         ("Creator Monetization Signals", "Active", f"{len(creator_balances)} creator balance records tracked."),
     ]
     insight_html = "".join(
-        f"<article class='pay-insight'><span>{clean_html(label)}</span><strong>{clean_html(status)}</strong><p>{clean_html(note)}</p></article>"
+        f"<article class='pay-insight'><span>{html_escape(clean_html(label))}</span><strong>{html_escape(clean_html(status))}</strong><p>{html_escape(clean_html(note))}</p></article>"
         for label, status, note in risk_notes
     )
     quick_actions = [
@@ -97842,7 +97887,7 @@ def admin_payments_command_center_page():
         ("Open Disputes", "/admin/disputes"),
         ("Open Tax Center", "/admin/tax-center"),
     ]
-    quick_html = "".join(f"<a class='button' href='{href}'>{clean_html(label)}</a>" for label, href in quick_actions)
+    quick_html = "".join(f"<a class='button' href='{href}'>{html_escape(clean_html(label))}</a>" for label, href in quick_actions)
     provider_status = provider.get("status") or ("ready" if provider.get("stripe_secret_configured") else "setup_required")
     body = f"""
     <style>
@@ -97855,13 +97900,13 @@ def admin_payments_command_center_page():
     @keyframes payFlow{{0%,100%{{filter:saturate(1);transform:translateY(0)}}50%{{filter:saturate(1.35);transform:translateY(-1px)}}}}
     @media(max-width:820px){{.treasury-flow{{grid-template-columns:1fr 1fr}}.flow-step:after{{display:none}}.finance-event{{grid-template-columns:1fr}}.finance-event code{{white-space:normal}}}}
     </style>
-    <section class='payments-hero'><span class='pill'>Financial Operating Hub · {clean_html(str(provider_status))}</span><h1>Payments Command Center</h1><p class='muted'>Monitor platform revenue, creator payouts, treasury health, subscriptions, and creator economy flow in realtime.</p><div class='pay-pulse'></div></section>
+    <section class='payments-hero'><span class='pill'>Financial Operating Hub · {html_escape(clean_html(str(provider_status)))}</span><h1>Payments Command Center</h1><p class='muted'>Monitor platform revenue, creator payouts, treasury health, subscriptions, and creator economy flow in realtime.</p><div class='pay-pulse'></div></section>
     <section class='pay-grid'>{kpi_html}</section>
     <section class='card'><h2>Creator Economy Flow</h2><div class='treasury-flow'><div class='flow-step'><strong>Customer payment</strong><span>Stripe checkout confirms trusted payment.</span></div><div class='flow-step'><strong>Platform fee</strong><span>CoinPlotXAI fee is calculated from active rules.</span></div><div class='flow-step'><strong>Creator allocation</strong><span>Seller net moves to pending balance.</span></div><div class='flow-step'><strong>Treasury allocation</strong><span>Fee revenue posts to platform wallet and fee ledger.</span></div><div class='flow-step'><strong>Escrow</strong><span>Risk and fulfillment windows hold funds safely.</span></div><div class='flow-step'><strong>Settlement payout</strong><span>Eligible funds release to connected accounts.</span></div></div></section>
     <section class='grid'><div class='card'><h2>Live Financial Stream</h2>{stream_html}</div><div class='card'><h2>AI Financial Intelligence</h2><section class='pay-grid'>{insight_html}</section></div></section>
     <section class='card'><h2>Quick Actions</h2><div class='actions'>{quick_html}</div></section>
     <section class='card table-wrap'><h2>Top Creator Balances</h2><table class='table'><tr><th>User</th><th>Seller</th><th>Gross</th><th>Fees</th><th>Available</th><th>Status</th></tr>{creator_rows or '<tr><td colspan=6>No creator balances yet.</td></tr>'}</table></section>
-    <section class='card'><h2>Provider Snapshot</h2><pre>{clean_html(json.dumps(provider, indent=2, default=str))}</pre></section>
+    <section class='card'><h2>Provider Snapshot</h2><pre>{html_escape(clean_html(json.dumps(provider, indent=2, default=str)))}</pre></section>
     """
     return admin_page_html("Payments Command Center", body, admin)
 
@@ -97902,14 +97947,14 @@ def admin_treasury_page():
         ("Failed Payouts", int(summary.get("failed_payouts") or 0), "Failures requiring operator review."),
         ("Refund Rate", f"{int(summary.get('refund_rate_bps') or 0) / 100:.2f}%", "Refunds divided by settled transactions."),
     ]
-    card_html = "".join(f"<article class='treasury-card'><span>{clean_html(label)}</span><strong>{clean_html(str(value))}</strong><p>{clean_html(note)}</p></article>" for label, value, note in cards)
-    wallet_rows = "".join(f"<tr><td>{clean_html(w.get('wallet_key') or '')}</td><td>{clean_html(w.get('currency') or 'USD')}</td><td>{dollars(w.get('available_balance_cents'))}</td><td>{dollars(w.get('pending_balance_cents'))}</td><td>{dollars(w.get('lifetime_revenue_cents'))}</td><td>{dollars(w.get('lifetime_refunds_cents'))}</td><td>{clean_html(w.get('status') or '')}</td></tr>" for w in (data.get("wallets") or []))
-    treasury_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('transaction_type') or '')}</td><td>{clean_html(t.get('seller_type') or '')}</td><td>{clean_html(t.get('item_type') or '')}</td><td>{dollars(t.get('gross_amount_cents'))}</td><td>{dollars(t.get('platform_fee_cents'))}</td><td>{dollars(t.get('creator_net_cents'))}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('trace_id') or '')}</td></tr>" for t in (data.get("treasury_transactions") or []))
-    fee_rows = "".join(f"<tr><td>{f.get('id')}</td><td>{clean_html(f.get('fee_type') or '')}</td><td>{clean_html(f.get('source_type') or '')} #{clean_html(f.get('source_id') or '')}</td><td>{dollars(f.get('amount_cents'))}</td><td>{clean_html(f.get('status') or '')}</td><td>{clean_html(f.get('provider_reference') or '')}</td><td>{clean_html(f.get('trace_id') or '')}</td></tr>" for f in (data.get("fee_ledger") or []))
-    payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{int(p.get('user_id') or 0)}</td><td>{clean_html(p.get('seller_type') or '')}</td><td>{dollars(p.get('amount_cents'))}</td><td>{clean_html(p.get('status') or '')}</td><td>{clean_html(p.get('risk_status') or '')}</td><td>{smart_time_html(p.get('scheduled_for'))}</td><td>{clean_html(p.get('trace_id') or '')}</td></tr>" for p in (data.get("payout_queue") or []))
-    escrow_rows = "".join(f"<tr><td>{e.get('id')}</td><td>{int(e.get('seller_user_id') or 0)}</td><td>{clean_html(e.get('seller_type') or '')}</td><td>{dollars(e.get('amount_cents'))}</td><td>{clean_html(e.get('status') or '')}</td><td>{smart_time_html(e.get('release_after'))}</td><td>{clean_html(e.get('trace_id') or '')}</td></tr>" for e in (data.get("escrow_holds") or []))
-    revenue_rows = "".join(f"<tr><td>{clean_html(r.get('period_key') or '')}</td><td>{clean_html(r.get('revenue_source') or '')}</td><td>{clean_html(r.get('seller_type') or '')}</td><td>{clean_html(r.get('item_type') or '')}</td><td>{dollars(r.get('gross_amount_cents'))}</td><td>{dollars(r.get('platform_fee_cents'))}</td><td>{dollars(r.get('creator_net_cents'))}</td><td>{int(r.get('transaction_count') or 0)}</td></tr>" for r in (data.get("revenue_breakdown") or []))
-    creator_rows = "".join(f"<tr><td>{int(c.get('user_id') or 0)}</td><td>{clean_html(c.get('seller_type') or '')}</td><td>{dollars(c.get('pending_balance_cents'))}</td><td>{dollars(c.get('available_balance_cents'))}</td><td>{dollars(c.get('lifetime_gross_cents'))}</td><td>{dollars(c.get('lifetime_fees_cents'))}</td><td>{dollars(c.get('lifetime_net_cents'))}</td><td>{'frozen' if c.get('frozen') else 'clear'}</td></tr>" for c in (data.get("creator_balances") or []))
+    card_html = "".join(f"<article class='treasury-card'><span>{html_escape(clean_html(label))}</span><strong>{html_escape(clean_html(str(value)))}</strong><p>{html_escape(clean_html(note))}</p></article>" for label, value, note in cards)
+    wallet_rows = "".join(f"<tr><td>{html_escape(clean_html(w.get('wallet_key') or ''))}</td><td>{html_escape(clean_html(w.get('currency') or 'USD'))}</td><td>{dollars(w.get('available_balance_cents'))}</td><td>{dollars(w.get('pending_balance_cents'))}</td><td>{dollars(w.get('lifetime_revenue_cents'))}</td><td>{dollars(w.get('lifetime_refunds_cents'))}</td><td>{html_escape(clean_html(w.get('status') or ''))}</td></tr>" for w in (data.get("wallets") or []))
+    treasury_rows = "".join(f"<tr><td>{t.get('id')}</td><td>{html_escape(clean_html(t.get('transaction_type') or ''))}</td><td>{html_escape(clean_html(t.get('seller_type') or ''))}</td><td>{html_escape(clean_html(t.get('item_type') or ''))}</td><td>{dollars(t.get('gross_amount_cents'))}</td><td>{dollars(t.get('platform_fee_cents'))}</td><td>{dollars(t.get('creator_net_cents'))}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td><td>{html_escape(clean_html(t.get('trace_id') or ''))}</td></tr>" for t in (data.get("treasury_transactions") or []))
+    fee_rows = "".join(f"<tr><td>{f.get('id')}</td><td>{html_escape(clean_html(f.get('fee_type') or ''))}</td><td>{html_escape(clean_html(f.get('source_type') or ''))} #{html_escape(clean_html(f.get('source_id') or ''))}</td><td>{dollars(f.get('amount_cents'))}</td><td>{html_escape(clean_html(f.get('status') or ''))}</td><td>{html_escape(clean_html(f.get('provider_reference') or ''))}</td><td>{html_escape(clean_html(f.get('trace_id') or ''))}</td></tr>" for f in (data.get("fee_ledger") or []))
+    payout_rows = "".join(f"<tr><td>{p.get('id')}</td><td>{int(p.get('user_id') or 0)}</td><td>{html_escape(clean_html(p.get('seller_type') or ''))}</td><td>{dollars(p.get('amount_cents'))}</td><td>{html_escape(clean_html(p.get('status') or ''))}</td><td>{html_escape(clean_html(p.get('risk_status') or ''))}</td><td>{smart_time_html(p.get('scheduled_for'))}</td><td>{html_escape(clean_html(p.get('trace_id') or ''))}</td></tr>" for p in (data.get("payout_queue") or []))
+    escrow_rows = "".join(f"<tr><td>{e.get('id')}</td><td>{int(e.get('seller_user_id') or 0)}</td><td>{html_escape(clean_html(e.get('seller_type') or ''))}</td><td>{dollars(e.get('amount_cents'))}</td><td>{html_escape(clean_html(e.get('status') or ''))}</td><td>{smart_time_html(e.get('release_after'))}</td><td>{html_escape(clean_html(e.get('trace_id') or ''))}</td></tr>" for e in (data.get("escrow_holds") or []))
+    revenue_rows = "".join(f"<tr><td>{html_escape(clean_html(r.get('period_key') or ''))}</td><td>{html_escape(clean_html(r.get('revenue_source') or ''))}</td><td>{html_escape(clean_html(r.get('seller_type') or ''))}</td><td>{html_escape(clean_html(r.get('item_type') or ''))}</td><td>{dollars(r.get('gross_amount_cents'))}</td><td>{dollars(r.get('platform_fee_cents'))}</td><td>{dollars(r.get('creator_net_cents'))}</td><td>{int(r.get('transaction_count') or 0)}</td></tr>" for r in (data.get("revenue_breakdown") or []))
+    creator_rows = "".join(f"<tr><td>{int(c.get('user_id') or 0)}</td><td>{html_escape(clean_html(c.get('seller_type') or ''))}</td><td>{dollars(c.get('pending_balance_cents'))}</td><td>{dollars(c.get('available_balance_cents'))}</td><td>{dollars(c.get('lifetime_gross_cents'))}</td><td>{dollars(c.get('lifetime_fees_cents'))}</td><td>{dollars(c.get('lifetime_net_cents'))}</td><td>{'frozen' if c.get('frozen') else 'clear'}</td></tr>" for c in (data.get("creator_balances") or []))
     body = f"""
     <style>
     .treasury-hero{{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.2);border-radius:24px;padding:24px;background:radial-gradient(circle at top left,rgba(120,255,214,.2),transparent 32%),linear-gradient(135deg,rgba(9,14,30,.96),rgba(6,9,19,.98));box-shadow:0 24px 80px rgba(0,0,0,.35)}}
@@ -97920,7 +97965,7 @@ def admin_treasury_page():
     </style>
     <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPlotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
     <section class='treasury-grid'>{card_html}</section>
-    <section class='card'><h2>Treasury Health</h2><pre>{clean_html(json.dumps({'stripe': provider, 'treasury_tables': 'active', 'settlement_engine': 'ledger_ready', 'payout_safety': 'queue_and_review'}, indent=2, default=str))}</pre></section>
+    <section class='card'><h2>Treasury Health</h2><pre>{html_escape(clean_html(json.dumps({'stripe': provider, 'treasury_tables': 'active', 'settlement_engine': 'ledger_ready', 'payout_safety': 'queue_and_review'}, indent=2, default=str)))}</pre></section>
     <section class='card table-wrap'><h2>Platform Wallets</h2><table class='table'><tr><th>Wallet</th><th>Currency</th><th>Available</th><th>Pending</th><th>Lifetime Revenue</th><th>Refunds</th><th>Status</th></tr>{wallet_rows or '<tr><td colspan=7>No platform wallets yet.</td></tr>'}</table></section>
     <section class='card table-wrap'><h2>Treasury Transactions</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Seller</th><th>Item</th><th>Gross</th><th>Fee</th><th>Creator Net</th><th>Status</th><th>Trace</th></tr>{treasury_rows or '<tr><td colspan=9>No treasury transactions yet.</td></tr>'}</table></section>
     <section class='card table-wrap'><h2>Fee Ledger</h2><table class='table'><tr><th>ID</th><th>Fee Type</th><th>Source</th><th>Amount</th><th>Status</th><th>Provider Ref</th><th>Trace</th></tr>{fee_rows or '<tr><td colspan=7>No fee ledger entries yet.</td></tr>'}</table></section>
@@ -97969,9 +98014,9 @@ def admin_sponsorships_page():
     cur.execute("SELECT * FROM sponsor_slots ORDER BY id DESC LIMIT 80")
     sponsors = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{s.get('id')}</td><td>{clean_html(s.get('campaign_name') or s.get('sponsor_name') or '')}</td><td>{clean_html(s.get('category') or '')}</td><td>{int(s.get('risk_rating') or 0)}</td><td>{clean_html(s.get('status') or '')}</td><td><form method='post'><input type='hidden' name='sponsor_id' value='{s.get('id')}'><input name='reason' placeholder='Reason optional'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='pause'>Pause</button><button name='action' value='risky'>Risky</button></form></td></tr>" for s in sponsors)
+    rows = "".join(f"<tr><td>{s.get('id')}</td><td>{html_escape(clean_html(s.get('campaign_name') or s.get('sponsor_name') or ''))}</td><td>{html_escape(clean_html(s.get('category') or ''))}</td><td>{int(s.get('risk_rating') or 0)}</td><td>{html_escape(clean_html(s.get('status') or ''))}</td><td><form method='post'><input type='hidden' name='sponsor_id' value='{s.get('id')}'><input name='reason' placeholder='Reason optional'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button><button name='action' value='pause'>Pause</button><button name='action' value='risky'>Risky</button></form></td></tr>" for s in sponsors)
     body = f"""
-    <h1>Sponsorship Control</h1><p class='muted'>Sponsors are reviewed before display. Risky claims, unsafe crypto promises, and misleading campaigns stay out.</p><p>{clean_html(message)}</p>
+    <h1>Sponsorship Control</h1><p class='muted'>Sponsors are reviewed before display. Risky claims, unsafe crypto promises, and misleading campaigns stay out.</p><p>{html_escape(clean_html(message))}</p>
     <section class='card'><h2>Create Sponsor Request</h2><form method='post'><input type='hidden' name='action' value='create'><input name='campaign_name' placeholder='Campaign name'><input name='landing_page' placeholder='Landing page'><input name='category' placeholder='Category'><button>Create Review</button></form></section>
     <section class='card'><h2>Pipeline</h2><table class='table'><tr><th>ID</th><th>Campaign</th><th>Category</th><th>Risk</th><th>Status</th><th>Actions</th></tr>{rows or '<tr><td colspan=6>No sponsor requests yet.</td></tr>'}</table></section>
     """
@@ -98135,28 +98180,28 @@ def admin_capability_matrix_page():
         "high": sum(1 for row in matrix if row["risk_level"] == "high"),
     }
     rows_html = "".join(
-        f"<tr><td>{clean_html(row['feature'])}</td><td>{clean_html(row['backend_status'])}</td><td>{clean_html(row['frontend_status'])}</td><td>{clean_html(row['realtime_status'])}</td><td>{clean_html(row['mobile_status'])}</td><td>{clean_html(row['ai_integration'])}</td><td>{clean_html(row['monetization_readiness'])}</td><td>{clean_html(row['security_review'])}</td><td>{clean_html(row['observability'])}</td><td>{clean_html(row['last_tested'])}</td><td>{clean_html(row['risk_level'])}</td><td>{clean_html(row['flag_state'])}</td><td>{clean_html(row['production_status'])}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(row['feature']))}</td><td>{html_escape(clean_html(row['backend_status']))}</td><td>{html_escape(clean_html(row['frontend_status']))}</td><td>{html_escape(clean_html(row['realtime_status']))}</td><td>{html_escape(clean_html(row['mobile_status']))}</td><td>{html_escape(clean_html(row['ai_integration']))}</td><td>{html_escape(clean_html(row['monetization_readiness']))}</td><td>{html_escape(clean_html(row['security_review']))}</td><td>{html_escape(clean_html(row['observability']))}</td><td>{html_escape(clean_html(row['last_tested']))}</td><td>{html_escape(clean_html(row['risk_level']))}</td><td>{html_escape(clean_html(row['flag_state']))}</td><td>{html_escape(clean_html(row['production_status']))}</td></tr>"
         for row in matrix
     )
     flag_forms = "".join(
         f"""
         <form class='card' method='post'>
-          <input type='hidden' name='feature_key' value='{clean_html(row['feature_key'])}'>
-          <h2>{clean_html(row['feature'])}</h2>
-          <p><span class='pill'>{clean_html(row['flag_state'])}</span> <span class='pill'>Risk {clean_html(row['risk_level'])}</span> <span class='pill'>Rollout {int(row['rollout_percentage'])}%</span></p>
+          <input type='hidden' name='feature_key' value='{html_escape(clean_html(row['feature_key']))}'>
+          <h2>{html_escape(clean_html(row['feature']))}</h2>
+          <p><span class='pill'>{html_escape(clean_html(row['flag_state']))}</span> <span class='pill'>Risk {html_escape(clean_html(row['risk_level']))}</span> <span class='pill'>Rollout {int(row['rollout_percentage'])}%</span></p>
           <label>State <select name='state'>{''.join(f"<option value='{s}' {'selected' if s == row['flag_state'] else ''}>{s}</option>" for s in sorted(feature_flag_engine.VALID_STATES))}</select></label>
           <label>Rollout <input name='rollout_percentage' type='number' min='0' max='100' value='{int(row['rollout_percentage'])}'></label>
           <label><input type='checkbox' name='premium_required' {'checked' if row['premium_required'] else ''}> Premium required</label>
           <label><input type='checkbox' name='owner_only' {'checked' if row['owner_only'] else ''}> Owner only</label>
           <label><input type='checkbox' name='internal_only' {'checked' if row['internal_only'] else ''}> Internal only</label>
-          <textarea name='notes' placeholder='Owner/admin notes'>{clean_html(row.get('notes') or '')}</textarea>
+          <textarea name='notes' placeholder='Owner/admin notes'>{html_escape(clean_html(row.get('notes') or ''))}</textarea>
           <button>Update Exposure</button>
         </form>
         """
         for row in matrix
     )
     body = f"""
-    <h1>Capability Matrix</h1><p class='muted'>Production trust control: every public feature must be real, gated, observable, and safe. Beta/internal features should not be oversold.</p><p>{clean_html(message)}</p>
+    <h1>Capability Matrix</h1><p class='muted'>Production trust control: every public feature must be real, gated, observable, and safe. Beta/internal features should not be oversold.</p><p>{html_escape(clean_html(message))}</p>
     <section class='grid'><div class='card'><h2>Production Ready</h2><p class='metric'>{summary['production']}</p></div><div class='card'><h2>Beta</h2><p class='metric'>{summary['beta']}</p></div><div class='card'><h2>Internal Only</h2><p class='metric'>{summary['internal']}</p></div><div class='card'><h2>High Risk</h2><p class='metric'>{summary['high']}</p></div></section>
     <section class='card'><h2>Feature Readiness</h2><table class='table'><tr><th>Feature</th><th>Backend</th><th>Frontend</th><th>Realtime</th><th>Mobile</th><th>AI</th><th>Monetization</th><th>Security</th><th>Observability</th><th>Last Tested</th><th>Risk</th><th>Flag</th><th>Production</th></tr>{rows_html}</table></section>
     <section class='grid'>{flag_forms}</section>
@@ -98184,12 +98229,12 @@ def admin_reliability_page():
     cur.execute("SELECT * FROM reliability_snapshots ORDER BY id DESC LIMIT 12")
     history = [dict(row) for row in cur.fetchall()]
     conn.close()
-    metric_cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_', ' ').title())}</h2><p class='metric'>{clean_html(str(v))}</p></div>" for k, v in reliability["metrics"].items())
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in reliability["recommendations"])
-    hist_rows = "".join(f"<tr><td>{clean_html(h.get('created_at') or '')}</td><td>{clean_html(str(h.get('overall_score') or ''))}</td><td>{clean_html(h.get('state') or '')}</td></tr>" for h in history)
+    metric_cards = "".join(f"<div class='card'><h2>{html_escape(clean_html(k.replace('_', ' ').title()))}</h2><p class='metric'>{html_escape(clean_html(str(v)))}</p></div>" for k, v in reliability["metrics"].items())
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in reliability["recommendations"])
+    hist_rows = "".join(f"<tr><td>{html_escape(clean_html(h.get('created_at') or ''))}</td><td>{html_escape(clean_html(str(h.get('overall_score') or '')))}</td><td>{html_escape(clean_html(h.get('state') or ''))}</td></tr>" for h in history)
     body = f"""
     <h1>Reliability</h1><p class='muted'>Production trust score for uptime, APIs, realtime, payments, marketplace, AI, queues, and latency.</p>
-    <section class='grid'><div class='card'><h2>System Reliability</h2><p class='metric'>{reliability['overall_score']}%</p><p>{clean_html(reliability['state'])}</p></div>{metric_cards}</section>
+    <section class='grid'><div class='card'><h2>System Reliability</h2><p class='metric'>{reliability['overall_score']}%</p><p>{html_escape(clean_html(reliability['state']))}</p></div>{metric_cards}</section>
     <section class='card'><h2>Recommendations</h2><ul>{recs}</ul></section>
     <section class='card'><h2>Recent Snapshots</h2><table class='table'><tr><th>Time</th><th>Score</th><th>State</th></tr>{hist_rows}</table></section>
     <p><a class='button' href='/admin/capability-matrix'>Capability Matrix</a> <a class='button' href='/admin/system-audit'>System Audit</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
@@ -98224,7 +98269,7 @@ def admin_groups_health_page():
         exists = table_exists(cur, table)
         actual = set(table_columns(cur, table)) if exists else set()
         missing = [c for c in cols if c not in actual]
-        table_rows.append(f"<tr><td>{clean_html(table)}</td><td>{'yes' if exists else 'no'}</td><td>{clean_html(', '.join(missing) or 'none')}</td></tr>")
+        table_rows.append(f"<tr><td>{html_escape(clean_html(table))}</td><td>{'yes' if exists else 'no'}</td><td>{html_escape(clean_html(', '.join(missing) or 'none'))}</td></tr>")
     cur.execute("SELECT * FROM pulse_group_creation_attempts ORDER BY id DESC LIMIT 20")
     attempts = [dict(row) for row in cur.fetchall()]
     media_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_group_post_media")
@@ -98258,15 +98303,15 @@ def admin_groups_health_page():
     missing_media_cols = [c for c in ["post_type", "media_url", "thumbnail_url", "media_type", "media_metadata", "moderation_status"] if c not in set(table_columns(cur, "pulse_group_posts"))]
     cur.execute("SELECT id, group_post_id, user_id, status, created_at FROM pulse_group_post_comments ORDER BY id DESC LIMIT 12")
     latest_comments = [dict(row) for row in cur.fetchall()]
-    latest_comment_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{c.get('group_post_id')}</td><td>{c.get('user_id')}</td><td>{clean_html(c.get('status') or '')}</td><td>{smart_time_html(c.get('created_at'))}</td></tr>" for c in latest_comments)
-    attempt_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('payload_summary') or '')}</td><td>{clean_html(a.get('error_message') or '')}</td><td>{smart_time_html(a.get('created_at'))}</td></tr>" for a in attempts)
+    latest_comment_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{c.get('group_post_id')}</td><td>{c.get('user_id')}</td><td>{html_escape(clean_html(c.get('status') or ''))}</td><td>{smart_time_html(c.get('created_at'))}</td></tr>" for c in latest_comments)
+    attempt_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{html_escape(clean_html(a.get('status') or ''))}</td><td>{html_escape(clean_html(a.get('trace_id') or ''))}</td><td>{html_escape(clean_html(a.get('payload_summary') or ''))}</td><td>{html_escape(clean_html(a.get('error_message') or ''))}</td><td>{smart_time_html(a.get('created_at'))}</td></tr>" for a in attempts)
     cur.execute("SELECT * FROM pulse_group_action_logs ORDER BY id DESC LIMIT 20")
     action_logs = [dict(row) for row in cur.fetchall()]
-    action_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('action') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{a.get('group_id') or ''}</td><td>{a.get('post_id') or ''}</td><td>{clean_html(a.get('trace_id') or '')}</td><td>{clean_html(a.get('message') or '')}</td><td>{smart_time_html(a.get('created_at'))}</td></tr>" for a in action_logs)
+    action_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{html_escape(clean_html(a.get('action') or ''))}</td><td>{html_escape(clean_html(a.get('status') or ''))}</td><td>{a.get('group_id') or ''}</td><td>{a.get('post_id') or ''}</td><td>{html_escape(clean_html(a.get('trace_id') or ''))}</td><td>{html_escape(clean_html(a.get('message') or ''))}</td><td>{smart_time_html(a.get('created_at'))}</td></tr>" for a in action_logs)
     conn.close()
     body = f"""
     <h1>Groups Health</h1><p class='muted'>Debug surface for PulseSoc group creation, schema health, and recent traceable failures.</p>
-    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Media Load Failures</h2><p class='metric'>{media_failures}</p></div><div class='card'><h2>Missing Media Files</h2><p class='metric'>{missing_media_files}</p></div><div class='card'><h2>Orphan Media</h2><p class='metric'>{orphan_media_records}</p></div><div class='card'><h2>Orphan Posts</h2><p class='metric'>{orphan_posts}</p></div><div class='card'><h2>Orphan Chats</h2><p class='metric'>{orphan_chats}</p></div><div class='card'><h2>Stale Conversations</h2><p class='metric'>{stale_conversations}</p></div><div class='card'><h2>Broken Memberships</h2><p class='metric'>{broken_memberships}</p></div><div class='card'><h2>Missing Owners</h2><p class='metric'>{missing_owners}</p></div><div class='card'><h2>Active Bans</h2><p class='metric'>{active_bans}</p></div><div class='card'><h2>Join Failures</h2><p class='metric'>{join_failures}</p></div><div class='card'><h2>Leave Failures</h2><p class='metric'>{leave_failures}</p></div><div class='card'><h2>Delete Failures</h2><p class='metric'>{delete_failures}</p></div><div class='card'><h2>Post Action Failures</h2><p class='metric'>{post_action_failures}</p></div><div class='card'><h2>Comments</h2><p class='metric'>{comment_count}</p></div><div class='card'><h2>Reactions</h2><p class='metric'>{reaction_count}</p></div><div class='card'><h2>Open Post Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Open Comment Reports</h2><p class='metric'>{comment_reports}</p></div><div class='card'><h2>Deleted Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Deleted Groups</h2><p class='metric'>{deleted_groups}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{clean_html(', '.join(missing_media_cols) or 'none')}</p></div></section>
+    <section class='grid'><div class='card'><h2>Group Media</h2><p class='metric'>{media_count}</p><p>attached media records</p></div><div class='card'><h2>Media Load Failures</h2><p class='metric'>{media_failures}</p></div><div class='card'><h2>Missing Media Files</h2><p class='metric'>{missing_media_files}</p></div><div class='card'><h2>Orphan Media</h2><p class='metric'>{orphan_media_records}</p></div><div class='card'><h2>Orphan Posts</h2><p class='metric'>{orphan_posts}</p></div><div class='card'><h2>Orphan Chats</h2><p class='metric'>{orphan_chats}</p></div><div class='card'><h2>Stale Conversations</h2><p class='metric'>{stale_conversations}</p></div><div class='card'><h2>Broken Memberships</h2><p class='metric'>{broken_memberships}</p></div><div class='card'><h2>Missing Owners</h2><p class='metric'>{missing_owners}</p></div><div class='card'><h2>Active Bans</h2><p class='metric'>{active_bans}</p></div><div class='card'><h2>Join Failures</h2><p class='metric'>{join_failures}</p></div><div class='card'><h2>Leave Failures</h2><p class='metric'>{leave_failures}</p></div><div class='card'><h2>Delete Failures</h2><p class='metric'>{delete_failures}</p></div><div class='card'><h2>Post Action Failures</h2><p class='metric'>{post_action_failures}</p></div><div class='card'><h2>Comments</h2><p class='metric'>{comment_count}</p></div><div class='card'><h2>Reactions</h2><p class='metric'>{reaction_count}</p></div><div class='card'><h2>Open Post Reports</h2><p class='metric'>{media_reports}</p></div><div class='card'><h2>Open Comment Reports</h2><p class='metric'>{comment_reports}</p></div><div class='card'><h2>Deleted Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Deleted Groups</h2><p class='metric'>{deleted_groups}</p></div><div class='card'><h2>Missing Media Columns</h2><p>{html_escape(clean_html(', '.join(missing_media_cols) or 'none'))}</p></div></section>
     <section class='card'><h2>Schema</h2><table class='table'><tr><th>Table</th><th>Exists</th><th>Missing Columns</th></tr>{''.join(table_rows)}</table></section>
     <section class='card'><h2>Latest Group Comments</h2><table class='table'><tr><th>ID</th><th>Post</th><th>User</th><th>Status</th><th>Time</th></tr>{latest_comment_rows or '<tr><td colspan=5>No comments yet.</td></tr>'}</table></section>
     <section class='card'><h2>Latest Group Action Logs</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Group</th><th>Post</th><th>Trace</th><th>Message</th><th>Time</th></tr>{action_rows or '<tr><td colspan=8>No group action logs yet.</td></tr>'}</table></section>
@@ -98342,7 +98387,7 @@ def admin_group_chat_health_page():
     )
     largest_rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('title') or 'Group Chat')}</td><td>{clean_html(r.get('conversation_type') or '')}</td><td>{r.get('group_id') or ''}</td><td>{int(r.get('participants') or 0)}</td><td>{clean_html(r.get('last_message_at') or '')}</td></tr>" for r in largest_rows)
+    rows = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('title') or 'Group Chat'))}</td><td>{html_escape(clean_html(r.get('conversation_type') or ''))}</td><td>{r.get('group_id') or ''}</td><td>{int(r.get('participants') or 0)}</td><td>{html_escape(clean_html(r.get('last_message_at') or ''))}</td></tr>" for r in largest_rows)
     body = f"""
     <h1>Group Chat Health</h1><p class='muted'>PulseSoc Messenger community chat activity, participant scale, media usage, and delivery readiness.</p>
     <section class='grid'><div class='card'><h2>Group Chats</h2><p class='metric'>{group_chats}</p></div><div class='card'><h2>Community Chats</h2><p class='metric'>{community_chats}</p></div><div class='card'><h2>Group Messages</h2><p class='metric'>{group_messages}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_group_messages}</p></div></section>
@@ -98449,14 +98494,14 @@ def admin_messages_health_page():
     provider_readiness = native_push_readiness.native_push_readiness(initialize_admin=False)
     web_push_ready = bool(os.getenv("VAPID_PUBLIC_KEY") and os.getenv("VAPID_PRIVATE_KEY"))
     expo_ready = True
-    latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('conversation_id')}</td><td>{r.get('sender_user_id')}</td><td>{r.get('receiver_user_id')}</td><td>{clean_html(r.get('message_type') or '')}</td><td>{clean_html(r.get('delivery_status') or r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in rows)
-    latest_groups = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('conversation_type') or '')}</td><td>{clean_html(r.get('title') or 'Group Chat')}</td><td>{r.get('owner_user_id') or ''}</td><td>{r.get('member_count') or 0}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in group_rows)
-    endpoint_cards = "".join(f"<div class='card'><h2>{clean_html(name)}</h2><p class='metric'>{clean_html(status)}</p></div>" for name, status in endpoint_status.items())
-    table_rows = "".join(f"<tr><td>{clean_html(name)}</td><td>{'ok' if ok else 'missing'}</td></tr>" for name, ok in table_health.items())
+    latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('conversation_id')}</td><td>{r.get('sender_user_id')}</td><td>{r.get('receiver_user_id')}</td><td>{html_escape(clean_html(r.get('message_type') or ''))}</td><td>{html_escape(clean_html(r.get('delivery_status') or r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>" for r in rows)
+    latest_groups = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('conversation_type') or ''))}</td><td>{html_escape(clean_html(r.get('title') or 'Group Chat'))}</td><td>{r.get('owner_user_id') or ''}</td><td>{r.get('member_count') or 0}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>" for r in group_rows)
+    endpoint_cards = "".join(f"<div class='card'><h2>{html_escape(clean_html(name))}</h2><p class='metric'>{html_escape(clean_html(status))}</p></div>" for name, status in endpoint_status.items())
+    table_rows = "".join(f"<tr><td>{html_escape(clean_html(name))}</td><td>{'ok' if ok else 'missing'}</td></tr>" for name, ok in table_health.items())
     user_diagnostic_html = "<p class='muted'>Search by exact user ID or email. Tokens are never displayed.</p>"
     if user_diagnostic:
         user_diagnostic_html = (
-            f"<p><strong>User {user_diagnostic['user_id']}</strong> · {clean_html(user_diagnostic['name'])} · {clean_html(user_diagnostic['email'])}</p>"
+            f"<p><strong>User {user_diagnostic['user_id']}</strong> · {html_escape(clean_html(user_diagnostic['name']))} · {html_escape(clean_html(user_diagnostic['email']))}</p>"
             f"{admin_rows_table(user_diagnostic['devices'], [('platform','Platform'),('push_provider','Provider'),('device_label','Device'),('last_seen_at','Last Seen'),('updated_at','Updated')])}"
             f"<h3>Recent Push</h3>{admin_rows_table(user_diagnostic['push'], [('status','Status'),('push_type','Type'),('trace_id','Trace'),('last_error','Reason'),('created_at','Created'),('processed_at','Processed')])}"
             f"<h3>Recent Message Notifications</h3>{admin_rows_table(user_diagnostic['notifications'], [('id','ID'),('type','Type'),('title','Title'),('entity_type','Entity'),('entity_id','Entity ID'),('created_at','Created'),('read_at','Read')])}"
@@ -98464,13 +98509,13 @@ def admin_messages_health_page():
     body = f"""
     <h1>Messages Health</h1><p class='muted'>PulseSoc Messenger delivery, schema, media upload, and realtime readiness.</p>
     <section class='grid'>{endpoint_cards}</section>
-    <section class='grid'><div class='card'><h2>Messages 24h</h2><p class='metric'>{messages_24h}</p></div><div class='card'><h2>Notifications 24h</h2><p class='metric'>{message_notifications_24h}</p></div><div class='card'><h2>Push Attempts 24h</h2><p class='metric'>{push_attempts_24h}</p></div><div class='card'><h2>Push Sent 24h</h2><p class='metric'>{push_sent_24h}</p></div><div class='card'><h2>Push Failed 24h</h2><p class='metric'>{push_failed_24h}</p></div><div class='card'><h2>Push Skipped 24h</h2><p class='metric'>{push_skipped_24h}</p></div><div class='card'><h2>Missing Token 24h</h2><p class='metric'>{missing_token_24h}</p></div><div class='card'><h2>Provider Setup Skips</h2><p class='metric'>{provider_not_configured_24h}</p></div><div class='card'><h2>Realtime</h2><p class='metric'>{'connected' if realtime.get('available') or realtime.get('ok') else clean_html(realtime.get('reason') or 'unavailable')}</p><p class='muted'>{int(realtime.get('active_connections') or 0)} connections · {int(realtime.get('events_per_minute') or 0)} events/min</p></div></section>
+    <section class='grid'><div class='card'><h2>Messages 24h</h2><p class='metric'>{messages_24h}</p></div><div class='card'><h2>Notifications 24h</h2><p class='metric'>{message_notifications_24h}</p></div><div class='card'><h2>Push Attempts 24h</h2><p class='metric'>{push_attempts_24h}</p></div><div class='card'><h2>Push Sent 24h</h2><p class='metric'>{push_sent_24h}</p></div><div class='card'><h2>Push Failed 24h</h2><p class='metric'>{push_failed_24h}</p></div><div class='card'><h2>Push Skipped 24h</h2><p class='metric'>{push_skipped_24h}</p></div><div class='card'><h2>Missing Token 24h</h2><p class='metric'>{missing_token_24h}</p></div><div class='card'><h2>Provider Setup Skips</h2><p class='metric'>{provider_not_configured_24h}</p></div><div class='card'><h2>Realtime</h2><p class='metric'>{'connected' if realtime.get('available') or realtime.get('ok') else html_escape(clean_html(realtime.get('reason') or 'unavailable'))}</p><p class='muted'>{int(realtime.get('active_connections') or 0)} connections · {int(realtime.get('events_per_minute') or 0)} events/min</p></div></section>
     <section class='grid'><div class='card'><h2>Expo Native Push</h2><p class='metric'>{'ready' if expo_ready else 'disabled'}</p><p class='muted'>Active native mobile sender path for Expo tokens.</p></div><div class='card'><h2>Web Push</h2><p class='metric'>{'ready' if web_push_ready else 'missing VAPID'}</p><p class='muted'>PWA/browser subscriptions use VAPID.</p></div><div class='card'><h2>APNs Readiness</h2><p class='metric'>{'ready' if provider_readiness.get('apns', {}).get('ready') else 'not active'}</p><p class='muted'>Bundle ID expected: {'yes' if provider_readiness.get('apns', {}).get('apns_bundle_id_expected') else 'no'}</p></div><div class='card'><h2>FCM Readiness</h2><p class='metric'>{'ready' if provider_readiness.get('fcm', {}).get('ready') else 'not active'}</p><p class='muted'>Firebase Admin available: {'yes' if provider_readiness.get('fcm', {}).get('firebase_admin_available') else 'no'}</p></div></section>
     <section class='card'><h2>Active Device Tokens</h2>{admin_rows_table(device_rows, [('platform','Platform'),('push_provider','Provider'),('total','Active')])}</section>
     <section class='card'><h2>Recent Chat Push Attempts</h2>{admin_rows_table(delivery_rows, [('user_id','User'),('push_type','Type'),('status','Status'),('attempts','Attempts'),('trace_id','Trace'),('last_error','Reason'),('provider_summary','Provider Response'),('created_at','Created'),('processed_at','Processed')])}</section>
     <section class='card'><h2>Expo Receipt Checks</h2>{admin_rows_table(expo_receipt_rows, [('user_id','User'),('status','Status'),('error_code','Provider Error'),('checked_at','Checked'),('created_at','Created')])}</section>
-    <section class='card'><h2>User Delivery Lookup</h2><form method='get'><input name='user' value='{clean_html(lookup)}' placeholder='Exact user ID or email'><button class='button' type='submit'>Inspect Delivery</button></form>{user_diagnostic_html}</section>
-    <section class='grid'><div class='card'><h2>/pulse/messages</h2><p class='metric'>ready</p><p class='muted'>Standalone Messenger home, tab filtering, search, room entry, and group creation are monitored here.</p></div><div class='card'><h2>Default Rooms</h2><p class='metric'>{default_rooms}</p></div><div class='card'><h2>Conversations</h2><p class='metric'>{conversations}</p></div><div class='card'><h2>Direct Chats</h2><p class='metric'>{direct_chats}</p></div><div class='card'><h2>Room Chats</h2><p class='metric'>{room_chats}</p></div><div class='card'><h2>Group Chats</h2><p class='metric'>{group_chats}</p></div><div class='card'><h2>Hidden Conversations</h2><p class='metric'>{hidden_conversations}</p></div><div class='card'><h2>No Participants</h2><p class='metric'>{conversations_without_participants}</p></div><div class='card'><h2>Orphan Group Chats</h2><p class='metric'>{orphan_chats}</p></div><div class='card'><h2>Missing Owner Participant</h2><p class='metric'>{missing_owner}</p></div><div class='card'><h2>Messages</h2><p class='metric'>{message_count}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_messages}</p></div><div class='card'><h2>Uploads</h2><p class='metric'>{upload_count}</p></div><div class='card'><h2>Pending Media Review</h2><p class='metric'>{pending_media}</p></div><div class='card'><h2>Missing Columns</h2><p>{clean_html(', '.join(missing_cols) or 'none')}</p></div></section>
+    <section class='card'><h2>User Delivery Lookup</h2><form method='get'><input name='user' value='{html_escape(clean_html(lookup))}' placeholder='Exact user ID or email'><button class='button' type='submit'>Inspect Delivery</button></form>{user_diagnostic_html}</section>
+    <section class='grid'><div class='card'><h2>/pulse/messages</h2><p class='metric'>ready</p><p class='muted'>Standalone Messenger home, tab filtering, search, room entry, and group creation are monitored here.</p></div><div class='card'><h2>Default Rooms</h2><p class='metric'>{default_rooms}</p></div><div class='card'><h2>Conversations</h2><p class='metric'>{conversations}</p></div><div class='card'><h2>Direct Chats</h2><p class='metric'>{direct_chats}</p></div><div class='card'><h2>Room Chats</h2><p class='metric'>{room_chats}</p></div><div class='card'><h2>Group Chats</h2><p class='metric'>{group_chats}</p></div><div class='card'><h2>Hidden Conversations</h2><p class='metric'>{hidden_conversations}</p></div><div class='card'><h2>No Participants</h2><p class='metric'>{conversations_without_participants}</p></div><div class='card'><h2>Orphan Group Chats</h2><p class='metric'>{orphan_chats}</p></div><div class='card'><h2>Missing Owner Participant</h2><p class='metric'>{missing_owner}</p></div><div class='card'><h2>Messages</h2><p class='metric'>{message_count}</p></div><div class='card'><h2>Media Messages</h2><p class='metric'>{media_messages}</p></div><div class='card'><h2>Uploads</h2><p class='metric'>{upload_count}</p></div><div class='card'><h2>Pending Media Review</h2><p class='metric'>{pending_media}</p></div><div class='card'><h2>Missing Columns</h2><p>{html_escape(clean_html(', '.join(missing_cols) or 'none'))}</p></div></section>
     <section class='card'><h2>Schema Readiness</h2><table class='table'><tr><th>Table</th><th>Status</th></tr>{table_rows}</table></section>
     <section class='card'><h2>Latest Group Chat Creations</h2><table class='table'><tr><th>ID</th><th>Type</th><th>Title</th><th>Owner</th><th>Members</th><th>Created</th></tr>{latest_groups or '<tr><td colspan=6>No group chats yet.</td></tr>'}</table></section>
     <section class='card'><h2>Latest Messages</h2><table class='table'><tr><th>ID</th><th>Conversation</th><th>Sender</th><th>Receiver</th><th>Type</th><th>Status</th><th>Time</th></tr>{latest or '<tr><td colspan=7>No messages yet.</td></tr>'}</table></section>
@@ -98514,8 +98559,8 @@ def admin_reels_health_page():
     )
     reel_rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    sounds_html = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('title') or '')}</td><td>{clean_html(r.get('artist') or '')}</td><td>{int(r.get('usage_count') or 0)}</td><td>{int(r.get('trend_score') or 0)}</td><td>{clean_html(r.get('safety_status') or '')}</td></tr>" for r in sound_rows)
-    reels_html = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('post_id')}</td><td>{r.get('user_id')}</td><td>{clean_html(r.get('category') or '')}</td><td>{int(r.get('reel_score') or 0)}</td><td>{int(r.get('safety_score') or 0)}</td><td>{clean_html(r.get('processing_status') or 'ready')}</td><td>{clean_html(r.get('moderation_status') or 'approved')}</td></tr>" for r in reel_rows)
+    sounds_html = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('title') or ''))}</td><td>{html_escape(clean_html(r.get('artist') or ''))}</td><td>{int(r.get('usage_count') or 0)}</td><td>{int(r.get('trend_score') or 0)}</td><td>{html_escape(clean_html(r.get('safety_status') or ''))}</td></tr>" for r in sound_rows)
+    reels_html = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('post_id')}</td><td>{r.get('user_id')}</td><td>{html_escape(clean_html(r.get('category') or ''))}</td><td>{int(r.get('reel_score') or 0)}</td><td>{int(r.get('safety_score') or 0)}</td><td>{html_escape(clean_html(r.get('processing_status') or 'ready'))}</td><td>{html_escape(clean_html(r.get('moderation_status') or 'approved'))}</td></tr>" for r in reel_rows)
     body = f"""
     <h1>Reels Health</h1><p class='muted'>Immersive Reels performance, sound system, moderation queue, processing readiness, and trust-ranked discovery health.</p>
     <section class='grid'><div class='card'><h2>Total Reels</h2><p class='metric'>{reels}</p></div><div class='card'><h2>Active Reels</h2><p class='metric'>{active_reels}</p></div><div class='card'><h2>Processing Queue</h2><p class='metric'>{processing}</p></div><div class='card'><h2>Moderation Queue</h2><p class='metric'>{moderation_queue}</p></div><div class='card'><h2>Audio Tracks</h2><p class='metric'>{audio_tracks}</p></div><div class='card'><h2>Reels With Sound</h2><p class='metric'>{reel_audio}</p></div><div class='card'><h2>Saved Sounds</h2><p class='metric'>{saved_sounds}</p></div><div class='card'><h2>Media Review</h2><p class='metric'>{missing_media}</p><p class='muted'>Reels that may need upload/transcoding inspection.</p></div></section>
@@ -98542,7 +98587,7 @@ def admin_content_health_page():
     cur.execute("SELECT id, user_id, post_type, deleted_at, updated_at FROM pulse_posts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 20")
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('user_id')}</td><td>{clean_html(r.get('post_type') or '')}</td><td>{clean_html(r.get('deleted_at') or '')}</td><td>{clean_html(r.get('updated_at') or '')}</td></tr>" for r in rows)
+    latest = "".join(f"<tr><td>{r.get('id')}</td><td>{r.get('user_id')}</td><td>{html_escape(clean_html(r.get('post_type') or ''))}</td><td>{html_escape(clean_html(r.get('deleted_at') or ''))}</td><td>{html_escape(clean_html(r.get('updated_at') or ''))}</td></tr>" for r in rows)
     body = f"""
     <h1>Content Health</h1><p class='muted'>Deletion reliability, content cleanup, orphaned engagement, and media cleanup readiness.</p>
     <section class='grid'><div class='card'><h2>Deleted PulseSoc Posts</h2><p class='metric'>{deleted_posts}</p></div><div class='card'><h2>Deleted Group Posts</h2><p class='metric'>{deleted_group_posts}</p></div><div class='card'><h2>Orphan Reactions</h2><p class='metric'>{orphan_reactions}</p></div><div class='card'><h2>Orphan Comments</h2><p class='metric'>{orphan_comments}</p></div><div class='card'><h2>Orphan Group Reactions</h2><p class='metric'>{orphan_group_reactions}</p></div><div class='card'><h2>Media Cleanup Queue</h2><p class='metric'>{orphan_media}</p></div></section>
@@ -98738,35 +98783,35 @@ def admin_merchant_applications_page():
             view_url = merchant_doc_review_url(doc_id)
             download_url = merchant_doc_review_url(doc_id, download=True)
             thumb = f"<img src='{view_url}' alt='{label} preview' loading='lazy'>" if merchant_doc_is_image(d) else "<div class='pdf-thumb'>PDF</div>" if merchant_doc_is_pdf(d) else "<div class='pdf-thumb'>DOC</div>"
-            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{clean_html(d.get('original_filename') or '')}</small><small>{int(d.get('file_size') or 0)//1024} KB · {clean_html(d.get('created_at') or '')}</small><em class='doc-status {doc_status}'>{doc_status}</em></span></button>"
+            doc_cards += f"<button type='button' class='doc-card' data-doc-id='{doc_id}' data-doc-url='{view_url}' data-download-url='{download_url}' data-doc-kind='{'pdf' if merchant_doc_is_pdf(d) else 'image' if merchant_doc_is_image(d) else 'file'}' data-doc-title='{label}'><span class='doc-thumb'>{thumb}</span><span><strong>{label}</strong><small>{html_escape(clean_html(d.get('original_filename') or ''))}</small><small>{int(d.get('file_size') or 0)//1024} KB · {html_escape(clean_html(d.get('created_at') or ''))}</small><em class='doc-status {doc_status}'>{doc_status}</em></span></button>"
         missing = [t for t in seller_lifecycle.REQUIRED_DOCUMENTS if not any(d.get("document_type") == t for d in docs)]
-        missing_html = f"<p class='missing'>Missing: {clean_html(', '.join(seller_lifecycle.DOCUMENT_LABELS.get(t, t) for t in missing))}</p>" if missing else ""
+        missing_html = f"<p class='missing'>Missing: {html_escape(clean_html(', '.join(seller_lifecycle.DOCUMENT_LABELS.get(t, t) for t in missing)))}</p>" if missing else ""
         doc_html = (f"<div class='doc-grid'>{doc_cards}{compare_btn}</div>{missing_html}" if doc_cards else f"<span class='muted'>No documents uploaded</span>{missing_html}")
 
         signals = seller_lifecycle.risk_signals(fields, docs)
-        signal_html = "".join(f"<li class='sig {clean_html(s.get('level') or 'info')}'><strong>{clean_html(s.get('label') or '')}</strong><span>{clean_html(s.get('detail') or '')}</span></li>" for s in signals)
+        signal_html = "".join(f"<li class='sig {html_escape(clean_html(s.get('level') or 'info'))}'><strong>{html_escape(clean_html(s.get('label') or ''))}</strong><span>{html_escape(clean_html(s.get('detail') or ''))}</span></li>" for s in signals)
         signal_block = f"<details class='panel'><summary>Risk signals ({len(signals)})</summary><ul class='signals'>{signal_html}</ul></details>" if signals else "<p class='muted'>No risk signals.</p>"
 
         history = history_by_app.get(app_id, [])
         history_html = "".join(
-            f"<li><code>{clean_html(h.get('from_status') or '—')} → {clean_html(h.get('to_status') or '')}</code>"
-            f"<small>{clean_html(h.get('actor_type') or '')} · {clean_html(h.get('created_at') or '')}</small>"
-            f"{('<span>' + clean_html(h.get('reason') or '') + '</span>') if h.get('reason') else ''}</li>"
+            f"<li><code>{html_escape(clean_html(h.get('from_status') or '—'))} → {html_escape(clean_html(h.get('to_status') or ''))}</code>"
+            f"<small>{html_escape(clean_html(h.get('actor_type') or ''))} · {html_escape(clean_html(h.get('created_at') or ''))}</small>"
+            f"{('<span>' + html_escape(clean_html(h.get('reason') or '')) + '</span>') if h.get('reason') else ''}</li>"
             for h in history
         )
         history_block = f"<details class='panel'><summary>Review history ({len(history)})</summary><ol class='timeline'>{history_html}</ol></details>" if history else ""
 
         notes = notes_by_app.get(app_id, [])
         notes_html = "".join(
-            f"<li><strong>{clean_html(reviewer_names.get(int(n.get('author_admin_id') or 0), 'Admin'))}</strong>"
-            f"<small>{clean_html(n.get('created_at') or '')}</small><p>{clean_html(n.get('body') or '')}</p></li>"
+            f"<li><strong>{html_escape(clean_html(reviewer_names.get(int(n.get('author_admin_id') or 0), 'Admin')))}</strong>"
+            f"<small>{html_escape(clean_html(n.get('created_at') or ''))}</small><p>{html_escape(clean_html(n.get('body') or ''))}</p></li>"
             for n in notes
         )
         notes_block = f"<details class='panel'><summary>Internal notes ({len(notes)})</summary><ul class='notes'>{notes_html}</ul></details>" if notes else ""
 
         assigned = int(a.get("reviewer_id") or 0)
         reviewer_options = "<option value='0'>Unassigned</option>" + "".join(
-            f"<option value='{int(r.get('id') or 0)}'{' selected' if int(r.get('id') or 0) == assigned else ''}>{clean_html(r.get('full_name') or r.get('email') or '')}</option>"
+            f"<option value='{int(r.get('id') or 0)}'{' selected' if int(r.get('id') or 0) == assigned else ''}>{html_escape(clean_html(r.get('full_name') or r.get('email') or ''))}</option>"
             for r in reviewers
         )
 
@@ -98791,13 +98836,13 @@ def admin_merchant_applications_page():
 
         rows += (
             f"<tr><td>{app_id}</td>"
-            f"<td>{clean_html(fields.get('display_name') or a.get('account_name') or '')}"
-            f"<br><small>@{clean_html(a.get('username') or '')}</small>"
-            f"<br><small>{clean_html(fields.get('email') or '')}</small></td>"
-            f"<td>{clean_html(seller_lifecycle.SELLER_TYPE_LABELS.get(fields.get('seller_type'), fields.get('seller_type') or '—'))}"
-            f"<br><small>{clean_html(intent)}</small></td>"
-            f"<td><span class='pill {status}'>{clean_html(status.replace('_',' '))}</span>"
-            f"<br><small>{clean_html(a.get('submitted_at') or a.get('updated_at') or '')}</small>{request_block}</td>"
+            f"<td>{html_escape(clean_html(fields.get('display_name') or a.get('account_name') or ''))}"
+            f"<br><small>@{html_escape(clean_html(a.get('username') or ''))}</small>"
+            f"<br><small>{html_escape(clean_html(fields.get('email') or ''))}</small></td>"
+            f"<td>{html_escape(clean_html(seller_lifecycle.SELLER_TYPE_LABELS.get(fields.get('seller_type'), fields.get('seller_type') or '—')))}"
+            f"<br><small>{html_escape(clean_html(intent))}</small></td>"
+            f"<td><span class='pill {status}'>{html_escape(clean_html(status.replace('_',' ')))}</span>"
+            f"<br><small>{html_escape(clean_html(a.get('submitted_at') or a.get('updated_at') or ''))}</small>{request_block}</td>"
             f"<td>{int(a.get('completeness') or 0)}%</td>"
             f"<td class='risk-{'high' if int(a.get('risk_score') or 0) >= 45 else 'mid' if int(a.get('risk_score') or 0) >= 20 else 'low'}'>{int(a.get('risk_score') or 0)}</td>"
             f"<td>{doc_html}</td>"
@@ -98867,7 +98912,7 @@ def admin_merchant_applications_page():
     @media(max-width:860px){{.merchant-review-shell{{grid-template-columns:1fr}}.review-sidebar{{position:static}}.doc-modal.open{{grid-template-columns:1fr;overflow:auto}}.compare-view{{grid-template-columns:1fr}}}}
     </style>
     <h1>Seller Applications</h1><p class='muted'>Review identity, business intent, private verification documents, safety answers, PulseSoc reputation, and risk before unlocking product listings. Approval is never automatic — every decision below is recorded against your admin account.</p>
-    {f"<p class='pill approved'>{clean_html(message)}</p>" if message else ""}
+    {f"<p class='pill approved'>{html_escape(clean_html(message))}</p>" if message else ""}
     <nav class='queue-filters' aria-label='Application status filters'>{chips}</nav>
     <form class='queue-search' method='get' action='/admin/merchant-applications' role='search'>
       <input type='hidden' name='status' value='{return_status}'>
@@ -98946,11 +98991,11 @@ def admin_teacher_applications_page():
     rows = ""
     for app_row in apps:
         docs = docs_by_app.get(int(app_row.get("id") or 0), [])
-        doc_html = "".join(f"<a class='doc-card' href='/admin/teacher-document/{int(d.get('id') or 0)}' target='_blank'><strong>{clean_html((d.get('document_type') or 'document').replace('_',' ').title())}</strong><small>{clean_html(d.get('original_filename') or '')}</small><em>{clean_html(d.get('review_status') or 'pending')}</em></a>" for d in docs) or "<span class='muted'>No documents</span>"
-        rows += f"<tr><td>{app_row.get('id')}</td><td>{clean_html(app_row.get('teacher_display_name') or app_row.get('account_name') or '')}<br><small>{clean_html(app_row.get('email') or '')}</small></td><td>{clean_html(app_row.get('teaching_category') or '')}</td><td>{clean_html(app_row.get('status') or '')}</td><td>{int(app_row.get('completeness') or 0)}%</td><td>{int(app_row.get('safety_score') or 0)}</td><td>{doc_html}</td><td><details><summary>Safety Answers</summary><p>{clean_html(app_row.get('learner_safety_plan') or '')}</p><p>{clean_html(app_row.get('trust_reason') or '')}</p></details><form method='post'><input type='hidden' name='application_id' value='{int(app_row.get('id') or 0)}'><input name='note' placeholder='Internal note'><button name='action' value='review'>Under Review</button><button name='action' value='approve'>Approve</button><button name='action' value='more_info'>Request Info</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button></form></td></tr>"
+        doc_html = "".join(f"<a class='doc-card' href='/admin/teacher-document/{int(d.get('id') or 0)}' target='_blank'><strong>{html_escape(clean_html((d.get('document_type') or 'document').replace('_',' ').title()))}</strong><small>{html_escape(clean_html(d.get('original_filename') or ''))}</small><em>{html_escape(clean_html(d.get('review_status') or 'pending'))}</em></a>" for d in docs) or "<span class='muted'>No documents</span>"
+        rows += f"<tr><td>{app_row.get('id')}</td><td>{html_escape(clean_html(app_row.get('teacher_display_name') or app_row.get('account_name') or ''))}<br><small>{html_escape(clean_html(app_row.get('email') or ''))}</small></td><td>{html_escape(clean_html(app_row.get('teaching_category') or ''))}</td><td>{html_escape(clean_html(app_row.get('status') or ''))}</td><td>{int(app_row.get('completeness') or 0)}%</td><td>{int(app_row.get('safety_score') or 0)}</td><td>{doc_html}</td><td><details><summary>Safety Answers</summary><p>{html_escape(clean_html(app_row.get('learner_safety_plan') or ''))}</p><p>{html_escape(clean_html(app_row.get('trust_reason') or ''))}</p></details><form method='post'><input type='hidden' name='application_id' value='{int(app_row.get('id') or 0)}'><input name='note' placeholder='Internal note'><button name='action' value='review'>Under Review</button><button name='action' value='approve'>Approve</button><button name='action' value='more_info'>Request Info</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button></form></td></tr>"
     body = f"""
     <style>.doc-card{{display:grid;gap:3px;padding:9px;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:rgba(255,255,255,.045);text-decoration:none;color:#f2fbff;margin:4px 0}}.doc-card small,.doc-card em{{color:#9fb5c0}}</style>
-    <h1>Teacher Applications</h1><p class='muted'>Review teaching quality, safety answers, identity/credential documents, public reputation, and course readiness before approving teacher tools.</p><p>{clean_html(message)}</p>
+    <h1>Teacher Applications</h1><p class='muted'>Review teaching quality, safety answers, identity/credential documents, public reputation, and course readiness before approving teacher tools.</p><p>{html_escape(clean_html(message))}</p>
     <section class='card'><table class='table'><tr><th>ID</th><th>Teacher</th><th>Category</th><th>Status</th><th>Complete</th><th>Safety</th><th>Documents</th><th>Review</th></tr>{rows or '<tr><td colspan=8>No teacher applications yet.</td></tr>'}</table></section>
     """
     return admin_page_html("Teacher Applications", body, admin)
@@ -99219,13 +99264,13 @@ def admin_marketplace_command_page():
             item = dict(row)
             media_by_listing.setdefault(int(item.get("product_id") or 0), []).append(item)
     conn.close()
-    cards = "".join(f"<div class='card'><h2>{clean_html(k.replace('_',' ').title())}</h2><p class='metric'>{v}</p></div>" for k, v in counts.items())
+    cards = "".join(f"<div class='card'><h2>{html_escape(clean_html(k.replace('_',' ').title()))}</h2><p class='metric'>{v}</p></div>" for k, v in counts.items())
     rows = ""
     for l in listings:
         media_items = media_by_listing.get(int(l.get("id") or 0), [])
-        media_html = "".join((f"<video src='{clean_html(m.get('media_url') or '')}' playsinline preload='metadata'></video>" if (m.get("media_type") or "") == "video" else f"<img src='{clean_html(m.get('thumbnail_url') or m.get('media_url') or '')}' alt='Product media' loading='lazy'>") for m in media_items[:4]) or "<span class='muted'>No media</span>"
-        rows += f"<tr><td>{l.get('id')}</td><td><strong>{clean_html(l.get('title') or '')}</strong><p>{clean_html(l.get('description') or '')}</p><div class='market-media-strip'>{media_html}</div></td><td>{clean_html(marketplace_seller_identity.display_store_name(l))}<br><small>Owner: {clean_html(l.get('seller_owner_name') or '')} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{clean_html(l.get('seller_status') or '')} · {clean_html(l.get('seller_verification_status') or '')}</small></td><td>{clean_html(l.get('category') or '')}<br>{clean_html(l.get('price_label') or '')} {clean_html(l.get('currency') or '')}<br>Qty {int(l.get('quantity') or 0)}</td><td>{clean_html(l.get('status') or '')}<br><small>{clean_html(l.get('approval_status') or '')}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
-    body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}td form{{display:grid;gap:6px;min-width:210px}}td textarea{{min-height:64px}}</style><h1>Marketplace Review</h1><p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p><p>{clean_html(message)}</p><section class='grid'>{cards}</section><section class='card'><h2>Listing Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
+        media_html = "".join((f"<video src='{html_escape(clean_html(m.get('media_url') or ''))}' playsinline preload='metadata'></video>" if (m.get("media_type") or "") == "video" else f"<img src='{html_escape(clean_html(m.get('thumbnail_url') or m.get('media_url') or ''))}' alt='Product media' loading='lazy'>") for m in media_items[:4]) or "<span class='muted'>No media</span>"
+        rows += f"<tr><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+    body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}td form{{display:grid;gap:6px;min-width:210px}}td textarea{{min-height:64px}}</style><h1>Marketplace Review</h1><p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p><p>{html_escape(clean_html(message))}</p><section class='grid'>{cards}</section><section class='card'><h2>Listing Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
     return admin_page_html("Marketplace Command", body, admin)
 
 
@@ -99296,7 +99341,7 @@ def admin_spaces_command_page():
         metrics = space_discovery_engine.score_space(space, counts.get(space["slug"], space.get("member_count", 0)))
         schedule = ai_schedules.get(space["slug"], {})
         ai_enabled = int(schedule.get("enabled") or 0)
-        rows += f"<tr><td>{clean_html(space['name'])}</td><td>{clean_html(space.get('category') or '')}</td><td>{clean_html(space.get('region') or '')}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {clean_html(schedule.get('next_run') or 'scheduled')}</span></td><td><form method='post'><input type='hidden' name='slug' value='{clean_html(space['slug'])}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
+        rows += f"<tr><td>{html_escape(clean_html(space['name']))}</td><td>{html_escape(clean_html(space.get('category') or ''))}</td><td>{html_escape(clean_html(space.get('region') or ''))}</td><td>{counts.get(space['slug'], space.get('member_count',0))}</td><td>{metrics['trust_score']}%</td><td>{metrics['activity_score']}%</td><td>{ai_counts.get(space['slug'],0)} posts<br><span class='muted'>{'Live' if ai_enabled else 'Paused'} · {html_escape(clean_html(schedule.get('next_run') or 'scheduled'))}</span></td><td><form method='post'><input type='hidden' name='slug' value='{html_escape(clean_html(space['slug']))}'><button name='action' value='feature'>Feature</button><button name='action' value='freeze'>Freeze</button><button name='action' value='resume_ai'>Resume AI</button><button name='action' value='pause_ai'>Pause AI</button></form></td></tr>"
     latest_ai = ""
     for row in latest_ai_rows:
         try:
@@ -99304,8 +99349,8 @@ def admin_spaces_command_page():
         except Exception:
             meta = {}
         duplicate = (meta.get("duplicate_risk") or {}).get("risk", 0)
-        latest_ai += f"<tr><td>{clean_html(row.get('space_slug') or '')}</td><td>{clean_html(row.get('title') or '')}<br><span class='muted'>{clean_html(row.get('post_type') or '')} · {clean_html(row.get('topic') or '')} · {clean_html(row.get('schedule_slot') or '')}</span></td><td>{int(row.get('quality_score') or 0)}%</td><td>{int(row.get('trust_score') or 0)}%</td><td>{int(row.get('energy_score') or 0)}%</td><td>{int(row.get('topic_score') or 0)}%</td><td>{int(duplicate or 0)}%</td><td>{clean_html(row.get('status') or '')}</td><td>{clean_html(row.get('created_at') or '')}</td><td><form method='post'><input type='hidden' name='ai_post_id' value='{int(row.get('id') or 0)}'><button name='action' value='regenerate_ai'>Regenerate</button><button name='action' value='approve_ai'>Approve</button><button name='action' value='unpublish_ai'>Unpublish</button></form></td></tr>"
-    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global PulseSoc Spaces network.</p><p>{clean_html(message)}</p><section class='card'><form method='post'><button class='button primary' name='action' value='run_ai'>Run due AI posts now</button></form></section><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>AI</th><th>Actions</th></tr>{rows}</table></section><section class='card'><h2>AI Post Review</h2><p class='muted'>PulseSoc Intelligence posts are generated by category-aware safety rules, scored for quality, duplicate risk, trust, and engagement before publishing.</p><table class='table'><tr><th>Space</th><th>Post</th><th>Quality</th><th>Trust</th><th>Energy</th><th>Topic</th><th>Dup Risk</th><th>Status</th><th>Created</th><th>Controls</th></tr>{latest_ai}</table></section>"
+        latest_ai += f"<tr><td>{html_escape(clean_html(row.get('space_slug') or ''))}</td><td>{html_escape(clean_html(row.get('title') or ''))}<br><span class='muted'>{html_escape(clean_html(row.get('post_type') or ''))} · {html_escape(clean_html(row.get('topic') or ''))} · {html_escape(clean_html(row.get('schedule_slot') or ''))}</span></td><td>{int(row.get('quality_score') or 0)}%</td><td>{int(row.get('trust_score') or 0)}%</td><td>{int(row.get('energy_score') or 0)}%</td><td>{int(row.get('topic_score') or 0)}%</td><td>{int(duplicate or 0)}%</td><td>{html_escape(clean_html(row.get('status') or ''))}</td><td>{html_escape(clean_html(row.get('created_at') or ''))}</td><td><form method='post'><input type='hidden' name='ai_post_id' value='{int(row.get('id') or 0)}'><button name='action' value='regenerate_ai'>Regenerate</button><button name='action' value='approve_ai'>Approve</button><button name='action' value='unpublish_ai'>Unpublish</button></form></td></tr>"
+    body = f"<h1>Spaces Command</h1><p class='muted'>Feature, freeze, monitor, and grow the global PulseSoc Spaces network.</p><p>{html_escape(clean_html(message))}</p><section class='card'><form method='post'><button class='button primary' name='action' value='run_ai'>Run due AI posts now</button></form></section><section class='card'><table class='table'><tr><th>Space</th><th>Category</th><th>Region</th><th>Members</th><th>Trust</th><th>Energy</th><th>AI</th><th>Actions</th></tr>{rows}</table></section><section class='card'><h2>AI Post Review</h2><p class='muted'>PulseSoc Intelligence posts are generated by category-aware safety rules, scored for quality, duplicate risk, trust, and engagement before publishing.</p><table class='table'><tr><th>Space</th><th>Post</th><th>Quality</th><th>Trust</th><th>Energy</th><th>Topic</th><th>Dup Risk</th><th>Status</th><th>Created</th><th>Controls</th></tr>{latest_ai}</table></section>"
     return admin_page_html("Spaces Command", body, admin)
 
 
@@ -99321,7 +99366,7 @@ def admin_media_studio_page():
     pending = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE moderation_status IN ('pending','needs_review')")
     conn.close()
     filters = camera_filter_engine.filter_catalog(True)
-    rows = "".join(f"<tr><td>{clean_html(f['label'])}</td><td>{'Premium' if f['premium'] else 'Free'}</td><td>{clean_html(f['css'])}</td></tr>" for f in filters)
+    rows = "".join(f"<tr><td>{html_escape(clean_html(f['label']))}</td><td>{'Premium' if f['premium'] else 'Free'}</td><td>{html_escape(clean_html(f['css']))}</td></tr>" for f in filters)
     body = f"""
     <h1>Media Studio</h1><p class='muted'>Camera capture, upload safety, filter catalog, group media, and processing health.</p>
     <section class='grid'><div class='card'><h2>Total Uploads</h2><p class='metric'>{uploads}</p></div><div class='card'><h2>Group Media</h2><p class='metric'>{group_media}</p></div><div class='card'><h2>Needs Review</h2><p class='metric'>{pending}</p></div></section>
@@ -99475,7 +99520,7 @@ def admin_media_health_page():
     total = admin_safe_count(cur, "SELECT COUNT(*) FROM chat_media_uploads WHERE deleted_at IS NULL")
     conn.close()
     required = status.get("required") or {}
-    env_rows = "".join(f"<tr><td>{clean_html(k)}</td><td>{'present' if v else 'missing'}</td></tr>" for k, v in required.items())
+    env_rows = "".join(f"<tr><td>{html_escape(clean_html(k))}</td><td>{'present' if v else 'missing'}</td></tr>" for k, v in required.items())
     if not env_rows:
         env_rows = "<tr><td>Local provider</td><td>active</td></tr>"
     table = admin_rows_table(rows, [("id", "ID"), ("context", "Context"), ("type", "Type"), ("provider", "Provider"), ("available", "Available"), ("dimensions", "Size"), ("url", "URL"), ("error", "Error")])
@@ -99486,8 +99531,8 @@ def admin_media_health_page():
     <h1>Media Health</h1><p class='muted'>Durable storage, URL resolution, fallback safety, and PulseSoc media availability.</p>
     {local_warning}
     <section class='grid'><div class='card'><h2>Total Active Media</h2><p class='metric'>{total}</p></div><div class='card'><h2>Broken / Restoring</h2><p class='metric'>{broken}</p></div><div class='card'><h2>Missing Objects</h2><p class='metric'>{missing_objects}</p></div><div class='card'><h2>Legacy Local Media</h2><p class='metric'>{local_legacy}</p></div><div class='card'><h2>Repaired / R2 Ready</h2><p class='metric'>{repaired_ready}</p></div><div class='card'><h2>Missing Thumbnails</h2><p class='metric'>{missing_thumbs}</p></div><div class='card'><h2>Missing Posters</h2><p class='metric'>{missing_posters}</p></div></section>
-    <section class='card'><h2>Storage Provider</h2><p class='muted'>{clean_html(status.get('provider'))} · configured={bool(status.get('configured'))}</p><table class='table'><tr><th>Variable</th><th>Status</th></tr>{env_rows}</table></section>
-    <section class='card'><h2>Media Engine Runtime</h2><table class='table'><tr><th>Check</th><th>Status</th></tr><tr><td>ffmpeg_present</td><td>{'yes' if ffmpeg_path else 'no'}</td></tr><tr><td>ffmpeg_version</td><td>{clean_html(ffmpeg_version or 'missing; set RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg on Railway')}</td></tr><tr><td>MUX_TOKEN_ID</td><td>{'present' if mux_status.get('token_id_configured') else 'missing'}</td></tr><tr><td>MUX_TOKEN_SECRET</td><td>{'present' if mux_status.get('token_secret_configured') else 'missing'}</td></tr><tr><td>worker_heartbeat</td><td>{clean_html(worker_heartbeat.get('updated_at') or worker_heartbeat.get('last_seen_at') or 'none')}</td></tr><tr><td>last_processed_media</td><td>{clean_html(str(last_processed_media.get('id') or 'none'))} · {clean_html(last_processed_media.get('processing_status') or '')}</td></tr><tr><td>last_error</td><td>{clean_html(last_media_error or 'none')}</td></tr></table></section>
+    <section class='card'><h2>Storage Provider</h2><p class='muted'>{html_escape(clean_html(status.get('provider')))} · configured={bool(status.get('configured'))}</p><table class='table'><tr><th>Variable</th><th>Status</th></tr>{env_rows}</table></section>
+    <section class='card'><h2>Media Engine Runtime</h2><table class='table'><tr><th>Check</th><th>Status</th></tr><tr><td>ffmpeg_present</td><td>{'yes' if ffmpeg_path else 'no'}</td></tr><tr><td>ffmpeg_version</td><td>{html_escape(clean_html(ffmpeg_version or 'missing; set RAILPACK_DEPLOY_APT_PACKAGES=ffmpeg on Railway'))}</td></tr><tr><td>MUX_TOKEN_ID</td><td>{'present' if mux_status.get('token_id_configured') else 'missing'}</td></tr><tr><td>MUX_TOKEN_SECRET</td><td>{'present' if mux_status.get('token_secret_configured') else 'missing'}</td></tr><tr><td>worker_heartbeat</td><td>{html_escape(clean_html(worker_heartbeat.get('updated_at') or worker_heartbeat.get('last_seen_at') or 'none'))}</td></tr><tr><td>last_processed_media</td><td>{html_escape(clean_html(str(last_processed_media.get('id') or 'none')))} · {html_escape(clean_html(last_processed_media.get('processing_status') or ''))}</td></tr><tr><td>last_error</td><td>{html_escape(clean_html(last_media_error or 'none'))}</td></tr></table></section>
     <section class='card'><h2>Recent Media Resolution</h2>{table}</section>
     <p><a class='button primary' href='/admin/media'>Open Media Diagnostics</a> <a class='button' href='/admin/performance'>Performance</a></p>
     """
@@ -99529,11 +99574,11 @@ def admin_system_audit_page():
                 rows.append({"area": area, "route": route, "status": "FAIL", "status_code": 0, "reason": str(exc)})
     hardening = production_hardening_engine.route_status_score(rows)
     stable = stability_engine.stability_snapshot({"route_failures": hardening["failures"], "raw_errors": sum(1 for r in rows if "Traceback" in r.get("reason", ""))})
-    row_html = "".join(f"<tr><td>{clean_html(r['area'])}</td><td>{clean_html(r['route'])}</td><td>{clean_html(r['status'])}</td><td>{r['status_code']}</td><td>{clean_html(r['reason'])}</td></tr>" for r in rows)
-    recs = "".join(f"<li>{clean_html(item)}</li>" for item in stable["recommendations"] + hardening["recommendations"])
+    row_html = "".join(f"<tr><td>{html_escape(clean_html(r['area']))}</td><td>{html_escape(clean_html(r['route']))}</td><td>{html_escape(clean_html(r['status']))}</td><td>{r['status_code']}</td><td>{html_escape(clean_html(r['reason']))}</td></tr>" for r in rows)
+    recs = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in stable["recommendations"] + hardening["recommendations"])
     body = f"""
     <h1>System Audit</h1><p class='muted'>Production-grade route, mobile, and stability sampling. Use the full script for deeper API/action checks.</p>
-    <section class='grid'><div class='card'><h2>Hardening Score</h2><p class='metric'>{hardening['score']}%</p><p>{clean_html(hardening['state'])}</p></div><div class='card'><h2>Stability Score</h2><p class='metric'>{stable['score']}%</p><p>{clean_html(stable['state'])}</p></div><div class='card'><h2>Failures</h2><p class='metric'>{hardening['failures']}</p><p>{hardening['warnings']} warnings</p></div></section>
+    <section class='grid'><div class='card'><h2>Hardening Score</h2><p class='metric'>{hardening['score']}%</p><p>{html_escape(clean_html(hardening['state']))}</p></div><div class='card'><h2>Stability Score</h2><p class='metric'>{stable['score']}%</p><p>{html_escape(clean_html(stable['state']))}</p></div><div class='card'><h2>Failures</h2><p class='metric'>{hardening['failures']}</p><p>{hardening['warnings']} warnings</p></div></section>
     <section class='card'><h2>Recommendations</h2><ul>{recs}</ul></section>
     <section class='card'><h2>Route Audit</h2><table class='table'><tr><th>Area</th><th>Route</th><th>Status</th><th>HTTP</th><th>Reason</th></tr>{row_html}</table></section>
     <p><a class='button primary' href='/admin/capability-matrix'>Capability Matrix</a> <a class='button' href='/admin/reliability'>Reliability</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
@@ -99550,7 +99595,7 @@ def admin_privileges_page():
     cur.execute("SELECT upp.*, COALESCE(u.display_name,u.username,u.email,'User') AS name FROM user_privilege_profiles upp LEFT JOIN users u ON u.user_id=upp.user_id ORDER BY trust_score DESC LIMIT 80")
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    table = "".join(f"<tr><td>{int(r.get('user_id') or 0)}</td><td>{clean_html(r.get('name') or '')}</td><td>{clean_html(r.get('current_level') or '')}</td><td>{int(r.get('trust_score') or 0)}</td><td>{'Yes' if r.get('can_go_live') else 'No'}</td></tr>" for r in rows)
+    table = "".join(f"<tr><td>{int(r.get('user_id') or 0)}</td><td>{html_escape(clean_html(r.get('name') or ''))}</td><td>{html_escape(clean_html(r.get('current_level') or ''))}</td><td>{int(r.get('trust_score') or 0)}</td><td>{'Yes' if r.get('can_go_live') else 'No'}</td></tr>" for r in rows)
     body = f"<h1>User Privileges</h1><p class='muted'>Trust score, creator level, and unlocks across PulseSoc, Marketplace, Teachers, and Live.</p><div class='card'><table><tr><th>User</th><th>Name</th><th>Level</th><th>Trust</th><th>Live</th></tr>{table or '<tr><td colspan=5>No privilege profiles yet. They are generated when users view Creator Status.</td></tr>'}</table></div>"
     return admin_page_html("Privileges", body, admin)
 
@@ -99566,8 +99611,8 @@ def admin_referrals_page():
     cur.execute("SELECT * FROM referral_invites ORDER BY id DESC LIMIT 80")
     invites = [dict(row) for row in cur.fetchall()]
     conn.close()
-    conversion_rows = "".join(f"<tr><td>{r.get('inviter_user_id')}</td><td>{clean_html(r.get('referral_code') or '')}</td><td>{int(r.get('counted') or 0)}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in rows)
-    invite_rows = "".join(f"<tr><td>{i.get('inviter_user_id')}</td><td>{clean_html(i.get('invite_channel') or '')}</td><td>{clean_html(i.get('status') or '')}</td><td>{clean_html(i.get('created_at') or '')}</td></tr>" for i in invites)
+    conversion_rows = "".join(f"<tr><td>{r.get('inviter_user_id')}</td><td>{html_escape(clean_html(r.get('referral_code') or ''))}</td><td>{int(r.get('counted') or 0)}</td><td>{int(r.get('total') or 0)}</td></tr>" for r in rows)
+    invite_rows = "".join(f"<tr><td>{i.get('inviter_user_id')}</td><td>{html_escape(clean_html(i.get('invite_channel') or ''))}</td><td>{html_escape(clean_html(i.get('status') or ''))}</td><td>{html_escape(clean_html(i.get('created_at') or ''))}</td></tr>" for i in invites)
     body = f"<h1>Referral Review</h1><p class='muted'>Inspect invite velocity, real signup conversions, and fraud-safe Live unlock progress.</p><div class='card'><h2>Conversions</h2><table><tr><th>Inviter</th><th>Code</th><th>Counted</th><th>Total</th></tr>{conversion_rows or '<tr><td colspan=4>No conversions yet.</td></tr>'}</table></div><div class='card'><h2>Recent Invites</h2><table><tr><th>Inviter</th><th>Channel</th><th>Status</th><th>Created</th></tr>{invite_rows or '<tr><td colspan=4>No invites logged yet.</td></tr>'}</table></div>"
     return admin_page_html("Referrals", body, admin)
 
@@ -99594,9 +99639,9 @@ def admin_livestreams_page():
     cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id ORDER BY s.id DESC LIMIT 80")
     streams = [dict(row) for row in cur.fetchall()]
     conn.close()
-    table = "".join(f"<tr><td>{r.get('user_id')}</td><td>{clean_html(r.get('name') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{int(r.get('referral_count') or 0)}</td><td><form method='post'><input name='user_id' value='{r.get('user_id')}'><input name='reason' placeholder='Reason'><button name='action' value='approve'>Approve</button><button name='action' value='suspend'>Suspend</button><button name='action' value='revoke'>Revoke</button></form></td></tr>" for r in rows)
-    stream_rows = "".join(f"<tr><td>{s.get('id')}</td><td>{clean_html(s.get('title') or '')}<br><small>{clean_html(s.get('creator_name') or '')}</small></td><td>{clean_html(s.get('status') or '')}</td><td>{int(s.get('viewer_count') or 0)}</td><td>{clean_html(s.get('stream_health') or '')}</td><td><a class='button' href='/pulse/live/studio/{int(s.get('id') or 0)}'>Studio</a></td></tr>" for s in streams)
-    body = f"<h1>Live Command Center</h1><p class='muted'>Active streams, creator access, reports, moderation actions, stream termination, analytics, and live safety monitoring.</p><p>{clean_html(message)}</p><div class='card'><h2>Active And Recent Streams</h2><table><tr><th>ID</th><th>Stream</th><th>Status</th><th>Viewers</th><th>Health</th><th>Action</th></tr>{stream_rows or '<tr><td colspan=6>No live streams yet.</td></tr>'}</table></div><div class='card'><h2>Livestream Access</h2><table><tr><th>User</th><th>Name</th><th>Status</th><th>Referrals</th><th>Action</th></tr>{table or '<tr><td colspan=5>No livestream access records yet.</td></tr>'}</table></div>"
+    table = "".join(f"<tr><td>{r.get('user_id')}</td><td>{html_escape(clean_html(r.get('name') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{int(r.get('referral_count') or 0)}</td><td><form method='post'><input name='user_id' value='{r.get('user_id')}'><input name='reason' placeholder='Reason'><button name='action' value='approve'>Approve</button><button name='action' value='suspend'>Suspend</button><button name='action' value='revoke'>Revoke</button></form></td></tr>" for r in rows)
+    stream_rows = "".join(f"<tr><td>{s.get('id')}</td><td>{html_escape(clean_html(s.get('title') or ''))}<br><small>{html_escape(clean_html(s.get('creator_name') or ''))}</small></td><td>{html_escape(clean_html(s.get('status') or ''))}</td><td>{int(s.get('viewer_count') or 0)}</td><td>{html_escape(clean_html(s.get('stream_health') or ''))}</td><td><a class='button' href='/pulse/live/studio/{int(s.get('id') or 0)}'>Studio</a></td></tr>" for s in streams)
+    body = f"<h1>Live Command Center</h1><p class='muted'>Active streams, creator access, reports, moderation actions, stream termination, analytics, and live safety monitoring.</p><p>{html_escape(clean_html(message))}</p><div class='card'><h2>Active And Recent Streams</h2><table><tr><th>ID</th><th>Stream</th><th>Status</th><th>Viewers</th><th>Health</th><th>Action</th></tr>{stream_rows or '<tr><td colspan=6>No live streams yet.</td></tr>'}</table></div><div class='card'><h2>Livestream Access</h2><table><tr><th>User</th><th>Name</th><th>Status</th><th>Referrals</th><th>Action</th></tr>{table or '<tr><td colspan=5>No livestream access records yet.</td></tr>'}</table></div>"
     return admin_page_html("Live Command Center", body, admin)
 
 
@@ -99633,8 +99678,8 @@ def admin_verification_page():
     cur.execute("SELECT vr.*, COALESCE(u.display_name,u.username,u.email,'User') AS name FROM verification_requests vr LEFT JOIN users u ON u.user_id=vr.user_id ORDER BY created_at DESC LIMIT 100")
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    table = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('name') or '')}</td><td>{clean_html(r.get('verification_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td><form method='post'><input type='hidden' name='request_id' value='{r.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button></form></td></tr>" for r in rows)
-    body = f"<h1>Verification Control</h1><p>{clean_html(message)}</p><div class='card'><table><tr><th>ID</th><th>User</th><th>Type</th><th>Status</th><th>Action</th></tr>{table or '<tr><td colspan=5>No verification requests yet.</td></tr>'}</table></div>"
+    table = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('name') or ''))}</td><td>{html_escape(clean_html(r.get('verification_type') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td><form method='post'><input type='hidden' name='request_id' value='{r.get('id')}'><button name='action' value='approve'>Approve</button><button name='action' value='reject'>Reject</button></form></td></tr>" for r in rows)
+    body = f"<h1>Verification Control</h1><p>{html_escape(clean_html(message))}</p><div class='card'><table><tr><th>ID</th><th>User</th><th>Type</th><th>Status</th><th>Action</th></tr>{table or '<tr><td colspan=5>No verification requests yet.</td></tr>'}</table></div>"
     return admin_page_html("Verification", body, admin)
 
 
@@ -99933,11 +99978,11 @@ def department_control_panels(slug):
         table_cols = [("worker_name", "Worker"), ("status", "Status"), ("last_seen_at", "Last Seen"), ("last_error", "Last Error")]
         actions = [("System Health", "/admin/system-health"), ("Provider Health", "/admin/provider-health"), ("PulseSoc Worker", "/admin/pulse-worker-health")]
     conn.close()
-    metric_html = "".join(f"<div class='card'><h2>{clean_html(m['name'])}</h2><p class='metric'>{m['value']}</p><p class='muted'>{clean_html(m['detail'])}</p></div>" for m in metrics)
+    metric_html = "".join(f"<div class='card'><h2>{html_escape(clean_html(m['name']))}</h2><p class='metric'>{m['value']}</p><p class='muted'>{html_escape(clean_html(m['detail']))}</p></div>" for m in metrics)
     if metric_html:
         panels.append(f"<div class='grid'>{metric_html}</div>")
     if actions:
-        action_html = " ".join(f"<a class='button' href='{clean_html(url)}'>{clean_html(label)}</a>" for label, url in actions)
+        action_html = " ".join(f"<a class='button' href='{html_escape(clean_html(url))}'>{html_escape(clean_html(label))}</a>" for label, url in actions)
         panels.append(f"<div class='card'><h2>Fast Actions</h2><p>{action_html}</p></div>")
     if table_rows and table_cols:
         panels.append(f"<div class='card'><h2>Live Queue Preview</h2>{admin_rows_table(table_rows, table_cols)}</div>")
@@ -100054,10 +100099,10 @@ def department_action_panel(slug):
     for action, label, target, help_text in options:
         cards.append(
             f"<form method='post' class='card'>"
-            f"<h2>{clean_html(label)}</h2><p class='muted'>{clean_html(help_text)}</p>"
+            f"<h2>{html_escape(clean_html(label))}</h2><p class='muted'>{html_escape(clean_html(help_text))}</p>"
             f"<input type='hidden' name='form_action' value='department_action'>"
-            f"<input type='hidden' name='department_action' value='{clean_html(action)}'>"
-            f"<input name='target_id' placeholder='{clean_html(target.title())} ID or slug'>"
+            f"<input type='hidden' name='department_action' value='{html_escape(clean_html(action))}'>"
+            f"<input name='target_id' placeholder='{html_escape(clean_html(target.title()))} ID or slug'>"
             f"<textarea name='action_note' placeholder='Operator note / reason'></textarea>"
             f"<button>Run Action</button></form>"
         )
@@ -100481,7 +100526,7 @@ def admin_global_command_page():
     meta = snapshot["meta"]
     actions = snapshot.get("actions") or {}
     cards = "".join(
-        f"<div class='card live-card'><h2>{clean_html(label)}</h2><p class='metric' data-live-key='{clean_html(key)}'>{value}</p><div class='spark'><span style='width:{max(8, min(100, int(value or 0) % 100))}%'></span></div></div>"
+        f"<div class='card live-card'><h2>{html_escape(clean_html(label))}</h2><p class='metric' data-live-key='{html_escape(clean_html(key))}'>{value}</p><div class='spark'><span style='width:{max(8, min(100, int(value or 0) % 100))}%'></span></div></div>"
         for label, value, key in [
             ("Global Users", counts["users"], "users"),
             ("Online Users", realtime.get("online_users", 0), "online_users"),
@@ -100493,36 +100538,36 @@ def admin_global_command_page():
             ("Socket Pressure", websocket.get("pressure", 0), "websocket_pressure"),
         ]
     )
-    attention = "".join(f"<li>{clean_html(item)}</li>" for item in snapshot["summary"]["what_needs_attention"])
+    attention = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in snapshot["summary"]["what_needs_attention"])
     trend_rows = "".join(
-        f"<tr><td>{clean_html(item.get('topic'))}</td><td>{int(item.get('mentions') or 0)}</td><td>{clean_html((item.get('origin') or {}).get('created_at') or 'n/a')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('topic')))}</td><td>{int(item.get('mentions') or 0)}</td><td>{html_escape(clean_html((item.get('origin') or {}).get('created_at') or 'n/a'))}</td></tr>"
         for item in snapshot["summary"]["trend_origins"]
     ) or "<tr><td colspan='3'>No trend origins indexed yet.</td></tr>"
     scam_rows = "".join(
-        f"<tr><td>{clean_html(item.get('cluster_key'))}</td><td>{clean_html(item.get('risk_weight'))}</td><td>{len(item.get('members') or [])}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('cluster_key')))}</td><td>{html_escape(clean_html(item.get('risk_weight')))}</td><td>{len(item.get('members') or [])}</td></tr>"
         for item in snapshot["summary"]["scam_clusters"]
     ) or "<tr><td colspan='3'>No scam clusters detected.</td></tr>"
     event_rows = "".join(
-        f"<li><span>{clean_html(event.get('event_type'))}</span><small>{clean_html(event.get('channel'))} · {clean_html(event.get('created_at'))}</small></li>"
+        f"<li><span>{html_escape(clean_html(event.get('event_type')))}</span><small>{html_escape(clean_html(event.get('channel')))} · {html_escape(clean_html(event.get('created_at')))}</small></li>"
         for event in event_bus.get("latest_events", [])[:8]
     ) or "<li><span>event bus ready</span><small>No live events buffered yet.</small></li>"
-    warnings = "".join(f"<li>{clean_html(item)}</li>" for item in system_health.get("warnings", [])) or "<li>All core systems are stable.</li>"
-    recommendations = "".join(f"<li>{clean_html(item)}</li>" for item in system_health.get("failsafe", {}).get("recommendations", []))
+    warnings = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in system_health.get("warnings", [])) or "<li>All core systems are stable.</li>"
+    recommendations = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in system_health.get("failsafe", {}).get("recommendations", []))
     fabric_factors = "".join(
-        f"<li><strong>{clean_html(str(item.get('system') or ''))}</strong>: {clean_html(str(item.get('signal_type') or ''))} = {clean_html(str(item.get('value') or ''))} <span class='pill'>{clean_html(str(item.get('confidence') or ''))}</span></li>"
+        f"<li><strong>{html_escape(clean_html(str(item.get('system') or '')))}</strong>: {html_escape(clean_html(str(item.get('signal_type') or '')))} = {html_escape(clean_html(str(item.get('value') or '')))} <span class='pill'>{html_escape(clean_html(str(item.get('confidence') or '')))}</span></li>"
         for item in fabric.get("signals", [])[:8]
     )
     meta_questions = "".join(
-        f"<li><strong>{clean_html(str(item.get('question') or ''))}</strong><br><span class='muted'>{clean_html(str(item.get('answer') or ''))}</span></li>"
+        f"<li><strong>{html_escape(clean_html(str(item.get('question') or '')))}</strong><br><span class='muted'>{html_escape(clean_html(str(item.get('answer') or '')))}</span></li>"
         for item in meta_intelligence_engine.command_questions(meta)
     )
     meta_decision = meta.get("decision") or {}
     action_rows = "".join(
-        f"<li><strong>{clean_html(str(item.get('priority') or ''))}</strong> · {clean_html(str(item.get('title') or ''))}<br><span class='muted'>{clean_html(str(item.get('recommended_action') or ''))}</span></li>"
+        f"<li><strong>{html_escape(clean_html(str(item.get('priority') or '')))}</strong> · {html_escape(clean_html(str(item.get('title') or '')))}<br><span class='muted'>{html_escape(clean_html(str(item.get('recommended_action') or '')))}</span></li>"
         for item in (actions.get("top_recommendations") or [])[:5]
     ) or "<li>No saved AI action recommendations yet.</li>"
     failed_action_rows = "".join(
-        f"<li>#{item.get('id')} {clean_html(str(item.get('action_type') or ''))}: {clean_html(str(item.get('status') or ''))}</li>"
+        f"<li>#{item.get('id')} {html_escape(clean_html(str(item.get('action_type') or '')))}: {html_escape(clean_html(str(item.get('status') or '')))}</li>"
         for item in (actions.get("failed_actions") or [])[:5]
     ) or "<li>No failed AI actions.</li>"
     command_css = """
@@ -100554,30 +100599,30 @@ def admin_global_command_page():
     <div class='grid'>{cards}</div>
     <section class='orb-grid'>
       <div class='card'><h2>Live Planetary PulseSoc</h2><canvas class='planet' id='globalCommandCanvas'></canvas></div>
-      <div class='card'><h2>System Nervous System</h2><p class='metric'><span id='systemState' class='status-{clean_html(system_health['state'])}'>{clean_html(system_health['state'])}</span></p><p><span class='pill'>Health {system_health['overall_score']}%</span> <span class='pill'>Realtime {realtime.get('active_realtime_clients', 0)}</span> <span class='pill'>Events {event_bus.get('events_per_minute', 0)}/min</span></p><h3>Warnings</h3><ul>{warnings}</ul><h3>Failsafe Recommendations</h3><ul>{recommendations}</ul></div>
+      <div class='card'><h2>System Nervous System</h2><p class='metric'><span id='systemState' class='status-{html_escape(clean_html(system_health['state']))}'>{html_escape(clean_html(system_health['state']))}</span></p><p><span class='pill'>Health {system_health['overall_score']}%</span> <span class='pill'>Realtime {realtime.get('active_realtime_clients', 0)}</span> <span class='pill'>Events {event_bus.get('events_per_minute', 0)}/min</span></p><h3>Warnings</h3><ul>{warnings}</ul><h3>Failsafe Recommendations</h3><ul>{recommendations}</ul></div>
     </section>
     <section class='grid'>
-      <div class='card brainstem'><h2>Universal Intelligence Fabric</h2><p class='metric'>{fabric.get('correlation', {}).get('correlation_strength', 0)}%</p><p>{clean_html(str(fabric.get('recommendation') or ''))}</p><p><span class='pill'>Priority {clean_html(str(fabric.get('priority') or ''))}</span> <span class='pill'>Confidence {clean_html(str(fabric.get('confidence') or ''))}</span> <span class='pill'>Domains {len(fabric.get('domains') or [])}</span></p><ul class='brain-list'>{fabric_factors}</ul></div>
-      <div class='card brainstem'><h2>Meta-Intelligence Coordination</h2><p class='metric'>{meta.get('coordination_score', 0)}%</p><p>{clean_html(str(meta_decision.get('decision') or ''))}</p><p><span class='pill'>Priority {clean_html(str(meta_decision.get('priority') or ''))}</span> <span class='pill'>Owner approval {'required' if meta_decision.get('requires_owner_approval') else 'not required'}</span></p><ul class='brain-list'>{meta_questions}</ul></div>
+      <div class='card brainstem'><h2>Universal Intelligence Fabric</h2><p class='metric'>{fabric.get('correlation', {}).get('correlation_strength', 0)}%</p><p>{html_escape(clean_html(str(fabric.get('recommendation') or '')))}</p><p><span class='pill'>Priority {html_escape(clean_html(str(fabric.get('priority') or '')))}</span> <span class='pill'>Confidence {html_escape(clean_html(str(fabric.get('confidence') or '')))}</span> <span class='pill'>Domains {len(fabric.get('domains') or [])}</span></p><ul class='brain-list'>{fabric_factors}</ul></div>
+      <div class='card brainstem'><h2>Meta-Intelligence Coordination</h2><p class='metric'>{meta.get('coordination_score', 0)}%</p><p>{html_escape(clean_html(str(meta_decision.get('decision') or '')))}</p><p><span class='pill'>Priority {html_escape(clean_html(str(meta_decision.get('priority') or '')))}</span> <span class='pill'>Owner approval {'required' if meta_decision.get('requires_owner_approval') else 'not required'}</span></p><ul class='brain-list'>{meta_questions}</ul></div>
     </section>
     <section class='grid'>
       <div class='card brainstem'><h2>Actionable Command Queue</h2><p class='metric'>{actions.get('pending_approvals', 0)}</p><p>pending owner approvals</p><p><span class='pill'>Open recommendations {actions.get('open_recommendations', 0)}</span> <span class='pill'>Queued actions {len(actions.get('critical_actions') or [])}</span></p><ul class='brain-list'>{action_rows}</ul><p><a class='button primary' href='/admin/approvals'>Review Approvals</a> <a class='button' href='/admin/ai-actions'>AI Actions</a></p></div>
       <div class='card brainstem'><h2>Execution Results</h2><p class='metric'>{len(actions.get('recent_results') or [])}</p><p>recent tracked outcomes</p><ul class='brain-list'>{failed_action_rows}</ul><p><a class='button' href='/admin/tasks'>Admin Tasks</a></p></div>
     </section>
     <section class='grid'>
-      <div class='card'><h2>Distributed Realtime Nervous System</h2><p class='metric'>{distributed.get('score', 0)}%</p><p><span class='pill'>Status {clean_html(str(distributed.get('status') or ''))}</span> <span class='pill'>Success {clean_html(str((distributed.get('metrics') or {}).get('delivery_success_rate') or 0))}%</span> <span class='pill'>Replay {sum(((distributed.get('metrics') or {}).get('replay_depths') or {}).values())}</span></p></div>
-      <div class='card'><h2>Websocket Orchestration</h2><p class='metric'>{websocket.get('pressure', 0)}%</p><p><span class='pill'>Sockets {websocket.get('active_sockets', 0)}</span> <span class='pill'>Reconnects {websocket.get('reconnect_spikes', 0)}</span> <span class='pill'>{clean_html(str((websocket.get('policy') or {}).get('mode') or ''))}</span></p></div>
+      <div class='card'><h2>Distributed Realtime Nervous System</h2><p class='metric'>{distributed.get('score', 0)}%</p><p><span class='pill'>Status {html_escape(clean_html(str(distributed.get('status') or '')))}</span> <span class='pill'>Success {html_escape(clean_html(str((distributed.get('metrics') or {}).get('delivery_success_rate') or 0)))}%</span> <span class='pill'>Replay {sum(((distributed.get('metrics') or {}).get('replay_depths') or {}).values())}</span></p></div>
+      <div class='card'><h2>Websocket Orchestration</h2><p class='metric'>{websocket.get('pressure', 0)}%</p><p><span class='pill'>Sockets {websocket.get('active_sockets', 0)}</span> <span class='pill'>Reconnects {websocket.get('reconnect_spikes', 0)}</span> <span class='pill'>{html_escape(clean_html(str((websocket.get('policy') or {}).get('mode') or '')))}</span></p></div>
       <div class='card'><h2>Event Stream Pressure</h2><p class='metric'>{stream.get('stream_pressure', 0)}%</p><p><span class='pill'>Lag {stream.get('queue_lag', 0)}</span> <span class='pill'>Dropped {stream.get('dropped_events', 0)}</span> <span class='pill'>Replay {stream.get('replay_count', 0)}</span></p></div>
     </section>
     <div class='grid'>
       <div class='card'><h2>Graph Health</h2><p class='metric'>{health['health_score']}%</p><p><span class='pill'>Nodes {health['node_count']}</span> <span class='pill'>Edges {health['edge_count']}</span> <span class='pill'>Signals {health['signal_count']}</span></p></div>
-      <div class='card'><h2>Community Prediction</h2><p class='metric'>{clean_html(predictions['community']['status'])}</p><p>Health score {predictions['community']['health_score']}%</p></div>
-      <div class='card'><h2>Global Energy</h2><p class='metric'>{predictions['energy']['energy_score']}%</p><p>{clean_html(predictions['energy']['visual_state'])}</p></div>
-      <div class='card'><h2>Resilience</h2><p class='metric'>{predictions['resilience']['resilience_score']}%</p><p>{clean_html(predictions['resilience']['status'])}</p></div>
+      <div class='card'><h2>Community Prediction</h2><p class='metric'>{html_escape(clean_html(predictions['community']['status']))}</p><p>Health score {predictions['community']['health_score']}%</p></div>
+      <div class='card'><h2>Global Energy</h2><p class='metric'>{predictions['energy']['energy_score']}%</p><p>{html_escape(clean_html(predictions['energy']['visual_state']))}</p></div>
+      <div class='card'><h2>Resilience</h2><p class='metric'>{predictions['resilience']['resilience_score']}%</p><p>{html_escape(clean_html(predictions['resilience']['status']))}</p></div>
     </div>
     <section class='card'><h2>What Needs Attention Today</h2><ul>{attention}</ul></section>
     <section class='grid'>
-      <div class='card'><h2>Predictive Insight Panels</h2><p><span class='pill'>Creator Forecast active</span> <span class='pill'>Scam Forecast {clean_html(predictions['safety']['recommended_action'])}</span> <span class='pill'>Infrastructure {clean_html(predictions['resilience']['status'])}</span></p><ul><li>Community health forecast: {clean_html(predictions['community']['status'])} at {predictions['community']['health_score']}%.</li><li>Social energy: {clean_html(predictions['energy']['visual_state'])} at {predictions['energy']['energy_score']}%.</li><li>Event throughput: {event_bus.get('events_per_minute', 0)} events/min.</li></ul></div>
+      <div class='card'><h2>Predictive Insight Panels</h2><p><span class='pill'>Creator Forecast active</span> <span class='pill'>Scam Forecast {html_escape(clean_html(predictions['safety']['recommended_action']))}</span> <span class='pill'>Infrastructure {html_escape(clean_html(predictions['resilience']['status']))}</span></p><ul><li>Community health forecast: {html_escape(clean_html(predictions['community']['status']))} at {predictions['community']['health_score']}%.</li><li>Social energy: {html_escape(clean_html(predictions['energy']['visual_state']))} at {predictions['energy']['energy_score']}%.</li><li>Event throughput: {event_bus.get('events_per_minute', 0)} events/min.</li></ul></div>
       <div class='card'><h2>Global Event Feed</h2><ul class='event-feed'>{event_rows}</ul></div>
     </section>
     <section class='grid'>
@@ -100640,9 +100685,9 @@ def admin_realtime_grid_page():
     websocket = snapshot["websocket"]
     stream = snapshot["stream"]
     dist_metrics = distributed.get("metrics") or {}
-    priority_rows = "".join(f"<tr><td>{clean_html(k)}</td><td>{v}</td></tr>" for k, v in (dist_metrics.get("priority_counts") or {}).items())
-    partition_rows = "".join(f"<tr><td>{clean_html(k)}</td><td>{v}</td></tr>" for k, v in sorted((dist_metrics.get("partition_depths") or {}).items())[:24])
-    channel_rows = "".join(f"<tr><td>{clean_html(name)}</td><td>{count}</td></tr>" for name, count in websocket.get("top_channels", []))
+    priority_rows = "".join(f"<tr><td>{html_escape(clean_html(k))}</td><td>{v}</td></tr>" for k, v in (dist_metrics.get("priority_counts") or {}).items())
+    partition_rows = "".join(f"<tr><td>{html_escape(clean_html(k))}</td><td>{v}</td></tr>" for k, v in sorted((dist_metrics.get("partition_depths") or {}).items())[:24])
+    channel_rows = "".join(f"<tr><td>{html_escape(clean_html(name))}</td><td>{count}</td></tr>" for name, count in websocket.get("top_channels", []))
     css = """
     <style>
     .ops-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.pressure{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.pressure span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#ffd166,#ff6b7a);box-shadow:0 0 18px rgba(110,223,246,.32)}@media(max-width:720px){.table{font-size:13px}}
@@ -100652,8 +100697,8 @@ def admin_realtime_grid_page():
     {css}
     <h1>Realtime Grid</h1><p class='muted'>Distributed realtime nervous system, websocket orchestration, replay buffers, partition pressure, and stream analytics.</p>
     <section class='ops-grid'>
-      <div class='card'><h2>Distributed Health</h2><p class='metric'>{distributed.get('score', 0)}%</p><div class='pressure'><span style='width:{distributed.get('score', 0)}%'></span></div><p>{clean_html(distributed.get('status'))}</p></div>
-      <div class='card'><h2>Delivery Success</h2><p class='metric'>{clean_html(str(dist_metrics.get('delivery_success_rate') or 0))}%</p><p><span class='pill'>Published {dist_metrics.get('published', 0)}</span> <span class='pill'>Failed {dist_metrics.get('failed', 0)}</span></p></div>
+      <div class='card'><h2>Distributed Health</h2><p class='metric'>{distributed.get('score', 0)}%</p><div class='pressure'><span style='width:{distributed.get('score', 0)}%'></span></div><p>{html_escape(clean_html(distributed.get('status')))}</p></div>
+      <div class='card'><h2>Delivery Success</h2><p class='metric'>{html_escape(clean_html(str(dist_metrics.get('delivery_success_rate') or 0)))}%</p><p><span class='pill'>Published {dist_metrics.get('published', 0)}</span> <span class='pill'>Failed {dist_metrics.get('failed', 0)}</span></p></div>
       <div class='card'><h2>Websocket Pressure</h2><p class='metric'>{websocket.get('pressure', 0)}%</p><p><span class='pill'>Active {websocket.get('active_sockets', 0)}</span> <span class='pill'>Reconnects {websocket.get('reconnect_spikes', 0)}</span></p></div>
       <div class='card'><h2>Stream Pressure</h2><p class='metric'>{stream.get('stream_pressure', 0)}%</p><p><span class='pill'>Lag {stream.get('queue_lag', 0)}</span> <span class='pill'>Replay {stream.get('replay_count', 0)}</span></p></div>
     </section>
@@ -100684,7 +100729,7 @@ def admin_intelligence_graph_page():
             "risk": 1 if entity_type in {"report", "scam"} else 0,
         })
     edges = [{"source": item.get("source_key"), "target": item.get("target_key"), "relationship": item.get("relationship"), "weight": item.get("weight") or 1} for item in snapshot.get("edges", [])[:260]]
-    graph_json = json.dumps({"nodes": nodes, "edges": edges}, default=str)
+    graph_json = script_json({"nodes": nodes, "edges": edges})
     body = f"""
     <style>
     .graph-shell{{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px}}.graph-canvas{{width:100%;height:68vh;min-height:420px;border-radius:18px;border:1px solid rgba(110,223,246,.22);background:radial-gradient(circle at 50% 45%,rgba(110,223,246,.12),transparent 32rem),#030914;touch-action:none}}.legend-dot{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:#6edff6;box-shadow:0 0 14px #6edff6}}.legend-dot.risk{{background:#ff6b7a;box-shadow:0 0 14px #ff6b7a}}@media(max-width:820px){{.graph-shell{{grid-template-columns:1fr}}.graph-canvas{{height:58vh;min-height:320px}}}}
@@ -100712,7 +100757,7 @@ def admin_trust_map_page():
     snapshot = global_command_snapshot(persist=False)
     health = snapshot["summary"]["health"]
     clusters = snapshot["summary"]["scam_clusters"]
-    cluster_html = "".join(f"<div class='card'><h2>{clean_html(c.get('cluster_key'))}</h2><p class='metric'>{clean_html(c.get('risk_weight'))}</p><p class='muted'>{len(c.get('members') or [])} connected entities</p></div>" for c in clusters) or "<div class='card'><h2>No active scam cluster</h2><p class='muted'>Trust map is calm right now.</p></div>"
+    cluster_html = "".join(f"<div class='card'><h2>{html_escape(clean_html(c.get('cluster_key')))}</h2><p class='metric'>{html_escape(clean_html(c.get('risk_weight')))}</p><p class='muted'>{len(c.get('members') or [])} connected entities</p></div>" for c in clusters) or "<div class='card'><h2>No active scam cluster</h2><p class='muted'>Trust map is calm right now.</p></div>"
     body = f"""
     <style>.heat{{height:18px;border-radius:999px;background:linear-gradient(90deg,#ff6b7a,#ffd166,#36e58f);position:relative;overflow:hidden}}.heat:after{{content:"";position:absolute;inset:0 {max(0,100-health['trust_score'])}% 0 0;background:rgba(255,255,255,.16);box-shadow:0 0 20px rgba(110,223,246,.35)}}.trust-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}</style>
     <h1>Trust Map</h1><p class='muted'>Trust clusters, scam propagation, creator reliability, reputation spread, and suspicious behavior overlays.</p>
@@ -100740,8 +100785,8 @@ def admin_global_events_page():
         logging.info("GLOBAL_EVENTS_LIST_SKIPPED error=%s", exc)
     conn.close()
     bus = event_bus_engine.metrics()
-    bus_rows = "".join(f"<tr><td>{clean_html(e.get('created_at'))}</td><td>{clean_html(e.get('channel'))}</td><td>{clean_html(e.get('event_type'))}</td><td>{clean_html(e.get('status'))}</td></tr>" for e in bus.get("latest_events", [])[:30])
-    db_rows = "".join(f"<tr><td>{clean_html(row.get('created_at'))}</td><td>{clean_html(row.get('event_type'))}</td><td>{clean_html(row.get('severity'))}</td><td>{clean_html(row.get('title'))}</td></tr>" for row in rows)
+    bus_rows = "".join(f"<tr><td>{html_escape(clean_html(e.get('created_at')))}</td><td>{html_escape(clean_html(e.get('channel')))}</td><td>{html_escape(clean_html(e.get('event_type')))}</td><td>{html_escape(clean_html(e.get('status')))}</td></tr>" for e in bus.get("latest_events", [])[:30])
+    db_rows = "".join(f"<tr><td>{html_escape(clean_html(row.get('created_at')))}</td><td>{html_escape(clean_html(row.get('event_type')))}</td><td>{html_escape(clean_html(row.get('severity')))}</td><td>{html_escape(clean_html(row.get('title')))}</td></tr>" for row in rows)
     body = f"""
     <h1>Global Event Timeline</h1><p class='muted'>Creator spikes, livestream starts, scam outbreaks, AI recommendations, moderation events, infrastructure events, and economy signals.</p>
     <section class='grid'><div class='card'><h2>Event Throughput</h2><p class='metric'>{bus.get('events_per_minute', 0)}/min</p></div><div class='card'><h2>Dead Letters</h2><p class='metric'>{bus.get('dead_letters', 0)}</p></div><div class='card'><h2>Buffered Events</h2><p class='metric'>{bus.get('buffered_events', 0)}</p></div></section>
@@ -100965,17 +101010,17 @@ def admin_command_center_page():
         risk = str(module.get("risk_level") or "low")
         dot_class = "status-danger" if module.get("state") == "CRITICAL" else "status-warn" if module.get("state") == "WATCH" else ""
         metrics = backend_command_metric_html(live_metrics.get(str(module.get("category") or ""), []))
-        actions = "".join(f"<span class='ops-action'>{clean_html(action)}</span>" for action in (module.get("actions") or [])[:4])
+        actions = "".join(f"<span class='ops-action'>{html_escape(clean_html(action))}</span>" for action in (module.get("actions") or [])[:4])
         module_cards.append(
-            f"<a class='card department-card ops-module-card' href='/admin/command-center/{clean_html(module['category'])}' style='text-decoration:none'>"
-            f"<h2><span class='status-dot {dot_class}'></span> {clean_html(module['title'])}</h2>"
-            f"<p><span class='pill'>{clean_html(module.get('state') or 'WATCH')}</span> <span class='pill'>Surface {clean_html(module.get('surface') or '')}</span></p>"
-            f"<p class='muted'>{clean_html(module.get('visible_state') or 'Backend-managed inventory')}.</p>"
+            f"<a class='card department-card ops-module-card' href='/admin/command-center/{html_escape(clean_html(module['category']))}' style='text-decoration:none'>"
+            f"<h2><span class='status-dot {dot_class}'></span> {html_escape(clean_html(module['title']))}</h2>"
+            f"<p><span class='pill'>{html_escape(clean_html(module.get('state') or 'WATCH'))}</span> <span class='pill'>Surface {html_escape(clean_html(module.get('surface') or ''))}</span></p>"
+            f"<p class='muted'>{html_escape(clean_html(module.get('visible_state') or 'Backend-managed inventory'))}.</p>"
             f"<div class='ops-metrics'>{metrics}</div>"
             f"<div class='mini-chart'><span style='width:{max(5, min(100, int(module.get('readiness_score') or 0)))}%'></span></div>"
-            f"<p><span class='pill'>Ready {int(module.get('readiness_score') or 0)}%</span> <span class='pill'>Active {int(module.get('active') or 0)}</span> <span class='pill'>Gaps {int(module.get('gaps') or 0)}</span> <span class='pill'>Risk {clean_html(risk)}</span></p>"
+            f"<p><span class='pill'>Ready {int(module.get('readiness_score') or 0)}%</span> <span class='pill'>Active {int(module.get('active') or 0)}</span> <span class='pill'>Gaps {int(module.get('gaps') or 0)}</span> <span class='pill'>Risk {html_escape(clean_html(risk))}</span></p>"
             f"<div class='ops-actions'>{actions}</div>"
-            f"<p class='muted'><strong>Fail-safe:</strong> {clean_html(module.get('failure_behavior') or '')}</p></a>"
+            f"<p class='muted'><strong>Fail-safe:</strong> {html_escape(clean_html(module.get('failure_behavior') or ''))}</p></a>"
         )
     launch_class = "status-danger" if readiness.get("status") == "blocked" else "status-warn" if readiness.get("status") == "watch" else ""
     launch_card = (
@@ -100983,7 +101028,7 @@ def admin_command_center_page():
         "<h2><span class='status-dot " + launch_class + "'></span> Launch Readiness</h2>"
         f"<p class='metric'>{int(readiness.get('score') or 0)}%</p>"
         f"<p class='muted'>Critical backend management: {int(readiness.get('critical_active') or 0)} active of {int(readiness.get('critical_total') or 0)}. Partial: {int(readiness.get('critical_partial') or 0)}. Blocked: {int(readiness.get('critical_blocked') or 0)}.</p>"
-        f"<p class='muted'>{clean_html(readiness.get('verification_note') or '')}</p>"
+        f"<p class='muted'>{html_escape(clean_html(readiness.get('verification_note') or ''))}</p>"
         + (
             "<p class='muted'><strong>Unreachable surfaces:</strong> "
             + clean_html(", ".join(
@@ -101008,7 +101053,7 @@ def admin_command_center_page():
         "</section>"
     )
     standard = backend_management_registry.audit_standard()
-    standard_items = "".join(f"<li>{clean_html(item)}</li>" for item in standard["required_for_new_features"])
+    standard_items = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in standard["required_for_new_features"])
     developer_rule_card = (
         "<section class='card'>"
         "<h2>Developer Rule</h2>"
@@ -101023,8 +101068,8 @@ def admin_command_center_page():
         missing = ", ".join(clean_html(name) for name in (service.get("missing_env_names") or [])[:5]) or "none"
         provider_rows.append(
             "<tr>"
-            f"<td><span class='status-dot {state_class}'></span> {clean_html(service.get('label') or '')}</td>"
-            f"<td><span class='pill'>{clean_html(state)}</span></td>"
+            f"<td><span class='status-dot {state_class}'></span> {html_escape(clean_html(service.get('label') or ''))}</td>"
+            f"<td><span class='pill'>{html_escape(clean_html(state))}</span></td>"
             f"<td>{int(service.get('configured_count') or 0)}/{int(service.get('required_count') or 0)}</td>"
             f"<td><code>{missing}</code></td>"
             "</tr>"
@@ -101087,7 +101132,7 @@ def admin_command_center_page():
         dot_class = "status-danger" if counts["warnings"] >= 5 else "status-warn" if counts["warnings"] else ""
         cards.append(
             f"<a class='card department-card' href='/admin/departments/{slug}' style='text-decoration:none'>"
-            f"<h2><span class='status-dot {dot_class}'></span> {clean_html(meta['title'])}</h2><p class='muted'>{', '.join(clean_html(x) for x in meta['focus'][:3])}</p>"
+            f"<h2><span class='status-dot {dot_class}'></span> {html_escape(clean_html(meta['title']))}</h2><p class='muted'>{', '.join(html_escape(clean_html(x)) for x in meta['focus'][:3])}</p>"
             f"<div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div>"
             f"<p><span class='pill'>Health {counts['health']}%</span> <span class='pill'>Tasks {counts['pending_tasks']}</span> <span class='pill'>Warnings {counts['warnings']}</span> <span class='pill'>Today {counts['today']}</span></p></a>"
         )
@@ -101174,21 +101219,21 @@ def admin_backend_management_module_page(module_key):
         if item.get("route_registered") is False:
             manage = "<span class='pill' title='This admin route is not registered in this process.'>Not registered</span>"
         else:
-            manage = f"<a class='button' href='{clean_html(item.get('route') or '/admin/command-center')}'>Manage</a>"
+            manage = f"<a class='button' href='{html_escape(clean_html(item.get('route') or '/admin/command-center'))}'>Manage</a>"
         audit_cell = clean_html(item.get("audit_log_table") or "")
         if item.get("audit_table_exists") is False:
             audit_cell += " <span class='pill' title='This audit table does not exist in the live schema, so nothing is being recorded.'>missing</span>"
         rows.append(
             "<tr>"
-            f"<td><strong>{clean_html(item.get('display_name') or '')}</strong><br><small>{clean_html(item.get('feature_key') or '')}</small></td>"
-            f"<td><span class='pill'>{clean_html(state)}</span> <span class='pill'>{clean_html(risk)}</span></td>"
-            f"<td>{clean_html(item.get('owner') or '')}<br><small>{clean_html(item.get('backend_service') or '')}</small></td>"
+            f"<td><strong>{html_escape(clean_html(item.get('display_name') or ''))}</strong><br><small>{html_escape(clean_html(item.get('feature_key') or ''))}</small></td>"
+            f"<td><span class='pill'>{html_escape(clean_html(state))}</span> <span class='pill'>{html_escape(clean_html(risk))}</span></td>"
+            f"<td>{html_escape(clean_html(item.get('owner') or ''))}<br><small>{html_escape(clean_html(item.get('backend_service') or ''))}</small></td>"
             f"<td>{audit_cell}</td>"
             f"<td>{manage}</td>"
             "</tr>"
         )
     module_summary = next((item for item in backend_management_registry.category_summary(all_module_features) if item.get("category") == module_key), {})
-    action_chips = "".join(f"<span class='pill'>{clean_html(action)}</span> " for action in (blueprint.get("actions") or []))
+    action_chips = "".join(f"<span class='pill'>{html_escape(clean_html(action))}</span> " for action in (blueprint.get("actions") or []))
     body = f"""
     <style>
       .module-search{{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end}}
@@ -101198,27 +101243,27 @@ def admin_backend_management_module_page(module_key):
       .ops-metric span{{display:block;color:#9fb5c0;font-size:12px}}
       @media(max-width:760px){{.module-search{{grid-template-columns:1fr}}.ops-metrics{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
     </style>
-    <h1>{clean_html(modules[module_key])}</h1>
+    <h1>{html_escape(clean_html(modules[module_key]))}</h1>
     <p class='muted'>Only features your admin role can manage are shown. Admin-only and moderator-only features stay server-side hidden from unauthorized roles.</p>
     <section class='card'>
       <h2>Operating Blueprint</h2>
       <div class='ops-metrics'>{metrics}</div>
-      <p><strong>Managed at:</strong> {clean_html(blueprint.get('surface') or '')}</p>
-      <p><strong>Operators:</strong> {clean_html(blueprint.get('operators') or '')}</p>
-      <p><strong>Visible state:</strong> {clean_html(blueprint.get('visible_state') or '')}</p>
+      <p><strong>Managed at:</strong> {html_escape(clean_html(blueprint.get('surface') or ''))}</p>
+      <p><strong>Operators:</strong> {html_escape(clean_html(blueprint.get('operators') or ''))}</p>
+      <p><strong>Visible state:</strong> {html_escape(clean_html(blueprint.get('visible_state') or ''))}</p>
       <p><strong>Actions:</strong> {action_chips}</p>
-      <p class='muted'><strong>Failure behavior:</strong> {clean_html(blueprint.get('failure_behavior') or '')}</p>
+      <p class='muted'><strong>Failure behavior:</strong> {html_escape(clean_html(blueprint.get('failure_behavior') or ''))}</p>
     </section>
     <section class='grid'>
       <div class='card'><h2>Readiness</h2><p class='metric'>{int(module_summary.get('readiness_score') or 0)}%</p></div>
       <div class='card'><h2>Managed Features</h2><p class='metric'>{int(module_summary.get('manageable') or 0)}</p></div>
       <div class='card'><h2>Gaps</h2><p class='metric'>{int(module_summary.get('gaps') or 0)}</p></div>
-      <div class='card'><h2>Risk</h2><p class='metric'>{clean_html(module_summary.get('risk_level') or 'low')}</p></div>
+      <div class='card'><h2>Risk</h2><p class='metric'>{html_escape(clean_html(module_summary.get('risk_level') or 'low'))}</p></div>
     </section>
     <section class='card'>
       <h2>Feature Inventory</h2>
       <form class='module-search' method='get'>
-        <label>Search<input name='q' value='{clean_html(query)}' placeholder='feature, owner, service'></label>
+        <label>Search<input name='q' value='{html_escape(clean_html(query))}' placeholder='feature, owner, service'></label>
         <label>Status<select name='status'>{''.join(f"<option value='{opt}'{' selected' if status_filter == opt else ''}>{opt.title()}</option>" for opt in ('all', 'active', 'partial', 'planned', 'blocked'))}</select></label>
         <label>Risk<select name='risk'>{''.join(f"<option value='{opt}'{' selected' if risk_filter == opt else ''}>{opt.title()}</option>" for opt in ('all', 'critical', 'high', 'medium', 'low'))}</select></label>
         <button class='button'>Filter</button>
@@ -101251,7 +101296,7 @@ def _admin_crypto_metric_cards(metrics):
         ("audit_events", "Audit Events"),
     ]
     return "".join(
-        f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{int(metrics.get(key) or 0)}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{int(metrics.get(key) or 0)}</p></article>"
         for key, label in labels
     )
 
@@ -101270,15 +101315,15 @@ def _admin_crypto_section_rows(sections):
     for section in sections:
         route = str(section.get("route") or "/admin/command-center/crypto")
         if known is None:
-            state, manage = "UNVERIFIED", f"<a class='button' href='{clean_html(route)}'>Manage</a>"
+            state, manage = "UNVERIFIED", f"<a class='button' href='{html_escape(clean_html(route))}'>Manage</a>"
         elif route in known:
-            state, manage = "REACHABLE", f"<a class='button' href='{clean_html(route)}'>Manage</a>"
+            state, manage = "REACHABLE", f"<a class='button' href='{html_escape(clean_html(route))}'>Manage</a>"
         else:
             state = "UNREACHABLE"
             manage = "<span class='pill' title='This surface is not registered in this process. The optional route pack that provides it failed to load.'>Not registered</span>"
         rows.append(
             "<tr>"
-            f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
+            f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
             f"<td><span class='pill'>{state}</span></td>"
             f"<td>{manage}</td>"
             "</tr>"
@@ -101308,7 +101353,7 @@ def admin_crypto_command_center_page():
     <section class="grid">{_admin_crypto_metric_cards(metrics)}</section>
     <section class="card">
       <h2>Provider Health</h2>
-      <p><span class="pill">{clean_html(provider_state)}</span> <span class="pill">Market source: {clean_html(state.get('market_source') or 'unavailable')}</span></p>
+      <p><span class="pill">{html_escape(clean_html(provider_state))}</span> <span class="pill">Market source: {html_escape(clean_html(state.get('market_source') or 'unavailable'))}</span></p>
       <p class="muted">Configured/missing checks only. API keys, provider secrets, wallet secrets, database URLs, and private user data are never displayed.</p>
     </section>
     <section class="card">
@@ -101347,12 +101392,12 @@ def admin_crypto_command_center_section_page(section_key):
         "audit": ["audit_events"],
     }.get(normalized, ["audit_events"])
     cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{int(metrics.get(key) or 0)}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{int(metrics.get(key) or 0)}</p></article>"
         for key in metric_map
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'Crypto Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'Crypto Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{cards}</section>
     <section class="card">
       <h2>Operational Console</h2>
@@ -101401,17 +101446,17 @@ def _admin_network_metric_cards(metrics):
     for key, label in labels:
         value = int(metrics.get(key) or 0)
         suffix = "%" if key.endswith("_score") else ""
-        cards.append(f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{value}{suffix}</p></article>")
+        cards.append(f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{value}{suffix}</p></article>")
     return "".join(cards)
 
 
 def _admin_network_section_rows(sections):
     return "".join(
         "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>{clean_html(section.get('state') or 'PRODUCTION READY')}</span></td>"
+        f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
+        f"<td><span class='pill'>{html_escape(clean_html(section.get('state') or 'PRODUCTION READY'))}</span></td>"
         f"<td>{int(section.get('count') or 0)}</td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/network-command-center')}'>Manage</a></td>"
+        f"<td><a class='button' href='{html_escape(clean_html(section.get('route') or '/admin/network-command-center'))}'>Manage</a></td>"
         "</tr>"
         for section in sections
     )
@@ -101494,7 +101539,7 @@ def admin_network_command_center_section_page(section_key):
         "audit": [("/admin/audit-logs", "Audit Logs"), ("/admin/command-center/network", "Registry")],
     }
     default_links = [("/admin/command-center/network", "Registry"), ("/admin/audit-logs", "Audit Logs")]
-    link_buttons = "".join(f"<a class='button' href='{clean_html(href)}'>{clean_html(label)}</a>" for href, label in section_links.get(section_key, default_links))
+    link_buttons = "".join(f"<a class='button' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for href, label in section_links.get(section_key, default_links))
     primary_metrics = {
         "notifications": ["unread_notifications", "queued_notifications", "failed_pushes", "delivery_health_score"],
         "messenger": ["active_conversations", "unread_notifications", "failed_messages", "message_health_score"],
@@ -101522,12 +101567,12 @@ def admin_network_command_center_section_page(section_key):
         "audit": ["network_trust_score", "reported_chats", "group_reports", "banned_users"],
     }.get(section_key, ["network_trust_score"])
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{int(metrics.get(key) or 0)}{'%' if key.endswith('_score') else ''}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{int(metrics.get(key) or 0)}{'%' if key.endswith('_score') else ''}</p></article>"
         for key in primary_metrics
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'Network Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'Network Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{metric_cards}</section>
     <section class="card">
       <h2>Operational Tools</h2>
@@ -101573,18 +101618,18 @@ def _admin_intelligence_metric_cards(metrics):
     for key, label in labels:
         value = int(metrics.get(key) or 0)
         suffix = "%" if key.endswith("_score") or key in {"platform_health", "safety_score", "prediction_confidence"} else ""
-        cards.append(f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{value}{suffix}</p></article>")
+        cards.append(f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{value}{suffix}</p></article>")
     return "".join(cards)
 
 
 def _admin_intelligence_section_rows(sections):
     return "".join(
         "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>{clean_html(section.get('state') or 'READY')}</span></td>"
+        f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
+        f"<td><span class='pill'>{html_escape(clean_html(section.get('state') or 'READY'))}</span></td>"
         f"<td>{int(section.get('count') or 0)}</td>"
         f"<td>{int(section.get('confidence') or 0)}%</td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/intelligence-command-center')}'>Manage</a></td>"
+        f"<td><a class='button' href='{html_escape(clean_html(section.get('route') or '/admin/intelligence-command-center'))}'>Manage</a></td>"
         "</tr>"
         for section in sections
     )
@@ -101659,7 +101704,7 @@ def admin_intelligence_command_center_section_page(section_key):
         "audit": [("/admin/audit-logs", "Audit Logs"), ("/admin/command-center/intelligence", "Registry")],
     }
     link_buttons = "".join(
-        f"<a class='button' href='{clean_html(href)}'>{clean_html(label)}</a>"
+        f"<a class='button' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>"
         for href, label in section_links.get(section_key, [("/admin/command-center/intelligence", "Registry"), ("/admin/audit-logs", "Audit Logs")])
     )
     primary_metrics = {
@@ -101681,12 +101726,12 @@ def admin_intelligence_command_center_section_page(section_key):
         "audit": ["audit_events", "security_events", "active_threats"],
     }.get(section_key, ["overall_intelligence_score"])
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{int(metrics.get(key) or 0)}{'%' if key.endswith('_score') or key in {'platform_health','safety_score','prediction_confidence'} else ''}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{int(metrics.get(key) or 0)}{'%' if key.endswith('_score') or key in {'platform_health','safety_score','prediction_confidence'} else ''}</p></article>"
         for key in primary_metrics
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'Intelligence Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'Intelligence Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{metric_cards}</section>
     <section class="card">
       <h2>Operational Tools</h2>
@@ -101695,7 +101740,7 @@ def admin_intelligence_command_center_section_page(section_key):
     </section>
     <section class="card">
       <h2>Launch Readiness</h2>
-      <p class="muted">State: {clean_html(section.get('state') or 'READY')} · Confidence: {int(section.get('confidence') or 0)}% · Registered Events: {int(section.get('count') or 0)}.</p>
+      <p class="muted">State: {html_escape(clean_html(section.get('state') or 'READY'))} · Confidence: {int(section.get('confidence') or 0)}% · Registered Events: {int(section.get('count') or 0)}.</p>
       <p class="muted">This surface is route-backed, permission-gated, audited, and connected to the protected backend command registry.</p>
     </section>
     <section class="card">
@@ -101740,17 +101785,17 @@ def _admin_creator_metric_cards(metrics):
     for key, label in labels:
         value = int(metrics.get(key) or 0)
         suffix = "%" if key.endswith("_score") else ""
-        cards.append(f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{value}{suffix}</p></article>")
+        cards.append(f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{value}{suffix}</p></article>")
     return "".join(cards)
 
 
 def _admin_creator_section_rows(sections):
     return "".join(
         "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>{clean_html(section.get('state') or 'READY')}</span></td>"
+        f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
+        f"<td><span class='pill'>{html_escape(clean_html(section.get('state') or 'READY'))}</span></td>"
         f"<td>{int(section.get('count') or 0)}</td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/creator-command-center')}'>Manage</a></td>"
+        f"<td><a class='button' href='{html_escape(clean_html(section.get('route') or '/admin/creator-command-center'))}'>Manage</a></td>"
         "</tr>"
         for section in sections
     )
@@ -101830,7 +101875,7 @@ def admin_creator_command_center_section_page(section_key):
         "moderation": [("/admin/pulse-moderation", "Content Moderation"), ("/admin/reports", "Reports")],
         "audit": [("/admin/audit-logs", "Audit Logs"), ("/admin/command-center/creator", "Registry")],
     }
-    link_buttons = "".join(f"<a class='button' href='{clean_html(href)}'>{clean_html(label)}</a>" for href, label in section_links.get(section_key, []))
+    link_buttons = "".join(f"<a class='button' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for href, label in section_links.get(section_key, []))
     primary_metrics = {
         "posts": ["posts_total", "posts_in_review", "posts_archived", "creator_health_score"],
         "reels": ["reels_total", "reels_processing", "moderation_queue", "media_health_score"],
@@ -101855,12 +101900,12 @@ def admin_creator_command_center_section_page(section_key):
         "audit": ["creator_health_score", "media_health_score", "live_health_score"],
     }.get(section_key, ["creator_health_score"])
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{int(metrics.get(key) or 0)}{'%' if key.endswith('_score') else ''}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{int(metrics.get(key) or 0)}{'%' if key.endswith('_score') else ''}</p></article>"
         for key in primary_metrics
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'Creator Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'Creator Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{metric_cards}</section>
     <section class="card">
       <h2>Operational Tools</h2>
@@ -101915,17 +101960,17 @@ def _admin_economy_metric_cards(metrics):
     for key, label, kind in labels:
         raw = metrics.get(key) or 0
         value = _admin_economy_money(raw) if kind == "$" else f"{int(raw)}{kind}"
-        cards.append(f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{clean_html(value)}</p></article>")
+        cards.append(f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{html_escape(clean_html(value))}</p></article>")
     return "".join(cards)
 
 
 def _admin_economy_section_rows(sections):
     return "".join(
         "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>{clean_html(section.get('state') or 'READY')}</span></td>"
+        f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
+        f"<td><span class='pill'>{html_escape(clean_html(section.get('state') or 'READY'))}</span></td>"
         f"<td>{int(section.get('count') or 0)}</td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/economy-command-center')}'>Manage</a></td>"
+        f"<td><a class='button' href='{html_escape(clean_html(section.get('route') or '/admin/economy-command-center'))}'>Manage</a></td>"
         "</tr>"
         for section in sections
     )
@@ -102005,7 +102050,7 @@ def admin_economy_command_center_section_page(section_key):
         "audit": [("/admin/audit-logs", "Audit Logs"), ("/admin/command-center/economy", "Registry")],
     }
     default_links = [("/admin/economy-command-center", "Economy Command Center"), ("/admin/audit-logs", "Audit Logs")]
-    link_buttons = "".join(f"<a class='button' href='{clean_html(href)}'>{clean_html(label)}</a>" for href, label in section_links.get(section_key, default_links))
+    link_buttons = "".join(f"<a class='button' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for href, label in section_links.get(section_key, default_links))
     primary_metrics = {
         "wallets": ["wallets", "wallet_balance_cents", "transactions", "payment_health"],
         "transactions": ["transactions", "payment_failures", "fraud_risk", "payment_health"],
@@ -102029,12 +102074,12 @@ def admin_economy_command_center_section_page(section_key):
         "audit": ["audit", "transactions", "fraud_risk", "payment_health"],
     }.get(section_key, ["payment_health", "fraud_risk"])
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{clean_html(_admin_economy_money(metrics.get(key)) if key.endswith('_cents') else str(int(metrics.get(key) or 0)) + ('%' if key in {'payment_health','fraud_risk'} else ''))}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{html_escape(clean_html(_admin_economy_money(metrics.get(key)) if key.endswith('_cents') else str(int(metrics.get(key) or 0)) + ('%' if key in {'payment_health','fraud_risk'} else '')))}</p></article>"
         for key in primary_metrics
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'Economy Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'Economy Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{metric_cards}</section>
     <section class="card">
       <h2>Operational Tools</h2>
@@ -102098,18 +102143,18 @@ def _admin_ads_metric_cards(metrics):
     for key, label, kind in labels:
         raw = metrics.get(key) or 0
         value = _admin_ads_money(raw) if kind == "$" else f"{int(raw)}{kind}"
-        cards.append(f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{clean_html(value)}</p></article>")
+        cards.append(f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{html_escape(clean_html(value))}</p></article>")
     return "".join(cards)
 
 
 def _admin_ads_section_rows(sections):
     return "".join(
         "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>{clean_html(section.get('state') or 'READY')}</span></td>"
+        f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
+        f"<td><span class='pill'>{html_escape(clean_html(section.get('state') or 'READY'))}</span></td>"
         f"<td>{int(section.get('count') or 0)}</td>"
         f"<td>{int(section.get('confidence') or 0)}%</td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/ads-command-center')}'>Manage</a></td>"
+        f"<td><a class='button' href='{html_escape(clean_html(section.get('route') or '/admin/ads-command-center'))}'>Manage</a></td>"
         "</tr>"
         for section in sections
     )
@@ -102131,7 +102176,7 @@ def admin_ads_command_center_page():
         conn.close()
     growth_metrics = growth_admin_state.get("metrics") or {}
     growth_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{int(value or 0):,}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{int(value or 0):,}</p></article>"
         for key, value in growth_metrics.items()
     )
     body = f"""
@@ -102207,7 +102252,7 @@ def admin_ads_command_center_section_page(section_key):
         "audit": [("/admin/audit-logs", "Audit Logs"), ("/admin/command-center/ads", "Registry")],
     }
     default_links = [("/admin/ads-command-center", "Ads Command Center"), ("/admin/audit-logs", "Audit Logs")]
-    link_buttons = "".join(f"<a class='button' href='{clean_html(href)}'>{clean_html(label)}</a>" for href, label in section_links.get(section_key, default_links))
+    link_buttons = "".join(f"<a class='button' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for href, label in section_links.get(section_key, default_links))
     primary_metrics = {
         "sponsored-signals": ["approved_creatives", "placements", "reports", "brand_safety_score"],
         "ads-manager": ["campaigns", "active_campaigns", "spend_cents", "delivery_health"],
@@ -102224,12 +102269,12 @@ def admin_ads_command_center_section_page(section_key):
         "audit": ["audit_logs", "tracking_events", "policy_flags", "commercial_health"],
     }.get(section_key, ["commercial_health", "delivery_health", "brand_safety_score"])
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{clean_html(_admin_ads_money(metrics.get(key)) if key.endswith('_cents') else str(metrics.get(key) or 0) + ('%' if key in {'ctr','delivery_health','brand_safety_score','commercial_health'} else ''))}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{html_escape(clean_html(_admin_ads_money(metrics.get(key)) if key.endswith('_cents') else str(metrics.get(key) or 0) + ('%' if key in {'ctr','delivery_health','brand_safety_score','commercial_health'} else '')))}</p></article>"
         for key in primary_metrics
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'Ads Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'Ads Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{metric_cards}</section>
     <section class="card">
       <h2>Operational Tools</h2>
@@ -102278,18 +102323,18 @@ def _admin_ai_metric_cards(metrics):
     cards = []
     for key, label, suffix in labels:
         raw = metrics.get(key) or 0
-        cards.append(f"<article class='card'><h2>{clean_html(label)}</h2><p class='metric'>{clean_html(str(int(raw)) + suffix)}</p></article>")
+        cards.append(f"<article class='card'><h2>{html_escape(clean_html(label))}</h2><p class='metric'>{html_escape(clean_html(str(int(raw)) + suffix))}</p></article>")
     return "".join(cards)
 
 
 def _admin_ai_section_rows(sections):
     return "".join(
         "<tr>"
-        f"<td><strong>{clean_html(section.get('label') or '')}</strong><br><small>{clean_html(section.get('description') or '')}</small></td>"
-        f"<td><span class='pill'>{clean_html(section.get('state') or 'READY')}</span></td>"
+        f"<td><strong>{html_escape(clean_html(section.get('label') or ''))}</strong><br><small>{html_escape(clean_html(section.get('description') or ''))}</small></td>"
+        f"<td><span class='pill'>{html_escape(clean_html(section.get('state') or 'READY'))}</span></td>"
         f"<td>{int(section.get('count') or 0)}</td>"
         f"<td>{int(section.get('confidence') or 0)}%</td>"
-        f"<td><a class='button' href='{clean_html(section.get('route') or '/admin/ai-command-center')}'>Manage</a></td>"
+        f"<td><a class='button' href='{html_escape(clean_html(section.get('route') or '/admin/ai-command-center'))}'>Manage</a></td>"
         "</tr>"
         for section in sections
     )
@@ -102363,7 +102408,7 @@ def admin_ai_command_center_section_page(section_key):
         "audit": [("/admin/audit-logs", "Audit Logs"), ("/admin/ai-usage", "AI Usage")],
     }
     default_links = [("/admin/ai-command-center", "AI Command Center"), ("/admin/audit-logs", "Audit Logs")]
-    link_buttons = "".join(f"<a class='button' href='{clean_html(href)}'>{clean_html(label)}</a>" for href, label in section_links.get(section_key, default_links))
+    link_buttons = "".join(f"<a class='button' href='{html_escape(clean_html(href))}'>{html_escape(clean_html(label))}</a>" for href, label in section_links.get(section_key, default_links))
     primary_metrics = {
         "undx-core": ["command_center_events", "pending_events", "recommendations", "mission_health"],
         "adaptive-companion": ["conversations", "messages", "provider_readiness", "privacy_score"],
@@ -102383,12 +102428,12 @@ def admin_ai_command_center_section_page(section_key):
     }.get(section_key, ["mission_health", "provider_readiness", "privacy_score"])
     percent_keys = {"mission_health", "provider_readiness", "automation_readiness", "privacy_score"}
     metric_cards = "".join(
-        f"<article class='card'><h2>{clean_html(key.replace('_',' ').title())}</h2><p class='metric'>{clean_html(str(metrics.get(key) or 0) + ('%' if key in percent_keys else ''))}</p></article>"
+        f"<article class='card'><h2>{html_escape(clean_html(key.replace('_',' ').title()))}</h2><p class='metric'>{html_escape(clean_html(str(metrics.get(key) or 0) + ('%' if key in percent_keys else '')))}</p></article>"
         for key in primary_metrics
     )
     body = f"""
-    <h1>{clean_html(section.get('label') or 'AI Surface')}</h1>
-    <p class="muted">{clean_html(section.get('description') or '')}</p>
+    <h1>{html_escape(clean_html(section.get('label') or 'AI Surface'))}</h1>
+    <p class="muted">{html_escape(clean_html(section.get('description') or ''))}</p>
     <section class="grid">{metric_cards}</section>
     <section class="card">
       <h2>Operational Tools</h2>
@@ -102419,11 +102464,11 @@ def admin_backend_launch_readiness_page():
     )
     operating_snapshot = backend_management_registry.operating_system_snapshot()
     gap_rows = "".join(
-        f"<tr><td>{clean_html(item.get('feature_key') or '')}</td><td>{clean_html(item.get('severity') or '')}</td><td>{clean_html(item.get('reason') or '')}</td><td>{clean_html(item.get('route') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('feature_key') or ''))}</td><td>{html_escape(clean_html(item.get('severity') or ''))}</td><td>{html_escape(clean_html(item.get('reason') or ''))}</td><td>{html_escape(clean_html(item.get('route') or ''))}</td></tr>"
         for item in readiness.get("remaining_gaps", [])
     )
     module_rows = "".join(
-        f"<tr><td>{clean_html(item.get('title') or '')}</td><td>{int(item.get('readiness_score') or 0)}%</td><td>{int(item.get('active') or 0)}/{int(item.get('total') or 0)}</td><td>{int(item.get('gaps') or 0)}</td><td>{clean_html(item.get('risk_level') or '')}</td></tr>"
+        f"<tr><td>{html_escape(clean_html(item.get('title') or ''))}</td><td>{int(item.get('readiness_score') or 0)}%</td><td>{int(item.get('active') or 0)}/{int(item.get('total') or 0)}</td><td>{int(item.get('gaps') or 0)}</td><td>{html_escape(clean_html(item.get('risk_level') or ''))}</td></tr>"
         for item in readiness.get("modules", [])
     )
     body = f"""
@@ -102431,7 +102476,7 @@ def admin_backend_launch_readiness_page():
     <p class='muted'>This dashboard fails loud when launch-critical features are not backend-managed, auditable, or permission-gated.</p>
     <section class='grid'>
       <div class='card'><h2>Readiness Score</h2><p class='metric'>{int(readiness.get('score') or 0)}%</p></div>
-      <div class='card'><h2>Status</h2><p class='metric'>{clean_html(readiness.get('status') or 'watch')}</p></div>
+      <div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(readiness.get('status') or 'watch'))}</p></div>
       <div class='card'><h2>Critical Active</h2><p class='metric'>{int(readiness.get('critical_active') or 0)}/{int(readiness.get('critical_total') or 0)}</p></div>
       <div class='card'><h2>Critical Gaps</h2><p class='metric'>{int(readiness.get('critical_blocked') or 0) + int(readiness.get('critical_partial') or 0)}</p></div>
       <div class='card'><h2>Total Features</h2><p class='metric'>{int(readiness.get('total_features_discovered') or 0)}</p></div>
@@ -102441,15 +102486,15 @@ def admin_backend_launch_readiness_page():
       <div class='card'><h2>Audit Missing</h2><p class='metric'>{int(readiness.get('audit_missing') or 0)}</p></div>
       <div class='card'><h2>Strict Gaps</h2><p class='metric'>{int(readiness.get('strict_gap_count') or 0)}</p></div>
     </section>
-    <section class='card'><h2>Verification</h2><p class='muted'>{clean_html(readiness.get('verification_note') or '')}</p>
-      <table><tr><th>Feature</th><th>Declared route</th><th>Launch critical</th></tr>{''.join(f"<tr><td>{clean_html(row.get('feature_key') or '')}</td><td>{clean_html(row.get('route') or '')}</td><td>{'yes' if row.get('launch_critical') else 'no'}</td></tr>" for row in (readiness.get('unreachable_routes') or [])) or '<tr><td colspan="3">Every declared admin route resolves in this process.</td></tr>'}</table>
+    <section class='card'><h2>Verification</h2><p class='muted'>{html_escape(clean_html(readiness.get('verification_note') or ''))}</p>
+      <table><tr><th>Feature</th><th>Declared route</th><th>Launch critical</th></tr>{''.join(f"<tr><td>{html_escape(clean_html(row.get('feature_key') or ''))}</td><td>{html_escape(clean_html(row.get('route') or ''))}</td><td>{'yes' if row.get('launch_critical') else 'no'}</td></tr>" for row in (readiness.get('unreachable_routes') or [])) or '<tr><td colspan="3">Every declared admin route resolves in this process.</td></tr>'}</table>
       <p class='muted'>Routes above are declared by the registry but were not found in the live URL map. Optional route packs register inside except blocks, so a subsystem can disappear without raising.</p>
-      <table><tr><th>Feature</th><th>Declared audit table</th></tr>{''.join(f"<tr><td>{clean_html(row.get('feature_key') or '')}</td><td>{clean_html(row.get('audit_log_table') or '')}</td></tr>" for row in (readiness.get('audit_table_missing') or [])) or '<tr><td colspan="2">Every declared audit table exists in the live schema.</td></tr>'}</table>
+      <table><tr><th>Feature</th><th>Declared audit table</th></tr>{''.join(f"<tr><td>{html_escape(clean_html(row.get('feature_key') or ''))}</td><td>{html_escape(clean_html(row.get('audit_log_table') or ''))}</td></tr>" for row in (readiness.get('audit_table_missing') or [])) or '<tr><td colspan="2">Every declared audit table exists in the live schema.</td></tr>'}</table>
     </section>
     <section class='card'><h2>Strict Launch Rules</h2><p class='muted'>Launch readiness requires a registered backend owner, management route, permission gate, audit target, QA report, and safe failure behavior. External services show only env-name readiness and never secrets.</p></section>
     <section class='card'><h2>Module Readiness</h2><table><tr><th>Module</th><th>Readiness</th><th>Active</th><th>Gaps</th><th>Risk</th></tr>{module_rows}</table></section>
     <section class='card'><h2>Gaps</h2><table><tr><th>Feature</th><th>Severity</th><th>Reason</th><th>Route</th></tr>{gap_rows or '<tr><td colspan="4">No backend management gaps detected.</td></tr>'}</table></section>
-    <section class='card'><h2>Risk Summary</h2><table><tr><th>Risk</th><th>Total</th></tr>{''.join(f"<tr><td>{clean_html(k)}</td><td>{int(v or 0)}</td></tr>" for k, v in (operating_snapshot.get('risk_summary') or {}).items())}</table></section>
+    <section class='card'><h2>Risk Summary</h2><table><tr><th>Risk</th><th>Total</th></tr>{''.join(f"<tr><td>{html_escape(clean_html(k))}</td><td>{int(v or 0)}</td></tr>" for k, v in (operating_snapshot.get('risk_summary') or {}).items())}</table></section>
     <p><a class='button' href='/admin/command-center'>Backend Command Center</a></p>
     """
     return admin_page_html("Backend Management Launch Readiness", body, admin)
@@ -102572,19 +102617,19 @@ def admin_department_page(slug):
     )
     members = [dict(row) for row in cur.fetchall()]
     conn.close()
-    focus = "".join(f"<li>{clean_html(item)}</li>" for item in meta["focus"])
+    focus = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in meta["focus"])
     task_rows = "".join(
-        f"<tr><td>{t.get('id')}</td><td>{clean_html(t.get('priority') or '')}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('title') or '')}</td><td>{clean_html(t.get('created_at') or '')}</td><td><form method='post'><input type='hidden' name='form_action' value='update_task'><input type='hidden' name='task_id' value='{t.get('id')}'><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option></select><button>Update</button></form></td></tr>"
+        f"<tr><td>{t.get('id')}</td><td>{html_escape(clean_html(t.get('priority') or ''))}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td><td>{html_escape(clean_html(t.get('title') or ''))}</td><td>{html_escape(clean_html(t.get('created_at') or ''))}</td><td><form method='post'><input type='hidden' name='form_action' value='update_task'><input type='hidden' name='task_id' value='{t.get('id')}'><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option></select><button>Update</button></form></td></tr>"
         for t in tasks
     )
-    case_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{clean_html(c.get('priority') or '')}</td><td>{clean_html(c.get('target_type') or '')}</td><td>{clean_html(c.get('reason') or '')}</td></tr>" for c in cases)
+    case_rows = "".join(f"<tr><td>{c.get('id')}</td><td>{html_escape(clean_html(c.get('priority') or ''))}</td><td>{html_escape(clean_html(c.get('target_type') or ''))}</td><td>{html_escape(clean_html(c.get('reason') or ''))}</td></tr>" for c in cases)
     cases_panel = ""
     if slug in {"trust-safety", "social", "moderation"}:
         cases_panel = f"<div class='card'><h2>Moderation Cases</h2><table><tr><th>ID</th><th>Priority</th><th>Target</th><th>Reason</th></tr>{case_rows or '<tr><td colspan=4>No open cases.</td></tr>'}</table></div><div class='card'><h2>Create Moderation Case</h2><form method='post'><input type='hidden' name='form_action' value='create_case'><select name='target_type'><option>post</option><option>comment</option><option>media</option><option>user</option><option>roast_line</option></select><input name='target_id' placeholder='Target ID'><select name='case_priority'><option>medium</option><option>high</option><option>critical</option><option>low</option></select><textarea name='reason' placeholder='Reason and context'></textarea><button>Create Case</button></form></div>"
-    member_rows = "".join(f"<tr><td>{clean_html(m.get('admin_email') or '')}</td><td>{clean_html(m.get('role') or '')}</td><td>{clean_html(m.get('permissions') or '')}</td></tr>" for m in members)
+    member_rows = "".join(f"<tr><td>{html_escape(clean_html(m.get('admin_email') or ''))}</td><td>{html_escape(clean_html(m.get('role') or ''))}</td><td>{html_escape(clean_html(m.get('permissions') or ''))}</td></tr>" for m in members)
     panels = department_control_panels(slug)
     controls = department_action_panel(slug)
-    body = f"<h1>{clean_html(meta['title'])}</h1><p>{clean_html(message)}</p><div class='grid'><div class='card'><h2>Health</h2><p style='font-size:34px;font-weight:900'>{counts['health']}%</p><div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div></div><div class='card'><h2>Pending Tasks</h2><p style='font-size:34px;font-weight:900'>{counts['pending_tasks']}</p></div><div class='card'><h2>Warnings</h2><p style='font-size:34px;font-weight:900'>{counts['warnings']}</p></div><div class='card'><h2>Today</h2><p style='font-size:34px;font-weight:900'>{counts['today']}</p></div></div>{panels}{controls}<div class='card'><h2>Department Focus</h2><ul>{focus}</ul></div><div class='card'><h2>Assigned Team</h2><table><tr><th>Admin</th><th>Role</th><th>Permissions</th></tr>{member_rows or '<tr><td colspan=3>No active department members assigned yet.</td></tr>'}</table></div><div class='card'><h2>Create Task</h2><form method='post'><input type='hidden' name='form_action' value='create_task'><input name='title' placeholder='Task title'><select name='priority'><option>normal</option><option>high</option><option>critical</option><option>low</option></select><input name='assigned_to' placeholder='Assigned admin ID optional'><input name='source_type' placeholder='Source type optional'><input name='source_id' placeholder='Source ID optional'><input name='due_at' placeholder='Due date optional'><textarea name='description' placeholder='Task details'></textarea><button>Create Task</button></form></div><div class='card'><h2>Work Queue</h2><table><tr><th>ID</th><th>Priority</th><th>Status</th><th>Title</th><th>Created</th><th>Action</th></tr>{task_rows or '<tr><td colspan=6>No tasks yet.</td></tr>'}</table></div>{cases_panel}"
+    body = f"<h1>{html_escape(clean_html(meta['title']))}</h1><p>{html_escape(clean_html(message))}</p><div class='grid'><div class='card'><h2>Health</h2><p style='font-size:34px;font-weight:900'>{counts['health']}%</p><div class='mini-chart'><span style='width:{max(5, min(100, counts['health']))}%'></span></div></div><div class='card'><h2>Pending Tasks</h2><p style='font-size:34px;font-weight:900'>{counts['pending_tasks']}</p></div><div class='card'><h2>Warnings</h2><p style='font-size:34px;font-weight:900'>{counts['warnings']}</p></div><div class='card'><h2>Today</h2><p style='font-size:34px;font-weight:900'>{counts['today']}</p></div></div>{panels}{controls}<div class='card'><h2>Department Focus</h2><ul>{focus}</ul></div><div class='card'><h2>Assigned Team</h2><table><tr><th>Admin</th><th>Role</th><th>Permissions</th></tr>{member_rows or '<tr><td colspan=3>No active department members assigned yet.</td></tr>'}</table></div><div class='card'><h2>Create Task</h2><form method='post'><input type='hidden' name='form_action' value='create_task'><input name='title' placeholder='Task title'><select name='priority'><option>normal</option><option>high</option><option>critical</option><option>low</option></select><input name='assigned_to' placeholder='Assigned admin ID optional'><input name='source_type' placeholder='Source type optional'><input name='source_id' placeholder='Source ID optional'><input name='due_at' placeholder='Due date optional'><textarea name='description' placeholder='Task details'></textarea><button>Create Task</button></form></div><div class='card'><h2>Work Queue</h2><table><tr><th>ID</th><th>Priority</th><th>Status</th><th>Title</th><th>Created</th><th>Action</th></tr>{task_rows or '<tr><td colspan=6>No tasks yet.</td></tr>'}</table></div>{cases_panel}"
     return admin_page_html(meta["title"], body, admin)
 
 
@@ -102924,16 +102969,16 @@ def admin_ai_actions_page():
     requests = [dict(row) for row in cur.fetchall()]
     conn.close()
     rec_rows = "".join(
-        f"<tr><td><a href='/admin/ai-actions/{r.get('id')}'>#{r.get('id')}</a></td><td>{clean_html(r.get('priority') or '')}</td><td>{clean_html(r.get('risk_level') or '')}</td><td>{clean_html(r.get('title') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td><form method='post'><input type='hidden' name='rec_id' value='{r.get('id')}'><button name='form_action' value='create_task'>Create Task</button><select name='action_type'><option value='create_admin_task'>Create Task</option><option value='send_admin_alert'>Admin Alert</option><option value='mark_content_for_review'>Review Content</option><option value='retry_failed_queue'>Retry Queue</option></select><button name='form_action' value='request_action'>Request Action</button></form></td></tr>"
+        f"<tr><td><a href='/admin/ai-actions/{r.get('id')}'>#{r.get('id')}</a></td><td>{html_escape(clean_html(r.get('priority') or ''))}</td><td>{html_escape(clean_html(r.get('risk_level') or ''))}</td><td>{html_escape(clean_html(r.get('title') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td><form method='post'><input type='hidden' name='rec_id' value='{r.get('id')}'><button name='form_action' value='create_task'>Create Task</button><select name='action_type'><option value='create_admin_task'>Create Task</option><option value='send_admin_alert'>Admin Alert</option><option value='mark_content_for_review'>Review Content</option><option value='retry_failed_queue'>Retry Queue</option></select><button name='form_action' value='request_action'>Request Action</button></form></td></tr>"
         for r in recommendations
     )
     req_rows = "".join(
-        f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('action_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{'Yes' if r.get('approval_required') else 'No'}</td><td>{clean_html(r.get('created_at') or '')}</td><td><form method='post'><input type='hidden' name='request_id' value='{r.get('id')}'><button name='form_action' value='execute_request'>Execute</button></form></td></tr>"
+        f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('action_type') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{'Yes' if r.get('approval_required') else 'No'}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td><td><form method='post'><input type='hidden' name='request_id' value='{r.get('id')}'><button name='form_action' value='execute_request'>Execute</button></form></td></tr>"
         for r in requests
     )
     body = f"""
     <h1>AI Action Pipeline</h1><p class='muted'>AI Insight → Admin Task → Owner Approval → Safe Execution → Audit Log → Result Tracking.</p>
-    <p>{clean_html(message)}</p>
+    <p>{html_escape(clean_html(message))}</p>
     <section class='grid'><div class='card'><h2>Pending Approvals</h2><p class='metric'>{summary['pending_approvals']}</p></div><div class='card'><h2>Open Recommendations</h2><p class='metric'>{summary['open_recommendations']}</p></div><div class='card'><h2>Action Queue</h2><p class='metric'>{len(summary['critical_actions'])}</p></div></section>
     <form method='post' class='card'><h2>Refresh From Global Command</h2><p class='muted'>Creates or updates a deduplicated recommendation from the live Meta-Intelligence layer.</p><button name='form_action' value='seed'>Create Recommendation</button></form>
     <section class='card'><h2>Recommendations</h2><table class='table'><tr><th>ID</th><th>Priority</th><th>Risk</th><th>Title</th><th>Status</th><th>Action</th></tr>{rec_rows or '<tr><td colspan=6>No AI recommendations yet.</td></tr>'}</table></section>
@@ -102969,13 +103014,13 @@ def admin_ai_action_detail_page(rec_id):
     cur.execute("SELECT * FROM ai_action_results WHERE recommendation_id=? ORDER BY id DESC LIMIT 20", (rec_id,))
     results = [dict(row) for row in cur.fetchall()]
     conn.close()
-    req_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('action_type') or '')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in requests)
-    audit_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('action_type') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td>{clean_html(a.get('created_at') or '')}</td></tr>" for a in audits)
-    result_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{clean_html(r.get('status') or '')}</td><td>{clean_html(r.get('created_at') or '')}</td></tr>" for r in results)
+    req_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('action_type') or ''))}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>" for r in requests)
+    audit_rows = "".join(f"<tr><td>{a.get('id')}</td><td>{html_escape(clean_html(a.get('action_type') or ''))}</td><td>{html_escape(clean_html(a.get('status') or ''))}</td><td>{html_escape(clean_html(a.get('created_at') or ''))}</td></tr>" for a in audits)
+    result_rows = "".join(f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('status') or ''))}</td><td>{html_escape(clean_html(r.get('created_at') or ''))}</td></tr>" for r in results)
     body = f"""
-    <h1>{clean_html(rec.get('title') or 'AI Recommendation')}</h1><p>{clean_html(message)}</p>
-    <section class='grid'><div class='card'><h2>Priority</h2><p class='metric'>{clean_html(rec.get('priority') or '')}</p></div><div class='card'><h2>Risk</h2><p class='metric'>{clean_html(rec.get('risk_level') or '')}</p></div><div class='card'><h2>Confidence</h2><p class='metric'>{clean_html(str(rec.get('confidence') or 0))}</p></div></section>
-    <section class='card'><h2>Recommendation</h2><p>{clean_html(rec.get('description') or '')}</p><p><strong>Suggested action:</strong> {clean_html(rec.get('recommended_action') or '')}</p><p><span class='pill'>{clean_html(rec.get('source_engine') or '')}</span> <span class='pill'>{clean_html(rec.get('affected_area') or '')}</span> <span class='pill'>Owner approval {'required' if rec.get('owner_approval_required') else 'not required'}</span></p></section>
+    <h1>{html_escape(clean_html(rec.get('title') or 'AI Recommendation'))}</h1><p>{html_escape(clean_html(message))}</p>
+    <section class='grid'><div class='card'><h2>Priority</h2><p class='metric'>{html_escape(clean_html(rec.get('priority') or ''))}</p></div><div class='card'><h2>Risk</h2><p class='metric'>{html_escape(clean_html(rec.get('risk_level') or ''))}</p></div><div class='card'><h2>Confidence</h2><p class='metric'>{html_escape(clean_html(str(rec.get('confidence') or 0)))}</p></div></section>
+    <section class='card'><h2>Recommendation</h2><p>{html_escape(clean_html(rec.get('description') or ''))}</p><p><strong>Suggested action:</strong> {html_escape(clean_html(rec.get('recommended_action') or ''))}</p><p><span class='pill'>{html_escape(clean_html(rec.get('source_engine') or ''))}</span> <span class='pill'>{html_escape(clean_html(rec.get('affected_area') or ''))}</span> <span class='pill'>Owner approval {'required' if rec.get('owner_approval_required') else 'not required'}</span></p></section>
     <section class='grid'><form method='post' class='card'><h2>Create Admin Task</h2><button name='form_action' value='create_task'>Create Task</button></form><form method='post' class='card'><h2>Request Safe Action</h2><select name='action_type'><option value='create_admin_task'>Create Task</option><option value='send_admin_alert'>Send Admin Alert</option><option value='mark_content_for_review'>Mark Content For Review</option><option value='retry_failed_queue'>Retry Failed Queue</option><option value='request_user_verification'>Request Verification</option></select><button name='form_action' value='request_action'>Request Action</button></form></section>
     <section class='card'><h2>Action Requests</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Created</th></tr>{req_rows or '<tr><td colspan=4>No requests yet.</td></tr>'}</table></section>
     <section class='card'><h2>Audit Log</h2><table class='table'><tr><th>ID</th><th>Action</th><th>Status</th><th>Time</th></tr>{audit_rows or '<tr><td colspan=4>No audit entries yet.</td></tr>'}</table></section>
@@ -103025,10 +103070,10 @@ def admin_approvals_page():
     approvals = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = "".join(
-        f"<tr><td>{a.get('id')}</td><td>{clean_html(a.get('priority') or '')}</td><td>{clean_html(a.get('risk_level') or '')}</td><td>{clean_html(a.get('title') or '')}</td><td>{clean_html(a.get('status') or '')}</td><td><form method='post'><input type='hidden' name='approval_id' value='{a.get('id')}'><input name='decision_note' placeholder='Decision note'><button name='decision' value='approve'>Approve</button><button name='decision' value='reject'>Reject</button><button name='decision' value='more_info'>More Info</button></form></td></tr>"
+        f"<tr><td>{a.get('id')}</td><td>{html_escape(clean_html(a.get('priority') or ''))}</td><td>{html_escape(clean_html(a.get('risk_level') or ''))}</td><td>{html_escape(clean_html(a.get('title') or ''))}</td><td>{html_escape(clean_html(a.get('status') or ''))}</td><td><form method='post'><input type='hidden' name='approval_id' value='{a.get('id')}'><input name='decision_note' placeholder='Decision note'><button name='decision' value='approve'>Approve</button><button name='decision' value='reject'>Reject</button><button name='decision' value='more_info'>More Info</button></form></td></tr>"
         for a in approvals
     )
-    body = f"<h1>Owner Approvals</h1><p class='muted'>Risky AI actions, privilege changes, monetization experiments, and safety interventions wait here for owner approval.</p><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Priority</th><th>Risk</th><th>Title</th><th>Status</th><th>Decision</th></tr>{rows or '<tr><td colspan=6>No approvals yet.</td></tr>'}</table></section><p><a class='button' href='/admin/ai-actions'>AI Actions</a> <a class='button' href='/admin/global-command'>Global Command</a></p>"
+    body = f"<h1>Owner Approvals</h1><p class='muted'>Risky AI actions, privilege changes, monetization experiments, and safety interventions wait here for owner approval.</p><p>{html_escape(clean_html(message))}</p><section class='card'><table class='table'><tr><th>ID</th><th>Priority</th><th>Risk</th><th>Title</th><th>Status</th><th>Decision</th></tr>{rows or '<tr><td colspan=6>No approvals yet.</td></tr>'}</table></section><p><a class='button' href='/admin/ai-actions'>AI Actions</a> <a class='button' href='/admin/global-command'>Global Command</a></p>"
     return admin_page_html("Owner Approvals", body, admin)
 
 
@@ -103062,10 +103107,10 @@ def admin_tasks_page():
     tasks = [dict(row) for row in cur.fetchall()]
     conn.close()
     rows = "".join(
-        f"<tr><td><a href='/admin/tasks/{t.get('id')}'>#{t.get('id')}</a></td><td>{clean_html(t.get('department') or '')}</td><td>{clean_html(t.get('priority') or '')}</td><td>{clean_html(t.get('status') or '')}</td><td>{clean_html(t.get('title') or '')}</td><td><form method='post'><input type='hidden' name='task_id' value='{t.get('id')}'><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option><option>escalated</option></select><input name='comment' placeholder='Optional note'><button>Update</button></form></td></tr>"
+        f"<tr><td><a href='/admin/tasks/{t.get('id')}'>#{t.get('id')}</a></td><td>{html_escape(clean_html(t.get('department') or ''))}</td><td>{html_escape(clean_html(t.get('priority') or ''))}</td><td>{html_escape(clean_html(t.get('status') or ''))}</td><td>{html_escape(clean_html(t.get('title') or ''))}</td><td><form method='post'><input type='hidden' name='task_id' value='{t.get('id')}'><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option><option>escalated</option></select><input name='comment' placeholder='Optional note'><button>Update</button></form></td></tr>"
         for t in tasks
     )
-    body = f"<h1>Admin Tasks</h1><p>{clean_html(message)}</p><section class='card'><table class='table'><tr><th>ID</th><th>Department</th><th>Priority</th><th>Status</th><th>Title</th><th>Update</th></tr>{rows or '<tr><td colspan=6>No tasks yet.</td></tr>'}</table></section>"
+    body = f"<h1>Admin Tasks</h1><p>{html_escape(clean_html(message))}</p><section class='card'><table class='table'><tr><th>ID</th><th>Department</th><th>Priority</th><th>Status</th><th>Title</th><th>Update</th></tr>{rows or '<tr><td colspan=6>No tasks yet.</td></tr>'}</table></section>"
     return admin_page_html("Admin Tasks", body, admin)
 
 
@@ -103098,11 +103143,11 @@ def admin_task_detail_page(task_id):
     conn.close()
     if not task:
         return admin_page_html("Admin Task", "<h1>Admin Task</h1><div class='card'>Task not found.</div>", admin)
-    comment_rows = "".join(f"<li><strong>Admin {c.get('admin_user_id')}</strong>: {clean_html(c.get('comment') or '')}<br><small>{clean_html(c.get('created_at') or '')}</small></li>" for c in comments)
+    comment_rows = "".join(f"<li><strong>Admin {c.get('admin_user_id')}</strong>: {html_escape(clean_html(c.get('comment') or ''))}<br><small>{html_escape(clean_html(c.get('created_at') or ''))}</small></li>" for c in comments)
     body = f"""
-    <h1>{clean_html(task.get('title') or 'Admin Task')}</h1>
-    <section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{clean_html(task.get('status') or '')}</p></div><div class='card'><h2>Priority</h2><p class='metric'>{clean_html(task.get('priority') or '')}</p></div><div class='card'><h2>Department</h2><p class='metric'>{clean_html(task.get('department') or '')}</p></div></section>
-    <section class='card'><h2>Details</h2><p>{clean_html(task.get('description') or '')}</p><p><span class='pill'>Source {clean_html(task.get('source_type') or '')}:{clean_html(task.get('source_id') or '')}</span> <span class='pill'>Approval {'required' if task.get('approval_required') else 'not required'}</span></p></section>
+    <h1>{html_escape(clean_html(task.get('title') or 'Admin Task'))}</h1>
+    <section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(task.get('status') or ''))}</p></div><div class='card'><h2>Priority</h2><p class='metric'>{html_escape(clean_html(task.get('priority') or ''))}</p></div><div class='card'><h2>Department</h2><p class='metric'>{html_escape(clean_html(task.get('department') or ''))}</p></div></section>
+    <section class='card'><h2>Details</h2><p>{html_escape(clean_html(task.get('description') or ''))}</p><p><span class='pill'>Source {html_escape(clean_html(task.get('source_type') or ''))}:{html_escape(clean_html(task.get('source_id') or ''))}</span> <span class='pill'>Approval {'required' if task.get('approval_required') else 'not required'}</span></p></section>
     <form method='post' class='card'><h2>Update Task</h2><select name='status'><option>open</option><option>in_progress</option><option>blocked</option><option>done</option><option>escalated</option></select><textarea name='comment' placeholder='Add progress note'></textarea><button>Save Update</button></form>
     <section class='card'><h2>Comments</h2><ul>{comment_rows or '<li>No comments yet.</li>'}</ul></section>
     """
@@ -103125,11 +103170,11 @@ def admin_ai_command_page():
             summaries.append(f"{meta['title']}: {counts['warnings']} warnings, {counts['pending_tasks']} open tasks.")
     if not summaries:
         summaries.append("No urgent department warnings detected from local diagnostics.")
-    top_actions = "".join(f"<li><strong>{clean_html(r.get('priority') or '')}</strong> · {clean_html(r.get('title') or '')}<br><span class='muted'>{clean_html(r.get('recommended_action') or '')}</span></li>" for r in action_summary["top_recommendations"])
+    top_actions = "".join(f"<li><strong>{html_escape(clean_html(r.get('priority') or ''))}</strong> · {html_escape(clean_html(r.get('title') or ''))}<br><span class='muted'>{html_escape(clean_html(r.get('recommended_action') or ''))}</span></li>" for r in action_summary["top_recommendations"])
     body = f"""
     <h1>AI Admin Command</h1><p class='muted'>Secrets and private messages are excluded. Recommendations become tasks only after admin/owner action.</p>
-    <section class='grid'><div class='card'><h2>What Should I Fix First?</h2><p class='metric'>{clean_html(rec.get('priority') or 'normal')}</p><p>{clean_html(rec.get('recommended_action') or '')}</p><p><span class='pill'>Confidence {clean_html(str(rec.get('confidence') or 0))}</span> <span class='pill'>Risk {clean_html(rec.get('risk_level') or '')}</span> <span class='pill'>Owner approval {'required' if rec.get('owner_approval_required') else 'not required'}</span></p></div><div class='card'><h2>Command Queue</h2><p class='metric'>{action_summary['pending_approvals']}</p><p>pending owner approvals</p><p><span class='pill'>Open recommendations {action_summary['open_recommendations']}</span></p></div></section>
-    <div class='card'><h2>Evidence</h2><ul>{''.join(f'<li>{clean_html(s)}</li>' for s in summaries)}</ul></div>
+    <section class='grid'><div class='card'><h2>What Should I Fix First?</h2><p class='metric'>{html_escape(clean_html(rec.get('priority') or 'normal'))}</p><p>{html_escape(clean_html(rec.get('recommended_action') or ''))}</p><p><span class='pill'>Confidence {html_escape(clean_html(str(rec.get('confidence') or 0)))}</span> <span class='pill'>Risk {html_escape(clean_html(rec.get('risk_level') or ''))}</span> <span class='pill'>Owner approval {'required' if rec.get('owner_approval_required') else 'not required'}</span></p></div><div class='card'><h2>Command Queue</h2><p class='metric'>{action_summary['pending_approvals']}</p><p>pending owner approvals</p><p><span class='pill'>Open recommendations {action_summary['open_recommendations']}</span></p></div></section>
+    <div class='card'><h2>Evidence</h2><ul>{''.join(f'<li>{html_escape(clean_html(s))}</li>' for s in summaries)}</ul></div>
     <div class='card'><h2>Recommended Actions</h2><ul>{top_actions or '<li>No saved AI actions yet. Refresh from Global Command to create one.</li>'}</ul></div>
     <form method='post' action='/admin/ai-actions' class='card'><h2>Create Actionable Recommendation</h2><p class='muted'>Copies the current Meta-Intelligence recommendation into the auditable action pipeline.</p><button name='form_action' value='seed'>Create Recommendation</button></form>
     <p><a class='button primary' href='/admin/ai-actions'>AI Actions</a> <a class='button' href='/admin/approvals'>Approvals</a> <a class='button' href='/admin/tasks'>Tasks</a> <a class='button' href='/admin/global-command'>Global Command</a></p>
@@ -106784,7 +106829,7 @@ def welcome_email_payload(user):
         "Support: support@pulsesoc.com"
     )
     html = branded_email_html("Welcome to PulseSoc", f"""
-      <p>Hi {clean_html(name)},</p>
+      <p>Hi {html_escape(clean_html(name))},</p>
       <p>Your PulseSoc account includes <strong>free core platform access</strong>.</p>
       <p>Free core includes PulseSoc, AI utilities, alerts, watchlists, groups, spaces, marketplace access, creator tools, and scam education.</p>
       <p>PulseSoc Premium is optional for glowing identity, creator cosmetics, advanced creator tools, analytics, exclusive badges, and prestige effects.</p>
@@ -106867,7 +106912,7 @@ def send_update_signup_email(lead):
         "Support: support@pulsesoc.com"
     )
     html = branded_email_html("You’re on the PulseSoc update list", f"""
-      <p>Hi {clean_html(name)},</p>
+      <p>Hi {html_escape(clean_html(name))},</p>
       <p>Thanks for joining updates. You may receive product updates, launch news, safety alerts, feature releases, and promotional offers based on your consent choices.</p>
       <p>No account was created unless you registered separately.</p>
       <p>You can opt out anytime. For SMS, reply STOP where supported or contact support.</p>
@@ -106888,7 +106933,7 @@ def send_password_reset_email(user, reset_link):
         "Support: support@pulsesoc.com"
     )
     html = branded_email_html("Change your PulseSoc password", f"""
-      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Hi {html_escape(clean_html(account_display_name(user)))},</p>
       <p>Use this secure, single-use link to change your password. It expires in 1 hour.</p>
       <p><a href="{reset_link}" style="color:#36e58f">Change password</a></p>
       <p>The link stops working after your password is changed.</p>
@@ -106915,7 +106960,7 @@ def send_password_changed_email(user):
         "CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords."
     )
     html = branded_email_html("Your PulseSoc password was changed", f"""
-      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Hi {html_escape(clean_html(account_display_name(user)))},</p>
       <p>Your account password was changed successfully.</p>
       <p>If you did not make this change, contact <a href="mailto:support@pulsesoc.com" style="color:#6edff6">support@pulsesoc.com</a> immediately.</p>
     """)
@@ -106944,10 +106989,10 @@ def send_username_recovery_email(user):
         "If you did not request this, you can ignore this email."
     )
     html = branded_email_html("Your PulseSoc account login", f"""
-      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Hi {html_escape(clean_html(account_display_name(user)))},</p>
       <p>You requested help finding your account login.</p>
-      <p><strong>Login email:</strong> {clean_html(user.get('email') or '')}<br>
-      <strong>Display name:</strong> {clean_html(account_display_name(user))}</p>
+      <p><strong>Login email:</strong> {html_escape(clean_html(user.get('email') or ''))}<br>
+      <strong>Display name:</strong> {html_escape(clean_html(account_display_name(user)))}</p>
       <p><a href="https://pulsesoc.com/login" style="color:#36e58f">Log in</a></p>
     """)
     return send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
@@ -107004,9 +107049,9 @@ def send_trial_lifecycle_email(user, event_type):
         "Support: support@pulsesoc.com"
     )
     html = branded_email_html(subject, f"""
-      <p>Hi {clean_html(account_display_name(user))},</p>
-      <p>{clean_html(message)}</p>
-      <p><strong>Trial end date:</strong> {clean_html(trial_end_label)}</p>
+      <p>Hi {html_escape(clean_html(account_display_name(user)))},</p>
+      <p>{html_escape(clean_html(message))}</p>
+      <p><strong>Trial end date:</strong> {html_escape(clean_html(trial_end_label))}</p>
       <p><a href="https://pulsesoc.com/account" style="color:#36e58f">Open your account</a></p>
     """)
     sent = send_platform_email(user.get("email"), subject, text, html, user.get("user_id"))
@@ -107118,12 +107163,12 @@ def payment_email_copy(user, details, email_type):
         "CoinPlotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
     )
     html = branded_email_html(subject, f"""
-      <p>Hi {clean_html(account_display_name(user))},</p>
-      <p>{clean_html(intro)}</p>
+      <p>Hi {html_escape(clean_html(account_display_name(user)))},</p>
+      <p>{html_escape(clean_html(intro))}</p>
       <p><strong>Plan:</strong> PulseSoc Premium<br>
-      {f"<strong>Payment amount:</strong> {clean_html(str(amount))} {clean_html(currency)}<br>" if amount else ""}
-      <strong>Billing date:</strong> {clean_html(str(billing_date))}<br>
-      <strong>Next billing date:</strong> {clean_html(str(next_billing_date))}</p>
+      {f"<strong>Payment amount:</strong> {html_escape(clean_html(str(amount)))} {html_escape(clean_html(currency))}<br>" if amount else ""}
+      <strong>Billing date:</strong> {html_escape(clean_html(str(billing_date)))}<br>
+      <strong>Next billing date:</strong> {html_escape(clean_html(str(next_billing_date)))}</p>
       <p><a href="{dashboard}" style="color:#36e58f">Open Dashboard</a> · <a href="{account}" style="color:#6edff6">Account</a> · <a href="{support}" style="color:#6edff6">Support</a></p>
       <p>Telegram is optional. Connect it from Account Settings if you want companion alerts.</p>
       <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@pulsesoc.com" style="color:#6edff6">support@pulsesoc.com</a> and include the email address used for your PulseSoc account.</p>
@@ -107320,12 +107365,12 @@ def send_upgrade_confirmation_email(user, details=None):
         "CoinPlotXAI Inc. provides educational AI intelligence only. Not financial, betting, investment, or legal advice."
     )
     html = branded_email_html("Your PulseSoc Premium Upgrade Is Active", f"""
-      <p>Hi {clean_html(account_display_name(user))},</p>
+      <p>Hi {html_escape(clean_html(account_display_name(user)))},</p>
       <p>Your <strong>PulseSoc Premium</strong> access is active.</p>
       <p><strong>Plan:</strong> PulseSoc Premium<br>
-      {f"<strong>Payment amount:</strong> {clean_html(str(amount))} {clean_html(currency)}<br>" if amount else ""}
-      <strong>Billing date:</strong> {clean_html(str(billing_date))}<br>
-      <strong>Next billing date:</strong> {clean_html(str(next_billing_date))}</p>
+      {f"<strong>Payment amount:</strong> {html_escape(clean_html(str(amount)))} {html_escape(clean_html(currency))}<br>" if amount else ""}
+      <strong>Billing date:</strong> {html_escape(clean_html(str(billing_date)))}<br>
+      <strong>Next billing date:</strong> {html_escape(clean_html(str(next_billing_date)))}</p>
       <p><a href="https://pulsesoc.com/dashboard" style="color:#36e58f">Open Dashboard</a> · <a href="https://pulsesoc.com/account" style="color:#6edff6">Account</a> · <a href="https://pulsesoc.com/support" style="color:#6edff6">Support</a></p>
       <p>Telegram activation: open Account Settings, generate a Telegram code, then return to the bot and send <strong>/link CODE</strong> or <strong>/connect CODE</strong>.</p>
       <p>If you experience any issue after payment, please email us immediately at <a href="mailto:support@pulsesoc.com" style="color:#6edff6">support@pulsesoc.com</a> and include the email address used for your PulseSoc account.</p>
