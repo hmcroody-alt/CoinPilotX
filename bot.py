@@ -45,14 +45,22 @@ def script_json(value):
 
     U+2028/U+2029 are escaped too: they are legal in JSON but are line
     terminators in JavaScript, so an unescaped one is a syntax error.
+
+    Those two needles are written as ``\\u2028``/``\\u2029`` escapes rather than
+    as the characters themselves, and that is not cosmetic. Python's
+    ``str.splitlines()`` treats both as line breaks while ``\n``-based tools and
+    ``ast`` line numbers do not, so a raw pair in this file made
+    ``SOURCE.splitlines()`` report two more lines than the parser saw. Every
+    index after this function shifted by two, and the protection tests that map
+    an AST ``lineno`` onto that list silently read the wrong slice of bot.py.
     """
     return (
         json.dumps(value, default=str)
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
         .replace("&", "\\u0026")
-        .replace(" ", "\\u2028")
-        .replace(" ", "\\u2029")
+        .replace("\u2028", "\\u2028")
+        .replace("\u2029", "\\u2029")
     )
 
 
