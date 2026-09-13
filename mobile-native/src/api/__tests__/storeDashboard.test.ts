@@ -276,6 +276,30 @@ describe("listingHealth", () => {
       "hidden"
     );
   });
+
+  /**
+   * The state a seller reaches by succeeding.
+   *
+   * Publishing writes `status='pending_review'` (bot.py's submit route, and the
+   * re-review path for a material edit). That value matched no branch here and
+   * fell into `hidden`, so the row a seller had just published flipped from
+   * "Draft — not published" to "Hidden from buyers" — and, because `hidden` is
+   * in the Out tab, the store's not-buyable count went *up* by one. The whole
+   * visible reward for finishing a listing was two pieces of bad news.
+   */
+  it("does not call a just-submitted listing hidden", () => {
+    for (const status of ["pending_review", "review_ready"]) {
+      expect(listingHealth(listing({ status, quantity: 50 }))).toBe("pending_review");
+    }
+  });
+
+  it("keeps a listing the safety engine stopped in the hidden bucket", () => {
+    // `blocked_review` contains "review" and is the opposite situation: a
+    // decision was made and it went against the seller. Matching review states
+    // by substring — which `SellerStoreScreen.statusKey` does — swallows it and
+    // would tell that seller to sit and wait for an answer they already have.
+    expect(listingHealth(listing({ status: "blocked_review", quantity: 50 }))).toBe("hidden");
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -519,6 +543,33 @@ describe("tabs", () => {
     const rows = rowsOf([listing({ status: "paused", quantity: 40 })]);
     expect(filterRows(rows, "out")).toHaveLength(1);
     expect(filterRows(rows, "active")).toHaveLength(0);
+  });
+
+  /**
+   * Submitting a listing must not raise the seller's problem count.
+   *
+   * This is the tab half of the `pending_review` bug and the more damaging one,
+   * because it is arithmetic rather than wording: an in-review listing counted
+   * as `hidden`, `hidden` is in Out, and Out is one of the two tabs
+   * `needsAttention` colours. So the reward for publishing was a red badge.
+   */
+  it("does not count an in-review listing as a problem", () => {
+    const rows = rowsOf([listing({ status: "pending_review", quantity: 40 })]);
+    expect(filterRows(rows, "out")).toHaveLength(0);
+    expect(filterRows(rows, "drafts")).toHaveLength(0);
+    // Not Active either: a buyer still cannot order it. It is simply in flight.
+    expect(filterRows(rows, "active")).toHaveLength(0);
+    expect(filterRows(rows, "all")).toHaveLength(1);
+    expect(deriveTabs(rows).every((tab) => !tab.needsAttention)).toBe(true);
+  });
+
+  it("moves a listing out of Drafts when it is submitted", () => {
+    // The seller's proof that Publish did something. Asserted as a transition
+    // rather than a state, because the point is the change they watch for.
+    const before = rowsOf([listing({ id: 9, listing_id: 9, status: "draft" })]);
+    const after = rowsOf([listing({ id: 9, listing_id: 9, status: "pending_review" })]);
+    expect(filterRows(before, "drafts")).toHaveLength(1);
+    expect(filterRows(after, "drafts")).toHaveLength(0);
   });
 });
 

@@ -412,6 +412,7 @@ describe("status copy", () => {
       "low_stock",
       "out_of_stock",
       "unknown_stock",
+      "pending_review",
       "hidden",
       "draft"
     ] as const;
@@ -435,6 +436,42 @@ describe("status copy", () => {
     // The actions differ too, because the fixes differ.
     expect(unknown.action).toBe("Add stock count");
     expect(empty.action).toBe("Restock");
+  });
+
+  /**
+   * The row must not offer a fix for a state that has nothing to fix.
+   *
+   * An in-review listing read "Hidden from buyers" with a "Restock" chip beside
+   * it. Both halves were wrong and the second is the worse one: it sends a
+   * seller into the editor to solve a stock problem they do not have, and when
+   * they change nothing and the status does not move, the app has taught them
+   * that publishing is broken.
+   */
+  it("offers no remedy for a listing that is merely waiting", () => {
+    const review = listingStatusCopy("pending_review", 40);
+    expect(review.label).toBe("In review — not live yet");
+    expect(review.action).toBeNull();
+  });
+
+  it("does not tell the seller of a hidden listing to restock it", () => {
+    // Restocking does nothing for a listing that is paused or rejected — the
+    // shelf is not the problem. Same class of wrong remedy as `unknown_stock`,
+    // which this file already guards one case above.
+    const hidden = listingStatusCopy("hidden", 40);
+    expect(hidden.action).not.toBe("Restock");
+    expect(hidden.action).toBe("Review listing");
+  });
+
+  it("keeps in-review and draft apart in words, since they share a dot colour", () => {
+    // `StoreStatusLed` gives both the neutral dot, which is only safe while the
+    // labels are distinguishable. If one is ever reworded into the other, the
+    // two states become indistinguishable on the row.
+    const review = listingStatusCopy("pending_review", null);
+    const draft = listingStatusCopy("draft", null);
+    expect(review.label).not.toBe(draft.label);
+    expect(review.label).not.toMatch(/draft/i);
+    // And it must not claim to be live, which is the other confusable reading.
+    expect(review.label).toMatch(/not live yet/);
   });
 });
 

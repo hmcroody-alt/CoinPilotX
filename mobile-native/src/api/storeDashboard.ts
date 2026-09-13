@@ -107,6 +107,18 @@ export type StoreListingHealth =
    * have"), and collapsing them is the defect this state exists to end.
    */
   | "unknown_stock"
+  /**
+   * Submitted, waiting on approval. Distinct from `hidden` because nothing is
+   * wrong and there is nothing to fix — the listing is doing exactly what the
+   * seller just asked it to do.
+   *
+   * It used to land in `hidden` by fall-through rather than by choice, so the
+   * moment a seller published, the row they were watching changed from "Draft —
+   * not published" to "Hidden from buyers · Restock": the one status update in
+   * the flow that tells them their work went backwards, plus a remedy for a
+   * problem they do not have.
+   */
+  | "pending_review"
   | "hidden"
   | "draft";
 
@@ -128,6 +140,26 @@ export const LOW_STOCK_THRESHOLD = 5;
 
 function normalizedStatus(listing: MarketplaceListing): string {
   return String(listing.status || listing.approval_status || "draft").toLowerCase();
+}
+
+/**
+ * The statuses that mean "submitted, no decision recorded yet".
+ *
+ * Mirrors `AWAITING_DECISION_STATES` in
+ * `services/marketplace_listing_lifecycle.py`, which is the authority — both
+ * values reach the `status` column (the seller resume route copies
+ * `review_ready` onto it, and submit/re-review writes `pending_review`).
+ *
+ * Matched exactly rather than by substring. `SellerStoreScreen.statusKey` tests
+ * `raw.includes("review")`, which also swallows `blocked_review` — a listing the
+ * safety engine stopped at risk >= 70. That one is genuinely hidden and must
+ * keep falling through to `hidden`; calling it "In review" would tell a seller
+ * to wait for a decision that has already gone against them.
+ */
+const AWAITING_REVIEW_STATES = ["pending_review", "review_ready"];
+
+function isAwaitingReview(status: string): boolean {
+  return AWAITING_REVIEW_STATES.includes(status);
 }
 
 /**
@@ -200,7 +232,21 @@ export function listingHealth(listing: MarketplaceListing): StoreListingHealth {
   const status = normalizedStatus(listing);
   const publication = String(listing.publication_state || listing.status || "").toLowerCase();
   if (!["published", "live", "active"].includes(publication)) {
-    return publication.includes("draft") ? "draft" : "hidden";
+    if (publication.includes("draft")) return "draft";
+    // Asked before the `hidden` fallback, because `hidden` is a fallback: the
+    // states it is *meant* to hold are enumerated below (pause/reject/blocked/
+    // removed/delete) and review is not among them. `statusKey` and `sellingTab`
+    // both already branch on pending/review; this was the only one of the three
+    // that did not, and it is the one the Store list reads.
+    //
+    // Note the boundary with `listingAwaitsReview`, which stays as it is. That
+    // function answers the *approval* axis, where a listing can be publicly
+    // active while a re-review runs, and it is right that such a listing keeps
+    // its stock health. This branch is only reachable when the listing is not
+    // public at all — its own status is the awaiting one — so there is no stock
+    // story to tell and no disagreement between the two.
+    if (isAwaitingReview(publication)) return "pending_review";
+    return "hidden";
   }
   if (status.includes("draft")) return "draft";
   if (
@@ -466,6 +512,17 @@ const TAB_MATCHERS: Record<StoreTabKey, (row: StoreListingRow) => boolean> = {
     row.health === "hidden",
   drafts: (row) => row.health === "draft"
 };
+
+/**
+ * `pending_review` matches no tab but `all`, and that is the intended reading.
+ *
+ * It is not Active (a buyer cannot order it), not Drafts (the seller submitted
+ * it — leaving Drafts is the visible proof the publish worked), and not Out,
+ * which colours its count via `needsAttention` and would raise an alarm over a
+ * listing that is simply waiting its turn. Back when it fell into `hidden` it
+ * did land in Out, so publishing a product *added one to the seller's problem
+ * count*. The row stays reachable on All, which is the tab the screen opens on.
+ */
 
 export function filterRows(rows: StoreListingRow[], tab: StoreTabKey): StoreListingRow[] {
   return rows.filter(TAB_MATCHERS[tab]);

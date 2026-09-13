@@ -41,6 +41,12 @@ const DOT_COLOR: Record<StoreListingHealth, string> = {
   out_of_stock: storeLight.status.error,
   unknown_stock: storeLight.status.warning,
   hidden: storeLight.status.error,
+  // Neutral, the same as `draft`, and deliberately not red or amber: nothing has
+  // failed and nothing is owed. Sharing a colour with `draft` is safe precisely
+  // because of this component's own rule — the label is required and rendered,
+  // and "In review — not live yet" and "Draft — not published" are not confusable
+  // sentences. Green would be the real error, since it would read as live.
+  pending_review: storeLight.status.neutral,
   draft: storeLight.status.neutral
 };
 

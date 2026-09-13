@@ -48,8 +48,19 @@ export function listingStatusCopy(
     // and is exactly what the old client did to every untracked listing.
     case "unknown_stock":
       return { label: "No stock count — buyers can't order", action: "Add stock count" };
+    // "In review" is the server's own word for this state
+    // (`marketplace_listing_lifecycle.seller_label` maps both awaiting states to
+    // it), not a new one coined here. No action: the seller has done everything
+    // the listing needs and the next move belongs to the reviewer. An action
+    // chip would have to name something to fix, and there is nothing.
+    case "pending_review":
+      return { label: "In review — not live yet", action: null };
     case "hidden":
-      return { label: "Hidden from buyers", action: "Restock" };
+      // Was "Restock" — the fix for an empty shelf, which does nothing for a
+      // paused or rejected listing. Same wrong-remedy mistake the
+      // `unknown_stock` note above exists to prevent, one case further down.
+      // The tap opens the listing, so the label says that and promises no cure.
+      return { label: "Hidden from buyers", action: "Review listing" };
     case "draft":
       return { label: "Draft — not published", action: "Finish listing" };
     default:
