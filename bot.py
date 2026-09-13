@@ -3226,16 +3226,30 @@ def enforce_admin_first_password_change():
     return None
 
 
+# One CSRF authority for the whole app. `services/csrf.py` records what is
+# accepted and why, and the measured table of what the three predecessors
+# disagreed about. These two keep their names because 52 call sites and 15
+# templates use them; they are now thin.
+from services import csrf as _csrf
+
+
 def get_csrf_token():
-    token = session.get("csrf_token")
-    if not token:
-        token = secrets.token_urlsafe(32)
-        session["csrf_token"] = token
-    return token
+    return _csrf.issue_token()
 
 
 def verify_csrf():
-    return request.form.get("csrf_token") and request.form.get("csrf_token") == session.get("csrf_token")
+    """Form-or-header CSRF check for cookie-authenticated requests.
+
+    Widened, never narrowed: this used to read `request.form` and nothing else,
+    so a `fetch` client sending `X-CSRF-Token` -- which our own JS bundles do --
+    was refused by all 52 call sites and by `enforce_admin_form_csrf`. Every
+    request shape that passed before still passes.
+
+    `allow_bearer` stays off here. A bearer resolves a member identity and this
+    function guards admin form posts among others; see the module docstring in
+    `services/csrf.py`.
+    """
+    return _csrf.verify(allow_bearer=False)
 
 
 # --- CSRF: default-deny for cookie-authenticated admin form posts ------------
@@ -12390,12 +12404,15 @@ def create_subscription_billing_portal_session(user):
 
 
 def _subscription_action_write_allowed():
-    try:
-        return pulse_ads_verify_write()
-    except Exception:
-        session_token = session.get("csrf_token")
-        header_token = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")
-        return bool(session_token and header_token and hmac.compare_digest(str(session_token), str(header_token)))
+    """Same gate as the ad writes, and now literally the same code.
+
+    This was a `try: pulse_ads_verify_write() except: <reimplement it>`. The
+    fallback accepted a header and nothing else, so whichever branch ran decided
+    whether a form post worked -- and the branch was chosen by whether an
+    unrelated exception fired. A CSRF gate whose accept-set depends on an
+    exception is not a gate anyone can reason about.
+    """
+    return _csrf.verify(allow_bearer=True)
 
 
 def _subscription_action_user():
@@ -18551,19 +18568,18 @@ def pulse_ads_json_payload():
 
 
 def pulse_ads_verify_write():
-    # Native app requests authenticate with a signed Authorization: Bearer token.
-    # Those are inherently CSRF-safe (a cross-site attacker cannot attach the
-    # custom header), so a verified mobile access token satisfies the write gate
-    # without a form/header CSRF token. The ad endpoints resolve the user before
-    # calling this, which is what sets g.mobile_access_user_id.
-    if getattr(g, "mobile_access_user_id", None):
-        return True
-    session_token = session.get("csrf_token")
-    header_token = request.headers.get("X-CSRF-Token") or request.headers.get("X-CSRFToken")
-    return bool(
-        verify_csrf()
-        or (session_token and header_token and hmac.compare_digest(str(session_token), str(header_token)))
-    )
+    """Write gate for the member-facing ad endpoints.
+
+    The bearer exemption was already the intent here -- the old comment said so
+    -- but it was implemented as a bare `g.mobile_access_user_id` check, and
+    that flag is only set when `account_user_id()` reaches its bearer branch,
+    which it skips whenever a session cookie is present. The native app sends
+    both, so the flag stayed unset and the exemption never fired in production:
+    every native ad write was refused while every read succeeded. `allow_bearer`
+    re-verifies the token against the database instead of trusting the flag,
+    which is the same repair already made for the Business OS packs.
+    """
+    return _csrf.verify(allow_bearer=True)
 
 
 def pulse_ads_api_user_required():
@@ -22609,8 +22625,7 @@ def admin_business_os_reconcile():
         return denied
     if os.getenv("BUSINESS_OS_LEDGER", "").strip().lower() not in ("1", "true", "on", "yes"):
         return jsonify({"ok": False, "error": "BUSINESS_OS_LEDGER flag is off."}), 409
-    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
-    if not token or token != session.get("csrf_token"):
+    if not verify_csrf():
         return jsonify({"ok": False, "error": "CSRF check failed."}), 400
     provider = (request.args.get("provider") or "stripe").strip() or "stripe"
     try:
@@ -22633,8 +22648,13 @@ def _business_os_entitlements_enabled():
 
 
 def _business_os_ent_csrf_ok():
-    token = request.headers.get("X-CSRF-Token") or request.form.get("csrf_token")
-    return bool(token) and token == session.get("csrf_token")
+    """Kept as a name, not as a second implementation.
+
+    It used to accept `X-CSRF-Token` or the form field and compare with `==`.
+    The unified check accepts both of those plus the legacy `X-CSRFToken`
+    alias, and compares in constant time.
+    """
+    return _csrf.verify(allow_bearer=False)
 
 
 @webhook_app.route("/admin/business-os/entitlements/grant", methods=["POST"])

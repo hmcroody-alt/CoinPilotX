@@ -20,11 +20,10 @@ mounting this pack changes nothing until the flags are turned on.
 
 from __future__ import annotations
 
-import hmac
-
 from flask import (Blueprint, g, jsonify, redirect, render_template, request,
                    session, url_for)
 
+from services import csrf as _shared_csrf
 from services.business_os import commerce_gateway as gw
 
 
@@ -43,57 +42,28 @@ def _json(payload, status=200):
     return resp
 
 
-def _verified_bearer_write_authority():
-    """Re-verify the Authorization bearer for a write, server-side.
-
-    ``g.mobile_access_user_id`` is only set when ``bot.account_user_id()``
-    actually reaches its bearer branch, and that branch is skipped whenever a
-    session cookie is present. The native app sends both a cookie and a
-    bearer, so the flag stays unset — and the app has no CSRF token to echo,
-    which left every Business OS write refused while every read succeeded.
-
-    This re-runs the real verifier (signature, expiry, device hash, and an
-    active non-revoked ``mobile_security_sessions`` row), so authority comes
-    from the database, never from the client's say-so. Anything short of a
-    verified bearer naming the same user the cookie does denies."""
-    header = (request.headers.get("Authorization") or "").strip()
-    if not header.lower().startswith("bearer "):
-        return False
-    resolve = getattr(_bot(), "account_user_id_from_mobile_access_token", None)
-    if not callable(resolve):
-        return False
-    try:
-        bearer_user_id = resolve()
-    except Exception:
-        return False
-    if not bearer_user_id:
-        return False
-    cookie_user_id = session.get("account_user_id")
-    if cookie_user_id and str(cookie_user_id) != str(bearer_user_id):
-        return False
-    return True
+#: `_verified_bearer_write_authority()` used to live here. It moved verbatim to
+#: `services.csrf.bearer_is_csrf_safe()`, which is the only caller's new home;
+#: nothing else in the repo referenced it. Left as a note rather than deleted
+#: silently because the behaviour it describes -- the cookie hiding the bearer,
+#: so every Business OS write was refused while every read succeeded -- is the
+#: reason the exemption exists, and that reasoning is now in the shared module.
 
 
 def _csrf_ok():
     """Default-deny CSRF gate for cookie-authenticated writes.
 
-    Native app requests carry a signed Authorization bearer (inherently
-    CSRF-safe — ``g.mobile_access_user_id`` upstream, or re-verified here when
-    a session cookie short-circuited that branch). Web requests must echo the
-    session token via ``X-CSRF-Token`` (the console page does) or a classic
-    ``csrf_token`` form field."""
-    if getattr(g, "mobile_access_user_id", None):
-        return True
-    if _verified_bearer_write_authority():
-        return True
-    session_token = session.get("csrf_token")
-    header_token = (request.headers.get("X-CSRF-Token")
-                    or request.headers.get("X-CSRFToken"))
-    if session_token and header_token:
-        return hmac.compare_digest(str(session_token), str(header_token))
-    form_token = request.form.get("csrf_token") if request.form else None
-    return bool(session_token and form_token
-                and hmac.compare_digest(str(session_token), str(form_token)))
+    Native app requests carry a signed Authorization bearer and are inherently
+    CSRF-safe, so ``allow_bearer`` is on here -- this pack is member-facing and
+    the native app has no CSRF token to echo. Web requests echo the session
+    token via ``X-CSRF-Token`` or a ``csrf_token`` form field.
+
+    The accept-set and the bearer re-verification now live in
+    ``services/csrf.py`` so that this pack, the entitlement endpoints and
+    ``bot.verify_csrf`` cannot drift apart again -- they had, on four of nine
+    request shapes.
+    """
+    return _shared_csrf.verify(allow_bearer=True)
 
 
 def _require_user():

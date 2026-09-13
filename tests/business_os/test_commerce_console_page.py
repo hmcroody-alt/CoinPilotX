@@ -114,7 +114,23 @@ def test_writes_carry_csrf_and_page_is_registered():
     assert "business_os_commerce_page" in adapter
     assert '"/business-os/commerce"' in adapter
     assert "business_os_commerce.html" in adapter
-    assert "_csrf_ok" in adapter and "compare_digest" in adapter
+    assert "_csrf_ok" in adapter
+    # The constant-time comparison used to be spelled in this file. It now lives
+    # in `services/csrf.py`, which is the point: six route packs answered "is
+    # this write CSRF-safe?" independently and disagreed on four of nine request
+    # shapes. Grepping the adapter for `compare_digest` would now report False
+    # for code that is constant-time, so the assertion follows the delegation
+    # instead of pinning where the bytes sit.
+    assert "csrf.verify(" in adapter, (
+        "the commerce CSRF gate no longer delegates to services/csrf.py. If it "
+        "has grown its own implementation again, that is the drift this was "
+        "unified to stop."
+    )
+    shared = _src(os.path.join(_ROOT, "services", "csrf.py"))
+    assert "compare_digest" in shared, (
+        "services/csrf.py no longer compares in constant time, so neither does "
+        "this route pack -- it delegates."
+    )
     # The CSRF gate must guard every mutating method the table uses.
     assert '("POST", "PATCH", "PUT")' in adapter
     # Login-required page idiom, same as the sibling /business-os page.

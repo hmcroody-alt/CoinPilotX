@@ -38,6 +38,7 @@ import pytest
 from services import db
 from services import business_os_commerce_routes as commerce_routes
 from services import business_os_supplier_routes as routes
+from services import csrf as shared_csrf
 from services.business_os.business import schema as business_schema
 from services.business_os.store import schema as store_schema
 from services.business_os.suppliers import connections, merchant_scope, schema, vault
@@ -147,6 +148,17 @@ def app(monkeypatch, bearer_users):
                         lambda: SimpleNamespace(
                             api_account_user=api_account_user,
                             account_user_id_from_mobile_access_token=verify_bearer))
+    # The write gate itself now lives in `services/csrf.py` -- six route packs
+    # answered "is this write CSRF-safe?" independently and disagreed on four of
+    # nine request shapes, so they were collapsed onto one implementation. The
+    # bearer-verifier seam moved with the logic, and it has to be patched here
+    # or the tests below that assert a *denial* would pass by accident: an
+    # ignored fake bearer fails to resolve, which looks exactly like a rejected
+    # one. `commerce_routes._bot` stays patched because that module still uses
+    # it for `api_account_user`.
+    monkeypatch.setattr(shared_csrf, "_bot",
+                        lambda: SimpleNamespace(
+                            account_user_id_from_mobile_access_token=verify_bearer))
     routes.register(app)
     return app
 
@@ -238,7 +250,7 @@ def test_a_valid_bearer_for_a_different_user_than_the_cookie_is_refused(client, 
 
 def test_the_gate_fails_closed_when_the_bearer_verifier_is_unavailable(client, monkeypatch):
     """An absent resolver must deny. A gate that opens when it cannot check is not a gate."""
-    monkeypatch.setattr(commerce_routes, "_bot", lambda: SimpleNamespace())
+    monkeypatch.setattr(shared_csrf, "_bot", lambda: SimpleNamespace())
     login(client)
     calls = spy(monkeypatch)
     assert native_post(client).status_code == 403
@@ -249,7 +261,7 @@ def test_a_raising_bearer_verifier_denies_rather_than_admits(client, monkeypatch
     def explode():
         raise RuntimeError("database down")
 
-    monkeypatch.setattr(commerce_routes, "_bot",
+    monkeypatch.setattr(shared_csrf, "_bot",
                         lambda: SimpleNamespace(account_user_id_from_mobile_access_token=explode))
     login(client)
     calls = spy(monkeypatch)

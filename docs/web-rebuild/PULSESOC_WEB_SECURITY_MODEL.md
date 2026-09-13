@@ -132,16 +132,78 @@ rendered no token field at all. The structural hooks were added precisely becaus
 discipline had failed — which is the argument for making the rebuild's protection structural
 too.
 
-### 3.2 Two contracts coexist
+### 3.2 Six contracts coexisted — RESOLVED, `services/csrf.py`
 
-`verify_csrf()` (`bot.py:3237`) checks **only `request.form['csrf_token']`** — it does not look
-at headers. But `pulse_ads_verify_write()`, `_csrf_ok()` and `_business_os_ent_csrf_ok()` accept
-`X-CSRF-Token` / `X-CSRFToken`. A client cannot know which contract a given route speaks without
-reading its source.
+**Status: done.** The finding below is kept because it is the reason the module exists and the
+reason it must not be unpicked.
 
-**Target: one header contract (`X-CSRF-Token`), one helper, enforced by the same decorator that
-enforces authentication (§4).** A single-page app sends headers naturally; there is no reason to
-carry the form-field contract into the rebuild.
+Six pieces of code answered "is this write CSRF-safe?": `bot.verify_csrf`,
+`bot._business_os_ent_csrf_ok`, `bot.pulse_ads_verify_write`,
+`bot._subscription_action_write_allowed`, `business_os_commerce_routes._csrf_ok`, and a sixth
+spelled inline in `admin_business_os_reconcile`. Driven through the same nine request shapes
+inside a request context, they **disagreed on four of them** — measured, not inferred:
+
+| request shape | `verify_csrf` | `_business_os_ent_csrf_ok` | `_csrf_ok` |
+|---|---|---|---|
+| form field, correct | ACCEPT | ACCEPT | ACCEPT |
+| `X-CSRF-Token`, correct | refuse | ACCEPT | ACCEPT |
+| `X-CSRFToken`, correct | refuse | refuse | ACCEPT |
+| header correct, form wrong | refuse | ACCEPT | ACCEPT |
+| bearer, no token anywhere | refuse | refuse | ACCEPT |
+| constant-time comparison | no | no | yes |
+
+Row two is the one that would have broken the rebuild. `verify_csrf()` read `request.form` and
+nothing else, and it is the verifier behind **52 call sites plus `enforce_admin_form_csrf`**. A
+`fetch` client sending `X-CSRF-Token` — which three of our own JS bundles already send — was
+refused, and refused with "Security check failed", which reads as a stale tab rather than a
+contract mismatch.
+
+All six now delegate to `services/csrf.py`. Verified: 0/9 disagreements, 5/5 delegating,
+constant-time comparison, and the bearer exemption exactly where declared.
+
+**The accept-set, and why each is in it:**
+
+| channel | status | why |
+|---|---|---|
+| `X-CSRF-Token` | **the contract** | a custom header cannot be attached cross-origin without a CORS preflight, and `webhook_app` sets no CORS response headers at all — so it is *stronger* evidence than a form field, not weaker |
+| `X-CSRFToken` | legacy alias, deprecated | already accepted by the commerce and supplier packs; dropping it is a narrowing against traffic this repo cannot see |
+| `csrf_token` form field | kept | 15 templates emit it and `inject_admin_form_csrf` writes it into every admin POST form |
+| `<meta name="csrf-token">` | **not a channel** | a *source* the client reads, not something the server accepts. Named here so nobody adds a fourth spelling by assuming symmetry |
+
+**When more than one channel carries a token, any of them matching is enough.** This is not a
+detail. The first draft made the header win outright; an exhaustive 6-verifier × 30-shape sweep
+against the pre-unification code showed that this **narrowed the gate in 12 places** — a valid
+form field alongside a stale header passed before and would have been refused after. A narrowed
+CSRF gate does not fail loudly; it refuses writes for a subset of clients while everything else
+looks fine. Precedence survives only to decide what a *refusal* reports.
+
+### 3.2.1 What each client must do
+
+- **The SPA sends `X-CSRF-Token`.** One spelling. Do not add a seventh; the protection suite
+  scans `static/` and `templates/` and fails on any `X-…CSRF…` header the server does not accept.
+- **The native app sends nothing** and relies on the bearer exemption. It has no CSRF token to
+  echo. `allow_bearer=True` is set on the three member-facing write gates and nowhere else.
+- **`allow_bearer` defaults to `False`** so a future caller writing `csrf.verify()` cannot
+  inherit an exemption by accident. The admin form path leaves it off deliberately: a bearer
+  resolves a *member* identity, and letting it vouch for a request whose authority comes from
+  `session['admin_user_id']` crosses a boundary for no gain — there is no admin client that
+  carries a bearer.
+
+A latent production bug surfaced while tracing this. `pulse_ads_verify_write` *intended* the
+bearer exemption and said so in a comment, but implemented it as a bare `g.mobile_access_user_id`
+test — a flag `account_user_id()` only sets when it reaches its bearer branch, which it skips
+whenever a session cookie is present. The native app sends both, so **the exemption never fired
+in production**: every native ad write and subscription action was refused while every read
+succeeded. Fixed here.
+
+The bearer verifier is resolved through a single seam (`services/csrf._bot()`). That seam is
+load-bearing: the suites proving the gate fails closed — forged bearer, verifier absent, verifier
+raising, bearer naming a different user than the cookie — inject their verifier by replacing it.
+Bypassing it with an inline `import bot` leaves those five tests *passing while testing nothing*,
+because an ignored fake bearer denies just as convincingly as a rejected one.
+
+Guarded by `tests/protection/test_csrf_contract.py` (16 checks, mutation-tested at 64/64
+including 15 negative controls).
 
 ### 3.3 SameSite is doing the real work, and it is not ours
 
@@ -409,7 +471,7 @@ The rebuild does not ship to general availability until every row is green.
 |---:|---|---|
 | 1 | `account_user_id()` verifies both credentials and denies on mismatch | Backend |
 | 2 | Auth decorator live, with boot-time default-deny assertion | Backend |
-| 3 | One header CSRF contract enforced on cookie-authenticated mutations | Backend |
+| 3 | ~~One header CSRF contract enforced on cookie-authenticated mutations~~ **DONE** — `services/csrf.py`, §3.2 | Backend |
 | 4 | Session and bearer signing keys split | Backend |
 | 5 | Web session revocability: implemented, **or** formally accepted and the UI corrected | Security + Product |
 | 6 | CSP `script-src` has **no** `'unsafe-inline'` on the SPA surface; `connect-src` tightened | Client |
