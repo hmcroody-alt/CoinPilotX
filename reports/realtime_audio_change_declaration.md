@@ -3109,3 +3109,97 @@ imported by nothing at runtime, so reverting it restores the previous guard
 behaviour with no dangling references — at the cost of restoring the blind spot.
 The two guard test suites would then fail, which is the intended signal that the
 revert re-opened a known hole rather than fixed anything.
+
+## Governance addendum — the gate's file-list mode could not see bot.py (2026-09-13)
+
+### Why the change is required
+
+This addendum changes no audio behavior and touches no app code. It repairs the
+**enforcement machinery**, which had a hole in one of its two entry points.
+
+`bot.py` is deliberately gated on diff *content* rather than on path: it is the
+111k-line monolith, almost every backend change touches it, and gating it by path
+would demand a full audio declaration for every unrelated route edit. So the gate
+greps the changed `bot.py` lines for `backend_diff_patterns` and only escalates on
+a match.
+
+That check was written to require a commit range. `--changed-files-from` supplies
+a file list and no range, so the condition `if BACKEND_FILE in files and base and
+head:` was false on every file-list invocation and the backend check was skipped
+entirely — not reported as unverifiable, simply absent from the result. The mode
+returned a clean bill of health for the single most-edited protected surface in
+the repository, and it is the mode reached for precisely when a checkout is dirty
+or shared and an author wants the gate scoped to their own edits.
+
+### Which feature required it
+
+None. This is governance repair, prompted by consolidating several agents' work
+onto `main`: the file-list mode is what makes the gate usable in a shared
+checkout, and a mode that cannot fail on `bot.py` is worse than no mode, because
+its all-clear is indistinguishable from a verified one.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `scripts/realtime_audio_change_gate.py` | `audio_governance` | File-list mode now diffs `bot.py` against the working tree (unstaged and staged both) instead of skipping the content check. An unreadable or empty diff is treated as **unverifiable** and exits 2 ("the gate could not run"), never as a pass. The `+`/`-` line scanner is split out of `backend_diff_is_audio_related` as `patterns_in_diff` so both callers share one matcher rather than growing a second copy; `backend_diff_is_audio_related` keeps its signature and its range-based behaviour byte for byte. |
+
+Supporting non-protected file: `tests/protection/test_realtime_audio_gate_file_list_mode.py`
+(new, 13 tests + 7 subtests) covering the mode directly — including that a
+`bot.py` audio-pattern edit present only in the working tree is detected, and
+that an unreadable diff exits 2 rather than 0.
+
+No manifest entry was added, removed, widened or narrowed. No category, path,
+pattern, or allowlist changed. `config/realtime-audio-protected-paths.json` is
+untouched by this addendum's commit.
+
+### Expected behavior change
+
+**None at runtime.** Zero app code, zero native code, zero backend route code.
+The only behavioral change is to CI/local tooling, and it is strictly stricter:
+invocations that previously reported "no protected change" for a `bot.py` audio
+edit now either escalate correctly or exit 2. Nothing that passed for a
+legitimate reason starts failing — the range-based path, which is what CI uses,
+is unchanged and still produced an identical verdict on this very push range.
+
+### Regression risk
+
+Confined to the gate's own exit code. The risk is a *false* escalation making the
+gate noisy rather than a missed one making it quiet, which is the correct
+direction for a lock. The range-based entry point is untouched, so CI behaviour
+is unchanged; only `--changed-files-from` gains a check it never had.
+
+### Tests run
+
+Against this exact tree, after resolving the merge of the admin-escaping branch:
+
+- `npm run test:realtime-audio-critical` — **11 suites, 191 tests, 0 failures.**
+- `npm run test:realtime-audio` — **21 suites, 377 tests, 0 failures.**
+- `npm run test:realtime-audio-architecture` (native manifest mirror) — **22 tests, 0 failures.**
+- `python -m unittest tests.protection.test_realtime_audio_architecture` — **19 tests, OK.**
+- `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` — **13 passed.**
+- `tests/protection/test_realtime_audio_gate_file_list_mode.py` — **13 passed, 7 subtests passed.**
+- Full backend protection suite — **671 checks across 44 suites, passed.**
+- `tsc --noEmit` — clean. `npm run verify` — 399 suites / 6916 tests, exit 0.
+- `python -m compileall services` — clean.
+
+The range-based gate over this push range reports the `bot.py` diff as
+audio-unrelated, which is the same verdict it gave before this change. That is
+the point: the repair adds a verdict where there was none, and does not alter the
+one that already existed.
+
+### Physical validation required
+
+**Not required, and none is claimed.** The protected diff is a Python CI script.
+It contains no session, track, publication, route, engine, or device line, ships
+in no build, and is not importable by the app. There is no audible behaviour for
+a human to confirm. Device QA for this consolidation is the ordinary release
+check carried by the mission it belongs to, not discharged here.
+
+### Rollback procedure
+
+Revert the single commit `1cdab480` (merged as `495cddc2`). The gate returns to
+its previous behaviour: range mode unchanged, file-list mode silently skipping
+`bot.py`. The new test file is independent and can be reverted with it or left in
+place, where it would fail and document the hole. Nothing else in the repository
+imports either file.
