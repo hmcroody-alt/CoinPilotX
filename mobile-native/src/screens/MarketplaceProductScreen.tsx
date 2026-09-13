@@ -57,6 +57,7 @@ import {
 } from "../api/marketplaceBuyerPresentation";
 import { fulfillmentTypeLabel, resolveFulfillmentKind, ticketOptions } from "../api/marketplaceFulfillment";
 import { marketplaceListingThumbnail } from "../api/marketplaceScreen";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
 import { sellerStoreInitial, sellerStoreName } from "../api/sellerIdentity";
 import { conversationSplitEnabled } from "../api/conversationDomain";
@@ -82,6 +83,12 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   const listing = route.params?.listing as MarketplaceListing | undefined;
   const listingId = Number(route.params?.listingId || listing?.id || 0);
   const { width } = useWindowDimensions();
+  // This screen is registered `headerShown: false`, so it owns the whole window
+  // including the status bar and the Dynamic Island. Without a top inset the
+  // 46pt back / share / save / cart row draws *underneath* the island, where the
+  // system swallows the touches: the controls are visible and completely dead,
+  // which strands the seller in "Preview as buyer" with no way back.
+  const insets = useSafeAreaInsets();
   const { authState } = useAuth();
   // Seller-only affordances are hidden on identity, not on a guess. Every QA
   // pass runs cross-account, so the common case is buyer !== seller and every
@@ -276,7 +283,7 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   return (
     <View style={styles.shell}>
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
           <Pressable accessibilityRole="button" accessibilityLabel="Back to Marketplace" style={styles.iconButton} onPress={() => navigation.goBack()}>
             <Ionicons name="arrow-back" size={24} color={storeLight.text.primary} />
           </Pressable>
