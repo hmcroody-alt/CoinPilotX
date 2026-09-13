@@ -198,6 +198,7 @@ from telegram.ext import (
 from services import (
     app_links,
     brevo_contacts as brevo_contacts_service,
+    client_address,
     command_center_client as command_center_client_service,
     command_router as command_router_service,
     db as db_service,
@@ -5731,21 +5732,37 @@ FAILED_LOGIN_CHALLENGE_MESSAGE = "Complete the security challenge to continue."
 
 
 def client_ip_address():
+    """The address this request may be attributed to.
+
+    Delegates to services/client_address.py, which reads the trusted *suffix* of
+    X-Forwarded-For instead of its leftmost element. The old expression here
+    read `.split(",")[0]` -- the end of the chain a client can type. It is not
+    exploitable on this deployment, because Railway's edge replaces the header
+    rather than appending to it, and that was measured rather than assumed; see
+    that module. It was exploitable on any deployment whose edge appends, which
+    is most of them, and nothing in this file said which kind we were on.
+    """
     if not has_request_context():
         return ""
-    return (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip())[:80]
+    return client_address.client_ip(request.headers, request.remote_addr or "")[:80]
 
 
 def request_country():
+    """Country resolved by a trusted edge, or "" when nothing resolved one.
+
+    This used to read CF-IPCountry / X-Country-Code / X-Appengine-Country /
+    CloudFront-Viewer-Country directly off the request. No edge in front of this
+    deployment sets any of them, so the value was never geolocation -- it was a
+    free-text field the caller filled in, and login_security_details() puts it in
+    security alerts as though it were evidence of where a login came from. A
+    probe that sent `X-Country-Code: ZZ` was recorded as ZZ.
+
+    Returning "" when no trusted edge is configured is not a regression: "" is
+    already what production returns, because production has no such edge.
+    """
     if not has_request_context():
         return ""
-    return clean_html(
-        request.headers.get("CF-IPCountry")
-        or request.headers.get("X-Appengine-Country")
-        or request.headers.get("X-Country-Code")
-        or request.headers.get("CloudFront-Viewer-Country")
-        or ""
-    )[:80]
+    return clean_html(client_address.client_country(request.headers))[:80]
 
 
 def auth_email_domain(email):
@@ -6220,7 +6237,7 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
                                 "masked_email": mask_email(email),
                                 "email_domain": domain,
                                 "ip_address": ip,
-                                "country": request.headers.get("CF-IPCountry", "")[:80] if has_request_context() else "",
+                                "country": request_country(),
                                 "user_agent": request.headers.get("User-Agent", "")[:500] if has_request_context() else "",
                                 "route": request.path if has_request_context() else "/login",
                                 "burst_count": max(counts.values()),
@@ -13314,7 +13331,7 @@ def friendly_internal_error(error):
                 trace_id,
                 request.path,
                 request.method,
-                request.headers.get("X-Forwarded-For") or request.remote_addr or "",
+                client_address.client_ip(request.headers, request.remote_addr or ""),
             )
             return jsonify({
                 "ok": False,
@@ -14430,7 +14447,19 @@ def debug_email_test():
 
 
 def client_ip_hash():
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip()
+    # Subject of every per-IP rate limit in the app. See client_ip_address()
+    # above for why this no longer reads the leftmost X-Forwarded-For element.
+    #
+    # The salt below is worth knowing about: ANALYTICS_SALT is unset in
+    # production, so this is sha256("coinpilotxai-inc:" + ip) with a constant
+    # that lives in this repository. IPv4 is 2**32 wide, so every ip_hash the
+    # platform has ever stored is reversible by anyone holding both. That is
+    # pseudonymisation that does not pseudonymise. It is not fixed here because
+    # ip_hash is a *correlation* key, not a signature: rotating the salt does not
+    # invalidate anything, it silently stops old and new rows for one address
+    # from grouping together -- the same trap as the password-reset lookup hash
+    # in services/signing_keys.py. Fixing it means a migration, not an edit.
+    ip = client_address.client_ip(request.headers, request.remote_addr or "")
     salt = os.getenv("ANALYTICS_SALT", "coinpilotxai-inc")
     return hashlib.sha256(f"{salt}:{ip}".encode("utf-8")).hexdigest() if ip else ""
 
@@ -14508,9 +14537,15 @@ def upsert_visitor_session(path=None, visibility="visible"):
             client_ip_hash(),
             user_agent,
             device_type,
-            (request.headers.get("CF-IPCountry") or request.headers.get("X-Country") or "")[:80],
-            (request.headers.get("X-Region") or "")[:120],
-            (request.headers.get("X-City") or "")[:120],
+            # Geo went into visitor_sessions straight off the request headers.
+            # Nothing in front of this app sets them, so every visitor row's
+            # country/region/city was whatever the visitor typed -- analytics
+            # any caller could steer. Country now comes from the trusted-edge
+            # resolver; region and city have no trusted source at all, so they
+            # record nothing rather than recording a claim.
+            request_country()[:80],
+            "",
+            "",
             (path or request.path)[:500],
             now,
             now,
@@ -29711,7 +29746,7 @@ def log_security_event(event_type, status="observed", user_id=0, path="", detail
             (
                 clean_html(event_type)[:120],
                 int(user_id or 0),
-                (request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip() if request else "")[:80],
+                (client_address.client_ip(request.headers, request.remote_addr or "") if request else "")[:80],
                 clean_html(path or (request.path if request else ""))[:240],
                 clean_html(status)[:80],
                 json.dumps(details or {})[:2000],
@@ -55603,7 +55638,79 @@ def api_pulse_marketplace_seller_listing_delete(listing_id):
     return jsonify({"ok": True, "message": "Listing removed from seller inventory.", "listing": item})
 
 
-def _marketplace_batch_apply(cur, action, listing, user_id, now):
+def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
+    """Write one repriced row, with the same consequences the single edit has.
+
+    Three things here are borrowed rather than reinvented, and each of them is a
+    way bulk could quietly diverge from the seller's other route into the same
+    column (§21):
+
+    * ``marketplace_normalize_price_label`` builds the stored label back out of
+      the parsed minor units, so the text on the row and the amount at checkout
+      cannot drift. Formatting the cents here instead would be a second price
+      formatter, and the two would disagree the first time a currency other than
+      USD went through.
+    * ``price_label`` is in ``MATERIAL_FIELDS``, so a live, approved listing goes
+      back to ``pending_review`` on a price change. The single edit does this;
+      if bulk did not, "select all → +20%" would be a way to reprice an entire
+      approved storefront without review — the cheapest possible bypass, and one
+      no moderator would ever see.
+    * ``mark_overridden`` hands ``price_label`` to the merchant permanently
+      (§25). Without it the next supplier sync is entitled to the column and
+      writes the provider's price back over the seller's, so the reprice appears
+      to work and then silently reverts on a schedule nobody is watching.
+    """
+    listing_id = int(listing.get("id") or 0)
+    currency = str(listing.get("currency") or "USD").upper()
+    price_cents = int((plan or {}).get("price_cents") or 0)
+
+    label, cents, currency, price_error = marketplace_normalize_price_label(
+        f"{Decimal(price_cents) / 100:.2f}", currency
+    )
+    if price_error or cents <= 0:
+        # Reachable: `pricing.MAX_PRICE_CENTS` and `MAX_PRICE_LABEL_CENTS` are
+        # not the same ceiling, so a rule can land on an amount the batch layer
+        # accepts and checkout will not. Raised rather than written, so the
+        # route reports this row as failed instead of storing a price the buyer
+        # can never be charged.
+        raise ValueError(price_error or "Enter a price greater than zero, or use “Free”.")
+
+    old_status = str(listing.get("status") or "draft").lower()
+    old_approval = str(listing.get("approval_status") or "draft").lower()
+    changed = {"price_label"} if str(listing.get("price_label") or "") != label else set()
+    material = marketplace_listing_lifecycle.requires_rereview(changed)
+    if old_status in marketplace_listing_lifecycle.PUBLIC_STATUSES and old_approval == "approved" and material:
+        next_status, next_approval = "pending_review", "pending_review"
+    else:
+        next_status, next_approval = old_status, old_approval
+
+    cur.execute(
+        "UPDATE marketplace_listings SET price_label=?, currency=?, status=?, approval_status=?, "
+        "updated_at=? WHERE id=? AND seller_user_id=?",
+        (label, currency, next_status, next_approval, now, listing_id, int(user_id)),
+    )
+
+    try:
+        from services import marketplace_variants as _variants
+
+        _variants.mark_overridden(
+            cur, listing_id=listing_id, seller_user_id=int(user_id), fields=["price_label"]
+        )
+    except Exception:
+        # A merchant-authored listing has no supplier source, and `mark_overridden`
+        # says so by raising. That is the expected case for most of a store and
+        # is not a failed reprice -- there is no supplier who could overwrite a
+        # column nobody else owns.
+        pass
+
+    applied = ["price_label"]
+    if next_status != old_status:
+        applied += ["status", "approval_status"]
+    return {"price_label": label, "price_cents": cents, "status": next_status,
+            "changes_applied": applied}
+
+
+def _marketplace_batch_apply(cur, action, listing, user_id, now, plan=None):
     """Move one row for a bulk action. Returns the fields the result reports.
 
     Every rule about *whether* this row should move has already been decided by
@@ -55614,6 +55721,8 @@ def _marketplace_batch_apply(cur, action, listing, user_id, now):
     themselves.
     """
     listing_id = int(listing.get("id") or 0)
+    if action == "price":
+        return _marketplace_batch_apply_price(cur, listing, user_id, now, plan)
     if action == "hide":
         cur.execute(
             "UPDATE marketplace_listings SET status='paused', updated_at=? "
@@ -55674,7 +55783,7 @@ def api_pulse_marketplace_seller_listings_batch():
     try:
         normalized = _batch.normalize_request(
             payload.get("action"), payload.get("listing_ids"),
-            payload.get("idempotency_key"))
+            payload.get("idempotency_key"), payload.get("pricing_rule"))
     except _batch.BatchError as err:
         return jsonify({"ok": False, "error": err.code, "message": err.message}), err.status
 
@@ -55684,7 +55793,11 @@ def api_pulse_marketplace_seller_listings_batch():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    if normalized["action"] == "publish" and not approved_marketplace_seller_for_user(cur, user["user_id"]):
+    # `price` joins `publish` here because it writes a listing field, and the
+    # single-listing edit route already refuses an unapproved seller. Leaving it
+    # out would make the bulk endpoint the one way to edit a listing without
+    # merchant approval.
+    if normalized["action"] in ("publish", "price") and not approved_marketplace_seller_for_user(cur, user["user_id"]):
         conn.close()
         return api_error("Merchant approval is required before publishing listings.", 403)
 
@@ -55710,7 +55823,35 @@ def api_pulse_marketplace_seller_listings_batch():
     owned = {int(dict(row)["id"]): dict(row) for row in cur.fetchall()}
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, list(owned))
 
-    decided = _batch.evaluate_rows(owned.values(), normalized["action"], media_by_listing)
+    price_plans = None
+    if normalized["action"] == "price":
+        # Supplier cost is read from the source rows, scoped to this seller. A
+        # listing with no source row simply has no cost, and `price_proposal`
+        # blocks it rather than treating the absence as zero.
+        costs = {}
+        if owned:
+            cur.execute(
+                f"SELECT listing_id, supplier_cost_cents FROM marketplace_product_sources "
+                f"WHERE listing_id IN ({placeholders}) AND seller_user_id=?",
+                (*ids, int(user["user_id"])),
+            )
+            for source_row in cur.fetchall():
+                source = dict(source_row)
+                raw_cost = source.get("supplier_cost_cents")
+                if raw_cost is None:
+                    continue
+                costs[int(source.get("listing_id") or 0)] = safe_int(raw_cost, 0)
+        currents = {}
+        for listing_id, row in owned.items():
+            current_cents, _ = parse_price_label_to_cents(
+                row.get("price_label") or "", str(row.get("currency") or "USD").upper()
+            )
+            currents[listing_id] = current_cents
+        price_plans = _batch.build_price_plans(
+            owned.values(), normalized["payload"], costs, currents)
+
+    decided = _batch.evaluate_rows(
+        owned.values(), normalized["action"], media_by_listing, price_plans)
     blocks = {int(row["id"]): block for row, block in decided}
 
     results = []
@@ -55729,7 +55870,21 @@ def api_pulse_marketplace_seller_listings_batch():
                 fixes=[_readiness.fix(code) for code in (block.get("blockers") or [])],
                 title=row.get("title") or ""))
             continue
-        applied = _marketplace_batch_apply(cur, normalized["action"], row, user["user_id"], now)
+        try:
+            applied = _marketplace_batch_apply(
+                cur, normalized["action"], row, user["user_id"], now,
+                (price_plans or {}).get(listing_id))
+        except Exception as apply_error:
+            # One row that could not be written must not lose the other
+            # seventeen. `failed` rather than `blocked` (§19): nothing about the
+            # product is wrong and there is nothing for the seller to go fix —
+            # the action could not be carried out.
+            app.logger.exception("bulk %s failed for listing %s", normalized["action"], listing_id)
+            results.append(_batch.result_entry(
+                listing_id, _batch.FAILED, error_code="APPLY_FAILED",
+                reason=str(apply_error) or "That change could not be saved.",
+                title=row.get("title") or ""))
+            continue
         results.append(_batch.result_entry(
             listing_id, _batch.SUCCEEDED, title=row.get("title") or "", **applied))
 
