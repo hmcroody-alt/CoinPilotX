@@ -463,9 +463,44 @@ own `use_remote_address` default **appends** — would silently convert every ra
   an appending edge it is every client that sends its own header; a distribution is readable
   under both, a warning is noise under one. The key space is caller-chosen, so it folds to a
   single `-1` bucket past 16 keys rather than growing unbounded.
-- 19 locks in `tests/protection/test_client_address_trust.py`, including a regex that fails the
-  build if the leftmost read reappears in `bot.py`. Mutation-verified: 17 mutations, 43/43
-  checks, both negative controls silent.
+- **A chain shorter than the hop count is refused, not clamped.** Reading `chain[-hops]` presumes
+  the chain is at least `hops` long, and the natural `min(hops, len(chain))` bounds check
+  re-opens the exact hole the index closed: at `hops=2` a one-element chain is read at `[-1]`,
+  which is the element the caller typed. This shipped in the first version of the module and was
+  found while building the observable below. It is **unreachable at `hops=1`**, so it passed
+  every test written against today's topology and would have armed itself on the day someone put
+  a CDN in front — the day this same document tells them to raise the hop count to 2. A client
+  cannot trigger it (proxies only ever append), so it is an operator-actionable signal and
+  nothing else.
+- 29 locks in `tests/protection/test_client_address_trust.py`, including a regex that fails the
+  build if the leftmost read reappears in `bot.py`. Mutation-verified twice: 17 mutations / 43
+  checks for the resolver, then 15 mutations / 30 checks for the short-chain rule and the status
+  surface, both runs with silent negative controls.
+
+**The counter is now readable.** `element_counts` above was the evidence for all of this, and
+until it was surfaced nothing could read it — the same defect as a shadow mode whose output ages
+out of the log window. `client_address.edge_status()` renders as an **Edge** chip on the
+Operations Center strip, fed by `/admin/ops/status.json`.
+
+- **Admin-gated, deliberately.** The obvious home was `/health`, and publishing the chain shape
+  there answers most of "does `X-Forwarded-For` forgery work on this deployment?" — the one
+  question the counter exists to detect someone else asking.
+- **Two conditions warn; a third deliberately does not.** A short chain warns, and `hops=0` while
+  forwarded elements keep arriving warns. A chain *longer* than the hop count does **not**: on an
+  appending edge that is every client that sends its own header, i.e. a permanently yellow light,
+  and a light that is always yellow is a light nobody reads. The shape stays visible in the
+  distribution where an operator can look at it instead of being paged by it.
+- **Absent, not green, when unobserved.** A worker that has resolved nothing has verified
+  nothing, so the chip stays neutral rather than reporting `ok` — the same rule the rest of that
+  endpoint follows and the same distinction the shadow report draws with its no-data exit code.
+- **The counters count resolutions, not requests.** `client_ip_hash()` is called from 53 places
+  in `bot.py` and up to three times in one pass through `basic_abuse_guard`, so one request
+  contributes several. The operator-facing text says "resolutions" for that reason, and a test
+  fails if it starts saying "requests".
+- **Green means "no anomaly observed in this worker",** not "no anomaly exists". The counters are
+  per-process across four gunicorn workers, and an origin reachable directly past the edge would
+  not appear here unless someone reached the admin route that way. Same lower-bound reading as
+  the shadow report's hit counts.
 
 **Country was never geolocation.** The same probe sent `X-Country-Code: ZZ` and the server stored
 `ZZ`; the control stored `''`. `request_country()` read any of four geo headers with no

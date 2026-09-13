@@ -142,6 +142,35 @@ salt orphans history rather than invalidating it; this needs a migration. §6.1.
 
 ---
 
+## SEC-5 — The hardening for SEC-4 contained a latent re-introduction of it (not live) — FIXED
+
+Found while building the observable for §6.1, not by a probe, because it is **not reachable in
+production**. `services/client_address.py` resolves the trusted element as `chain[-hops]`, and the
+first version bounded that index with `min(hops, len(chain))`.
+
+That clamp is the bug. At `hops=2` a one-element chain is read at `[-1]` — and a one-element chain
+at `hops=2` means the request did *not* traverse both proxies, so its single element is whatever
+the caller typed. The bounds check therefore hands an attacker-chosen string back to every per-IP
+control, which is precisely the defect the module was written to close.
+
+It is invisible at `hops=1`, which is production's default and the only value the tests exercised
+by accident. So:
+
+- it passed all 19 locks in the original suite,
+- it passed a 17-mutation verification run,
+- and it would have armed itself the day an operator followed §6.1's own advice and set
+  `PULSESOC_TRUSTED_PROXY_HOPS=2` for a CDN.
+
+A short chain now falls back to the socket peer and increments `short_chain`, which raises the
+**Edge** chip on `/admin/ops/status.json`. A client cannot produce the condition — proxies only
+ever append — so it is operator-actionable and cannot be used to spam the alert.
+
+The general lesson is the one this file keeps re-learning: **a guard verified only against the
+current topology is verified against one value of its own parameter.** The suite now exercises
+`hops` at 0, 1, and 2, and a mutation restoring the clamp is caught.
+
+---
+
 ## Cross-reference
 
 Full context for these findings lives in:

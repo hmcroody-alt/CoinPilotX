@@ -33,8 +33,8 @@ putting a CDN in front (the CSP already names ``static.cloudflareinsights.com``)
 moving off Railway, or Railway changing an Envoy default. The point of this
 module is to make the accident into a property.
 
-The fix is one index
---------------------
+The fix is one index, and one precondition
+------------------------------------------
 
 With ``hops`` trusted reverse proxies in front of the app, the trustworthy
 element is ``xff[-hops]``: the rightmost entries are the ones infrastructure you
@@ -44,6 +44,16 @@ with ``hops=1`` the list has exactly one element and ``xff[-1] is xff[0]``, so
 this changes nothing in production right now. That is the intended shape. This
 is a guard, not a behaviour change; it is supposed to be a no-op until the day
 it isn't.
+
+The index alone is not enough, because it presumes the chain is at least
+``hops`` long. Clamping it into range when it isn't -- the natural
+``min(hops, len(chain))`` -- re-opens the hole it was written to close: at
+``hops=2`` a one-element chain is read at ``[-1]``, which is the element the
+caller typed. That is unreachable at ``hops=1``, so it survives every test run
+against today's topology and arms itself on the day someone puts a CDN in front,
+which is the day this file tells them to raise ``hops`` to 2. A chain shorter
+than ``hops`` therefore falls back to the socket peer and is counted, never
+read.
 
 Why a count and not a log line
 ------------------------------
@@ -95,7 +105,9 @@ _STATS: dict = {
     "from_peer": 0,        # no usable X-Forwarded-For; socket peer used
     "rejected_value": 0,   # the trusted slot held something that is not an IP
     "hops_zero": 0,        # configured as directly exposed
+    "short_chain": 0,      # fewer proxies appended than are configured as trusted
     "element_counts": {},  # observed len(X-Forwarded-For) -> occurrences
+    "observed_hops": None,  # hop count in effect when the above were recorded
 }
 
 
@@ -172,13 +184,19 @@ def client_ip(headers, remote_addr: str = "") -> str:
     _note("resolutions")
     peer = _usable(remote_addr)
     hops = trusted_proxy_hops()
+    # Recorded, not re-read later. The counters below are a history, and the hop
+    # count is re-read from the environment on every resolution -- so a status
+    # that pairs historical counters with a freshly-read config value can
+    # describe observations under a configuration that was not in effect when
+    # they were made. The observation and its configuration travel together.
+    with _LOCK:
+        _STATS["observed_hops"] = hops
 
-    if hops <= 0:
-        # Directly exposed: X-Forwarded-For is unverified client input.
-        _note("hops_zero")
-        _note("from_peer")
-        return peer
-
+    # Observed always, trusted only per configuration. Counting the chain even
+    # when we are configured to ignore it is what makes `hops=0` diagnosable: if
+    # the app believes it is directly exposed and forwarded elements keep
+    # arriving anyway, something is in front of it that nobody told it about,
+    # and every request is being attributed to that thing's address.
     try:
         raw = headers.get("X-Forwarded-For", "") or ""
     except Exception:
@@ -186,14 +204,36 @@ def client_ip(headers, remote_addr: str = "") -> str:
     chain = [part.strip() for part in str(raw).split(",") if part.strip()]
     _note_elements(len(chain))
 
+    if hops <= 0:
+        # Directly exposed: X-Forwarded-For is unverified client input.
+        _note("hops_zero")
+        _note("from_peer")
+        return peer
+
     if not chain:
+        _note("from_peer")
+        return peer
+
+    # A chain shorter than the trusted hop count did not traverse the proxies we
+    # believe are in front, so none of its elements were written by us. Clamping
+    # the index into range instead -- `min(hops, len(chain))` -- reads whatever
+    # is there, which at hops=2 hands a one-element chain straight back to the
+    # caller who typed it: this module's entire defect, reintroduced by a bounds
+    # check. It is not reachable at hops=1, which is why it would have shipped
+    # quietly and armed itself on the day a CDN went in front.
+    #
+    # A client cannot cause this: every proxy appends, so the chain can only be
+    # short if the request skipped one (origin reachable directly past the CDN)
+    # or the hop count is wrong. Both are operator-actionable, which is what
+    # makes this safe to raise an alert on -- see `edge_status()`.
+    if len(chain) < hops:
+        _note("short_chain")
         _note("from_peer")
         return peer
 
     # Count from the right. Entries to the left of the trusted suffix were not
     # written by infrastructure we control and are not read.
-    index = min(hops, len(chain))
-    trusted = _usable(chain[-index])
+    trusted = _usable(chain[-hops])
     if not trusted:
         _note("rejected_value")
         _note("from_peer")
@@ -231,6 +271,13 @@ def stats() -> dict:
     ``element_counts`` is the one worth reading: it is the evidence for the
     assumption in this module's docstring, sampled from live traffic rather than
     asserted once in a probe.
+
+    Every counter here counts *resolutions*, not requests. ``client_ip_hash()``
+    alone is called from 53 places in ``bot.py`` and up to three times inside a
+    single pass through ``basic_abuse_guard``, so one request can contribute
+    several. That makes these numbers useful for ratios and for "has this ever
+    happened", and wrong for "how many callers" -- which is why nothing built on
+    them is phrased in requests.
     """
     with _LOCK:
         snapshot = dict(_STATS)
@@ -240,9 +287,67 @@ def stats() -> dict:
     return snapshot
 
 
+def edge_status():
+    """Honest state for an operations surface, or ``None`` if unobserved.
+
+    ``None`` rather than ``"ok"`` when this process has resolved nothing. A
+    worker that has answered no requests has verified nothing about the edge,
+    and the Operations Center renders an omitted service neutral rather than
+    green -- the same rule the rest of ``/admin/ops/status.json`` follows, and
+    the same distinction the shadow report draws with its no-data exit code.
+
+    Per-process, which is adequate here and would not be for a rate count. The
+    counters live in one of four gunicorn workers and the poll lands on whichever
+    one answers, so this under-samples. But both conditions it reports are
+    properties of the *deployment* -- the hop count is one environment variable
+    and the topology is shared -- so any worker that sees one is representative,
+    and the poll re-runs every 20 seconds against a fresh draw.
+
+    Two conditions warn, and one deliberately does not:
+
+    ``short_chain`` -- resolutions that saw fewer forwarded elements than the
+    configured hop count. Those addresses are being attributed to the socket
+    peer, which behind an edge is the edge, so those callers share a single
+    rate-limit bucket. Unreachable by a client (proxies only ever append), so it
+    cannot be used to spam the alert.
+
+    ``hops_zero`` alongside observed forwarded elements -- the app is configured
+    as directly exposed but something is forwarding to it, so every caller in
+    the fleet is being attributed to that thing.
+
+    A chain *longer* than the hop count is not a warning, on purpose. On an
+    appending edge that is every client that sends its own header, i.e. a
+    permanently yellow light, which is a light nobody reads. It is the reason
+    ``element_counts`` is a distribution rather than a log line, and it stays in
+    the detail below where an operator can see the shape and decide.
+    """
+    snapshot = stats()
+    if not snapshot["resolutions"]:
+        return None
+
+    forwarded_seen = any(
+        length >= 1 for length in snapshot["element_counts"] if length != -1
+    ) or bool(snapshot["element_counts"].get(-1))
+
+    if snapshot["short_chain"]:
+        state, detail = "warn", (
+            f"{snapshot['short_chain']} resolution(s) saw fewer forwarded "
+            f"elements than the {snapshot['observed_hops']} trusted hop(s) in "
+            f"effect; those were attributed to the socket peer")
+    elif not snapshot["observed_hops"] and forwarded_seen:
+        state, detail = "warn", (
+            "configured as directly exposed, but forwarded elements are "
+            "arriving; every caller is being attributed to whatever is in front")
+    else:
+        state, detail = "ok", "chain shape matches the configured hop count"
+
+    return {"state": state, "detail": detail, "counters": snapshot}
+
+
 def reset_for_tests() -> None:
     with _LOCK:
         _STATS.update({
             "resolutions": 0, "from_forwarded": 0, "from_peer": 0,
-            "rejected_value": 0, "hops_zero": 0, "element_counts": {},
+            "rejected_value": 0, "hops_zero": 0, "short_chain": 0,
+            "element_counts": {}, "observed_hops": None,
         })

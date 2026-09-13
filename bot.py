@@ -16021,6 +16021,7 @@ def admin_page_html(title, body, admin=None):
         "<span class='ops-stat' data-svc='live'><span class='d'></span>Live</span>"
         "<span class='ops-stat' data-svc='calls'><span class='d'></span>Calls</span>"
         "<span class='ops-stat' data-svc='ai'><span class='d'></span>AI</span>"
+        "<span class='ops-stat' data-svc='edge'><span class='d'></span>Edge</span>"
         "</div>"
     )
 
@@ -16151,7 +16152,43 @@ def admin_ops_status_json():
     if tele is not None:
         services["live"] = "ok" if tele else "warn"
 
-    return jsonify({"services": services, "ts": datetime.now().isoformat()})
+    # Edge: is the X-Forwarded-For chain the shape this deployment is configured
+    # to trust? Every per-IP control -- rate limits and the failed-login lockout
+    # that can block an address for 900 seconds -- is keyed on the answer, and
+    # until now the evidence for it lived in a counter nothing read.
+    #
+    # Admin-gated on purpose. The obvious home was /health, and that would have
+    # published the chain shape to anyone who asked, which is most of the way to
+    # answering "does X-Forwarded-For forgery work on this deployment?" -- the
+    # one question the counter exists to detect someone else asking.
+    try:
+        # Resolve this request before reading the status. Addresses are only
+        # resolved where they are used -- basic_abuse_guard returns early unless
+        # it is a POST/PUT to a protected path -- so a worker can serve traffic
+        # for a long time having observed nothing, and the chip would sit
+        # neutral almost always. This poll is itself a real request through the
+        # real edge, carrying whatever chain that edge produces, so resolving it
+        # is a measurement rather than a synthetic sample.
+        #
+        # It biases toward "ok": an origin reachable directly past the edge
+        # would not show up here unless someone reached the admin route that
+        # way. So the green state means "no anomaly observed in this worker",
+        # not "no anomaly exists" -- the same lower-bound reading the shadow
+        # report's hit counts carry.
+        client_address.client_ip(request.headers, request.remote_addr or "")
+        edge = client_address.edge_status()
+        if edge:
+            services["edge"] = edge["state"]
+            edge_detail = {k: v for k, v in edge.items() if k != "state"}
+        else:
+            edge_detail = None  # nothing resolved in this worker yet; stays neutral
+    except Exception:
+        edge_detail = None
+
+    payload = {"services": services, "ts": datetime.now().isoformat()}
+    if edge_detail:
+        payload["edge"] = edge_detail
+    return jsonify(payload)
 
 
 @webhook_app.route("/admin/ops/search.json", methods=["GET"])
