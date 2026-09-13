@@ -117,8 +117,33 @@
   --tap-target-min: 48px;
 
   /* --- Layout ----------------------------------------------------------- */
-  --container-max: 1280px;
-  --container-reading: 720px;
+  /* Every value here is measured from `HomeScreen.tsx`'s wide canvas rather
+   * than chosen. The earlier scaffold guessed 1280/720; native says 1480, and
+   * the app is the product. `scripts/ops/native_layout_parity_gate.py` holds
+   * the two copies together.
+   *
+   *   content.maxWidth 1480, content.padding 12   (HomeScreen.tsx:1748)
+   *   homeCanvasWide.gap 16                       (HomeScreen.tsx:2132)
+   *   commandRail.width 226                       (HomeScreen.tsx:1933)
+   *   sideRail.width 314                          (HomeScreen.tsx:2989)
+   *   wideCanvas threshold 900                    (HomeScreen.tsx:1168)
+   *
+   * The feed is not a fixed width in native and is not one here: the rails are
+   * fixed, the feed is `flex: 1` (`minmax(0, 1fr)` below), and the shell caps.
+   * `--feed-max` is what that arrives at once the shell has capped, recorded so
+   * reading surfaces can line up with the feed without re-deriving it:
+   *
+   *   1480 - (2 x 12) - 226 - 314 - (2 x 16) = 884
+   *
+   * which is also why the side rail arrives exactly at 1480 and not before --
+   * that is the first width where all three columns fit at their real sizes. */
+  --shell-max: 1480px;
+  --shell-pad: 12px;
+  --rail-gap: 16px;
+  --rail-command: 226px;
+  --rail-side: 314px;
+  --feed-max: 884px;
+
   --gutter: var(--space-3);
   --gutter-wide: var(--space-6);
 

@@ -1,0 +1,130 @@
+/**
+ * The application shell: rails, feed column, and the two widths they change at.
+ *
+ * Where the numbers come from
+ * ---------------------------
+ * All of them are measured from the native app's own wide canvas
+ * (`mobile-native/src/screens/HomeScreen.tsx`), not chosen here. The values
+ * live in `tokens.css` with their source lines, and
+ * `scripts/ops/native_layout_parity_gate.py` fails if the two copies drift.
+ *
+ * This is a correction to the phase plan, which specified four breakpoints
+ * (768 / 1120 / 1600) and a feed column capped at 680px. Tracing the app found
+ * none of those five numbers in it. Native caps its content at 1480 with 12px
+ * padding, fixes the two rails at 226 and 314 with a 16px gap, and gives the
+ * feed `flex: 1` -- so the feed has no fixed width at all, and the figure it
+ * actually reaches once the shell caps is:
+ *
+ *     1480 - (2 x 12) - 226 - 314 - (2 x 16) = 884
+ *
+ * 680 would have been a second opinion about the product, held only by the
+ * website. The rule for this rebuild is that the app is the product, so the
+ * traced geometry wins and the plan's guess is recorded as the guess it was.
+ *
+ * Why two breakpoints and not four
+ * --------------------------------
+ * Both of the ones kept are structural -- each is the width where a column
+ * first fits at its real size, which means neither is a taste call:
+ *
+ *   900   native's own `wideCanvas` threshold (HomeScreen.tsx:1168), where it
+ *         brings the command rail in. Honoured rather than replaced: at 900 the
+ *         feed is 900 - 24 - 226 - 16 = 634px, still comfortable, whereas the
+ *         plan's 768 would have seated the rail against a 502px feed -- a
+ *         *narrower* feed than the 744px it had one pixel earlier.
+ *   1480  where all three columns fit at once, and the same width the shell
+ *         caps at. Below it the side rail would have to steal from the feed.
+ *
+ * Adding a rail always costs the feed something at the moment it appears; the
+ * only real choice is where to spend it, and both of these spend it at a width
+ * the app itself already picked. Intermediate breakpoints would step type or
+ * gutters, which is a thing to do once there is content to measure, not now.
+ *
+ * Desktop is not the phone stretched out: below 900 there is one column and it
+ * fills the width, and above it the extra room buys *columns* rather than
+ * longer lines of text. The feed's measure is the same at 1920 as at 1480.
+ */
+
+.pulse-shell {
+  display: grid;
+  /* Phone and small tablet: the feed alone. `minmax(0, 1fr)` rather than `1fr`
+   * mirrors native's `homePrimaryColumn.minWidth: 0` -- without it a wide child
+   * (a code block, a long unbroken URL) pushes the column past the shell
+   * instead of scrolling inside it, because a grid track's automatic minimum is
+   * its content, not zero. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--rail-gap);
+  width: 100%;
+  max-width: var(--shell-max);
+  /* `alignSelf: "center"` on native's content view. */
+  margin-inline: auto;
+  padding: var(--shell-pad);
+}
+
+/* Rails are laid out by the grid, so the grid decides whether they exist. They
+ * are removed rather than hidden: a `visibility: hidden` rail still occupies
+ * its track, and an off-screen one is still read aloud and still tab-stops. */
+.pulse-shell__rail {
+  display: none;
+}
+
+.pulse-shell__feed {
+  /* The track already constrains this, but a feed rendered outside the shell
+   * (an embed, a print stylesheet, a test harness) should still hold its
+   * measure rather than run to the full page width. */
+  max-width: var(--feed-max);
+  min-width: 0;
+}
+
+@media (min-width: 900px) {
+  .pulse-shell {
+    grid-template-columns: var(--rail-command) minmax(0, 1fr);
+  }
+
+  .pulse-shell__rail--command {
+    display: block;
+  }
+
+  /* Native pins the rails to the top of the canvas rather than stretching them
+   * to the feed's height (`alignItems: "flex-start"`), so a short rail beside a
+   * long feed does not grow a column of empty panel. */
+  .pulse-shell__rail {
+    align-self: start;
+    position: sticky;
+    /* Clears the header and keeps the rail in view down a long feed -- the
+     * closest web equivalent of a rail that never scrolls off a phone. */
+    top: var(--space-2);
+  }
+}
+
+@media (min-width: 1480px) {
+  .pulse-shell {
+    grid-template-columns: var(--rail-command) minmax(0, 1fr) var(--rail-side);
+  }
+
+  .pulse-shell__rail--side {
+    display: block;
+  }
+}
+
+/* A sticky rail taller than the viewport can never be scrolled to its end,
+ * because the sticky box stops moving while its overflow is still below the
+ * fold. Giving it its own scroll region is the fix; `overscroll-behavior`
+ * stops that scroll from chaining to the feed once the rail bottoms out. */
+@media (min-width: 900px) {
+  .pulse-shell__rail {
+    max-height: calc(100vh - var(--space-4));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* Reduced motion has nothing to say about sticky positioning, but a rail that
+ * repositions as the page scrolls is motion for anyone who experiences it that
+ * way, and a static rail loses nothing but convenience. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-shell__rail {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
+  }
+}
