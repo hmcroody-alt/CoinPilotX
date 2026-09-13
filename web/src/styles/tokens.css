@@ -151,6 +151,58 @@
   --z-toast: 48;
 }
 
+/* ---------------------------------------------------------------------------
+ * Native metric parity
+ * ---------------------------------------------------------------------------
+ * `ThemeContext.buildTheme` returns a `metrics` object that ported components
+ * must match exactly. Three of its values are NOT on the eight-point grid:
+ * `radius` 14, `sectionGap` 26/18, and `rowMinHeight` 56/46. They are carried
+ * here verbatim rather than rounded onto the grid.
+ *
+ * This is the same call as the `12`/`20` half-steps above, and it is worth
+ * being explicit about why, because "round it to 16, nobody will notice" is the
+ * tempting simplification: a component ported to a 16px radius against a native
+ * 14px one looks correct in isolation and wrong only side by side, which is the
+ * one comparison no automated check performs. Parity that is off by two pixels
+ * is not parity, it is a bug with good manners.
+ *
+ * The grid still governs LAYOUT. These govern PORTED COMPONENTS. A new web-only
+ * surface -- the desktop columns, the marketing pages -- uses the grid.
+ */
+:root {
+  --native-row-min-height: 56px;
+  --native-row-min-height-compact: 46px;
+  --native-row-pad-y: 12px;
+  --native-row-pad-y-compact: 8px;
+  --native-row-pad-x: 16px;
+  --native-section-gap: 26px;
+  --native-section-gap-compact: 18px;
+  --native-radius: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+ * The other four palettes
+ * ---------------------------------------------------------------------------
+ * IMPORTANT, and the reason these are inert by default:
+ *
+ * `buildTheme` (mobile-native/src/theme/ThemeContext.tsx:214) hard-pins
+ * `const activeTheme: ThemeMode = "dark"`. The user's stored theme preference
+ * is read but discarded when selecting a palette. Black, Light Futuristic and
+ * White are fully implemented in the binary and unreachable in it -- native's
+ * own `__testing` export exists precisely because `ThemeProvider` cannot
+ * produce them.
+ *
+ * So these blocks are a port of code native ships, not of behaviour native
+ * offers. They are here so that the day the pin is lifted, it is lifted in one
+ * line on each platform instead of being a web project; shipping a web theme
+ * switcher now would hand browser users four appearances the app deliberately
+ * withholds, which inverts the rule that native is the source of truth just as
+ * surely as restyling the app around the website would.
+ *
+ * `web/src/theme/themes.ts` holds the matching pin, and the parity gate asserts
+ * the two pins agree.
+ */
+
 /* The AMOLED variant. Same token names, different surface values -- theming is
  * an attribute swap, never a second stylesheet. */
 [data-theme="black"] {
@@ -160,6 +212,139 @@
   --pulse-border: #1b2b36;
   --pulse-glass: rgba(5, 8, 10, 0.92);
   --pulse-glass-strong: rgba(3, 5, 7, 0.97);
+}
+
+/* Light Futuristic. Not a tint of dark: the accents are re-picked so they clear
+ * 4.5:1 against light surfaces while keeping their semantic role (accent is
+ * still the signal green, danger still the rose). */
+[data-theme="light_futuristic"] {
+  --pulse-bg: #f6f8fb;
+  --pulse-surface: #ffffff;
+  --pulse-surface-raised: #eef2f7;
+  --pulse-text: #0b141c;
+  --pulse-muted: #5b6b7c;
+  --pulse-accent: #00966f;
+  --pulse-accent-strong: #0071a6;
+  --pulse-warning: #a06a00;
+  --pulse-danger: #c02341;
+  --pulse-border: #d3dde7;
+  --pulse-intelligence: #6a3fd6;
+  --pulse-creator: #0f8f83;
+  --pulse-economy: #9a7413;
+  --pulse-safety: #0a8a52;
+  --pulse-crypto: #0a7ba3;
+  --pulse-disabled: #a3b0bc;
+  --pulse-focus: #0071a6;
+  --pulse-glass: rgba(255, 255, 255, 0.86);
+  --pulse-glass-strong: rgba(246, 248, 251, 0.96);
+  --pulse-signal-dim: rgba(0, 150, 111, 0.1);
+  --pulse-signal-soft: rgba(0, 113, 166, 0.1);
+  --pulse-danger-soft: rgba(192, 35, 65, 0.1);
+  --pulse-warning-soft: rgba(160, 106, 0, 0.1);
+
+  /* The light accents are dark enough to carry white text, so the on-accent
+   * pairing inverts with the palette. This token is the one that must never be
+   * assumed: it is the whole reason it exists. */
+  --pulse-on-accent: #ffffff;
+}
+
+/* White: plain neutral light. Inherits Light Futuristic's accessible accents
+ * and flattens the tinted surface ramp to white and neutral grey. Note that
+ * CSS custom properties do not inherit between selector blocks, so the shared
+ * values are repeated rather than cascaded -- `[data-theme]` blocks are
+ * siblings on the same element, not nested scopes. */
+[data-theme="white"] {
+  --pulse-bg: #ffffff;
+  --pulse-surface: #ffffff;
+  --pulse-surface-raised: #f4f5f6;
+  --pulse-text: #111417;
+  --pulse-muted: #5d6670;
+  --pulse-accent: #00966f;
+  --pulse-accent-strong: #0071a6;
+  --pulse-warning: #a06a00;
+  --pulse-danger: #c02341;
+  --pulse-border: #dde1e5;
+  --pulse-intelligence: #6a3fd6;
+  --pulse-creator: #0f8f83;
+  --pulse-economy: #9a7413;
+  --pulse-safety: #0a8a52;
+  --pulse-crypto: #0a7ba3;
+  --pulse-disabled: #a3b0bc;
+  --pulse-focus: #0071a6;
+  --pulse-glass: #ffffff;
+  --pulse-glass-strong: #fafafa;
+  --pulse-signal-dim: rgba(0, 150, 111, 0.1);
+  --pulse-signal-soft: rgba(0, 113, 166, 0.1);
+  --pulse-danger-soft: rgba(192, 35, 65, 0.1);
+  --pulse-warning-soft: rgba(160, 106, 0, 0.1);
+  --pulse-on-accent: #ffffff;
+}
+
+/* ---------------------------------------------------------------------------
+ * High contrast
+ * ---------------------------------------------------------------------------
+ * Native applies these as a PARTIAL overlay on top of the resolved palette
+ * (`{ ...base, ...contrast }`), so only the nine listed keys change and every
+ * other token keeps its per-theme value. `[data-hc]` composed with
+ * `[data-theme]` reproduces that exactly, which is why it is a separate
+ * attribute rather than four more full palettes: a fifth and sixth palette
+ * would have to be regenerated every time any base theme changed.
+ *
+ * Specificity: two attribute selectors (0,2,0) beats one (0,1,0), so these win
+ * over the palette blocks above regardless of source order.
+ */
+[data-hc="1"][data-theme="dark"],
+[data-hc="1"][data-theme="black"] {
+  --pulse-bg: #000000;
+  --pulse-surface: #0a0a0a;
+  --pulse-surface-raised: #161616;
+  --pulse-text: #ffffff;
+  --pulse-muted: #d6dde4;
+  --pulse-border: #7b8b99;
+  --pulse-accent: #4dffc8;
+  --pulse-glass: #0a0a0a;
+  --pulse-glass-strong: #000000;
+}
+
+[data-hc="1"][data-theme="light_futuristic"],
+[data-hc="1"][data-theme="white"] {
+  --pulse-bg: #ffffff;
+  --pulse-surface: #ffffff;
+  --pulse-surface-raised: #f0f0f0;
+  --pulse-text: #000000;
+  --pulse-muted: #2b3843;
+  --pulse-border: #4a5a68;
+  --pulse-accent: #00614a;
+  --pulse-glass: #ffffff;
+  --pulse-glass-strong: #ffffff;
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduce transparency
+ * ---------------------------------------------------------------------------
+ * Native: `palette.glass = palette.surface; palette.glassStrong =
+ * palette.background` whenever `reduceTransparency` OR `highContrast` is on
+ * (ThemeContext.tsx:220-223). Expressed here as a self-reference so it collapses
+ * correctly under every palette without restating a single colour -- a literal
+ * copy would silently stop tracking the day a surface value changed.
+ *
+ * The OS-level media query is honoured alongside the explicit attribute so a
+ * visitor who set the preference in macOS or Windows gets it without having
+ * found a setting inside the product. `[data-hc="1"]` is included because
+ * native ORs the two, and an implementation that honoured only the explicit
+ * transparency flag would leave high-contrast users with translucent panels.
+ */
+[data-reduce-transparency="1"],
+[data-hc="1"] {
+  --pulse-glass: var(--pulse-surface);
+  --pulse-glass-strong: var(--pulse-bg);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --pulse-glass: var(--pulse-surface);
+    --pulse-glass-strong: var(--pulse-bg);
+  }
 }
 
 /* Reduce-motion is a first-class input in the native app, not an afterthought:
