@@ -337,9 +337,22 @@ authorship in Python rather than joining. **A web feed query written the obvious
 JOIN users` — silently drops 81% of the feed**, and an authorization filter written against that
 join would be silently evaluating the wrong row set. Resolve it before the feed phase.
 
-Related, and cheap: the session table only grows. **9,728 of 10,132 `mobile_security_sessions`
-rows are revoked or rotated and are never deleted.** A web launch multiplies session churn. Add
-the TTL sweep before launch.
+Related, and *not* as cheap as it first looked. **9,730 of 10,135 `mobile_security_sessions` rows
+are revoked or rotated and are never touched — and every one of them still carries a `user_agent`,
+9,729 an `ip_hash`.** The instinct is to delete them. Deleting them disarms refresh-token reuse
+detection: `rotate_mobile_refresh_token()` (`bot.py:31288`) identifies a replayed token by finding
+its row *with no status or expiry filter*, so a deleted row turns a detected credential theft into
+a plain 401 with no security event, no family revocation and no user alert. `rotated` rows are also
+still live credentials (`bot.py:91458`).
+
+The job is therefore to tombstone the device and network identifiers and keep the hashes forever —
+`scripts/web_rebuild/phase0_session_sweep.py`, with `tests/web_parity/test_session_sweep.py` holding
+the invariants. Full reasoning in `PULSESOC_DATABASE_GAP_ANALYSIS.md` §5a.
+
+One thing to settle *before* the web client ships, not after: 47% of that table is
+`refresh_token_reuse` revocations belonging to **nine users**, dominated by `platform='web'`, with
+single families re-revoked up to 19 times. That is reuse detection firing on benign refresh desync,
+and the web rebuild adds exactly the second client leg that causes it (§5b).
 
 ---
 

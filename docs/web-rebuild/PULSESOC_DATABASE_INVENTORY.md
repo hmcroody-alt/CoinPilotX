@@ -685,8 +685,11 @@ So the browser is **already** a first-class session citizen: refresh rotation, `
    evaluated first, a client that sends *both* a cookie and a bearer token resolves via the cookie, and
    anything downstream that reads `g.mobile_access_user_id` sees nothing. When the web client and native
    app share a browser (an in-app webview), this is a live hazard.
-2. **No TTL sweep.** 9,728 of 10,132 rows are `revoked` or `rotated` and are never deleted. The table only
-   grows. A web launch multiplies session churn.
+2. **No retention at all.** 9,730 of 10,135 rows are `revoked` or `rotated` and are never touched. The
+   readable symptom is growth; the real one is that **every one of those dead rows still carries a
+   `user_agent`, and 9,729 still carry an `ip_hash`.** Note that this is *not* a case for `DELETE`:
+   `rotated` still authenticates (`bot.py:91458`) and the row is what makes refresh-token reuse
+   detectable at all (`bot.py:31288`). See `PULSESOC_DATABASE_GAP_ANALYSIS.md` §5a.
 3. **`active_sessions`** — the table backing the "Active sessions / Sign out all devices" UI
    (`bot.py:84159`, `84195`) — **has only a pkey index and no UNIQUE on `session_hash`.** Session lookup
    there is a sequential scan and duplicate session hashes are not prevented.
@@ -738,7 +741,7 @@ Ranked by value/risk. "Size" is the table the change touches.
 | 2 | Decide the `user_id = 0` sentinel: insert a real system user, or backfill 1,915 posts | Unblocks the `pulse_posts.user_id` FK and prevents the `INNER JOIN` trap | **Medium** — an `INSERT` into `users` with an explicit id must not desync `users_user_id_seq` |
 | 3 | Add the 11 core-social FKs from §3.3 | Turns convention into enforcement where it is already clean | **Low** — all target tables are small; validate immediately |
 | 4 | Add UNIQUE + index on `active_sessions.session_hash` | Web session lookup and revocation | **Low** |
-| 5 | Add a session TTL sweep for `mobile_security_sessions` | 9,728 of 10,132 rows are dead | **Low**, but it is a DELETE — must be batched and must never touch `status='active'` |
+| 5 | Run `scripts/web_rebuild/phase0_session_sweep.py` against `mobile_security_sessions` | 9,730 dead rows still carry `user_agent` + `ip_hash` | **Low** — it is an UPDATE, not a DELETE. Never touches `active`, never touches a `rotated` row inside the reuse grace window, never clears `refresh_token_hash`. Gap analysis §5a explains why the DELETE version was wrong |
 | 6 | Index the pkey-only hot tables: `visitor_logs`, `analytics_events`, `pulse_live_events`, `pulse_media_assets`, `undx_embedding_cache` | Seq scans today | **Low** if `CONCURRENTLY`; `visitor_logs` at 207k rows is the only one where build time is noticeable |
 | 7 | Drop the 10 exact-duplicate and 27 prefix-redundant indexes | Pure write overhead | **Low** — `DROP INDEX CONCURRENTLY` |
 | 8 | Replace `OFFSET` pagination with keyset pagination on the feed | The web infinite scroll re-reads the prefix on every page | **Low schema risk** (no DDL), **high code risk** — changes the `/api/pulse/feed` contract that the native app also consumes |

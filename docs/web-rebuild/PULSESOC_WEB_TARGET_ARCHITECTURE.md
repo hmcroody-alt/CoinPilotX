@@ -412,7 +412,7 @@ Deliberately small. **236 endpoints need callers, not construction.**
 |---:|---|
 | 7 | Shared rate-limit store (Redis) + turn on distributed mode. Per-worker dicts mean the real limit is ~4× the configured one |
 | 8 | `GET /health/routes` as a hard deploy gate, extended with a feature-flag snapshot — ~382 routes live inside `except Exception` registrations and **pack #1 alone is 162 routes owning all messaging and calling** |
-| 9 | Session TTL sweep — 9,728 of 10,132 `mobile_security_sessions` rows are revoked/rotated and never deleted |
+| 9 | Session retention — 9,730 dead `mobile_security_sessions` rows still carry `user_agent` + `ip_hash`. **Tombstone, do not delete:** the row is what makes refresh-token reuse detectable (gap analysis §5a) |
 | 10 | Fix `bot.py:28760` — raw database cells rendered into an admin session with no sanitisation. **Independent of the rebuild schedule** |
 
 ### 8.3 Explicitly *not* in scope
