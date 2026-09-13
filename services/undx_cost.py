@@ -224,6 +224,67 @@ def normalize_call_kind(kind: Any) -> str:
     return text if text in KNOWN_CALL_KINDS else CALL_KIND_UNKNOWN
 
 
+# ------------------------------------------------------------------- models
+
+#: Kinds where the money is spent against a *named model*, so a missing name is a
+#: gap. `research` and `translation` are absent deliberately: a Brave query or a
+#: Google Translate request bills against an endpoint, and there is no model to
+#: name. Their empty `model` is the accurate value, not a hole.
+#:
+#: This lives here rather than in `undx_capabilities.CAPABILITIES`, where a
+#: per-kind declaration table already exists, for one reason: that module imports
+#: this one. A flag consulted by `record()` cannot live on the far side of that
+#: edge without inverting it.
+MODEL_BEARING_CALL_KINDS: frozenset[str] = frozenset({
+    CALL_KIND_CHAT, CALL_KIND_REASONING, CALL_KIND_EMBEDDING, CALL_KIND_IMAGE,
+    CALL_KIND_TRANSCRIPTION, CALL_KIND_RERANK, CALL_KIND_MODERATION,
+})
+
+#: What goes in the column when a model-bearing call did not say which model. The
+#: same shape as `CALL_KIND_UNKNOWN` and for the same reason: it is ugly in a
+#: report, which is the correct amount of ugly for spend nobody attributed.
+MODEL_UNDECLARED = "undeclared"
+
+#: No model dimension at all, for the kinds that have none. Kept distinct from
+#: `MODEL_UNDECLARED` because collapsing them would put every translation row in a
+#: per-model report under a name that reads as a defect, and then the one name that
+#: *is* a defect would stop standing out.
+MODEL_NOT_APPLICABLE = ""
+
+#: A bound on a unique-index key reachable from a public entry point, not a guess
+#: about how long model names get. The longest real name in `PRICE_PER_MILLION_USD`
+#: is under 40 characters; some providers namespace theirs
+#: (`accounts/fireworks/models/...`), so the cap is generous and its job is only to
+#: stop `record({"model": <64KB>})` from becoming an index entry.
+_MODEL_NAME_LIMIT = 120
+
+
+def normalize_model(model: Any, kind: Any = CALL_KIND_CHAT) -> str:
+    """Ledger value for a caller's declared model, given the kind of call.
+
+    Three outcomes, and the distinction between the last two is the point:
+
+    * A name becomes that name, **lowercased**. Not cosmetic. The `provider`
+      column is already lowercased, and `GPT-4o` alongside `gpt-4o` would be two
+      rows under the widened unique index - splitting one model's spend in half
+      and making both halves look affordable. Casing is the difference most likely
+      to vary between call sites writing the same model.
+    * Absent on a kind that has no models (`research`, `translation`) becomes
+      `""`. There is nothing to attribute; the column is empty because the
+      question does not apply.
+    * Absent on a kind that *does* have models becomes `"undeclared"`. Something
+      chose a model and did not say which, which is a gap in the accounting and
+      should read as one.
+    """
+    text = "" if model is None else str(model).strip().lower()[:_MODEL_NAME_LIMIT]
+    if text:
+        return text
+    kind_text = normalize_call_kind(kind)
+    if kind_text in MODEL_BEARING_CALL_KINDS:
+        return MODEL_UNDECLARED
+    return MODEL_NOT_APPLICABLE
+
+
 # ------------------------------------------------------------------ the ledger
 
 LEDGER_TABLE = "undx_cost_ledger"
@@ -238,6 +299,13 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         month TEXT NOT NULL,
         provider TEXT NOT NULL,
         call_kind TEXT NOT NULL DEFAULT '{CALL_KIND_CHAT}',
+        -- `NOT NULL DEFAULT ''` is load-bearing, not defensive. PostgreSQL treats
+        -- NULLs as distinct in a unique index, so a nullable `model` would make
+        -- every upsert for an unnamed model miss its own conflict target and
+        -- INSERT a fresh row instead of incrementing - the ledger would grow one
+        -- row per call and every total would still be right, so nothing would look
+        -- broken until someone counted the rows. SQLite is the same for indexes.
+        model TEXT NOT NULL DEFAULT '',
         calls INTEGER NOT NULL DEFAULT 0,
         input_tokens INTEGER NOT NULL DEFAULT 0,
         output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -246,18 +314,25 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         uncosted_calls INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""",
-    # Not decoration: `ON CONFLICT (month, provider, call_kind) DO UPDATE`
+    # Not decoration: `ON CONFLICT (month, provider, call_kind, model) DO UPDATE`
     # requires it, and it is what turns increment-and-read into one atomic
     # statement instead of a read-modify-write race between nine processes.
-    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{LEDGER_TABLE}_month_provider_kind "
-    f"ON {LEDGER_TABLE}(month, provider, call_kind)",
-    # Dropped in the same run that creates its replacement, and **after** it.
-    # The old index is on `(month, provider)`, which is strictly narrower: while
-    # it stands, the first embedding row for a provider that already has a chat
-    # row collides and the write fails. So it has to go. It goes last because if
-    # creating the wider index fails, the table must still have *an* index -
-    # without one the upsert is a runtime error and every write fails, which is
-    # worse than a write that fails only for the new kinds.
+    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{LEDGER_TABLE}_month_provider_kind_model "
+    f"ON {LEDGER_TABLE}(month, provider, call_kind, model)",
+    # The two narrower predecessors, dropped in the same run that creates their
+    # replacement and **after** it. Each is strictly narrower than the index above,
+    # and while one stands, the first row that differs only in the new column
+    # collides and the write fails: `(month, provider)` blocked the first embedding
+    # row for a provider that already had a chat row, and
+    # `(month, provider, call_kind)` blocks the second *model* for a provider's
+    # chat spend. So both have to go.
+    #
+    # They go last because if creating the wider index fails, the table must still
+    # have *an* index - without one the upsert is a runtime error and every write
+    # fails, which is worse than a write that fails only for the new dimension.
+    # Order is asserted, not merely intended; see
+    # `test_the_narrow_index_is_dropped_only_after_the_wide_one_exists`.
+    f"DROP INDEX IF EXISTS ux_{LEDGER_TABLE}_month_provider_kind",
     f"DROP INDEX IF EXISTS ux_{LEDGER_TABLE}_month_provider",
 )
 
@@ -268,13 +343,32 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 #: on a fresh database and the migration path only for tables that predate it.
 _LEDGER_COLUMNS: tuple[tuple[str, str], ...] = (
     ("call_kind", f"TEXT NOT NULL DEFAULT '{CALL_KIND_CHAT}'"),
+    ("model", "TEXT NOT NULL DEFAULT ''"),
+)
+
+#: Every row that predates the `model` column was written by a call that had a
+#: model and no column to put it in, so `''` - which the `ADD COLUMN` default gives
+#: them - would claim the wrong thing: that those kinds have no model dimension.
+#: Restricted to the model-bearing kinds so the `research` and `translation` rows
+#: already in the table, which genuinely have no model, keep the empty string.
+#:
+#: Idempotent, and safe against the collision it looks like it might cause. New
+#: writes never produce `''` for a model-bearing kind - `normalize_model` returns
+#: `undeclared` instead - so a row this statement would move can only be a
+#: pre-column row, and it can only be moving onto a name that is not yet taken for
+#: that (month, provider, kind). After the first run there is nothing to match.
+_LEDGER_BACKFILL: tuple[str, ...] = (
+    f"UPDATE {LEDGER_TABLE} SET model = '{MODEL_UNDECLARED}' "
+    f"WHERE model = '' AND call_kind IN ("
+    + ", ".join(f"'{kind}'" for kind in sorted(MODEL_BEARING_CALL_KINDS))
+    + ")",
 )
 
 _UPSERT_SQL = f"""INSERT INTO {LEDGER_TABLE}
-    (month, provider, call_kind, calls, input_tokens, output_tokens,
+    (month, provider, call_kind, model, calls, input_tokens, output_tokens,
      reasoning_tokens, cost_micro_usd, uncosted_calls, updated_at)
-    VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (month, provider, call_kind) DO UPDATE SET
+    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (month, provider, call_kind, model) DO UPDATE SET
         calls = {LEDGER_TABLE}.calls + 1,
         input_tokens = {LEDGER_TABLE}.input_tokens + ?,
         output_tokens = {LEDGER_TABLE}.output_tokens + ?,
@@ -285,7 +379,7 @@ _UPSERT_SQL = f"""INSERT INTO {LEDGER_TABLE}
     RETURNING calls, cost_micro_usd, uncosted_calls"""
 
 _READ_SQL = f"""SELECT provider, call_kind, calls, input_tokens, output_tokens,
-    reasoning_tokens, cost_micro_usd, uncosted_calls
+    reasoning_tokens, cost_micro_usd, uncosted_calls, model
     FROM {LEDGER_TABLE} WHERE month = ?"""
 
 
@@ -379,6 +473,19 @@ def ensure_schema(conn=None) -> int:
             cur.execute(f"ALTER TABLE {LEDGER_TABLE} ADD COLUMN {column} {definition}")
         for statement in _SCHEMA_STATEMENTS[1:]:
             cur.execute(statement)
+        for statement in _LEDGER_BACKFILL:
+            # Guarded on its own, and the only statement here that is. The rest of
+            # this function is structural: if the table or the index is not there,
+            # nothing can be recorded and the exception should reach the caller. The
+            # backfill is historical attribution, so failing it leaves pre-column
+            # rows reading as `''` instead of `undeclared` - a cosmetic
+            # misattribution of history - and that is a strictly better outcome than
+            # refusing to boot the accounting layer over it.
+            try:
+                cur.execute(statement)
+            except Exception as exc:  # noqa: BLE001 - see comment above
+                log.warning("UNDX cost ledger model backfill skipped error=%s",
+                            type(exc).__name__)
         if own:
             conn.commit()
         return len(_SCHEMA_STATEMENTS)
@@ -502,6 +609,15 @@ def record(usage: dict[str, Any]) -> dict[str, Any]:
         # one - but it is recorded under a name that reads as a defect.
         log.warning("UNDX cost ledger unrecognised call_kind provider=%s declared=%r",
                     provider, usage.get("call_kind"))
+    model = normalize_model(usage.get("model"), kind)
+    if model == MODEL_UNDECLARED:
+        # Quieter than the `unknown` kind above, and deliberately so. An
+        # unclassified *kind* is spend nobody categorised; an unnamed model is
+        # spend correctly categorised whose attribution is missing. Both are gaps,
+        # only the first is §22. Logged at all because every model-bearing call
+        # site in this repo does pass a model today, so this line firing means a
+        # new one arrived without one.
+        log.info("UNDX cost ledger model undeclared provider=%s kind=%s", provider, kind)
     month = current_month()
     local = _bump_local(month, provider, kind, usage)
     if not ledger_enabled():
@@ -519,7 +635,8 @@ def record(usage: dict[str, Any]) -> dict[str, Any]:
         conn = _connect()
         cur = conn.cursor()
         cur.execute(_UPSERT_SQL, (
-            month, provider, kind, inputs, outputs, reasoning, cost_micro, uncosted, stamp,
+            month, provider, kind, model,
+            inputs, outputs, reasoning, cost_micro, uncosted, stamp,
             inputs, outputs, reasoning, cost_micro, uncosted, stamp,
         ))
         row = cur.fetchone()
@@ -563,12 +680,24 @@ def month_snapshot(month: str | None = None) -> dict[str, Any]:
     got cannot tell a $0 month from an unreachable ledger, and those two demand
     opposite reactions.
 
-    `providers` is summed **across** call kinds and so means exactly what it
-    meant before the `call_kind` column existed - every budget, refusal and
+    `providers` is summed **across** call kinds and models, and so means exactly
+    what it meant before either column existed - every budget, refusal and
     dashboard reading it keeps working untouched, and a provider's total does not
-    silently shrink the day embeddings start being recorded. `kinds` is the new
-    axis, reported alongside rather than instead: adding a dimension to a
-    measurement must not change the measurement.
+    silently shrink the day embeddings start being recorded or the day one
+    provider's spend splits across two model names. `kinds` and `models` are
+    reported alongside rather than instead: adding a dimension to a measurement
+    must not change the measurement.
+
+    That invariant is the entire risk of widening the key. Each new column turns
+    one row into several, so a reader that assigned instead of accumulating would
+    report the *last* row it happened to see as the provider's total. This loop
+    accumulates, and `test_a_providers_total_survives_the_model_split` is what keeps
+    it accumulating.
+
+    `models` is keyed `provider/model` and omits rows whose `model` is empty - the
+    kinds that have no model to name. `undeclared` *is* included, because a
+    per-model report that hides unattributed spend is the report that lets it stay
+    unattributed.
     """
     month = month or current_month()
     if ledger_enabled():
@@ -580,20 +709,29 @@ def month_snapshot(month: str | None = None) -> dict[str, Any]:
             cur.execute(_READ_SQL, (month,))
             providers: dict[str, dict[str, int]] = {}
             kinds: dict[str, dict[str, int]] = {}
+            models: dict[str, dict[str, int]] = {}
             for row in cur.fetchall() or []:
                 values = {
                     "calls": int(row[2]), "input_tokens": int(row[3]),
                     "output_tokens": int(row[4]), "reasoning_tokens": int(row[5]),
                     "cost_micro_usd": int(row[6]), "uncosted_calls": int(row[7]),
                 }
-                for target, key in ((providers, str(row[0])), (kinds, str(row[1]))):
+                axes = [(providers, str(row[0])), (kinds, str(row[1]))]
+                model = str(row[8] or "")
+                if model:
+                    # Keyed `provider/model`, not `model`. Model names are not
+                    # globally unique - an open-weights model is served by several
+                    # providers at different prices - and merging them would produce
+                    # a per-model total that belongs to no bill anyone receives.
+                    axes.append((models, f"{row[0]}/{model}"))
+                for target, key in axes:
                     bucket = target.setdefault(key, _empty_bucket())
                     for field, amount in values.items():
                         bucket[field] += amount
             with _LOCK:
                 _STATS["reads"] += 1
             return {"month": month, "providers": providers, "kinds": kinds,
-                    "source": "ledger"}
+                    "models": models, "source": "ledger"}
         except Exception as exc:  # noqa: BLE001
             with _LOCK:
                 _STATS["read_failures"] += 1
@@ -606,8 +744,15 @@ def month_snapshot(month: str | None = None) -> dict[str, Any]:
                     conn.close()
                 except Exception:  # pragma: no cover
                     pass
+    # `models` is empty rather than absent, and empty rather than populated. The
+    # process mirror does not carry a per-model tally on the same reasoning as
+    # `_bump_local`: the mirror exists to keep a *budget* enforceable during an
+    # outage, and no budget in this module is per-model. Present-and-empty keeps the
+    # dict shape identical in both branches so a caller cannot get an AttributeError
+    # only during an incident; `source` is how it tells empty from unavailable.
     return {"month": month, "providers": _local_snapshot(month),
-            "kinds": _local_snapshot(month, axis="kinds"), "source": "process"}
+            "kinds": _local_snapshot(month, axis="kinds"), "models": {},
+            "source": "process"}
 
 
 def stats() -> dict[str, Any]:
@@ -832,6 +977,8 @@ __all__ = [
     "CALL_KIND_RERANK", "CALL_KIND_MODERATION", "CALL_KIND_TRANSLATION",
     "CALL_KIND_UNKNOWN", "KNOWN_CALL_KINDS", "is_known_call_kind",
     "normalize_call_kind",
+    "MODEL_BEARING_CALL_KINDS", "MODEL_UNDECLARED", "MODEL_NOT_APPLICABLE",
+    "normalize_model",
     "PRICE_PER_MILLION_USD", "MICRO_PER_USD", "LEDGER_TABLE", "BUDGET_ENV_VARS",
     "price_for", "is_priced", "estimate_cost_usd", "to_micro_usd", "from_micro_usd",
     "ensure_schema", "record", "month_snapshot", "stats", "current_month",
