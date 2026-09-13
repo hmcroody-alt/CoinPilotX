@@ -162,6 +162,34 @@ def _read_job(job, adapter, meta):
     raise fulfillment.FulfillmentError("invalid_sync_kind")
 
 
+def _apply(job, value, now, counts):
+    """Let a completed product/inventory read reach the listings it describes. §23/§24.
+
+    Placed *after* ``_finish``, deliberately. The read succeeded and the evidence
+    of that belongs in the job row whatever happens next; scheduling the retry on
+    the outcome of the write instead would re-read the supplier — spending quota
+    — to fix something that was never a read problem.
+
+    Which is also why every failure here is swallowed. This is a consumer bolted
+    onto a scheduler that worked without one for its whole life, and a reconciler
+    that can abort a worker tick would take fulfilment down with it. The cost of
+    swallowing is one stale listing until the next cadence; the cost of raising
+    is a supplier order that never dispatches.
+    """
+    if job["kind"] not in {"product", "inventory"}:
+        return
+    try:
+        from . import revisions
+        result = revisions.apply_supplier_read(
+            connection_id=job["connection_id"], business_id=job["business_id"],
+            store_id=job["store_id"], kind=job["kind"],
+            resource_id=job["resource_id"], payload=value, now=now)
+    except Exception:
+        counts["revision_failures"] += 1
+        return
+    counts["revisions"] += result["variants"]
+
+
 def _seed_jobs(limit, now):
     """Only persisted selected resources; never scan CJ's catalogue."""
     from . import gateway
@@ -208,7 +236,13 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
     _seed_jobs(limit, now)
     # Existing inbox handler only performs idempotent scheduling; no financial write.
     inbox = webhook_inbox.reconcile_pending(webhooks.mark_dirty, provider="cj", limit=limit)
-    counts = {"intents": 0, "reads": 0, "deferred": 0, "inbox": inbox["examined"]}
+    counts = {"intents": 0, "reads": 0, "deferred": 0, "inbox": inbox["examined"],
+              # Variants whose stock or cost a supplier read actually changed,
+              # and reads whose application failed. Reported separately from
+              # `reads` because a tick that reads twenty products and revises
+              # nothing is healthy, and one that reads twenty and fails to apply
+              # twenty is not — and both have `reads: 20`.
+              "revisions": 0, "revision_failures": 0}
     for _ in range(limit):
         intent = fulfillment.claim(now=now)
         if intent is None:
@@ -240,6 +274,7 @@ def run_once(*, adapter_factory=None, limit=20, now=None):
             adapter.background = True
             value = _read_job(job, adapter, bundle["connection"])
             _finish(job, now=now, value=value)
+            _apply(job, value, now, counts)
             connections.record_activity(job["connection_id"], job["business_id"], job["store_id"], adapter=adapter, synced=True)
         except Exception as exc:
             try:
