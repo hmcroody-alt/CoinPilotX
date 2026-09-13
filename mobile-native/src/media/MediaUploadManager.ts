@@ -1,11 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
-import { pulseApi, PulseApiError } from "../api/pulseApi";
+import { pulseApi } from "../api/pulseApi";
 import type { NativeMediaAsset, NativeMediaUploadOptions, NativeMediaUploadResult, UploadProgress } from "./nativeMediaUpload";
+import { MAX_RETRIES, PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "./resumableUploadTransport";
 
 const STORAGE_PREFIX = "pulsesoc.media-upload.v2.";
-const PARALLEL_PARTS = 4;
-const MAX_RETRIES = 5;
 
 type UploadSession = {
   upload_id: string;
@@ -35,24 +34,6 @@ type ManagedTask = {
 const activeTasks = new Map<string, ManagedTask>();
 
 function keyFor(uploadId: string) { return `${STORAGE_PREFIX}${uploadId}`; }
-function sleep(ms: number) { return new Promise((resolve) => setTimeout(resolve, ms)); }
-
-// Normalize a local media URI for `fetch()` without double-encoding or stripping an
-// existing scheme. AVFoundation/expo emit `file://…` already; a bare `/var/…` path gets a
-// `file://` prefix. `content://`, `ph://`, `http(s)://` are passed through untouched.
-function toFetchableUri(uri: string) {
-  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(uri) || uri.startsWith("content://") || uri.startsWith("ph://")) return uri;
-  return `file://${uri.startsWith("/") ? "" : "/"}${uri}`;
-}
-
-// Obtain a React Native native-backed Blob that streams from the filesystem. The blob is a
-// descriptor (blobId + offset + size) — the bytes stay in native memory and never enter JS,
-// so there is no ArrayBuffer/Uint8Array round-trip. `blob.slice()` returns a zero-copy view
-// over the same native data, which is what makes multipart part uploads memory-safe.
-async function nativeBlobFromUri(uri: string): Promise<Blob> {
-  const response = await fetch(toFetchableUri(uri));
-  return response.blob();
-}
 
 async function persist(state: PersistedUpload) {
   await AsyncStorage.setItem(keyFor(state.session.upload_id), JSON.stringify(state));
@@ -60,52 +41,6 @@ async function persist(state: PersistedUpload) {
 
 async function removePersisted(uploadId: string) {
   await AsyncStorage.removeItem(keyFor(uploadId)).catch(() => undefined);
-}
-
-function transientStatus(status: number) {
-  return status === 0 || status === 408 || status === 429 || status >= 500;
-}
-
-async function withRetry<T>(operation: () => Promise<T>, onRetry: (attempt: number) => void, isCancelled: () => boolean) {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-    if (isCancelled()) throw new Error("Upload cancelled.");
-    try { return await operation(); } catch (error) {
-      lastError = error;
-      const status = error instanceof PulseApiError ? error.status : Number((error as { status?: number })?.status || 0);
-      if (attempt >= MAX_RETRIES || !transientStatus(status)) throw error;
-      onRetry(attempt + 1);
-      const jitter = Math.floor(Math.random() * 350);
-      await sleep(Math.min(8000, 500 * (2 ** attempt)) + jitter);
-    }
-  }
-  throw lastError;
-}
-
-function uploadBlob(
-  url: string,
-  blob: Blob,
-  mimeType: string,
-  onBytes: (loaded: number) => void,
-  register: (xhr: XMLHttpRequest | null) => void
-): Promise<{ etag: string }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest(); register(xhr);
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("Content-Type", mimeType);
-    xhr.upload.onprogress = (event) => onBytes(event.loaded);
-    xhr.onerror = () => reject(Object.assign(new Error("Upload transport was interrupted."), { status: 0, category: "network" }));
-    xhr.onabort = () => reject(new Error("Upload cancelled."));
-    xhr.onload = () => {
-      register(null);
-      if (xhr.status < 200 || xhr.status >= 300) {
-        reject(Object.assign(new Error(`Storage rejected upload (${xhr.status}).`), { status: xhr.status, category: "storage" }));
-        return;
-      }
-      resolve({ etag: String(xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag") || "").replace(/^W\//, "") });
-    };
-    xhr.send(blob);
-  });
 }
 
 export class MediaUploadManager {

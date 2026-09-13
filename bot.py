@@ -92481,6 +92481,49 @@ def api_messages_media_upload():
         return _messenger_media_json_error(conn, exc)
 
 
+def _messenger_media_resumable(handler):
+    """Shared plumbing for the resumable session operations.
+
+    The four of them differ only by which foundation call they make, and the
+    bytes never reach Flask on this path -- these requests carry JSON, so the
+    oversized-request guard's 30 MB default is the right ceiling for them.
+    """
+    user, auth_error = _messenger_media_user()
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        payload = request.get_json(silent=True) or {}
+        if not payload.get("attachment_id"):
+            payload["attachment_id"] = safe_int(request.args.get("attachment_id"), 0)
+        conn, cur = _messenger_media_open_db()
+        result, status = handler(cur, conn, user, payload)
+        conn.close()
+        return jsonify(result), status
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/upload/parts", methods=["POST"])
+def api_messages_media_upload_parts():
+    return _messenger_media_resumable(messenger_media_foundation.sign_upload_parts)
+
+
+@webhook_app.route("/api/messages/media/upload/state", methods=["POST"])
+def api_messages_media_upload_state():
+    return _messenger_media_resumable(messenger_media_foundation.resumable_upload_state)
+
+
+@webhook_app.route("/api/messages/media/upload/finish", methods=["POST"])
+def api_messages_media_upload_finish():
+    return _messenger_media_resumable(messenger_media_foundation.finish_resumable_upload)
+
+
+@webhook_app.route("/api/messages/media/upload/abort", methods=["POST"])
+def api_messages_media_upload_abort():
+    return _messenger_media_resumable(messenger_media_foundation.abort_resumable_upload)
+
+
 @webhook_app.route("/api/messages/media/complete", methods=["POST"])
 def api_messages_media_complete():
     user, auth_error = _messenger_media_user()

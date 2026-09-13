@@ -13,6 +13,7 @@ import {
 // messengerOrdering imports only TYPES from this module, so the cycle is erased
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
+import { PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
 /**
@@ -986,6 +987,23 @@ export async function updateCachedConversationPreview(conversationId: number, pr
   });
 }
 
+export type MessengerUploadInit = {
+  ok?: boolean;
+  attachment_id?: number;
+  upload_method?: "direct" | "resumable";
+  upload_url?: string;
+  part_size_bytes?: number;
+  part_count?: number;
+  max_parts_per_request?: number;
+  session_expires_at?: string;
+};
+
+export type MessengerUploadProgress = {
+  bytesSent: number;
+  totalBytes: number;
+  percent: number;
+};
+
 export async function uploadMessengerMedia(input: {
   conversationId: number;
   uri: string;
@@ -994,6 +1012,7 @@ export async function uploadMessengerMedia(input: {
   sizeBytes?: number;
   voice?: boolean;
   durationSeconds?: number;
+  onProgress?: (value: MessengerUploadProgress) => void;
 }) {
   if (input.conversationId === PULSE_AI_CONVERSATION_ID) {
     throw new PulseApiError("UNDX can chat by text right now. Remove the attachment and send a message.", 400, "pulse_ai_text_only");
@@ -1010,7 +1029,7 @@ export async function uploadMessengerMedia(input: {
       "local_file_size_unavailable"
     );
   }
-  const init = await pulseApi<{ ok?: boolean; attachment_id?: number }>("/api/messages/media/init", {
+  const init = await pulseApi<MessengerUploadInit>("/api/messages/media/init", {
     method: "POST",
     body: JSON.stringify({
       conversation_id: input.conversationId,
@@ -1022,6 +1041,37 @@ export async function uploadMessengerMedia(input: {
   });
   const attachmentId = Number(init.attachment_id || 0);
   if (!attachmentId) throw new PulseApiError("Media upload did not return an attachment id.", 502, "attachment_init_failed");
+
+  // The server decides which transport this file gets, and it decides from the
+  // size it was told. A single POST cannot carry a 90-minute video off a phone:
+  // one dropped connection restarts the whole transfer, and the bytes would pass
+  // through Flask's memory on the way. Above the threshold the server opens a
+  // multipart session and the parts go straight to storage.
+  if (init.upload_method === "resumable") {
+    const durationMs = input.durationSeconds ? Math.max(1, Math.round(input.durationSeconds * 1000)) : 0;
+    const finished = await uploadMessengerMediaInParts({
+      attachmentId,
+      uri: input.uri,
+      mimeType,
+      sizeBytes,
+      session: init,
+      durationMs,
+      onProgress: input.onProgress
+    });
+    const resumableDownloadUrl = String(finished.download_url || `/api/messages/media/${attachmentId}/download`);
+    return {
+      ...finished,
+      attachment_id: attachmentId,
+      media_id: Number(finished.media_id || 0),
+      media_url: String(finished.signed_url || finished.media_url || resumableDownloadUrl),
+      playback_url: String(finished.playback_url || finished.signed_url || resumableDownloadUrl),
+      thumbnail_url: String(finished.thumbnail_url || ""),
+      download_url: resumableDownloadUrl,
+      message_type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
+      type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
+      file_size: Number(finished.file_size || finished.size_bytes || sizeBytes)
+    };
+  }
 
   const form = new FormData();
   form.append("attachment_id", String(attachmentId));
@@ -1071,6 +1121,105 @@ export async function uploadMessengerMedia(input: {
     type: input.voice ? "voice" : mediaType === "photo" ? "image" : mediaType,
     file_size: Number(completed.file_size || completed.size_bytes || sizeBytes)
   };
+}
+
+/**
+ * Send a large attachment as parts, straight to storage.
+ *
+ * Two things here are deliberate and easy to undo by accident:
+ *
+ * The resume point is asked of the server, never assumed. `/upload/state` reports
+ * what storage actually holds, so a retry re-sends only the gap. The client does
+ * not tell the server which parts landed -- it has no way to know, and a claim it
+ * cannot back would leave a hole in the finished object.
+ *
+ * The blob is fetched once and sliced. RN blob slices are descriptors over native
+ * memory, so a 2 GB file never enters JS. Reading each part into a buffer instead
+ * would work on a short clip and run the phone out of memory on a long one.
+ */
+async function uploadMessengerMediaInParts(input: {
+  attachmentId: number;
+  uri: string;
+  mimeType: string;
+  sizeBytes: number;
+  session: MessengerUploadInit;
+  durationMs: number;
+  onProgress?: (value: MessengerUploadProgress) => void;
+}): Promise<MediaUploadResult> {
+  const { attachmentId, mimeType, sizeBytes } = input;
+  const partSize = Math.max(1, Number(input.session.part_size_bytes || 0));
+  const partCount = Math.max(1, Number(input.session.part_count || 0));
+  const perRequest = Math.max(1, Number(input.session.max_parts_per_request || 1));
+  if (!input.session.part_size_bytes || !input.session.part_count) {
+    throw new PulseApiError("Media upload session was incomplete.", 502, "attachment_session_incomplete");
+  }
+
+  const state = await pulseApi<{ missing_parts?: number[]; bytes_stored?: number }>(
+    "/api/messages/media/upload/state",
+    { method: "POST", body: JSON.stringify({ attachment_id: attachmentId }) }
+  );
+  const pending = Array.isArray(state.missing_parts) && state.missing_parts.length
+    ? state.missing_parts.map((value) => Number(value)).filter((value) => value >= 1 && value <= partCount)
+    : Array.from({ length: partCount }, (_, index) => index + 1);
+
+  const sentByPart = new Map<number, number>();
+  const alreadyStored = Math.max(0, Number(state.bytes_stored || 0));
+  const report = () => {
+    const sent = alreadyStored + [...sentByPart.values()].reduce((total, value) => total + value, 0);
+    input.onProgress?.({
+      bytesSent: Math.min(sizeBytes, sent),
+      totalBytes: sizeBytes,
+      percent: Math.min(99, Math.round((Math.min(sizeBytes, sent) / Math.max(1, sizeBytes)) * 100))
+    });
+  };
+
+  const body = await nativeBlobFromUri(input.uri);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < pending.length) {
+      // A batch of signatures per round trip rather than one each: ~250 parts for a
+      // 2 GB file would otherwise be 250 extra requests before any bytes move.
+      const batch = pending.slice(cursor, cursor + perRequest);
+      cursor += batch.length;
+      const signed = await withRetry(
+        () => pulseApi<{ parts?: Array<{ part_number: number; upload_url: string }> }>(
+          "/api/messages/media/upload/parts",
+          { method: "POST", body: JSON.stringify({ attachment_id: attachmentId, part_numbers: batch }) }
+        ),
+        () => undefined,
+        () => false
+      );
+      for (const part of signed.parts || []) {
+        const number = Number(part.part_number);
+        const start = (number - 1) * partSize;
+        const end = Math.min(sizeBytes, start + partSize);
+        await withRetry(
+          async () => {
+            await uploadBlob(part.upload_url, body.slice(start, end, mimeType), mimeType, (loaded) => {
+              sentByPart.set(number, loaded);
+              report();
+            }, () => undefined);
+            sentByPart.set(number, end - start);
+            report();
+          },
+          () => undefined,
+          () => false
+        );
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
+
+  return pulseApi<MediaUploadResult>("/api/messages/media/upload/finish", {
+    method: "POST",
+    body: JSON.stringify({
+      attachment_id: attachmentId,
+      duration_ms: input.durationMs || "",
+      width: "",
+      height: "",
+      waveform_json: ""
+    })
+  });
 }
 
 export function resolveLocalMessengerFileSize(uri: string, declaredSize?: number) {

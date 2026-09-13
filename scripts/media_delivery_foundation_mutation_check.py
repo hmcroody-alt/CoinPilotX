@@ -174,6 +174,86 @@ MUTATIONS = [
         "tests/test_messenger_media_type_resolution.py",
         "pytest",
     ),
+    (
+        # §13, resumability. The resume point is the provider's account of what it
+        # stored; a client-supplied list is a claim about someone else's storage.
+        # Trusting it commits an object with a hole where the skipped range was,
+        # and marks the attachment uploaded. The first version of the guard below
+        # asserted on an echoed response field and survived this exact edit.
+        "resume point read from the client's parts list",
+        FOUNDATION,
+        '    declared = int(_row_get(row, "size_bytes", 0) or 0)\n'
+        "    stored = _provider_parts(row, provider_upload_id)\n",
+        '    declared = int(_row_get(row, "size_bytes", 0) or 0)\n'
+        '    stored = [{"part_number": int(p.get("part_number") or 0), "etag": str(p.get("etag") or ""), '
+        '"size_bytes": int(p.get("size_bytes") or 0)} for p in (payload.get("parts") or [])] '
+        "or _provider_parts(row, provider_upload_id)\n",
+        "test_a_client_cannot_claim_a_part_it_never_sent",
+        "tests/test_messenger_resumable_upload.py",
+        "pytest",
+    ),
+    (
+        # §13. Completing first and checking after is the difference between a
+        # refused upload and a truncated object that is valid at the key, passes
+        # every later read, and is only discovered by whoever watches the video.
+        "byte total verified after the object is committed",
+        FOUNDATION,
+        '    if declared and total != declared:\n        raise MessengerMediaError(\n            "upload_incomplete",',
+        '    if False:\n        raise MessengerMediaError(\n            "upload_incomplete",',
+        "test_finishing_early_is_refused_before_a_truncated_object_exists",
+        "tests/test_messenger_resumable_upload.py",
+        "pytest",
+    ),
+    (
+        # §53. Read access and write access are not the same grant. Every member of
+        # a conversation can read an attachment; only the sender may sign parts into
+        # its upload or decide it is finished.
+        "any conversation member can write to the upload",
+        FOUNDATION,
+        "    _require_attachment_access(cur, row, user_id, require_sender=True)\n    provider_upload_id",
+        "    _require_attachment_access(cur, row, user_id, require_sender=False)\n    provider_upload_id",
+        "test_another_member_of_the_conversation_cannot_sign_parts",
+        "tests/test_messenger_resumable_upload.py",
+        "pytest",
+    ),
+    (
+        # §12-13. The server chose a transport and the client ignored it. Nothing
+        # errors: a 2 GB body is handed to one POST, Flask holds it in memory, and
+        # the first dropped connection starts the whole hour over.
+        "resumable transport ignored by the client",
+        MESSENGER_API,
+        '  if (init.upload_method === "resumable") {',
+        "  if (false) {",
+        "sends a long video as parts and never through the single-request route",
+        "src/api/__tests__/messengerResumableUpload.test.ts",
+        "jest",
+    ),
+    (
+        # §13. Resuming from part one re-sends everything already stored. On a
+        # 2 GB upload that is the difference between finishing and never
+        # finishing, and it looks identical in review.
+        "resume restarts from the first part",
+        MESSENGER_API,
+        "  const pending = Array.isArray(state.missing_parts) && state.missing_parts.length\n"
+        "    ? state.missing_parts.map((value) => Number(value)).filter((value) => value >= 1 && value <= partCount)\n"
+        "    : Array.from({ length: partCount }, (_, index) => index + 1);",
+        "  const pending = Array.from({ length: partCount }, (_, index) => index + 1);",
+        "resumes from what the server says is stored, not from part one",
+        "src/api/__tests__/messengerResumableUpload.test.ts",
+        "jest",
+    ),
+    (
+        # §13. The final part is short. Slicing a full part width past the end pads
+        # the object with zeros, and the byte total then disagrees with the declared
+        # size -- so the server refuses an upload that was actually complete.
+        "final part sliced past the end of the file",
+        MESSENGER_API,
+        "        const end = Math.min(sizeBytes, start + partSize);",
+        "        const end = start + partSize;",
+        "sends a long video as parts and never through the single-request route",
+        "src/api/__tests__/messengerResumableUpload.test.ts",
+        "jest",
+    ),
 ]
 
 
@@ -199,7 +279,11 @@ def failed_on(output: str, expect: str, runner: str) -> bool:
     what gets matched -- otherwise a mutation the suite ignored would be recorded as
     caught by the very test that stayed green.
     """
-    markers = ("●",) if runner == "jest" else ("FAILED", "ERROR")
+    # SUBFAILED is how pytest reports a failing `subTest`. Without it, a guard
+    # written as a parametrised sweep reads as "died, but not on <expect>" -- the
+    # harness would call a caught mutation uncaught, which is the one direction of
+    # error that sends someone off to fix a test that is already working.
+    markers = ("●",) if runner == "jest" else ("FAILED", "ERROR", "SUBFAILED")
     for line in output.splitlines():
         stripped = line.strip()
         if any(stripped.startswith(marker) for marker in markers) and expect in stripped:

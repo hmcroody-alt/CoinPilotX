@@ -27,9 +27,20 @@ from werkzeug.utils import secure_filename
 
 from services import db as db_service
 from services import media_storage
+from services import media_upload_sessions
 from services import stored_video_policy
 
 MESSENGER_VIDEO_SURFACE = "messenger"
+
+# Resumable-upload shape is shared with the posts/reels sessions rather than
+# re-chosen here. A Messenger-only part size would mean two answers to "how big
+# is a part", and the one that is wrong is only discovered on a phone network.
+RESUMABLE_THRESHOLD_BYTES = media_upload_sessions.MULTIPART_THRESHOLD
+RESUMABLE_PART_SIZE_BYTES = media_upload_sessions.PART_SIZE
+RESUMABLE_URL_TTL_SECONDS = media_upload_sessions.SIGNED_URL_TTL_SECONDS
+RESUMABLE_SESSION_TTL_SECONDS = media_upload_sessions.SESSION_TTL_SECONDS
+MAX_PARTS_PER_SIGN = media_upload_sessions.MAX_PARTS_PER_SIGN
+MAX_PARTS = 10000
 
 
 UPLOAD_STATUSES = {"pending", "uploaded", "attached", "failed", "deleted"}
@@ -264,7 +275,10 @@ def ensure_schema(cur: Any, conn: Any | None = None) -> None:
             error_message TEXT,
             metadata_json TEXT,
             updated_at TEXT,
-            deleted_at TEXT
+            deleted_at TEXT,
+            upload_provider_id TEXT,
+            upload_part_size_bytes INTEGER,
+            upload_expires_at TEXT
         )
         """
     )
@@ -291,6 +305,13 @@ def ensure_schema(cur: Any, conn: Any | None = None) -> None:
         ("metadata_json", "TEXT"),
         ("updated_at", "TEXT"),
         ("deleted_at", "TEXT"),
+        # Resumable-upload session state. Deliberately *not* a completed-parts
+        # list: the provider's own `list_parts` is the only account of what was
+        # actually stored, and a client-supplied list lets a caller claim a part
+        # landed when it did not.
+        ("upload_provider_id", "TEXT"),
+        ("upload_part_size_bytes", "INTEGER"),
+        ("upload_expires_at", "TEXT"),
     ]:
         _add_column_if_missing(cur, "message_attachments", column, definition)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_message_attachments_conversation ON message_attachments(conversation_id, conversation_model)")
@@ -761,20 +782,335 @@ def init_upload(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str, An
         row = cur.fetchone()
         attachment_id = int(_row_get(row, "id", 0))
     _enqueue_processing_jobs(cur, attachment_id, data["conversation_id"], data["media_type"], processing_status)
+    session = _open_resumable_session(cur, attachment_id, key, data["mime_type"], data["size_bytes"])
     conn.commit()
-    log_event("upload_init", trace_id, user_id, data["conversation_id"], attachment_id, media_type=data["media_type"], size_bytes=data["size_bytes"], mime_type=data["mime_type"])
+    log_event(
+        "upload_init", trace_id, user_id, data["conversation_id"], attachment_id,
+        media_type=data["media_type"], size_bytes=data["size_bytes"], mime_type=data["mime_type"],
+        upload_method=session["upload_method"],
+    )
     return ok_response(
         {
             "attachment_id": attachment_id,
-            "upload_url": "/api/messages/media/upload",
-            "upload_method": "direct",
             "max_size_bytes": data["max_size_bytes"],
             "media_type": data["media_type"],
             "mime_type": data["mime_type"],
             "trace_id": trace_id,
+            **session,
         },
         201,
     )
+
+
+def _resumable_available() -> bool:
+    """Whether bytes can go straight to private object storage.
+
+    Local-disk development has no multipart API, so the single POST stays the
+    answer there. This is the only reason the direct path survives.
+    """
+    return bool(media_storage.object_client() and (os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET")))
+
+
+def _storage_bucket() -> str:
+    return os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET") or ""
+
+
+def _part_count(size_bytes: int, part_size: int) -> int:
+    return max(1, -(-int(size_bytes) // int(part_size)))
+
+
+def _open_resumable_session(cur: Any, attachment_id: int, storage_key: str, mime_type: str, size_bytes: int) -> dict[str, Any]:
+    """Open a multipart upload when the file is too big for one request.
+
+    A 90-minute video is the case this exists for. One POST cannot carry it: the
+    request has to survive a cell handoff, a backgrounded app and a tunnel that
+    drops, and a single stream restarts from zero every time any of those
+    happen. Below the threshold the extra round trips cost more than they save,
+    so a small photo still goes direct.
+    """
+    if int(size_bytes) < RESUMABLE_THRESHOLD_BYTES or not _resumable_available():
+        return {"upload_method": "direct", "upload_url": "/api/messages/media/upload"}
+    part_size = RESUMABLE_PART_SIZE_BYTES
+    if _part_count(size_bytes, part_size) > MAX_PARTS:
+        # S3/R2 cap a multipart upload at 10,000 parts. Growing the part instead
+        # of refusing keeps the ceiling a size decision rather than an accident
+        # of arithmetic.
+        part_size = -(-int(size_bytes) // MAX_PARTS)
+    try:
+        created = media_storage.object_client().create_multipart_upload(
+            Bucket=_storage_bucket(),
+            Key=storage_key,
+            ContentType=mime_type,
+            CacheControl="private, max-age=0, no-store",
+        )
+        provider_upload_id = str(created["UploadId"])
+    except Exception as exc:
+        # A failure here is not fatal: the direct path still works for anything
+        # the request ceiling can carry, and saying so beats a 502 on init.
+        logging.warning("MESSENGER_MEDIA_RESUMABLE_INIT_FAILED key=%s error=%s", storage_key, str(exc)[:300])
+        return {"upload_method": "direct", "upload_url": "/api/messages/media/upload"}
+    cur.execute(
+        "UPDATE message_attachments SET upload_provider_id=?, upload_part_size_bytes=?, upload_expires_at=?, updated_at=? WHERE id=?",
+        (provider_upload_id, int(part_size), _future_iso(RESUMABLE_SESSION_TTL_SECONDS), now_iso(), attachment_id),
+    )
+    return {
+        "upload_method": "resumable",
+        "upload_url": "/api/messages/media/upload/parts",
+        "part_size_bytes": int(part_size),
+        "part_count": _part_count(size_bytes, part_size),
+        "max_parts_per_request": MAX_PARTS_PER_SIGN,
+        "session_expires_at": _future_iso(RESUMABLE_SESSION_TTL_SECONDS),
+    }
+
+
+def _future_iso(seconds: int) -> str:
+    """Same spelling as `now_iso`, because expiry is compared as a string.
+
+    A timestamp without the trailing Z sorts *before* the identical timestamp
+    with one, so a mismatched format here would read as expired on creation.
+    """
+    return datetime.utcfromtimestamp(time.time() + int(seconds)).replace(microsecond=0).isoformat() + "Z"
+
+
+def _require_resumable_session(cur: Any, user: dict[str, Any], attachment_id: int, allow_expired: bool = False) -> tuple[Any, int, str]:
+    """The shared gate for every resumable operation.
+
+    Sender-only, because a conversation member who can *read* an attachment must
+    not be able to sign writes into another member's upload.
+    """
+    if not attachment_id:
+        raise MessengerMediaError("attachment_required", "Attachment is required.", 400)
+    user_id = int(user.get("user_id") or user.get("id") or 0)
+    row = _fetch_attachment(cur, attachment_id)
+    _require_attachment_access(cur, row, user_id, require_sender=True)
+    provider_upload_id = str(_row_get(row, "upload_provider_id", "") or "")
+    if not provider_upload_id:
+        raise MessengerMediaError("upload_not_resumable", "This upload did not open a resumable session.", 409)
+    status = str(_row_get(row, "upload_status", "") or "").lower()
+    if status in {"uploaded", "attached"}:
+        raise MessengerMediaError("upload_already_complete", "This upload has already finished.", 409)
+    expires_at = str(_row_get(row, "upload_expires_at", "") or "")
+    if not allow_expired and expires_at and expires_at < now_iso():
+        # Refreshable rather than fatal: the stored parts are still there, so the
+        # client re-authorizes and resumes instead of restarting the transfer.
+        raise MessengerMediaError("upload_session_expired", "This upload needs to be re-authorized before it can continue.", 410)
+    return row, user_id, provider_upload_id
+
+
+def _provider_parts(row: Any, provider_upload_id: str) -> list[dict[str, Any]]:
+    """What the provider says is stored. The only account of that worth trusting.
+
+    A client-reported parts list is a claim about someone else's storage; taking
+    it would let a caller complete an upload out of parts that were never sent.
+    """
+    client = media_storage.object_client()
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    collected: list[dict[str, Any]] = []
+    marker = 0
+    while True:
+        response = client.list_parts(
+            Bucket=_storage_bucket(), Key=storage_key, UploadId=provider_upload_id,
+            MaxParts=1000, PartNumberMarker=marker,
+        )
+        for part in response.get("Parts") or []:
+            collected.append({
+                "part_number": int(part.get("PartNumber") or 0),
+                "etag": str(part.get("ETag") or ""),
+                "size_bytes": int(part.get("Size") or 0),
+            })
+        if not response.get("IsTruncated"):
+            break
+        marker = int(response.get("NextPartNumberMarker") or 0)
+        if not marker:
+            break
+    collected.sort(key=lambda item: item["part_number"])
+    return collected
+
+
+def sign_upload_parts(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Hand the client short-lived URLs for a batch of parts.
+
+    Batched rather than all-at-once because the URLs expire: signing 250 parts up
+    front means the tail of a long upload carries dead authorization.
+    """
+    ensure_schema(cur)
+    attachment_id = int(payload.get("attachment_id") or 0)
+    row, user_id, provider_upload_id = _require_resumable_session(cur, user, attachment_id)
+    part_size = int(_row_get(row, "upload_part_size_bytes", 0) or 0) or RESUMABLE_PART_SIZE_BYTES
+    part_count = _part_count(int(_row_get(row, "size_bytes", 0) or 0), part_size)
+    requested = payload.get("part_numbers") or payload.get("parts") or []
+    numbers = sorted({int(n) for n in requested if str(n).strip().lstrip("-").isdigit() and 1 <= int(n) <= part_count})
+    if not numbers:
+        raise MessengerMediaError("invalid_part_numbers", "Valid part numbers are required.", 400)
+    numbers = numbers[:MAX_PARTS_PER_SIGN]
+    client = media_storage.object_client()
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    parts = [
+        {
+            "part_number": number,
+            "upload_url": client.generate_presigned_url(
+                "upload_part",
+                Params={"Bucket": _storage_bucket(), "Key": storage_key, "UploadId": provider_upload_id, "PartNumber": number},
+                ExpiresIn=RESUMABLE_URL_TTL_SECONDS,
+            ),
+        }
+        for number in numbers
+    ]
+    return ok_response({
+        "attachment_id": attachment_id,
+        "parts": parts,
+        "part_size_bytes": part_size,
+        "part_count": part_count,
+        "signed_url_expires_in": RESUMABLE_URL_TTL_SECONDS,
+    })
+
+
+def resumable_upload_state(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Where to pick the transfer back up, and extend the session while asking.
+
+    This is the whole point of the feature: after a dropped tunnel the client
+    asks what landed instead of starting the file again.
+    """
+    ensure_schema(cur)
+    attachment_id = int(payload.get("attachment_id") or 0)
+    row, user_id, provider_upload_id = _require_resumable_session(cur, user, attachment_id, allow_expired=True)
+    stored = _provider_parts(row, provider_upload_id)
+    part_size = int(_row_get(row, "upload_part_size_bytes", 0) or 0) or RESUMABLE_PART_SIZE_BYTES
+    declared = int(_row_get(row, "size_bytes", 0) or 0)
+    part_count = _part_count(declared, part_size)
+    completed = [item["part_number"] for item in stored]
+    expires_at = _future_iso(RESUMABLE_SESSION_TTL_SECONDS)
+    cur.execute(
+        "UPDATE message_attachments SET upload_expires_at=?, updated_at=? WHERE id=?",
+        (expires_at, now_iso(), attachment_id),
+    )
+    conn.commit()
+    return ok_response({
+        "attachment_id": attachment_id,
+        "completed_parts": completed,
+        "missing_parts": [n for n in range(1, part_count + 1) if n not in set(completed)],
+        "bytes_stored": sum(item["size_bytes"] for item in stored),
+        "size_bytes": declared,
+        "part_size_bytes": part_size,
+        "part_count": part_count,
+        "session_expires_at": expires_at,
+    })
+
+
+def finish_resumable_upload(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Stitch the parts, then verify the object before calling it uploaded.
+
+    The byte total is checked *before* completing, so a client that finishes
+    early never produces a truncated object someone would later have to explain.
+    """
+    ensure_schema(cur)
+    trace_id = _trace_id()
+    attachment_id = int(payload.get("attachment_id") or 0)
+    row, user_id, provider_upload_id = _require_resumable_session(cur, user, attachment_id, allow_expired=True)
+    media_type = str(_row_get(row, "media_type", "file") or "file")
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    declared = int(_row_get(row, "size_bytes", 0) or 0)
+    stored = _provider_parts(row, provider_upload_id)
+    if not stored:
+        raise MessengerMediaError("no_parts_uploaded", "No part of this upload has been received yet.", 409)
+    total = sum(item["size_bytes"] for item in stored)
+    if declared and total != declared:
+        raise MessengerMediaError(
+            "upload_incomplete",
+            "The upload is not finished yet. Please let it complete and try again.",
+            409,
+        )
+    client = media_storage.object_client()
+    client.complete_multipart_upload(
+        Bucket=_storage_bucket(), Key=storage_key, UploadId=provider_upload_id,
+        MultipartUpload={"Parts": [{"PartNumber": item["part_number"], "ETag": item["etag"]} for item in stored]},
+    )
+    head = media_storage.head_object(storage_key) or {}
+    stored_length = int(head.get("ContentLength") or 0)
+    if declared and stored_length and stored_length != declared:
+        raise MessengerMediaError("size_mismatch", "The stored file size did not match the upload.", 409)
+    _reject_mismatched_object_bytes(storage_key, str(_row_get(row, "mime_type", "") or ""))
+    meta = _normalized_metadata(payload)
+    _reject_overlong_video(media_type, meta.get("duration_ms"))
+    processing_status = _initial_processing_status(media_type, meta.get("waveform") if isinstance(meta.get("waveform"), list) else None)
+    cur.execute(
+        """
+        UPDATE message_attachments
+        SET upload_status='uploaded',
+            signed_url_strategy=?,
+            size_bytes=?,
+            duration_ms=COALESCE(?, duration_ms),
+            width=COALESCE(?, width),
+            height=COALESCE(?, height),
+            waveform_json=COALESCE(?, waveform_json),
+            processing_status=?,
+            error_code='',
+            error_message='',
+            upload_provider_id=NULL,
+            upload_expires_at=NULL,
+            updated_at=?
+        WHERE id=?
+        """,
+        (
+            media_storage.provider() if media_storage.provider() in {"r2", "s3"} else "private",
+            stored_length or total,
+            meta.get("duration_ms"),
+            meta.get("width"),
+            meta.get("height"),
+            json.dumps(meta.get("waveform"), separators=(",", ":")) if meta.get("waveform") is not None else None,
+            processing_status,
+            now_iso(),
+            attachment_id,
+        ),
+    )
+    _enqueue_processing_jobs(cur, attachment_id, int(_row_get(row, "conversation_id", 0) or 0), media_type, processing_status)
+    conn.commit()
+    log_event(
+        "upload_resumable_finished", trace_id, user_id, int(_row_get(row, "conversation_id", 0) or 0), attachment_id,
+        media_type=media_type, size_bytes=stored_length or total, parts=len(stored),
+    )
+    return ok_response(_attachment_payload(cur, attachment_id, user_id, include_url=False))
+
+
+def _reject_mismatched_object_bytes(storage_key: str, expected_mime: str) -> None:
+    """Sniff the stored object's header, the same rule the direct path applies.
+
+    Bytes that never passed through Flask still have to be what they claimed to
+    be. An unreadable range is not a refusal -- see the direct path's reasoning:
+    a storage hiccup must not look like a malicious file.
+    """
+    try:
+        header = media_storage.get_object(storage_key, "bytes=0-511")["Body"].read(16)
+    except Exception as exc:
+        logging.warning("MESSENGER_MEDIA_OBJECT_HEADER_CHECK_UNAVAILABLE key=%s error=%s", storage_key, str(exc)[:200])
+        return
+    observed = sniff_media_class(header or b"")
+    if not observed:
+        return
+    if observed == "forbidden":
+        raise MessengerMediaError("unsafe_file_contents", "That file cannot be sent as a Messenger attachment.", 415)
+    expected_class = media_class_for_mime(expected_mime)
+    if expected_class and observed != expected_class:
+        raise MessengerMediaError("file_contents_mismatch", "The file contents do not match its type.", 415)
+
+
+def abort_resumable_upload(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """Discard the parts so an abandoned upload stops being billed storage."""
+    ensure_schema(cur)
+    attachment_id = int(payload.get("attachment_id") or 0)
+    row, user_id, provider_upload_id = _require_resumable_session(cur, user, attachment_id, allow_expired=True)
+    try:
+        media_storage.object_client().abort_multipart_upload(
+            Bucket=_storage_bucket(), Key=str(_row_get(row, "storage_key", "") or ""), UploadId=provider_upload_id,
+        )
+    except Exception as exc:
+        logging.warning("MESSENGER_MEDIA_RESUMABLE_ABORT_FAILED attachment_id=%s error=%s", attachment_id, str(exc)[:200])
+    cur.execute(
+        "UPDATE message_attachments SET upload_status='failed', error_code='upload_aborted', error_message='Upload was cancelled.', upload_provider_id=NULL, upload_expires_at=NULL, updated_at=? WHERE id=?",
+        (now_iso(), attachment_id),
+    )
+    conn.commit()
+    return ok_response({"attachment_id": attachment_id, "upload_status": "failed", "aborted": True})
 
 
 def _initial_processing_status(media_type: str, waveform: list[float] | None) -> str:
