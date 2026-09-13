@@ -75,14 +75,42 @@ def test_the_canceled_branch_marks_the_event_processed(bot_source):
 # One mutation, many callers
 # --------------------------------------------------------------------------
 
-def test_stock_is_returned_in_exactly_one_place_in_the_codebase(cart_source):
-    """The credit expression must have a single home.
+#: Every file allowed to add units back to ``marketplace_listings.quantity``,
+#: with the guard that makes each one safe. The point was never "one file" — it
+#: was "no *unguarded* copy". A new entry here is a claim that needs an answer to
+#: "what stops this crediting twice", which is why the reason is stored beside
+#: the path rather than in a comment somewhere.
+CREDIT_SITES = {
+    # Guarded by the reservation compare-and-swap immediately above it: the row
+    # is claimed HELD -> RELEASED first, and losing that race returns before the
+    # credit. Release is therefore idempotent and a captured reservation can
+    # never be released.
+    "services/marketplace_cart_routes.py": "reservation CAS",
+    # Supplier reconciliation (§23/§24), not a release. Guarded by being a delta
+    # anchored on the stored row: the move is `after - before` where `before` is
+    # the variant's own `stock_quantity`, which the same transaction then
+    # overwrites with `after`. Re-applying the same supplier read computes a
+    # delta of zero and writes nothing, so it cannot double-credit. Two workers
+    # cannot race it either — sync jobs are UNIQUE(connection_id,kind,
+    # resource_id) and leased, so one supplier read is applied once at a time.
+    "services/business_os/suppliers/revisions.py": "delta anchored on stored row",
+}
+
+
+def test_stock_is_only_credited_by_a_guarded_writer(cart_source):
+    """No file may add units back without a documented guard.
 
     Every other invariant in this subsystem — release is idempotent, a captured
     reservation cannot be released, stock cannot be double-credited — is
-    enforced by the compare-and-swap that guards this one statement. A second
-    copy anywhere would be unguarded by construction, so the count is the
-    invariant.
+    enforced by the compare-and-swap that guards the cart's statement. A copy
+    that is unguarded by construction breaks all of them at once, so this
+    enumerates the writers instead of trusting that nobody adds one.
+
+    A second legitimate writer now exists because supplier reconciliation moves
+    the same column for a different reason: a restock is not a release, and
+    routing it through the cart's credit would mean inventing a reservation to
+    release. It carries its own guard, recorded in ``CREDIT_SITES`` and asserted
+    below to be something other than a disguised release path.
     """
     credit = "UPDATE marketplace_listings SET quantity=COALESCE(quantity,0)+"
     # Scoped to the runtime source tree. A repo-wide walk would also traverse
@@ -95,7 +123,21 @@ def test_stock_is_returned_in_exactly_one_place_in_the_codebase(cart_source):
         for path in candidates
         if credit in path.read_text(encoding="utf-8", errors="ignore")
     ]
-    assert matches == ["services/marketplace_cart_routes.py"], matches
+    assert sorted(matches) == sorted(CREDIT_SITES), matches
+
+
+def test_the_supplier_reconciler_is_not_a_disguised_release_path():
+    """The second credit site must not touch reservations at all.
+
+    This is what keeps the allowlist above from becoming a rubber stamp. If
+    supplier reconciliation ever learned to read or write
+    ``marketplace_inventory_reservations``, it would be releasing stock outside
+    the compare-and-swap — the exact defect this file exists to prevent, wearing
+    a different subsystem's name.
+    """
+    source = (REPO_ROOT / "services" / "business_os" / "suppliers" / "revisions.py").read_text(
+        encoding="utf-8")
+    assert "marketplace_inventory_reservations" not in source
 
 
 def test_bot_never_mutates_reservation_rows_directly(bot_source):
