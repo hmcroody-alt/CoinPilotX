@@ -78,7 +78,7 @@ expensive.
 | Workstream | Items |
 |---|---|
 | **Auth** | Fix `account_user_id()` to verify both credentials and deny on mismatch. Ship the auth decorator + **boot-time default-deny assertion**. Unify CSRF on one header contract. Split session/bearer signing keys |
-| **Infra** | Verify R2 CORS against the **live bucket** and set `ExposeHeaders: ["ETag"]`. Shared rate-limit store (Redis) + distributed mode on. `GET /health/routes` as a hard deploy gate, extended with a feature-flag snapshot. AASA health check returns 200 with non-empty `details[]` |
+| **Infra** | ~~Verify R2 CORS against the **live bucket**~~ **done 2026-09-13 — confirmed absent** (`scripts/ops/r2_cors_probe.py`); **applying the policy is still owed and is a human action**, see the risk note below. ~~Shared rate-limit store (Redis) + distributed mode on~~ **done** (5920d542). ~~`GET /health/routes` as a hard deploy gate~~ **done** (4a64915f: build-time contract gate + deploy-time liveness gate), still to extend with a feature-flag snapshot. AASA health check returns 200 with non-empty `details[]` |
 | **Database** | 3 index additions (`lower(users.username)`, `lower(users.email)`, `active_sessions.session_hash`) — all `CONCURRENTLY`, all with a partial predicate for blank values. 2 duplicate-index removals. Session TTL sweep |
 | **Security** | **Fix `bot.py:28760`** |
 | **Client** | Repo scaffold, CI build producing hashed static assets, no Node in the deploy image |
@@ -97,6 +97,23 @@ expensive.
 cover, reels, seller documents). It is first in the list for that reason. **Never run DDL
 against production to test it** — verify on a throwaway Docker Postgres 18; SQLite reproduces
 neither the type nor the constraint behaviour.
+
+> **OWED, and owed to a person rather than to a commit — R2 bucket CORS.**
+> Measured 2026-09-13: `pulse-media2` has **no CORS configuration at all**. A browser
+> preflight returns 403 and R2 answers `CORS not configured for this bucket`, so every
+> browser upload fails at preflight — not only the multipart ones this plan worried about.
+>
+> The probe is read-only by deliberate choice and **does not apply the fix**. Bucket CORS is
+> production infrastructure and the blast radius of a wrong `AllowedOrigins` is every origin
+> on the internet holding an intercepted presigned URL, so naming the real origins needs a
+> human. `python3 scripts/ops/r2_cors_probe.py` prints the exact policy and the
+> `aws s3api put-bucket-cors` command to apply it.
+>
+> This is written here, rather than only in the inventory, because a confirmed blocker whose
+> remediation is *intentionally* not automated is the kind that gets marked "investigated"
+> and then forgotten. Phase 0 does not exit and **Phase 7 cannot start** until a re-run of
+> the probe exits 0 — it reads behaviour rather than configuration, so a clean re-run is
+> proof the change actually took, not proof that someone edited a config page.
 
 ---
 
