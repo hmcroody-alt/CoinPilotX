@@ -1204,6 +1204,11 @@ remaining work.
 
 ### The ledger has no model dimension
 
+> **Closed in §14.** The finding below stands as written at the time. The column exists now, the
+> follow-up it defers was done, and the weaker call-site assertion it settles for has been moved
+> down a layer onto the ledger row. Left unedited rather than corrected, because the reasoning for
+> deferring it — and the estimate of what the migration would cost — is the part worth keeping.
+
 Found while trying to assert that an env-overridden model reaches the record. It does not, and
 it cannot: `undx_cost_ledger` keys on `(month, provider, call_kind)` and has no `model` column,
 so `record_spend(model=...)` uses the model **only** to look up a price. Per-model attribution
@@ -1765,3 +1770,171 @@ itself which file it opened rather than trusting the module attribute. The other
 two are the pairing: they reproduce the pre-fixture behaviour on purpose and assert
 that the same checks catch it, so the file demonstrates sensitivity rather than
 merely truth.
+
+---
+
+## §14 — Which model the money went to
+
+§10 recorded the gap and declined to close it: `undx_cost_ledger` keyed on
+`(month, provider, call_kind)`, so every model a provider serves collapsed into one row. The
+report could say what OpenAI cost and not what produced it, and `record_spend(model=...)` used the
+name it was given **only** to look up a price before discarding it.
+
+The data was never missing. `undx_router` puts a model in the usage dict, the image pipeline and
+the embedding adapter both pass one explicitly, and `undx_capabilities.record_spend` was already
+threading `"model"` into `undx_cost.record`. It arrived on every call and was dropped on the floor
+for want of a column. So no adapter changed in this phase — the work was entirely in the ledger.
+
+### Three outcomes, not two
+
+`normalize_model` returns one of three things, and the distinction between the last two carries the
+meaning:
+
+| Input | Recorded | Reads as |
+|---|---|---|
+| `"GPT-4o"` | `gpt-4o` | this spend belongs to that model |
+| absent, on `research` / `translation` | `''` | this kind has no model dimension |
+| absent, on a model-bearing kind | `undeclared` | this **is** a model call and we failed to say which |
+
+This is the same shape as `call_kind`'s absent-becomes-`chat` versus
+unrecognised-becomes-`unknown`, and for the same reason: **absent is not the same question as
+unrecognised.** A Brave query bills against an endpoint per request and a Google Translate call
+bills per character; there is no model to name, so `''` is the accurate value rather than a hole.
+An embedding call with no model name is a hole, and should read as one. Collapsing the two in
+either direction is a mutation in the harness, because either collapse looks like a
+simplification:
+
+* Everything becomes `undeclared` → every research and translation row reports a gap that does not
+  exist, and fabricated gaps are worse than no gap column at all, because the real ones stop
+  standing out.
+* Everything becomes `''` → an unnamed embedding model is recorded as *absent by nature*. The gap
+  does not show up as a gap; it shows up as a fact.
+
+`MODEL_BEARING_CALL_KINDS` is the frozenset that decides, and it lives in `undx_cost.py` rather
+than beside the existing per-kind declaration table in `undx_capabilities.CAPABILITIES` — because
+capabilities imports cost, and a flag `record()` consults cannot live on the far side of that edge
+without inverting the dependency.
+
+### Lowercasing is not cosmetic
+
+`model` is part of a unique index. `GPT-4o` and `gpt-4o` would be two rows, which does not corrupt
+any total — the provider's figure is still exactly right — but it splits one model's spend into two
+halves that are each comfortably under whatever threshold the whole would have crossed. Removing
+`.lower()` reads like dropping a gratuitous transform on a name the provider itself chose, and is
+in the harness for that reason.
+
+### Adding a dimension to a measurement must not change the measurement
+
+The risk in widening a key is never the new column, it is the old readings. Each dimension turns
+one row into several, so `month_snapshot`'s per-provider total became a **sum over rows** rather
+than a row. It already accumulated (`bucket[field] += amount`), so nothing had to change — but a
+reader that assigned would report whichever row the cursor yielded last, and with two models of
+equal spend that is a 50% understatement of the bill that looks like a plausible number. Mutated
+and pinned.
+
+The models axis is keyed `provider/model`, not `model`. Model names are not globally unique — an
+open-weights model is served by several hosts at several prices — so merging them produces a
+per-model total corresponding to no invoice anyone receives, with the cheap host quietly
+subsidising the expensive one in the only figure a reader would check.
+
+### `NOT NULL DEFAULT ''`, and the hazard that is *not* the one advertised
+
+The column is `NOT NULL DEFAULT ''`, and the first version of this note gave the wrong reason. The
+claim was that a nullable column would make every unnamed-model upsert miss its own conflict
+target on Postgres — which treats NULLs as distinct in a unique index — and INSERT one row per call
+while every total stayed correct. Plausible, load-bearing-sounding, and not what happens. Removing
+the constraint and re-running `scripts/undx_cost_ledger_pg_migration_probe.py` fails eight checks
+and **not one of them is a row count**: `normalize_model` never returns None, so no write ever puts
+a NULL there.
+
+What actually breaks is the migration. `ADD COLUMN model TEXT` with no default leaves every
+pre-existing row NULL; the backfill's `WHERE model = ''` cannot match a NULL; those rows are
+stranded permanently. Then `month_snapshot`'s `str(row[8] or "")` maps NULL to `''` — the value
+that *means* "this kind has no model" — and they drop off the models axis silently. History stops
+reading as missing and starts reading as asserted absence. A gap disguised as a fact, again, and
+this time for the whole pre-migration past.
+
+The conflict-target hazard is real but **latent**: it needs a writer that bypasses
+`normalize_model` — raw SQL, a migration, another service — and then it behaves exactly as
+originally described. `NOT NULL` closes that door before anyone opens it. Both hazards are now
+written down as measured-versus-latent rather than conflated, in the column's own comment and in
+the probe's docstring.
+
+The correction is worth recording as a method point: the prose was checked against the artefact by
+*running the mutation it described*, and the artefact disagreed. This is the third time in this
+mission that fact-checking my own writing against the files has caught something — after the
+mis-quoted `Procfile` line and the `pulse_ads_worker.py` naming trap in §13.
+
+### The Postgres probe grew a second half
+
+`scripts/undx_cost_ledger_pg_migration_probe.py` now exercises three migration origins instead of
+one, and the middle one is the one that matters:
+
+| Origin | Shape | Why |
+|---|---|---|
+| original | no `call_kind`, no `model`, `(month, provider)` index | the full chain still works |
+| **intermediate** | `call_kind` present, `model` absent, `(month, provider, call_kind)` index | **the transition production will actually take** |
+| fresh | straight from `CREATE TABLE` | the new-deployment path |
+
+The intermediate origin is the only one that can distinguish the backfill *working* from the
+backfill *running*, because it is the only one that can already hold a `research` row — which must
+keep `''` while the `chat` and `embedding` rows beside it move to `undeclared`. A backfill with no
+`call_kind` predicate passes every other check in the file and fails only there. 53 checks pass;
+both mutations above were confirmed to fail it — the nullable-column one on eight checks, the
+unpredicated-backfill one on exactly the two rows that genuinely have no model.
+
+### A source-order assertion standing in for a behavioural one
+
+The `DROP INDEX` for the superseded `(month, provider, call_kind)` index has to run, or the first
+row differing only by `model` violates it and the write fails outright — a hard failure rather than
+a quiet accounting error, and one reachable only on a *migrated* deployment, never on a fresh one.
+
+The mutation deleting that drop was reported as caught. It was caught by
+`test_the_narrow_indexes_are_dropped_only_after_the_wide_one_exists`, which reads the order of
+`_SCHEMA_STATEMENTS` and migrates nothing. The behavioural test I had predicted would catch it did
+not even notice, because it builds its table from `CREATE TABLE` — a table that never had the old
+index and therefore cannot fail to drop it.
+
+A green harness line was concealing a test that asserts a source shape where a behaviour was
+wanted. §50's point generalises: a protection test never seen to fail is a comment with a test
+runner attached, and a mutation caught by the *wrong* test is a comment with a green tick. Fixed by
+adding `test_a_migrated_table_takes_a_second_model_for_one_provider_and_kind`, which starts from
+the pre-`model` shape and then writes two models under one `(provider, kind)`, and re-anchoring the
+mutation on it. The index-name test stays — it is what caught the prefix-containment trap twice.
+
+### Index name prefix containment, for the second time
+
+`ux_..._month_provider` ⊂ `ux_..._month_provider_kind` ⊂ `ux_..._month_provider_kind_model`. A
+substring `in` check would have passed unchanged through both migrations without ever being right.
+Set membership is what made `test_the_unique_index_exists_so_the_upsert_can_work` fail on this
+change — which is what a name assertion is *for*, and the second time that specific choice has paid
+off.
+
+### Mutation coverage
+
+Eight new entries, 52 in the harness, all confirmed to fail the named test and only it.
+
+| Mutation | Caught by |
+|---|---|
+| keep the provider's casing on the model name | `test_casing_does_not_split_a_models_spend` |
+| call every empty model `undeclared`, kind be damned | `test_a_kind_with_no_models_records_an_empty_model` |
+| call every empty model `''`, kind be damned | `test_a_model_bearing_kind_with_no_model_is_undeclared` |
+| key the models axis by model name alone | `test_the_models_axis_is_keyed_by_provider_and_model` |
+| put model-less kinds on the models axis anyway | `test_the_models_axis_omits_kinds_with_no_model_but_keeps_undeclared` |
+| assign each axis bucket instead of accumulating | `test_a_providers_total_survives_the_model_split` |
+| leave the superseded `call_kind` index in place | `test_a_migrated_table_takes_a_second_model_for_one_provider_and_kind` |
+| backfill every empty model, not just model-bearing kinds | `test_an_old_table_is_migrated_and_model_bearing_rows_are_backfilled` |
+
+### What this still does not give you
+
+* **Per-model *pricing*.** The column records which model spent the money, not a rate for it.
+  `uncosted_calls` remains the honesty column, and the four unpriced providers from §11 are still
+  unpriced. Knowing that `gpt-image-1` incurred forty calls is strictly more than knowing OpenAI
+  incurred forty, and still not a dollar figure.
+* **Retroactive attribution.** Rows written before the column read `undeclared`, which is honest
+  and not useful. The §9 failure mode — spend sliding into the unpriced column after a model rename
+  — becomes diagnosable from *now on*, not backwards.
+* **A bound on cardinality.** Names are truncated at 120 characters and lowercased, and nothing
+  else constrains them. A provider that versioned its model string per request would grow one row
+  per request. No deployment here does that, and the guard would be a cap on distinct models per
+  month rather than a length limit, so it is named as a risk rather than pre-solved.

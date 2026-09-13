@@ -644,6 +644,133 @@ MUTATIONS = [
         "test_the_fallback_is_absolute",
         "tests/test_dev_database_isolation.py",
     ),
+    (
+        # Reads as removing a gratuitous transform on a name the provider gave us -
+        # and arguably the provider's own casing is the more faithful record. But the
+        # `model` column is part of a unique index, so `GPT-4o` and `gpt-4o` become
+        # two rows, and one model's spend arrives as two halves that are each under
+        # whatever threshold the whole would have crossed. Nothing errors; the
+        # provider total is still right; only per-model attribution silently halves.
+        "cost: keep the provider's casing on the model name",
+        COST,
+        '    text = "" if model is None else str(model).strip().lower()[:_MODEL_NAME_LIMIT]\n',
+        '    text = "" if model is None else str(model).strip()[:_MODEL_NAME_LIMIT]\n',
+        "test_casing_does_not_split_a_models_spend",
+        COST_TESTS,
+    ),
+    (
+        # Collapses the two absences into the louder one. Looks like tightening the
+        # accounting - every unnamed model now flagged as a gap - and does the
+        # opposite: research and translation bill against an endpoint and have no
+        # model to name, so every one of their rows starts reporting a hole that does
+        # not exist. Fabricated gaps are worse than no gap column, because the real
+        # ones stop standing out.
+        "cost: call every empty model 'undeclared', kind be damned",
+        COST,
+        '    kind_text = normalize_call_kind(kind)\n'
+        '    if kind_text in MODEL_BEARING_CALL_KINDS:\n'
+        '        return MODEL_UNDECLARED\n'
+        '    return MODEL_NOT_APPLICABLE\n',
+        '    return MODEL_UNDECLARED\n',
+        "test_a_kind_with_no_models_records_an_empty_model",
+        COST_TESTS,
+    ),
+    (
+        # The same collapse in the other direction, and the dangerous one. An
+        # embedding call that never said which model now records `''`, which is the
+        # value that *means* "this kind has no model dimension". The gap does not
+        # show up as a gap; it shows up as a fact. Downstream, `budget_state`'s
+        # unpriced-model uplift is keyed on the recorded name, so a hole disguised
+        # as an absence is a hole the budget cannot price defensively.
+        "cost: call every empty model 'not applicable', kind be damned",
+        COST,
+        '    kind_text = normalize_call_kind(kind)\n'
+        '    if kind_text in MODEL_BEARING_CALL_KINDS:\n'
+        '        return MODEL_UNDECLARED\n'
+        '    return MODEL_NOT_APPLICABLE\n',
+        '    return MODEL_NOT_APPLICABLE\n',
+        "test_a_model_bearing_kind_with_no_model_is_undeclared",
+        COST_TESTS,
+    ),
+    (
+        # Reads as a simplification: model names are famous, why prefix them. Because
+        # they are not unique - an open-weights model is served by several providers
+        # at several prices - so merging them yields a per-model total that
+        # corresponds to no invoice anyone receives, and the cheap host subsidises
+        # the expensive one in the only figure anybody would check.
+        "cost: key the models axis by model name alone",
+        COST,
+        '                    axes.append((models, f"{row[0]}/{model}"))\n',
+        '                    axes.append((models, model))\n',
+        "test_the_models_axis_is_keyed_by_provider_and_model",
+        COST_TESTS,
+    ),
+    (
+        # Drops the guard that keeps model-less kinds off the model axis. Looks like
+        # removing a special case; produces a `provider/` bucket holding every
+        # research and translation call, which reads as a real model whose name
+        # failed to render rather than as spend that has no model.
+        "cost: put model-less kinds on the models axis anyway",
+        COST,
+        '                if model:\n',
+        '                if True:\n',
+        "test_the_models_axis_omits_kinds_with_no_model_but_keeps_undeclared",
+        COST_TESTS,
+    ),
+    (
+        # The accumulate that makes a widened key safe. Adding the `model` dimension
+        # turned one row per (provider, kind) into several, so every axis total is now
+        # a sum over rows; assigning instead reports the last row the cursor happened
+        # to yield. With two models of equal spend that is a 50% understatement of the
+        # provider's bill, and it looks entirely plausible. "Adding a dimension to a
+        # measurement must not change the measurement."
+        "cost: assign each axis bucket instead of accumulating into it",
+        COST,
+        '                        bucket[field] += amount\n',
+        '                        bucket[field] = amount\n',
+        "test_a_providers_total_survives_the_model_split",
+        COST_TESTS,
+    ),
+    (
+        # Leaves the superseded `(month, provider, call_kind)` index standing. Reads
+        # as caution - why drop an index - and is the opposite: it is strictly
+        # narrower than the new one, so the first row that differs only by model
+        # violates it and the write fails outright. Not a silent accounting error
+        # this time but a hard failure, and one that appears only on a *migrated*
+        # deployment, never on a fresh one, so it would ship green.
+        #
+        # This entry earned its own test. On the first run it was anchored on
+        # `test_a_providers_total_survives_the_model_split`, which builds its table
+        # from `CREATE TABLE` - a table that never had the old index and so cannot
+        # fail to drop it. The harness reported the mutation as caught, but by
+        # `test_the_narrow_indexes_are_dropped_only_after_the_wide_one_exists`, which
+        # reads the statement *order* rather than migrating anything. That is a
+        # source-shape assertion standing in for a behavioural one, and the gap was
+        # invisible until a mutation asked which test was doing the work. Hence
+        # `test_a_migrated_table_takes_a_second_model_for_one_provider_and_kind`,
+        # which starts from the pre-`model` shape on purpose.
+        "cost: leave the superseded call_kind index in place",
+        COST,
+        '    f"DROP INDEX IF EXISTS ux_{LEDGER_TABLE}_month_provider_kind",\n',
+        '',
+        "test_a_migrated_table_takes_a_second_model_for_one_provider_and_kind",
+        COST_TESTS,
+    ),
+    (
+        # Backfills every pre-column row to `undeclared`, not just the model-bearing
+        # ones. The tidier-looking statement, and it rewrites the `research` and
+        # `translation` history that genuinely had no model into a fleet of invented
+        # gaps. This is the mutation the Postgres probe also catches, from the other
+        # side of the migration.
+        "cost: backfill every empty model, not just the model-bearing kinds",
+        COST,
+        '    f"WHERE model = \'\' AND call_kind IN ("\n'
+        '    + ", ".join(f"\'{kind}\'" for kind in sorted(MODEL_BEARING_CALL_KINDS))\n'
+        '    + ")",\n',
+        '    f"WHERE model = \'\'",\n',
+        "test_an_old_table_is_migrated_and_model_bearing_rows_are_backfilled",
+        COST_TESTS,
+    ),
 ]
 
 

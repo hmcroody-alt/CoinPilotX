@@ -354,6 +354,23 @@ class SpendIsMetered(unittest.TestCase):
         self.assertNotIn(undx_cost.CALL_KIND_CHAT, snapshot["kinds"])
         self.assertIn("perplexity", snapshot["providers"])
 
+    def test_the_embedding_model_is_named_in_the_durable_record(self):
+        """Embedding is a model-bearing kind, so `undeclared` here would be a hole.
+
+        Worth its own test rather than another assertion on the row above, because
+        the two failures look nothing alike: the row above going wrong means spend
+        landed in the wrong *bucket*, while this going wrong means the spend is in
+        the right bucket and cannot be attributed to the model that incurred it.
+        The second is the one that survives a review, since every total still adds
+        up. `budget_state`'s unpriced-model fallback is downstream of this name.
+        """
+        run_with(FakeResponse(200, wire_response([int8_vector(1)])))
+        models = undx_cost.month_snapshot()["models"]
+        self.assertEqual(sorted(models),
+                         ["perplexity/" + embed.configured_model().lower()])
+        self.assertNotIn(undx_cost.MODEL_UNDECLARED,
+                         [key.split("/", 1)[1] for key in models])
+
     def test_the_provider_reported_cost_beats_the_price_table(self):
         """A table is a price someone read on a date; a reported cost is a
         measurement of the call that just happened. Asserted by making the two

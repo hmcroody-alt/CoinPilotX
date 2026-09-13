@@ -125,6 +125,15 @@ def test_a_translation_is_recorded_as_translation_not_chat(ledger):
     snapshot = _kinds(ledger)
     assert snapshot["kinds"]["translation"]["calls"] == 1
     assert "chat" not in snapshot["kinds"]
+    # And no model, because there is not one. Google Translate bills against an
+    # endpoint per character; there is no model name to attribute this to, so the
+    # ledger stores `''` and the row stays off the models axis entirely. That is a
+    # different statement from `undeclared`, which means a model-bearing call that
+    # failed to say which model — a gap. Asserting emptiness here pins the
+    # distinction from the side that is easy to get wrong: were `translation` ever
+    # added to `MODEL_BEARING_CALL_KINDS`, every translation row would start
+    # reporting a hole that does not exist.
+    assert snapshot["models"] == {}
     assert "google" in snapshot["providers"]
 
 

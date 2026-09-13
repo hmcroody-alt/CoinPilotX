@@ -598,6 +598,20 @@ class ModelDimensionTest(_LedgerCase):
         reason the backfill is a separate statement rather than a different
         `ADD COLUMN` default.
         """
+        self._build_pre_model_table()
+        undx_cost.ensure_schema()
+        self.assertEqual(self._rows(), [("brave", "research", "", 4),
+                                        ("openai", "chat", "undeclared", 13)])
+
+    def _build_pre_model_table(self):
+        """The shape production is in right now: `call_kind` landed, `model` has not.
+
+        Worth a helper rather than one test's setup, because every *other* test in
+        this class gets its table from `_SCHEMA_STATEMENTS[0]`, which already carries
+        `model` and has never carried the superseded index. So none of them can
+        observe anything that goes wrong only on the way *from* the old shape — and
+        that is precisely where the remaining risk lives.
+        """
         conn = sqlite3.connect(self.db_path)
         try:
             conn.executescript(f"""
@@ -623,9 +637,35 @@ class ModelDimensionTest(_LedgerCase):
         finally:
             conn.close()
 
+    def test_a_migrated_table_takes_a_second_model_for_one_provider_and_kind(self):
+        """The superseded index has to actually be gone, and only a migration shows it.
+
+        `(month, provider, call_kind)` is strictly narrower than the index replacing
+        it, so while it stands, the first row differing only by `model` violates it
+        and the write fails outright — not a quiet accounting error, a hard one. But
+        it is reachable only from a table that *had* that index, and
+        `_SCHEMA_STATEMENTS` never creates one, so on a fresh table deleting the
+        `DROP INDEX` has no observable effect whatsoever.
+
+        Which is how this test came to exist: the mutation harness deleted that drop
+        and the only thing that caught it was the test reading statement *order*. A
+        source-order assertion is not evidence that a migration works — it is the
+        same class of thing as a comment. Two models, one provider, one kind, on a
+        genuinely migrated table, is evidence.
+        """
+        self._build_pre_model_table()
         undx_cost.ensure_schema()
-        self.assertEqual(self._rows(), [("brave", "research", "", 4),
-                                        ("openai", "chat", "undeclared", 13)])
+
+        undx_cost.record(_usage(provider="openai", call_kind="chat", model="gpt-4o"))
+        undx_cost.record(_usage(provider="openai", call_kind="chat", model="gpt-4o-mini"))
+
+        self.assertEqual([row for row in self._rows() if row[0] == "openai"],
+                         [("openai", "chat", "gpt-4o", 1),
+                          ("openai", "chat", "gpt-4o-mini", 1),
+                          # The backfilled pre-column row, untouched beside them.
+                          ("openai", "chat", "undeclared", 13)])
+        self.assertEqual(undx_cost.month_snapshot()["providers"]["openai"]["calls"], 15,
+                         "the provider total spans all three model rows")
 
     def test_the_backfill_is_idempotent_and_does_not_touch_new_rows(self):
         """It runs on every boot. A second pass has nothing to match, because a new
