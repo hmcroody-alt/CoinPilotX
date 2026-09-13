@@ -15,7 +15,13 @@ is a change nobody can reconstruct after it breaks production audio.
 Exit codes
     0  no protected change, or protected change with a valid declaration
     1  protected change with a missing, stale, or incomplete declaration
-    2  the gate could not run (bad range, missing manifest)
+    2  the gate could not run (bad range, missing manifest, or a bot.py change
+       whose diff content the gate had no way to inspect)
+
+``--changed-files-from`` has no commit range, so ``bot.py`` — which is gated on
+diff content rather than on path — is checked against the working tree instead.
+If that cannot be read either, the gate exits 2 rather than reporting an
+all-clear it did not verify.
 
 Usage
     python3 scripts/realtime_audio_change_gate.py --base <sha> --head <sha>
@@ -68,9 +74,8 @@ def changed_files(base: str, head: str) -> list[str]:
     return [line.strip() for line in out.splitlines() if line.strip()]
 
 
-def backend_diff_is_audio_related(base: str, head: str, patterns: Iterable[str]) -> list[str]:
-    """Return the audio patterns that appear in changed bot.py lines."""
-    diff = git("diff", "--unified=0", f"{base}...{head}", "--", BACKEND_FILE)
+def patterns_in_diff(diff: str, patterns: Iterable[str]) -> list[str]:
+    """Return the audio patterns that appear on added/removed lines of ``diff``."""
     touched = []
     for line in diff.splitlines():
         if not (line.startswith("+") or line.startswith("-")):
@@ -81,6 +86,35 @@ def backend_diff_is_audio_related(base: str, head: str, patterns: Iterable[str])
             if pattern in line and pattern not in touched:
                 touched.append(pattern)
     return touched
+
+
+def backend_diff_is_audio_related(base: str, head: str, patterns: Iterable[str]) -> list[str]:
+    """Return the audio patterns that appear in changed bot.py lines."""
+    return patterns_in_diff(git("diff", "--unified=0", f"{base}...{head}", "--", BACKEND_FILE), patterns)
+
+
+def backend_worktree_diff() -> str | None:
+    """bot.py's uncommitted diff (unstaged + staged), or None if git cannot answer.
+
+    File-list mode has no commit range, so there is nothing to diff bot.py
+    against except the working tree. That is the right source for the mode's
+    actual use — scoping the gate to your own edits in a shared or dirty
+    checkout — but it can be empty for reasons that are not "nothing changed",
+    so the caller must treat empty as unverifiable rather than as a pass.
+    """
+    parts = []
+    for scope in ([], ["--cached"]):
+        result = subprocess.run(
+            ["git", "diff", *scope, "--unified=0", "--", BACKEND_FILE],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        parts.append(result.stdout)
+    return "".join(parts)
 
 
 def newest_commit_touching(base: str, head: str, paths: list[str]) -> str:
@@ -267,11 +301,34 @@ def main() -> int:
             hits.append(path)
             reasons[path] = mapping[path]
 
-    if BACKEND_FILE in files and base and head:
-        patterns = backend_diff_is_audio_related(base, head, manifest["backend_diff_patterns"])
+    if BACKEND_FILE in files:
+        # bot.py is gated on diff CONTENT, not on path, so a changed-file list
+        # alone can never answer whether it is protected. Skipping the check when
+        # no range is available — which is every file-list invocation — turned the
+        # most-edited protected surface into a guaranteed all-clear.
+        if base and head:
+            patterns = backend_diff_is_audio_related(base, head, manifest["backend_diff_patterns"])
+            source = "range"
+        else:
+            diff = backend_worktree_diff()
+            if diff is None or not diff.strip():
+                print(
+                    f"::error::{BACKEND_FILE} is in the changed-file list, but its diff content "
+                    "could not be inspected: there is no --base/--head range and the working tree "
+                    f"shows no uncommitted change to {BACKEND_FILE}. {BACKEND_FILE} is protected by "
+                    "diff content rather than by path, so the gate cannot tell whether this change "
+                    "is audio-related. Re-run with --base <sha> --head <sha> covering the commits "
+                    f"that changed {BACKEND_FILE}.",
+                    file=sys.stderr,
+                )
+                return 2
+            patterns = patterns_in_diff(diff, manifest["backend_diff_patterns"])
+            source = "working tree"
         if patterns:
             hits.append(BACKEND_FILE)
-            reasons[BACKEND_FILE] = "backend_token_and_room_policy (" + ", ".join(patterns) + ")"
+            reasons[BACKEND_FILE] = (
+                f"backend_token_and_room_policy [{source}] (" + ", ".join(patterns) + ")"
+            )
 
     protected = bool(hits)
 
