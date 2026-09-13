@@ -130,17 +130,38 @@ SPA shell, the responsive grid.
 **Key content:**
 - Translate `colors.ts` across all 5 themes to CSS custom properties, plus the 3 new token
   families (`--pulse-scrim-*`, `--pulse-on-accent`, `--pulse-on-media`).
-- The 6-stop gradient in CSS; the **14-node mesh copied verbatim as inline SVG** from
-  `pulseBackground.ts:117-155` — it cannot be reproduced in CSS.
-- Breakpoints: phone <768 / tablet 768–1119 / desktop 1120–1599 / wide ≥1600, under the
-  governing rule: **the feed column never exceeds 680px at any breakpoint. Extra width buys
-  additional columns, never wider rows.**
+- The 6-stop gradient in CSS; the 14-node mesh copied verbatim from `pulseBackground.ts:117-155`.
+  ~~as inline SVG~~ — **superseded, see below.**
+- ~~Breakpoints: phone <768 / tablet 768–1119 / desktop 1120–1599 / wide ≥1600, the feed column
+  never exceeding 680px at any breakpoint.~~ — **superseded, see below.** The governing *rule*
+  survives and is still the point: **extra width buys additional columns, never wider rows.**
 - Reuse `services/app_links.py` and `templates/_app_link_cta.html` **unchanged**. Macros must be
   imported `with context` or they raise `UndefinedError` at render time.
 - **The CTA uses `--pulse-on-accent`, not white** — white on `#32e6b3` measures ~1.8:1 and fails
   WCAG AA.
 - One service worker, seeded from `sw.js`'s hardened `safeNotificationUrl()` (`sw.js:186-198`);
   unregister `service-worker.js`. Delete the byte-identical `site.webmanifest`.
+
+**Corrections made during Phase 1, from tracing the app rather than planning against it.**
+Both were written above as specifications and were actually guesses; the app disagreed. Recorded
+here rather than quietly fixed, because the numbers in the struck-through lines are the ones
+someone re-reading this plan would otherwise reintroduce.
+
+- **The mesh is absolutely positioned DOM, not inline SVG** (1b, `121a5c58`). A node's position is
+  a percentage of the field while its size is device px. SVG has one user space, so reproducing
+  that needs `preserveAspectRatio="none"`, which stretches every node into an ellipse by whatever
+  the field's aspect ratio happens to be — on the one layer whose whole job is to look identical
+  to the app.
+- **The grid is two breakpoints (900 / 1480) and the feed reaches 884px, not 680** (1c,
+  `ad5c486e`). `HomeScreen.tsx` caps content at 1480 with 12px padding, fixes the rails at 226 and
+  314 with a 16px gap, and gives the feed `flex: 1` — so the feed has no declared width in native
+  at all, and 884 is what the shell leaves once it caps. Both breakpoints are structural: 900 is
+  native's own `wideCanvas` threshold, and 1480 is where all three columns first fit at their real
+  sizes. None of 768 / 1120 / 1600 / 680 appear anywhere in the app.
+
+Both are gated, so neither can drift back: `scripts/ops/native_background_parity_gate.py` and
+`scripts/ops/native_layout_parity_gate.py`. The layout gate reads native and checks the CSS
+against it — that direction deliberately, so the website cannot redefine the product's shape.
 
 **Exit:** SPA `index.html` is served from a `/pulse/*` route (**not `/static/`**, which has no
 CSP). `script-src` has **no `'unsafe-inline'`** on the SPA surface. Reduced-motion and
@@ -199,7 +220,8 @@ dependency, no realtime requirement. **The cleanest, lowest-risk parity win in t
 inventory**, and therefore the right place to discover that an architectural assumption is
 wrong.
 
-**Exit:** full CRUD against a live environment, at all four breakpoints. Error and empty states
+**Exit:** full CRUD against a live environment, at every breakpoint (three layouts, across the
+two breakpoints Phase 1c settled on — not the four originally planned). Error and empty states
 **never co-render** — a failed fetch is not empty data, and the mutual exclusion is tested.
 `pulseApi`'s `error_code` contract (not `code`) is honoured.
 
