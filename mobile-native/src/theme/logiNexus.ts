@@ -54,35 +54,65 @@ export const logiNexus = {
      * would need. Surfaces are expressed as rgba over the known background
      * rather than as flat hexes, because that is what lets them survive a
      * background change.
+     *
+     * THIS IS A BUSINESS SURFACE and is subject to the black/white/green lock —
+     * `BusinessProfileScreen` and `BusinessBuyerPreviewScreen` are the two
+     * screens in the commerce family that run dark instead of on `storeLight`'s
+     * white page. It is the only locked palette that does not live in its own
+     * `*Light.ts` file, which is exactly why the original sweep missed it;
+     * `businessPaletteLock` now scans this file for this reason.
+     *
+     * The lock moved four things here, all of them at matched luminance so only
+     * the hue changed:
+     *
+     *   background  #03070C → #050A08   0.0020 → 0.0027, still black
+     *   textDim     #5A7186 → #67736E   0.157  → 0.163
+     *   textMuted   #8FA5B8 → #9DA3A3   0.3621 → 0.3601
+     *   secondary   #3FD4FF → #7FE9D0   0.554  → 0.673
+     *
+     * `secondary` is the only one that is a real change rather than a
+     * neutralisation. It was a cyan and is now a pale mint — a lighter step of
+     * `accent` rather than a hue away from it. That is a genuine loss of
+     * separation, and it is acceptable here only because of how `secondary` is
+     * actually used: it is the far stop of gradients that start at `accent`
+     * (the verification ring, the Save button, the rotating sweep), where a
+     * two-step mint ramp is if anything more coherent than mint→cyan, and it
+     * tints two glyphs that carry their own label (`accessibilityLabel=
+     * "Verified"`, and the row icons beside their text). Nothing distinguishes
+     * a state by `accent`-vs-`secondary` alone.
+     *
+     * `textPrimary` #EEF6FB is left as it is. Blue leads it, but at 5%
+     * saturation it is a near-white and sits in the same class as the cool
+     * neutrals the lock explicitly keeps (#C7CDD3, #ADB1B8).
      */
     businessLive: {
-      background: "#03070C",
+      background: "#050A08",
       /**
        * The reference design blurs its panels. No blur library is installed
        * (see the report's dependency note), so these sit slightly more opaque
        * than a true blur would need, which keeps text contrast honest when a
        * panel overlaps a busy cover image.
        */
-      panel: "rgba(14, 24, 35, 0.72)",
-      panelStrong: "rgba(14, 24, 35, 0.92)",
-      panelRaised: "rgba(20, 33, 46, 0.86)",
+      panel: "rgba(16, 28, 25, 0.72)",
+      panelStrong: "rgba(16, 28, 25, 0.92)",
+      panelRaised: "rgba(22, 36, 33, 0.86)",
       accent: "#2EE6A8",
       accentSoft: "rgba(46, 230, 168, 0.16)",
       accentGlow: "rgba(46, 230, 168, 0.38)",
-      secondary: "#3FD4FF",
-      secondarySoft: "rgba(63, 212, 255, 0.16)",
+      secondary: "#7FE9D0",
+      secondarySoft: "rgba(127, 233, 208, 0.16)",
       warning: "#F5B544",
       warningSoft: "rgba(245, 181, 68, 0.14)",
       warningGlow: "rgba(245, 181, 68, 0.32)",
       textPrimary: "#EEF6FB",
-      textMuted: "#8FA5B8",
-      textDim: "#5A7186",
+      textMuted: "#9DA3A3",
+      textDim: "#67736E",
       hairline: "rgba(64, 224, 178, 0.14)",
       hairlineStrong: "rgba(64, 224, 178, 0.28)",
       /** Sheen for the rotating card border and the verification scan stripe. */
       sheen: "rgba(238, 246, 251, 0.10)",
-      gridLine: "rgba(63, 212, 255, 0.18)",
-      overlayScrim: "rgba(3, 7, 12, 0.82)",
+      gridLine: "rgba(127, 233, 208, 0.18)",
+      overlayScrim: "rgba(5, 10, 8, 0.82)",
       danger: colors.danger
     }
   },

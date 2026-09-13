@@ -1,7 +1,7 @@
 /**
  * Light palette for the seller Events manager and the Activity center.
  *
- * These two screens share the same navy-header, white-card trade dress as the
+ * These two screens share the same black-header, white-card trade dress as the
  * Store / Orders / Messages seller surfaces, so the base neutrals come straight
  * from `storeLight` — page, card, header gradient, hairline, text families.
  * Only the domain-specific additions the mission spells out live here, so a
@@ -18,6 +18,27 @@
  *      red = live/urgent, pink = social, shield-green = system).
  *
  * Nothing here overrides an existing token; this is purely additive.
+ *
+ * THIS FILE STRADDLES THE BLACK/WHITE/GREEN LOCK, which is why it is not in
+ * `businessPaletteLock`'s scan list and why the violet and blue above survive.
+ *
+ * `EventsManagerScreen` is a seller surface and is subject to the lock;
+ * `ActivityScreen` is the app-wide notification centre and is not. The tokens
+ * divide along exactly that line, and it is worth checking before editing one:
+ *
+ *   Events manager only — locked:  EVENT_COVER, COUNTDOWN, DATE_TILE, CAPACITY,
+ *                                  AVATAR_STACK, `status.*`
+ *   Activity only — not locked:    ACTIVITY_TYPE, `bg.unread`,
+ *                                  `border.unreadEdge`, `text.unread`
+ *   Shared:                        EVENTS_LIVE and the inherited neutrals
+ *
+ * So `ACTIVITY_TYPE.orders` is still the Store blue #2B6DA8 and
+ * `.marketplace` still a violet. That is not an oversight — those circles are
+ * the app's domain colour-coding, they appear beside social and safety rows
+ * that were never in scope, and collapsing six categories onto green would cost
+ * the Activity feed the distinction it is built on. Recolouring them is a
+ * product decision about the notification centre, not a consequence of this
+ * lock.
  */
 
 import { storeLight } from "./storeLight";
@@ -32,11 +53,18 @@ export const EVENTS_LIVE = {
   bannerBorder: "#F0C9C8"
 } as const;
 
-/** Event cover gradient (dark teal → navy) with a translucent tag pill on top. */
+/**
+ * Event cover gradient (dark teal, deepening) with a translucent tag pill on top.
+ *
+ * The ramp used to end on the navy #0B2A3A. Under the black/white/green lock it
+ * ends on a deep green-black instead, at the same relative luminance (0.0199 vs
+ * 0.0203) so the cover is exactly as dark as it was and the white cover text
+ * keeps its contrast — only the hue changed.
+ */
 export const EVENT_COVER = {
   from: "#0F3B31",
   mid: "#15564A",
-  to: "#0B2A3A",
+  to: "#0A2C24",
   /** Translucent tag pill (IN-PERSON · WORKSHOP etc.) floating on the cover. */
   tagBg: "rgba(255,255,255,0.16)",
   tagBorder: "rgba(255,255,255,0.28)",
@@ -53,10 +81,22 @@ export const COUNTDOWN = {
   unit: storeLight.text.muted
 } as const;
 
-/** Calendar date tile — navy month band for upcoming, muted grey for past. */
+/**
+ * Calendar date tile — black month band for upcoming, muted grey for past.
+ *
+ * The upcoming band was the reference navy #232F3E and is now the same
+ * near-black as the header, so a date tile and the chrome above it are one dark
+ * rather than two. The past band was #8FA5B8, a cool blue-grey; it is now a true
+ * grey at the same luminance (0.360 vs 0.362), which keeps "past" reading as
+ * exactly as recessive as it did.
+ *
+ * Worth noting that #8FA5B8 is 22% saturated and so sits *under* the
+ * `businessPaletteLock` floor — the scan would not have caught it. It went
+ * because it was read, next to a navy that the scan did catch.
+ */
 export const DATE_TILE = {
-  upcomingBand: "#232F3E",
-  pastBand: "#8FA5B8",
+  upcomingBand: storeLight.bg.headerFrom,
+  pastBand: "#9DA3A3",
   bandText: "#FFFFFF",
   bodyBg: "#FFFFFF",
   bodyBorder: storeLight.border.hairline,
@@ -129,11 +169,44 @@ export const eventsLight = {
     onDarkMuted: storeLight.text.onDarkMuted,
     unread: "#2B6DA8"
   },
+  /**
+   * The upcoming-row status LED (`EventRow`'s `StatusLED`). Three lifecycle
+   * states, and it is worth being precise about how they relate, because it is
+   * what decides the colours: `promoted` is not a peer of `published`, it is
+   * `published` *plus a live Advertising campaign* (`deriveEventStatus` returns
+   * it only when `event.promotionCampaignId` is set). `draft` is the one state
+   * that is not live.
+   *
+   * `promoted` was the Marketplace violet. Under the black/white/green lock the
+   * replacement is the app's gold, not a second green and not the promotion
+   * gray:
+   *
+   *   - A second green would put "published" and "promoted" a hair apart on the
+   *     one axis a reader scans, and they are the two states most often on
+   *     screen together.
+   *   - `adsLight.post.base` gray is the *product* identity of Post ads, not a
+   *     lifecycle state; borrowing it would make a promoted event read as more
+   *     recessive than a plain published one, which is backwards.
+   *   - Gold is the money/ads channel app-wide (`adsLight`: "gold → money";
+   *     `insightsLight.source.ads`), and what distinguishes a promoted event
+   *     from a published one is exactly that a campaign is spending on it. This
+   *     is the case gold exists for.
+   *
+   * It is a *dark* gold because this token is a text colour as well as a dot
+   * fill. The money golds are fills and fail as text on the white card:
+   * #FFA41C is 1.99:1 and this file's own #C77F00 is 3.25:1. #8A6100 is the
+   * same hue at 5.54:1, over the 4.5:1 body-text floor and close to the 6.13:1
+   * the violet had.
+   *
+   * All three are drawn beside `status.line` ("Promoted · 4.2k reach",
+   * "Published · 88 interested", or the first publish blocker), so the state is
+   * never carried by colour alone.
+   */
   status: {
     /** Published (green ping). */
     published: "#067D62",
-    /** Promoted (violet). */
-    promoted: "#6D4AC4",
+    /** Promoted — dark gold, the money/ads channel. See above. */
+    promoted: "#8A6100",
     /** Draft (grey). */
     draft: storeLight.text.muted
   },

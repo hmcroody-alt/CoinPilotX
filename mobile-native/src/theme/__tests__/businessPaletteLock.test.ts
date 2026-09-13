@@ -52,7 +52,15 @@ import { join } from "path";
  * push people into deleting the explanation instead.
  */
 
-/** Every theme module that a business/seller surface reads. */
+/**
+ * Every theme module a business/seller surface reads AND owns end to end, so the
+ * whole file can be scanned.
+ *
+ * Two more business palettes exist that cannot be scanned whole, because they
+ * share a file with something outside the lock. They get their own describe
+ * block at the bottom — see `PARTIAL` there for what and why. Anything added
+ * here must be a file where every colour is a business colour.
+ */
 const BUSINESS_THEMES = [
   "storeLight.ts",
   "marketplaceLight.ts",
@@ -61,7 +69,12 @@ const BUSINESS_THEMES = [
   "insightsLight.ts",
   "paymentsLight.ts",
   "adsLight.ts",
-  "hubLight.ts"
+  "hubLight.ts",
+  // The seller's commerce inbox (CommerceInboxScreen + components/messages/*).
+  // Missed by the original sweep: it is named for Messages, so it read as the
+  // consumer Messenger tab, but the dark Messenger does not use it and every
+  // one of its consumers is the Business "Sections" inbox.
+  "messagesLight.ts"
 ];
 
 /**
@@ -227,7 +240,7 @@ describe("business themes carry no blue or violet", () => {
   it("scans the themes this lock is supposed to cover", () => {
     // Guards against the whole suite passing because a rename made every file
     // unreadable, or because someone trimmed the list instead of a colour.
-    expect(BUSINESS_THEMES.length).toBe(8);
+    expect(BUSINESS_THEMES.length).toBe(9);
     for (const file of BUSINESS_THEMES) {
       expect(read(file).length).toBeGreaterThan(0);
     }
@@ -238,5 +251,129 @@ describe("business themes carry no blue or violet", () => {
       .filter(banned)
       .map((c) => `${c.source} rgb(${c.r},${c.g},${c.b})`);
     expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * The two business palettes that live in a file with a non-business neighbour.
+ *
+ * A whole-file scan is the right shape for the nine above and the wrong shape
+ * for these two, so each gets the narrowest scan that still covers it. The risk
+ * a narrow scan carries is that it silently stops covering anything — a rename,
+ * a moved brace — so both extractors assert they found something first.
+ */
+describe("the business palettes that share a file", () => {
+  /**
+   * `logiNexus.colors.businessLive` — the dark palette behind
+   * `BusinessProfileScreen` and `BusinessBuyerPreviewScreen`, the two screens in
+   * the commerce family that are not on `storeLight`'s white page.
+   *
+   * It sits inside `logiNexus.ts`, whose other namespaces are the app-wide
+   * LogiNexus chrome and are emphatically NOT locked — the home surface is
+   * indigo and cyan by design. So the scan is the `businessLive` object only,
+   * brace-matched out of the source.
+   */
+  function businessLiveBlock(): string {
+    const source = stripComments(readFileSync(join(__dirname, "..", "logiNexus.ts"), "utf8"));
+    const start = source.indexOf("businessLive: {");
+    if (start < 0) return "";
+    let depth = 0;
+    for (let i = source.indexOf("{", start); i < source.length; i += 1) {
+      if (source[i] === "{") depth += 1;
+      if (source[i] === "}") {
+        depth -= 1;
+        if (depth === 0) return source.slice(start, i + 1);
+      }
+    }
+    return "";
+  }
+
+  it("still finds the businessLive block it is scanning", () => {
+    const block = businessLiveBlock();
+    // Cheap proof the brace-match landed on the right object and did not run
+    // away into the rest of the file.
+    expect(block).toContain("panelRaised:");
+    expect(block).toContain("overlayScrim:");
+    expect(block).not.toContain("typography");
+    expect(parseColours(block).length).toBeGreaterThan(10);
+  });
+
+  it("logiNexus.colors.businessLive carries no blue or violet", () => {
+    const offenders = parseColours(businessLiveBlock())
+      .filter(banned)
+      .map((c) => `${c.source} rgb(${c.r},${c.g},${c.b})`);
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * `eventsLight.ts` is read by two screens on opposite sides of the lock:
+   * `EventsManagerScreen` (a seller surface, locked) and `ActivityScreen` (the
+   * app-wide notification centre, not locked). The tokens divide cleanly along
+   * that line, so the file keeps a blue and a violet on purpose.
+   *
+   * The exemption is carved out BY NAME — the `ACTIVITY_TYPE` object and the
+   * three `unread` keys — and everything else in the file is scanned normally.
+   *
+   * Not by file position, which was the first attempt and was worse than
+   * nothing: the Events-manager `status` block sits *after* `ACTIVITY_TYPE` in
+   * the source, so a "scan everything above it" slice skipped the violet
+   * `status.promoted` that this whole exercise found. The exclusions have to
+   * follow the tokens, not the line numbers.
+   */
+  function splitEventsLight() {
+    const source = stripComments(readFileSync(join(__dirname, "..", "eventsLight.ts"), "utf8"));
+    const start = source.indexOf("export const ACTIVITY_TYPE");
+    const end = source.indexOf("}", source.indexOf("system:", start));
+    const activity = start < 0 || end < 0 ? "" : source.slice(start, end + 1);
+    const locked = source
+      .replace(activity, "")
+      // `bg.unread`, `border.unreadEdge` and `text.unread` — the Activity row
+      // tint, its left edge and its bold timestamp. Only NotificationRow and
+      // ActivityHeader read them.
+      .split("\n")
+      .filter((line) => !/^\s*(unread|unreadEdge):/.test(line))
+      .join("\n");
+    return { activity, locked };
+  }
+
+  it("still finds the two regions it is splitting eventsLight.ts into", () => {
+    const { activity, locked } = splitEventsLight();
+    expect(activity).toContain("marketplace:");
+    expect(activity).toContain("system:");
+    expect(activity).not.toContain("eventsLight");
+    // The locked side must still contain the Events-manager tokens, or the
+    // exclusion has eaten the thing it is meant to be guarding.
+    expect(locked).toContain("EVENT_COVER");
+    expect(locked).toContain("DATE_TILE");
+    expect(locked).toContain("promoted:");
+    expect(locked).toContain("upcomingBand:");
+  });
+
+  /**
+   * The assertion that would have caught the violet `status.promoted` the sweep
+   * left behind on a locked surface. It is now a dark gold.
+   */
+  it("everything in eventsLight.ts outside the Activity tokens is clean", () => {
+    const offenders = parseColours(splitEventsLight().locked)
+      .filter(banned)
+      .map((c) => `${c.source} rgb(${c.r},${c.g},${c.b})`);
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * And the exempt side, pinned as an exact set. A new blue in `ACTIVITY_TYPE`
+   * fails because the set grows; removing one fails too, which is deliberate —
+   * if the Activity feed is ever recoloured, that is a product decision about
+   * the notification centre and someone should record it here rather than have
+   * a test quietly accept it.
+   */
+  it("the Activity exemption is exactly these two hues", () => {
+    const exempt = [...new Set(parseColours(splitEventsLight().activity).filter(banned).map((c) => c.source))].sort();
+    expect(exempt).toEqual([
+      // ACTIVITY_TYPE.orders — the Store blue, on notification rows.
+      "#2B6DA8",
+      // ACTIVITY_TYPE.marketplace — the Marketplace violet, likewise.
+      "#6D4AC4"
+    ]);
   });
 });

@@ -3,7 +3,7 @@
  * two dresses:
  *
  *   • upcoming / draft → DateTile + title + meta + a status LED. The LED reads a
- *     derived EventStatus: green Published (+ interest), violet Promoted (+ reach
+ *     derived EventStatus: green Published (+ interest), gold Promoted (+ reach
  *     from Advertising), grey Draft (+ the real blocking reason). Nothing here is
  *     invented — a promoted row with no campaign figure shows "Promoted" with no
  *     number.
