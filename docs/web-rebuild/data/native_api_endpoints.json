@@ -1,0 +1,506 @@
+{
+ "account.ts": [
+  "/api/account/2fa/disable",
+  "/api/account/2fa/enable",
+  "/api/account/language",
+  "/api/account/password/change-request",
+  "/api/account/reauthenticate",
+  "/api/account/recovery-codes/generate",
+  "/api/account/region-preferences",
+  "/api/account/security",
+  "/api/account/security-events",
+  "/api/account/sessions/revoke-all",
+  "/api/account/status",
+  "/api/account/trusted-devices",
+  "/api/account/trusted-devices/${deviceId}",
+  "/api/account/verify-email",
+  "/api/account/verify-phone",
+  "/api/dashboard/account/settings",
+  "/pulse/settings/account"
+ ],
+ "accountHealth.ts": [
+  "/api/dashboard/account/state",
+  "/api/dashboard/account/strikes/${strikeId}/appeal"
+ ],
+ "activity.ts": [
+  "/pulse/activity",
+  "/pulse/calls/${call.call_id}",
+  "/pulse/messages/${conversation.conversation_id}",
+  "/pulse/notifications"
+ ],
+ "activityFeed.ts": [
+  "/pulse/marketplace",
+  "/pulse/orders"
+ ],
+ "ads.ts": [
+  "/api/pulse/ads/click",
+  "/api/pulse/ads/event",
+  "/api/pulse/ads/impression",
+  "/api/pulse/ads/viewability"
+ ],
+ "adsAudiences.ts": [
+  "/api/pulse/ads/audiences",
+  "/api/pulse/ads/audiences/lookalike"
+ ],
+ "adsDashboard.ts": [
+  "/api/pulse/ads/analytics"
+ ],
+ "adsDetail.ts": [
+  "/api/pulse/ads",
+  "/api/pulse/ads/campaign/draft",
+  "/api/pulse/ads/campaign/drafts",
+  "/api/pulse/ads/insights/apply"
+ ],
+ "adsOs.ts": [
+  "/api/pulse/ads",
+  "/api/pulse/ads/audiences",
+  "/api/pulse/ads/campaigns/full",
+  "/api/pulse/ads/targeting/estimate",
+  "/api/pulse/media/upload"
+ ],
+ "adsPolicyCenter.ts": [
+  "/api/pulse/ads/appeals"
+ ],
+ "adsPortal.ts": [
+  "/api/pulse/ads/portal"
+ ],
+ "adsWallet.ts": [
+  "/api/pulse/ads/wallet/auto-topup",
+  "/api/pulse/ads/wallet/limits"
+ ],
+ "alerts.ts": [
+  "/api/crypto/alerts"
+ ],
+ "auth.ts": [
+  "/api/mobile/auth/change-confirmation-email",
+  "/api/mobile/auth/confirmation-status",
+  "/api/mobile/auth/login",
+  "/api/mobile/auth/logout",
+  "/api/mobile/auth/logout-all",
+  "/api/mobile/auth/recover",
+  "/api/mobile/auth/register",
+  "/api/mobile/auth/resend-confirmation",
+  "/api/mobile/auth/session"
+ ],
+ "briefings.ts": [
+  "/api/pulse/briefings/preferences",
+  "/api/pulse/briefings/seen",
+  "/api/pulse/briefings/status"
+ ],
+ "businessOs.ts": [
+  "/api/dashboard/account/verification/request",
+  "/api/pulse/ads/accounts",
+  "/api/pulse/ads/analytics${suffix}",
+  "/api/pulse/ads/campaigns",
+  "/pulse/ads"
+ ],
+ "businessProfile.ts": [
+  "/api/pulse/business/profile",
+  "/api/pulse/business/profile/${sellerUserId}",
+  "/api/pulse/business/profile/address",
+  "/api/pulse/business/profile/hours",
+  "/api/pulse/business/profile/link",
+  "/api/pulse/business/profile/preview",
+  "/api/pulse/business/profile/publish",
+  "/api/pulse/business/profile/sync",
+  "/api/pulse/business/profile/vocabularies"
+ ],
+ "calls.ts": [
+  "/api/calls/active",
+  "/api/calls/capabilities",
+  "/api/calls/start",
+  "/api/calls/voip-token",
+  "/api/calls/voip-token/revoke"
+ ],
+ "camera.ts": [
+  "/api/pulse/camera/config",
+  "/api/pulse/camera/config${suffix}",
+  "/api/pulse/camera/preview",
+  "/api/pulse/camera/preview/mark-published",
+  "/api/pulse/media/upload",
+  "/api/pulse/posts/create-from-camera",
+  "/api/pulse/reels/create-from-camera"
+ ],
+ "capitalGraph.ts": [
+  "/api/private-office/capital-graph",
+  "/api/private-office/capital-graph/cash-flow",
+  "/api/private-office/capital-graph/exposure",
+  "/api/private-office/capital-graph/integrity",
+  "/api/private-office/capital-graph/obligations",
+  "/api/private-office/capital-graph/overview",
+  "/api/private-office/capital-graph/portfolio",
+  "/api/private-office/entities"
+ ],
+ "checkoutCountries.ts": [
+  "/api/pulse/marketplace/cart/checkout-options"
+ ],
+ "commerceInbox.ts": [
+  "/api/pulse/communications/v2/conversations"
+ ],
+ "composerMusic.ts": [
+  "/api/pulse/music/ai-suggest"
+ ],
+ "creator.ts": [
+  "/api/dashboard/content-planner/item",
+  "/api/dashboard/creator/state",
+  "/api/pulse/creator-ai/${tool}",
+  "/pulse/creator-studio"
+ ],
+ "cryptoPremium.ts": [
+  "/api/crypto/alerts",
+  "/api/mobile/crypto/alerts",
+  "/api/mobile/crypto/portfolio"
+ ],
+ "dashboard.ts": [
+  "/pulse/orders/${order.id}"
+ ],
+ "dropshipping.ts": [
+  "/api/business-os/dropshipping",
+  "/api/business-os/suppliers/cj"
+ ],
+ "events.ts": [
+  "/pulse/events",
+  "/pulse/events/${liveId}",
+  "/pulse/live/${liveId}",
+  "/pulse/live/events/create",
+  "/pulse/live/schedule"
+ ],
+ "eventsData.ts": [
+  "/pulse/live/999001"
+ ],
+ "feed.ts": [
+  "/api/pulse/follows/toggle",
+  "/api/pulse/posts",
+  "/api/pulse/posts/${postId}",
+  "/api/pulse/posts/${postId}/comments",
+  "/api/pulse/posts/${postId}/comments${query}",
+  "/api/pulse/posts/${postId}/hide",
+  "/api/pulse/posts/${postId}/react",
+  "/api/pulse/posts/${postId}/repost",
+  "/api/pulse/users/mute"
+ ],
+ "friends.ts": [
+  "/api/pulse/friends",
+  "/api/pulse/friends/request"
+ ],
+ "groups.ts": [
+  "/api/pulse/communications/rooms",
+  "/api/pulse/groups/create"
+ ],
+ "growth.ts": [
+  "/api/pulse/growth",
+  "/pulse/growth"
+ ],
+ "intelligence.ts": [
+  "/api/crypto/alerts",
+  "/api/dashboard/intelligence/state"
+ ],
+ "learning.ts": [
+  "/api/education/categories",
+  "/api/education/lesson/${cleanSlug}",
+  "/api/education/lessons",
+  "/api/education/quiz/submit",
+  "/api/education/tutor",
+  "/pulse/courses",
+  "/pulse/courses/create",
+  "/pulse/teacher-dashboard",
+  "/pulse/teachers"
+ ],
+ "live.ts": [
+  "/api/pulse/live/${liveId}/chat",
+  "/api/pulse/live/${liveId}/chat/${messageId}/${action}",
+  "/api/pulse/live/${liveId}/end",
+  "/api/pulse/live/${liveId}/guests/${guestId}/${action}",
+  "/api/pulse/live/${liveId}/guests/${guestId}/leave",
+  "/api/pulse/live/${liveId}/guests/${guestId}/publish-complete",
+  "/api/pulse/live/${liveId}/join",
+  "/api/pulse/live/${liveId}/join-request",
+  "/api/pulse/live/${liveId}/join-requests",
+  "/api/pulse/live/${liveId}/join-requests/${requestId}/${action}",
+  "/api/pulse/live/${liveId}/join-requests/${requestId}/cancel",
+  "/api/pulse/live/${liveId}/join-status",
+  "/api/pulse/live/${liveId}/native-publish",
+  "/api/pulse/live/${liveId}/react",
+  "/api/pulse/live/${liveId}/replay/retry",
+  "/api/pulse/live/${liveId}/rtc/token",
+  "/api/pulse/live/${liveId}/state",
+  "/api/pulse/live/start",
+  "/pulse/live/${id}"
+ ],
+ "marketIntelligence.ts": [
+  "/api/pulse/market/portfolio/risk",
+  "/api/pulse/market/snapshot"
+ ],
+ "marketPulse.ts": [
+  "/api/pulse/market/global"
+ ],
+ "marketplace.ts": [
+  "/api/pulse/marketplace/commercial/terms",
+  "/api/pulse/marketplace/digital-files/upload",
+  "/api/pulse/marketplace/listings/create",
+  "/api/pulse/marketplace/listings/report",
+  "/api/pulse/marketplace/listings/save",
+  "/api/pulse/marketplace/media/attach",
+  "/api/pulse/marketplace/seller/apply",
+  "/api/pulse/marketplace/seller/listings/${listingId}",
+  "/api/pulse/marketplace/seller/listings/${listingId}/${action}",
+  "/api/pulse/marketplace/seller/listings/${listingId}/submit",
+  "/api/pulse/marketplace/seller/listings/batch",
+  "/api/pulse/messages/start",
+  "/api/pulse/orders/${orderId}/cash-collected",
+  "/api/pulse/payments/checkout",
+  "/api/pulse/payments/seller/orders",
+  "/api/pulse/payouts/connect"
+ ],
+ "marketplaceCommerce.ts": [
+  "/api/pulse/marketplace/cart",
+  "/api/pulse/marketplace/cart/${lineId}",
+  "/api/pulse/marketplace/cart/${lineId}/confirm-price",
+  "/api/pulse/marketplace/cart/checkout",
+  "/api/pulse/marketplace/cart/validate",
+  "/api/pulse/marketplace/offers",
+  "/api/pulse/marketplace/offers/${offerId}/${action}",
+  "/api/pulse/marketplace/offers/${offerId}/checkout",
+  "/api/pulse/marketplace/offers/${offerId}/counter",
+  "/api/pulse/marketplace/returns",
+  "/api/pulse/payments/orders/${transactionId}"
+ ],
+ "messenger.ts": [
+  "/api/messages/media/${attachmentId}/download",
+  "/api/messages/media/complete",
+  "/api/messages/media/init",
+  "/api/messages/media/upload",
+  "/api/pulse-ai/actions/cancel",
+  "/api/pulse-ai/actions/confirm",
+  "/api/pulse-ai/message",
+  "/api/pulse/communications/v2"
+ ],
+ "music.ts": [
+  "/api/pulse/music/upload"
+ ],
+ "notifications.ts": [
+  "/api/notification-preferences",
+  "/api/pulse/notifications/${notificationId}",
+  "/api/pulse/notifications/${notificationId}/read",
+  "/api/pulse/notifications/${notificationId}/resolve",
+  "/api/pulse/notifications/preferences",
+  "/api/pulse/notifications/read-all${query}",
+  "/api/pulse/notifications/unread-count"
+ ],
+ "ordersDashboard.ts": [
+  "/api/pulse/orders",
+  "/api/pulse/payments/seller/orders"
+ ],
+ "pages.ts": [
+  "/api/pages",
+  "/api/pages/${pageId}",
+  "/api/pages/${pageId}/follow",
+  "/api/pages/${pageId}/link-options",
+  "/api/pages/${pageId}/links",
+  "/api/pages/${pageId}/links${suffix}",
+  "/api/pages/${pageId}/manage",
+  "/api/pages/${pageId}/members",
+  "/api/pages/${pageId}/members/${memberUserId}",
+  "/api/pages/${pageId}/posts",
+  "/api/pages/${pageId}/status",
+  "/api/pages/${pageId}/transfer",
+  "/api/pages/${pageId}/verification",
+  "/api/pages/:id/manage",
+  "/api/pages/:id/posts",
+  "/api/pages/identities",
+  "/api/pages/invites",
+  "/api/pages/invites/accept",
+  "/api/pages/invites/decline"
+ ],
+ "payments.ts": [
+  "/api/pulse/ads/accounts/${accountId}/wallet/apple-iap/verify",
+  "/api/pulse/ads/iap/products",
+  "/api/pulse/payments/apple/premium/verify",
+  "/api/pulse/payments/intents",
+  "/api/pulse/payments/route"
+ ],
+ "portfolio.ts": [
+  "/api/portfolio",
+  "/api/portfolio/${id}"
+ ],
+ "premium.ts": [
+  "/api/dashboard/economy/state",
+  "/api/premium/billing-portal",
+  "/api/premium/checkout",
+  "/api/premium/status",
+  "/pulse/premium",
+  "/pulse/profile"
+ ],
+ "premiumCenter.ts": [
+  "/api/premium/status",
+  "/api/premium/status-center",
+  "/api/premium/usage-center"
+ ],
+ "presence.ts": [
+  "/api/pulse/presence"
+ ],
+ "privateConversations.ts": [
+  "/api/private-office/conversations"
+ ],
+ "privateFeatures.ts": [
+  "/api/private-office/briefings",
+  "/api/private-office/claims/${claimId}/review",
+  "/api/private-office/concierge",
+  "/api/private-office/documents",
+  "/api/private-office/relationships",
+  "/api/private-office/shield"
+ ],
+ "privateOffice.ts": [
+  "/api/private-office/facts",
+  "/api/private-office/overview",
+  "/api/private-office/security"
+ ],
+ "privateRecords.ts": [
+  "/api/private-office/attention",
+  "/api/private-office/operations/overview",
+  "/api/private-office/records"
+ ],
+ "profile.ts": [
+  "/api/pulse/follows/toggle",
+  "/api/pulse/premium/profile-theme",
+  "/api/pulse/profile/avatar",
+  "/api/pulse/profile/avatar/remove",
+  "/api/pulse/profile/cover",
+  "/api/pulse/profile/cover/remove",
+  "/api/pulse/profile/me",
+  "/api/pulse/profile/update"
+ ],
+ "profileTarget.ts": [
+  "/pulse/profile"
+ ],
+ "progress.ts": [
+  "/api/progress",
+  "/api/progress/activity",
+  "/api/progress/faq",
+  "/api/progress/how-it-works",
+  "/api/progress/invite",
+  "/api/progress/milestones",
+  "/api/progress/missions",
+  "/api/progress/tile"
+ ],
+ "promotions.ts": [
+  "/api/promotions"
+ ],
+ "pulse.ts": [
+  "/api/dashboard/mission-control",
+  "/api/pulse/assistant/chat",
+  "/api/pulse/profile/me"
+ ],
+ "pulseApi.ts": [
+  "/api/messages/media/",
+  "/api/mobile/auth/",
+  "/api/pulse/mobile/auth/"
+ ],
+ "push.ts": [
+  "/api/push/subscribe",
+  "/api/push/unsubscribe"
+ ],
+ "reels.ts": [
+  "/api/pulse/reels/${reelId}",
+  "/api/pulse/reels/${reelId}/comments",
+  "/api/pulse/reels/${reelId}/follow-creator",
+  "/api/pulse/reels/${reelId}/not-interested",
+  "/api/pulse/reels/${reelId}/react",
+  "/api/pulse/reels/${reelId}/repost",
+  "/api/pulse/reels/${reelId}/share",
+  "/api/pulse/reels/${reelId}/view",
+  "/api/pulse/reels/comments/${commentId}",
+  "/api/pulse/reels/comments/${commentId}/react",
+  "/api/pulse/reels/create",
+  "/api/pulse/report"
+ ],
+ "referral.ts": [
+  "/api/mobile/referral/claim"
+ ],
+ "rewards.ts": [
+  "/api/pulse/rewards/credits/redeem"
+ ],
+ "safety.ts": [
+  "/api/dashboard/network/state"
+ ],
+ "saved.ts": [
+  "/api/pulse/saved",
+  "/api/pulse/saved/${itemId}",
+  "/api/pulse/saved/${itemId}/move",
+  "/api/pulse/saved/collections",
+  "/api/pulse/saved/collections/${collectionId}"
+ ],
+ "sellerApplication.ts": [
+  "/api/pulse/seller/application",
+  "/api/pulse/seller/application/documents",
+  "/api/pulse/seller/application/documents/${documentId}/remove",
+  "/api/pulse/seller/application/draft",
+  "/api/pulse/seller/application/submit",
+  "/api/pulse/seller/application/withdraw"
+ ],
+ "sellerPayouts.ts": [
+  "/api/pulse/payments/seller/connect/status",
+  "/api/pulse/payments/seller/payouts"
+ ],
+ "status.ts": [
+  "/api/pulse/status",
+  "/api/pulse/status/${statusId}",
+  "/api/pulse/status/${statusId}/react",
+  "/api/pulse/status/${statusId}/reply",
+  "/api/pulse/status/${statusId}/share",
+  "/api/pulse/status/${statusId}/view",
+  "/api/pulse/status/ai-story"
+ ],
+ "stripePaymentSheet.ts": [
+  "/api/pulse/marketplace/cart/checkout",
+  "/api/pulse/payments/checkout"
+ ],
+ "support.ts": [
+  "/api/pulse/block",
+  "/api/pulse/report",
+  "/api/scam-shield/scan",
+  "/api/security/report",
+  "/api/support/ticket",
+  "/pulse/help"
+ ],
+ "translation.ts": [
+  "/api/pulse/translations",
+  "/api/pulse/translations/languages",
+  "/api/pulse/translations/preference"
+ ],
+ "undxActions.ts": [
+  "/api/business-os/undx/confirmations",
+  "/api/business-os/undx/emergency-stop",
+  "/api/business-os/undx/marketplace/listings/draft",
+  "/api/business-os/undx/marketplace/listings/publish/execute",
+  "/api/business-os/undx/marketplace/listings/publish/plan",
+  "/api/business-os/undx/permissions",
+  "/api/business-os/undx/policies",
+  "/api/business-os/undx/receipts",
+  "/api/business-os/undx/requests",
+  "/api/business-os/undx/tools"
+ ],
+ "undxRuns.ts": [
+  "/api/undx/runs"
+ ],
+ "undxSelfKnowledge.ts": [
+  "/api/pulse-ai/conversation"
+ ],
+ "verification.ts": [
+  "/api/dashboard/account/state",
+  "/api/dashboard/account/verification/appeal",
+  "/api/dashboard/account/verification/document",
+  "/api/dashboard/account/verification/request",
+  "/api/premium/status",
+  "/api/pulse/profile/me"
+ ],
+ "watchlists.ts": [
+  "/api/crypto/favorites",
+  "/api/crypto/watchlists",
+  "/api/crypto/watchlists/market"
+ ],
+ "welcome.ts": [
+  "/api/pulse/welcome-dismiss",
+  "/api/pulse/welcome-state"
+ ]
+}

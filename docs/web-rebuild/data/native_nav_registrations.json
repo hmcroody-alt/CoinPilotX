@@ -1,0 +1,1112 @@
+[
+{
+"navigator": "Tabs",
+"route": "Dashboard",
+"component": "UserDashboardScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Home",
+"component": "(inline)",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Search",
+"component": "SearchScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Saved",
+"component": "SavedScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Groups",
+"component": "GroupsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Live",
+"component": "LiveScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Reels",
+"component": "ReelsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Create",
+"component": "CreateTabScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Status",
+"component": "StatusScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Messenger",
+"component": "MessengerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Notifications",
+"component": "ActivityInboxScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "PulseAI",
+"component": "PulseAiScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Profile",
+"component": "ProfileScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Marketplace",
+"component": "MarketplaceScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Tabs",
+"route": "Settings",
+"component": "SettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Tabs",
+"component": "(inline)",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "UserDashboard",
+"component": "UserDashboardScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "UserDashboardWeb",
+"component": "UserDashboardScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DashboardComposeAlias",
+"component": "DashboardActionAliasScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DashboardMusicAlias",
+"component": "DashboardActionAliasScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Music",
+"component": "MusicScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PulseQueue",
+"component": "PulseQueueScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DashboardLegacyModule",
+"component": "DashboardLegacyModuleScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DashboardModuleDetail",
+"component": "DashboardModuleDetailScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CameraStudio",
+"component": "CameraStudioScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ContentPreview",
+"component": "ContentPreviewScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Call",
+"component": "CallScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Chat",
+"component": "ChatScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "NewChat",
+"component": "NewChatScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PulseShare",
+"component": "PulseShareScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PostDetail",
+"component": "PostDetailScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ProfilePostViewer",
+"component": "ProfilePostViewerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Reels",
+"component": "ReelsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ReelDetail",
+"component": "ReelsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "StatusDetail",
+"component": "StatusScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketplaceDetail",
+"component": "MarketplaceScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketplaceProduct",
+"component": "MarketplaceProductScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOs",
+"component": "BusinessHubRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessProfile",
+"component": "BusinessProfileScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessBuyerPreview",
+"component": "BusinessBuyerPreviewScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketplaceManager",
+"component": "MarketplaceManagerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsAdvertising",
+"component": "AdvertisingRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsOrders",
+"component": "OrdersRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsMessages",
+"component": "MessagesRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsEvents",
+"component": "EventsRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsSection",
+"component": "BusinessOsSectionScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsActivity",
+"component": "ActivityRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsInsights",
+"component": "BusinessOsInsightsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BusinessOsPayments",
+"component": "BusinessOsPaymentsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MoneyLayer",
+"component": "MoneyLayerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MoneyDetail",
+"component": "MoneyDetailScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Rewards",
+"component": "RewardsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "SellerStore",
+"component": "SellerStoreRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Dropshipping",
+"component": "DropshippingHubScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingSuppliers",
+"component": "SuppliersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingConnect",
+"component": "ConnectSupplierScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingCatalog",
+"component": "SupplierCatalogScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingProduct",
+"component": "SupplierProductScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingCart",
+"component": "ImportCartScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingProducts",
+"component": "DropshippingProductsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingDraft",
+"component": "ReviewImportedProductScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingOrders",
+"component": "DropshippingOrdersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DropshippingSync",
+"component": "DropshippingSyncScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BuyerOrders",
+"component": "BuyerOrdersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BuyerOrderDetail",
+"component": "BuyerOrdersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BuyerPurchases",
+"component": "BuyerOrdersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketplaceCart",
+"component": "MarketplaceCartScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketplaceCheckout",
+"component": "MarketplaceCheckoutScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BuyerOrdersDashboard",
+"component": "BuyerOrdersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MerchantApply",
+"component": "SellerApplicationScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MerchantDashboard",
+"component": "SellerStoreScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MerchantProfile",
+"component": "SellerStoreScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketplaceCreateGateway",
+"component": "SellerListingComposerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Search",
+"component": "SearchScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Saved",
+"component": "SavedScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "GroupDetail",
+"component": "GroupsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LiveDetail",
+"component": "LiveScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LiveStudio",
+"component": "LiveStudioScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "NativeLiveHost",
+"component": "LiveHostSessionScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ReplayViewer",
+"component": "ReplayViewerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Events",
+"component": "EventsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "EventDetail",
+"component": "EventsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LiveScheduleGateway",
+"component": "EventsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LiveEventCreateGateway",
+"component": "EventsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ProfileDetail",
+"component": "ProfileScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Page",
+"component": "PageScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PageCreate",
+"component": "PageCreateRoute",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PageConnections",
+"component": "PageConnectionsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PageTeam",
+"component": "PageTeamScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PageEdit",
+"component": "PageEditScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PagesHub",
+"component": "PagesHubScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Presence",
+"component": "PresenceHubScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PulseIdentity",
+"component": "PulseIdentityScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ProfileEdit",
+"component": "ProfileEditScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Premium",
+"component": "PremiumCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CreatorStudio",
+"component": "CreatorStudioScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CreatorStudioAlias",
+"component": "CreatorStudioScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ContentPlanner",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ContentPlannerWeb",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ContentPlannerPulseAlias",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PostScheduler",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PostSchedulerPulseAlias",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DraftStudio",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DraftStudioPulseAlias",
+"component": "ContentPlannerScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Courses",
+"component": "CoursesLearningScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CourseDetail",
+"component": "CoursesLearningScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LearningLessonDetail",
+"component": "CoursesLearningScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "TeacherProfileGateway",
+"component": "CoursesLearningScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "TeacherDashboardGateway",
+"component": "CoursesLearningScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "GrowthCenter",
+"component": "GrowthCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ProgressCenter",
+"component": "ProgressCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "IntelligenceCenter",
+"component": "IntelligenceCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "UndxActionCenter",
+"component": "UndxActionCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "UndxCapabilities",
+"component": "UndxCapabilitiesScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Watchlists",
+"component": "WatchlistsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Portfolio",
+"component": "PortfolioScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MarketPulse",
+"component": "MarketPulseScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateOffice",
+"component": "PrivateOfficeScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateFacts",
+"component": "PrivateFactsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateOperations",
+"component": "PrivateOperationsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CapitalGraph",
+"component": "CapitalGraphScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CapitalEntity",
+"component": "CapitalEntityScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateOfficeSecurity",
+"component": "PrivateOfficeSecurityScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateDocuments",
+"component": "PrivateDocumentsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivatePeople",
+"component": "PrivatePeopleScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateBriefings",
+"component": "PrivateBriefingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateShield",
+"component": "PrivateShieldScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateConcierge",
+"component": "PrivateConciergeScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateMeetings",
+"component": "PrivateMeetingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateMeetingRoom",
+"component": "PrivateMeetingRoomScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateConversations",
+"component": "PrivateConversationsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivateConversationInfo",
+"component": "PrivateConversationInfoScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AssetDetail",
+"component": "AssetDetailScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AlertManagement",
+"component": "AlertManagementScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CryptoAlertManagement",
+"component": "AlertManagementScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CryptoAlertCenter",
+"component": "CryptoAlertCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CryptoAlertHistory",
+"component": "CryptoAlertHistoryScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "CryptoPortfolio",
+"component": "CryptoPortfolioScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountCenter",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountSettings",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountSecurity",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountWebSettings",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountWebSecurity",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountPrivacy",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountDevices",
+"component": "AccountCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountHealth",
+"component": "AccountHealthAppealsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountHealthWeb",
+"component": "AccountHealthAppealsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "SafetyHub",
+"component": "SafetyHubScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "SafetyWebHub",
+"component": "SafetyHubScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "TrustSafety",
+"component": "TrustSafetyScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "TrustSafetySupport",
+"component": "TrustSafetyScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "TrustSafetyHelp",
+"component": "TrustSafetyScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "TrustCenter",
+"component": "TrustSafetyScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "SecurityReport",
+"component": "TrustSafetyScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ScamShield",
+"component": "TrustSafetyScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "VerificationCenter",
+"component": "VerificationCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "VerificationWebCenter",
+"component": "VerificationCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ActivityInbox",
+"component": "ActivityInboxScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BriefingsHub",
+"component": "BriefingsHubScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BriefingDetail",
+"component": "BriefingDetailScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ActivityInboxLegacyInbox",
+"component": "ActivityInboxScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ActivityInboxWebActivity",
+"component": "ActivityInboxScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "ActivityInboxWebInbox",
+"component": "ActivityInboxScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "NotificationCenter",
+"component": "NotificationCenterScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "NotificationPreferences",
+"component": "NotificationPreferencesScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "RegionTime",
+"component": "RegionTimeScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "NotificationSettings",
+"component": "NotificationSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AppearanceSettings",
+"component": "AppearanceSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccessibilitySettings",
+"component": "AccessibilitySettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LanguageSettings",
+"component": "LanguageSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "StorageSettings",
+"component": "StorageSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PermissionsSettings",
+"component": "PermissionsSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "PrivacySettings",
+"component": "PrivacySettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "SecuritySettings",
+"component": "SecuritySettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "SessionsDevices",
+"component": "SessionsDevicesScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "BlockedUsers",
+"component": "BlockedUsersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "MutedUsers",
+"component": "MutedUsersScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DataPrivacySettings",
+"component": "DataPrivacySettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "HelpSettings",
+"component": "HelpSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AboutSettings",
+"component": "AboutSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "LegalSettings",
+"component": "LegalSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "DeveloperSettings",
+"component": "DeveloperSettingsScreen",
+"file": "AppNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Login",
+"component": "LoginScreen",
+"file": "AuthNavigator"
+},
+{
+"navigator": "Stack",
+"route": "Signup",
+"component": "SignupScreen",
+"file": "AuthNavigator"
+},
+{
+"navigator": "Stack",
+"route": "AccountRecovery",
+"component": "AccountRecoveryScreen",
+"file": "AuthNavigator"
+}
+]
