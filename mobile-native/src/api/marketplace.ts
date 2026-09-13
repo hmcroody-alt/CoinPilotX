@@ -26,17 +26,59 @@ const SELLER_STORE_CACHE_KEY = "pulsesoc.native.marketplace.seller_store";
  * not — though some (an empty shelf, an uncounted one) still stop checkout,
  * which is why `checkout_ready` is its own boolean and not `blockers.length === 0`.
  */
+/**
+ * One thing the seller has to do, already written out by the server.
+ *
+ * `section` is which part of the editor fixes it, so a tapped blocker can open
+ * the right place instead of dumping the seller at the top of a twelve-section
+ * form. `label` is prose because four surfaces render these codes — the store
+ * row, the Ready-to-Sell list, the bulk result and the single publish error —
+ * and each one owning its own code→English table is four tables that drift.
+ */
+export type ListingFix = {
+  code: string;
+  label: string;
+  section: string;
+};
+
 export type ListingReadiness = {
   publishable: boolean;
   checkout_ready: boolean;
   blockers: string[];
   warnings: string[];
+  /** e.g. "2 things left", or "Ready to publish" when there are none. */
+  summary: string;
+  /** One entry per blocker, in blocker order. Warnings get no fix. */
+  fixes: ListingFix[];
 };
+
+/**
+ * Why a BULK action would refuse this row, or `null` when it would not.
+ *
+ * Readiness cannot answer this on its own, and the gap is not academic: a
+ * finished, priced, already-live listing is `publishable: true` and must still
+ * never be republished — doing so knocks it back into the review queue and
+ * takes it off the storefront. So the state gate lives on the server beside
+ * readiness, in `listing_batch.block_reason`, and the *same function* answers
+ * both the preview drawn here and the batch that runs later. That is the only
+ * arrangement in which "Publish 14 · 4 blocked" is a promise rather than a
+ * guess.
+ */
+export type ListingBulkBlock = {
+  code: string;
+  /** Server-written, seller-facing, e.g. "Already published", "2 things left". */
+  reason: string;
+  blockers?: string[];
+};
+
+/** Keyed by action ("publish", "hide"). `null` means the action would apply. */
+export type ListingBulkEligibility = Record<string, ListingBulkBlock | null>;
 
 /** Verdict codes this client understands. The server may send others; readers
  *  must tolerate an unrecognised code rather than treating it as absent. */
 export const READINESS_CODES = {
   MISSING_TITLE: "MISSING_TITLE",
+  MISSING_DESCRIPTION: "MISSING_DESCRIPTION",
   MISSING_CATEGORY: "MISSING_CATEGORY",
   NO_VALID_MEDIA: "NO_VALID_MEDIA",
   MISSING_PRICE: "MISSING_PRICE",
@@ -93,6 +135,13 @@ export type MarketplaceListing = {
    * assuming a clean bill of health.
    */
   readiness?: ListingReadiness;
+  /**
+   * What each bulk action would do to this row. Seller route only, same as
+   * `readiness`. Absent means "not sent" — a caller must treat that as not
+   * eligible rather than as eligible, for the reason spelled out on
+   * {@link ListingBulkBlock}.
+   */
+  bulk_eligibility?: ListingBulkEligibility;
   product_type?: string;
   /**
    * Internal moderation fields. `safety_score` is deliberately absent from this
@@ -508,6 +557,91 @@ async function mutateMarketplaceSellerListingStatus(listingId: number, action: "
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * Bulk actions
+ * ------------------------------------------------------------------ */
+
+export type MarketplaceBatchAction = "publish" | "hide";
+
+/**
+ * Why one listing in a batch did not end up where the seller aimed it.
+ *
+ * Three outcomes, and the middle one is the whole reason this is not a boolean.
+ * `succeeded` moved. `failed` could not be attempted — the id was not found, or
+ * did not belong to this seller. `blocked` means the server looked at the row
+ * and it is not ready: nothing is wrong with the request, the product is
+ * unfinished. Collapsing blocked into failed is what turns "4 need a price"
+ * into "4 errors", and a seller cannot act on an error.
+ */
+export type MarketplaceBatchOutcome = "succeeded" | "blocked" | "failed";
+
+export type MarketplaceBatchResult = {
+  listing_id: number;
+  outcome: MarketplaceBatchOutcome;
+  /** Present on every entry the server could name. */
+  title?: string;
+  /** One sentence, server-written. Present on blocked and failed. */
+  reason?: string;
+  error_code?: string;
+  /** Readiness codes, for blocked rows the verdict refused. */
+  blockers?: string[];
+  /** The same blockers as prose plus an editor section. Tappable. */
+  fixes?: ListingFix[];
+  /** Which columns moved, for succeeded rows. */
+  changes_applied?: string[];
+  /**
+   * The listing's own status afterwards, e.g. `"pending_review"`. Not the
+   * outcome of the batch — a row can succeed into `pending_review`, and reading
+   * this as "did it work" would report every successful publish as pending.
+   */
+  status?: string;
+};
+
+export type MarketplaceBatchResponse = {
+  ok: boolean;
+  batch_id: string;
+  action: MarketplaceBatchAction;
+  requested_count: number;
+  successful_count: number;
+  blocked_count: number;
+  failed_count: number;
+  results: MarketplaceBatchResult[];
+  /** True when this exact request had already run and the server replayed it. */
+  replayed?: boolean;
+};
+
+/**
+ * Apply one action to many listings in ONE request.
+ *
+ * The alternative — looping the single-listing routes on the phone — is what
+ * this replaces, and the difference is not performance. A loop has no batch: a
+ * retry re-runs whatever half already succeeded, and the "14 published, 4 need
+ * attention" summary is assembled here out of whichever replies happened to
+ * arrive, so a dropped connection silently changes the count the seller is
+ * shown.
+ *
+ * `idempotencyKey` is required rather than generated inside, and that is the
+ * point of the parameter. Generated here, every retry would mint a fresh key
+ * and publish everything a second time — which is exactly the double-submission
+ * the key exists to prevent. The caller holds one key for one *attempt by the
+ * seller*, across as many retries as that attempt needs, and the server replays
+ * its original answer instead of re-applying.
+ */
+export async function batchMarketplaceSellerListings(input: {
+  action: MarketplaceBatchAction;
+  listingIds: number[];
+  idempotencyKey: string;
+}) {
+  return pulseApi<MarketplaceBatchResponse>("/api/pulse/marketplace/seller/listings/batch", {
+    method: "POST",
+    body: JSON.stringify({
+      action: input.action,
+      listing_ids: input.listingIds,
+      idempotency_key: input.idempotencyKey
+    })
+  });
+}
+
 export async function connectMarketplacePayout() {
   const result = await pulseApi<MarketplaceActionResponse>("/api/pulse/payouts/connect", {
     method: "POST",
@@ -682,6 +816,34 @@ function normalizeQuantity(raw: MarketplaceListing["quantity"]): number | null {
   return Number.isFinite(quantity) ? quantity : null;
 }
 
+/**
+ * A verdict, or `undefined` when the payload carries one this build cannot
+ * render.
+ *
+ * The server writes the seller-facing prose — `summary` and one `fixes` entry
+ * per blocker — precisely so no surface here owns a code→English table. A
+ * cached snapshot from before that change has the codes and none of the words,
+ * and there are only two ways to handle it: invent the words, which recreates
+ * the table and the drift, or admit we were not told. This admits it, and every
+ * reader already treats an absent verdict as "no news" rather than "good news".
+ */
+function normalizeReadiness(raw: ListingReadiness | undefined): ListingReadiness | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  if (typeof raw.summary !== "string" || !Array.isArray(raw.fixes)) return undefined;
+  return {
+    publishable: Boolean(raw.publishable),
+    checkout_ready: Boolean(raw.checkout_ready),
+    blockers: Array.isArray(raw.blockers) ? raw.blockers.map(String) : [],
+    warnings: Array.isArray(raw.warnings) ? raw.warnings.map(String) : [],
+    summary: raw.summary,
+    fixes: raw.fixes.map((entry) => ({
+      code: String(entry?.code || ""),
+      label: String(entry?.label || ""),
+      section: String(entry?.section || "overview")
+    }))
+  };
+}
+
 export function normalizeMarketplaceListing(item: MarketplaceListing): MarketplaceListing {
   const id = Number(item.listing_id || item.id || 0);
   return {
@@ -729,8 +891,40 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     quantity: normalizeQuantity(item.quantity),
     product_type: String(item.product_type || ""),
     saved: Boolean(item.saved || item.is_saved),
+    readiness: normalizeReadiness(item.readiness),
+    bulk_eligibility: normalizeBulkEligibility(item.bulk_eligibility),
     media: normalizeMarketplaceMedia(item)
   };
+}
+
+/**
+ * Keeps only entries this build can act on: an action name mapped either to
+ * `null` (eligible) or to a block carrying prose. A malformed entry is dropped
+ * rather than coerced, because the two ways of coercing it are "assume eligible"
+ * — which publishes something the server refused — and "assume blocked with an
+ * empty reason", which is a disabled row the seller cannot be told anything
+ * about. Dropping it leaves the action absent, and absence already means
+ * not eligible.
+ */
+function normalizeBulkEligibility(
+  raw: ListingBulkEligibility | undefined
+): ListingBulkEligibility | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const out: ListingBulkEligibility = {};
+  Object.keys(raw).forEach((action) => {
+    const block = raw[action];
+    if (block === null) {
+      out[action] = null;
+      return;
+    }
+    if (!block || typeof block !== "object" || typeof block.reason !== "string") return;
+    out[action] = {
+      code: String(block.code || ""),
+      reason: block.reason,
+      blockers: Array.isArray(block.blockers) ? block.blockers.map(String) : undefined
+    };
+  });
+  return out;
 }
 
 export function marketplaceSellerAuthor(listing: MarketplaceListing): PulseAuthor {

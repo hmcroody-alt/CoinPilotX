@@ -201,7 +201,9 @@ describe("listingHealth", () => {
       publishable: true,
       checkout_ready: false,
       blockers: [] as string[],
-      warnings
+      warnings,
+      summary: "Ready to publish",
+      fixes: []
     });
     expect(listingHealth(listing({ quantity: 40, readiness: verdict(["OUT_OF_STOCK"]) }))).toBe(
       "out_of_stock"

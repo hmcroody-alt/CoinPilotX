@@ -75,10 +75,17 @@ import { StoreDashboardScreen } from "../StoreDashboardScreen";
  * Fixtures
  * ------------------------------------------------------------------ */
 
-const READY = { publishable: true, checkout_ready: true, blockers: [], warnings: [] };
+const READY = {
+  publishable: true,
+  checkout_ready: true,
+  blockers: [],
+  warnings: [],
+  summary: "Ready to publish",
+  fixes: []
+};
 
 /**
- * Not publishable. `blockers` is what `partition` reads.
+ * Not publishable.
  *
  * Note that `warnings` stays empty, which keeps this row *in stock* for tab
  * purposes — the two lists answer different questions and the screen reads them
@@ -89,7 +96,9 @@ const NOT_READY = {
   publishable: false,
   checkout_ready: false,
   blockers: ["MISSING_PRICE"],
-  warnings: []
+  warnings: [],
+  summary: "1 thing left",
+  fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }]
 };
 
 /** Out of stock. `warnings` is what the tab filter reads. */
@@ -97,8 +106,32 @@ const SOLD_OUT = {
   publishable: true,
   checkout_ready: false,
   blockers: [],
-  warnings: ["OUT_OF_STOCK"]
+  warnings: ["OUT_OF_STOCK"],
+  summary: "Ready to publish",
+  fixes: []
 };
+
+/**
+ * The second half of what the seller route sends: what a bulk action would do
+ * to this row, decided server-side by `listing_batch.block_reason`.
+ *
+ * It is a separate field from `readiness` and these fixtures set it separately,
+ * which is the whole point — the screen no longer infers eligibility from
+ * status or from the verdict, so a fixture cannot imply it either. `null` per
+ * action means the server would let it through.
+ */
+const ELIGIBLE = { publish: null, hide: null };
+
+const BLOCKED_UNREADY = {
+  publish: { code: "NOT_READY", reason: "1 thing left", blockers: ["MISSING_PRICE"] },
+  hide: null
+};
+
+/** A row the server has ruled unpublishable, verdict and eligibility together. */
+const unready = {
+  readiness: NOT_READY,
+  bulk_eligibility: BLOCKED_UNREADY
+} as Partial<MarketplaceListing>;
 
 function listing(id: number, over: Partial<MarketplaceListing> = {}): MarketplaceListing {
   return {
@@ -112,6 +145,7 @@ function listing(id: number, over: Partial<MarketplaceListing> = {}): Marketplac
     status: "active",
     approval_status: "approved",
     readiness: READY,
+    bulk_eligibility: ELIGIBLE,
     ...over
   } as MarketplaceListing;
 }
@@ -384,7 +418,7 @@ describe("a reload that changes the catalogue", () => {
 
 describe("the publish preview on the rows themselves", () => {
   it("names why a selected row will not publish", async () => {
-    mockLoad.mockResolvedValue(result([listing(1), listing(2, { readiness: NOT_READY })]));
+    mockLoad.mockResolvedValue(result([listing(1), listing(2, unready)]));
     const view = await renderScreen();
 
     longPressRow(view, "Listing 1");
@@ -397,7 +431,7 @@ describe("the publish preview on the rows themselves", () => {
 
   it("refuses a row whose readiness never arrived", async () => {
     // The rule, at the screen level: absence is not a clean bill of health.
-    mockLoad.mockResolvedValue(result([listing(1, { readiness: undefined })]));
+    mockLoad.mockResolvedValue(result([listing(1, { readiness: undefined, bulk_eligibility: undefined })]));
     const view = await renderScreen();
     longPressRow(view, "Listing 1");
 
@@ -407,7 +441,7 @@ describe("the publish preview on the rows themselves", () => {
   it("says nothing about a row that is not in the selection", async () => {
     // An unselected row wearing "1 thing left" reads as a warning about the
     // listing rather than a preview of a batch it is not part of.
-    mockLoad.mockResolvedValue(result([listing(1), listing(2, { readiness: NOT_READY })]));
+    mockLoad.mockResolvedValue(result([listing(1), listing(2, unready)]));
     const view = await renderScreen();
 
     longPressRow(view, "Listing 1");
@@ -433,7 +467,7 @@ describe("selection is never signalled by colour alone", () => {
   });
 
   it("reads the blocked reason out rather than leaving it to the wash", async () => {
-    mockLoad.mockResolvedValue(result([listing(1, { readiness: NOT_READY })]));
+    mockLoad.mockResolvedValue(result([listing(1, unready)]));
     const view = await renderScreen();
     longPressRow(view, "Listing 1");
 

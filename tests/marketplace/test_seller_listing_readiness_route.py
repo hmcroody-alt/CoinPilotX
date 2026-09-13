@@ -191,6 +191,11 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         for item in items:
             self.assertNotIn("readiness", item,
                              "the public search endpoint is publishing merchant readiness")
+            # And the same for the field added beside it. `bulk_eligibility`
+            # carries strings like "2 things left" and "Already in review",
+            # which describe the merchant's backlog rather than the product.
+            self.assertNotIn("bulk_eligibility", item,
+                             "the public search endpoint is publishing bulk eligibility")
 
     def test_the_verdict_carries_no_money_or_supplier_facts(self):
         item = self.seller_item(self.insert_listing(quantity=0, price_label=""))
@@ -217,6 +222,61 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
             self.assertEqual(set(item["readiness"]),
                              {"publishable", "checkout_ready", "blockers",
                               "warnings", "summary", "fixes"})
+
+    # -- what a bulk action would do, decided here rather than on the phone ----
+
+    def test_every_listing_says_what_a_bulk_action_would_do_to_it(self):
+        """§34's preview is drawn from this field, so a row without one leaves
+        the client to re-derive it -- which is the whole defect."""
+        for overrides in ({}, {"price_label": ""}, {"status": "draft",
+                                                    "approval_status": "draft"}):
+            self.insert_listing(**overrides)
+        items = self.client.get("/api/pulse/marketplace/seller/listings").get_json()["items"]
+        for item in items:
+            self.assertIn("bulk_eligibility", item)
+            self.assertEqual(set(item["bulk_eligibility"]), {"publish", "hide"})
+
+    def test_a_finished_live_listing_is_publishable_and_still_blocked(self):
+        """The case a client-side derivation cannot see, and the reason this
+        field exists at all.
+
+        An approved, active listing passes every readiness check -- it is a
+        finished product. Republishing it would push it back into the review
+        queue and take the storefront dark until a moderator cleared it. Only
+        `listing_batch.block_reason` knows that, because only it owns the state
+        gate; readiness is about the listing's contents and says nothing about
+        where it already is.
+        """
+        item = self.seller_item(self.insert_listing())
+        self.assertTrue(item["readiness"]["publishable"])
+        block = item["bulk_eligibility"]["publish"]
+        self.assertIsNotNone(block, "select-all + Publish would unpublish this seller's store")
+        self.assertEqual(block["code"], "ALREADY_PUBLISHED")
+        # Hiding it, on the other hand, is exactly what a seller might want.
+        self.assertIsNone(item["bulk_eligibility"]["hide"])
+
+    def test_the_preview_and_the_batch_give_the_same_answer(self):
+        """One authority, asked twice.
+
+        Not "two implementations that agree" -- the assertion is that the field
+        on the row is literally what the batch endpoint computes, so there is no
+        second answer that could drift.
+        """
+        listing_id = self.insert_listing(price_label="", status="draft",
+                                         approval_status="draft")
+        preview = self.seller_item(listing_id)["bulk_eligibility"]["publish"]
+        self.assertIsNotNone(preview)
+        self.assertEqual(preview["reason"], "1 thing left")
+
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            json={"action": "publish", "listing_ids": [listing_id],
+                  "idempotency_key": "preview-vs-outcome"})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        outcome = response.get_json()["results"][0]
+        self.assertEqual(outcome["outcome"], "blocked")
+        self.assertEqual(outcome["reason"], preview["reason"])
+        self.assertEqual(outcome["blockers"], preview["blockers"])
 
 
 if __name__ == "__main__":

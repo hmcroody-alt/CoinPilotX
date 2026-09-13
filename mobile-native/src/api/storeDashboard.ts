@@ -26,6 +26,7 @@ import {
   listMarketplaceSellerOrders,
   loadCachedSellerStore,
   READINESS_CODES,
+  type ListingBulkEligibility,
   type ListingReadiness,
   type MarketplaceListing,
   type MarketplaceSellerOrder,
@@ -266,6 +267,12 @@ export type StoreListingRow = {
    * exists for cached snapshots, and an old snapshot has no news, not good news.
    */
   readiness: ListingReadiness | null;
+  /**
+   * What a bulk action would do to this row, as decided by the server function
+   * the batch itself uses. `null` when the payload carried none — and a caller
+   * must read that as "not eligible", not as "go ahead".
+   */
+  bulkEligibility: ListingBulkEligibility | null;
   /** Units of this listing sold in the trailing 7 days. Derived from orders. */
   unitsSold7d: number;
   // MOCK-DATA: no review aggregate exists, so these stay null and the row
@@ -428,6 +435,7 @@ export function deriveRows(
       quantity: stockCount(listing),
       health: listingHealth(listing),
       readiness: listing.readiness ?? null,
+      bulkEligibility: listing.bulk_eligibility ?? null,
       unitsSold7d: sold.get(String(id)) || 0,
       rating: null,
       reviewCount: null

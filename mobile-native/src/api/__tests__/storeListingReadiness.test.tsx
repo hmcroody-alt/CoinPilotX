@@ -52,13 +52,46 @@ function payload(over: Partial<MarketplaceListing> = {}): MarketplaceListing {
     approval_status: "approved",
     listing_type: "physical",
     product_type: "physical",
-    readiness: { publishable: true, checkout_ready: true, blockers: [], warnings: [] },
+    readiness: verdict(),
     ...over
   } as MarketplaceListing;
 }
 
+/**
+ * A test double of `listing_readiness.evaluate`'s prose half.
+ *
+ * The server sends one fix per blocker, in blocker order, and falls back to a
+ * generic label for a code it has no phrasing for — so a client can rely on the
+ * two arrays lining up. Deriving them here rather than making every call site
+ * spell them out keeps that invariant in the fixture, where a test that breaks
+ * it is visible.
+ */
+const SERVER_FIXES: Record<string, { label: string; section: string }> = {
+  MISSING_TITLE: { label: "Add title", section: "details" },
+  MISSING_DESCRIPTION: { label: "Add description", section: "details" },
+  MISSING_CATEGORY: { label: "Choose category", section: "details" },
+  NO_VALID_MEDIA: { label: "Add photo", section: "media" },
+  MISSING_PRICE: { label: "Add price", section: "pricing" },
+  RESTRICTED_PRODUCT: { label: "Resolve policy review", section: "policies" }
+};
+
 function verdict(over: Partial<ListingReadiness> = {}): ListingReadiness {
-  return { publishable: true, checkout_ready: true, blockers: [], warnings: [], ...over };
+  const blockers = over.blockers ?? [];
+  return {
+    publishable: true,
+    checkout_ready: true,
+    warnings: [],
+    summary: blockers.length
+      ? `${blockers.length} thing${blockers.length === 1 ? "" : "s"} left`
+      : "Ready to publish",
+    fixes: blockers.map((code) => ({
+      code,
+      label: SERVER_FIXES[code]?.label ?? "Review this listing",
+      section: SERVER_FIXES[code]?.section ?? "overview"
+    })),
+    ...over,
+    blockers
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -234,14 +267,19 @@ describe("the remaining-work line", () => {
       .toBe("1 thing left · Add title");
   });
 
-  it("counts a code it cannot phrase rather than pretending it is not there", () => {
-    // Shrinking the number to the subset this build understands would quietly
-    // tell the seller there is less to do than there is.
+  it("names a code this build has never heard of, because the server named it", () => {
+    // The old version of this row owned the code->English table and could only
+    // count what it could phrase: "2 things left · Add price", with the second
+    // task unnamed and unguessable. The words now arrive with the verdict, so a
+    // blocker added to the server after this build shipped still reads.
     const copy = listingRemainingCopy(
       verdict({ publishable: false, blockers: ["MISSING_PRICE", "SOME_FUTURE_CODE"] })
     );
     expect(copy).toContain("2 things left");
     expect(copy).toContain("Add price");
+    // The server's fallback for a code with no phrasing of its own -- generic,
+    // but a task rather than a silence.
+    expect(copy).toContain("Review this listing");
     expect(copy).not.toContain("SOME_FUTURE_CODE");
   });
 

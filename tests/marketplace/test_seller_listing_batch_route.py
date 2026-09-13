@@ -213,7 +213,7 @@ class SellerListingBatchRouteTestCase(unittest.TestCase):
         self.assertEqual(set(result["blockers"]), {"MISSING_PRICE", "MISSING_CATEGORY"})
         # And in words the seller can act on, from the one engine that owns them.
         self.assertEqual({f["label"] for f in result["fixes"]},
-                         {"Add a price", "Choose a category"})
+                         {"Add price", "Choose category"})
         self.assertEqual({f["section"] for f in result["fixes"]}, {"pricing", "details"})
 
     def test_the_counts_always_add_up_to_the_request(self):

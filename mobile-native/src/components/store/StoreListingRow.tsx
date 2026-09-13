@@ -61,43 +61,25 @@ export function listingStatusCopy(
 }
 
 /**
- * Merchant-facing phrasing for each blocker code, as an imperative the seller
- * can act on. §7 asks the row to state the exact remaining work, which means
- * "Add price", not "MISSING_PRICE" and not "incomplete".
+ * "2 things left · Add price + Add photo" — §7.
  *
- * Keyed by the server's vocabulary
- * (`services/business_os/marketplace/listing_readiness.py`). A code with no
- * entry is deliberately *counted but not named* — see `listingRemainingCopy` —
- * because inventing a phrase for a code this build has never seen would put
- * words in the server's mouth.
- */
-const BLOCKER_COPY: Record<string, string> = {
-  MISSING_TITLE: "Add title",
-  MISSING_CATEGORY: "Add category",
-  NO_VALID_MEDIA: "Add photo",
-  MISSING_PRICE: "Add price",
-  RESTRICTED_PRODUCT: "Resolve restriction"
-};
-
-/**
- * "2 things left · Add price + photo" — §7.
+ * Every word here comes from the verdict. There used to be a `BLOCKER_COPY`
+ * table in this file mapping each server code to an imperative, and it was the
+ * third copy of that table in the codebase; a code the server had learned and
+ * this build had not was silently counted-but-unnamed, so a seller was told
+ * "3 things left · Add price" and left to guess the other two.
  *
  * Returns `null` when there is nothing left *or* when no verdict arrived. Those
  * are different situations and both correctly render no line: the row must not
  * claim a listing is complete on the strength of a payload that never said so.
- *
- * The count comes from every blocker; only the ones this build can phrase are
- * listed. So an unrecognised code still shows up in "3 things left" even when it
- * cannot be named, which keeps the number honest rather than quietly shrinking
- * the work to what this build happens to understand.
  */
 export function listingRemainingCopy(readiness: StoreListingRowData["readiness"]): string | null {
   if (!readiness || !Array.isArray(readiness.blockers)) return null;
-  const blockers = readiness.blockers;
-  if (blockers.length === 0) return null;
-  const named = blockers.map((code) => BLOCKER_COPY[code]).filter(Boolean);
-  const count = `${blockers.length} thing${blockers.length === 1 ? "" : "s"} left`;
-  return named.length ? `${count} · ${named.join(" + ")}` : count;
+  if (readiness.blockers.length === 0) return null;
+  const labels = (Array.isArray(readiness.fixes) ? readiness.fixes : [])
+    .map((entry) => entry?.label)
+    .filter(Boolean);
+  return labels.length ? `${readiness.summary} · ${labels.join(" + ")}` : readiness.summary;
 }
 
 /**

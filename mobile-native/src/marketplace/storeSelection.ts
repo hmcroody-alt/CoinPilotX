@@ -40,9 +40,9 @@
  * thing in this file most likely to be "simplified" later:
  *
  *   **A row with no verdict is not eligible.** Not eligible-by-default, not
- *   optimistically eligible. `readiness: null` means the payload never said,
- *   and a bulk publish that treats "never said" as "fine" is how you publish a
- *   listing with no price. Absence is not a clean bill of health.
+ *   optimistically eligible. A missing `bulkEligibility` means the payload
+ *   never said, and a bulk publish that treats "never said" as "fine" is how
+ *   you publish a listing with no price. Absence is not a clean bill of health.
  */
 
 import type { StoreListingRow } from "../api/storeDashboard";
@@ -183,11 +183,11 @@ export type StoreBulkPartition = {
  * Split a selection into what will happen and what will not, before anything
  * is sent.
  *
- * Publish eligibility is **read from the server's verdict, never re-derived**.
- * `readiness.publishable` is the one authority (§5/§81); asking a second
- * question here would recreate exactly the divergence the readiness engine
- * exists to end, and it would do it at the moment a seller is publishing
- * fourteen things at once.
+ * Eligibility is **read, never derived**. The server attaches
+ * `bulk_eligibility` to every row of the seller's own listings, computed by
+ * `listing_batch.block_reason` — the same function the batch endpoint runs when
+ * the seller commits. So the preview and the outcome are not two answers that
+ * happen to agree; they are one answer, asked twice.
  */
 export function partition(rows: StoreListingRow[], action: StoreBulkAction): StoreBulkPartition {
   const eligible: StoreListingRow[] = [];
@@ -202,24 +202,27 @@ export function partition(rows: StoreListingRow[], action: StoreBulkAction): Sto
   return { eligible, blocked };
 }
 
+/**
+ * The one thing this file will not do is answer the question itself.
+ *
+ * There used to be a small TypeScript re-implementation here: no verdict blocks,
+ * `!publishable` blocks with a counted string, hide blocks when already hidden.
+ * Every clause of it was defensible and the whole was still wrong, because it
+ * could not know the rule that has nothing to do with readiness — an
+ * already-live listing is perfectly `publishable` and must never be published
+ * again. Select-all plus Publish would have shown "Publish 18", sent 18, and
+ * knocked fourteen live products back into the review queue.
+ *
+ * The fix was not to add the missing clause. It was to stop having clauses.
+ */
 function blockReason(row: StoreListingRow, action: StoreBulkAction): string | null {
-  if (action === "hide") {
-    // Hiding is always safe: it removes a listing from buyers, and the worst
-    // case of hiding something already hidden is nothing at all. Nothing here
-    // should acquire a blocker without a concrete failure to point at.
-    return row.health === "hidden" ? "Already hidden" : null;
-  }
-
-  if (!row.readiness) {
-    // Not "probably fine". The verdict is how this build knows anything about
-    // publishability, and it did not arrive.
-    return "No readiness check yet";
-  }
-  if (!row.readiness.publishable) {
-    const count = row.readiness.blockers.length;
-    return count > 0 ? `${count} thing${count === 1 ? "" : "s"} left` : "Not ready to publish";
-  }
-  return null;
+  const verdict = row.bulkEligibility?.[action];
+  // `undefined` is the payload not carrying an answer for this action; `null` is
+  // the server saying it would apply. Only the second is a yes. An older cached
+  // snapshot has neither the field nor any news, and news is what eligibility
+  // requires.
+  if (verdict === undefined) return "No readiness check yet";
+  return verdict === null ? null : verdict.reason;
 }
 
 /**

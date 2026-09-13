@@ -14,8 +14,14 @@
  *      that scrolled off screen must be *named*, not hidden.
  *   3. A reload must drop ids that no longer exist, or a bulk action posts an
  *      id whose failure is reported against a row nobody can see.
- *   4. A row with no readiness verdict is NOT eligible to publish. "The payload
- *      never said" is not "nothing is wrong".
+ *   4. A row the server has not ruled on is NOT eligible to publish. "The
+ *      payload never said" is not "nothing is wrong".
+ *
+ * Eligibility itself is no longer decided here and the tests below are written
+ * to keep it that way: they set `bulkEligibility` — what the server said — and
+ * assert it is obeyed, including in the cases where obeying it contradicts
+ * every other field on the row. A test that built eligibility out of
+ * `readiness` would be re-stating the rule it is supposed to be guarding.
  */
 import type { StoreListingRow } from "../../api/storeDashboard";
 import {
@@ -40,7 +46,15 @@ function row(id: number, over: Partial<StoreListingRow> = {}): StoreListingRow {
     currency: "USD",
     quantity: 4,
     health: "in_stock",
-    readiness: { publishable: true, checkout_ready: true, blockers: [], warnings: [] },
+    readiness: {
+      publishable: true,
+      checkout_ready: true,
+      blockers: [],
+      warnings: [],
+      summary: "Ready to publish",
+      fixes: []
+    },
+    bulkEligibility: { publish: null, hide: null },
     unitsSold7d: 0,
     rating: null,
     reviewCount: null,
@@ -193,14 +207,9 @@ describe("selectedRows", () => {
 describe("partition — what will happen, before it happens", () => {
   const ready = row(1);
   const blocked = row(2, {
-    readiness: { publishable: false, checkout_ready: false, blockers: ["MISSING_PRICE"], warnings: [] }
-  });
-  const twoBlockers = row(3, {
-    readiness: {
-      publishable: false,
-      checkout_ready: false,
-      blockers: ["MISSING_PRICE", "NO_VALID_MEDIA"],
-      warnings: []
+    bulkEligibility: {
+      publish: { code: "NOT_READY", reason: "1 thing left", blockers: ["MISSING_PRICE"] },
+      hide: null
     }
   });
 
@@ -210,62 +219,98 @@ describe("partition — what will happen, before it happens", () => {
     expect(out.map((b) => b.row.id)).toEqual([2]);
   });
 
-  it("refuses a row with no verdict at all", () => {
-    // THE rule. `readiness: null` means the payload never said, and a bulk
+  it("refuses a row the server said nothing about", () => {
+    // THE rule. No `bulkEligibility` means the payload never said, and a bulk
     // publish that reads "never said" as "fine" is how you publish a listing
     // with no price. Absence is not a clean bill of health.
-    const unknown = row(4, { readiness: null });
+    const unknown = row(4, { bulkEligibility: null });
     const { eligible, blocked: out } = partition([unknown], "publish");
     expect(eligible).toEqual([]);
     expect(out[0].reason).toBe("No readiness check yet");
   });
 
-  it("gives a reason a seller can act on, counting what is left", () => {
-    expect(partition([blocked], "publish").blocked[0].reason).toBe("1 thing left");
-    expect(partition([twoBlockers], "publish").blocked[0].reason).toBe("2 things left");
+  it("refuses a row the server ruled on for the other action only", () => {
+    // A payload carrying `hide` but not `publish` has still not answered the
+    // question being asked. Reading the sibling action's answer, or reading the
+    // object's mere presence as a yes, both publish something unexamined.
+    const halfAnswered = row(11, { bulkEligibility: { hide: null } });
+    expect(partition([halfAnswered], "publish").blocked[0].reason).toBe("No readiness check yet");
   });
 
-  it("still blocks when the verdict says no but lists no blockers", () => {
-    // A server that says `publishable: false` with an empty list is still
-    // saying no. Treating an empty array as "nothing wrong" would invert it.
-    const mute = row(5, {
-      readiness: { publishable: false, checkout_ready: false, blockers: [], warnings: [] }
+  it("repeats the server's sentence rather than composing one", () => {
+    // The seller reads this string. It is written once, on the server, by the
+    // same function that will refuse the row later — so the reason shown before
+    // the tap and the reason returned after it cannot disagree.
+    const odd = row(12, {
+      bulkEligibility: { publish: { code: "ALREADY_SUBMITTED", reason: "Already in review" }, hide: null }
     });
-    expect(partition([mute], "publish").blocked[0].reason).toBe("Not ready to publish");
+    expect(partition([odd], "publish").blocked[0].reason).toBe("Already in review");
   });
 
-  it("reads the server's verdict rather than re-deriving it from the row", () => {
-    // No price, no stock, hidden — and the server says publishable. The client
-    // does not get a second opinion; `readiness.publishable` is the one
-    // authority, and asking again here is how the two drift apart.
+  it("blocks a finished listing that is already live", () => {
+    // The case a client-side derivation cannot see. Nothing is wrong with this
+    // product — it is priced, stocked, photographed and `publishable` — and
+    // publishing it again would pull it off the storefront and back into the
+    // review queue. Only the server knows what state it is being published
+    // *from*.
+    const live = row(13, {
+      readiness: {
+        publishable: true,
+        checkout_ready: true,
+        blockers: [],
+        warnings: [],
+        summary: "Ready to publish",
+        fixes: []
+      },
+      bulkEligibility: {
+        publish: { code: "ALREADY_PUBLISHED", reason: "Already published" },
+        hide: null
+      }
+    });
+    expect(partition([live], "publish").eligible).toEqual([]);
+    expect(partition([live], "publish").blocked[0].reason).toBe("Already published");
+  });
+
+  it("obeys the server against every other field on the row", () => {
+    // No price, no stock, unknown health, and a readiness verdict that says no
+    // — and the server says this one publishes. The client does not get a
+    // second opinion, because a second opinion is a second implementation.
     const contradictory = row(6, {
       priceLabel: "",
       quantity: null,
       health: "unknown_stock",
-      readiness: { publishable: true, checkout_ready: false, blockers: [], warnings: ["LOW_STOCK"] }
+      readiness: {
+        publishable: false,
+        checkout_ready: false,
+        blockers: ["MISSING_PRICE"],
+        warnings: [],
+        summary: "1 thing left",
+        fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }]
+      },
+      bulkEligibility: { publish: null, hide: null }
     });
     expect(partition([contradictory], "publish").eligible.map((r) => r.id)).toEqual([6]);
   });
 
   describe("hide", () => {
-    it("does not require a readiness verdict", () => {
-      // Hiding removes a listing from buyers. Blocking it on a verdict that
-      // never arrived would strand a seller with a bad listing they can see and
-      // cannot pull.
-      const unknown = row(7, { readiness: null, health: "in_stock" });
-      expect(partition([unknown], "hide").eligible.map((r) => r.id)).toEqual([7]);
-    });
-
-    it("blocks only rows that are already hidden", () => {
-      const already = row(8, { health: "hidden" });
+    it("blocks only rows the server says are already hidden", () => {
+      const already = row(8, {
+        health: "hidden",
+        bulkEligibility: { publish: null, hide: { code: "ALREADY_HIDDEN", reason: "Already hidden" } }
+      });
       const { eligible, blocked: out } = partition([row(9), already], "hide");
       expect(eligible.map((r) => r.id)).toEqual([9]);
       expect(out[0].reason).toBe("Already hidden");
     });
 
     it("does not block a row the publish path would have blocked", () => {
+      // Hiding removes a listing from buyers. A seller who cannot publish a
+      // broken listing must still be able to pull it.
       const notPublishable = row(10, {
-        readiness: { publishable: false, checkout_ready: false, blockers: ["MISSING_PRICE"], warnings: [] }
+        bulkEligibility: {
+          publish: { code: "NOT_READY", reason: "1 thing left", blockers: ["MISSING_PRICE"] },
+          hide: null
+        }
       });
       expect(partition([notPublishable], "hide").blocked).toEqual([]);
     });
@@ -275,7 +320,10 @@ describe("partition — what will happen, before it happens", () => {
 describe("bulkActionLabel — the sentence on the confirm button", () => {
   const ready = [row(1), row(2)];
   const blocked = row(3, {
-    readiness: { publishable: false, checkout_ready: false, blockers: ["MISSING_PRICE"], warnings: [] }
+    bulkEligibility: {
+      publish: { code: "NOT_READY", reason: "1 thing left", blockers: ["MISSING_PRICE"] },
+      hide: null
+    }
   });
 
   it("states the blocked count alongside what will happen", () => {
@@ -293,7 +341,10 @@ describe("bulkActionLabel — the sentence on the confirm button", () => {
   });
 
   it("uses the verb of the action it was given", () => {
-    const already = row(4, { health: "hidden" });
+    const already = row(4, {
+      health: "hidden",
+      bulkEligibility: { publish: null, hide: { code: "ALREADY_HIDDEN", reason: "Already hidden" } }
+    });
     expect(bulkActionLabel(partition([row(5), already], "hide"), "hide")).toBe("Hide 1 · 1 blocked");
     expect(bulkActionLabel(partition([already], "hide"), "hide")).toBe("Nothing to hide");
   });

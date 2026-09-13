@@ -358,17 +358,23 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
 
 #: What the merchant should go and do, in the imperative. Deliberately an
 #: instruction and not a restatement of the fault: "MISSING_PRICE" tells a
-#: seller what is wrong, "Add a price" tells them what to do about it.
+#: seller what is wrong, "Add price" tells them what to do about it.
+#:
+#: Articles are dropped because these labels are read in two places with very
+#: different budgets: on their own line in Ready to Sell, and concatenated onto
+#: a store row as "2 things left · Add price + Add photo". "Add a price and a
+#: photo" is the sentence a human would write and the one that wraps to three
+#: lines on a phone. Two label sets would be one set that drifts.
 FIXES = {
-    MISSING_TITLE: "Add a title",
-    MISSING_DESCRIPTION: "Add a description",
-    MISSING_CATEGORY: "Choose a category",
-    NO_VALID_MEDIA: "Add a photo",
-    MISSING_PRICE: "Add a price",
-    RESTRICTED_PRODUCT: "Resolve a policy review",
-    OUT_OF_STOCK: "Restock this listing",
-    LOW_STOCK: "Running low on stock",
-    UNKNOWN_INVENTORY: "Set a stock count",
+    MISSING_TITLE: "Add title",
+    MISSING_DESCRIPTION: "Add description",
+    MISSING_CATEGORY: "Choose category",
+    NO_VALID_MEDIA: "Add photo",
+    MISSING_PRICE: "Add price",
+    RESTRICTED_PRODUCT: "Resolve policy review",
+    OUT_OF_STOCK: "Restock",
+    LOW_STOCK: "Running low",
+    UNKNOWN_INVENTORY: "Set stock count",
 }
 
 #: Which section of the edit workspace fixes each code, so a blocker on the
