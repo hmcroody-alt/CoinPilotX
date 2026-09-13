@@ -623,3 +623,70 @@ def write_methods(record: dict) -> list[str]:
     """Methods that change state. GET is not on this list and HEAD/OPTIONS are
     already stripped, so anything remaining is a mutation."""
     return [m for m in record.get("methods") or [] if m != "GET"]
+
+
+#: Modules whose every registered view must carry a declaration, enforced at
+#: boot. Empty today, and that is correct: it is an opt-in list, and the code it
+#: is waiting for has not been written yet.
+#:
+#: Why modules and not path prefixes. The obvious reading of "default-deny for
+#: new routes" is to guard a prefix — and it does not work here, because the SPA
+#: is planned to live under `/pulse/*` (`PULSESOC_WEB_TARGET_ARCHITECTURE.md`
+#: §2.2) and 323 legacy rules are already there. A prefix guard would refuse to
+#: boot the moment it was switched on, which means it would be switched off.
+#:
+#: A module is also the honest unit. "Code written under the new rule" is a
+#: property of who wrote it, not of the URL it happens to be mounted at, and the
+#: rebuild will mount new views at old-looking paths on purpose.
+DECLARATION_REQUIRED_MODULES: frozenset[str] = frozenset()
+
+
+def undeclared_in_guarded_modules(app) -> list[str]:
+    """Registered rules from a guarded module that declare no authentication."""
+    offenders = []
+    for rule in app.url_map.iter_rules():
+        view = app.view_functions.get(rule.endpoint)
+        if view is None:
+            continue
+        module = getattr(view, "__module__", "") or ""
+        if module not in DECLARATION_REQUIRED_MODULES:
+            continue
+        if declaration_of(view) is None:
+            offenders.append(f"{rule.rule} -> {module}.{rule.endpoint}")
+    return sorted(offenders)
+
+
+def assert_routes_declared(app) -> None:
+    """Refuse to finish booting if a guarded module registered an undeclared route.
+
+    This is the second half of the mechanism, and it catches a case the merge
+    gate structurally cannot. `tests/protection/test_route_auth.py` compares
+    against a baseline, so it sees a route that exists *in the process it runs
+    in*. Optional route packs register inside `except Exception` blocks; a
+    blueprint that raises during a test run is simply absent, and absence is
+    deliberately not an error there (a deleted route is not a regression). The
+    same blueprint registering fine in production, carrying an undeclared route,
+    is invisible to that test and visible to this one.
+
+    Deliberately fatal, and deliberately not overridable by an environment
+    variable. A fail-closed check with a documented escape hatch is a check that
+    gets escaped at 3am and never un-escaped; the recovery here is to declare the
+    route, which is a one-line change and the change that was owed anyway.
+
+    Scoped to `DECLARATION_REQUIRED_MODULES` so this cannot take production down
+    for the 2,160 legacy routes, none of which declares anything. The two halves
+    cover different failures on purpose: the test is broad and advisory, this is
+    narrow and fatal.
+    """
+    offenders = undeclared_in_guarded_modules(app)
+    if not offenders:
+        return
+    raise RuntimeError(
+        "Refusing to start: {n} route(s) in declaration-required modules carry "
+        "no authentication declaration:\n  {routes}\n\n"
+        "Add @auth_required, @admin_required or @public_route(reason='...') "
+        "from services.route_auth to each. If a route is genuinely public, say "
+        "so with a reason -- the reason is the part a reviewer reads.".format(
+            n=len(offenders), routes="\n  ".join(offenders)
+        )
+    )

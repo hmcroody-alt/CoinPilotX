@@ -300,6 +300,76 @@ def test_no_route_family_vanished_wholesale():
     )
 
 
+def test_the_boot_assertion_refuses_an_undeclared_route():
+    """The fail-closed half, exercised rather than assumed.
+
+    `assert_routes_declared()` runs once at the bottom of `bot.py` and is inert
+    while `DECLARATION_REQUIRED_MODULES` is empty. Inert code that has never been
+    observed doing its job is indistinguishable from broken code, and this one
+    would be discovered broken on the day it was supposed to stop a breach.
+
+    Exercised on a throwaway Flask app: pointing it at `bot.app` would mean
+    registering routes on the object every other test in this file measures.
+    """
+    import flask
+
+    probe = flask.Flask("route_auth_boot_probe")
+
+    def undeclared():
+        return {"ok": True}
+
+    declared = route_auth.public_route("protection probe")(lambda: {"ok": True})
+    declared.__name__ = "declared_probe"
+    undeclared.__module__ = declared.__module__ = "route_auth_boot_probe_module"
+
+    probe.add_url_rule("/probe/declared", "declared_probe", declared)
+
+    original = route_auth.DECLARATION_REQUIRED_MODULES
+    try:
+        route_auth.DECLARATION_REQUIRED_MODULES = frozenset({"route_auth_boot_probe_module"})
+
+        # A guarded module whose routes all declare must not block a boot.
+        route_auth.assert_routes_declared(probe)
+
+        probe.add_url_rule("/probe/undeclared", "undeclared_probe", undeclared)
+        try:
+            route_auth.assert_routes_declared(probe)
+        except RuntimeError as exc:
+            assert "/probe/undeclared" in str(exc), (
+                f"the guard refused but did not name the offending route: {exc}"
+            )
+        else:
+            raise AssertionError(
+                "assert_routes_declared() accepted an undeclared route in a "
+                "declaration-required module. The boot-time half of default-deny "
+                "is not enforcing anything."
+            )
+    finally:
+        route_auth.DECLARATION_REQUIRED_MODULES = original
+
+
+def test_the_boot_assertion_is_still_wired_into_bot():
+    """Guard the guard, again -- and for a different reason than the vocabulary.
+
+    The check above proves the function works. It says nothing about whether
+    anything calls it. Deleting the two lines at the bottom of `bot.py` leaves
+    every test in this file green, because they all measure route *shape* and
+    the shape does not change when the assertion stops running.
+
+    Matched on the call, not on the import: an import with no call is exactly
+    what a careless merge conflict resolution leaves behind.
+    """
+    with open(os.path.join(ROOT, "bot.py"), "r", encoding="utf-8") as handle:
+        source = handle.read()
+    assert "_assert_routes_declared(webhook_app)" in source, (
+        "bot.py no longer calls assert_routes_declared(). The boot-time half of "
+        "default-deny is dead: services/route_auth.py still defines it, and "
+        "nothing runs it, so a guarded module can register an undeclared route "
+        "and the process will start happily. Restore the call at the end of "
+        "bot.py, after every route pack has registered."
+    )
+
+
 if __name__ == "__main__":
     # The suite runner executes this file as a script and fails it for reporting
     # zero checks, so it has to be runnable both ways -- see the note on _STATE.

@@ -123913,4 +123913,14 @@ if __name__ == "__main__":
     threading.Thread(target=run_webhook, daemon=True).start()
     main()
 
+# Default-deny, checked after every route pack has had its chance to register.
+# Scoped to services.route_auth.DECLARATION_REQUIRED_MODULES, which is empty
+# until the web rebuild adds its first module, so this is inert for all 2,160
+# legacy routes and cannot refuse a boot today. It raises rather than logs on
+# purpose: an undeclared route in a module that opted into declaring is the one
+# failure the whole mechanism exists to make unshippable.
+from services.route_auth import assert_routes_declared as _assert_routes_declared
+
+_assert_routes_declared(webhook_app)
+
 print("CoinPilotX web boot complete", flush=True)

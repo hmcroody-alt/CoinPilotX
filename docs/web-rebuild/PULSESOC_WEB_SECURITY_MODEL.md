@@ -182,11 +182,29 @@ after 5 attempts, and admin sessions have real lifetimes the user sessions lack
 (`ADMIN_SESSION_ABSOLUTE_HOURS` 12, `ADMIN_SESSION_IDLE_MINUTES` 60) with legacy sessions
 treated as expired.
 
-**Two separate identity systems.** `session['account_user_id']` over `users` and
-`session['admin_user_id']` over `admin_users`. **Being a logged-in user grants no admin
-capability whatsoever**, and there is no path from one to the other. Preserve this absolutely —
-a unified "role" column on `users` would be a regression, however convenient it looks from a
-client.
+**Two separate identity systems — but not two disjoint ones.** `session['account_user_id']`
+over `users` and `session['admin_user_id']` over `admin_users`. Keep them separate: no client
+may be able to turn one cookie into the other.
+
+> **Correction.** An earlier version of this section said "being a logged-in user grants no
+> admin capability whatsoever, and there is no path from one to the other." That is false, and
+> it is false for a fifth of the admin surface. `require_super_user_page()` and
+> `require_super_user_api()` (`bot.py:5314`, `bot.py:5325`) resolve the **member** session and
+> then call `user_is_super_user()`, which is true when the account row carries `is_super_user`
+> **or** when the account's email equals the configured owner email. **105 of the 496
+> admin-classified rules** reach admin standing by that path — `require_owner_api` 85,
+> `require_owner_admin_page` 9, `require_super_user_api` 8, `require_super_user_page` 2,
+> `require_owner_account_page` 1.
+>
+> So a role column on `users` would not be *introducing* the pattern. It already exists, named
+> `is_super_user`, alongside an env-configured owner email that confers the same standing with
+> no row change at all. The design advice survives — do not widen it — but it has to be given
+> for the real reason: there are two elevation paths to audit, not one property to preserve. A
+> rebuild that inherits the false version will build a client authorization model that cannot
+> express what 105 live routes already do, and will read every one of them as a bug.
+
+Counts from `config/route_auth_baseline.json`; reproduce with
+`python3 scripts/protection/generate_route_auth_baseline.py`.
 
 **Private Office second lock.** Header-bound `X-Office-Grant` + `X-Office-Device`, bound to the
 credential family that authenticated the request — so a stolen grant presented by another
