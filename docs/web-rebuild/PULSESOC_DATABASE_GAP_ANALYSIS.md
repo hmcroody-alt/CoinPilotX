@@ -156,14 +156,40 @@ Four changes. All are `CREATE INDEX CONCURRENTLY`. None takes a long lock.
 
 | # | Change | Why | Risk |
 |---:|---|---|---|
-| 1 | `UNIQUE INDEX CONCURRENTLY` on `lower(users.username)` | **`/@username` is a sequential scan today.** No index, no UNIQUE. Every web profile page hit scans the table | **Low** — but must use a partial predicate to tolerate 6 blank usernames |
-| 2 | `UNIQUE INDEX CONCURRENTLY` on `lower(users.email)` | Login is a seq scan | **Low** — 3 blank emails need the same partial predicate |
-| 3 | `UNIQUE` + index on `active_sessions.session_hash` | Table has **only a pkey index**. Session lookup is a seq scan and duplicate hashes are not prevented | **Low** |
+| 1 | `UNIQUE INDEX CONCURRENTLY` on `lower(nullif(users.username, ''))` | **`/@username` is a sequential scan today.** No index, no UNIQUE. Every web profile page hit scans the table | **Low** — the `nullif` is what tolerates the 6 blank usernames. Not a partial predicate; see below |
+| 2 | `UNIQUE INDEX CONCURRENTLY` on `lower(nullif(users.email, ''))` | Login is a seq scan | **Low** — same `nullif` form for the 3 blank emails |
+| 3 | `UNIQUE` + index on `active_sessions.session_hash` | Table has **only a pkey index**. Session lookup is a seq scan and duplicate hashes are not prevented | **Low** — plain expression; a session hash is never legitimately blank |
 | 4 | Drop the duplicate UNIQUE indexes on `pulse_saved_items` and the two identical indexes on `pulse_messages` | Pure write-amplification | **Low** |
 
 Plus one maintenance job, not a schema change:
 
 | 5 | **Session TTL sweep.** 9,728 of 10,132 `mobile_security_sessions` rows are `revoked`/`rotated` and are **never deleted**. The table only grows, and a web launch multiplies session churn |
+
+> **The partial-index trap — measured, not theorised.** The textbook fix for blank
+> values is `CREATE UNIQUE INDEX ... WHERE username <> ''`. Under a prepared
+> statement that index works for exactly **five** executions and is then abandoned
+> for a sequential scan, silently and forever: on the 6th execution Postgres
+> switches to a **generic plan**, and a generic plan cannot prove `$1 <> ''`
+> against a parameter it has not yet seen, so the partial index is no longer
+> provably applicable. Every web request goes through a prepared statement.
+> `/@username` would be indexed for five hits per statement and seq-scan every hit
+> after that, with no error and no log line. Moving the `nullif` **into the indexed
+> expression** removes the predicate entirely, so there is nothing left for the
+> planner to fail to discharge. `scripts/web_rebuild/phase0_indexes.py` asserts
+> this by `EXPLAIN EXECUTE`-ing each index seven times and failing if the index
+> name drops out of the plan.
+
+> **The invalid-index trap.** `CREATE INDEX CONCURRENTLY` cannot run inside a
+> transaction, and when it fails it leaves behind a corpse with
+> `pg_index.indisvalid = false`. That corpse satisfies `IF NOT EXISTS`, so every
+> subsequent run skips the build and the index is never created — and an invalid
+> index is never used by the planner either. The script checks `indisvalid`, drops
+> the corpse, and rebuilds, rather than trusting `IF NOT EXISTS`.
+
+Both are encoded in `scripts/web_rebuild/phase0_indexes.py`, which is **dry-run by
+default** (`--apply` to execute) and was verified end to end against a throwaway
+Postgres 18.6 container loaded with a fixture matching production exactly — 39
+users, 6 blank usernames, 3 blank emails, the same duplicate-index pairs.
 
 ---
 
