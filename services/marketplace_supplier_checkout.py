@@ -45,29 +45,77 @@ writes ``last_synced_at``.
 So on this deployment every drop-shipped listing has a NULL confirmation and a
 latch that reads ``NO_DRAIN_HAS_EVER_RUN``, exactly as before the Procfile entry
 existed. The entry removes one of three preconditions; it does not give this gate
-teeth, and anyone reading the Procfile alone will conclude otherwise.
+teeth, and anyone reading the Procfile alone will conclude otherwise. Every
+drop-shipped sale today goes through tier 2 as ``unverified``, annotated, and that
+is the most this gate can honestly say until something is re-reading.
 
 A gate that demanded freshness anyway would take every drop-shipped listing off
 sale the moment it shipped. That is not this gate catching a real problem; it is
 a change in *what we check* wearing the costume of a change in *what is true*.
 Nothing about those listings got worse when this file was added.
 
-So the strictness follows the evidence that exists, read from the reconciler's
-own drain latch rather than from a flag somebody has to remember to set:
+So the strictness follows the evidence that exists, in two tiers, and the tiers
+are ordered by the *kind* of evidence rather than by how it arrived:
 
-* **The reconciler has never run.** Freshness cannot be demanded, because it was
-  never on offer. Positively-bad state still refuses — a variant the supplier has
-  said is sold out is sold out whether or not anything re-read it since. Anything
-  else is allowed *and marked*: the decision carries ``unverified`` with the
-  latch state that caused it, so the lane records it on the transaction and the
-  gap is auditable instead of absorbed.
-* **The reconciler is running.** Freshness is demanded. A confirmation older than
-  :data:`CONFIRMATION_MAX_AGE_SECONDS`, or a source the last read left ``STALE``,
-  refuses — because now silence means something broke, not that the feature was
-  never turned on.
+1. **An affirmative report of a problem refuses, unconditionally.** Every active
+   variant out of stock (:data:`REASON_SOLD_OUT`), or a source state in
+   :data:`FAILED_SYNC_STATES`. None of these expires and none of them depends on a
+   reconciler running — a supplier that said "none left" has not become less sold
+   out by nobody asking again since, and a revoked credential does not start
+   working because the worker stopped.
+2. **An absence of recent reassurance is judged against what was on offer.** If
+   nothing is refreshing confirmations, or this listing has never had one,
+   freshness cannot be demanded and the sale is allowed *and marked*: the decision
+   carries ``unverified`` plus the latch state and which kind of absence it was, so
+   the lane records it on the transaction and the gap is auditable instead of
+   absorbed. If a reconciler is running and this listing *does* have a
+   confirmation, that confirmation has to be current — older than
+   :data:`CONFIRMATION_MAX_AGE_SECONDS`, dated in the future, or unreadable all
+   refuse, because now silence means something broke.
 
-The effect is that deploying the worker makes this gate strict by itself, and
-until then it says out loud that it cannot vouch for what it is letting through.
+Why "never confirmed" is not "went stale"
+-----------------------------------------
+The first draft keyed strictness on one fact — is a reconciler running — and then
+demanded a per-listing confirmation. Those two decouple immediately.
+``worker.run_once`` writes ``record_drain_tick(completed=True)`` as its last
+statement, and reaches it even on a tick that claimed zero jobs, so the latch
+reads ``DRAINING`` within seconds of the first tick. Confirmations arrive far more
+slowly: ``revisions`` writes ``last_synced_at`` one listing at a time, twenty jobs
+a tick, on the 3600-second product cadence. So for hours after the worker starts,
+every listing is simultaneously "a reconciler is up" and "this one has never been
+confirmed".
+
+Under the first draft that combination refused, and the measured consequence on
+this deployment was total: all 22 drop-shipped sources carry
+``last_synced_at IS NULL`` (``link_source`` never writes it, and ``importer`` and
+``gateway`` both go through ``link_source``), so enabling the worker would have
+refused 100% of drop-shipped checkouts and kept refusing until coverage caught
+up — while telling each buyer to "try again shortly". All 22 also read
+``sync_state='SYNCED'``, so nothing in the data looked wrong.
+
+The conflation was in one comparison: an ``age`` of ``None`` meant both "no stamp"
+and "a stamp nobody can parse". Those are opposite facts. A listing with no
+confirmation has no evidence that could have gone stale, and absence of evidence
+is not evidence of a sell-out; a listing with an unreadable confirmation has a
+failed write or a schema drift, and "I cannot tell when this was confirmed" reads
+safely as "it was not". So they now take different branches, and the strict path
+applies to the listings that genuinely have something to be stale.
+
+The cost is explicit: a never-confirmed listing is sellable on the annotation
+rather than refused, which narrows what this gate blocks. That is the intended
+trade. §22's job is to refuse a sale we have positive reason to believe cannot be
+filled — an empty column is not that reason, and a gate whose first act on being
+switched on is to close the store has stopped being a safety feature.
+
+What is *not* traded away is tier 1. Widening the absent-evidence case is only
+defensible while affirmative bad evidence still refuses through it, which is why
+:data:`FAILED_SYNC_STATES` moved above the unverified allow rather than staying
+below it: otherwise "we have no confirmation" would have quietly outranked "the
+last read told us the product is gone".
+
+The effect is that deploying the worker makes this gate strict as confirmations
+arrive, listing by listing, rather than all at once on a latch, and until a
+listing is covered it says out loud that it cannot vouch for it.
 """
 from __future__ import annotations
 
@@ -79,7 +127,11 @@ from services import marketplace_variants as variants
 from services.business_os.suppliers.fulfillment import DRAIN_STALL_SECONDS
 
 __all__ = [
+    "CONFIRMATION_KNOWN",
     "CONFIRMATION_MAX_AGE_SECONDS",
+    "CONFIRMATION_NEVER",
+    "CONFIRMATION_STATES",
+    "CONFIRMATION_UNREADABLE",
     "DECISION_ALLOW",
     "DECISION_REFUSE",
     "NOT_APPLICABLE",
@@ -111,6 +163,24 @@ CONFIRMATION_MAX_AGE_SECONDS = 2700
 #: (``revisions``) and this reader are not guaranteed to be the same process, and
 #: refusing checkouts over a second of NTP drift would be its own outage.
 CLOCK_SKEW_TOLERANCE_SECONDS = 300
+
+#: What a listing's ``last_synced_at`` column is, as three distinguishable facts
+#: rather than a timestamp-or-None.
+#:
+#: ``NEVER`` and ``UNREADABLE`` both produce no age, and collapsing them is the
+#: defect the module docstring describes: one is a listing the reconciler has not
+#: reached yet, the other is a write that went wrong. The first is the normal state
+#: of every listing on this deployment; the second should never happen and means
+#: something is broken. Treating them alike refuses the whole catalogue to guard
+#: against a corruption nobody has observed.
+#:
+#: Named and exported because the value travels out on every decision and into the
+#: audit annotation, so a post-mortem can separate "sold without a confirmation
+#: because none had been written yet" from anything else.
+CONFIRMATION_NEVER = "NEVER"
+CONFIRMATION_UNREADABLE = "UNREADABLE"
+CONFIRMATION_KNOWN = "KNOWN"
+CONFIRMATION_STATES = (CONFIRMATION_NEVER, CONFIRMATION_UNREADABLE, CONFIRMATION_KNOWN)
 
 DECISION_ALLOW = "ALLOW"
 DECISION_REFUSE = "REFUSE"
@@ -167,6 +237,20 @@ MESSAGES = {
 #: deployed" because it is the same situation — nothing is re-reading.
 RUNNING_STATES = ("DRAINING",)
 
+#: Source states that are an affirmative report of a failure, as opposed to an
+#: absence of a recent success. ``STALE`` means the last read did not apply,
+#: ``ERROR`` that it threw, ``DISCONNECTED`` that the merchant's credential no
+#: longer works, ``REMOVED`` that the provider dropped the product. Each is a
+#: reason to refuse in its own right and none of them expires, so they are checked
+#: before anything to do with the reconciler's latch or the confirmation clock.
+#:
+#: ``PENDING`` is deliberately absent, and it is the trap in this tuple: it is the
+#: column DEFAULT, so every source has it before its first read. Including it would
+#: refuse every freshly imported listing — the same catalogue-wide refusal this
+#: module's docstring is about, arriving by a different route.
+FAILED_SYNC_STATES = (supplier_schema.SYNC_STALE, supplier_schema.SYNC_ERROR,
+                      supplier_schema.SYNC_DISCONNECTED, supplier_schema.SYNC_REMOVED)
+
 
 def _parse(stamp: Any) -> datetime | None:
     """Read one of the two timestamp spellings this schema uses, or give up.
@@ -189,11 +273,29 @@ def _parse(stamp: Any) -> datetime | None:
     return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
 
 
-def _age_seconds(stamp: Any, now: datetime) -> float | None:
-    parsed = _parse(stamp)
+def _confirmation(stamp: Any, now: datetime) -> tuple[str, float | None]:
+    """Which of the three things ``last_synced_at`` can be, and its age if it has one.
+
+    Three outcomes rather than an age-or-None, because the caller has to tell
+    :data:`CONFIRMATION_NEVER` from :data:`CONFIRMATION_UNREADABLE` and an age of
+    ``None`` cannot carry that distinction — which is precisely the bug the module
+    docstring describes.
+
+    One function, one parse. The earlier shape asked ``_parse`` whether the stamp
+    was readable and ``_age_seconds`` how old it was, and two independent reads of
+    the same column can disagree after an edit to one of them. Here the invariant
+    is structural: the age is a float exactly when the state is
+    :data:`CONFIRMATION_KNOWN`, and ``None`` otherwise. ``evaluate`` compares the
+    age numerically without a ``None`` guard *because* of that invariant, so it is
+    pinned by its own test rather than defended by a redundant check.
+    """
+    text = str(stamp or "").strip()
+    if not text:
+        return CONFIRMATION_NEVER, None
+    parsed = _parse(text)
     if parsed is None:
-        return None
-    return (now - parsed).total_seconds()
+        return CONFIRMATION_UNREADABLE, None
+    return CONFIRMATION_KNOWN, (now - parsed).total_seconds()
 
 
 def reconciliation_evidence(cur, *, now: Any = None) -> dict:
@@ -294,33 +396,73 @@ def evaluate(cur, *, listing_id: Any, evidence: Mapping[str, Any] | None = None,
         # STOCKED sources rather than writing over the merchant's count.
         return _not_applicable("merchant_stocked")
 
+    running = bool((evidence or {}).get("running"))
+    confirmation, age = _confirmation(source.get("last_synced_at"), now_dt)
+    sync_state = str(source.get("sync_state") or "").strip().upper()
+    #: Every answer below carries the same four facts, gathered once. A refusal
+    #: that reported less than an allow would make the audit trail thinnest for
+    #: exactly the decisions someone will come back to ask about.
+    seen = {"evidence_state": _state_of(evidence), "confirmation": confirmation,
+            "confirmation_age_seconds": age, "sync_state": sync_state}
+
     rows = _orderable(variants.variants_for(cur, int(source["listing_id"])))
     states = [str(row.get("stock_state") or "").strip().upper() for row in rows]
     if states and all(state == supplier_schema.STOCK_OUT_OF_STOCK for state in states):
         # Positively bad, and true regardless of freshness. A supplier that said
         # "none left" has not become less sold out by nobody asking again since.
-        return _refuse(REASON_SOLD_OUT, evidence_state=_state_of(evidence))
+        return _refuse(REASON_SOLD_OUT, **seen)
 
-    running = bool((evidence or {}).get("running"))
-    age = _age_seconds(source.get("last_synced_at"), now_dt)
-    sync_state = str(source.get("sync_state") or "").strip().upper()
-    if not running:
-        # See the module docstring: freshness cannot be demanded of a reconciler
-        # that has never run. Allowed, and said out loud.
-        return _allow(unverified=True, evidence_state=_state_of(evidence),
-                      confirmation_age_seconds=age, sync_state=sync_state)
-    if age is None or age > CONFIRMATION_MAX_AGE_SECONDS or age < -CLOCK_SKEW_TOLERANCE_SECONDS:
-        return _refuse(REASON_STALE_CONFIRMATION, evidence_state=_state_of(evidence),
-                       confirmation_age_seconds=age, sync_state=sync_state)
-    if sync_state in (supplier_schema.SYNC_STALE, supplier_schema.SYNC_ERROR,
-                      supplier_schema.SYNC_DISCONNECTED, supplier_schema.SYNC_REMOVED):
-        # A recent *attempt* that failed. The timestamp above only proves when a
-        # read last succeeded; this proves the most recent one did not, which is
-        # the state a listing sits in while its supplier is unreachable.
-        return _refuse(REASON_STALE_CONFIRMATION, evidence_state=_state_of(evidence),
-                       confirmation_age_seconds=age, sync_state=sync_state)
-    return _allow(unverified=False, evidence_state=_state_of(evidence),
-                  confirmation_age_seconds=age, sync_state=sync_state)
+    if sync_state in FAILED_SYNC_STATES:
+        # A read that was *attempted* and failed. The timestamp only ever proves
+        # when a read last succeeded; this proves the most recent one did not —
+        # the state a listing sits in while its supplier is unreachable, or after
+        # the merchant revoked the connection, or after the provider dropped the
+        # product.
+        #
+        # Above the latch and the confirmation checks, in the same tier as a
+        # sold-out variant, because it is the same *kind* of fact: an affirmative
+        # statement that something is wrong, not an absence of reassurance. It does
+        # not become less true because nothing is re-reading — if anything a
+        # stopped reconciler means it will stay true. An earlier arrangement had
+        # this below the unverified allow, which made the decision depend on
+        # whether the failed state happened to arrive with a timestamp: it does
+        # today, from the one writer that sets both in a single UPDATE, and a
+        # future writer that set only the state would have been silently allowed
+        # through. Ordering it by the kind of evidence removes that dependency
+        # rather than documenting it.
+        return _refuse(REASON_STALE_CONFIRMATION, **seen)
+
+    if not running or confirmation == CONFIRMATION_NEVER:
+        # Two different situations, one correct answer, and the reason is the same
+        # in both: there is no evidence here that could have gone stale.
+        #
+        # `not running` — freshness cannot be demanded of a reconciler that has
+        # never run or has stopped. `CONFIRMATION_NEVER` — freshness cannot be
+        # demanded of a listing the running reconciler has not reached yet, which
+        # is every listing for hours after the worker starts, because the latch
+        # flips on tick #1 and confirmations arrive twenty jobs at a time.
+        #
+        # Allowed, and said out loud: the annotation carries which of the two it
+        # was, so "we sold this without a confirmation" is a queryable fact rather
+        # than a shrug.
+        return _allow(unverified=True, **seen)
+
+    if confirmation == CONFIRMATION_UNREADABLE:
+        # Corrupt is not absent. Something wrote this column and nothing can read
+        # it, which is a failed write or a format drift between `revisions` and
+        # `_parse` — and the safe reading of "I cannot tell when this was
+        # confirmed" is that it was not. Distinct branch from the age comparison
+        # below because that comparison cannot run on a None.
+        return _refuse(REASON_STALE_CONFIRMATION, **seen)
+
+    if age > CONFIRMATION_MAX_AGE_SECONDS or age < -CLOCK_SKEW_TOLERANCE_SECONDS:
+        # No `age is None` guard, and deliberately not: `_confirmation` returns a
+        # float exactly when it returns KNOWN, and both other states returned
+        # above. A guard here would be dead code that reads as load-bearing. The
+        # invariant is pinned by a test instead.
+        return _refuse(REASON_STALE_CONFIRMATION, **seen)
+
+    return _allow(unverified=False, **seen)
 
 
 def _clock(now: Any) -> datetime:
@@ -352,7 +494,7 @@ def _state_of(evidence: Mapping[str, Any] | None) -> str:
 def _base(decision: str) -> dict:
     return {"decision": decision, "reason": "", "message": "", "code": "",
             "unverified": False, "evidence_state": "", "sync_state": "",
-            "confirmation_age_seconds": None}
+            "confirmation": "", "confirmation_age_seconds": None}
 
 
 def _not_applicable(reason: str) -> dict:
@@ -438,10 +580,18 @@ def audit(decision: Mapping[str, Any]) -> dict:
     *that* the sale went through without a current supplier confirmation and what
     the reconciler's state was, which is what a post-mortem needs and the most a
     buyer-facing row should hold.
+
+    ``confirmation`` is on here because the two unverified cases need telling apart
+    after the fact. "The reconciler had not reached this listing yet" is expected
+    and self-clearing; "the reconciler was stalled" or "was never deployed" is an
+    incident. Both produce ``unverified`` sales, and without this key a post-mortem
+    counting them cannot say which kind it is looking at. It is one of three fixed
+    words (:data:`CONFIRMATION_STATES`), so it leaks nothing.
     """
     if decision.get("decision") != DECISION_ALLOW or not decision.get("unverified"):
         return {}
     return {"supplier_unverified": {
         "reconciliation": decision.get("evidence_state") or "",
+        "confirmation": decision.get("confirmation") or "",
         "sync_state": decision.get("sync_state") or "",
     }}

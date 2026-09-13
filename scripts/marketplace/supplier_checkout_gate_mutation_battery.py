@@ -20,15 +20,36 @@ future. Each of those looks like a tidy-up and each one silently reopens the
 window §22 exists to close.
 
 **Too strict.** This is the direction that bites hardest in this deployment,
-because ``supplier_worker`` is not in the Procfile and ``link_source`` never writes
-``last_synced_at`` — so *every* drop-shipped listing is unconfirmed and always will
-be until the reconciler ships. A gate that demands freshness regardless takes the
-whole catalogue off sale and calls it safety. The strictness is therefore derived
-from the drain latch, and the latch mutations are the ones that matter most:
-dropping ``DRAIN_STALLED`` (a worker that ran once and died reads as healthy
-forever), or widening ``RUNNING_STATES`` to include the states that mean nothing is
-re-reading. The module's first draft actually had the first of those bugs, which is
-the best available evidence that the mutation is plausible rather than invented.
+because ``supplier_worker`` has a Procfile entry but runs dark behind two unset env
+flags, and ``link_source`` never writes ``last_synced_at`` — so *every* drop-shipped
+listing is unconfirmed and will stay that way until the reconciler is switched on
+and works through them. A gate that demands freshness regardless takes the whole
+catalogue off sale and calls it safety. The strictness is therefore derived from
+the drain latch, and the latch mutations are the ones that matter most: dropping
+``DRAIN_STALLED`` (a worker that ran once and died reads as healthy forever), or
+widening ``RUNNING_STATES`` to include the states that mean nothing is re-reading.
+The module's first draft actually had the first of those bugs, which is the best
+available evidence that the mutation is plausible rather than invented.
+
+The module's *second* shipped bug is the reason for the never-confirmed group, and
+it is subtler than the first because reading the latch is what hid it. The latch
+answers "is anything re-reading"; the gate then demanded evidence that is written
+per listing. Those decouple within seconds of the worker starting — completion is
+recorded on a tick that claimed no work, while confirmations land twenty jobs at a
+time — so the whole catalogue sits in "reconciler up, this listing never confirmed"
+for hours, and the gate refused it. Measured: 22 of 22 drop-shipped sources have a
+NULL confirmation, all reading ``sync_state='SYNCED'``. The mutations here run in
+both directions, because the fix has an over-application as well as a regression:
+collapsing ``if not running or confirmation == CONFIRMATION_NEVER`` back to
+``if not running`` restores the bug, and widening it to swallow the stale case
+destroys the gate's remaining purpose. Both must be caught.
+
+The ordering group exists for the same reason in miniature. Widening the
+absent-evidence case is only defensible while affirmative bad evidence still
+refuses through it, so ``FAILED_SYNC_STATES`` is checked above the unverified
+allow. Every production row carrying a failed state also carries a timestamp,
+which makes the wrong order invisible to any realistic fixture — hence a mutation
+that reinstates the dependency rather than deleting the check.
 
 Then the fail-open group. ``reconciliation_evidence`` swallows every exception by
 design, because a deployment that never initialised the supplier subsystem has
@@ -105,21 +126,41 @@ PERMISSIVE_MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "a recent read that failed is trusted anyway",
         GATE,
-        "    if sync_state in (supplier_schema.SYNC_STALE, supplier_schema.SYNC_ERROR,\n"
-        "                      supplier_schema.SYNC_DISCONNECTED, supplier_schema.SYNC_REMOVED):",
+        "    if sync_state in FAILED_SYNC_STATES:",
         "    if False:",
+    ),
+    (
+        # The ordering bug specifically, rather than the check being absent. These
+        # two mutations look alike and are not: the one above deletes the failed-read
+        # refusal outright, which almost any test notices; this one leaves it in
+        # place and makes it conditional on the listing having a timestamp, which is
+        # exactly what the earlier arrangement did by putting it below the
+        # never-confirmed allow. Every production row that carries a failed state
+        # also carries a timestamp, so this mutation is invisible to a suite that
+        # only exercises realistic rows — and it is the one that would sell a
+        # REMOVED product.
+        "a failed read only refuses when it happens to carry a timestamp",
+        GATE,
+        "    if sync_state in FAILED_SYNC_STATES:",
+        "    if sync_state in FAILED_SYNC_STATES and confirmation == CONFIRMATION_KNOWN:",
+    ),
+    (
+        # PENDING is the column DEFAULT, so this refuses every freshly imported
+        # listing. It belongs in the permissive group by construction and in the
+        # strictness group by effect; it is here because the mutation is "somebody
+        # tightened the failed set", and the point is that tightening it is not
+        # free.
+        "the default sync state joins the failed set and refuses every import",
+        GATE,
+        "FAILED_SYNC_STATES = (supplier_schema.SYNC_STALE, supplier_schema.SYNC_ERROR,",
+        "FAILED_SYNC_STATES = (supplier_schema.SYNC_PENDING, supplier_schema.SYNC_STALE,\n"
+        "                      supplier_schema.SYNC_ERROR,",
     ),
     (
         "a confirmation dated in the future reads as fresh",
         GATE,
-        "    if age is None or age > CONFIRMATION_MAX_AGE_SECONDS or age < -CLOCK_SKEW_TOLERANCE_SECONDS:",
-        "    if age is None or age > CONFIRMATION_MAX_AGE_SECONDS:",
-    ),
-    (
-        "a missing confirmation is treated as a fresh one",
-        GATE,
-        "    if age is None or age > CONFIRMATION_MAX_AGE_SECONDS",
-        "    if age is not None and age > CONFIRMATION_MAX_AGE_SECONDS",
+        "    if age > CONFIRMATION_MAX_AGE_SECONDS or age < -CLOCK_SKEW_TOLERANCE_SECONDS:",
+        "    if age > CONFIRMATION_MAX_AGE_SECONDS:",
     ),
     (
         "a supplier-less listing is reported as checked and satisfied",
@@ -128,15 +169,31 @@ PERMISSIVE_MUTATIONS: list[tuple[str, str, str, str]] = [
         "def _not_applicable(reason: str) -> dict:\n    return {**_base(DECISION_ALLOW), \"reason\": reason}",
     ),
     (
-        # Deliberately mutated in `_age_seconds` rather than in `_parse`. The
+        # Deliberately mutated in `_confirmation` rather than in `_parse`. The
         # obvious version — have `_parse` fall back to `datetime.now()` — is
         # defeated by the clock-skew guard instead of by the suite's intent, and
         # only on days when the real clock is far enough from the frozen `NOW` to
         # trip it. A mutation whose fate depends on the wall clock proves nothing.
+        #
+        # This anchor moved when `_age_seconds` was replaced. The old mutation put
+        # `return 0.0` where the None came from; the equivalent now is to hand back
+        # a KNOWN state with a zero age, because the state string is what the
+        # decision branches on.
         "an unreadable timestamp is treated as a perfectly fresh one",
         GATE,
-        "    parsed = _parse(stamp)\n    if parsed is None:\n        return None",
-        "    parsed = _parse(stamp)\n    if parsed is None:\n        return 0.0",
+        "    parsed = _parse(text)\n    if parsed is None:\n        return CONFIRMATION_UNREADABLE, None",
+        "    parsed = _parse(text)\n    if parsed is None:\n        return CONFIRMATION_KNOWN, 0.0",
+    ),
+    (
+        # The other half of the same seam. Above, corrupt evidence reads as fresh;
+        # here it reads as *absent*, which routes it into the widened allow. This is
+        # the specific way the never-confirmed fix could be over-applied — "None is
+        # None, why are there two of them" is a plausible simplification and it
+        # sells against a column nobody can read.
+        "a corrupt confirmation is filed as one that was never written",
+        GATE,
+        "    parsed = _parse(text)\n    if parsed is None:\n        return CONFIRMATION_UNREADABLE, None",
+        "    parsed = _parse(text)\n    if parsed is None:\n        return CONFIRMATION_NEVER, None",
     ),
 ]
 
@@ -162,8 +219,35 @@ STRICTNESS_MUTATIONS: list[tuple[str, str, str, str]] = [
     (
         "freshness is demanded of a reconciler that was never deployed",
         GATE,
-        "    if not running:\n        # See the module docstring",
-        "    if False:\n        # See the module docstring",
+        "    if not running or confirmation == CONFIRMATION_NEVER:",
+        "    if False:",
+    ),
+    (
+        # The regression this module was rewritten to prevent, expressed as the one
+        # edit that would cause it. Anybody simplifying that condition back to
+        # `if not running:` is re-introducing it, and the measured cost was every
+        # drop-shipped checkout on the deployment: 22 of 22 sources carry a NULL
+        # `last_synced_at`, and the drain latch flips to DRAINING within seconds of
+        # the worker's first tick.
+        #
+        # It survives here only if the suite has no test for a running reconciler
+        # meeting a listing it has not reached yet — which is the exact test the
+        # first draft got backwards, so this is the mutation with the strongest
+        # claim to being plausible rather than invented.
+        "a listing the running reconciler has not reached yet is refused",
+        GATE,
+        "    if not running or confirmation == CONFIRMATION_NEVER:",
+        "    if not running:",
+    ),
+    (
+        # The inverse over-correction: never-confirmed no longer refuses, so the
+        # tempting next simplification is to stop demanding freshness at all. This
+        # keeps the widened allow and deletes the strict half, which is what makes
+        # it dangerous — the suite's happy paths all still pass.
+        "the widened allow swallows the went-stale case too",
+        GATE,
+        "    if not running or confirmation == CONFIRMATION_NEVER:",
+        "    if not running or confirmation != CONFIRMATION_KNOWN or age > 0:",
     ),
     (
         "the confirmation window stops tracking the reconciler's cadence",
@@ -221,8 +305,20 @@ FAIL_OPEN_MUTATIONS: list[tuple[str, str, str, str]] = [
         GATE,
         "    return {\"decision\": decision, \"reason\": \"\", \"message\": \"\", \"code\": \"\",\n"
         "            \"unverified\": False, \"evidence_state\": \"\", \"sync_state\": \"\",\n"
-        "            \"confirmation_age_seconds\": None}",
+        "            \"confirmation\": \"\", \"confirmation_age_seconds\": None}",
         "    return {\"decision\": decision, \"reason\": \"\"}",
+    ),
+    (
+        # Widening the allow was traded against marking what it lets through, and
+        # this is the mutation that collects the widening without paying for it.
+        # Both unverified cases still write an annotation, so a test that only
+        # asserts "an annotation exists" stays green while the two incidents — a
+        # listing merely queued, and a reconciler that is not running at all —
+        # become indistinguishable in the audit.
+        "the audit stops recording which kind of absence it was",
+        GATE,
+        "        \"confirmation\": decision.get(\"confirmation\") or \"\",\n",
+        "",
     ),
 ]
 
