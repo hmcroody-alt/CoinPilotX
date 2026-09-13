@@ -221,6 +221,47 @@ catches *downgrades*. Staying out is the stronger position, and every web-rebuil
 **Gate:** `tests/protection/test_web_spa_shell.py` (12 checks) — mutation-tested 30/30 with five
 behaviour-preserving controls silent. Full suite: 643 checks across 43 suites, green.
 
+### Phase 1g — the accessibility contract, closed
+
+Auditing the Phase 1 exit criterion clause by clause turned up one unmet half. Checking it is
+worth recording, because the first check was wrong: grepping `web/src/styles/` for
+`prefers-contrast` found nothing, which looked like "high contrast was never ported". It had been
+— as `[data-hc="1"]`, which is the *correct* port, because native's `highContrast` is a toggle in
+`AccessibilitySettingsScreen`, not an OS signal. The gate had been comparing those palettes all
+along (8 resolved palettes, not 5). The lesson is the cheap one: the wrong query returns a
+confident wrong answer, and "feature missing" is the answer a grep is most likely to fake.
+
+What was genuinely missing sat next to it. Native has **three** accessibility inputs, all in-app
+settings: `highContrast`, `reduceTransparency`, `reduceMotion`. `tokens.css` honoured the first two
+through *both* an attribute and a media query, and documented why both are needed. Reduce-motion
+had only the media query, and `applyTheme` published only two of the three attributes. So a member
+who turned Reduce Motion on **inside PulseSoc** kept getting the full ambient loops on the web —
+the one place they had explicitly asked them to stop. Fixed by adding `[data-reduce-motion="1"]`
+and the matching `setAttribute`.
+
+Two checks were added to `native_theme_parity_gate.py`, both aimed at failures that get *quieter*
+over time rather than louder:
+
+- **Completeness, not values.** Native cannot grow a duration that escapes the preference —
+  `duration: (ms) => reduceMotion ? 0 : ms` is a function over all of them. CSS has no equivalent,
+  so the web restates the set as literals, and literals rot: add a seventh `--dur-*` and the
+  six-line blocks keep passing while the new animation plays through. The gate now asserts every
+  duration declared at `:root` is zeroed by **every** trigger. An empty baseline is
+  `could-not-check`, never a pass.
+- **Styled implies published.** `tokens.css` and `themes.ts` form a loop neither half can verify
+  alone. Delete the `setAttribute` and the CSS block is still there, still correct, still passing
+  every check that reads CSS — and dead, because nothing matches it. The member sees no change and
+  has nothing to report. Checked one-way on purpose: a publisher with no CSS is inert, a CSS block
+  with no publisher is a feature that silently does nothing.
+
+**Gate:** `tests/protection/test_native_theme_parity_gate.py` grew 26 → 41 checks. Mutation-tested
+17/17 (12 mutations, 5 behaviour-preserving controls silent, tree hashed either side), including
+the exit-code distinction — a mutation that goes red for the wrong reason is scored as a miss.
+
+**Phase 1 exit criterion: all four clauses now met and gated.** SPA served from a route with its
+own CSP (1f); no `'unsafe-inline'` in `script-src` (1f); reduced-motion and high-contrast mirror
+native (1a + 1g); one service worker (1e).
+
 ---
 
 ## 4. Phase 2 — Authentication

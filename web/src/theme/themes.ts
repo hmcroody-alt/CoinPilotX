@@ -60,10 +60,20 @@ export const ACTIVE_THEME: ThemeMode = "dark";
  * active, not a palette of its own, and reduce-transparency is a derived flag
  * that native ORs with high contrast. `tokens.css` reproduces both with
  * attribute selectors, so this function only has to publish the inputs.
+ *
+ * All three of native's accessibility inputs are settings inside the product,
+ * not OS signals, so all three need an explicit attribute here. `reduceMotion`
+ * is the one with no derived component: native applies it as
+ * `duration: (ms) => reduceMotion ? 0 : ms`, and the web's equivalent is the
+ * `[data-reduce-motion="1"]` block zeroing every `--dur-*`.
  */
 export function applyTheme(
   root: HTMLElement,
-  options: { highContrast?: boolean; reduceTransparency?: boolean } = {},
+  options: {
+    highContrast?: boolean;
+    reduceTransparency?: boolean;
+    reduceMotion?: boolean;
+  } = {},
 ): void {
   root.setAttribute("data-theme", ACTIVE_THEME);
 
@@ -80,4 +90,10 @@ export function applyTheme(
 
   if (reduceTransparency) root.setAttribute("data-reduce-transparency", "1");
   else root.removeAttribute("data-reduce-transparency");
+
+  // Not ORed with anything. Native keeps `reduceMotion` standalone -- unlike
+  // reduceTransparency, high contrast does not imply it -- so deriving one from
+  // the other here would suppress motion the app still plays.
+  if (options.reduceMotion === true) root.setAttribute("data-reduce-motion", "1");
+  else root.removeAttribute("data-reduce-motion");
 }

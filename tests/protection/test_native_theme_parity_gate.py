@@ -489,6 +489,227 @@ def test_the_real_run_actually_compares_something():
     assert "8 metrics" in message, message
 
 
+_MOTION_CSS = """
+:root {
+  --dur-instant: 80ms;
+  --dur-quick: 150ms;
+}
+[data-reduce-motion="1"] {
+  --dur-instant: 0ms;
+  --dur-quick: 0ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-quick: 0ms;
+  }
+}
+"""
+
+
+def test_a_complete_motion_suppression_reports_no_problems():
+    """The healthy shape, so the failure tests below mean something."""
+    blocks = GATE.parse_css_blocks(_MOTION_CSS)
+    assert GATE.check_motion_suppression(_MOTION_CSS, blocks) == []
+
+
+def test_a_duration_the_attribute_trigger_forgets_is_reported():
+    """The rot this check exists for.
+
+    Native cannot grow a duration that escapes reduce-motion -- `duration()` is
+    a function over all of them. The web restates the set as literals, so the
+    seventh token added six months from now is the one that silently keeps
+    animating. It must be named, not merely counted.
+    """
+    css = _MOTION_CSS.replace(
+        "  --dur-quick: 150ms;\n}",
+        "  --dur-quick: 150ms;\n  --dur-slow: 900ms;\n}",
+    )
+    blocks = GATE.parse_css_blocks(css)
+    problems = GATE.check_motion_suppression(css, blocks)
+    attribute = [p for p in problems if GATE.REDUCED_MOTION_ATTR in p]
+    assert any("--dur-slow" in p for p in attribute), problems
+
+
+def test_a_duration_the_media_query_forgets_is_reported():
+    """Both triggers are checked, not just the first one that happens to exist."""
+    css = _MOTION_CSS.replace(
+        "    --dur-instant: 0ms;\n    --dur-quick: 0ms;\n",
+        "    --dur-instant: 0ms;\n",
+    )
+    blocks = GATE.parse_css_blocks(css)
+    problems = GATE.check_motion_suppression(css, blocks)
+    media = [p for p in problems if GATE.REDUCED_MOTION_QUERY_LABEL in p]
+    assert any("--dur-quick" in p for p in media), problems
+
+
+def test_the_in_app_trigger_missing_entirely_is_reported():
+    """The exact state the tree was in before this check existed.
+
+    `accessibility.reduceMotion` is a setting inside the product, not an OS
+    signal, so a stylesheet carrying only the media query leaves every member
+    who turned it on in PulseSoc with the full ambient loops on the web.
+    """
+    css = _MOTION_CSS.replace(
+        '[data-reduce-motion="1"] {\n  --dur-instant: 0ms;\n  --dur-quick: 0ms;\n}',
+        "",
+    )
+    blocks = GATE.parse_css_blocks(css)
+    problems = GATE.check_motion_suppression(css, blocks)
+    assert any(
+        GATE.REDUCED_MOTION_ATTR in p and "suppresses no durations" in p
+        for p in problems
+    ), problems
+
+
+def test_the_os_trigger_missing_entirely_is_reported():
+    """The symmetric hole: a visitor who never opens the product's settings."""
+    css = _MOTION_CSS[: _MOTION_CSS.index("@media")]
+    blocks = GATE.parse_css_blocks(css)
+    problems = GATE.check_motion_suppression(css, blocks)
+    assert any(
+        GATE.REDUCED_MOTION_QUERY_LABEL in p and "suppresses no durations" in p
+        for p in problems
+    ), problems
+
+
+def test_a_merely_shortened_duration_is_not_suppression():
+    """`duration()` returns 0. A smaller number is a different contract."""
+    css = _MOTION_CSS.replace(
+        '[data-reduce-motion="1"] {\n  --dur-instant: 0ms;',
+        '[data-reduce-motion="1"] {\n  --dur-instant: 1ms;',
+    )
+    blocks = GATE.parse_css_blocks(css)
+    problems = GATE.check_motion_suppression(css, blocks)
+    assert any("not zero" in p and "--dur-instant" in p for p in problems), problems
+
+
+def test_zero_spellings_that_mean_zero_are_accepted():
+    """`0`, `0s` and `0ms` are one value.
+
+    A gate that reports them apart is a gate someone switches off, which is the
+    same reason the colour comparison normalises `#FFF` and `rgb(255,255,255)`.
+    """
+    css = _MOTION_CSS.replace(
+        '[data-reduce-motion="1"] {\n  --dur-instant: 0ms;\n  --dur-quick: 0ms;\n}',
+        '[data-reduce-motion="1"] {\n  --dur-instant: 0s;\n  --dur-quick: 0;\n}',
+    )
+    blocks = GATE.parse_css_blocks(css)
+    assert GATE.check_motion_suppression(css, blocks) == []
+
+
+def test_a_trigger_zeroing_a_token_that_does_not_exist_is_reported():
+    """A renamed token leaves a suppression line that suppresses nothing.
+
+    This is the failure that looks healthiest: the block still has the same
+    number of lines in it, so a reviewer counting lines sees a complete set.
+    """
+    css = _MOTION_CSS.replace(
+        '[data-reduce-motion="1"] {\n  --dur-instant: 0ms;',
+        '[data-reduce-motion="1"] {\n  --dur-instnat: 0ms;',
+    )
+    blocks = GATE.parse_css_blocks(css)
+    problems = GATE.check_motion_suppression(css, blocks)
+    assert any("--dur-instnat" in p for p in problems), problems
+    assert any("--dur-instant" in p for p in problems), problems
+
+
+def test_no_durations_at_root_is_could_not_check_not_a_pass():
+    """An empty baseline satisfies every completeness check vacuously.
+
+    Which is the failure shape this directory exists to refuse: the ways this
+    check breaks -- a renamed prefix, a parser that stops matching -- all empty
+    the baseline, and an empty baseline compares clean against anything.
+    """
+    css = ":root { --pulse-accent: #111111; }"
+    blocks = GATE.parse_css_blocks(css)
+    try:
+        GATE.check_motion_suppression(css, blocks)
+    except GATE.CouldNotCheck:
+        return
+    raise AssertionError("an empty duration baseline was treated as a pass")
+
+
+def test_the_two_at_rule_readers_agree_on_where_a_media_block_ends():
+    """`_split_at_rules` and `_at_rules_with_preludes` share a span finder.
+
+    If they could disagree, one would see a `@media` block the other did not,
+    and a suppression context would go silently unchecked -- the gate getting
+    quieter, which is the direction that never announces itself.
+    """
+    css = """
+    :root { --dur-quick: 150ms; }
+    @media (prefers-reduced-motion: reduce) {
+      :root { --dur-quick: 0ms; }
+    }
+    @media (min-width: 900px) { .x { color: red; } }
+    """
+    _, at_rules = GATE._split_at_rules(css)
+    preludes = GATE._at_rules_with_preludes(css)
+    assert len(preludes) == 2, preludes
+    assert "".join(body for _, body in preludes) == at_rules
+
+
+def test_every_styled_attribute_has_a_publisher_on_the_live_tree():
+    """The loop between tokens.css and themes.ts closes today."""
+    css = GATE.WEB_TOKENS.read_text(encoding="utf-8")
+    assert GATE.check_attribute_publishers(css) == []
+
+
+def test_an_attribute_styled_but_never_published_is_reported():
+    """A CSS block nothing can match is a feature that silently does nothing.
+
+    This is the failure with no symptom: the stylesheet still contains the
+    block, so it reviews as implemented, and the member who turned the
+    preference on simply sees no change and has nothing to report.
+    """
+    css = '[data-nobody-sets-this="1"] { --dur-quick: 0ms; }'
+    problems = GATE.check_attribute_publishers(css)
+    assert any("data-nobody-sets-this" in p for p in problems), problems
+
+
+def test_the_publisher_check_reads_the_real_themes_file():
+    """Anti-vacuity: it must fail when the live publishers are what is missing.
+
+    Without this the check could be satisfied by a `themes.ts` that publishes
+    nothing at all, since a CSS fixture styling nothing produces no problems
+    either.
+    """
+    css = (
+        '[data-hc="1"] { --pulse-bg: #000; }\n'
+        '[data-reduce-motion="1"] { --dur-quick: 0ms; }\n'
+        '[data-reduce-transparency="1"] { --pulse-glass: #000; }\n'
+    )
+    assert GATE.check_attribute_publishers(css) == [], (
+        "the three attributes the live themes.ts publishes should all be found"
+    )
+
+    source = GATE.WEB_THEMES.read_text(encoding="utf-8")
+    for attribute in ("data-hc", "data-reduce-motion", "data-reduce-transparency"):
+        assert f'setAttribute("{attribute}"' in source, (
+            f"{attribute} is styled in tokens.css but themes.ts no longer "
+            f"publishes it"
+        )
+
+
+def test_no_styled_attributes_at_all_is_could_not_check():
+    """An empty styled set makes the difference vacuously empty."""
+    try:
+        GATE.check_attribute_publishers(":root { --dur-quick: 150ms; }")
+    except GATE.CouldNotCheck:
+        return
+    raise AssertionError("a stylesheet with no attribute selectors was a pass")
+
+
+def test_the_live_summary_counts_the_durations_it_checked():
+    """Guard against the count going to zero while the line still reads green."""
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        GATE.main([])
+    message = out.getvalue()
+    assert "6 durations suppressed by both reduce-motion triggers" in message, message
+
+
 if __name__ == "__main__":
     import pathlib as _pathlib
     import sys as _sys

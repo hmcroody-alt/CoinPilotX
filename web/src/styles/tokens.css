@@ -378,7 +378,29 @@
 
 /* Reduce-motion is a first-class input in the native app, not an afterthought:
  * the long ambient loops are suppressed outright. The web honours the same
- * contract at the root so no component has to remember to. */
+ * contract at the root so no component has to remember to.
+ *
+ * Two triggers, for the same reason reduce-transparency has two. Native's
+ * `accessibility.reduceMotion` is a setting *inside the product*
+ * (AccessibilitySettingsScreen), not an OS signal, so honouring only the media
+ * query would mean a member who turned Reduce Motion on in PulseSoc still got
+ * the full ambient loops on the web -- the one place they had explicitly asked
+ * for them to stop. The media query is kept alongside so a visitor who set the
+ * preference at the OS level is covered before they ever find the setting.
+ *
+ * Native expresses this as `duration: (ms) => reduceMotion ? 0 : ms` -- every
+ * duration, no exceptions, which is why both blocks below must list every
+ * `--dur-*` declared at `:root`. `native_theme_parity_gate.py` enforces that
+ * completeness rather than trusting the lists to be kept in step by hand. */
+[data-reduce-motion="1"] {
+  --dur-instant: 0ms;
+  --dur-quick: 0ms;
+  --dur-standard: 0ms;
+  --dur-reveal: 0ms;
+  --dur-entrance: 0ms;
+  --dur-stagger: 0ms;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-instant: 0ms;

@@ -374,6 +374,52 @@ AT_RULE_ALLOWED = frozenset(
 )
 
 
+def _at_rule_spans(css: str):
+    """`(at, open_brace, end)` index triples for each top-level at-rule.
+
+    Factored out so `_split_at_rules` and `_at_rules_with_preludes` cannot
+    disagree about where an at-rule begins and ends. If they could, the failure
+    would be one of them seeing a `@media` block the other does not -- which
+    shows up as a suppression context that is silently never checked, i.e. the
+    gate getting quieter rather than louder.
+    """
+    index = 0
+    while True:
+        at = css.find("@", index)
+        if at < 0:
+            return
+        open_at = css.find("{", at)
+        if open_at < 0:
+            return
+
+        depth = 0
+        end = len(css)
+        for position in range(open_at, len(css)):
+            if css[position] == "{":
+                depth += 1
+            elif css[position] == "}":
+                depth -= 1
+                if depth == 0:
+                    end = position + 1
+                    break
+
+        yield at, open_at, end
+        index = end
+
+
+def _at_rules_with_preludes(css: str) -> list[tuple[str, str]]:
+    """`(prelude, body)` for each top-level at-rule, e.g. `@media (...)`, `{...}`.
+
+    `_split_at_rules` deliberately discards preludes -- it only needs to know
+    that something was at-rule-scoped. Telling *which* condition applies needs
+    the prelude, so this is its own function rather than a widened return type.
+    """
+    return [
+        (css[at:open_at].strip(), css[open_at:end])
+        for at, open_at, end in _at_rule_spans(css)
+    ]
+
+
 def _split_at_rules(css: str) -> tuple[str, str]:
     """Separate top-level at-rule blocks from ordinary rules.
 
@@ -388,32 +434,14 @@ def _split_at_rules(css: str) -> tuple[str, str]:
     ordinary: list[str] = []
     at_rules: list[str] = []
 
-    index = 0
-    while True:
-        at = css.find("@", index)
-        if at < 0:
-            ordinary.append(css[index:])
-            return "".join(ordinary), "".join(at_rules)
-
-        open_at = css.find("{", at)
-        if open_at < 0:
-            ordinary.append(css[index:])
-            return "".join(ordinary), "".join(at_rules)
-
-        depth = 0
-        end = len(css)
-        for position in range(open_at, len(css)):
-            if css[position] == "{":
-                depth += 1
-            elif css[position] == "}":
-                depth -= 1
-                if depth == 0:
-                    end = position + 1
-                    break
-
-        ordinary.append(css[index:at])
+    cursor = 0
+    for at, open_at, end in _at_rule_spans(css):
+        ordinary.append(css[cursor:at])
         at_rules.append(css[open_at:end])
-        index = end
+        cursor = end
+
+    ordinary.append(css[cursor:])
+    return "".join(ordinary), "".join(at_rules)
 
 
 def parse_css_blocks(css: str) -> list[tuple[list[str], dict[str, str]]]:
@@ -451,6 +479,127 @@ def parse_css_blocks(css: str) -> list[tuple[list[str], dict[str, str]]]:
             blocks.append((selectors, declarations))
 
     return blocks
+
+
+# Reduce-motion parity.
+#
+# Native has no per-animation opt-out. `buildTheme` returns
+# `duration: (ms) => reduceMotion ? 0 : ms`, so turning the preference on zeroes
+# every duration in the product by construction -- there is no list to keep in
+# step, and no way to add a duration that escapes it.
+#
+# CSS has no equivalent of that function, so the web restates the suppression as
+# two blocks of literals, and literals rot: add a seventh `--dur-*` token and
+# the six-line blocks keep passing while the new animation plays straight
+# through the preference. What is checked below is therefore completeness --
+# every duration declared at `:root` is zeroed by every trigger -- rather than
+# the values themselves, because completeness is the property native gets for
+# free and the web has to maintain by hand.
+_DURATION_RE = re.compile(r"^--dur-[a-z0-9-]+$")
+_ZERO_RE = re.compile(r"^0(?:ms|s)?$", re.IGNORECASE)
+
+REDUCED_MOTION_ATTR = '[data-reduce-motion="1"]'
+REDUCED_MOTION_QUERY = "prefers-reduced-motion"
+REDUCED_MOTION_QUERY_LABEL = "@media (prefers-reduced-motion: reduce)"
+
+
+def root_durations(
+    blocks: list[tuple[list[str], dict[str, str]]]
+) -> dict[str, str]:
+    """Every `--dur-*` declared unconditionally, i.e. on an unqualified root."""
+    found: dict[str, str] = {}
+    for selectors, declarations in blocks:
+        if not any(s.strip() in (":root", "html", "*") for s in selectors):
+            continue
+        for prop, value in declarations.items():
+            if _DURATION_RE.match(prop):
+                found[prop] = value
+    return found
+
+
+def motion_suppressions(
+    css: str, blocks: list[tuple[list[str], dict[str, str]]]
+) -> dict[str, dict[str, str]]:
+    """The `--dur-*` declarations each reduce-motion trigger contributes.
+
+    Both triggers are required, and they are not redundant.
+    `accessibility.reduceMotion` is a setting inside the app rather than an OS
+    signal, so the media query alone would miss every member who turned it on in
+    PulseSoc; the attribute alone would miss every visitor who set it at the OS
+    level and never opened the setting.
+    """
+    contexts: dict[str, dict[str, str]] = {}
+
+    for prelude, body in _at_rules_with_preludes(_strip_comments(css)):
+        if REDUCED_MOTION_QUERY not in prelude:
+            continue
+        contexts.setdefault(REDUCED_MOTION_QUERY_LABEL, {}).update(
+            {
+                prop: value.strip()
+                for prop, value in _DECL_RE.findall(body)
+                if _DURATION_RE.match(prop)
+            }
+        )
+
+    for selectors, declarations in blocks:
+        if not any(s.strip() == REDUCED_MOTION_ATTR for s in selectors):
+            continue
+        contexts.setdefault(REDUCED_MOTION_ATTR, {}).update(
+            {
+                prop: value
+                for prop, value in declarations.items()
+                if _DURATION_RE.match(prop)
+            }
+        )
+
+    return contexts
+
+
+def check_motion_suppression(
+    css: str, blocks: list[tuple[list[str], dict[str, str]]]
+) -> list[str]:
+    """Problems with the web's reproduction of `theme.duration()`."""
+    baseline = root_durations(blocks)
+    if not baseline:
+        raise CouldNotCheck(
+            "found no `--dur-*` properties at `:root` in tokens.css. Either the "
+            "duration tokens were renamed or the parser stopped seeing them. "
+            "Both leave reduce-motion parity unverified, and an empty baseline "
+            "would otherwise make every completeness check below pass trivially."
+        )
+
+    problems: list[str] = []
+    contexts = motion_suppressions(css, blocks)
+
+    for trigger in (REDUCED_MOTION_ATTR, REDUCED_MOTION_QUERY_LABEL):
+        declarations = contexts.get(trigger)
+        if not declarations:
+            problems.append(
+                f"`{trigger}` suppresses no durations. Native zeroes all of them "
+                f"through `theme.duration()`; a trigger that zeroes none is not "
+                f"that contract."
+            )
+            continue
+
+        for prop in sorted(set(baseline) - set(declarations)):
+            problems.append(
+                f"`{prop}` is declared at `:root` but `{trigger}` does not zero "
+                f"it, so that animation still plays for members who asked it to "
+                f"stop"
+            )
+        for prop in sorted(set(declarations) - set(baseline)):
+            problems.append(
+                f"`{trigger}` zeroes `{prop}`, which is not declared at `:root` "
+                f"-- a renamed or misspelled token that suppresses nothing"
+            )
+        for prop, value in sorted(declarations.items()):
+            if not _ZERO_RE.match(value.strip()):
+                problems.append(
+                    f"`{trigger}` sets `{prop}: {value}`, which is not zero. "
+                    f"Native's `duration()` returns 0, not a smaller number."
+                )
+
+    return problems
 
 
 def _selector_matches(selector: str, theme: str, high_contrast: bool) -> bool:
@@ -540,6 +689,48 @@ def _resolve_vars(properties: dict[str, str], limit: int = 8) -> dict[str, str]:
         if not changed:
             break
     return output
+
+
+def check_attribute_publishers(css: str) -> list[str]:
+    """Every attribute `tokens.css` keys off must be published by `applyTheme`.
+
+    The two files form a loop that neither half can verify alone. `tokens.css`
+    styles `[data-reduce-motion="1"]`; `themes.ts` is the only thing that ever
+    sets that attribute. Drop the `setAttribute` call and the CSS block is still
+    there, still correct, still passing every check that reads CSS -- and dead,
+    because nothing ever matches it. The member who turned the preference on
+    sees no change and has no error to report.
+
+    Checked in this direction only. A publisher with no CSS block is inert and
+    harmless; a CSS block with no publisher is a feature that silently does
+    nothing, which is the one worth failing a build over.
+    """
+    if not WEB_THEMES.is_file():
+        raise CouldNotCheck(f"missing {WEB_THEMES.relative_to(REPO)}")
+    source = WEB_THEMES.read_text(encoding="utf-8")
+
+    styled = {
+        attribute
+        for attribute, _ in re.findall(
+            r"\[(data-[a-z-]+)=\"([^\"]+)\"\]", _strip_comments(css)
+        )
+    }
+    if not styled:
+        raise CouldNotCheck(
+            "found no `[data-*=\"...\"]` selectors in tokens.css. The stylesheet "
+            "uses them for every accessibility state, so extracting none means "
+            "the selector reader broke rather than that the states went away."
+        )
+
+    published = set(re.findall(r"setAttribute\(\s*\"(data-[a-z-]+)\"", source))
+
+    return [
+        f"`tokens.css` styles `[{attribute}=...]` but `applyTheme` in "
+        f"web/src/theme/themes.ts never calls `setAttribute(\"{attribute}\", ...)`, "
+        f"so nothing ever matches that block and the preference it implements is "
+        f"silently inert"
+        for attribute in sorted(styled - published)
+    ]
 
 
 def web_active_theme() -> str:
@@ -650,9 +841,12 @@ def main(argv: list[str]) -> int:
 
         if not WEB_TOKENS.is_file():
             raise CouldNotCheck(f"missing {WEB_TOKENS.relative_to(REPO)}")
-        blocks = parse_css_blocks(WEB_TOKENS.read_text(encoding="utf-8"))
+        css = WEB_TOKENS.read_text(encoding="utf-8")
+        blocks = parse_css_blocks(css)
         if not blocks:
             raise CouldNotCheck("parsed zero custom-property blocks from tokens.css")
+        motion_problems = check_motion_suppression(css, blocks)
+        motion_problems += check_attribute_publishers(css)
     except CouldNotCheck as exc:
         print(f"native-theme-parity: {exc}", file=sys.stderr)
         print(
@@ -661,7 +855,7 @@ def main(argv: list[str]) -> int:
         )
         return EXIT_NO_DATA
 
-    problems = compare(natives, blocks, metrics, native_pin, web_pin)
+    problems = compare(natives, blocks, metrics, native_pin, web_pin) + motion_problems
 
     if problems:
         print("native-theme-parity: the web tokens have drifted from native.")
@@ -677,7 +871,8 @@ def main(argv: list[str]) -> int:
     print(
         f"native-theme-parity: verified {themes} resolved palettes "
         f"({len(PALETTE_TO_CSS)} colours each), {len(METRICS_TO_CSS)} metrics, "
-        f"and the {native_pin!r} appearance pin."
+        f"{len(root_durations(blocks))} durations suppressed by both "
+        f"reduce-motion triggers, and the {native_pin!r} appearance pin."
     )
     return EXIT_OK
 
