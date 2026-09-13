@@ -3363,6 +3363,39 @@ def sentinel_observe_security_response(response):
     return response
 
 
+@webhook_app.after_request
+def pulse_observe_route_hit(response):
+    """Count one route hit, attributed to the client that made it.
+
+    This is the evidence the web rebuild's deletion gate runs on. Static
+    extraction cannot see a URL that is assembled at request time — f-string
+    route constants, computed `url_for` endpoints, links built inside the 496
+    inline-HTML pages — so no route may be deleted on the strength of "nothing
+    references it", only on a week of this showing nothing *reaches* it.
+
+    Records `request.url_rule.rule`, never `request.path`: the rule carries no
+    ids and therefore no personal data, and it keeps the key space bounded by
+    the route table instead of by traffic. Buffered and flushed on an interval,
+    so this is a dict increment per request, not a write.
+    """
+    try:
+        from services import route_hit_log
+        if not route_hit_log.enabled():
+            return response
+        rule = getattr(request.url_rule, "rule", None) or route_hit_log.UNMATCHED_RULE
+        route_hit_log.record(
+            rule,
+            request.method or "GET",
+            route_hit_log.classify_client(request.headers.get("User-Agent", ""), request.headers),
+        )
+    except Exception:
+        # Telemetry that can 500 the route it measures has made the product
+        # worse in order to learn something about it. route_hit_log.stats()
+        # counts its own failures, so this is quiet rather than silent.
+        pass
+    return response
+
+
 def sentinel_rate_refused(scope, limit, window_seconds, subject=None):
     """Count one security-critical action; return the Decision if it is refused.
 
@@ -118999,6 +119032,15 @@ def _init_db_impl():
     seed_education_knowledge_bank(cur)
     seed_arena_foundation(cur)
     ensure_owner_admin_with_cursor(cur, allow_reset=False)
+
+    # Route-hit telemetry. Takes this function's connection on purpose: the
+    # commit two lines down is what makes the DDL durable. Handing it its own
+    # connection is the `ensure_schema(conn)` trap in reverse.
+    try:
+        from services import route_hit_log
+        route_hit_log.ensure_schema(conn)
+    except Exception as exc:
+        logging.warning("ROUTE_HIT_LOG_SCHEMA_FAILED error=%s", str(exc)[:300])
 
     conn.commit()
     conn.close()
