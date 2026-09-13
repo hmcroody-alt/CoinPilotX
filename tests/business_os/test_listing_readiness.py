@@ -64,7 +64,7 @@ def test_the_fixture_is_actually_ready():
     assert r.evaluate(listing()) == {
         "publishable": True, "checkout_ready": True,
         "blockers": [], "warnings": [],
-        "summary": "Ready to publish", "fixes": []}
+        "summary": "Ready to publish", "fixes": [], "notes": []}
 
 
 # --- the anti-drift test ------------------------------------------------------
@@ -219,7 +219,7 @@ def test_a_listing_with_no_stock_concept_reports_no_stock_state(product_type):
                                  product_type=product_type, quantity=None))
     assert verdict == {"publishable": True, "checkout_ready": True,
                        "blockers": [], "warnings": [],
-                       "summary": "Ready to publish", "fixes": []}
+                       "summary": "Ready to publish", "fixes": [], "notes": []}
 
 
 # --- the columns a real row actually carries ----------------------------------
@@ -542,6 +542,41 @@ def test_low_stock_warns_without_closing_checkout():
     assert r.LOW_STOCK not in r.CHECKOUT_BLOCKING
 
 
+# --- the warnings get words too -----------------------------------------------
+def test_a_warning_is_worded_and_addressed_like_a_blocker():
+    """`notes` is what a Ready to Sell screen has to render.
+
+    Without it, the listing below is publishable with an empty fix list, so the
+    screen shows nothing to do above a green Publish button -- and the merchant
+    publishes a product no buyer can check out. The warning is not a blocker and
+    must not become one; it just has to be sayable.
+    """
+    verdict = r.evaluate(listing(quantity=None))
+    assert verdict["publishable"] is True
+    assert verdict["checkout_ready"] is False
+    assert verdict["fixes"] == []
+    assert verdict["notes"] == [
+        {"code": r.UNKNOWN_INVENTORY, "label": "Set stock count", "section": "inventory"}]
+
+
+def test_notes_and_fixes_stay_on_their_own_sides():
+    """Merging the two lists would either block on low stock or publish over a
+    missing price, depending on which way the merge went."""
+    verdict = r.evaluate(listing(price_label="", quantity=0))
+    assert [entry["code"] for entry in verdict["fixes"]] == [r.MISSING_PRICE]
+    assert [entry["code"] for entry in verdict["notes"]] == [r.OUT_OF_STOCK]
+
+
+def test_unknown_and_empty_stock_read_differently_in_words():
+    """§10 in the prose layer, not just in the codes: the distinction the client's
+    own derivation collapsed has to survive all the way to the label."""
+    unknown = r.evaluate(listing(quantity=None))["notes"][0]["label"]
+    empty = r.evaluate(listing(quantity=0))["notes"][0]["label"]
+    assert unknown == "Set stock count"
+    assert empty == "Restock"
+    assert unknown != empty
+
+
 # --- the seller's business stays the seller's ---------------------------------
 def test_a_verdict_carries_no_money_and_no_supplier_facts():
     """A verdict is codes and booleans. Nothing in it can leak supplier cost,
@@ -549,8 +584,9 @@ def test_a_verdict_carries_no_money_and_no_supplier_facts():
     the object at all -- which is what makes it safe to render anywhere."""
     verdict = r.evaluate(listing(quantity=0, price_label=""))
     assert set(verdict) == {"publishable", "checkout_ready", "blockers",
-                            "warnings", "summary", "fixes"}
+                            "warnings", "summary", "fixes", "notes"}
     assert all(set(entry) == {"code", "label", "section"} for entry in verdict["fixes"])
+    assert all(set(entry) == {"code", "label", "section"} for entry in verdict["notes"])
     assert all(isinstance(code, str) for code in
                verdict["blockers"] + verdict["warnings"])
     forbidden = ("cost", "margin", "supplier", "token", "openid", "connection",

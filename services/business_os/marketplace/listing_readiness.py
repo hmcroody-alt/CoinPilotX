@@ -343,6 +343,18 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
         "warnings": warnings,
         "summary": summary(blockers),
         "fixes": [fix(code) for code in blockers],
+        # The warnings, worded and addressed the same way, because a listing that
+        # publishes and cannot be bought needs to say so somewhere. `publishable`
+        # true with `checkout_ready` false is exactly that listing, and a Ready to
+        # Sell screen showing an empty list above a green Publish button is the
+        # "absence is a clean bill of health" reading this field exists to deny.
+        #
+        # Separate from `fixes` rather than merged into it because the two carry
+        # different force -- one stops the publish, one does not -- and a surface
+        # that cannot tell them apart will either block on a low stock count or
+        # publish over a missing price. Same `fix()`, so there is still one label
+        # table and one section map.
+        "notes": [fix(code) for code in warnings],
     }
 
 

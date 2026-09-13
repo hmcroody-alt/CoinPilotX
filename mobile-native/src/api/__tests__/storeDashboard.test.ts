@@ -203,7 +203,8 @@ describe("listingHealth", () => {
       blockers: [] as string[],
       warnings,
       summary: "Ready to publish",
-      fixes: []
+      fixes: [],
+      notes: warnings.map((code) => ({ code, label: "Restock", section: "inventory" }))
     });
     expect(listingHealth(listing({ quantity: 40, readiness: verdict(["OUT_OF_STOCK"]) }))).toBe(
       "out_of_stock"

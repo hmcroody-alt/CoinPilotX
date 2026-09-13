@@ -120,7 +120,7 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         self.assertEqual(item["readiness"], {
             "publishable": True, "checkout_ready": True,
             "blockers": [], "warnings": [],
-            "summary": "Ready to publish", "fixes": []})
+            "summary": "Ready to publish", "fixes": [], "notes": []})
 
     def test_the_verdict_names_the_gap_the_row_renders_as_silence(self):
         """§12: a listing with no price must say so.
@@ -201,7 +201,7 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         item = self.seller_item(self.insert_listing(quantity=0, price_label=""))
         verdict = item["readiness"]
         self.assertEqual(set(verdict), {"publishable", "checkout_ready", "blockers",
-                                        "warnings", "summary", "fixes"})
+                                        "warnings", "summary", "fixes", "notes"})
         flat = repr(verdict).lower()
         for word in ("cost", "margin", "supplier", "token", "openid", "connection", "cents"):
             self.assertNotIn(word, flat, f"{word!r} has no business in a readiness verdict")
@@ -221,7 +221,7 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
             self.assertIn("readiness", item, f"listing {item.get('id')} has no verdict")
             self.assertEqual(set(item["readiness"]),
                              {"publishable", "checkout_ready", "blockers",
-                              "warnings", "summary", "fixes"})
+                              "warnings", "summary", "fixes", "notes"})
 
     # -- what a bulk action would do, decided here rather than on the phone ----
 
@@ -277,6 +277,95 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         self.assertEqual(outcome["outcome"], "blocked")
         self.assertEqual(outcome["reason"], preview["reason"])
         self.assertEqual(outcome["blockers"], preview["blockers"])
+
+    # -- the SINGLE product path answers with the same verdict ----------------
+    #
+    # §32's journey is Store -> Edit -> Ready to Sell -> fix -> Publish, and it
+    # runs entirely on responses from the routes below. They used to hand back a
+    # listing with no verdict on it at all, while the list route beside them
+    # attached one, so the same product gave two different answers depending on
+    # which route the phone had asked last. The editor merges an update response
+    # over the row it is holding, which means the missing key did not clear the
+    # stale verdict -- it preserved it. That is the shape of the bug these pin.
+
+    def edit_response(self, listing_id, **fields):
+        response = self.client.patch(
+            f"/api/pulse/marketplace/seller/listings/{listing_id}", json=fields)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()["listing"]
+
+    def test_saving_an_edit_answers_with_the_verdict(self):
+        listing_id = self.insert_listing(price_label="", status="draft",
+                                         approval_status="draft")
+        item = self.edit_response(listing_id, title="Brass desk lamp, small")
+        self.assertIn("readiness", item, "the editor has nothing to draw Ready to Sell from")
+        self.assertEqual(item["readiness"]["blockers"], [readiness.MISSING_PRICE])
+
+    def test_fixing_the_price_clears_the_blocker_in_the_same_response(self):
+        """The §31 read-back, on the one surface where it is easy to fake.
+
+        Adding a price and being told to add a price is what the seller saw
+        before: the update response carried no verdict, so the phone kept the one
+        it fetched with the list. The fix has to be visible in the answer to the
+        request that made it, not on the next full reload.
+        """
+        listing_id = self.insert_listing(price_label="", status="draft",
+                                         approval_status="draft")
+        before = self.edit_response(listing_id, title="Brass desk lamp")
+        self.assertEqual(before["readiness"]["blockers"], [readiness.MISSING_PRICE])
+
+        after = self.edit_response(listing_id, price_label="$24.00")
+        self.assertEqual(after["readiness"]["blockers"], [])
+        self.assertTrue(after["readiness"]["publishable"])
+        self.assertEqual(after["readiness"]["summary"], "Ready to publish")
+
+    def test_the_editor_and_the_list_cannot_disagree(self):
+        """One authority, asked twice -- the single-product half of it.
+
+        The list route and the update route are different functions with
+        different SQL, and both now go through one serializer. Asserting the
+        whole verdict is equal, rather than each field, is what would catch a
+        second attachment point growing beside the first.
+        """
+        listing_id = self.insert_listing(quantity=None, price_label="",
+                                         status="draft", approval_status="draft")
+        from_list = self.seller_item(listing_id)
+        from_edit = self.edit_response(listing_id, title=from_list["title"])
+        self.assertEqual(from_edit["readiness"], from_list["readiness"])
+        self.assertEqual(from_edit["bulk_eligibility"], from_list["bulk_eligibility"])
+
+    def test_hiding_a_listing_answers_with_the_verdict_too(self):
+        """Pause and resume return a listing, so they return a verdict.
+
+        Not for completeness: the row the seller lands back on is rendered from
+        this response, and a row whose verdict went missing renders as one with
+        nothing left to do.
+        """
+        listing_id = self.insert_listing(price_label="")
+        for action in ("pause", "resume"):
+            response = self.client.post(
+                f"/api/pulse/marketplace/seller/listings/{listing_id}/{action}")
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            item = response.get_json()["listing"]
+            self.assertIn("readiness", item, f"{action} dropped the verdict")
+            self.assertEqual(item["readiness"]["blockers"], [readiness.MISSING_PRICE])
+            self.assertIn("bulk_eligibility", item, f"{action} dropped bulk eligibility")
+
+    def test_the_single_path_verdict_still_reaches_nobody_else(self):
+        """The attachment moved into a shared serializer, so §27 gets re-asserted.
+
+        `pulse_marketplace_seller_listing_payload` wraps the same function the
+        public listing page and search use. If the wrapping had gone the other
+        way round -- verdicts inside the public serializer, stripped on the way
+        out -- this would be how it showed up.
+        """
+        listing_id = self.insert_listing(price_label="", quantity=0)
+        self.edit_response(listing_id, title="Brass desk lamp public two")
+        response = self.client.get("/api/pulse/marketplace/search")
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        for item in response.get_json().get("items") or []:
+            self.assertNotIn("readiness", item)
+            self.assertNotIn("bulk_eligibility", item)
 
 
 if __name__ == "__main__":

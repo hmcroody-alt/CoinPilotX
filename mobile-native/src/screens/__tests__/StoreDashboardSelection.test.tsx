@@ -81,7 +81,8 @@ const READY = {
   blockers: [],
   warnings: [],
   summary: "Ready to publish",
-  fixes: []
+  fixes: [],
+  notes: []
 };
 
 /**
@@ -98,7 +99,8 @@ const NOT_READY = {
   blockers: ["MISSING_PRICE"],
   warnings: [],
   summary: "1 thing left",
-  fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }]
+  fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }],
+  notes: []
 };
 
 /** Out of stock. `warnings` is what the tab filter reads. */
@@ -108,7 +110,8 @@ const SOLD_OUT = {
   blockers: [],
   warnings: ["OUT_OF_STOCK"],
   summary: "Ready to publish",
-  fixes: []
+  fixes: [],
+  notes: [{ code: "OUT_OF_STOCK", label: "Restock", section: "inventory" }]
 };
 
 /**

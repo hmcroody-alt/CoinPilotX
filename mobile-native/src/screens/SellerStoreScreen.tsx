@@ -13,8 +13,12 @@ import {
   pauseMarketplaceSellerListing,
   resumeMarketplaceSellerListing,
   sellerStoreWebUrl,
+  submitMarketplaceSellerListing,
   updateMarketplaceSellerListing
 } from "../api/marketplace";
+import type { ListingFix } from "../api/marketplace";
+import { StoreReadinessPanel } from "../components/store";
+import { storeFixTarget } from "../marketplace/storeFixTarget";
 import { DIGITAL_COMMERCE_ENABLED } from "../api/config";
 import { mediaDisplayUrl } from "../api/feed";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
@@ -55,6 +59,31 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [editCategory, setEditCategory] = useState("");
   const [editPriceLabel, setEditPriceLabel] = useState("");
   const [editQuantity, setEditQuantity] = useState("");
+
+  /**
+   * The fields a tapped blocker jumps to, keyed by the server's `section`.
+   *
+   * `fixes[].section` is a small fixed vocabulary the readiness engine owns, and
+   * routing on it is the whole reason it is sent — a blocker that only *names*
+   * the problem leaves the seller scrolling a form looking for the box. This is
+   * a routing table, not a translation one: no string on the row is written
+   * here, only where the tap lands.
+   */
+  const titleInput = useRef<TextInput | null>(null);
+  const descriptionInput = useRef<TextInput | null>(null);
+  const priceInput = useRef<TextInput | null>(null);
+  const quantityInput = useRef<TextInput | null>(null);
+
+  /**
+   * The listing a publish is already in flight for.
+   *
+   * A ref rather than reading `busy`, for the reason the bulk path learned the
+   * hard way: `busy` is state, written by `setBusy` and read on the next render,
+   * so two taps inside one frame — before the disabled prop has flushed — both
+   * see an idle screen and both POST. Two submits is §23's duplicate. A ref is
+   * written and read in the same tick, so the second tap sees the first.
+   */
+  const publishInFlight = useRef(0);
 
   // True once a canonical store response has landed. Guards the cache read
   // below so a slow AsyncStorage hop can never repaint over fresher data.
@@ -253,6 +282,73 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     }
   }
 
+  /**
+   * §32's "tap the blocker, land on the fix".
+   *
+   * Media has no field on this screen — the fix is a capture, so the tap opens
+   * the camera. Policies has no field anywhere: the seller cannot clear a
+   * restricted-goods review from the app, and saying so is the honest response
+   * to a tap. Pretending otherwise by focusing an unrelated box would be the
+   * dead button §31 is about.
+   */
+  function focusFix(fix: ListingFix) {
+    setMessage("");
+    switch (storeFixTarget(fix.section)) {
+      case "camera":
+        navigation.navigate("CameraStudio", {
+          target: "marketplace",
+          title: t("commerce:marketplace.mediaScreenTitle")
+        });
+        return;
+      case "price":
+        priceInput.current?.focus();
+        return;
+      case "quantity":
+        quantityInput.current?.focus();
+        return;
+      case "policy":
+        setMessage(
+          "This one needs a policy review we can't clear from the app. Change the product details, or contact support on pulsesoc.com."
+        );
+        return;
+      default:
+        titleInput.current?.focus();
+    }
+  }
+
+  function previewAsBuyer(listing: MarketplaceListing) {
+    // The buyer screen renders the listing it is handed rather than refetching,
+    // which is what makes this work on an unpublished draft: the buyer endpoint
+    // would not return one. Nothing seller-only is rendered there, and this is
+    // the seller's own device, so §27 is untouched.
+    navigation.navigate("MarketplaceProduct", {
+      listingId: listing.id,
+      listing,
+      title: listing.title || t("commerce:marketplace.listingTitleFallback")
+    });
+  }
+
+  async function publishListing(listing: MarketplaceListing) {
+    if (publishInFlight.current === listing.id) return;
+    publishInFlight.current = listing.id;
+    setBusy(`publish:${listing.id}`);
+    setMessage("");
+    try {
+      const result = await submitMarketplaceSellerListing(listing.id);
+      // The read-back §31 asks for. The submit route re-evaluates readiness and
+      // sends the row back, so the panel above redraws from the server's answer
+      // rather than from an optimistic guess about what publishing did.
+      applyListingResponse(result.listing);
+      setMessage(result.message || t("commerce:marketplace.listingUpdated"));
+      await invalidateNativeSync(["seller_inventory", "marketplace"], "listing_published");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"));
+    } finally {
+      publishInFlight.current = 0;
+      setBusy("");
+    }
+  }
+
   async function mutateListingStatus(listing: MarketplaceListing, action: "pause" | "resume" | "delete") {
     setBusy(`${action}:${listing.id}`);
     setMessage("");
@@ -405,7 +501,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               <Text style={styles.editorTitle}>{t("commerce:marketplace.editListingTitle", { id: String(editingListing.id) })}</Text>
               <StatusPill listing={editingListing} />
             </View>
-            <TextInput style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder={t("commerce:marketplace.titlePlaceholder")} placeholderTextColor={colors.muted} />
+            <StoreReadinessPanel
+              readiness={editingListing.readiness}
+              publishBlock={editingListing.bulk_eligibility?.publish ?? null}
+              onFix={focusFix}
+              onPreview={() => previewAsBuyer(editingListing)}
+              onPublish={() => publishListing(editingListing)}
+              publishing={busy === `publish:${editingListing.id}`}
+            />
+            <TextInput ref={titleInput} style={styles.input} value={editTitle} onChangeText={setEditTitle} placeholder={t("commerce:marketplace.titlePlaceholder")} placeholderTextColor={colors.muted} />
             <TextInput
               style={styles.input}
               value={editShortDescription}
@@ -414,6 +518,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               placeholderTextColor={colors.muted}
             />
             <TextInput
+              ref={descriptionInput}
               style={[styles.input, styles.textArea]}
               value={editDescription}
               onChangeText={setEditDescription}
@@ -423,9 +528,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             />
             <View style={styles.twoCol}>
               <TextInput style={[styles.input, styles.flex]} value={editCategory} onChangeText={setEditCategory} placeholder={t("commerce:marketplace.categoryPlaceholder")} placeholderTextColor={colors.muted} />
-              <TextInput style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder={t("commerce:marketplace.priceLabelPlaceholder")} placeholderTextColor={colors.muted} />
+              <TextInput ref={priceInput} style={[styles.input, styles.flex]} value={editPriceLabel} onChangeText={setEditPriceLabel} placeholder={t("commerce:marketplace.priceLabelPlaceholder")} placeholderTextColor={colors.muted} />
             </View>
             <TextInput
+              ref={quantityInput}
               style={styles.input}
               value={editQuantity}
               onChangeText={setEditQuantity}

@@ -52,7 +52,8 @@ function row(id: number, over: Partial<StoreListingRow> = {}): StoreListingRow {
       blockers: [],
       warnings: [],
       summary: "Ready to publish",
-      fixes: []
+      fixes: [],
+      notes: []
     },
     bulkEligibility: { publish: null, hide: null },
     unitsSold7d: 0,
@@ -260,7 +261,8 @@ describe("partition — what will happen, before it happens", () => {
         blockers: [],
         warnings: [],
         summary: "Ready to publish",
-        fixes: []
+        fixes: [],
+        notes: []
       },
       bulkEligibility: {
         publish: { code: "ALREADY_PUBLISHED", reason: "Already published" },
@@ -285,7 +287,8 @@ describe("partition — what will happen, before it happens", () => {
         blockers: ["MISSING_PRICE"],
         warnings: [],
         summary: "1 thing left",
-        fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }]
+        fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }],
+        notes: []
       },
       bulkEligibility: { publish: null, hide: null }
     });

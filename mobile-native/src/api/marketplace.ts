@@ -48,8 +48,20 @@ export type ListingReadiness = {
   warnings: string[];
   /** e.g. "2 things left", or "Ready to publish" when there are none. */
   summary: string;
-  /** One entry per blocker, in blocker order. Warnings get no fix. */
+  /** One entry per blocker, in blocker order. */
   fixes: ListingFix[];
+  /**
+   * One entry per warning, in warning order, worded and addressed exactly like
+   * a fix — same table, same section map, different force.
+   *
+   * Kept out of `fixes` because these do not stop a publish and a surface that
+   * cannot tell the two apart will either block on a low stock count or publish
+   * over a missing price. Kept out of the readiness *codes* for rendering
+   * because a `publishable` listing with an empty fix list draws an empty
+   * Ready-to-Sell list above a green button — and if it is not
+   * `checkout_ready`, that empty list is a lie the seller acts on.
+   */
+  notes: ListingFix[];
 };
 
 /**
@@ -465,10 +477,18 @@ export async function createMarketplaceListing(payload: MarketplaceListingCreate
 }
 
 export async function submitMarketplaceSellerListing(listingId: number) {
-  return pulseApi<MarketplaceListingMutationResponse>(`/api/pulse/marketplace/seller/listings/${listingId}/submit`, {
-    method: "POST",
-    body: JSON.stringify({})
-  });
+  const result = await pulseApi<MarketplaceListingMutationResponse>(
+    `/api/pulse/marketplace/seller/listings/${listingId}/submit`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+  // Normalized like every other seller mutation. This one was raw, and the
+  // response is what the editor merges over the row it is holding -- so an
+  // unnormalized publish put a coerced quantity and an unchecked verdict onto a
+  // row the rest of the screen reads as canonical.
+  return {
+    ...result,
+    listing: result.listing ? normalizeMarketplaceListing(result.listing) : undefined
+  };
 }
 
 export type MarketplaceDigitalFileUploadResponse = {
@@ -830,17 +850,30 @@ function normalizeQuantity(raw: MarketplaceListing["quantity"]): number | null {
 function normalizeReadiness(raw: ListingReadiness | undefined): ListingReadiness | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   if (typeof raw.summary !== "string" || !Array.isArray(raw.fixes)) return undefined;
+  const warnings = Array.isArray(raw.warnings) ? raw.warnings.map(String) : [];
+  const notes = Array.isArray(raw.notes) ? raw.notes : [];
+  // A snapshot cached before the server started sending `notes` has the warning
+  // codes and none of the words. Passing it through as `notes: []` would draw an
+  // empty Ready-to-Sell list for a listing that has something to say — the exact
+  // "absence is a clean bill of health" reading the field was added to deny — so
+  // the verdict is refused whole, which every reader treats as "no news".
+  if (warnings.length !== notes.length) return undefined;
   return {
     publishable: Boolean(raw.publishable),
     checkout_ready: Boolean(raw.checkout_ready),
     blockers: Array.isArray(raw.blockers) ? raw.blockers.map(String) : [],
-    warnings: Array.isArray(raw.warnings) ? raw.warnings.map(String) : [],
+    warnings,
     summary: raw.summary,
-    fixes: raw.fixes.map((entry) => ({
-      code: String(entry?.code || ""),
-      label: String(entry?.label || ""),
-      section: String(entry?.section || "overview")
-    }))
+    fixes: raw.fixes.map(normalizeFix),
+    notes: notes.map(normalizeFix)
+  };
+}
+
+function normalizeFix(entry: ListingFix | undefined): ListingFix {
+  return {
+    code: String(entry?.code || ""),
+    label: String(entry?.label || ""),
+    section: String(entry?.section || "overview")
   };
 }
 

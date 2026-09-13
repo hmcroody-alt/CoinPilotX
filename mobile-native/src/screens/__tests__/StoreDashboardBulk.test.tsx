@@ -82,7 +82,8 @@ const READY = {
   blockers: [],
   warnings: [],
   summary: "Ready to publish",
-  fixes: []
+  fixes: [],
+  notes: []
 };
 
 const NOT_READY = {
@@ -91,7 +92,8 @@ const NOT_READY = {
   blockers: ["MISSING_PRICE"],
   warnings: [],
   summary: "1 thing left",
-  fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }]
+  fixes: [{ code: "MISSING_PRICE", label: "Add price", section: "pricing" }],
+  notes: []
 };
 
 /**

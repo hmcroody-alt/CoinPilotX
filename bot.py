@@ -54449,43 +54449,55 @@ def api_pulse_marketplace_seller_listings():
     )
     rows = [dict(row) for row in cur.fetchall()]
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [row.get("id") for row in rows])
-    from services.business_os.marketplace import listing_readiness as _readiness
-    from services.business_os.marketplace import listing_batch as _batch
     items = []
     for row in rows:
         media_rows = media_by_listing.get(int(row.get("id") or 0), [])
-        payload = pulse_marketplace_listing_payload(row, media_rows)
-        # The readiness verdict is attached HERE and not inside
-        # `pulse_marketplace_listing_payload`, because that serializer also feeds
-        # the buyer endpoints, and "this listing has no price yet" is the
-        # merchant's own business. This route is the seller reading their own
-        # store -- `l.seller_user_id=?` above -- so the verdict cannot reach
-        # anyone else through it.
-        #
-        # Computed from `row`, the database row, rather than from `payload`: the
-        # serializer coerces `quantity` through a spread and a blank price to "",
-        # and readiness has to see the NULL that distinguishes "no stock tracked"
-        # from "none left". Losing exactly that distinction is what the client's
-        # own derivation did.
-        verdict = _readiness.evaluate(row, media=media_rows)
-        payload["readiness"] = verdict
-        # What a BULK action would do to this row, decided by the same function
-        # the batch route decides with. The seller's list is where §34's preview
-        # is drawn -- "Publish 14 · 4 blocked" -- and drawing it from a
-        # re-implementation on the phone is how the button comes to promise
-        # fourteen and deliver four.
-        #
-        # Readiness alone cannot answer it. A finished, perfect, already-live
-        # listing is `publishable` and still must not be republished, so the
-        # state gate lives in `block_reason` and only `block_reason` knows it.
-        payload["bulk_eligibility"] = {
-            action: _batch.block_reason(
-                row, action, verdict if action == "publish" else None)
-            for action in _batch.ACTIONS
-        }
-        items.append(payload)
+        items.append(pulse_marketplace_seller_listing_payload(row, media_rows))
     conn.close()
     return jsonify({"ok": True, "items": items, "limit": limit})
+
+
+def pulse_marketplace_seller_listing_payload(row, media_rows):
+    """A listing as its own merchant sees it: the public payload plus the verdicts.
+
+    Every seller-facing route that hands back a listing goes through here, and
+    that is the point. The verdicts used to be attached in the list route only,
+    so the same listing answered two different questions depending on which route
+    the phone had asked last: the list said "2 things left - Add price", and the
+    PATCH that fixed the price answered with no verdict at all. The editor merges
+    that response over the row it is holding, so the *stale* blocker survived the
+    fix -- the seller added a price and was still told to add a price.
+
+    Callers must pass the database row, not a serialized payload. The public
+    serializer coerces a blank price to "" and spreads `quantity`, and readiness
+    has to see the NULL that separates "no stock tracked" from "none left".
+    Losing exactly that distinction is what the phone's own derivation did.
+
+    Not folded into `pulse_marketplace_listing_payload` because that serializer
+    also feeds the buyer endpoints, and what a product still needs before it can
+    go live is the merchant's own business -- SS27. Every caller of this function
+    selects `WHERE seller_user_id = <the caller>`, so neither verdict can reach
+    anyone but the owner.
+    """
+    from services.business_os.marketplace import listing_readiness as _readiness
+    from services.business_os.marketplace import listing_batch as _batch
+
+    payload = pulse_marketplace_listing_payload(row, media_rows)
+    verdict = _readiness.evaluate(row, media=media_rows)
+    payload["readiness"] = verdict
+    # What a BULK action would do to this row, decided by the same function the
+    # batch route decides with. SS34's preview -- "Publish 14 - 4 blocked" -- is
+    # drawn from this, and drawing it from a re-implementation on the phone is how
+    # the button comes to promise fourteen and deliver four.
+    #
+    # Readiness alone cannot answer it. A finished, perfect, already-live listing
+    # is `publishable` and still must not be republished, so the state gate lives
+    # in `block_reason` and only `block_reason` knows it.
+    payload["bulk_eligibility"] = {
+        action: _batch.block_reason(row, action, verdict if action == "publish" else None)
+        for action in _batch.ACTIONS
+    }
+    return payload
 
 
 def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
@@ -54515,7 +54527,9 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
     if not listing:
         return {}
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing.get("id")])
-    return pulse_marketplace_listing_payload(listing, media_by_listing.get(int(listing.get("id") or 0), []))
+    return pulse_marketplace_seller_listing_payload(
+        listing, media_by_listing.get(int(listing.get("id") or 0), [])
+    )
 
 
 def pulse_emit_marketplace_inventory_event(

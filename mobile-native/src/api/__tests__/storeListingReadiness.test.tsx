@@ -72,25 +72,39 @@ const SERVER_FIXES: Record<string, { label: string; section: string }> = {
   MISSING_CATEGORY: { label: "Choose category", section: "details" },
   NO_VALID_MEDIA: { label: "Add photo", section: "media" },
   MISSING_PRICE: { label: "Add price", section: "pricing" },
-  RESTRICTED_PRODUCT: { label: "Resolve policy review", section: "policies" }
+  RESTRICTED_PRODUCT: { label: "Resolve policy review", section: "policies" },
+  OUT_OF_STOCK: { label: "Restock", section: "inventory" },
+  LOW_STOCK: { label: "Running low", section: "inventory" },
+  UNKNOWN_INVENTORY: { label: "Set stock count", section: "inventory" }
 };
+
+function worded(codes: string[]) {
+  return codes.map((code) => ({
+    code,
+    label: SERVER_FIXES[code]?.label ?? "Review this listing",
+    section: SERVER_FIXES[code]?.section ?? "overview"
+  }));
+}
 
 function verdict(over: Partial<ListingReadiness> = {}): ListingReadiness {
   const blockers = over.blockers ?? [];
+  const warnings = over.warnings ?? [];
   return {
     publishable: true,
     checkout_ready: true,
-    warnings: [],
     summary: blockers.length
       ? `${blockers.length} thing${blockers.length === 1 ? "" : "s"} left`
       : "Ready to publish",
-    fixes: blockers.map((code) => ({
-      code,
-      label: SERVER_FIXES[code]?.label ?? "Review this listing",
-      section: SERVER_FIXES[code]?.section ?? "overview"
-    })),
     ...over,
-    blockers
+    blockers,
+    warnings,
+    // Derived last, and from the *resolved* arrays, because the server sends one
+    // entry per code on both sides and the normalizer refuses a verdict where
+    // `warnings` and `notes` disagree in length. A call site that overrode
+    // `warnings` and left a stale `notes` would be discarded whole rather than
+    // fail loudly, so the fixture never lets the two drift apart.
+    fixes: worded(blockers),
+    notes: worded(warnings)
   };
 }
 
@@ -141,6 +155,46 @@ describe("normalizeMarketplaceListing", () => {
     ]);
     expect(listing.quantity).toBeNull();
     expect(listing.readiness?.warnings).toEqual(["UNKNOWN_INVENTORY"]);
+  });
+
+  it("carries the warnings as words, not just as codes", () => {
+    const readiness = verdict({ checkout_ready: false, warnings: ["UNKNOWN_INVENTORY"] });
+    expect(normalizeMarketplaceListing(payload({ readiness })).readiness?.notes).toEqual([
+      { code: "UNKNOWN_INVENTORY", label: "Set stock count", section: "inventory" }
+    ]);
+  });
+
+  it("refuses a cached verdict that has the warning codes but not their words", () => {
+    // A snapshot written before the server started sending `notes`. Letting it
+    // through as `notes: []` would draw an empty Ready-to-Sell list over a
+    // listing that has something to say -- and this one is not checkout_ready,
+    // so the empty list is a lie the seller would act on. Refusing it whole
+    // reads downstream as "not told", which every surface already handles.
+    const stale = {
+      publishable: true,
+      checkout_ready: false,
+      blockers: [],
+      warnings: ["UNKNOWN_INVENTORY"],
+      summary: "Ready to publish",
+      fixes: []
+    } as unknown as ListingReadiness;
+    expect(normalizeMarketplaceListing(payload({ readiness: stale })).readiness).toBeUndefined();
+  });
+
+  it("still accepts a clean verdict from that same older build", () => {
+    // The other half, and the reason the guard is length-matched rather than a
+    // flat `notes` presence check: a listing with nothing to warn about was
+    // serialized identically before and after the change, so refusing it would
+    // strip verdicts from most of a seller's store for no gain.
+    const clean = {
+      publishable: true,
+      checkout_ready: true,
+      blockers: [],
+      warnings: [],
+      summary: "Ready to publish",
+      fixes: []
+    } as unknown as ListingReadiness;
+    expect(normalizeMarketplaceListing(payload({ readiness: clean })).readiness?.notes).toEqual([]);
   });
 });
 
