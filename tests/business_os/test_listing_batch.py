@@ -567,6 +567,41 @@ def test_a_payload_on_an_action_that_ignores_it_is_refused(action):
     assert exc.value.code == "UNSUPPORTED_ACTION"
 
 
+def test_no_payload_action_is_precomputable():
+    """A rule-dependent verdict must never be attached to a listing payload.
+
+    The list route builds `bulk_eligibility` by looping this tuple. When it
+    looped `ACTIONS` instead, adding `price` put
+    `{"code": "NO_PRICE_PROPOSAL", "reason": "No price worked out"}` on every
+    listing in every seller's store — a block that no listing could ever clear,
+    on a feature that works, because the verdict was computed with no rule. A
+    client cannot distinguish that from a real block, so silence is the only
+    honest answer until there is a rule.
+    """
+    assert set(b.PRECOMPUTED_ACTIONS).isdisjoint(b.PAYLOAD_ACTIONS)
+    # And it is still a subset of the real action list, so this cannot be
+    # satisfied by inventing names.
+    assert set(b.PRECOMPUTED_ACTIONS) <= set(b.ACTIONS)
+    # Every action is accounted for by exactly one of the two, so a future action
+    # cannot be quietly left out of both and lose its row verdict.
+    assert set(b.PRECOMPUTED_ACTIONS) | set(b.PAYLOAD_ACTIONS) == set(b.ACTIONS)
+
+
+def test_a_precomputed_verdict_needs_no_payload_to_be_meaningful():
+    """The property that makes precomputation honest, asserted directly.
+
+    For each precomputable action, `block_reason` called the way the list route
+    calls it — with no proposal — must not invent a block that only exists
+    because nothing was passed. `price` fails this, which is why it is excluded.
+    """
+    ready = listing(status="draft", approval_status="draft")
+    for action in b.PRECOMPUTED_ACTIONS:
+        block = b.block_reason(ready, action, READY if action == "publish" else None)
+        assert block is None, f"{action} blocked a clean row with no payload: {block}"
+    # The excluded one demonstrably does need a payload.
+    assert b.block_reason(ready, "price", None, None) is not None
+
+
 def test_the_rule_is_part_of_the_request_fingerprint():
     # THE test for this feature. Same key, same listings, different price is a
     # different request. If these hashes match, `claim` calls the second one a
@@ -664,3 +699,53 @@ def test_the_blocking_price_and_the_written_price_are_one_object():
     # The number the writer will use is the same object the decision was made
     # from, not a second evaluation of the rule.
     assert plans[1]["price_cents"] == 1200
+
+
+# --- the preview (§34) -------------------------------------------------------
+
+
+def test_a_preview_never_reports_anything_as_succeeded():
+    """The word `succeeded` may not appear in an answer to a request that wrote
+    nothing. A preview entry carrying it would let the store render "14 products
+    updated" for a batch that has not run."""
+    with pytest.raises(ValueError):
+        b.summarize_preview("price", [b.result_entry(1, b.SUCCEEDED)])
+
+
+def test_a_commit_summary_never_reports_would_apply():
+    # The same fence from the other side, so the two vocabularies cannot be
+    # produced by one code path that lost track of which mode it is in.
+    with pytest.raises(ValueError):
+        b.summarize("mlb_1", "price", [b.result_entry(1, b.WOULD_APPLY)])
+
+
+def test_a_preview_carries_no_batch_id_and_no_success_count():
+    """The two omissions are the feature.
+
+    A client that renders a preview as an outcome should crash on a missing key,
+    not print a confident wrong number. `successful_count` is the one a summary
+    banner reaches for first, and `batch_id` would name a batch that was never
+    claimed and can never be replayed.
+    """
+    summary = b.summarize_preview("price", [
+        b.result_entry(1, b.WOULD_APPLY, price_label="$12.00"),
+        b.result_entry(2, b.BLOCKED, error_code="UNKNOWN_COST"),
+        b.result_entry(3, b.FAILED, error_code=b.NOT_FOUND),
+    ])
+    assert "batch_id" not in summary
+    assert "successful_count" not in summary
+    assert summary["preview"] is True
+    assert (summary["requested_count"], summary["eligible_count"],
+            summary["blocked_count"], summary["failed_count"]) == (3, 1, 1, 1)
+
+
+def test_every_previewed_row_lands_in_exactly_one_count():
+    # The property that makes the preview's arithmetic checkable by the seller:
+    # the three counts add up to what they selected, so a row cannot go missing
+    # between the tap and the sheet.
+    entries = ([b.result_entry(i, b.WOULD_APPLY) for i in range(1, 8)]
+               + [b.result_entry(i, b.BLOCKED) for i in range(8, 12)]
+               + [b.result_entry(12, b.FAILED)])
+    summary = b.summarize_preview("price", entries)
+    assert (summary["eligible_count"] + summary["blocked_count"]
+            + summary["failed_count"]) == summary["requested_count"] == 12

@@ -70,6 +70,22 @@ ACTIONS = ("publish", "hide", "price")
 #: Actions that take a payload, and are meaningless without one.
 PAYLOAD_ACTIONS = ("price",)
 
+#: The actions whose verdict follows from the listing row alone, so a list route
+#: can attach one to every row it returns and the phone can grey the right rows
+#: before asking anything.
+#:
+#: ``price`` is deliberately absent, and the absence is the honest answer. What
+#: blocks a reprice depends on the *rule the seller has not chosen yet*: the same
+#: listing is `PRICE_UNCHANGED` under cost+20% and a clean success under
+#: cost+25%. Attaching a verdict computed with no rule yielded
+#: ``{"code": "NO_PRICE_PROPOSAL"}`` on every listing in the store — a permanent,
+#: authoritative-sounding block on a feature that works, which is worse than
+#: silence because a client cannot tell it apart from a real one. Omitting the
+#: key instead makes the client's existing "no verdict is not a yes" rule give
+#: the right answer for free, and the real verdict comes from
+#: :func:`build_price_plans` once there is a rule to compute it from.
+PRECOMPUTED_ACTIONS = tuple(action for action in ACTIONS if action not in PAYLOAD_ACTIONS)
+
 #: A ceiling on one request. Not a performance number — it is the largest set a
 #: seller can be shown an honest preview of, and the largest we are willing to
 #: move under a single idempotency key. A client with more rows than this must
@@ -481,6 +497,59 @@ def result_entry(listing_id: int, outcome: str, **extra) -> dict:
     entry = {"listing_id": int(listing_id), "outcome": outcome}
     entry.update({k: v for k, v in extra.items() if v is not None})
     return entry
+
+
+#: A preview outcome, and deliberately not :data:`SUCCEEDED`.
+#:
+#: A preview writes nothing, so every word it could borrow from the committed
+#: vocabulary would be a lie about a row that did not move. ``summarize`` refuses
+#: this value and ``summarize_preview`` refuses ``SUCCEEDED``, so the two shapes
+#: cannot be produced by the same code path by accident.
+WOULD_APPLY = "would_apply"
+
+
+def summarize_preview(action: str, results: list) -> dict:
+    """§34. What this batch *would* do, computed by the code that would do it.
+
+    The reason this exists rather than the client working it out: a reprice
+    verdict depends on the rule, so — unlike publish and hide — it cannot be
+    attached to a listing row in advance. Without a preview the seller's only
+    way to find out what "cost + 20%" does to their forty listings is to apply
+    it to their forty listings.
+
+    Three things are missing from this shape on purpose, and each one is a
+    client-side bug that becomes loud instead of silent:
+
+    * **No ``batch_id``.** Nothing was claimed and nothing can be replayed. A
+      client that stores this id and later reports "batch mlb_… applied" would be
+      naming a batch that never existed.
+    * **No ``successful_count``.** A caller that renders "14 products updated"
+      from a preview gets a ``KeyError``, not a confident wrong number. This is
+      the single most important omission here.
+    * **No side effects at all** — no claim, no ledger row, no key spent. The
+      request still carries an idempotency key (it is validated exactly like any
+      other, so a preview cannot be a way to skip validation) and simply never
+      claims it. A seller who previews six rules before choosing one has spent
+      nothing, and may send the sixth under the key they previewed with.
+    """
+    counts = {WOULD_APPLY: 0, BLOCKED: 0, FAILED: 0}
+    for entry in results:
+        outcome = entry.get("outcome")
+        if outcome not in counts:
+            # Catches exactly the confusion this vocabulary exists to prevent:
+            # a committed `succeeded` entry reaching a preview summary.
+            raise ValueError(f"unknown preview outcome {outcome!r}")
+        counts[outcome] += 1
+
+    return {
+        "action": action,
+        "preview": True,
+        "requested_count": len(results),
+        "eligible_count": counts[WOULD_APPLY],
+        "blocked_count": counts[BLOCKED],
+        "failed_count": counts[FAILED],
+        "results": results,
+    }
 
 
 # --- idempotency -------------------------------------------------------------

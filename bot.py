@@ -54802,9 +54802,13 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
     # Readiness alone cannot answer it. A finished, perfect, already-live listing
     # is `publishable` and still must not be republished, so the state gate lives
     # in `block_reason` and only `block_reason` knows it.
+    # `PRECOMPUTED_ACTIONS`, not `ACTIONS`: a reprice verdict depends on the rule
+    # the seller has not picked yet, so there is no honest answer to attach here.
+    # Iterating `ACTIONS` put a permanent `NO_PRICE_PROPOSAL` block on every
+    # listing in the store the moment `price` was added to it.
     payload["bulk_eligibility"] = {
         action: _batch.block_reason(row, action, verdict if action == "publish" else None)
-        for action in _batch.ACTIONS
+        for action in _batch.PRECOMPUTED_ACTIONS
     }
     return payload
 
@@ -55603,6 +55607,61 @@ def api_pulse_marketplace_seller_listing_delete(listing_id):
     return jsonify({"ok": True, "message": "Listing removed from seller inventory.", "listing": item})
 
 
+def _marketplace_batch_price_outcome(listing, plan):
+    """What a reprice of this row comes to: the label, and whether it re-reviews.
+
+    Pure, and called by **both** the preview and the write, which is the reason
+    it is a function. §34 shows the seller "$49.00 → $12.00" before they commit,
+    and the only way that arrow cannot lie is for the string on the right to be
+    produced here rather than formatted a second time for display. A preview that
+    renders its own version of the price is a second price formatter, and it
+    disagrees with the stored one the first time a rule lands on a fraction of a
+    cent or a currency other than USD.
+
+    Raises ``ValueError`` for an amount that cannot be stored — see the ceiling
+    note below — so the preview reports the same row as failed that the write
+    would, instead of promising a price the commit will refuse.
+    """
+    currency = str(listing.get("currency") or "USD").upper()
+    price_cents = int((plan or {}).get("price_cents") or 0)
+
+    label, cents, currency, price_error = marketplace_normalize_price_label(
+        f"{Decimal(price_cents) / 100:.2f}", currency
+    )
+    if price_error or cents <= 0:
+        # Reachable: `pricing.MAX_PRICE_CENTS` and `MAX_PRICE_LABEL_CENTS` are
+        # not the same ceiling, so a rule can land on an amount the batch layer
+        # accepts and checkout will not. Raised rather than written, so the route
+        # reports this row as failed instead of storing a price the buyer can
+        # never be charged.
+        raise ValueError(price_error or "Enter a price greater than zero, or use “Free”.")
+
+    old_status = str(listing.get("status") or "draft").lower()
+    old_approval = str(listing.get("approval_status") or "draft").lower()
+    changed = {"price_label"} if str(listing.get("price_label") or "") != label else set()
+    material = marketplace_listing_lifecycle.requires_rereview(changed)
+    # `price_label` is in `MATERIAL_FIELDS`, so a live, approved listing goes back
+    # to `pending_review` on a price change. The single edit does this; if bulk
+    # did not, "select all → +20%" would be a way to reprice an entire approved
+    # storefront without review — the cheapest possible bypass, and one no
+    # moderator would ever see. The preview reads this too, so a seller is told
+    # their live products will go back into the queue *before* they tap.
+    rereviews = (
+        old_status in marketplace_listing_lifecycle.PUBLIC_STATUSES
+        and old_approval == "approved"
+        and material
+    )
+    return {
+        "price_label": label,
+        "price_cents": cents,
+        "currency": currency,
+        "rereviews": rereviews,
+        "next_status": "pending_review" if rereviews else old_status,
+        "next_approval": "pending_review" if rereviews else old_approval,
+        "old_status": old_status,
+    }
+
+
 def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
     """Write one repriced row, with the same consequences the single edit has.
 
@@ -55610,11 +55669,11 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
     way bulk could quietly diverge from the seller's other route into the same
     column (§21):
 
-    * ``marketplace_normalize_price_label`` builds the stored label back out of
-      the parsed minor units, so the text on the row and the amount at checkout
-      cannot drift. Formatting the cents here instead would be a second price
-      formatter, and the two would disagree the first time a currency other than
-      USD went through.
+    * ``_marketplace_batch_price_outcome`` decides the label and the re-review,
+      and the preview calls the very same function. ``marketplace_normalize_price_label``
+      inside it builds the stored label back out of the parsed minor units, so
+      the text on the row, the number the seller was shown before committing, and
+      the amount at checkout cannot drift apart.
     * ``price_label`` is in ``MATERIAL_FIELDS``, so a live, approved listing goes
       back to ``pending_review`` on a price change. The single edit does this;
       if bulk did not, "select all → +20%" would be a way to reprice an entire
@@ -55626,28 +55685,13 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
       to work and then silently reverts on a schedule nobody is watching.
     """
     listing_id = int(listing.get("id") or 0)
-    currency = str(listing.get("currency") or "USD").upper()
-    price_cents = int((plan or {}).get("price_cents") or 0)
-
-    label, cents, currency, price_error = marketplace_normalize_price_label(
-        f"{Decimal(price_cents) / 100:.2f}", currency
-    )
-    if price_error or cents <= 0:
-        # Reachable: `pricing.MAX_PRICE_CENTS` and `MAX_PRICE_LABEL_CENTS` are
-        # not the same ceiling, so a rule can land on an amount the batch layer
-        # accepts and checkout will not. Raised rather than written, so the
-        # route reports this row as failed instead of storing a price the buyer
-        # can never be charged.
-        raise ValueError(price_error or "Enter a price greater than zero, or use “Free”.")
-
-    old_status = str(listing.get("status") or "draft").lower()
-    old_approval = str(listing.get("approval_status") or "draft").lower()
-    changed = {"price_label"} if str(listing.get("price_label") or "") != label else set()
-    material = marketplace_listing_lifecycle.requires_rereview(changed)
-    if old_status in marketplace_listing_lifecycle.PUBLIC_STATUSES and old_approval == "approved" and material:
-        next_status, next_approval = "pending_review", "pending_review"
-    else:
-        next_status, next_approval = old_status, old_approval
+    outcome = _marketplace_batch_price_outcome(listing, plan)
+    label = outcome["price_label"]
+    cents = outcome["price_cents"]
+    currency = outcome["currency"]
+    old_status = outcome["old_status"]
+    next_status = outcome["next_status"]
+    next_approval = outcome["next_approval"]
 
     cur.execute(
         "UPDATE marketplace_listings SET price_label=?, currency=?, status=?, approval_status=?, "
@@ -55673,6 +55717,65 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
         applied += ["status", "approval_status"]
     return {"price_label": label, "price_cents": cents, "status": next_status,
             "changes_applied": applied}
+
+
+def _marketplace_batch_decide(cur, normalized, user_id):
+    """Read the rows a batch names and decide each one. Writes nothing.
+
+    Called by the preview and by the commit, and that sharing is the whole
+    reason it exists. §34 promises the seller the shape of the outcome before
+    they tap; the only way that promise cannot drift is for the preview and the
+    commit to be one decision asked twice, rather than two decisions expected to
+    agree. Splitting them is how a button comes to read "Reprice 14" and reprice
+    four.
+
+    Ownership is enforced by the ``seller_user_id=?`` here and nowhere else. Ids
+    the seller does not own simply do not come back, so both callers report them
+    ``NOT_FOUND`` — the same answer a deleted id gets, which is what stops the
+    endpoint being used to discover which listing ids exist.
+    """
+    from services.business_os.marketplace import listing_batch as _batch
+
+    ids = normalized["listing_ids"]
+    placeholders = ",".join(["?"] * len(ids))
+    cur.execute(
+        f"SELECT * FROM marketplace_listings WHERE id IN ({placeholders}) AND seller_user_id=?",
+        (*ids, int(user_id)),
+    )
+    owned = {int(dict(row)["id"]): dict(row) for row in cur.fetchall()}
+    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, list(owned))
+
+    price_plans = None
+    if normalized["action"] == "price":
+        # Supplier cost is read from the source rows, scoped to this seller. A
+        # listing with no source row simply has no cost, and `price_proposal`
+        # blocks it rather than treating the absence as zero.
+        costs = {}
+        if owned:
+            cur.execute(
+                f"SELECT listing_id, supplier_cost_cents FROM marketplace_product_sources "
+                f"WHERE listing_id IN ({placeholders}) AND seller_user_id=?",
+                (*ids, int(user_id)),
+            )
+            for source_row in cur.fetchall():
+                source = dict(source_row)
+                raw_cost = source.get("supplier_cost_cents")
+                if raw_cost is None:
+                    continue
+                costs[int(source.get("listing_id") or 0)] = safe_int(raw_cost, 0)
+        currents = {}
+        for listing_id, row in owned.items():
+            current_cents, _ = parse_price_label_to_cents(
+                row.get("price_label") or "", str(row.get("currency") or "USD").upper()
+            )
+            currents[listing_id] = current_cents
+        price_plans = _batch.build_price_plans(
+            owned.values(), normalized["payload"], costs, currents)
+
+    decided = _batch.evaluate_rows(
+        owned.values(), normalized["action"], media_by_listing, price_plans)
+    blocks = {int(row["id"]): block for row, block in decided}
+    return owned, blocks, price_plans
 
 
 def _marketplace_batch_apply(cur, action, listing, user_id, now, plan=None):
@@ -55766,6 +55869,59 @@ def api_pulse_marketplace_seller_listings_batch():
         conn.close()
         return api_error("Merchant approval is required before publishing listings.", 403)
 
+    # §34. Answered here, *above the claim*, so the structure of the function is
+    # the guarantee: a preview returns before a key can be spent and before the
+    # write loop exists. A `dry_run` flag checked further down would be one
+    # misplaced `continue` away from writing.
+    #
+    # The request is validated exactly like a real one — same action, same ids,
+    # same rule — so a preview can never be a way around validation, and the
+    # seller cannot be shown a preview of a batch that would be refused.
+    if bool(payload.get("dry_run")):
+        owned, blocks, price_plans = _marketplace_batch_decide(cur, normalized, user["user_id"])
+        preview = []
+        for listing_id in normalized["listing_ids"]:
+            row = owned.get(listing_id)
+            if row is None:
+                preview.append(_batch.result_entry(
+                    listing_id, _batch.FAILED, error_code=_batch.NOT_FOUND,
+                    reason="Listing not found"))
+                continue
+            block = blocks.get(listing_id)
+            if block is not None:
+                preview.append(_batch.result_entry(
+                    listing_id, _batch.BLOCKED, reason=block.get("reason"),
+                    error_code=block.get("code"), blockers=block.get("blockers"),
+                    fixes=[_readiness.fix(code) for code in (block.get("blockers") or [])],
+                    title=row.get("title") or ""))
+                continue
+            detail = {}
+            if normalized["action"] == "price":
+                try:
+                    # The same function the write calls, so the "$49.00 → $12.00"
+                    # the seller reads is the string that will be stored, not a
+                    # second formatter's opinion of it.
+                    outcome = _marketplace_batch_price_outcome(row, (price_plans or {}).get(listing_id))
+                except Exception as preview_error:
+                    # An amount the write would refuse is reported refused here
+                    # too, rather than previewed as a success the commit undoes.
+                    preview.append(_batch.result_entry(
+                        listing_id, _batch.FAILED, error_code="APPLY_FAILED",
+                        reason=str(preview_error) or "That change could not be saved.",
+                        title=row.get("title") or ""))
+                    continue
+                detail = {
+                    "price_label": outcome["price_label"],
+                    "current_price_label": row.get("price_label") or "",
+                    # Named so the sheet can warn before the tap, not after: this
+                    # is a live product that will leave the storefront for review.
+                    "returns_to_review": outcome["rereviews"],
+                }
+            preview.append(_batch.result_entry(
+                listing_id, _batch.WOULD_APPLY, title=row.get("title") or "", **detail))
+        conn.close()
+        return jsonify({"ok": True, **_batch.summarize_preview(normalized["action"], preview)})
+
     try:
         claim = _batch.claim(cur, user["user_id"], normalized)
     except _batch.BatchError as err:
@@ -55780,44 +55936,7 @@ def api_pulse_marketplace_seller_listings_batch():
     conn.commit()
 
     ids = normalized["listing_ids"]
-    placeholders = ",".join(["?"] * len(ids))
-    cur.execute(
-        f"SELECT * FROM marketplace_listings WHERE id IN ({placeholders}) AND seller_user_id=?",
-        (*ids, int(user["user_id"])),
-    )
-    owned = {int(dict(row)["id"]): dict(row) for row in cur.fetchall()}
-    media_by_listing = pulse_marketplace_media_rows_for_listings(cur, list(owned))
-
-    price_plans = None
-    if normalized["action"] == "price":
-        # Supplier cost is read from the source rows, scoped to this seller. A
-        # listing with no source row simply has no cost, and `price_proposal`
-        # blocks it rather than treating the absence as zero.
-        costs = {}
-        if owned:
-            cur.execute(
-                f"SELECT listing_id, supplier_cost_cents FROM marketplace_product_sources "
-                f"WHERE listing_id IN ({placeholders}) AND seller_user_id=?",
-                (*ids, int(user["user_id"])),
-            )
-            for source_row in cur.fetchall():
-                source = dict(source_row)
-                raw_cost = source.get("supplier_cost_cents")
-                if raw_cost is None:
-                    continue
-                costs[int(source.get("listing_id") or 0)] = safe_int(raw_cost, 0)
-        currents = {}
-        for listing_id, row in owned.items():
-            current_cents, _ = parse_price_label_to_cents(
-                row.get("price_label") or "", str(row.get("currency") or "USD").upper()
-            )
-            currents[listing_id] = current_cents
-        price_plans = _batch.build_price_plans(
-            owned.values(), normalized["payload"], costs, currents)
-
-    decided = _batch.evaluate_rows(
-        owned.values(), normalized["action"], media_by_listing, price_plans)
-    blocks = {int(row["id"]): block for row, block in decided}
+    owned, blocks, price_plans = _marketplace_batch_decide(cur, normalized, user["user_id"])
 
     results = []
     for listing_id in ids:
