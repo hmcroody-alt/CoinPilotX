@@ -331,40 +331,29 @@ MUTATIONS = [
         "pytest",
     ),
     (
-        # Ordering, not presence. Enforcement sits after the UPDATE that restores
-        # `is_available=1` for a ready asset. Hoisted above it, every delivery blocks
-        # the video and then immediately republishes it -- and no unit test of either
-        # statement alone would see anything wrong.
-        "measurement overwritten by the ready update",
+        # Ordering, not presence. Enforcement runs *after* the UPDATE that restores
+        # `is_available=1` for a ready asset, so the block is the last word.
+        #
+        # This does not literally hoist the call above that UPDATE. A one-shot text
+        # substitution cannot move a statement: the first version of this mutation
+        # inserted a copy above the UPDATE and left the original below it, so
+        # enforcement simply ran twice and the suite stayed green -- a survivor that
+        # said nothing about the code. What the ordering actually buys is that no
+        # write republishes the asset after the measurement has blocked it, so that
+        # is what gets violated here: a ready-UPDATE placed after enforcement, which
+        # blocks the video and republishes it inside one delivery. No unit test of
+        # either statement alone would see anything wrong.
+        "ready update lands after the measurement",
         BOT,
-        """                cur.execute(
-                    \"\"\"
-                    UPDATE chat_media_uploads
-                    SET mux_status=?, mux_playback_id=COALESCE(NULLIF(?, ''), mux_playback_id),
-                        playback_url=COALESCE(NULLIF(?, ''), playback_url),
-                        processing_status=?, is_available=CASE WHEN ?='ready' THEN 1 ELSE is_available END,
-                        error_message=CASE WHEN ?='errored' THEN 'Mux video asset errored.' ELSE COALESCE(error_message, '') END,
-                        updated_at=?
-                    WHERE mux_asset_id=?
-                    \"\"\",
-                    (status, playback_id, playback_url, processing_status, status, status, now, mux_asset_id),
-                )
-""",
-        """                if status == "ready":
-                    media_service.enforce_measured_video_duration(
+        """                    media_service.enforce_measured_video_duration(
                         cur, asset_id=mux_asset_id, duration_seconds=mux_duration_seconds)
-                cur.execute(
-                    \"\"\"
-                    UPDATE chat_media_uploads
-                    SET mux_status=?, mux_playback_id=COALESCE(NULLIF(?, ''), mux_playback_id),
-                        playback_url=COALESCE(NULLIF(?, ''), playback_url),
-                        processing_status=?, is_available=CASE WHEN ?='ready' THEN 1 ELSE is_available END,
-                        error_message=CASE WHEN ?='errored' THEN 'Mux video asset errored.' ELSE COALESCE(error_message, '') END,
-                        updated_at=?
-                    WHERE mux_asset_id=?
-                    \"\"\",
-                    (status, playback_id, playback_url, processing_status, status, status, now, mux_asset_id),
-                )
+""",
+        """                    media_service.enforce_measured_video_duration(
+                        cur, asset_id=mux_asset_id, duration_seconds=mux_duration_seconds)
+                    cur.execute(
+                        "UPDATE chat_media_uploads SET is_available=1, updated_at=? WHERE mux_asset_id=?",
+                        (now, mux_asset_id),
+                    )
 """,
         "test_the_measurement_outranks_the_ready_update_in_the_same_request",
         "tests/test_measured_duration_wiring.py",
