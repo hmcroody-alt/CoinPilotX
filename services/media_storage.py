@@ -206,6 +206,36 @@ def head_object(storage_key):
     return client.head_object(Bucket=os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), Key=key)
 
 
+def discard_public_file(storage):
+    """Drop a just-stored object the caller has decided to refuse.
+
+    For the window between `save_public_file` and the caller accepting the upload.
+    A refusal that skips this leaves the bytes paid for and unreferenced -- and the
+    refusals this exists for are the largest files on the platform. Best effort in
+    both halves: the refusal is already correct, and failing to tidy up must not
+    turn it into an error the uploader sees.
+    """
+    item = dict(storage or {})
+    local_path = str(item.get("local_path") or "")
+    if local_path:
+        try:
+            Path(local_path).unlink(missing_ok=True)
+        except Exception as exc:
+            logging.warning("MEDIA_DISCARD_LOCAL_FAILED path=%s error_type=%s", local_path[:200], type(exc).__name__)
+    if not item.get("durable_uploaded"):
+        return
+    key = str(item.get("storage_key") or "").strip().replace("\\", "/").lstrip("/")
+    if not key or ".." in key.split("/"):
+        return
+    client = object_client()
+    if client is None:
+        return
+    try:
+        client.delete_object(Bucket=os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), Key=key)
+    except Exception as exc:
+        logging.warning("MEDIA_DISCARD_OBJECT_FAILED key=%s error_type=%s", key[:200], type(exc).__name__)
+
+
 def save_public_file(file_storage, folder="media"):
     if not file_storage or not getattr(file_storage, "filename", ""):
         raise ValueError("No media file provided.")

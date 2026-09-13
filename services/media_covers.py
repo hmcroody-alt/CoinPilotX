@@ -46,7 +46,14 @@ def _run(command: list[str], timeout: int = _FFMPEG_TIMEOUT) -> subprocess.Compl
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
 
 
-def _video_duration_seconds(source: Path) -> float:
+def video_duration_seconds(source: Path) -> float:
+    """Read a stored video's real length off the container, in seconds.
+
+    0.0 means unmeasurable, not zero-length: no ffprobe on the box, an unreadable
+    container, a probe that timed out. Callers enforcing a duration ceiling must
+    treat that as an absent measurement rather than a passing one -- which is what
+    `stored_video_policy.exceeds_limit` already does with a falsy duration.
+    """
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
         return 0.0
@@ -98,7 +105,7 @@ def _extract_frame(source: Path, target: Path, seek_seconds: float | None) -> bo
 
 def extract_video_poster_frame(source: Path, tmp_dir: Path) -> Path | None:
     """Best usable frame: representative first, brighter seeks if it is dark."""
-    duration = _video_duration_seconds(source)
+    duration = video_duration_seconds(source)
     attempts: list[tuple[str, float | None]] = [("representative", None)]
     if duration > 2:
         attempts += [("seek15", duration * 0.15), ("seek40", duration * 0.40)]

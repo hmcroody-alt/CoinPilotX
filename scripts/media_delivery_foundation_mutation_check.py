@@ -456,6 +456,54 @@ MUTATIONS = [
         "tests/test_measured_video_duration_enforcement.py",
         "pytest",
     ),
+    (
+        # The state the sync POST path was in: the duration ceiling applied only to
+        # clients that volunteered a duration, and every web surface has a fallback
+        # that volunteers nothing. Removing the probe restores that exactly.
+        "the sync upload path trusts the client's silence",
+        MEDIA_SERVICE,
+        "        measured_seconds = media_covers.video_duration_seconds(path)",
+        "        measured_seconds = 0.0",
+        "test_a_ninety_one_minute_upload_is_refused_with_no_declared_duration",
+        "tests/test_sync_upload_duration_measurement.py",
+        "pytest",
+    ),
+    (
+        # The inverse, and the one that breaks working uploads rather than letting a
+        # long one through. `exceeds_limit` falls back to the strictest cap for a name
+        # nobody registered, which is right before the bytes arrive and wrong here:
+        # pulse_comment video would start failing at 60 seconds.
+        "the probe convicts a surface nobody registered",
+        MEDIA_SERVICE,
+        "        violation = stored_video_policy.measured_violation(context_type, measured_seconds)",
+        "        violation = \"too long\" if stored_video_policy.exceeds_limit(context_type, measured_seconds) else \"\"",
+        "test_a_surface_nobody_registered_is_left_alone",
+        "tests/test_sync_upload_duration_measurement.py",
+        "pytest",
+    ),
+    (
+        # A correct refusal that keeps the bytes. Invisible to every functional test,
+        # and the files it strands are the largest ones the platform handles.
+        "refused upload keeps its bytes",
+        MEDIA_SERVICE,
+        "            media_storage.discard_public_file(storage)",
+        "            pass",
+        "test_a_refused_upload_does_not_keep_the_bytes",
+        "tests/test_sync_upload_duration_measurement.py",
+        "pytest",
+    ),
+    (
+        # Measuring and then not recording it. The row reads as unmeasured, so the
+        # worker's reconciler picks it up and re-probes a video already probed -- and
+        # nothing downstream can tell how long the video is.
+        "the measurement is taken and thrown away",
+        MEDIA_SERVICE,
+        "            measured_seconds or None,",
+        "            None,",
+        "test_an_accepted_video_carries_its_measured_length",
+        "tests/test_sync_upload_duration_measurement.py",
+        "pytest",
+    ),
 ]
 
 

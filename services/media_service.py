@@ -1092,14 +1092,50 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     availability_error = "" if verification_status == "verified" else (storage.get("upload_error") or "durable_upload_unverified")
     thumbnail_url = url if media_type != "video" else ""
     poster_url = thumbnail_url if media_type != "video" else ""
+    measured_seconds = 0.0
+    if media_type == "video":
+        # The duration the client declared is checked earlier, in
+        # upload_progress_service, and only when a client declared one. Nothing
+        # obliges it to: every web upload path falls back to a plain form POST when
+        # the upload manager script has not loaded, and those fallbacks send no
+        # duration at all. This is the measurement, read off the stored container,
+        # and it is the first number about the video that the uploader did not
+        # choose.
+        measured_seconds = media_covers.video_duration_seconds(path)
+        # measured_violation, not exceeds_limit: it declines to judge a surface
+        # nobody registered. `save_upload` is reached with free-form context_types
+        # (asset_focus, native, pulse_comment), and the strictest-cap fallback
+        # would cut those to 60s here while looking like a product decision.
+        violation = stored_video_policy.measured_violation(context_type, measured_seconds)
+        if violation:
+            media_storage.discard_public_file(storage)
+            logging.warning(
+                "PULSE_MEDIA_UPLOAD_DURATION_REJECTED trace_id=%s user_id=%s context_type=%s measured_seconds=%s limit_seconds=%s reason=%s",
+                upload_trace,
+                int(user_id),
+                context_type,
+                int(measured_seconds),
+                stored_video_policy.max_duration_seconds(context_type),
+                violation,
+            )
+            return {
+                "ok": False,
+                "message": stored_video_policy.limit_message(context_type),
+                "error": stored_video_policy.MEASURED_REJECTION_CODE,
+                # The mobile client reads `error_code`; `error` alone collapses this
+                # into a generic failure and the user never learns it was length.
+                "error_code": stored_video_policy.MEASURED_REJECTION_CODE,
+                "measured_duration_seconds": int(measured_seconds),
+                "max_duration_seconds": stored_video_policy.max_duration_seconds(context_type),
+            }, 413
     conn = user_context.connect()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO chat_media_uploads
         (uploader_user_id, context_type, context_id, original_filename, stored_filename, media_url, thumbnail_url,
-         media_type, mime_type, file_size_bytes, width, height, moderation_status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)
+         media_type, mime_type, file_size_bytes, duration_seconds, width, height, moderation_status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)
         """,
         (
             int(user_id),
@@ -1112,6 +1148,11 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
             media_type,
             storage.get("mime_type") or mime,
             int(storage.get("file_size") or size),
+            # Written here so the row carries its own length from the moment it
+            # exists. Leaving it 0 would also hand the row to the worker's
+            # reconciler, which selects on duration_seconds<=0 and would re-measure
+            # a video this function already measured.
+            measured_seconds or None,
             width,
             height,
             _now(),
