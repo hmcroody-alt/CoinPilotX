@@ -163,7 +163,7 @@ function result(listings: MarketplaceListing[]): StoreLoadResult {
 }
 
 async function renderScreen() {
-  const nav = { navigate: jest.fn(), goBack: jest.fn() };
+  const nav = { navigate: jest.fn(), push: jest.fn(), goBack: jest.fn() };
   const view = render(<StoreDashboardScreen navigation={nav} route={{ params: { mode: "dashboard" } }} />);
   await act(async () => {
     await Promise.resolve();
@@ -212,9 +212,9 @@ describe("entering selection mode", () => {
     expect(view.queryByText(/Select all/)).toBeNull();
 
     fireEvent.press(view.getByText("Listing 1"));
-    expect(view.nav.navigate).toHaveBeenCalledWith(
+    expect(view.nav.push).toHaveBeenCalledWith(
       "SellerStore",
-      expect.objectContaining({ listingId: 1, mode: "create" })
+      expect.objectContaining({ listingId: 1, mode: "product" })
     );
   });
 
@@ -230,11 +230,15 @@ describe("entering selection mode", () => {
     const view = await renderScreen();
     longPressRow(view, "Listing 2");
     view.nav.navigate.mockClear();
+    view.nav.push.mockClear();
 
     fireEvent.press(view.getByText("Listing 1"));
 
     // Landing in the editor here abandons the selection the seller is building.
+    // Both methods, because the editor is opened with `push` — checking only
+    // `navigate` would have gone quietly green while the row still escaped.
     expect(view.nav.navigate).not.toHaveBeenCalled();
+    expect(view.nav.push).not.toHaveBeenCalled();
     expect(view.getByText("2 selected")).toBeTruthy();
   });
 
@@ -270,7 +274,7 @@ describe("entering selection mode", () => {
 
     expect(view.queryByText(/Select all/)).toBeNull();
     fireEvent.press(view.getByText("Listing 1"));
-    expect(view.nav.navigate).toHaveBeenCalled();
+    expect(view.nav.push).toHaveBeenCalled();
   });
 
   it("stays open when the seller deselects their last row", async () => {

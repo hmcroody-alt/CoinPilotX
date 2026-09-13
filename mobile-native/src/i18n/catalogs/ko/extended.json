@@ -1157,6 +1157,7 @@
       "sellerInventory": "판매자 재고",
       "sellerInventoryCopy": "판매자 소유 상품 항목을 수정하고 PulseSoc 마켓플레이스 검토를 통해 공개 여부를 관리해요. 공개 마켓플레이스 노출은 승인을 받아야 해요.",
       "emptyInventory": "상품을 만들거나 불러오면 판매자 재고가 표시돼요.",
+      "productNotYours": "해당 상품은 회원님의 스토어에 없습니다. 삭제되었거나 링크가 다른 판매자의 상품을 가리키고 있을 수 있습니다.",
       "editListingTitle": "상품 #{{id}} 수정",
       "saveAndReview": "저장하고 검토 요청",
       "addMedia": "미디어 추가",

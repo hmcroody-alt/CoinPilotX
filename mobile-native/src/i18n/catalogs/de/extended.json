@@ -1172,6 +1172,7 @@
       "sellerInventory": "Verkaufsbestand",
       "sellerInventoryCopy": "Bearbeite die Felder deiner eigenen Anzeigen und steuere die Sichtbarkeit über die PulseSoc-Marketplace-Prüfung. Die öffentliche Sichtbarkeit im Marketplace bleibt freigabepflichtig.",
       "emptyInventory": "Der Verkaufsbestand erscheint, sobald Produkte erstellt oder geladen wurden.",
+      "productNotYours": "Dieses Produkt ist nicht in deinem Shop. Es wurde möglicherweise entfernt, oder der Link verweist auf das Angebot eines anderen Verkäufers.",
       "editListingTitle": "Anzeige #{{id}} bearbeiten",
       "saveAndReview": "Speichern und prüfen lassen",
       "addMedia": "Medien hinzufügen",

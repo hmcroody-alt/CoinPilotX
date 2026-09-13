@@ -164,7 +164,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   // that listing's editor with its current values, rather than on an empty panel
   // the seller has to hunt through. Runs once per requested id, so a later
   // refresh cannot yank the seller back out of a listing they navigated away to.
-  const requestedListingId = route?.params?.listingId || 0;
+  // Coerced rather than read straight, because the id is matched with `===`
+  // against a numeric `listing.id`. In-app callers pass the row's number and are
+  // fine; anything that reaches params as text — a query string, a notification
+  // payload — would be `"21" === 21`, false for every listing the merchant owns,
+  // and the seller would be told their own product isn't in their store. That is
+  // the one failure mode of resolving by exact id, so it is closed here rather
+  // than trusted to every future caller. Non-numeric collapses to 0, which reads
+  // as "no listing requested" and never matches a listing.
+  const requestedListingId = Number(route?.params?.listingId) || 0;
   const openedListingId = useRef(0);
   useEffect(() => {
     if (!requestedListingId || openedListingId.current === requestedListingId) return;
@@ -388,7 +396,65 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   const activeListings = listings.filter((listing) => listing.buyer_visible === true);
   const pendingListings = listings.filter((listing) => statusKey(listing) === "pending");
-  const editingListing = listings.find((listing) => listing.id === editingListingId) || listings[0] || null;
+  /**
+   * The single-product editor resolves by id and nothing else.
+   *
+   * The shared expression below ends `|| listings[0]`, which is a sane default
+   * for a browsing panel where the editor is one of several things on screen and
+   * the seller has not picked yet. It is dangerous here. `mode: "product"` means
+   * the merchant tapped Edit on one specific row, so a miss must not silently
+   * hand them a *different* product's form — pre-filled with its title, price and
+   * quantity, and wired to a Save that writes to its id. Wrong-product edits are
+   * indistinguishable from correct ones after the fact.
+   *
+   * So a miss resolves to null and the panel says so. The cases that reach it are
+   * a listing removed between the list loading and the tap, and an id belonging
+   * to another merchant's store — the second being the §27 check, enforced here
+   * by the fact that `listings` only ever holds this merchant's own listings.
+   */
+  const productListing = requestedListingId
+    ? listings.find((listing) => listing.id === requestedListingId) || null
+    : null;
+  const productMode = mode === "product";
+  const editingListing = productMode
+    ? productListing
+    : listings.find((listing) => listing.id === editingListingId) || listings[0] || null;
+  /**
+   * Told apart from "still loading" deliberately: before the fetch resolves the
+   * honest answer is a spinner, not "we couldn't find it". Only once a load has
+   * completed and the id is still absent is it genuinely missing or not theirs.
+   */
+  const productUnavailable = productMode && !loading && !productListing;
+
+  /**
+   * "Finish listing" opens the editor already on the blocking field — §32's
+   * "tap it and go fix it", applied to the entry point rather than to the
+   * blocker row.
+   *
+   * Waits for `editingListingId` to match: `startListingEdit` sets the state
+   * that mounts the inputs, so the refs are still null on the tick the listing
+   * resolves and focusing there is a no-op. Runs once per listing, so the
+   * keyboard cannot reappear under a seller who dismissed it and scrolled away.
+   *
+   * Only the three in-form targets are honoured. `camera` and `policy` are
+   * deliberately excluded: `focusFix` answers those with a navigation to
+   * CameraStudio and with a message, and doing either unprompted on open would
+   * throw the merchant into a different screen, or explain a rule they had not
+   * asked about, before they had seen their own product. Tapping the blocker
+   * still does both — the difference is that a tap is a request.
+   */
+  const requestedSection = route?.params?.section || "";
+  const deepLinkedListingId = useRef(0);
+  useEffect(() => {
+    if (!productMode || !requestedSection || !productListing) return;
+    if (editingListingId !== productListing.id) return;
+    if (deepLinkedListingId.current === productListing.id) return;
+    deepLinkedListingId.current = productListing.id;
+    const target = storeFixTarget(requestedSection);
+    if (target === "price") priceInput.current?.focus();
+    else if (target === "quantity") quantityInput.current?.focus();
+    else if (target === "details") titleInput.current?.focus();
+  }, [productMode, requestedSection, productListing, editingListingId]);
 
   if (loading && !listings.length && !orders.length) {
     return (
@@ -399,7 +465,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     );
   }
 
-  const heading = sellerStoreHeading(mode);
+  const heading = sellerStoreHeading(mode, route?.params?.title);
   const shows = (panel: SellerStorePanel) => sellerStoreShowsPanel(mode, panel);
 
   return (
@@ -473,10 +539,22 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("inventory") ? (
       <Panel>
-        <Text style={styles.sectionTitle}>{t("commerce:marketplace.sellerInventory")}</Text>
-        <Text style={styles.copy}>{t("commerce:marketplace.sellerInventoryCopy")}</Text>
+        {/* The picker, the heading and the "pick one" copy are all about
+            choosing a product. In the single-product editor the choice has
+            already been made by the row that was tapped, and re-rendering the
+            list here is the "make the merchant select the product again" the
+            correction is about. */}
+        {productMode ? null : (
+          <>
+            <Text style={styles.sectionTitle}>{t("commerce:marketplace.sellerInventory")}</Text>
+            <Text style={styles.copy}>{t("commerce:marketplace.sellerInventoryCopy")}</Text>
+          </>
+        )}
+        {productUnavailable ? (
+          <Text style={styles.error}>{t("commerce:marketplace.productNotYours")}</Text>
+        ) : null}
         <View style={styles.inventoryList}>
-          {listings.slice(0, 8).map((listing) => (
+          {(productMode ? [] : listings.slice(0, 8)).map((listing) => (
             <Pressable accessibilityRole="button"
               key={`inventory-${listing.id}`}
               style={[styles.inventoryRow, editingListing?.id === listing.id && styles.inventoryRowActive]}
@@ -493,7 +571,11 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             </Pressable>
           ))}
         </View>
-        {!listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.emptyInventory")}</Text> : null}
+        {/* Not in product mode: "your shelf is empty" is a claim about the whole
+            store, and here the merchant arrived from a row that exists. When the
+            id cannot be resolved the message above is the accurate one, and
+            rendering both would state two different reasons for one blank panel. */}
+        {!productMode && !listings.length ? <Text style={styles.emptyText}>{t("commerce:marketplace.emptyInventory")}</Text> : null}
 
         {editingListing ? (
           <View style={styles.editorBox}>

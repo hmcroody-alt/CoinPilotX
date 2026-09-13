@@ -203,7 +203,26 @@ const SECTION_COUNT = Object.keys(SLOT).length;
 
 type Props = {
   route?: { params?: RootStackParamList["SellerStore"] };
-  navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
+  /**
+   * `push` is here, and used, because this screen and the listing editor are the
+   * same registered route.
+   *
+   * `SellerStoreRoute` renders this dashboard for `mode: "dashboard"` and
+   * `SellerStoreScreen` for every other mode, behind one `SellerStore` entry in
+   * the navigator. So `navigate("SellerStore", …)` from here does not open a new
+   * screen — React Navigation sees the route already focused and merges the
+   * params into it, swapping this list out in place. The editor then has no
+   * Store list beneath it, and Back leaves the store altogether.
+   *
+   * `push` stacks a second `SellerStore` entry instead, which is what makes Back
+   * return to this list — still mounted, so its scroll position, tab and search
+   * text survive the round trip without any of it being saved and restored.
+   */
+  navigation: {
+    navigate: (...args: any[]) => void;
+    push?: (...args: any[]) => void;
+    goBack?: () => void;
+  };
 };
 
 export function StoreDashboardScreen({ route, navigation }: Props) {
@@ -702,17 +721,75 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * -------------------------------------------------------------- */
 
   /**
+   * Opens another `mode` of the `SellerStore` route as a NEW screen on top of
+   * this one.
+   *
+   * Why this exists rather than calling `navigation.navigate` directly: this
+   * dashboard *is* the `SellerStore` route (see `SellerStoreRoute`, which picks
+   * between the two screens on `mode`). `navigate` to a route that is already
+   * the focused one merges params into it instead of pushing, so every one of
+   * these links used to swap this list out in place — leaving nothing underneath
+   * and sending Back out of the store entirely.
+   *
+   * The `push` fallback to `navigate` is for the non-stack callers only: the
+   * screen is exercised with a plain `{ navigate }` object in tests and is
+   * reachable through aliases that may not be a stack. Degrading to the old
+   * in-place swap is worse than pushing but better than a crash on an undefined
+   * method, and the stack case — which is every real entry point — takes the
+   * first branch.
+   */
+  const openSellerStore = useCallback(
+    (params: RootStackParamList["SellerStore"]) => {
+      if (navigation.push) navigation.push("SellerStore", params);
+      else navigation.navigate("SellerStore", params);
+    },
+    [navigation]
+  );
+
+  /**
    * The listing editor is a panel inside `SellerStoreScreen`, and this screen
-   * takes over `mode: "dashboard"` — so Edit routes to `mode: "create"`, which
-   * renders the same `listings` panel with the same editor. The editor is not
-   * reimplemented here and is not orphaned by the swap. `listingId` is what
-   * makes it land on the row the seller tapped instead of an empty panel.
+   * takes over `mode: "dashboard"` — so Edit routes there rather than
+   * reimplementing an editor. `listingId` is what makes it land on the row the
+   * seller tapped.
+   *
+   * The mode is `"product"`, not `"create"`. `create` was the original choice
+   * and it does contain the editor, but its panel set puts the Storefront
+   * readiness hero and the Listing management card above it: the editor opened
+   * on the correct product, three panels down, under a heading that read
+   * "Listings". Tapping Edit on a necklace and landing on a listings hub is the
+   * same failure as not passing the id at all, from the merchant's side.
+   * `product` renders the editor panel alone. See `sellerStoreMode`.
    */
   const openListing = useCallback(
     (row: StoreListingRowData) => {
-      navigation.navigate("SellerStore", { mode: "create", title: row.title, listingId: row.id });
+      openSellerStore({ mode: "product", title: row.title, listingId: row.id });
     },
-    [navigation]
+    [openSellerStore]
+  );
+
+  /**
+   * "Finish listing" — the same editor, opened on the thing that is missing.
+   *
+   * The row already knows: `readiness.fixes[0].section` is the first blocker in
+   * the order the server ranked them, and it is the same vocabulary the blocker
+   * rows inside the editor route on. Passing it means a draft blocked on price
+   * opens with the price field focused instead of at the top of the form.
+   *
+   * Falls back to a plain open when there is no fix list — a listing with no
+   * readiness data yet has no first blocker to aim at, and guessing one would
+   * send the seller to a field that is already filled in.
+   */
+  const finishListing = useCallback(
+    (row: StoreListingRowData) => {
+      const section = row.readiness?.fixes?.[0]?.section;
+      openSellerStore({
+        mode: "product",
+        title: row.title,
+        listingId: row.id,
+        ...(section ? { section } : {})
+      });
+    },
+    [openSellerStore]
   );
 
   /** The buyer-facing marketplace tab — the real "preview as buyer" surface. */
@@ -816,7 +893,11 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
               // MOCK-DATA: `shippingToday` needs order.ship_by, so the
               // "N ship today" caption is absent rather than guessed.
               caption={kpis.shippingToday == null ? null : `${kpis.shippingToday} ship today`}
-              onPress={() => navigation.navigate("SellerStore", { mode: "orders" })}
+              // Same route as this screen, so this has to push — see
+              // `openSellerStore`. Tapping the Orders KPI used to replace the
+              // store list rather than stack on it, which is the same defect
+              // Edit had and cost the merchant their way back the same way.
+              onPress={() => openSellerStore({ mode: "orders" })}
               destinationHint="your orders"
               reducedMotion={reducedMotion}
               delay={SLOT.kpis * STORE_STAGGER_MS}
@@ -1138,7 +1219,10 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
             }
             onPress={() => openListing(item)}
             onEdit={() => openListing(item)}
-            onAction={() => openListing(item)}
+            // "Finish listing" on a draft: same editor as Edit, aimed at the
+            // first blocker rather than the top of the form. One editor, not a
+            // second completion flow.
+            onAction={() => finishListing(item)}
             onLongPress={() => enterSelection(item.id)}
             selection={
               selection

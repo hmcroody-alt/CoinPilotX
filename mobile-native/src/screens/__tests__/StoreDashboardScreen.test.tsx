@@ -109,7 +109,11 @@ function result(over: Partial<StoreLoadResult> = {}): StoreLoadResult {
 }
 
 function navigation() {
-  return { navigate: jest.fn(), goBack: jest.fn() };
+  // `push` is separate from `navigate` on purpose and is asserted on directly.
+  // This dashboard and the listing editor are the same registered `SellerStore`
+  // route, so `navigate` there merges params into the focused screen instead of
+  // opening one — a mock with only `navigate` would let that regress silently.
+  return { navigate: jest.fn(), push: jest.fn(), goBack: jest.fn() };
 }
 
 async function renderScreen(nav = navigation()) {
@@ -414,13 +418,94 @@ describe("navigation", () => {
       fireEvent.press(view.getByLabelText("Edit Bright Coffee Beans"));
     });
 
-    // `create` is the mode whose panel set contains the editor. Routing to
-    // `dashboard` — which this screen now occupies — would orphan it. The id
-    // is what lands the seller on that listing's editor instead of a blank one.
-    expect(view.nav.navigate).toHaveBeenCalledWith("SellerStore", {
-      mode: "create",
+    // `product` is the mode whose panel set is the editor and nothing else.
+    // `create` also contains the editor and was what this sent originally, but
+    // it renders the Storefront hero and the Listing management card above it,
+    // so Edit on one necklace landed on a listings hub with the editor three
+    // panels down. The id is what selects the row; the mode is what makes it
+    // the only thing on screen.
+    //
+    // `push`, not `navigate`, and that is the second half of the same defect:
+    // this screen is the `SellerStore` route, so `navigate` there merges params
+    // into it and swaps the list out in place. The editor would then have no
+    // store list under it and Back would leave the store.
+    expect(view.nav.push).toHaveBeenCalledWith("SellerStore", {
+      mode: "product",
       title: "Bright Coffee Beans",
       listingId: 1
+    });
+    expect(view.nav.navigate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The row's inline "Finish listing" must land in the same editor, not a
+   * parallel completion wizard — and on the blocking field, which is what
+   * distinguishes it from Edit. `section` comes from the server's own ranked
+   * fix list, so the editor and the row agree on which blocker is first.
+   */
+  it("sends Finish listing to the same editor, deep-linked to the first blocker", async () => {
+    mockLoad.mockResolvedValue(
+      result({
+        listings: {
+          status: "ok",
+          data: [
+            listing({
+              id: 7,
+              listing_id: 7,
+              title: "Unpriced Draft",
+              status: "draft",
+              price_label: "",
+              readiness: {
+                publishable: false,
+                checkout_ready: false,
+                blockers: ["MISSING_PRICE"],
+                warnings: [],
+                summary: "1 thing left",
+                fixes: [{ code: "MISSING_PRICE", section: "pricing", label: "Add price" }],
+                notes: []
+              }
+            } as never)
+          ]
+        }
+      })
+    );
+    const view = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Finish listing for Unpriced Draft"));
+    });
+
+    expect(view.nav.push).toHaveBeenCalledWith("SellerStore", {
+      mode: "product",
+      title: "Unpriced Draft",
+      listingId: 7,
+      section: "pricing"
+    });
+  });
+
+  /**
+   * A listing with no readiness verdict has no first blocker, and aiming at a
+   * guessed one would open the keyboard on a field that is already filled in.
+   */
+  it("omits the section when the row has no ranked fix to aim at", async () => {
+    mockLoad.mockResolvedValue(
+      result({
+        listings: {
+          status: "ok",
+          data: [listing({ id: 8, listing_id: 8, title: "Bare Draft", status: "draft" } as never)]
+        }
+      })
+    );
+    const view = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Finish listing for Bare Draft"));
+    });
+
+    expect(view.nav.push).toHaveBeenCalledWith("SellerStore", {
+      mode: "product",
+      title: "Bare Draft",
+      listingId: 8
     });
   });
 
@@ -431,7 +516,35 @@ describe("navigation", () => {
       fireEvent.press(view.getByLabelText(/^Open orders/));
     });
 
-    expect(view.nav.navigate).toHaveBeenCalledWith("SellerStore", { mode: "orders" });
+    // Pushed for the same reason Edit is: Orders is another mode of the route
+    // this screen occupies, so navigating would replace the store list.
+    expect(view.nav.push).toHaveBeenCalledWith("SellerStore", { mode: "orders" });
+  });
+
+  /**
+   * Back has to land on the store list, which means the list must still be
+   * mounted underneath — the only way its scroll position, active tab and
+   * search text survive without being saved and restored by hand.
+   *
+   * Read as a guard: every `SellerStore` link on this screen goes through
+   * `push`. A single `navigate` among them is a screen the merchant cannot get
+   * back from, and it is invisible in a test that only checks params.
+   */
+  it("never replaces itself when opening another mode of its own route", async () => {
+    const view = await renderScreen();
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Edit Bright Coffee Beans"));
+    });
+    await act(async () => {
+      fireEvent.press(view.getByLabelText(/^Open orders/));
+    });
+
+    const navigated = view.nav.navigate.mock.calls.filter(
+      (call: unknown[]) => call[0] === "SellerStore"
+    );
+    expect(navigated).toEqual([]);
+    expect(view.nav.push.mock.calls.length).toBe(2);
   });
 
   it("previews the storefront through the buyer marketplace tab", async () => {

@@ -187,7 +187,7 @@ function batchResponse(results: MarketplaceBatchResult[]): MarketplaceBatchRespo
  * ------------------------------------------------------------------ */
 
 async function renderScreen() {
-  const nav = { navigate: jest.fn(), goBack: jest.fn() };
+  const nav = { navigate: jest.fn(), push: jest.fn(), goBack: jest.fn() };
   const view = render(
     <StoreDashboardScreen navigation={nav} route={{ params: { mode: "dashboard" } }} />
   );

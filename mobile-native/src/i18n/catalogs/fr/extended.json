@@ -1172,6 +1172,7 @@
       "sellerInventory": "Stock du vendeur",
       "sellerInventoryCopy": "Modifiez les champs de vos annonces et gérez leur visibilité via l'examen Marketplace PulseSoc. La visibilité publique sur le Marketplace reste soumise à approbation.",
       "emptyInventory": "Le stock du vendeur apparaît après la création ou le chargement de produits.",
+      "productNotYours": "Ce produit n'est pas dans votre boutique. Il a peut-être été supprimé, ou le lien renvoie à l'annonce d'un autre vendeur.",
       "editListingTitle": "Modifier l'annonce n° {{id}}",
       "saveAndReview": "Enregistrer et soumettre",
       "addMedia": "Ajouter un média",

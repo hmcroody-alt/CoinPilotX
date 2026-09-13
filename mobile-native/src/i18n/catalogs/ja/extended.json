@@ -1157,6 +1157,7 @@
       "sellerInventory": "出品者の在庫",
       "sellerInventoryCopy": "出品者が所有する項目を編集し、PulseSocマーケットプレイスの審査を通じて公開範囲を管理できます。マーケットプレイスでの公開には引き続き承認が必要です。",
       "emptyInventory": "商品を作成または読み込むと、出品者の在庫が表示されます。",
+      "productNotYours": "その商品はあなたのストアにありません。削除されたか、リンクが別の出品者の商品を指している可能性があります。",
       "editListingTitle": "出品 #{{id}} を編集",
       "saveAndReview": "保存して審査へ",
       "addMedia": "メディアを追加",

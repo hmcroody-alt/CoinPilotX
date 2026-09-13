@@ -1172,6 +1172,7 @@
       "sellerInventory": "Inventario del vendedor",
       "sellerInventoryCopy": "Edita los campos de tus anuncios y controla su visibilidad a través de la revisión de Marketplace de PulseSoc. La visibilidad pública en Marketplace sigue sujeta a aprobación.",
       "emptyInventory": "El inventario del vendedor aparece cuando se crean o se cargan productos.",
+      "productNotYours": "Ese producto no está en tu tienda. Puede que se haya eliminado o que el enlace apunte al anuncio de otro vendedor.",
       "editListingTitle": "Editar el anuncio n.º {{id}}",
       "saveAndReview": "Guardar y revisar",
       "addMedia": "Añadir contenido",

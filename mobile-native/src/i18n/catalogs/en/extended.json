@@ -1172,6 +1172,7 @@
       "sellerInventory": "Seller inventory",
       "sellerInventoryCopy": "Edit seller-owned listing fields and control visibility through PulseSoc marketplace review. Public Marketplace visibility remains approval-gated.",
       "emptyInventory": "Seller inventory appears after products are created or loaded.",
+      "productNotYours": "That product isn't in your store. It may have been removed, or the link may point at another seller's listing.",
       "editListingTitle": "Edit listing #{{id}}",
       "saveAndReview": "Save and Review",
       "addMedia": "Add Media",

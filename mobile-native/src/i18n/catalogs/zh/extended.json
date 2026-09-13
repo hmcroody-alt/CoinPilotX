@@ -1157,6 +1157,7 @@
       "sellerInventory": "卖家库存",
       "sellerInventoryCopy": "编辑卖家自有的商品字段，并通过 PulseSoc 商城审核控制可见性。在公开商城中的展示仍需通过审核。",
       "emptyInventory": "创建或加载商品后，卖家库存会显示在这里。",
+      "productNotYours": "该商品不在你的店铺中。它可能已被删除，或者链接指向了其他卖家的商品。",
       "editListingTitle": "编辑商品 #{{id}}",
       "saveAndReview": "保存并送审",
       "addMedia": "添加媒体",

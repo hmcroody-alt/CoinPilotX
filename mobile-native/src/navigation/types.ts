@@ -364,7 +364,26 @@ export type RootStackParamList = {
    * unread total is the same number the header bells show.
    */
   BusinessOsActivity: { title?: string; filter?: "all" | "social" | "marketplace" | "orders" | "system" } | undefined;
-  SellerStore: { title?: string; mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders"; sellerId?: string; listingId?: number } | undefined;
+  /**
+   * `mode: "product"` is the single-product editor, and it is the only mode that
+   * *requires* `listingId`. Store's Edit used to send `mode: "create"` with a
+   * listing id: the id was honoured, but `create` renders the Listings hub above
+   * the panel holding the editor, so the merchant landed on a generic dashboard
+   * with their product three panels down. `product` renders that panel alone.
+   *
+   * `section` deep-links to a blocker's fix (see `storeFixTarget`), so "Finish
+   * listing" opens the editor already focused on the thing that is missing
+   * instead of at the top of the form.
+   */
+  SellerStore:
+    | {
+        title?: string;
+        mode?: "overview" | "apply" | "dashboard" | "profile" | "create" | "payouts" | "orders" | "product";
+        sellerId?: string;
+        listingId?: number;
+        section?: string;
+      }
+    | undefined;
   /**
    * Dropshipping. Nine routes rather than one because the merchant journey has
    * nine distinct decisions in it, and the layers they act on are genuinely
