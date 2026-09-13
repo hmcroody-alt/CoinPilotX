@@ -3,14 +3,23 @@
  * they are decidable: publishing twice (§23) and lying about what happened (§19).
  */
 
-import type { MarketplaceBatchResponse, MarketplaceBatchResult } from "../../api/marketplace";
+import type {
+  MarketplaceBatchPreview,
+  MarketplaceBatchPreviewResult,
+  MarketplaceBatchResponse,
+  MarketplaceBatchResult
+} from "../../api/marketplace";
 import {
   beginAttempt,
   idsToSend,
   isSameAttempt,
   outcomeOf,
-  outcomeReason
+  outcomeReason,
+  reviewFromPartition,
+  reviewFromPreview,
+  reviewLabel
 } from "../storeBulkRun";
+import type { StoreListingRow } from "../../api/storeDashboard";
 
 function entry(
   listing_id: number,
@@ -217,5 +226,247 @@ describe("the reason beside a row", () => {
     // would be this build putting a cause in the server's mouth.
     expect(outcomeReason(entry(1, "blocked"))).toBe("Not ready yet");
     expect(outcomeReason(entry(1, "failed"))).toBe("Could not be updated");
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * §23 again — the key has to cover the rule, not just the rows
+ * ------------------------------------------------------------------ */
+
+describe("an attempt that carries a pricing rule", () => {
+  const PLUS_20 = { type: "COST_PLUS_PERCENT", value: 20 } as const;
+  const PLUS_25 = { type: "COST_PLUS_PERCENT", value: 25 } as const;
+
+  /**
+   * The failure this exists for, and it is not a double-write.
+   *
+   * A key that identifies only (action, ids) cannot tell "cost + 20% on these
+   * fourteen" from "cost + 25% on these fourteen". The seller previews 20%,
+   * changes their mind, previews 25%, taps Apply — and the key is already spent,
+   * so the server answers by *replaying the 20% batch it already ran*. The sheet
+   * then shows a confirmation for prices that were never written. Nothing errors,
+   * nothing is written twice, and the numbers on screen are fiction.
+   */
+  it("is not the same attempt once the rule changes", () => {
+    const attempt = beginAttempt("price", [3, 1, 2], PLUS_20);
+    expect(isSameAttempt(attempt, "price", [1, 2, 3], PLUS_20)).toBe(true);
+    expect(isSameAttempt(attempt, "price", [1, 2, 3], PLUS_25)).toBe(false);
+  });
+
+  /** A different rule *type* at the same number is different work too. */
+  it("tells a percentage from a margin at the same value", () => {
+    const attempt = beginAttempt("price", [1], { type: "COST_PLUS_PERCENT", value: 40 });
+    expect(isSameAttempt(attempt, "price", [1], { type: "TARGET_MARGIN", value: 40 })).toBe(false);
+  });
+
+  /** And dropping the rule entirely is not a match for having one. */
+  it("does not match a rule-less request", () => {
+    const attempt = beginAttempt("price", [1], PLUS_20);
+    expect(isSameAttempt(attempt, "price", [1], null)).toBe(false);
+    expect(isSameAttempt(attempt, "price", [1])).toBe(false);
+  });
+
+  /**
+   * The precomputed actions carry no rule and must keep matching as they did
+   * before — otherwise Try again after a publish timeout mints a second key and
+   * publishes everything twice, which is the original §23 failure reintroduced
+   * by the fix for this one.
+   */
+  it("leaves publish and hide exactly as they were", () => {
+    const attempt = beginAttempt("publish", [1, 2]);
+    expect(attempt.rule).toBeNull();
+    expect(isSameAttempt(attempt, "publish", [2, 1])).toBe(true);
+    expect(isSameAttempt(attempt, "hide", [2, 1])).toBe(false);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * §34 — the review face
+ * ------------------------------------------------------------------ */
+
+function previewEntry(
+  listing_id: number,
+  outcome: MarketplaceBatchPreviewResult["outcome"],
+  over: Partial<MarketplaceBatchPreviewResult> = {}
+): MarketplaceBatchPreviewResult {
+  return { listing_id, outcome, ...over };
+}
+
+function preview(results: MarketplaceBatchPreviewResult[]): MarketplaceBatchPreview {
+  return {
+    ok: true,
+    preview: true,
+    action: "price",
+    requested_count: results.length,
+    eligible_count: results.filter((r) => r.outcome === "would_apply").length,
+    blocked_count: results.filter((r) => r.outcome === "blocked").length,
+    failed_count: results.filter((r) => r.outcome === "failed").length,
+    results
+  };
+}
+
+const noTitles = (id: number) => `Listing ${id}`;
+
+describe("the reprice review", () => {
+  it("draws the arrow from the server's two labels", () => {
+    const review = reviewFromPreview(
+      preview([
+        previewEntry(7, "would_apply", {
+          title: "Lamp",
+          current_price_label: "$49.00",
+          price_label: "$12.00"
+        })
+      ]),
+      "price",
+      noTitles
+    );
+    expect(review.changing).toHaveLength(1);
+    expect(review.changing[0].detail).toBe("$49.00 → $12.00");
+  });
+
+  /**
+   * §11 in the UI. A listing with no price has *no* price, and an arrow starting
+   * at "$0.00" or "Free" would invent the fact the rule forbids inventing.
+   */
+  it("does not invent a starting price for a listing that has none", () => {
+    const review = reviewFromPreview(
+      preview([previewEntry(7, "would_apply", { price_label: "$12.00" })]),
+      "price",
+      noTitles
+    );
+    expect(review.changing[0].detail).toBe("Set to $12.00");
+  });
+
+  /**
+   * The warning that costs a seller sales if it is missing: `price_label` is a
+   * material field, so a live approved product goes back to the review queue and
+   * off sale. It has to be on the row, not in a footnote, because it is true of
+   * some rows in the batch and not others.
+   */
+  it("carries the re-review warning per row, separately from the price", () => {
+    const review = reviewFromPreview(
+      preview([
+        previewEntry(1, "would_apply", { price_label: "$1.00", returns_to_review: true }),
+        previewEntry(2, "would_apply", { price_label: "$2.00" })
+      ]),
+      "price",
+      noTitles
+    );
+    expect(review.changing[0].warning).toBe("Goes back to review");
+    expect(review.changing[1].warning).toBeNull();
+    // And it is not smuggled into `detail`, which is where a block reason goes.
+    expect(review.changing[0].detail).toBe("Set to $1.00");
+  });
+
+  /**
+   * Before the write, "blocked" and "failed" answer the same question — will this
+   * row change — so they share the list. The distinction §19 draws is about the
+   * *result*, where it decides whether the seller has a task or an error.
+   */
+  it("puts everything that will not change in one list, each with its reason", () => {
+    const review = reviewFromPreview(
+      preview([
+        previewEntry(1, "would_apply", { price_label: "$1.00" }),
+        previewEntry(2, "blocked", { reason: "Already at that price" }),
+        previewEntry(3, "failed", { reason: "No longer in your store" })
+      ]),
+      "price",
+      noTitles
+    );
+    expect(review.changing.map((line) => line.id)).toEqual([1]);
+    expect(review.staying.map((line) => line.detail)).toEqual([
+      "Already at that price",
+      "No longer in your store"
+    ]);
+  });
+
+  it("falls back to the local title only when the server did not name the row", () => {
+    const review = reviewFromPreview(
+      preview([
+        previewEntry(1, "would_apply", { title: "Lamp", price_label: "$1.00" }),
+        previewEntry(2, "would_apply", { price_label: "$2.00" })
+      ]),
+      "price",
+      (id) => `local ${id}`
+    );
+    expect(review.changing.map((line) => line.title)).toEqual(["Lamp", "local 2"]);
+  });
+
+  it("keeps every requested row, so nothing is silently dropped from the review", () => {
+    const review = reviewFromPreview(
+      preview([
+        previewEntry(1, "would_apply", { price_label: "$1.00" }),
+        previewEntry(2, "blocked"),
+        previewEntry(3, "failed")
+      ]),
+      "price",
+      noTitles
+    );
+    expect(review.changing.length + review.staying.length).toBe(3);
+  });
+});
+
+describe("the review for publish and hide", () => {
+  function row(id: number): StoreListingRow {
+    return { id, title: `Listing ${id}` } as StoreListingRow;
+  }
+
+  it("reads the server's block reason through unchanged", () => {
+    const review = reviewFromPartition(
+      { eligible: [row(1)], blocked: [{ row: row(2), reason: "1 thing left" }] },
+      "publish"
+    );
+    expect(review.changing).toEqual([{ id: 1, title: "Listing 1", detail: null, warning: null }]);
+    expect(review.staying[0].detail).toBe("1 thing left");
+  });
+});
+
+describe("the sentence on the confirm button", () => {
+  const line = (id: number) => ({ id, title: `L${id}`, detail: null, warning: null });
+
+  it("names the verb, the count, and how many will not move", () => {
+    expect(
+      reviewLabel({ action: "price", changing: [line(1), line(2)], staying: [line(3)] })
+    ).toBe("Reprice 2 · 1 blocked");
+  });
+
+  it("drops the blocked half when there is none", () => {
+    expect(reviewLabel({ action: "price", changing: [line(1)], staying: [] })).toBe("Reprice 1");
+  });
+
+  /**
+   * Every action gets its own verb from one table. This is the test that fails
+   * if a fourth action is added without a word for it — the alternative, an
+   * inline `action === "publish" ? … : …`, would have labelled a reprice "Hide".
+   */
+  it("uses the right verb for each action", () => {
+    expect(reviewLabel({ action: "publish", changing: [line(1)], staying: [] })).toBe("Publish 1");
+    expect(reviewLabel({ action: "hide", changing: [line(1)], staying: [] })).toBe("Hide 1");
+    expect(reviewLabel({ action: "price", changing: [line(1)], staying: [] })).toBe("Reprice 1");
+  });
+
+  it("says nothing will happen rather than offering a zero", () => {
+    expect(reviewLabel({ action: "price", changing: [], staying: [line(1)] })).toBe(
+      "Nothing to reprice"
+    );
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The result headline, for the third action
+ * ------------------------------------------------------------------ */
+
+describe("a repriced batch reads back as repriced", () => {
+  it("does not borrow publish's or hide's verb", () => {
+    const outcome = outcomeOf(
+      "price",
+      response([entry(1, "succeeded", { price_label: "$12.00" }), entry(2, "blocked")])
+    );
+    expect(outcome.headline).toBe("1 product repriced");
+    expect(outcome.attention).toBe("1 product needs attention");
+  });
+
+  it("says nothing repriced rather than nothing published", () => {
+    expect(outcomeOf("price", response([entry(1, "blocked")])).headline).toBe("Nothing repriced");
   });
 });

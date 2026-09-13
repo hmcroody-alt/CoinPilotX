@@ -170,13 +170,75 @@ export function selectionSummary(
  * Eligibility — §34's preview
  * ------------------------------------------------------------------ */
 
-export type StoreBulkAction = "publish" | "hide";
+/**
+ * The actions whose verdict follows from the listing row alone.
+ *
+ * These are the ones the list payload can carry an answer for, because nothing
+ * about "can this be published" depends on anything the seller has not typed
+ * yet. `bulk_eligibility` on every row holds those answers, and
+ * {@link partition} reads them.
+ *
+ * The name mirrors `PRECOMPUTED_ACTIONS` in
+ * `services/business_os/marketplace/listing_batch.py`, and the two must stay in
+ * step: the server only attaches verdicts for the actions in its tuple, so an
+ * action listed here but not there gets "No readiness check yet" on every row
+ * in the store.
+ */
+export type StorePrecomputedBulkAction = "publish" | "hide";
+
+/**
+ * Every action the docked bar offers, including the one no row can be
+ * pre-judged for.
+ *
+ * `price` is the odd one and the reason this type is split in two. What blocks
+ * a reprice depends on the rule the seller has not chosen yet — the same
+ * listing is `PRICE_UNCHANGED` under cost+20% and a clean success under
+ * cost+25% — so there is no verdict to attach to a row in advance and no honest
+ * partition to compute here. The server answers a reprice with a dry run
+ * (`previewMarketplaceSellerBatch`), and {@link partition} refuses `price` at
+ * the type level so nobody re-adds a local guess.
+ */
+export type StoreBulkAction = StorePrecomputedBulkAction | "price";
+
+/** Narrow to the actions {@link partition} can answer, at runtime. */
+export function isPrecomputed(action: StoreBulkAction): action is StorePrecomputedBulkAction {
+  return action !== "price";
+}
 
 export type StoreBulkPartition = {
   /** Rows the action can be applied to. */
   eligible: StoreListingRow[];
   /** Rows it cannot, each with the reason a seller can act on. */
   blocked: { row: StoreListingRow; reason: string }[];
+};
+
+/**
+ * How each action is spoken about, in one table.
+ *
+ * Every one of these used to be an inline `action === "publish" ? … : …`, which
+ * is a correct way to write a two-valued switch and a silent bug the moment
+ * there are three: `price` would have rendered as "Hide", on the button, in the
+ * sheet title, in the result headline, and in the screen-reader label — each
+ * one a separate ternary that nothing would have flagged. A `Record` keyed by
+ * the union makes adding a fourth action a compile error in one place instead
+ * of a mislabelled button in five.
+ *
+ * `done` is what the row says after it happened, and is not simply the past
+ * tense: publishing a listing submits it for review rather than putting it in
+ * front of buyers, and saying "Published" there is the claim §31 exists to stop.
+ */
+export const BULK_VERB: Record<
+  StoreBulkAction,
+  { imperative: string; plain: string; past: string; done: string }
+> = {
+  publish: {
+    imperative: "Publish",
+    plain: "publish",
+    past: "published",
+    done: "Submitted for review"
+  },
+  hide: { imperative: "Hide", plain: "hide", past: "hidden", done: "Hidden from buyers" },
+  price: { imperative: "Reprice", plain: "reprice", past: "repriced", done: "Price updated" }
 };
 
 /**
@@ -189,7 +251,10 @@ export type StoreBulkPartition = {
  * the seller commits. So the preview and the outcome are not two answers that
  * happen to agree; they are one answer, asked twice.
  */
-export function partition(rows: StoreListingRow[], action: StoreBulkAction): StoreBulkPartition {
+export function partition(
+  rows: StoreListingRow[],
+  action: StorePrecomputedBulkAction
+): StoreBulkPartition {
   const eligible: StoreListingRow[] = [];
   const blocked: { row: StoreListingRow; reason: string }[] = [];
 
@@ -215,7 +280,7 @@ export function partition(rows: StoreListingRow[], action: StoreBulkAction): Sto
  *
  * The fix was not to add the missing clause. It was to stop having clauses.
  */
-function blockReason(row: StoreListingRow, action: StoreBulkAction): string | null {
+function blockReason(row: StoreListingRow, action: StorePrecomputedBulkAction): string | null {
   const verdict = row.bulkEligibility?.[action];
   // `undefined` is the payload not carrying an answer for this action; `null` is
   // the server saying it would apply. Only the second is a yes. An older cached
@@ -233,10 +298,13 @@ function blockReason(row: StoreListingRow, action: StoreBulkAction): string | nu
  * in advance. A button reading "Publish 18" that publishes 14 is the failure
  * this replaces.
  */
-export function bulkActionLabel(partitioned: StoreBulkPartition, action: StoreBulkAction): string {
-  const verb = action === "publish" ? "Publish" : "Hide";
+export function bulkActionLabel(
+  partitioned: StoreBulkPartition,
+  action: StorePrecomputedBulkAction
+): string {
+  const verb = BULK_VERB[action].imperative;
   const { eligible, blocked } = partitioned;
-  if (eligible.length === 0) return `Nothing to ${verb.toLowerCase()}`;
+  if (eligible.length === 0) return `Nothing to ${BULK_VERB[action].plain}`;
   return blocked.length > 0
     ? `${verb} ${eligible.length} · ${blocked.length} blocked`
     : `${verb} ${eligible.length}`;

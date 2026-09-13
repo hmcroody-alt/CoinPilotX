@@ -48,7 +48,11 @@ import {
   type StoreSetupStep,
   type StoreTabKey
 } from "../api/storeDashboard";
-import { batchMarketplaceSellerListings } from "../api/marketplace";
+import {
+  batchMarketplaceSellerListings,
+  previewMarketplaceSellerBatch,
+  type MarketplacePricingRule
+} from "../api/marketplace";
 import { PulseApiError } from "../api/pulseApi";
 import {
   StoreAttentionBanner,
@@ -72,6 +76,7 @@ import {
 } from "../components/store";
 import {
   bulkActionLabel,
+  isPrecomputed,
   partition,
   reconcile,
   selectAllLabel,
@@ -81,7 +86,6 @@ import {
   toggle,
   toggleAll,
   type StoreBulkAction,
-  type StoreBulkPartition,
   type StoreSelection
 } from "../marketplace/storeSelection";
 import {
@@ -89,9 +93,17 @@ import {
   idsToSend,
   isSameAttempt,
   outcomeOf,
+  reviewFromPartition,
+  reviewFromPreview,
   type StoreBulkAttempt,
-  type StoreBulkOutcome
+  type StoreBulkOutcome,
+  type StoreBulkReview
 } from "../marketplace/storeBulkRun";
+import {
+  EMPTY_PRICING_DRAFT,
+  parsePricingRule,
+  type StorePricingRuleDraft
+} from "../marketplace/storeBulkPricing";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
@@ -131,17 +143,16 @@ const ATTENTION_COPY: Record<StoreAttention["kind"], { headline: string; detail:
 };
 
 /**
- * Every id the seller reviewed, eligible or not.
+ * Every id the seller reviewed, changing or not.
  *
- * Read off the frozen partition rather than stored beside it, so the list that
- * goes on the wire cannot drift from the list the sheet drew. Blocked rows are
- * included deliberately — see `idsToSend` in `marketplace/storeBulkRun`: the
- * preview is a snapshot, and the server re-checks every row at write time.
+ * Read off the frozen review rather than stored beside it, so the list that goes
+ * on the wire cannot drift from the list the sheet drew. Rows that will not
+ * change are included deliberately — see `idsToSend` in
+ * `marketplace/storeBulkRun`: the review is a snapshot, and the server re-checks
+ * every row at write time.
  */
-function reviewedIds(partitioned: StoreBulkPartition): number[] {
-  return [...partitioned.eligible, ...partitioned.blocked.map((entry) => entry.row)].map(
-    (row) => row.id
-  );
+function reviewedIds(review: StoreBulkReview): number[] {
+  return [...review.changing, ...review.staying].map((line) => line.id);
 }
 
 /**
@@ -218,19 +229,34 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * "this is the work it is about" are the same fact. Split apart, there is a
    * render where the phase says `running` and the attempt is still null.
    *
-   * `action` and `partitioned` are **frozen when the sheet opens**. The list
-   * behind it keeps reloading — the batch itself triggers a reload — and
-   * `reconcile` can drop rows out of the selection while the seller is reading
-   * the confirm face. Re-deriving the review list from live state would mean the
-   * seller taps a button describing one batch and sends another.
+   * `action` and `review` are **frozen when the sheet opens**. The list behind
+   * it keeps reloading — the batch itself triggers a reload — and `reconcile` can
+   * drop rows out of the selection while the seller is reading the confirm face.
+   * Re-deriving the review list from live state would mean the seller taps a
+   * button describing one batch and sends another.
    */
   const [bulk, setBulk] = useState<{
     phase: StoreBulkSheetPhase;
     action: StoreBulkAction;
-    partitioned: StoreBulkPartition;
+    /** `null` only on the `rule` face, before anything has been previewed. */
+    review: StoreBulkReview | null;
+    /**
+     * The rule the review was computed under, carried so the commit sends the
+     * same one. Reading it back off `priceDraft` at confirm time was the
+     * alternative and is the bug: the draft is live, the review is frozen, and a
+     * seller who edits the field while the confirm face is up would apply a rule
+     * whose prices they never saw.
+     */
+    rule: MarketplacePricingRule | null;
     outcome: StoreBulkOutcome | null;
     error: string | null;
   } | null>(null);
+  /**
+   * The pricing rule being typed. Lives on the screen rather than in `bulk` so
+   * it survives closing the sheet — a seller who cancels to check a product and
+   * comes back finds their number still there.
+   */
+  const [priceDraft, setPriceDraft] = useState<StorePricingRuleDraft>(EMPTY_PRICING_DRAFT);
   /**
    * The attempt the open sheet is sending — a ref, not state, and that is the
    * whole of §23 on the client.
@@ -359,10 +385,25 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * is still going into the batch, so partitioning `visible` would drop it from
    * the count on the button while leaving it in the request. The list stays
    * `allRows` because the selection does.
+   *
+   * `null` for `price`, and that is the point of `isPrecomputed`. There is no
+   * local verdict for a reprice — what blocks one depends on the rule the seller
+   * has not typed yet — so there is nothing to wash the rows with and no count to
+   * put on the button. Partitioning anyway would have marked every row in the
+   * store "No readiness check yet" and greyed the whole feature out.
    */
   const partitioned = useMemo(
-    () => (selection ? partition(selectedRows(selection, allRows), pendingAction) : null),
+    () =>
+      selection && isPrecomputed(pendingAction)
+        ? partition(selectedRows(selection, allRows), pendingAction)
+        : null,
     [selection, allRows, pendingAction]
+  );
+
+  /** How many rows the rule face says it covers. */
+  const selectedCount = useMemo(
+    () => (selection ? selectedRows(selection, allRows).length : 0),
+    [selection, allRows]
   );
 
   /** The same partition, keyed by id, for the row the list is drawing. */
@@ -416,7 +457,10 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
         const response = await batchMarketplaceSellerListings({
           action,
           listingIds: idsToSend(attempt),
-          idempotencyKey: attempt.idempotencyKey
+          idempotencyKey: attempt.idempotencyKey,
+          // Off the attempt, not off `priceDraft`: the attempt is what the seller
+          // agreed to, and it is the thing the idempotency key identifies.
+          pricingRule: attempt.rule ?? undefined
         });
         const outcome = outcomeOf(action, response);
         await load("refresh").catch(() => undefined);
@@ -447,26 +491,127 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * asked.
    */
   const confirmBulk = useCallback(() => {
-    if (!bulk) return;
-    const ids = reviewedIds(bulk.partitioned);
+    // No review means the rule face, where there is nothing to confirm yet. The
+    // sheet does not render a confirm button there; this is the guard that makes
+    // that a fact rather than a layout detail.
+    if (!bulk?.review) return;
+    const ids = reviewedIds(bulk.review);
     const held = attemptRef.current;
     const attempt =
-      held && isSameAttempt(held, bulk.action, ids) ? held : beginAttempt(bulk.action, ids);
+      held && isSameAttempt(held, bulk.action, ids, bulk.rule)
+        ? held
+        : beginAttempt(bulk.action, ids, bulk.rule);
     attemptRef.current = attempt;
     void runBulk(bulk.action, attempt);
   }, [bulk, runBulk]);
 
+  /**
+   * The dry run — §34.
+   *
+   * Asks the server what the rule comes to and shows the answer. Writes nothing:
+   * the endpoint returns above its own claim, so this cannot spend the key it
+   * sends or reach the write loop. Its key is separate from the commit's for a
+   * reason that is not symmetry — a preview leaves a key spendable, so reusing
+   * one would work, but reusing it *across a rule change* would hand the commit
+   * a key the server had already answered under the old rule.
+   *
+   * Failure lands on the error face rather than silently reverting to the rule
+   * field, because "I tapped Preview and the sheet went back to normal" is
+   * indistinguishable from a dropped tap.
+   */
+  const previewBulk = useCallback(async () => {
+    if (!selection) return;
+    const parsed = parsePricingRule(priceDraft);
+    if (!parsed.rule) return;
+    const ids = selectedRows(selection, allRows).map((row) => row.id);
+    if (ids.length === 0) return;
+    setBulk((current) => (current ? { ...current, phase: "previewing", error: null } : current));
+    try {
+      const response = await previewMarketplaceSellerBatch({
+        action: "price",
+        listingIds: ids,
+        idempotencyKey: `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+        pricingRule: parsed.rule
+      });
+      const review = reviewFromPreview(
+        response,
+        "price",
+        (listingId) => allRows.find((row) => row.id === listingId)?.title || `Listing ${listingId}`
+      );
+      // A fresh review is new work, so the held key is dropped. Keeping it would
+      // let a second rule be committed under the first rule's key, and a spent
+      // key is answered by replay rather than by looking at the payload.
+      attemptRef.current = null;
+      setBulk((current) =>
+        current ? { ...current, phase: "confirm", review, rule: parsed.rule, error: null } : current
+      );
+    } catch (error) {
+      setBulk((current) =>
+        current ? { ...current, phase: "error", error: bulkErrorMessage(error) } : current
+      );
+    }
+  }, [selection, allRows, priceDraft]);
+
+  /**
+   * Try again, on whichever request actually failed.
+   *
+   * The error face is shared, so one handler has to serve both, and pointing it
+   * straight at `confirmBulk` would have been the dangerous version: a seller
+   * whose *dry run* timed out would tap "Try again" and get a write. The review
+   * is the discriminator — there is one only once a preview has come back — and
+   * it is the honest one, because it is the same fact the confirm button is
+   * gated on.
+   */
+  const retryBulk = useCallback(() => {
+    if (bulk?.review) {
+      confirmBulk();
+      return;
+    }
+    void previewBulk();
+  }, [bulk?.review, confirmBulk, previewBulk]);
+
+  /**
+   * Back to the rule, from the review or from a refusal.
+   *
+   * The draft survives — that is the whole value of the button, since a seller
+   * going from 20% to 25% is changing one character — but the review and the
+   * frozen rule do not. Keeping the review would leave the old rule's prices on
+   * screen while the seller edits the number that produced them, which is §34
+   * inverted: a preview that no longer previews the thing about to happen.
+   * Dropping it also puts `retryBulk` back on the dry run, because there is once
+   * again nothing reviewed to commit.
+   *
+   * The held idempotency key is deliberately NOT cleared here. If the seller got
+   * to this button from a failed commit, that key may have been claimed, and
+   * `previewBulk` is the place that drops it — after a new review exists, so the
+   * two facts move together. Clearing it here as well would be harmless and
+   * would also hide which step is responsible.
+   */
+  const changeRule = useCallback(() => {
+    setBulk((current) =>
+      current ? { ...current, phase: "rule", review: null, rule: null, error: null } : current
+    );
+  }, []);
+
   const openBulkSheet = useCallback(() => {
-    if (!partitioned) return;
+    if (!selection) return;
     attemptRef.current = null;
+    if (!isPrecomputed(pendingAction)) {
+      // A reprice opens on the rule face with no review, because there is nothing
+      // to review until the server has been asked.
+      setBulk({ phase: "rule", action: pendingAction, review: null, rule: null, outcome: null, error: null });
+      return;
+    }
+    if (!partitioned) return;
     setBulk({
       phase: "confirm",
       action: pendingAction,
-      partitioned,
+      review: reviewFromPartition(partitioned, pendingAction),
+      rule: null,
       outcome: null,
       error: null
     });
-  }, [partitioned, pendingAction]);
+  }, [selection, partitioned, pendingAction]);
 
   /**
    * Closing the sheet. After a result it also ends selection mode.
@@ -984,13 +1129,20 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
       {/* Docked, outside the list, because it must stay reachable while the
           seller scrolls the rows it is about. `StoreSelectionBar` above the list
           answers "what have I picked"; this answers "what will happen to it". */}
-      {selection && partitioned ? (
+      {selection ? (
         <View style={[styles.bulkDock, { paddingBottom: Math.max(insets.bottom, 8) }]}>
           <StoreBulkBar
             action={pendingAction}
             onChangeAction={setPendingAction}
-            ctaLabel={bulkActionLabel(partitioned, pendingAction)}
-            eligibleCount={partitioned.eligible.length}
+            // Empty for `price`, where there is no partition and therefore no
+            // count. The bar knows to say "Edit pricing" instead rather than
+            // being handed a sentence assembled from nothing.
+            ctaLabel={
+              partitioned && isPrecomputed(pendingAction)
+                ? bulkActionLabel(partitioned, pendingAction)
+                : ""
+            }
+            eligibleCount={partitioned?.eligible.length ?? 0}
             onPress={openBulkSheet}
             busy={bulk?.phase === "running"}
             reducedMotion={reducedMotion}
@@ -1003,11 +1155,19 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
           visible
           phase={bulk.phase}
           action={bulk.action}
-          partitioned={bulk.partitioned}
+          review={bulk.review}
           outcome={bulk.outcome}
           errorMessage={bulk.error}
+          priceDraft={priceDraft}
+          onChangePriceDraft={setPriceDraft}
+          selectedCount={selectedCount}
+          onPreview={() => void previewBulk()}
           onConfirm={confirmBulk}
-          onRetry={confirmBulk}
+          onRetry={retryBulk}
+          // Only a reprice has a rule to go back to. Passing this for publish or
+          // hide would put a button on their sheet that landed the seller on a
+          // rule face those actions never had.
+          onChangeRule={isPrecomputed(bulk.action) ? undefined : changeRule}
           onClose={closeBulkSheet}
           // The server names most result rows; this fills in the ones it did
           // not, from the list the seller is already looking at. A result line

@@ -6,10 +6,10 @@
  * it", which is a different question and deserves the thumb-reachable half of
  * the screen:
  *
- *   [ Publish | Hide ]
+ *   [ Publish | Hide | Price ]
  *   [        Publish 14 · 4 blocked        ]
  *
- * Three decisions:
+ * Four decisions:
  *
  * 1. **The count is on the button.** §34 asks for the shape of the outcome
  *    before the seller commits, and the button is the last thing they read. A
@@ -27,26 +27,43 @@
  * 3. **Zero eligible disables the button, and says why.** "Nothing to publish"
  *    with fourteen rows selected is information — every one of them is blocked —
  *    where a greyed button with no label is a dead end.
+ *
+ * 4. **Price does not get a count, and its CTA is never disabled by one.** The
+ *    other two arm a number because the list payload already knows the verdict
+ *    for every row. A reprice has no verdict until there is a rule, so the bar
+ *    cannot honestly say "Reprice 14" here and does not try; it says "Edit
+ *    pricing" and opens the rule face, where the seller types a rule and the
+ *    server answers with the real counts. Greying this out on
+ *    `eligibleCount === 0` — which is what the shared `disabled` used to do —
+ *    would have made the feature permanently unreachable, because `partition`
+ *    refuses to answer for `price` and every row would have been "blocked".
  */
 
 import { ActivityIndicator, Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { storeLight } from "../../theme/storeLight";
 import { useStorePress } from "../../theme/storeMotion";
-import type { StoreBulkAction } from "../../marketplace/storeSelection";
+import { isPrecomputed, type StoreBulkAction } from "../../marketplace/storeSelection";
 
 const ACTION_LABEL: Record<StoreBulkAction, string> = {
   publish: "Publish",
-  hide: "Hide"
+  hide: "Hide",
+  price: "Price"
 };
 
-const ACTIONS: StoreBulkAction[] = ["publish", "hide"];
+const ACTIONS: StoreBulkAction[] = ["publish", "hide", "price"];
 
 export type StoreBulkBarProps = {
   action: StoreBulkAction;
   onChangeAction: (action: StoreBulkAction) => void;
-  /** From `bulkActionLabel`, e.g. "Publish 14 · 4 blocked". Already a sentence. */
+  /**
+   * From `bulkActionLabel`, e.g. "Publish 14 · 4 blocked". Already a sentence.
+   * Ignored for `price`, which has no count to put in one yet.
+   */
   ctaLabel: string;
-  /** How many rows the action will actually touch. Zero disables the CTA. */
+  /**
+   * How many rows the action will actually touch. Zero disables the CTA — for
+   * the precomputed actions only; see decision 4.
+   */
   eligibleCount: number;
   onPress: () => void;
   /** True while a batch is in flight — the CTA is disabled and spins. */
@@ -64,7 +81,10 @@ export function StoreBulkBar({
   reducedMotion
 }: StoreBulkBarProps) {
   const press = useStorePress(reducedMotion, 0.98);
-  const disabled = busy || eligibleCount === 0;
+  // `isPrecomputed` gates the count, not the tap: only an action the rows carry
+  // a verdict for can be known to have nothing to do.
+  const disabled = busy || (isPrecomputed(action) && eligibleCount === 0);
+  const label = isPrecomputed(action) ? ctaLabel : "Edit pricing";
 
   return (
     <View style={styles.bar}>
@@ -100,14 +120,14 @@ export function StoreBulkBar({
           accessibilityRole="button"
           // The label is the count sentence, so a screen-reader user hears the
           // same thing a sighted one reads: how many, and how many will not.
-          accessibilityLabel={ctaLabel}
+          accessibilityLabel={label}
           accessibilityState={{ disabled }}
         >
           {busy ? (
             <ActivityIndicator size="small" color={storeLight.cta.text} />
           ) : (
             <Text style={[styles.ctaText, disabled ? styles.ctaTextOff : null]} numberOfLines={1}>
-              {ctaLabel}
+              {label}
             </Text>
           )}
         </Pressable>

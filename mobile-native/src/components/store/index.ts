@@ -29,6 +29,9 @@ export type { StoreSelectionBarProps } from "./StoreSelectionBar";
 export { StoreBulkBar } from "./StoreBulkBar";
 export type { StoreBulkBarProps } from "./StoreBulkBar";
 
+export { StoreBulkPriceRule } from "./StoreBulkPriceRule";
+export type { StoreBulkPriceRuleProps } from "./StoreBulkPriceRule";
+
 export { StoreBulkSheet } from "./StoreBulkSheet";
 export type { StoreBulkSheetProps, StoreBulkSheetPhase } from "./StoreBulkSheet";
 

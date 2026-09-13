@@ -581,7 +581,28 @@ async function mutateMarketplaceSellerListingStatus(listingId: number, action: "
  * Bulk actions
  * ------------------------------------------------------------------ */
 
-export type MarketplaceBatchAction = "publish" | "hide";
+export type MarketplaceBatchAction = "publish" | "hide" | "price";
+
+/**
+ * How a bulk reprice works out each listing's new price.
+ *
+ * Mirrors `services/business_os/suppliers/pricing.py`, which is the one
+ * authority for what a rule means — this type names the rules, it does not
+ * implement them. Nothing on the phone multiplies a cost by anything: the
+ * server computes every price, because a second implementation here would
+ * disagree with the stored one the first time a rule landed on a fraction of a
+ * cent, and it would do it across a whole storefront at once.
+ *
+ * `MANUAL_PRICE` is absent on purpose. It is a legitimate rule for a single
+ * listing and a meaningless one for a batch — "price these forty manually" is
+ * not an instruction a batch can carry out — and the server refuses it with
+ * `INVALID_PRICING_RULE`.
+ */
+export type MarketplacePricingRule =
+  | { type: "COST_PLUS_FIXED"; value: number }
+  | { type: "COST_PLUS_PERCENT"; value: number }
+  | { type: "MULTIPLIER"; value: number }
+  | { type: "TARGET_MARGIN"; value: number };
 
 /**
  * Why one listing in a batch did not end up where the seller aimed it.
@@ -595,9 +616,20 @@ export type MarketplaceBatchAction = "publish" | "hide";
  */
 export type MarketplaceBatchOutcome = "succeeded" | "blocked" | "failed";
 
-export type MarketplaceBatchResult = {
+/**
+ * Everything a result entry carries except its verdict.
+ *
+ * Split out so a commit entry and a preview entry can share every field and
+ * share *no* outcome word. The server draws the same line — `summarize` and
+ * `summarize_preview` in `listing_batch.py` each raise on the other's
+ * vocabulary — and the reason is the same on both sides: `would_apply` and
+ * `succeeded` must never be interchangeable, because the one thing a preview
+ * must not be able to do is render as a result. A single `outcome: string` here
+ * would let a component built for the commit face consume a dry run and print
+ * "14 products published" over fourteen products that were never touched.
+ */
+type MarketplaceBatchEntry = {
   listing_id: number;
-  outcome: MarketplaceBatchOutcome;
   /** Present on every entry the server could name. */
   title?: string;
   /** One sentence, server-written. Present on blocked and failed. */
@@ -615,6 +647,28 @@ export type MarketplaceBatchResult = {
    * this as "did it work" would report every successful publish as pending.
    */
   status?: string;
+  /**
+   * The stored price, on a reprice. On a preview it is the price that *would* be
+   * stored, formatted by the server's own label builder rather than here — so
+   * the number the seller approves and the number written are one string.
+   */
+  price_label?: string;
+  /** Preview only: what the row costs today, so the sheet can draw the arrow. */
+  current_price_label?: string;
+  /**
+   * The warning that matters most, and it is on **both** shapes rather than the
+   * preview alone. `price_label` is a material field, so repricing a live,
+   * approved product sends it back to the review queue and off sale. The preview
+   * says so before the tap, which is what a seller is entitled to; the commit
+   * says so afterwards, which is what a seller who tapped past the warning needs.
+   * One field, one word, both faces.
+   */
+  returns_to_review?: boolean;
+};
+
+/** One row of a committed batch. */
+export type MarketplaceBatchResult = MarketplaceBatchEntry & {
+  outcome: MarketplaceBatchOutcome;
 };
 
 export type MarketplaceBatchResponse = {
@@ -651,13 +705,87 @@ export async function batchMarketplaceSellerListings(input: {
   action: MarketplaceBatchAction;
   listingIds: number[];
   idempotencyKey: string;
+  /** Required for `price`, refused for the others. */
+  pricingRule?: MarketplacePricingRule;
 }) {
   return pulseApi<MarketplaceBatchResponse>("/api/pulse/marketplace/seller/listings/batch", {
     method: "POST",
     body: JSON.stringify({
       action: input.action,
       listing_ids: input.listingIds,
-      idempotency_key: input.idempotencyKey
+      idempotency_key: input.idempotencyKey,
+      // Omitted rather than sent as null: the server refuses a payload on an
+      // action that ignores one, and `undefined` disappears from the JSON.
+      ...(input.pricingRule ? { pricing_rule: input.pricingRule } : {})
+    })
+  });
+}
+
+/**
+ * A preview outcome. `would_apply` rather than `succeeded`, because a request
+ * that wrote nothing must not be able to produce the word the store renders as
+ * "14 products updated".
+ */
+export type MarketplaceBatchPreviewOutcome = "would_apply" | "blocked" | "failed";
+
+/** One row of a dry run. Same fields as a result, deliberately not the same verdicts. */
+export type MarketplaceBatchPreviewResult = MarketplaceBatchEntry & {
+  outcome: MarketplaceBatchPreviewOutcome;
+};
+
+/**
+ * §34. What the batch *would* do — and pointedly not shaped like what it did.
+ *
+ * `batch_id` and `successful_count` are absent from the server's response and
+ * therefore from this type, so a component that tries to render a preview as an
+ * outcome fails to compile instead of printing a confident wrong number.
+ */
+export type MarketplaceBatchPreview = {
+  ok: boolean;
+  preview: true;
+  action: MarketplaceBatchAction;
+  requested_count: number;
+  eligible_count: number;
+  blocked_count: number;
+  failed_count: number;
+  results: MarketplaceBatchPreviewResult[];
+};
+
+/**
+ * Ask what would happen, changing nothing.
+ *
+ * This exists because a reprice verdict is not knowable in advance the way a
+ * publish verdict is: it depends on the rule, so the server cannot attach it to
+ * a listing row and the phone cannot derive it. Without this call the only way
+ * for a seller to find out what "cost + 20%" does to forty listings is to do it
+ * to forty listings.
+ *
+ * The preview and the apply are the same server decision, so the sheet is not
+ * making a prediction — it is showing the answer early.
+ *
+ * `idempotencyKey` is required here too, and it should NOT be the one you will
+ * apply with. The route answers a dry run above its own `claim`, so a preview
+ * genuinely cannot spend a key and sharing one would work today — but a seller
+ * previewing "cost + 20%", then "cost + 25%", then applying would hand the
+ * commit a key the server had already been asked under a different rule, and a
+ * key that has been seen is answered by replay rather than by reading the
+ * payload. Mint a throwaway key per dry run; the attempt's key is minted when
+ * the seller confirms.
+ */
+export async function previewMarketplaceSellerBatch(input: {
+  action: MarketplaceBatchAction;
+  listingIds: number[];
+  idempotencyKey: string;
+  pricingRule?: MarketplacePricingRule;
+}) {
+  return pulseApi<MarketplaceBatchPreview>("/api/pulse/marketplace/seller/listings/batch", {
+    method: "POST",
+    body: JSON.stringify({
+      action: input.action,
+      listing_ids: input.listingIds,
+      idempotency_key: input.idempotencyKey,
+      dry_run: true,
+      ...(input.pricingRule ? { pricing_rule: input.pricingRule } : {})
     })
   });
 }
