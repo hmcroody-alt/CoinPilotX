@@ -1,9 +1,33 @@
-const CACHE_NAME = "pulsesoc-cache-v27-brand-refresh";
+// The single service worker for this origin, scope "/".
+//
+// There used to be two. static/service-worker.js was a fork of this file that
+// diverged at aa70aa7e ("Enable locked-screen Intelligence alert delivery"),
+// which hardened the push path and landed in the fork only -- so the two copies
+// disagreed about how a push notification is built, and the one registered at
+// scope "/" was the *stale* one. Worse, static/notifications.js subscribed push
+// against the fork, so the live push path was the file nobody was maintaining as
+// the canonical worker. The fork's two improvements (badge validation and sound
+// key normalisation) are merged in below; service-worker.js is now a tombstone
+// that unregisters itself. See tests/protection/test_web_service_worker.py.
+//
+// The cache name is bumped so this worker's activate handler evicts the shared
+// v27 cache that both copies used to write.
+const CACHE_NAME = "pulsesoc-cache-v28-single-worker";
 const DEBUG_SW = false;
+
+// Must stay byte-identical to the src= every page uses. The gate pins that.
+const NOTIFICATIONS_JS = "/static/notifications.js?v=sw-consolidation-20260913";
+
 const STATIC_ASSETS = [
   "/manifest.json",
   "/static/analytics.js",
-  "/static/notifications.js",
+  // Versioned to match every loader of this file. The static branch of the
+  // fetch handler is cache-first and keys on the full URL *including* the
+  // query, so precaching the bare "/static/notifications.js" would warm an
+  // entry no page ever requests -- and, worse, would serve install-time bytes
+  // to any page that did. The version query is the only invalidation this file
+  // has: /static/* is served `public, max-age=31536000, immutable`.
+  NOTIFICATIONS_JS,
   "/static/sounds/notification-soft.wav",
   "/static/brand/pulsesoc-logo-20260813.png",
   "/static/brand/pulsesoc-icon-192-20260813.png",
@@ -212,6 +236,7 @@ function buildPushNotification(payload) {
   const notificationCategory = data.category || payload.category || "";
   const isIntelligence = /^intelligence_/.test(String(notificationType)) || notificationCategory === "intelligence";
   const priority = String(payload.priority || data.priority || data.priority_badge || "").toLowerCase();
+  const soundKey = String(payload.sound_key || data.sound_key || payload.sound || data.sound || "").toLowerCase();
   const defaultUrl = conversationId ? `/pulse/messages/${conversationId}` : (isIntelligence ? "/pulse/alerts" : "/pulse/notifications");
   const targetUrl = safeNotificationUrl(data.web_url || data.url || data.target_url || data.deep_link || payload.web_url || payload.url || payload.target_url || payload.deep_link || defaultUrl);
   const title = isIntelligence ? "PULSESOC ALERT" : (payload.title || "PulseSoc Alert");
@@ -219,10 +244,23 @@ function buildPushNotification(payload) {
   const displayBody = isIntelligence && intelligenceHeadline
     ? `${intelligenceHeadline}\n${payload.body || payload.message || "Open PulseSoc to review this signal."}`
     : (payload.body || payload.message || "New PulseSoc update.");
+  // A badge that is not a same-origin absolute path falls back to the brand
+  // asset. Ported verbatim from the service-worker.js fork, where it was added
+  // to keep lock-screen delivery working: Android drops the whole notification
+  // when the badge fails to load, so a bad badge does not degrade the
+  // notification, it deletes it.
+  //
+  // `icon` below has the same shape and is deliberately left alone. The fork
+  // validated only `badge`, and that is the change with evidence behind it;
+  // tightening `icon` here would be an untested behaviour change smuggled in
+  // under a merge, and it would reject the absolute https:// icons a payload is
+  // currently free to send.
+  const defaultBadge = "/static/brand/pulsesoc-icon-192-20260813.png";
+  const badgeAsset = typeof payload.badge === "string" && payload.badge.trim().startsWith("/") ? payload.badge : defaultBadge;
   const options = {
     body: displayBody,
     icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260813.png",
-    badge: payload.badge || "/static/brand/pulsesoc-icon-192-20260813.png",
+    badge: badgeAsset,
     vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
     data: {
       ...data,
@@ -234,7 +272,7 @@ function buildPushNotification(payload) {
       category: notificationCategory,
       headline: intelligenceHeadline || data.headline || payload.headline || "",
       priority,
-      sound_key: payload.sound_key || data.sound_key || "",
+      sound_key: soundKey || data.sound_key || "",
       vibration: payload.vibration || data.vibration || "",
       notification_id: payload.notification_id || data.notification_id || "",
       signal_id: payload.signal_id || data.signal_id || data.event_id || ""

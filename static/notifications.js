@@ -882,6 +882,100 @@
     return outputArray;
   }
 
+  // The single service worker, and the one push subscribes against.
+  const PUSH_SW_URL = "/sw.js";
+  const PUSH_SW_SCOPE = "/";
+  const LEGACY_SW_SCOPE_PATH = "/static/";
+
+  // Moves a push subscription off the retired /static/service-worker.js
+  // registration and onto /sw.js.
+  //
+  // This exists because a PushSubscription belongs to a registration. Retiring
+  // the old worker destroys its subscription, and the server would go on pushing
+  // to a dead endpoint -- no error anywhere, the user simply stops getting
+  // notifications. So the old subscription is withdrawn and reported before the
+  // registration goes, and a replacement is taken out on the new worker.
+  //
+  // The scope check is load-bearing. getRegistration() resolves a *document*
+  // URL against registration scopes and returns the most specific match, so
+  // once the legacy registration is gone this same call happily returns the new
+  // scope-"/" registration -- and unregistering that would delete the very
+  // worker this function is migrating to, taking push with it. Matching on the
+  // scope proves we are holding the legacy registration and not its successor.
+  async function migrateLegacyPushRegistration() {
+    if (!("serviceWorker" in navigator)) return false;
+
+    const legacy = await navigator.serviceWorker
+      .getRegistration("/static/service-worker.js")
+      .catch(() => null);
+    if (!legacy) return false;
+
+    let scopePath = "";
+    try {
+      scopePath = new URL(legacy.scope, window.location.origin).pathname;
+    } catch (error) {
+      return false;
+    }
+    if (scopePath !== LEGACY_SW_SCOPE_PATH) return false;
+
+    const subscription = await legacy.pushManager.getSubscription().catch(() => null);
+    const hadSubscription = Boolean(subscription);
+    if (subscription) {
+      const endpoint = subscription.endpoint;
+      await subscription.unsubscribe().catch(() => {});
+      // preserve_preferences, because this is a move and not a withdrawal.
+      // /api/push/unsubscribe defaults to also setting
+      // enable_push_notifications = false, which is right for the settings
+      // toggle below and wrong here: the user asked for nothing. Without it,
+      // a re-subscribe that fails for any reason leaves the account with push
+      // switched off rather than merely unsubscribed, and the difference is
+      // that the second state repairs itself on the next visit.
+      await fetch("/api/push/unsubscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ endpoint, preserve_preferences: true })
+      }).catch(() => {});
+    }
+    await legacy.unregister().catch(() => {});
+
+    // Only re-subscribe for a user who was actually subscribed. Doing it
+    // unconditionally would hand push to people who had switched it off.
+    // Permission is already granted here -- they had a subscription -- so this
+    // raises no prompt.
+    if (!hadSubscription || !("PushManager" in window) || Notification.permission !== "granted") {
+      return hadSubscription;
+    }
+    try {
+      const keyPayload = await fetch("/api/push/public-key", { cache: "no-store", credentials: "same-origin" }).then(r => r.json());
+      if (!keyPayload.public_key) return hadSubscription;
+      const registration = await navigator.serviceWorker.register(PUSH_SW_URL, { scope: PUSH_SW_SCOPE });
+      await navigator.serviceWorker.ready;
+      const replacement = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyPayload.public_key)
+      });
+      await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({
+          ...replacement.toJSON(),
+          platform: "pwa",
+          push_provider: "web_push",
+          permission: Notification.permission,
+          app_version: document.documentElement.dataset.appVersion || ""
+        })
+      }).catch(() => {});
+    } catch (error) {
+      // The old subscription is already gone at this point, so a failure here
+      // leaves the user unsubscribed rather than double-subscribed. That is the
+      // recoverable direction: the push settings screen re-subscribes, and the
+      // server is not left pushing into the void.
+    }
+    return hadSubscription;
+  }
+
   function showPushPermissionOnboarding() {
     return new Promise((resolve, reject) => {
       const existing = document.querySelector("[data-pulse-push-onboarding]");
@@ -959,7 +1053,8 @@
     if (permission !== "granted") throw new Error("Push permission was not granted. Re-enable notifications in your browser or device settings, then try again.");
     const keyPayload = await fetch("/api/push/public-key", { cache: "no-store", credentials: "same-origin" }).then(r => r.json());
     if (!keyPayload.public_key) throw new Error("Push keys are not configured yet.");
-    const registration = await navigator.serviceWorker.register("/static/service-worker.js");
+    await migrateLegacyPushRegistration().catch(() => {});
+    const registration = await navigator.serviceWorker.register(PUSH_SW_URL, { scope: PUSH_SW_SCOPE });
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(keyPayload.public_key)
@@ -986,10 +1081,17 @@
   async function unsubscribePush() {
     let endpoint = "";
     if ("serviceWorker" in navigator) {
-      const registration = await navigator.serviceWorker.getRegistration("/static/service-worker.js");
-      const subscription = registration ? await registration.pushManager.getSubscription() : null;
-      if (subscription) {
-        endpoint = subscription.endpoint;
+      // Every registration, not just the current one. This used to look only at
+      // the legacy /static/service-worker.js registration, so after the move to
+      // /sw.js it would have reported success while leaving the subscription
+      // alive -- the user turns push off and keeps receiving it. During the
+      // migration window a device can legitimately hold either registration, so
+      // the only honest answer is to sweep all of them.
+      const registrations = await navigator.serviceWorker.getRegistrations().catch(() => []);
+      for (const registration of registrations) {
+        const subscription = await registration.pushManager.getSubscription().catch(() => null);
+        if (!subscription) continue;
+        endpoint = endpoint || subscription.endpoint;
         await subscription.unsubscribe().catch(() => {});
       }
     }
@@ -1118,6 +1220,10 @@
   document.addEventListener("DOMContentLoaded", async () => {
     bindNotificationActions();
     bindSettings();
+    // Not awaited: the migration is a no-op for everyone except the shrinking
+    // set of devices still holding the retired worker, and making page setup
+    // wait on two network calls to serve them would be the wrong trade.
+    migrateLegacyPushRegistration().catch(() => {});
     await loadPreferences().then(renderSettings).catch(() => {});
     await loadPushStatus().catch(() => {});
     bindRealtime();
