@@ -623,13 +623,34 @@ describe("deriveAttention", () => {
  * Status strip
  * ------------------------------------------------------------------ */
 
-describe("deriveStatus", () => {
-  it("treats an empty store as open, not paused", () => {
-    // Empty is a different screen state, with its own invitation to add a listing.
+/**
+ * The superseded path, still the one the App Store build runs.
+ *
+ * `storeReadiness` below replaces this function, but only behind
+ * `EXPO_PUBLIC_STORE_READINESS`, and `eas.json` sets that flag on development,
+ * development-simulator and preview — not on `production`. The omission is
+ * deliberate (4594ceac promoted the ladder to internal builds and said so), so
+ * these assertions are not dead code pending a delete: they describe the strip a
+ * paying seller sees today.
+ *
+ * They are therefore written as CHARACTERISATION, not as approval. Two of the
+ * three answers below are wrong, and each one's test says which sentence it puts
+ * on a real seller's screen. Nobody should read a green tick here as "the legacy
+ * strip is fine", and nobody should repair these cases in place either — patching
+ * `deriveStatus` into something that can distinguish five states is how you end
+ * up with two readiness implementations that drift. The fix is promoting the
+ * flag; this block is the checklist of what promoting it corrects.
+ */
+describe("deriveStatus (legacy, pre-readiness strip)", () => {
+  it("calls an empty store open — the sentence the ladder exists to remove", () => {
+    // Not an endorsement. `storeReadiness` answers `not_set_up` here, and the
+    // whole reason it was written is that this line means a seller who has never
+    // listed anything reads "Open for orders" over an empty catalogue.
     expect(deriveStatus([])).toEqual({ open: true });
   });
 
   it("is open while at least one listing is orderable", () => {
+    // The one answer this function gets right in both directions.
     const rows = rowsOf([
       listing({ id: 1, listing_id: 1, quantity: 0 }),
       listing({ id: 2, listing_id: 2, quantity: 1 })
@@ -644,6 +665,49 @@ describe("deriveStatus", () => {
       listing({ id: 3, listing_id: 3, status: "draft" })
     ]);
     expect(deriveStatus(rows)).toEqual({ open: false });
+  });
+
+  /**
+   * The case that made this block worth annotating, observed on a device.
+   *
+   * A seller selects six products, taps Bulk Actions → Publish, and the request
+   * succeeds: `bot.py` writes `status` and `approval_status` to `pending_review`
+   * on all six. The strip then tells them their store is paused and hands them a
+   * "Reopen" button, because nothing spans the seam between the two functions —
+   * `listingHealth` maps a `pending_review` publication state to health
+   * `"pending_review"`, and `deriveStatus` only looks for `in_stock` or
+   * `low_stock`, so "waiting on a reviewer" and "the seller closed the shop"
+   * arrive here as the same boolean.
+   *
+   * `open: false` is not even defensible as a narrow reading of "orderable".
+   * The word on screen is the damage: it reports an action the seller did not
+   * take, immediately after the one they did, and the button it offers cannot
+   * fix it — `StoreDashboardScreen`'s legacy branch answers "Reopen" with
+   * `setTab("out"); setExpanded(true)`, a filter change. The seller is told they
+   * broke their store and handed a control that does nothing about it.
+   *
+   * Asserted rather than fixed, and asserted with the failing-rung comparison
+   * inline, so that whoever enables the flag for `production` can see in one
+   * place what changes. {@link storeReadiness} gets this right — see "calls a
+   * store that just bulk-published 'waiting on review', not paused".
+   */
+  it("cannot tell a store awaiting review from one the seller paused", () => {
+    const justPublished = [1, 2, 3, 4, 5, 6].map((id) =>
+      listing({ id, listing_id: id, status: "pending_review", approval_status: "pending_review" })
+    );
+    // Every row is in review, none is orderable, and the function has no rung
+    // for that — so it reports the store as paused.
+    expect(deriveStatus(rowsOf(justPublished))).toEqual({ open: false });
+    // What the strip does with that boolean, spelled out: the legacy branch in
+    // StoreDashboardScreen renders "Paused — buyers can't order" / "Reopen" for
+    // `open: false`. The ladder renders "Waiting on review" / "Manage".
+    const ladder = storeReadiness({ listings: justPublished, rows: rowsOf(justPublished) });
+    expect(ladder.readiness).toBe("pending_review");
+    expect(ladder.openForOrders).toBe(false);
+    // Same boolean, different sentence. `openForOrders` is not what the seller
+    // reads; `statusLabel` is, and that is the whole difference between the two
+    // paths in this case.
+    expect(ladder.statusLabel).not.toMatch(/paused/i);
   });
 });
 
