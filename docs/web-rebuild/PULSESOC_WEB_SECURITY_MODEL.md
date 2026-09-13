@@ -30,7 +30,7 @@ this document because none of them will produce an error when they break.
 | **T1** | JSON routes need no CSRF | *"the browser preflights it cross-site and this app sets no CORS headers"* (`bot.py:3451–3456`) — verified: zero `Access-Control-Allow-Origin`, zero `flask_cors` in the backend | **Anyone adds a CORS header.** The exemption's premise is 3,000 lines away from the exemption |
 | **T2** | Zero foreign keys is contained | One backend, written by one team, is the only writer. 884 tables, 9,458 columns, **0 FK constraints** | A second client writes to the same tables. There is no database-level backstop against orphans |
 | **T3** | Rate limiting works | Limits key on `X-PulseSoc-Device-Id`, which the phone sends | A browser arrives sending neither device header — every Chrome-on-Windows visitor collapses into one bucket |
-| **T4** | One signing key is acceptable | `COINPILOTX_SECRET_KEY` signs Flask sessions *and* bearer tokens (`bot.py:3619`) | A third credential family joins. Rotating to kill a compromised web session logs out every phone in the field |
+| **T4** | ~~One signing key is acceptable~~ **RESOLVED** — `services/signing_keys.py`, §2.5 | It was worse than stated: `COINPILOTX_SECRET_KEY` signed **five** families, not two. The root now derives one key per purpose | — |
 
 **T1 is the sharpest and deserves a standing rule:**
 
@@ -111,6 +111,64 @@ is the part that is non-negotiable either way.
 **13 have never had a web caller** and the re-auth flow assumes a native prompt. A browser needs
 its own step-up path. This is the one auth area that is genuinely unbuilt for web rather than
 merely unexercised.
+
+### 2.5 One key signed five credential families — RESOLVED, `services/signing_keys.py`
+
+T4 above claimed `COINPILOTX_SECRET_KEY` signed sessions *and* bearer tokens. Tracing every
+use found **five** families on that one key, and the two that were missing from the claim are
+the two with database consequences:
+
+| family | site | rotation cost | how it recovers |
+|---|---|---|---|
+| Flask session cookie | `bot.py:465`, `:1214` | **every web user logged out, permanently** | re-login, and only that |
+| mobile bearer access | `:3665` verify, `:31291` mint | ≤ 15 min (`TTL = 900`) | **automatic** |
+| messenger media URLs | `:91565–91573` | ≤ 15 min (TTL 900) | automatic, URLs re-mint |
+| password reset | `:6507` | ≤ 1h of pending links | request another reset |
+| arithmetic captcha | `:5885`, `:5899` | one request | retry |
+
+**The asymmetry is the finding, and it runs opposite to intuition.** The instinct is that the
+bearer key is the dangerous one to touch. It is the cheapest: the refresh token is a random
+string hashed with a plain SHA-256, so it does not involve this secret at all;
+`/api/mobile/auth/refresh` accepts it without a bearer; and `pulseApi.ts:208` refreshes and
+replays on a bare 401. A phone heals itself inside fifteen minutes with no user action.
+
+The session cookie is the expensive one, and it is expensive without limit: it is client-side
+signed, has **no server-side row** to migrate, and `PERSISTENT_SESSION_DAYS = max(3650, …)`.
+
+So the coupling taxed precisely the operation you most want to perform quickly. Responding to a
+suspected token leak by rotating the key meant logging out every web user forever.
+
+**Derived, not configured.** Each purpose gets `HMAC-SHA256(root, "pulsesoc/key/v1/" + purpose)`.
+Deriving rather than adding five environment variables means the split takes effect on the next
+deploy with no operator action, and there is no such thing as a half-applied version of it.
+`PULSESOC_<PURPOSE>_SECRET` overrides one derived key, and that is the independent-rotation
+mechanism: set one variable, one family rotates, the other four keep working.
+
+**Migration, per family, decided by the measured cost above:**
+
+- **Session** — `SECRET_KEY_FALLBACKS = [COINPILOTX_SECRET_KEY]` (Flask 3.1.3). Existing cookies
+  keep opening; new ones are signed with the derived key. **Zero logouts at deploy**, proved by
+  a real cookie round-trip with a negative control, not by reading the changelog.
+- **Mobile access / messenger media** — no fallback. 900s TTL and self-healing clients; a
+  fallback would buy fifteen minutes of nothing and keep a retired key live.
+- **Password reset** — legacy-hash fallback on the read path. This hash is not a signature you
+  verify, it is the **primary lookup key**, so changing it does not invalidate a link, it
+  *orphans* one: the row is present, unexpired, and the query returns nothing.
+- **Captcha** — outright. It had been reading `app.secret_key`, so it would have silently
+  followed the session key and stayed coupled to it; it now names its own.
+
+Two traps worth recording, because both fail silently and only for the users the fix protects:
+
+1. `password_reset_token_hash_legacy()` must end at `COINPILOTX_SECRET_KEY`, **not**
+   `webhook_app.secret_key` — that attribute now holds the derived session key, so the fallback
+   would compute a hash that never indexed anything and match zero rows.
+2. The password-reset chain reads `SECRET_KEY` before `FLASK_SECRET_KEY`, which is *not* the
+   order the root uses. Production has `SECRET_KEY` and `SESSION_SECRET` set and no
+   `FLASK_SECRET_KEY`, so today they agree — but on an environment with both set to different
+   values they did not, and the stored hashes were computed from that disagreement.
+
+Locked by `tests/protection/test_signing_key_separation.py` (22 checks, mutation-tested at
+77/77, including the negative controls that show which mutations each test must *not* fire on).
 
 ---
 
@@ -472,7 +530,7 @@ The rebuild does not ship to general availability until every row is green.
 | 1 | `account_user_id()` verifies both credentials and denies on mismatch | Backend |
 | 2 | Auth decorator live, with boot-time default-deny assertion | Backend |
 | 3 | ~~One header CSRF contract enforced on cookie-authenticated mutations~~ **DONE** — `services/csrf.py`, §3.2 | Backend |
-| 4 | Session and bearer signing keys split | Backend |
+| 4 | ~~Session and bearer signing keys split~~ **DONE** — `services/signing_keys.py`, §2.5 | Backend |
 | 5 | Web session revocability: implemented, **or** formally accepted and the UI corrected | Security + Product |
 | 6 | CSP `script-src` has **no** `'unsafe-inline'` on the SPA surface; `connect-src` tightened | Client |
 | 7 | SPA `index.html` served from a `/pulse/*` route, not `/static/` (so CSP applies) | Client |

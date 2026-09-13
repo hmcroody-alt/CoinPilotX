@@ -74,13 +74,21 @@ def mint_access_token(user_id: int, device_hash: str, ttl: int = 900) -> str:
     structure is pinned to `account_user_id_from_mobile_access_token()`
     (`bot.py:3638`) — if that changes shape, these tests should fail loudly
     rather than quietly stop exercising the bearer path.
+
+    It changed shape, and they did. The signing key was `COINPILOTX_SECRET_KEY`
+    until that root was split into five derived per-purpose keys; bearer tokens
+    now use `COINPILOTX_MOBILE_ACCESS_KEY`. Six tests failed, and the one that
+    mattered was `test_a_minted_token_really_verifies` — the positive control.
+    Without it the other five would have gone on passing while proving nothing,
+    because they assert a *denial*, and a token signed with the wrong key is
+    denied exactly as convincingly as the attack each one is named after.
     """
     payload = {"uid": user_id, "dh": device_hash, "exp": int(time.time()) + ttl}
     body = base64.urlsafe_b64encode(
         json.dumps(payload).encode("utf-8")
     ).decode("ascii").rstrip("=")
     signature = hmac.new(
-        bot.COINPILOTX_SECRET_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
+        bot.COINPILOTX_MOBILE_ACCESS_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256
     ).hexdigest()
     return f"{body}.{signature}"
 

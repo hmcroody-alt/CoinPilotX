@@ -11,11 +11,18 @@ question it could fail.
    and these tests keep the restore step from being quietly removed the first
    time it makes CI slow.
 
-2. THE SECRET KEY FELL BACK TO A PER-PROCESS RANDOM VALUE. `bot.py` signs both
-   Flask sessions and the mobile bearer tokens with `COINPILOTX_SECRET_KEY`.
-   The Procfile runs `gunicorn --workers 2`, so with the variable unset each
-   worker invented a different key and rejected the other's tokens. The symptom
-   is intermittent 401s, which get triaged as a mobile-client bug.
+2. THE SECRET KEY FELL BACK TO A PER-PROCESS RANDOM VALUE. `COINPILOTX_SECRET_KEY`
+   is the root every credential family is derived from. The Procfile runs
+   `gunicorn --workers 2`, so with the variable unset each worker invented a
+   different root, derived a different key for every purpose, and rejected the
+   other's tokens. The symptom is intermittent 401s, which get triaged as a
+   mobile-client bug.
+
+   Deriving rather than sharing did not weaken this: the five keys are pure
+   functions of the root, so an unstable root is still an unstable everything,
+   and the boot guard below is still the thing standing between that and
+   production. See `services/signing_keys.py`, and
+   `tests/protection/test_signing_key_separation.py` for the split itself.
 
 These parse source rather than importing: importing `bot` boots a 111k-line
 Flask monolith, and the secret guard is now a boot-time `raise`, so importing
@@ -63,14 +70,64 @@ def test_secret_key_requirements_are_documented():
     assert "PULSESOC_ALLOW_EPHEMERAL_SECRET" in env_example
     # The template must say the variable is required, or an operator reading a
     # file of ~180 blank keys has no way to know this one stops the boot.
-    index = env_example.index("FLASK_SECRET_KEY=")
-    assert "REQUIRED" in env_example[max(0, index - 400):index]
+    #
+    # This used to scan a fixed 400-character window above the variable, and it
+    # broke when the comment block grew -- the word was still there, directly
+    # above the variable, just further up. A character budget is the wrong unit:
+    # it silently converts "explain this variable more thoroughly" into a test
+    # failure, and the obvious fix (raise 400) would keep being wrong at 800.
+    # What the test means is "the comment attached to this variable says it is
+    # required", so that is what it now reads.
+    lines = env_example.splitlines()
+    index = next(i for i, line in enumerate(lines) if line.startswith("FLASK_SECRET_KEY="))
+    block = []
+    while index > 0 and lines[index - 1].startswith("#"):
+        index -= 1
+        block.append(lines[index])
+    assert block, "FLASK_SECRET_KEY has no explanatory comment at all"
+    assert any("REQUIRED" in line for line in block), (
+        "the comment block directly above FLASK_SECRET_KEY no longer says the "
+        "variable is REQUIRED. Boot fails without it, and an operator scanning "
+        "~180 blank keys has nothing else to distinguish it from the optional ones."
+    )
 
 
-def test_secret_key_still_signs_mobile_tokens():
+def test_the_root_secret_still_reaches_mobile_token_signing():
     """Guard the premise. If token signing moves, this whole file's reasoning
-    needs revisiting rather than silently continuing to pass."""
-    assert BOT.count("hmac.new(COINPILOTX_SECRET_KEY.encode") >= 2
+    needs revisiting rather than silently continuing to pass.
+
+    It moved. This used to read::
+
+        assert BOT.count("hmac.new(COINPILOTX_SECRET_KEY.encode") >= 2
+
+    and it failed, which is the guard doing its job -- the root no longer signs
+    anything directly. It is now the input to five one-way derivations, so this
+    file's reasoning survives intact but by one more step: losing the root still
+    loses every credential family, because every derived key is a pure function
+    of it. That is the property this file actually cares about, and it is what is
+    asserted below, rather than the particular call shape that used to express
+    it.
+
+    The assertion covers the *mint and verify* sites, not just the derivation:
+    checking only that `derive()` is called would pass a bot.py that derived a
+    key and then went on signing with the root anyway.
+    """
+    assert BOT.count("hmac.new(COINPILOTX_MOBILE_ACCESS_KEY.encode") >= 2, (
+        "mobile access tokens are no longer signed with the derived mobile key "
+        "at both the mint and the verify site."
+    )
+    assert "COINPILOTX_MOBILE_ACCESS_KEY = _signing_keys.derive(" in BOT, (
+        "the mobile signing key is no longer derived from the root secret. If it "
+        "became an independently configured variable, losing the root no longer "
+        "loses this family and the backup reasoning below needs redoing."
+    )
+    # The root must not sign anything directly any more. `.encode` is what every
+    # signing site spells; the derivation lines pass the root as a plain str.
+    assert "hmac.new(COINPILOTX_SECRET_KEY.encode" not in BOT, (
+        "something signs with the root secret again. The point of the split is "
+        "that no two credential families share a key, and the root sharing with "
+        "any one family re-couples it to all five."
+    )
 
 
 # --- 2. Backups must exist, and must be proven restorable --------------------

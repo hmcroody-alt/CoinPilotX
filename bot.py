@@ -132,6 +132,27 @@ if COINPILOTX_RANDOM_SECRET_USED and _deployment_environment_enabled() and not _
         "deliberately."
     )
 COINPILOTX_SECRET_KEY = COINPILOTX_CONFIGURED_SECRET_KEY or secrets.token_hex(32)
+
+# One root, five independent signing keys. See services/signing_keys.py for the
+# measured rotation costs; the short version is that they differ by five orders
+# of magnitude and the coupling taxed the cheap one. Rotating the mobile bearer
+# key is nearly free -- 900s TTL, and the client self-heals through a refresh
+# token that does not use this secret at all -- but while the two shared a key,
+# doing it logged out every web user permanently, because the session cookie is
+# client-side signed with no server-side row and a 10-year lifetime.
+#
+# Captured here rather than derived at each call site so there is one place to
+# read what signs what. `derive()` still re-reads its override on every call,
+# which is what lets a test exercise one; in production setting a Railway
+# variable restarts the process, so the two are indistinguishable there.
+from services import signing_keys as _signing_keys  # noqa: E402
+
+COINPILOTX_SESSION_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.SESSION)
+COINPILOTX_MOBILE_ACCESS_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.MOBILE_ACCESS)
+COINPILOTX_MESSENGER_MEDIA_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.MESSENGER_MEDIA)
+COINPILOTX_PASSWORD_RESET_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.PASSWORD_RESET)
+COINPILOTX_CAPTCHA_KEY = _signing_keys.derive(COINPILOTX_SECRET_KEY, _signing_keys.CAPTCHA)
+
 COINPILOTX_SESSION_COOKIE_SECURE = _env_bool("SESSION_COOKIE_SECURE", _deployment_environment_enabled())
 PERSISTENT_SESSION_COOKIE = os.getenv("PULSESOC_REFRESH_COOKIE_NAME", "pulse_refresh_session")
 PERSISTENT_SESSION_DAYS = max(3650, int(os.getenv("PULSESOC_PERSISTENT_SESSION_DAYS", "3650")))
@@ -462,8 +483,17 @@ ADMIN_USER_IDS = {
 # 🌐 WEBHOOK APP (RIGHT AFTER STRIPE)
 # =========================
 webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
-webhook_app.secret_key = COINPILOTX_SECRET_KEY
+webhook_app.secret_key = COINPILOTX_SESSION_KEY
 webhook_app.config.update(
+    # The old root stays accepted for *reading* existing cookies. Without this,
+    # switching to the derived key would log out every web user at deploy and
+    # they would have no way back but re-login: the session is client-side
+    # signed, has no server-side row to migrate, and lives 10 years. Flask
+    # 3.1.3 tries `secret_key` first and each fallback in turn, so new cookies
+    # are signed with the derived key and old ones keep verifying until they
+    # are next written. Removable once PERMANENT_SESSION_LIFETIME has turned
+    # over, which is to say not soon.
+    SECRET_KEY_FALLBACKS=[COINPILOTX_SECRET_KEY],
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=COINPILOTX_SESSION_COOKIE_SECURE,
@@ -1211,8 +1241,17 @@ if PAYMENT_PROVIDER_ENABLED and not STRIPE_FOUNDER_PRICE_ID:
     logging.warning("Railway Stripe warning: STRIPE_FOUNDER_PRICE_ID is missing. Founder checkout will remain safely disabled.")
 
 webhook_app = Flask(__name__, template_folder="templates", static_folder="static")
-webhook_app.secret_key = COINPILOTX_SECRET_KEY
+webhook_app.secret_key = COINPILOTX_SESSION_KEY
 webhook_app.config.update(
+    # The old root stays accepted for *reading* existing cookies. Without this,
+    # switching to the derived key would log out every web user at deploy and
+    # they would have no way back but re-login: the session is client-side
+    # signed, has no server-side row to migrate, and lives 10 years. Flask
+    # 3.1.3 tries `secret_key` first and each fallback in turn, so new cookies
+    # are signed with the derived key and old ones keep verifying until they
+    # are next written. Removable once PERMANENT_SESSION_LIFETIME has turned
+    # over, which is to say not soon.
+    SECRET_KEY_FALLBACKS=[COINPILOTX_SECRET_KEY],
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=COINPILOTX_SESSION_COOKIE_SECURE,
@@ -3662,7 +3701,12 @@ def account_user_id_from_mobile_access_token():
         body, signature = access_token.rsplit(".", 1)
     except ValueError:
         return None
-    expected_signature = hmac.new(COINPILOTX_SECRET_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    # No fallback to the old root, deliberately. An access token lives 900s and
+    # the client recovers by itself: pulseApi refreshes on a bare 401 and
+    # replays, and the refresh token is a random string hashed with a plain
+    # SHA-256, so it does not involve this key. Accepting the old signature
+    # would buy at most fifteen minutes of nothing and keep a retired key live.
+    expected_signature = hmac.new(COINPILOTX_MOBILE_ACCESS_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature, expected_signature):
         return None
     try:
@@ -5882,7 +5926,11 @@ def issue_login_challenge(email):
     a = secrets.randbelow(7) + 2
     b = secrets.randbelow(7) + 2
     session[login_challenge_session_key(email)] = {
-        "answer_hash": hashlib.sha256(f"{a + b}:{app.secret_key}".encode("utf-8")).hexdigest(),
+        # Was `app.secret_key`, which is now the derived *session* key -- so this
+        # would have kept working while quietly tying captcha validity to session
+        # rotation. Named explicitly instead. Rotation costs one retry to
+        # whoever is mid-form, so there is no fallback.
+        "answer_hash": hashlib.sha256(f"{a + b}:{COINPILOTX_CAPTCHA_KEY}".encode("utf-8")).hexdigest(),
         "expires_at": (datetime.now() + timedelta(minutes=10)).isoformat(),
     }
     return {"prompt": f"What is {a} + {b}?", "required": True}
@@ -5896,7 +5944,7 @@ def verify_login_challenge(email, submitted):
     except Exception:
         expired = True
     expected = record.get("answer_hash") or ""
-    actual = hashlib.sha256(f"{str(submitted or '').strip()}:{app.secret_key}".encode("utf-8")).hexdigest()
+    actual = hashlib.sha256(f"{str(submitted or '').strip()}:{COINPILOTX_CAPTCHA_KEY}".encode("utf-8")).hexdigest()
     ok = bool(expected and not expired and hmac.compare_digest(expected, actual))
     if ok:
         session.pop(login_challenge_session_key(email), None)
@@ -6503,9 +6551,43 @@ def ensure_password_reset_token_columns(cur, conn=None):
 
 
 def password_reset_token_hash(token):
-    token = str(token or "")
-    secret = (os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY") or webhook_app.secret_key or "pulse-reset-token").encode("utf-8")
-    return hmac.new(secret, token.encode("utf-8"), hashlib.sha256).hexdigest()
+    """The lookup hash stored in `password_reset_tokens.token_hash`.
+
+    Unlike the other four families this hash is not a signature you verify, it
+    is the primary lookup key -- so changing it does not invalidate a link, it
+    *orphans* one: the row is still there and still unexpired, and the query
+    that should find it returns nothing. Hence `password_reset_token_hash_legacy`
+    and the two-step read in `load_password_reset_record`.
+    """
+    return hmac.new(
+        COINPILOTX_PASSWORD_RESET_KEY.encode("utf-8"),
+        str(token or "").encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def password_reset_token_hash_legacy(token):
+    """How rows written before the key split were indexed. Read path only.
+
+    Reproduced exactly, including the variable order, which is *not* the order
+    the root secret uses: this chain reads SECRET_KEY before FLASK_SECRET_KEY
+    and falls back to SESSION_SECRET not at all. On an environment with both set
+    to different values, this function and the root disagreed, and that
+    disagreement is part of what the stored hashes were computed from.
+
+    It ends at `COINPILOTX_SECRET_KEY` rather than `webhook_app.secret_key`,
+    which is the whole trap: that attribute now holds the *derived session key*,
+    so reading it here would compute a hash that never indexed anything and the
+    fallback would silently match zero rows -- failing in exactly the way it
+    exists to prevent, and only for the users it exists to protect.
+    """
+    secret = (
+        os.getenv("SECRET_KEY")
+        or os.getenv("FLASK_SECRET_KEY")
+        or COINPILOTX_SECRET_KEY
+        or "pulse-reset-token"
+    ).encode("utf-8")
+    return hmac.new(secret, str(token or "").encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _row_value(row, key, index, default=None):
@@ -6525,14 +6607,24 @@ def _row_value(row, key, index, default=None):
 def load_password_reset_record(cur, token):
     token = clean_html(token or "")
     ensure_password_reset_token_columns(cur)
-    token_hash = password_reset_token_hash(token)
-    cur.execute(
-        "SELECT id, user_id, expires_at, used_at, token_hash FROM password_reset_tokens WHERE token_hash=? ORDER BY id DESC LIMIT 1",
-        (token_hash,),
-    )
     # Tokens are stored HMAC-hashed only; there is intentionally no legacy
-    # plaintext-token fallback lookup here.
-    return cur.fetchone()
+    # plaintext-token fallback lookup here. The second lookup below is not one:
+    # it is the same HMAC under the pre-split key, so an attacker holding a
+    # stolen `token_hash` still cannot turn it into a usable link either way.
+    #
+    # Two queries rather than an OR so the index on token_hash is used for both
+    # and so the ordering is unambiguous: a current-key match always wins.
+    # Pending links live at most an hour, so this second read stops being
+    # reachable an hour after deploy and the branch can then be deleted.
+    for token_hash in (password_reset_token_hash(token), password_reset_token_hash_legacy(token)):
+        cur.execute(
+            "SELECT id, user_id, expires_at, used_at, token_hash FROM password_reset_tokens WHERE token_hash=? ORDER BY id DESC LIMIT 1",
+            (token_hash,),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            return row
+    return None
 
 
 def safe_password_reset_request(email, source="web"):
@@ -31288,7 +31380,7 @@ def mobile_access_token(user_id, device_hash, issued_at=None):
         "jti": secrets.token_urlsafe(12),
     }
     body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("ascii").rstrip("=")
-    sig = hmac.new(COINPILOTX_SECRET_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
+    sig = hmac.new(COINPILOTX_MOBILE_ACCESS_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
     return f"{body}.{sig}", expires_at
 
 
@@ -91562,15 +91654,15 @@ MESSENGER_MEDIA_TOKEN_HEADER = messenger_media_foundation.ACCESS_TOKEN_HEADER
 
 
 def mint_messenger_media_token(attachment_id, user_id, ttl_seconds=None):
-    return messenger_media_foundation.mint_access_token(COINPILOTX_SECRET_KEY, attachment_id, user_id, ttl_seconds)
+    return messenger_media_foundation.mint_access_token(COINPILOTX_MESSENGER_MEDIA_KEY, attachment_id, user_id, ttl_seconds)
 
 
 def messenger_media_token_user_id(attachment_id, token):
-    return messenger_media_foundation.access_token_user_id(COINPILOTX_SECRET_KEY, attachment_id, token)
+    return messenger_media_foundation.access_token_user_id(COINPILOTX_MESSENGER_MEDIA_KEY, attachment_id, token)
 
 
 def messenger_media_token_state(attachment_id, token):
-    return messenger_media_foundation.access_token_state(COINPILOTX_SECRET_KEY, attachment_id, token)
+    return messenger_media_foundation.access_token_state(COINPILOTX_MESSENGER_MEDIA_KEY, attachment_id, token)
 
 
 # Media failure taxonomy. A media failure is never an authentication failure, so
