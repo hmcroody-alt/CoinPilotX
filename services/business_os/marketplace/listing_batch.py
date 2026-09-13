@@ -55,12 +55,20 @@ from typing import Any, Iterable, Optional
 
 from services import db
 from services.business_os.marketplace import listing_readiness as _readiness
+from services.business_os.suppliers import pricing as _pricing
 
-#: The two actions a bulk request may carry today. Bulk pricing, category and
-#: visibility (§22–§33) will extend this; they are not silently accepted now,
-#: because an unknown action that fell through to a no-op would report
-#: ``successful_count`` for work nobody did.
-ACTIONS = ("publish", "hide")
+#: The actions a bulk request may carry. Bulk category (§22–§33) will extend
+#: this further; unknown actions are not silently accepted, because one that
+#: fell through to a no-op would report ``successful_count`` for work nobody
+#: did.
+#:
+#: ``price`` is the first action that carries a *payload* — the rest of this
+#: module was written for actions whose entire meaning is their name. See
+#: :func:`normalize_request` and :func:`request_hash` for what that changes.
+ACTIONS = ("publish", "hide", "price")
+
+#: Actions that take a payload, and are meaningless without one.
+PAYLOAD_ACTIONS = ("price",)
 
 #: A ceiling on one request. Not a performance number — it is the largest set a
 #: seller can be shown an honest preview of, and the largest we are willing to
@@ -113,7 +121,9 @@ def _utc_now_iso() -> str:
 # --- request validation ------------------------------------------------------
 
 
-def normalize_request(action: Any, listing_ids: Any, idempotency_key: Any) -> dict:
+def normalize_request(
+    action: Any, listing_ids: Any, idempotency_key: Any, payload: Any = None
+) -> dict:
     """Coerce and check a raw request body, or refuse it.
 
     Duplicated ids are collapsed rather than rejected. A client that sends the
@@ -169,29 +179,144 @@ def normalize_request(action: Any, listing_ids: Any, idempotency_key: Any) -> di
     if len(key) > 128:
         raise BatchError("MISSING_IDEMPOTENCY_KEY", "Missing idempotency key.")
 
-    return {"action": action, "listing_ids": sorted(clean), "idempotency_key": key}
+    normalized = {"action": action, "listing_ids": sorted(clean), "idempotency_key": key}
+
+    if action == "price":
+        # Validated by the pricing engine rather than here. `pricing` is the one
+        # authority for what a rule means (§21), and it is the same module the
+        # dropship import path applies at the other end of the product's life —
+        # a rule that is legal on import and illegal on reprice, or vice versa,
+        # would be two opinions about one seller's pricing.
+        #
+        # MANUAL_PRICE is refused for a *bulk* request even though it is the
+        # engine's legitimate default, because it is the one rule that names no
+        # number: "price these forty listings manually" is not an instruction
+        # the batch can carry out, and accepting it would end in forty
+        # `successful` outcomes for forty unchanged prices.
+        try:
+            rule = _pricing.normalize_rule(payload)
+        except _pricing.PricingRejected as err:
+            raise BatchError("INVALID_PRICING_RULE", str(err))
+        if rule.get("type") == _pricing.MANUAL_PRICE:
+            raise BatchError(
+                "INVALID_PRICING_RULE",
+                "Choose how the new price should be worked out.",
+            )
+        normalized["payload"] = rule
+    elif payload is not None:
+        # A payload sent with `publish` or `hide` is a client that thinks it is
+        # asking for something. It is not — those actions ignore it — and the
+        # seller would be told the batch succeeded at whatever they thought they
+        # were also requesting.
+        raise BatchError(
+            "UNSUPPORTED_ACTION",
+            "That bulk action does not take any settings.",
+        )
+
+    return normalized
 
 
-def request_hash(action: str, listing_ids: Iterable[int]) -> str:
+def request_hash(action: str, listing_ids: Iterable[int], payload: Any = None) -> str:
     """A fingerprint of what the caller asked for.
 
     Exists so that reusing a key for a *different* request is caught. Without
     it, a client that recycles keys would receive the first batch's answer for
     the second batch's listings — the reply would name ids nobody asked about,
     and the rows the seller actually selected would never move.
+
+    ``payload`` is part of the fingerprint because for ``price`` it is most of
+    the request. Same key, same forty listings, "+10%" then "+25%" is *not* a
+    replay, and treating it as one is the worst available failure here: the
+    seller is handed the first batch's "40 repriced" summary, believes the
+    second change landed, and their store keeps the old margin. Every price
+    surface would agree with every other one and all of them would be wrong.
+
+    It is omitted from the hashed document entirely when absent, rather than
+    hashed as ``null``. Adding a key to this JSON changes the digest of every
+    request that has ever been made, so a stored ``publish`` batch would stop
+    matching its own replay and answer ``IDEMPOTENCY_KEY_CONFLICT`` — a client
+    retrying through a timeout would be refused instead of served, and the
+    breakage would land on rows already written by the first attempt.
     """
-    payload = json.dumps(
-        {"action": action, "listing_ids": sorted(int(i) for i in listing_ids)},
-        sort_keys=True,
-        separators=(",", ":"),
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    document: dict = {"action": action, "listing_ids": sorted(int(i) for i in listing_ids)}
+    if payload is not None:
+        document["payload"] = payload
+    return hashlib.sha256(
+        json.dumps(document, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 # --- eligibility -------------------------------------------------------------
 
 
-def block_reason(listing: dict, action: str, verdict: Optional[dict] = None) -> Optional[dict]:
+def price_proposal(rule: dict, cost_cents: Any, current_cents: Any) -> dict:
+    """What this listing's new price would be, or why there will not be one.
+
+    Pure, and the only place the bulk reprice decides anything. Returns either
+    ``{"price_cents": n}`` or ``{"block": {...}}``.
+
+    The arithmetic is `pricing.apply_rule`'s, not a copy of it. That module
+    already returns ``None`` for a cost it cannot use, and translating that
+    ``None`` into a *blocked outcome* rather than into a number is the whole job
+    here — the brief's rule is that unknown cost is not zero cost, and the shape
+    of that bug is a batch that quietly writes $0.00 onto every listing whose
+    supplier row is missing and reports them all as successfully repriced. The
+    seller finds out from the orders.
+    """
+    if cost_cents is None:
+        return {
+            "block": {
+                "code": "UNKNOWN_COST",
+                "reason": "No supplier cost — can't work out a price",
+            }
+        }
+
+    price_cents = _pricing.apply_rule(rule, cost_cents)
+    if price_cents is None:
+        # Cost was known, so this is the rule and the cost together landing
+        # outside what a price may be. Reported as its own reason: "we know your
+        # cost and this rule still does not give a usable price" is a different
+        # thing for the seller to fix than a missing cost.
+        return {
+            "block": {
+                "code": "PRICE_OUT_OF_RANGE",
+                "reason": "That rule doesn't give a usable price",
+            }
+        }
+    if price_cents <= 0:
+        # A rule can legally land on zero — COST_PLUS_PERCENT on a zero cost, for
+        # one. Zero is not a price; it is a free product nobody chose to give
+        # away, and `_has_price`/checkout would read it as unpriced anyway.
+        return {
+            "block": {
+                "code": "PRICE_OUT_OF_RANGE",
+                "reason": "That rule doesn't give a usable price",
+            }
+        }
+
+    if current_cents is not None and int(current_cents) == price_cents:
+        # Not a success, and this is the case most easily mistaken for one. The
+        # write would be a no-op on the price column, but `price_label` is a
+        # MATERIAL_FIELD: a live, approved listing that "changes" to the price it
+        # already has is sent back to `pending_review` and off sale until a
+        # moderator clears it. Repricing a store would take every listing already
+        # at target off the shelf, and the summary would call it a success.
+        return {
+            "block": {
+                "code": "PRICE_UNCHANGED",
+                "reason": "Already at that price",
+            }
+        }
+
+    return {"price_cents": price_cents}
+
+
+def block_reason(
+    listing: dict,
+    action: str,
+    verdict: Optional[dict] = None,
+    proposal: Optional[dict] = None,
+) -> Optional[dict]:
     """Why this listing will not move, or ``None`` if it will.
 
     ``verdict`` is ``listing_readiness.evaluate``'s output. It is a parameter
@@ -216,6 +341,20 @@ def block_reason(listing: dict, action: str, verdict: Optional[dict] = None) -> 
         if status == "seller_deleted":
             return {"code": "DELETED", "reason": "Removed from your store"}
         return None
+
+    if action == "price":
+        if status == "seller_deleted":
+            return {"code": "DELETED", "reason": "Removed from your store"}
+        # Readiness is deliberately not consulted. A listing blocked from
+        # publishing for a missing photo is exactly the kind of listing a seller
+        # is entitled to reprice — refusing would make the store's unfinished
+        # rows the only ones a bulk price change cannot reach, which is backwards.
+        if proposal is None:
+            # No proposal computed means nobody worked out what this row's new
+            # price would be. Same rule as `verdict is None` below: absence is
+            # not permission, and the unexamined row must not be written.
+            return {"code": "NO_PRICE_PROPOSAL", "reason": "No price worked out"}
+        return proposal.get("block")
 
     if status == "seller_deleted":
         return {"code": "DELETED", "reason": "Removed from your store"}
@@ -253,6 +392,7 @@ def evaluate_rows(
     rows: Iterable[dict],
     action: str,
     media_by_listing: Optional[dict] = None,
+    price_plans: Optional[dict] = None,
 ) -> list:
     """Decide every row in one pass, returning ``(row, block)`` pairs.
 
@@ -270,14 +410,42 @@ def evaluate_rows(
     shown and what the server does that this whole engine exists to end.
     """
     lookup = media_by_listing or {}
+    plans = price_plans or {}
     decided = []
     for row in rows:
+        listing_id = int(row.get("id") or 0)
         if action == "publish":
-            verdict = _readiness.evaluate(row, media=lookup.get(int(row.get("id") or 0)))
+            verdict = _readiness.evaluate(row, media=lookup.get(listing_id))
         else:
             verdict = None
-        decided.append((row, block_reason(row, action, verdict)))
+        decided.append((row, block_reason(row, action, verdict, plans.get(listing_id))))
     return decided
+
+
+def build_price_plans(
+    rows: Iterable[dict],
+    rule: dict,
+    cost_by_listing: Optional[dict] = None,
+    current_cents_by_listing: Optional[dict] = None,
+) -> dict:
+    """Work out every row's new price once, keyed by listing id.
+
+    Separate from :func:`evaluate_rows` so that the number the batch *blocks on*
+    and the number it *writes* are the same object rather than two evaluations
+    of the same rule. They would agree — `price_proposal` is pure — but the
+    route would then hold two independent price derivations, which is the shape
+    that eventually drifts. The caller computes this, hands it to
+    ``evaluate_rows``, and reads ``price_cents`` back out of it for the write.
+    """
+    costs = cost_by_listing or {}
+    currents = current_cents_by_listing or {}
+    plans = {}
+    for row in rows:
+        listing_id = int(row.get("id") or 0)
+        plans[listing_id] = price_proposal(
+            rule, costs.get(listing_id), currents.get(listing_id)
+        )
+    return plans
 
 
 # --- the answer --------------------------------------------------------------
@@ -372,7 +540,9 @@ def claim(conn, seller_user_id, normalized: dict) -> dict:
     second review submission for every row.
     """
     key = normalized["idempotency_key"]
-    digest = request_hash(normalized["action"], normalized["listing_ids"])
+    digest = request_hash(
+        normalized["action"], normalized["listing_ids"], normalized.get("payload")
+    )
     seller = str(seller_user_id)
 
     existing = conn.execute(

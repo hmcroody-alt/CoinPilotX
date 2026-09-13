@@ -519,3 +519,148 @@ def test_the_select_and_the_insert_agree_about_the_seller_type(conn):
     assert selects and inserts
     assert selects[0][0] == "41" and isinstance(selects[0][0], str)
     assert inserts[0][1] == "41" and isinstance(inserts[0][1], str)
+
+
+# --- bulk reprice ------------------------------------------------------------
+#
+# The action that carries a payload. Everything above this line describes a
+# request whose entire meaning is its name; a price request means nothing
+# without the rule, and the two failures that buys are (a) the rule escaping the
+# idempotency fingerprint, so a second, different price is served the first
+# one's summary, and (b) an unknown cost being treated as a cost of zero.
+
+
+def test_a_price_request_carries_its_rule():
+    normalized = b.normalize_request(
+        "price", [2, 1], "key-p", {"type": "COST_PLUS_PERCENT", "value": 20}
+    )
+    assert normalized["payload"] == {"type": "COST_PLUS_PERCENT", "value": 20.0}
+    assert normalized["listing_ids"] == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        None,                                   # manual: names no number
+        {"type": "MANUAL_PRICE"},               # ditto, spelled out
+        {"type": "NONSENSE", "value": 5},
+        {"type": "MULTIPLIER", "value": 0},     # engine's own range rules
+        {"type": "MULTIPLIER", "value": -2},
+        {"type": "TARGET_MARGIN", "value": 100},
+        {"type": "COST_PLUS_PERCENT", "value": "20"},
+        {"type": "COST_PLUS_PERCENT", "value": True},
+        "COST_PLUS_PERCENT",
+    ],
+)
+def test_a_price_request_without_a_usable_rule_is_refused(rule):
+    with pytest.raises(b.BatchError) as exc:
+        b.normalize_request("price", [1], "key-p", rule)
+    assert exc.value.code == "INVALID_PRICING_RULE"
+
+
+@pytest.mark.parametrize("action", ["publish", "hide"])
+def test_a_payload_on_an_action_that_ignores_it_is_refused(action):
+    # Otherwise the seller is told the batch succeeded, including at whatever
+    # they believed the payload was asking for.
+    with pytest.raises(b.BatchError) as exc:
+        b.normalize_request(action, [1], "key-1", {"type": "MULTIPLIER", "value": 2})
+    assert exc.value.code == "UNSUPPORTED_ACTION"
+
+
+def test_the_rule_is_part_of_the_request_fingerprint():
+    # THE test for this feature. Same key, same listings, different price is a
+    # different request. If these hashes match, `claim` calls the second one a
+    # replay and hands back the first one's "40 repriced" summary while the
+    # store keeps its old prices.
+    ten = b.request_hash("price", [1, 2], {"type": "COST_PLUS_PERCENT", "value": 10})
+    twentyfive = b.request_hash("price", [1, 2], {"type": "COST_PLUS_PERCENT", "value": 25})
+    assert ten != twentyfive
+
+
+def test_adding_a_payload_did_not_move_every_existing_fingerprint():
+    # Hashing an absent payload as `null` would change the digest of every
+    # publish and hide batch ever recorded, so a client retrying through a
+    # timeout would be refused with IDEMPOTENCY_KEY_CONFLICT instead of served
+    # the answer -- on rows the first attempt already wrote.
+    import hashlib as _h, json as _j
+
+    legacy = _h.sha256(
+        _j.dumps(
+            {"action": "publish", "listing_ids": [1, 2]},
+            sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    assert b.request_hash("publish", [1, 2]) == legacy
+
+
+def test_unknown_cost_is_not_a_cost_of_zero():
+    # The bug this whole path is shaped around: a missing supplier row must
+    # block the listing, never price it at $0.00 and report it repriced.
+    plan = b.price_proposal({"type": "COST_PLUS_PERCENT", "value": 20}, None, 2400)
+    assert plan.get("price_cents") is None
+    assert plan["block"]["code"] == "UNKNOWN_COST"
+
+
+def test_a_known_cost_produces_the_engine_s_price():
+    # Delegated, not reimplemented: the assertion is that this equals the
+    # pricing engine's own answer rather than a number retyped here.
+    from services.business_os.suppliers import pricing as p
+
+    plan = b.price_proposal({"type": "COST_PLUS_PERCENT", "value": 20}, 1000, 900)
+    assert plan["price_cents"] == p.apply_rule({"type": "COST_PLUS_PERCENT", "value": 20}, 1000)
+    assert plan["price_cents"] == 1200
+    assert "block" not in plan
+
+
+def test_a_rule_that_lands_on_zero_is_not_a_price():
+    plan = b.price_proposal({"type": "COST_PLUS_PERCENT", "value": 20}, 0, 500)
+    assert plan["block"]["code"] == "PRICE_OUT_OF_RANGE"
+
+
+def test_a_listing_already_at_the_target_price_is_blocked_not_repriced():
+    # `price_label` is a MATERIAL_FIELD, so "changing" a live listing to the
+    # price it already has sends it back to pending_review and off sale. A
+    # store-wide reprice would shelve every listing already at target and call
+    # it a success.
+    plan = b.price_proposal({"type": "COST_PLUS_PERCENT", "value": 20}, 1000, 1200)
+    assert plan["block"]["code"] == "PRICE_UNCHANGED"
+
+
+def test_a_row_nobody_priced_is_blocked():
+    # Absence is not permission -- the same rule the publish path applies to a
+    # missing verdict, one action across.
+    assert b.block_reason(listing(), "price", None, None) == {
+        "code": "NO_PRICE_PROPOSAL",
+        "reason": "No price worked out",
+    }
+
+
+def test_a_deleted_listing_is_not_repriced():
+    assert b.block_reason(listing(status="seller_deleted"), "price", None,
+                          {"price_cents": 1200})["code"] == "DELETED"
+
+
+@pytest.mark.parametrize("status", ["draft", "active", "paused", "rejected", "changes_requested"])
+def test_reprice_reaches_listings_publish_cannot(status):
+    # Readiness and publishability are deliberately not consulted for a price
+    # change. An unfinished or paused listing is exactly the kind a seller
+    # reprices, and the publish gates would make those the only rows a bulk
+    # price change cannot touch.
+    assert b.block_reason(listing(status=status), "price", None, {"price_cents": 1200}) is None
+
+
+def test_the_blocking_price_and_the_written_price_are_one_object():
+    rows = [listing(id=1), listing(id=2)]
+    plans = b.build_price_plans(
+        rows,
+        {"type": "COST_PLUS_PERCENT", "value": 20},
+        {1: 1000, 2: None},
+        {1: 900, 2: 900},
+    )
+    decided = dict((int(row["id"]), block) for row, block in
+                   b.evaluate_rows(rows, "price", None, plans))
+    assert decided[1] is None
+    assert decided[2]["code"] == "UNKNOWN_COST"
+    # The number the writer will use is the same object the decision was made
+    # from, not a second evaluation of the rule.
+    assert plans[1]["price_cents"] == 1200
