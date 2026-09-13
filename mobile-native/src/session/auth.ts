@@ -327,7 +327,12 @@ export async function signOutEverywhere(): Promise<AuthState> {
   return unauthenticatedState();
 }
 
-async function persistSessionEnvelope(session: SessionResponse) {
+/**
+ * Exported so the QA simulator sign-in finishes the same way the real one does.
+ * It is the only place the wire field names are mapped onto the envelope, and a
+ * second copy of that mapping is how the two would drift apart.
+ */
+export async function persistSessionEnvelope(session: SessionResponse) {
   const userId = Number(session.user?.user_id ?? (session.user as Record<string, unknown> | undefined)?.id ?? 0);
   if (!userId || !session.refresh_token) return;
   const now = Date.now();

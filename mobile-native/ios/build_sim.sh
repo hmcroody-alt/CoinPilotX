@@ -156,9 +156,43 @@ echo "=== [sim] all $count frameworks verified signed ==="
 # not declare keychain-access-groups on the device either -- an app with an
 # application-identifier gets a default keychain access group equal to it -- so
 # demanding both here would fail a build that is in fact correct.
+#
+# `otool -s` does not commit to one output format, and the decode has to handle
+# both or it fails a correct build. The same section in the same architecture
+# prints as plain bytes ("3c 3f 78 6d") from one configuration and as
+# little-endian 32-bit words ("6d783f3c") from another. Feeding the word form
+# straight to `xxd -r -p` yields every four bytes reversed -- "mx?<ev loisr" --
+# so the plist is unreadable and the grep below finds nothing in a binary that
+# is correctly signed. That is the cry-wolf shape again, and it is worse here
+# than for the bundle check: this guard's whole reason to exist is that nothing
+# downstream will ever tell you the entitlement is missing.
+#
+# So: a 16-char field is the address column and is dropped, a 2-char field is
+# already a byte, and an 8-char field is a word whose four bytes are emitted in
+# reverse. That covers both observed formats without asking which one this is.
 echo "=== [sim] verifying embedded keychain entitlements ==="
-embedded="$(otool -X -s __TEXT __entitlements "$APP/PulseSoc" 2>/dev/null \
-  | awk '{$1=""; print}' | xxd -r -p 2>/dev/null || true)"
+embedded="$(otool -X -s __TEXT __entitlements "$APP/PulseSoc" 2>/dev/null | awk '
+  {
+    for (i = 1; i <= NF; i++) {
+      w = $i
+      if (length(w) == 16) continue
+      if (length(w) == 8)
+        printf "%s%s%s%s", substr(w, 7, 2), substr(w, 5, 2), substr(w, 3, 2), substr(w, 1, 2)
+      else
+        printf "%s", w
+    }
+  }' | xxd -r -p 2>/dev/null || true)"
+# "I could not read the section" and "the entitlement is not in it" are different
+# problems with the same symptom, and only the second one is about the build.
+case "$embedded" in
+  *"<?xml"*) ;;
+  *)
+    echo "COULD NOT DECODE __TEXT,__entitlements -- this is about the decode, not the build."
+    echo "-- otool printed a format neither branch above handles. Check its raw output:"
+    echo "--   otool -X -s __TEXT __entitlements '$APP/PulseSoc' | head"
+    exit 1
+    ;;
+esac
 case "$embedded" in
   *application-identifier*|*keychain-access-groups*) ;;
   *)
