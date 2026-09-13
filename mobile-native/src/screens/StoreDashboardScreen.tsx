@@ -27,7 +27,7 @@
  * the backend work it needs.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View, Animated } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
@@ -48,8 +48,12 @@ import {
   type StoreSetupStep,
   type StoreTabKey
 } from "../api/storeDashboard";
+import { batchMarketplaceSellerListings } from "../api/marketplace";
+import { PulseApiError } from "../api/pulseApi";
 import {
   StoreAttentionBanner,
+  StoreBulkBar,
+  StoreBulkSheet,
   StoreEmptyListings,
   StoreHeader,
   StoreKpiCard,
@@ -63,10 +67,11 @@ import {
   StoreSetupChecklist,
   StoreSparkline,
   StoreStatusStrip,
-  StoreTabBar
+  StoreTabBar,
+  type StoreBulkSheetPhase
 } from "../components/store";
 import {
-  EMPTY_SELECTION,
+  bulkActionLabel,
   partition,
   reconcile,
   selectAllLabel,
@@ -75,8 +80,18 @@ import {
   selectionSummary,
   toggle,
   toggleAll,
+  type StoreBulkAction,
+  type StoreBulkPartition,
   type StoreSelection
 } from "../marketplace/storeSelection";
+import {
+  beginAttempt,
+  idsToSend,
+  isSameAttempt,
+  outcomeOf,
+  type StoreBulkAttempt,
+  type StoreBulkOutcome
+} from "../marketplace/storeBulkRun";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
@@ -114,6 +129,34 @@ const ATTENTION_COPY: Record<StoreAttention["kind"], { headline: string; detail:
     detail: "Restock before they sell out and drop off the storefront."
   }
 };
+
+/**
+ * Every id the seller reviewed, eligible or not.
+ *
+ * Read off the frozen partition rather than stored beside it, so the list that
+ * goes on the wire cannot drift from the list the sheet drew. Blocked rows are
+ * included deliberately — see `idsToSend` in `marketplace/storeBulkRun`: the
+ * preview is a snapshot, and the server re-checks every row at write time.
+ */
+function reviewedIds(partitioned: StoreBulkPartition): number[] {
+  return [...partitioned.eligible, ...partitioned.blocked.map((entry) => entry.row)].map(
+    (row) => row.id
+  );
+}
+
+/**
+ * The sentence on the error face.
+ *
+ * Only a `PulseApiError` carries prose worth showing: its message is the
+ * server's own, which is how `BATCH_TOO_LARGE` reaches the seller as "Select up
+ * to 200 listings at a time." without this screen keeping its own copy of the
+ * limit. Anything else is a transport failure whose message is written for a
+ * developer, so it gets the generic line instead.
+ */
+function bulkErrorMessage(error: unknown): string | null {
+  if (error instanceof PulseApiError && error.message) return error.message;
+  return null;
+}
 
 /**
  * Entrance slots, in the order the spec choreographs them. Named so a section
@@ -166,8 +209,43 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * deselected their last row.
    */
   const [selection, setSelection] = useState<StoreSelection | null>(null);
-  /** Which bulk action the row washes are previewing. §21 will let this change. */
-  const [pendingAction] = useState<"publish" | "hide">("publish");
+  /** Which bulk action the row washes and the docked CTA are previewing. */
+  const [pendingAction, setPendingAction] = useState<StoreBulkAction>("publish");
+  /**
+   * The open bulk sheet, or `null` for no sheet — §23, §31, §33.
+   *
+   * One object rather than four pieces of state, because "a sheet is open" and
+   * "this is the work it is about" are the same fact. Split apart, there is a
+   * render where the phase says `running` and the attempt is still null.
+   *
+   * `action` and `partitioned` are **frozen when the sheet opens**. The list
+   * behind it keeps reloading — the batch itself triggers a reload — and
+   * `reconcile` can drop rows out of the selection while the seller is reading
+   * the confirm face. Re-deriving the review list from live state would mean the
+   * seller taps a button describing one batch and sends another.
+   */
+  const [bulk, setBulk] = useState<{
+    phase: StoreBulkSheetPhase;
+    action: StoreBulkAction;
+    partitioned: StoreBulkPartition;
+    outcome: StoreBulkOutcome | null;
+    error: string | null;
+  } | null>(null);
+  /**
+   * The attempt the open sheet is sending — a ref, not state, and that is the
+   * whole of §23 on the client.
+   *
+   * Held in state it would be written by `setBulk` and read back on the next
+   * render, so two presses inside one frame — which is what a double-tap is,
+   * before the disabled state has flushed — would both read `null` and both mint
+   * a key. Two keys is two batches: everything published twice. A ref is written
+   * and read in the same tick, so the second press finds the first press's key.
+   *
+   * Cleared when a sheet opens, because a new sheet is new work: reusing a key
+   * across sheets would have the server replay its old answer to a question the
+   * seller is asking again.
+   */
+  const attemptRef = useRef<StoreBulkAttempt | null>(null);
 
   // The header bell reads the ONE shared unread store — the same number every
   // seller header and the Activity feed show. Pull the authoritative count on
@@ -270,25 +348,31 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const selecting = selection !== null;
 
   /**
-   * The blocked reason per selected id, for the pending action.
+   * What the pending action would do to the current selection — computed once.
    *
-   * Keyed by id rather than computed inside `renderItem` so the row and the
-   * confirm button read the *same* partition. Deriving it twice is how the
+   * The row washes, the docked CTA's count and the confirm sheet's blocked list
+   * are three renderings of this one value. Deriving it three times is how the
    * button comes to say "4 blocked" while five rows wear the wash.
    *
-   * It partitions `allRows`, not `visible`, and no test currently tells the two
-   * apart — measured, not assumed. Today only rendered rows ever look up a
-   * reason, so `visible` would give byte-identical output. That stops being
-   * true the moment §21's confirm button counts the blocked half: a selected
-   * row scrolled off by a tab filter is still going into the batch, and
-   * partitioning `visible` would drop it from the count while leaving it in the
-   * action. The list stays `allRows` because the selection does.
+   * It partitions `allRows`, not `visible`, and the difference is now load
+   * bearing rather than theoretical: a selected row scrolled off by a tab filter
+   * is still going into the batch, so partitioning `visible` would drop it from
+   * the count on the button while leaving it in the request. The list stays
+   * `allRows` because the selection does.
    */
-  const blockedById = useMemo(() => {
-    if (!selection) return null;
-    const { blocked } = partition(selectedRows(selection, allRows), pendingAction);
-    return new Map(blocked.map((entry) => [entry.row.id, entry.reason]));
-  }, [selection, allRows, pendingAction]);
+  const partitioned = useMemo(
+    () => (selection ? partition(selectedRows(selection, allRows), pendingAction) : null),
+    [selection, allRows, pendingAction]
+  );
+
+  /** The same partition, keyed by id, for the row the list is drawing. */
+  const blockedById = useMemo(
+    () =>
+      partitioned
+        ? new Map(partitioned.blocked.map((entry) => [entry.row.id, entry.reason]))
+        : null,
+    [partitioned]
+  );
 
   const enterSelection = useCallback((id: number) => {
     // Long-press enters the mode *and* picks the row pressed. Entering with
@@ -307,6 +391,97 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   const onToggleAll = useCallback(() => {
     setSelection((current) => (current === null ? current : toggleAll(current, visible)));
   }, [visible]);
+
+  /* -------------------------------------------------------------- *
+   * Bulk actions — §19, §23, §31, §33, §34
+   * -------------------------------------------------------------- */
+
+  /**
+   * Send the attempt, then read the store back from the server.
+   *
+   * §31's chain in one function: TAP → REQUEST → BACKEND CHANGE → READ BACK →
+   * UI UPDATE. Nothing here patches a row locally. The result face is built from
+   * the server's `results`, and the list underneath is reloaded from the server
+   * before the seller sees it, so the two cannot disagree about what happened.
+   *
+   * The reload is awaited rather than fired off, because the seller's next tap
+   * is Done and the list they land on has to be the one the batch produced. Its
+   * failure is swallowed on purpose: a refresh that could not complete does not
+   * turn a batch that did into an error.
+   */
+  const runBulk = useCallback(
+    async (action: StoreBulkAction, attempt: StoreBulkAttempt) => {
+      setBulk((current) => (current ? { ...current, phase: "running", error: null } : current));
+      try {
+        const response = await batchMarketplaceSellerListings({
+          action,
+          listingIds: idsToSend(attempt),
+          idempotencyKey: attempt.idempotencyKey
+        });
+        const outcome = outcomeOf(action, response);
+        await load("refresh").catch(() => undefined);
+        setBulk((current) =>
+          current ? { ...current, phase: "result", outcome, error: null } : current
+        );
+      } catch (error) {
+        setBulk((current) =>
+          current ? { ...current, phase: "error", error: bulkErrorMessage(error) } : current
+        );
+      }
+    },
+    [load]
+  );
+
+  /**
+   * The confirm button, and the retry button, are the same handler.
+   *
+   * That is what makes §23 hold. The key belongs to the *attempt* — one action
+   * on one id set — so a second tap while the first is in flight, or a Try again
+   * after a timeout, sends the key the server has already seen and gets the
+   * original answer replayed instead of publishing everything twice.
+   *
+   * `isSameAttempt` decides whether the key in hand still describes this work. It
+   * compares the id set as a set, so it is not fooled by ordering, and it is the
+   * reason a mismatched key is replaced rather than reused: sending a key that
+   * belongs to a different id set would have the server answer a question nobody
+   * asked.
+   */
+  const confirmBulk = useCallback(() => {
+    if (!bulk) return;
+    const ids = reviewedIds(bulk.partitioned);
+    const held = attemptRef.current;
+    const attempt =
+      held && isSameAttempt(held, bulk.action, ids) ? held : beginAttempt(bulk.action, ids);
+    attemptRef.current = attempt;
+    void runBulk(bulk.action, attempt);
+  }, [bulk, runBulk]);
+
+  const openBulkSheet = useCallback(() => {
+    if (!partitioned) return;
+    attemptRef.current = null;
+    setBulk({
+      phase: "confirm",
+      action: pendingAction,
+      partitioned,
+      outcome: null,
+      error: null
+    });
+  }, [partitioned, pendingAction]);
+
+  /**
+   * Closing the sheet. After a result it also ends selection mode.
+   *
+   * The selection described rows in the state they were in before the write. Now
+   * that they have moved, carrying it forward would leave the seller holding a
+   * set whose CTA reads "Nothing to publish" — an answer about work that is
+   * already done. The rows that did not move are still in the list, still
+   * flagged, and are fixed one at a time from there.
+   */
+  const closeBulkSheet = useCallback(() => {
+    const finished = bulk?.phase === "result";
+    setBulk(null);
+    if (finished) setSelection(null);
+  }, [bulk?.phase]);
 
   // Note: selection is deliberately NOT cleared when `tab` or `query` changes.
   // Gathering rows across tabs is the workflow, and `selectionSummary` names the
@@ -805,6 +980,43 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
           </View>
         }
       />
+
+      {/* Docked, outside the list, because it must stay reachable while the
+          seller scrolls the rows it is about. `StoreSelectionBar` above the list
+          answers "what have I picked"; this answers "what will happen to it". */}
+      {selection && partitioned ? (
+        <View style={[styles.bulkDock, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+          <StoreBulkBar
+            action={pendingAction}
+            onChangeAction={setPendingAction}
+            ctaLabel={bulkActionLabel(partitioned, pendingAction)}
+            eligibleCount={partitioned.eligible.length}
+            onPress={openBulkSheet}
+            busy={bulk?.phase === "running"}
+            reducedMotion={reducedMotion}
+          />
+        </View>
+      ) : null}
+
+      {bulk ? (
+        <StoreBulkSheet
+          visible
+          phase={bulk.phase}
+          action={bulk.action}
+          partitioned={bulk.partitioned}
+          outcome={bulk.outcome}
+          errorMessage={bulk.error}
+          onConfirm={confirmBulk}
+          onRetry={confirmBulk}
+          onClose={closeBulkSheet}
+          // The server names most result rows; this fills in the ones it did
+          // not, from the list the seller is already looking at. A result line
+          // with no title would be a row they cannot identify.
+          titleFor={(listingId) =>
+            allRows.find((row) => row.id === listingId)?.title || `Listing ${listingId}`
+          }
+        />
+      ) : null}
     </View>
   );
 }
@@ -884,6 +1096,10 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: storeLight.text.primary },
   sectionLink: { fontSize: 13, fontWeight: "600", color: storeLight.text.link },
+  // Only the safe-area padding lives here; the bar draws its own hairline and
+  // fill, so this wrapper matches its background to avoid a stripe of page
+  // colour under the home indicator.
+  bulkDock: { backgroundColor: storeLight.bg.card },
   noMatches: { padding: 24, backgroundColor: storeLight.bg.card, alignItems: "center" },
   noMatchesText: { fontSize: 13, color: storeLight.text.muted },
   footerBlock: { gap: storeLight.space.section, paddingTop: storeLight.space.section },

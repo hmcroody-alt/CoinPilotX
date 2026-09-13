@@ -26,6 +26,12 @@ export type { StoreListingRowProps, StoreRowSelection } from "./StoreListingRow"
 export { StoreSelectionBar } from "./StoreSelectionBar";
 export type { StoreSelectionBarProps } from "./StoreSelectionBar";
 
+export { StoreBulkBar } from "./StoreBulkBar";
+export type { StoreBulkBarProps } from "./StoreBulkBar";
+
+export { StoreBulkSheet } from "./StoreBulkSheet";
+export type { StoreBulkSheetProps, StoreBulkSheetPhase } from "./StoreBulkSheet";
+
 export { StoreAttentionBanner } from "./StoreAttentionBanner";
 export type { StoreAttentionBannerProps } from "./StoreAttentionBanner";
 
