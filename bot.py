@@ -3663,17 +3663,44 @@ def account_user_id_from_mobile_access_token():
         return None
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema(cur)
-        cur.execute(
-            """
-            SELECT user_id, device_hash
-            FROM mobile_security_sessions
-            WHERE user_id=? AND access_token_hash=? AND status='active'
-              AND COALESCE(revoked_at,'')='' AND COALESCE(access_expires_at,'')>=?
-            LIMIT 1
-            """,
-            (user_id, mobile_token_hash(access_token), datetime.utcnow().isoformat(timespec="seconds")),
-        )
+        # Defined once and called twice rather than written out twice. This is
+        # the predicate that decides whether a bearer token authenticates, and
+        # the two call sites below are the same query — a copy-paste pair would
+        # let someone tighten one and leave the other as a way in.
+        def live_session_for_token():
+            cur.execute(
+                """
+                SELECT user_id, device_hash
+                FROM mobile_security_sessions
+                WHERE user_id=? AND access_token_hash=? AND status='active'
+                  AND COALESCE(revoked_at,'')='' AND COALESCE(access_expires_at,'')>=?
+                LIMIT 1
+                """,
+                (user_id, mobile_token_hash(access_token), datetime.utcnow().isoformat(timespec="seconds")),
+            )
+
+        # Optimistic: the table is built by init_db() at boot, so in steady
+        # state the schema guard is a dozen round trips (one CREATE TABLE, eight
+        # catalog lookups, three CREATE INDEX) to learn nothing. That is
+        # acceptable on a cold path and not on the authentication path, which
+        # now runs for every request carrying a bearer. Heal on failure instead
+        # of paying on success — see ensure_mobile_security_session_schema_once.
+        try:
+            live_session_for_token()
+        except Exception:
+            # Postgres aborts the transaction on a failed statement, so the
+            # retry has to start from a clean one or every subsequent query in
+            # this connection fails with InFailedSqlTransaction.
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            ensure_mobile_security_session_schema_once(cur)
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            live_session_for_token()
         row = dict(cur.fetchone() or {})
         conn.close()
     except Exception:
@@ -3688,8 +3715,86 @@ def account_user_id_from_mobile_access_token():
     return user_id
 
 
+_BEARER_UNRESOLVED = object()
+
+
+def verified_bearer_user_id():
+    """Resolve the ``Authorization: Bearer`` credential once per request.
+
+    ``account_user_id_from_mobile_access_token()`` verifies an HMAC signature,
+    decodes the payload, and then queries ``mobile_security_sessions`` for a
+    live row matching both the token hash and the device hash. That is real
+    work, and ``account_user_id()`` is called dozens of times per request, so
+    the result is cached on ``g`` for the life of the request.
+
+    Requests with no ``Authorization`` header cost nothing: the underlying
+    function returns before it opens a connection.
+    """
+    if not has_request_context():
+        return None
+    cached = getattr(g, "_verified_bearer_user_id", _BEARER_UNRESOLVED)
+    if cached is not _BEARER_UNRESOLVED:
+        return cached
+    try:
+        resolved = account_user_id_from_mobile_access_token()
+    except Exception:
+        # Never let credential verification take down a request that a cookie
+        # could still authenticate. An unverifiable bearer is "no bearer".
+        resolved = None
+    g._verified_bearer_user_id = resolved
+    return resolved
+
+
 def account_user_id():
-    return session.get("account_user_id") or account_user_id_from_mobile_access_token() or restore_account_from_persistent_cookie()
+    """Resolve the caller, checking every credential presented — not the first one.
+
+    The old form was ``session.get(...) or <bearer> or <cookie restore>``, and
+    ``or`` short-circuits. The native app sends a session cookie **and** a
+    bearer on every request, so the cookie always won and the bearer branch was
+    unreachable in production. Two consequences, one cosmetic and one not:
+
+    - ``g.mobile_access_user_id`` was never set, even though a perfectly valid
+      bearer was sitting in the headers. That flag is what tells a write gate
+      "this request carried a credential a cross-site attacker cannot forge,
+      so it does not need a CSRF token" (``pulse_ads_verify_write``,
+      ``bot.py:18448``). With the flag dead and the app holding no CSRF token,
+      **reads succeeded and writes returned 403** — a whole class of native
+      write failures with no server error to find.
+    - Two credentials naming two different users were never compared. The first
+      one found was simply believed.
+
+    So: verify both, and deny when they disagree.
+
+    **The asymmetry below is load-bearing.** A bearer that fails to verify is
+    *not* a mismatch. ``MOBILE_ACCESS_TOKEN_TTL_SECONDS`` is 900, so every
+    native session spends part of its life holding an access token that has
+    expired and not yet been refreshed, alongside a cookie that is still good.
+    That is the ordinary state of a working client, not an attack. Treating
+    "bearer did not verify" as a conflict would sign out every phone on the
+    platform within fifteen minutes. Only a bearer that verifies *to a
+    different user* is a conflict.
+
+    A conflict is refused rather than resolved. Picking either credential would
+    be guessing which one the caller meant, and the failure mode of guessing
+    wrong is acting on one user's authority under another user's identity.
+    """
+    cookie_user_id = session.get("account_user_id")
+    bearer_user_id = verified_bearer_user_id()
+
+    if bearer_user_id and cookie_user_id and str(bearer_user_id) != str(cookie_user_id):
+        try:
+            log_security_event(
+                "credential_identity_mismatch",
+                "blocked",
+                int(cookie_user_id or 0),
+                request.path if has_request_context() else "",
+                {"cookie_user_id": str(cookie_user_id), "bearer_user_id": str(bearer_user_id)},
+            )
+        except Exception:
+            pass
+        return None
+
+    return cookie_user_id or bearer_user_id or restore_account_from_persistent_cookie()
 
 
 PRESENCE_ACTIVITY_PATHS = {
@@ -31071,6 +31176,29 @@ def mobile_security_device_context(payload=None):
         "platform": platform,
         "source": clean_html(payload.get("source") or "mobile_auth")[:80],
     }
+
+
+@schema_guard.run_once_per_process
+def ensure_mobile_security_session_schema_once(cur):
+    """Build the session schema at most once per worker process.
+
+    The guard exists because the authentication path cannot afford to re-run a
+    dozen DDL and catalog statements on every request. `init_db()` already
+    creates this table at boot and workers are replaced on deploy, so a
+    once-per-process check is the same guarantee at a thousandth of the cost.
+
+    Going through `services/schema_guard` rather than a module-level boolean buys
+    two things a hand-rolled flag would not. It double-checks under a lock, which
+    matters at `--threads 8` where several requests reach first use together. And
+    it enrols the cache in `schema_guard.reset_all()`, which `tests/conftest.py`
+    calls around every test — a private flag would survive into the next test's
+    fresh database and skip creation, surfacing much later as "no such table:
+    mobile_security_sessions" in whichever suite happened to run second.
+
+    A call that raises is not cached, so a transient failure retries on the next
+    request rather than latching the schema as "done" when it is not.
+    """
+    ensure_mobile_security_session_schema(cur)
 
 
 def ensure_mobile_security_session_schema(cur):

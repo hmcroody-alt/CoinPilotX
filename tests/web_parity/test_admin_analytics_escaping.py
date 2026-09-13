@@ -34,8 +34,10 @@ These tests drive the real route through the real Flask app. Asserting against
 a copy of the `table()` helper would pass forever while the page stayed
 vulnerable.
 
-This module sets DATABASE_URL at import time, so it must run in its own pytest
-process.
+`bot` resolves its database at import and never looks again, so DATABASE_URL has
+to be set before that line. It is chosen in this directory's `conftest.py`, which
+pytest imports before any test module here — see the note there for why doing it
+per-module silently broke whichever of two modules was collected second.
 
 Run: python3 -m pytest tests/web_parity/test_admin_analytics_escaping.py
 """
@@ -52,8 +54,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-os.environ["DATABASE_URL"] = "sqlite:///" + tempfile.mkstemp(suffix=".db")[1]
-os.environ["COINPILOTX_INIT_DB_ON_IMPORT"] = "1"
+# `setdefault`, not assignment: conftest.py has already chosen one database for the
+# whole directory, and overwriting it here would be a no-op for `bot` (already
+# imported) while pointing this module's fixtures at a file nothing reads.
+os.environ.setdefault("DATABASE_URL", "sqlite:///" + tempfile.mkstemp(suffix=".db")[1])
+os.environ.setdefault("COINPILOTX_INIT_DB_ON_IMPORT", "1")
 os.environ.setdefault("FLASK_SECRET_KEY", "admin-analytics-escaping-tests")
 os.environ["ADMIN_ANALYTICS_PASSWORD"] = "test-admin-password"
 

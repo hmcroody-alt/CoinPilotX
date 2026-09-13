@@ -80,6 +80,14 @@ class RouteHitBuffering(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
         self.tmp.close()
+        # Remember what was there rather than assuming nothing was. This class
+        # reloads `services.db`, which reads DATABASE_URL once at import — so the
+        # variable and the module are a pair, and both have to be put back. See
+        # tearDown.
+        self._saved_env = {
+            key: os.environ.get(key)
+            for key in ("DATABASE_URL", "PULSE_ROUTE_HIT_LOG_ENABLED")
+        }
         os.environ["DATABASE_URL"] = f"sqlite:///{self.tmp.name}"
         os.environ["PULSE_ROUTE_HIT_LOG_ENABLED"] = "1"
 
@@ -97,8 +105,33 @@ class RouteHitBuffering(unittest.TestCase):
         conn.close()
 
     def tearDown(self):
-        os.environ.pop("PULSE_ROUTE_HIT_LOG_ENABLED", None)
-        os.environ.pop("DATABASE_URL", None)
+        """Undo both halves of setUp: the environment *and* the reloaded module.
+
+        The previous version popped DATABASE_URL and left `services.db` reloaded.
+        Both are leaks, and the second is the dangerous one. Popping the variable
+        unsets it for the rest of the process rather than restoring what the
+        directory's conftest set, and the still-reloaded `services.db` stays bound
+        to `self.tmp.name` — a file this method then deletes. Every later test in
+        the process that reaches `services.db.connect()` was therefore pointed at
+        a unlinked temporary database, silently, with the damage appearing in some
+        unrelated module as missing rows.
+
+        Restoring the module matters even though the variable alone looks
+        sufficient: `services.db` resolves its URL at import, so putting the
+        environment back without reloading changes nothing about where it writes.
+        """
+        for key, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+        import importlib
+        from services import db as db_module
+        from services import route_hit_log
+        importlib.reload(db_module)
+        importlib.reload(route_hit_log)
+
         try:
             os.unlink(self.tmp.name)
         except OSError:
