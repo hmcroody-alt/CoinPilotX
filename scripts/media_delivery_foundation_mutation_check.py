@@ -372,6 +372,55 @@ MUTATIONS = [
         "pytest",
     ),
     (
+        # Blocking the upload was the whole fix for two commits, and it left the one
+        # surface long video exists for still serving the video: pulse_reels keeps its
+        # own copy of the playback URL and that copy overrides the withheld post media.
+        "the Reel republishing a blocked video is left alone",
+        MEDIA_SERVICE,
+        "        if stored_video_policy.publishes_through_reels(surface):\n            blocked_reels.extend(_block_reel_for_post(cur, row.get(\"context_id\"), reason))",
+        "        pass",
+        "test_the_reel_is_blocked_by_the_delivery_that_blocks_the_upload",
+        "tests/test_measured_duration_wiring.py",
+        "pytest",
+    ),
+    (
+        # The inverse defect, and the more expensive one. A messenger upload's
+        # context_id is a *message* id, so widening the takedown to every surface
+        # blocks whatever Reel happens to share that number -- a stranger's video
+        # disappears because someone sent a long clip in a chat.
+        "the takedown reads a message id as a post id",
+        POLICY,
+        "    return _canonical(surface) in _FEED_SURFACES",
+        "    return True",
+        "test_a_messenger_upload_cannot_block_a_reel_that_shares_its_context_id",
+        "tests/test_measured_duration_wiring.py",
+        "pytest",
+    ),
+    (
+        # Marking the row is only half of it. This is the guard that does not depend on
+        # any of the three queries remembering to filter, which is why removing it has
+        # to be caught on its own.
+        "a blocked Reel is still playable on read",
+        BOT,
+        "    if str(item.get(\"moderation_status\") or \"approved\").lower() == \"blocked\":\n        return False",
+        "    pass",
+        "test_a_blocked_reel_is_not_playable_even_with_a_video_url",
+        "tests/test_reel_takedown_read_path.py",
+        "pytest",
+    ),
+    (
+        # And the queries, which are the half that keeps a blocked Reel out of the feed
+        # payload entirely. Dropping the filter from the lane query is the realistic
+        # regression: it is the one furthest from the code that sets the column.
+        "the reels lane loads blocked reels again",
+        BOT,
+        " AND COALESCE(status,'active')!='deleted' AND COALESCE(moderation_status,'approved')!='blocked'\", tuple(int(p.get(\"id\") or 0) for p in posts))",
+        " AND COALESCE(status,'active')!='deleted'\", tuple(int(p.get(\"id\") or 0) for p in posts))",
+        "test_the_reel_loaders_filter_blocked_rows",
+        "tests/test_reel_takedown_read_path.py",
+        "pytest",
+    ),
+    (
         # Messenger's ffprobe pass has always produced the real length and only ever
         # written it down. This is that original defect, restored.
         "Messenger records its probe without enforcing it",

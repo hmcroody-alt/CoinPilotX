@@ -48498,9 +48498,9 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
     cur = conn.cursor()
     try:
         if reel_id:
-            cur.execute("SELECT * FROM pulse_reels WHERE id=? AND COALESCE(status,'active')!='deleted' LIMIT 1", (int(reel_id),))
+            cur.execute("SELECT * FROM pulse_reels WHERE id=? AND COALESCE(status,'active')!='deleted' AND COALESCE(moderation_status,'approved')!='blocked' LIMIT 1", (int(reel_id),))
         else:
-            cur.execute("SELECT * FROM pulse_reels WHERE post_id=? AND COALESCE(status,'active')!='deleted' LIMIT 1", (int(post_id),))
+            cur.execute("SELECT * FROM pulse_reels WHERE post_id=? AND COALESCE(status,'active')!='deleted' AND COALESCE(moderation_status,'approved')!='blocked' LIMIT 1", (int(post_id),))
         reel_row = dict(cur.fetchone() or {})
     except Exception:
         reel_row = {}
@@ -48765,6 +48765,13 @@ def reel_media_source_is_playable(src):
 
 def reel_has_playable_video(reel):
     item = dict(reel or {})
+    # `video_url` below is a denormalized copy of the playback URL, so it survives
+    # the block applied to the upload it came from -- unlike the media items, which
+    # get an `is_available` guard a few lines down. Three separate queries filter
+    # blocked reels out before they reach here; this is the one check that does not
+    # depend on a fourth query remembering to.
+    if str(item.get("moderation_status") or "approved").lower() == "blocked":
+        return False
     media_items = item.get("media") or []
     candidates = []
     for media in media_items:
@@ -49087,7 +49094,7 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
     if posts:
         placeholders = ",".join(["?"] * len(posts))
         try:
-            cur.execute(f"SELECT * FROM pulse_reels WHERE post_id IN ({placeholders}) AND COALESCE(status,'active')!='deleted'", tuple(int(p.get("id") or 0) for p in posts))
+            cur.execute(f"SELECT * FROM pulse_reels WHERE post_id IN ({placeholders}) AND COALESCE(status,'active')!='deleted' AND COALESCE(moderation_status,'approved')!='blocked'", tuple(int(p.get("id") or 0) for p in posts))
             reel_rows = {int(row["post_id"]): dict(row) for row in cur.fetchall()}
         except Exception:
             reel_rows = {}
@@ -49223,6 +49230,7 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
                 SELECT id
                 FROM pulse_reels
                 WHERE COALESCE(status,'active')!='deleted'
+                  AND COALESCE(moderation_status,'approved')!='blocked'
                   AND COALESCE(post_id,0)>0
                   AND (
                     COALESCE(video_url,'')!=''

@@ -98,6 +98,24 @@ def is_known_surface(surface: str) -> bool:
     return _canonical(surface) in _SURFACE_SECONDS
 
 
+# Surfaces whose uploads are published through pulse_posts, and therefore possibly
+# through a pulse_reels row that keeps its own copy of the video URL. Blocking the
+# upload is not enough for these: the copy outlives the block.
+_FEED_SURFACES = frozenset({"post", "feed", "reel"})
+
+
+def publishes_through_reels(surface: str) -> bool:
+    """Whether blocking an upload on this surface can leave a Reel playable.
+
+    A feed upload's `context_id` is the post id, and `pulse_reels.video_url` is a
+    denormalized copy of the playback URL that overrides the post's withheld media
+    on read. So the caller has a second row to take down, and only for these
+    surfaces -- a messenger upload's `context_id` is a message id, and reading it
+    as a post id would block an unrelated stranger's Reel.
+    """
+    return _canonical(surface) in _FEED_SURFACES
+
+
 def strictest_seconds() -> int:
     return min(_SURFACE_SECONDS.values())
 

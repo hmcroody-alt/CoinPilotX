@@ -1365,11 +1365,12 @@ def enforce_measured_video_duration(cur, *, asset_id="", media_id=0, duration_se
     except (TypeError, ValueError):
         measured = 0.0
     if int(media_id or 0):
-        cur.execute("SELECT id, context_type FROM chat_media_uploads WHERE id=?", (int(media_id),))
+        cur.execute("SELECT id, context_type, context_id FROM chat_media_uploads WHERE id=?", (int(media_id),))
     else:
-        cur.execute("SELECT id, context_type FROM chat_media_uploads WHERE mux_asset_id=?", (reference,))
+        cur.execute("SELECT id, context_type, context_id FROM chat_media_uploads WHERE mux_asset_id=?", (reference,))
     rows = [dict(row) for row in (cur.fetchall() or [])]
     blocked = []
+    blocked_reels = []
     for row in rows:
         row_id = int(row.get("id") or 0)
         surface = str(row.get("context_type") or "")
@@ -1406,7 +1407,61 @@ def enforce_measured_video_duration(cur, *, asset_id="", media_id=0, duration_se
             row_id, surface, int(measured), stored_video_policy.max_duration_seconds(surface),
             stored_video_policy.MEASURED_REJECTION_CODE,
         )
-    return {"checked": len(rows), "blocked": blocked, "measured_seconds": measured}
+        if stored_video_policy.publishes_through_reels(surface):
+            blocked_reels.extend(_block_reel_for_post(cur, row.get("context_id"), reason))
+    return {
+        "checked": len(rows),
+        "blocked": blocked,
+        "blocked_reels": blocked_reels,
+        "measured_seconds": measured,
+    }
+
+
+def _block_reel_for_post(cur, context_id, reason):
+    """Take down the Reel that republishes a blocked post's video.
+
+    `pulse_reels.video_url` is written at creation and read back in preference to
+    the post's media, so a Reel stays playable after its upload is blocked -- the
+    feed's own `is_available` guard is applied to media items and not to that
+    column. Marking the Reel row is what makes the measurement reach the surface
+    long video actually matters on.
+
+    `context_id` is TEXT (`str(post_id)`) while `pulse_reels.post_id` is INTEGER,
+    so the comparison is done on an int parsed here rather than in SQL. Postgres
+    rejects `integer = text` outright, and SQLite would quietly match nothing --
+    the second being the dangerous one, since the block would look applied.
+    """
+    try:
+        post_id = int(str(context_id or "").strip() or 0)
+    except (TypeError, ValueError):
+        post_id = 0
+    if post_id <= 0:
+        return []
+    try:
+        cur.execute(
+            "SELECT id FROM pulse_reels WHERE post_id=? AND COALESCE(moderation_status,'approved')!='blocked'",
+            (post_id,),
+        )
+        reel_ids = [int(dict(row).get("id") or 0) for row in (cur.fetchall() or [])]
+        if not reel_ids:
+            return []
+        cur.execute(
+            "UPDATE pulse_reels SET moderation_status='blocked', updated_at=? WHERE post_id=?",
+            (_now(), post_id),
+        )
+    except Exception as exc:
+        # Not swallowed: the upload block above is already durable, and losing it
+        # by letting this raise through the caller's transaction would be worse
+        # than a Reel that outlives it. Reported loudly and in the return value so
+        # the gap is visible instead of assumed closed.
+        logging.warning(
+            "MEDIA_DURATION_REEL_TAKEDOWN_FAILED post_id=%s error_type=%s", post_id, type(exc).__name__,
+        )
+        return []
+    logging.warning(
+        "MEDIA_DURATION_REEL_BLOCKED post_id=%s reel_ids=%s reason=%s", post_id, reel_ids, reason[:120],
+    )
+    return reel_ids
 
 
 def migrate_local_media_row(row, *, force=False):

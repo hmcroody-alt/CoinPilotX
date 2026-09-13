@@ -145,6 +145,11 @@ def uploads_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uploader_user_id INTEGER,
             context_type TEXT,
+            -- Left NULL by every row here. Enforcement reads it to find the Reel
+            -- that republishes a blocked video, and that second takedown is covered
+            -- in tests/test_measured_duration_wiring.py against a pulse_reels table.
+            -- This fixture stays about the rule.
+            context_id TEXT,
             media_type TEXT,
             duration_seconds REAL,
             moderation_status TEXT DEFAULT 'approved',

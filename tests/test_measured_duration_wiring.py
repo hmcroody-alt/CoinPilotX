@@ -37,11 +37,18 @@ def _database(tmp_path, *, context_type=POST_SURFACE, duration_seconds=None,
         """
         CREATE TABLE chat_media_uploads (
             id INTEGER PRIMARY KEY AUTOINCREMENT, uploader_user_id INTEGER,
-            context_type TEXT, media_type TEXT, duration_seconds REAL,
+            context_type TEXT, context_id TEXT, media_type TEXT, duration_seconds REAL,
             moderation_status TEXT, moderation_reason TEXT, mux_asset_id TEXT,
             mux_status TEXT, mux_playback_id TEXT, playback_url TEXT,
             processing_status TEXT, is_available INTEGER, error_message TEXT,
             created_at TEXT, updated_at TEXT, deleted_at TEXT
+        );
+        -- context_id is TEXT here because that is how attach_media_to_message
+        -- writes it (str(post_id)), and pulse_reels.post_id is INTEGER. The
+        -- mismatch is the point: it is what the takedown has to bridge in Python.
+        CREATE TABLE pulse_reels (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, video_url TEXT,
+            status TEXT, moderation_status TEXT, updated_at TEXT
         );
         CREATE TABLE pulse_media_assets (
             media_id INTEGER, mux_asset_id TEXT, mux_status TEXT, mux_playback_id TEXT,
@@ -75,12 +82,18 @@ def _database(tmp_path, *, context_type=POST_SURFACE, duration_seconds=None,
     conn.execute(
         """
         INSERT INTO chat_media_uploads
-            (id, uploader_user_id, context_type, media_type, duration_seconds,
+            (id, uploader_user_id, context_type, context_id, media_type, duration_seconds,
              moderation_status, mux_asset_id, mux_status, processing_status,
              is_available, created_at)
-        VALUES (1, 7, ?, 'video', ?, 'approved', ?, 'preparing', 'mux_processing', 1, ?)
+        VALUES (1, 7, ?, '31', 'video', ?, 'approved', ?, 'preparing', 'mux_processing', 1, ?)
         """,
         (context_type, duration_seconds, asset_id, created_at),
+    )
+    conn.execute(
+        """
+        INSERT INTO pulse_reels (id, post_id, video_url, status, moderation_status)
+        VALUES (4, 31, 'https://stream.mux.com/vod.m3u8', 'active', 'approved')
+        """
     )
     conn.commit()
     conn.close()
@@ -91,6 +104,14 @@ def _row(path):
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM chat_media_uploads WHERE id=1").fetchone()
+    conn.close()
+    return row
+
+
+def _reel(path):
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM pulse_reels WHERE id=4").fetchone()
     conn.close()
     return row
 
@@ -180,6 +201,67 @@ class TestTheWebhookEnforcesWhatMuxMeasured:
         _deliver(monkeypatch, path, duration=NINETY_MINUTES + 1, event="video.asset.errored")
 
         assert _row(path)["processing_status"] != "rejected_too_long"
+
+
+class TestTheReelThatRepublishesTheVideoIsTakenDownToo:
+    """Blocking the upload is not enough on the surface long video is *for*.
+
+    `pulse_reels.video_url` is a denormalized copy of the playback URL, written at
+    creation. On read it overrides the post's media (`merged = {**post, **reel_row}`),
+    and the feed's `is_available` guard is applied to media items but not to that
+    column -- so a Reel stays playable after its own upload has been blocked. These
+    tests are about the second row the measurement has to reach.
+    """
+
+    def test_the_reel_is_blocked_by_the_delivery_that_blocks_the_upload(self, tmp_path, monkeypatch):
+        path = _database(tmp_path)
+        _deliver(monkeypatch, path, duration=NINETY_MINUTES + 1)
+
+        assert _row(path)["moderation_status"] == "blocked"
+        assert _reel(path)["moderation_status"] == "blocked"
+
+    def test_the_text_post_id_is_bridged_rather_than_compared_in_sql(self, tmp_path, monkeypatch):
+        # context_id is TEXT ('31'), pulse_reels.post_id is INTEGER (31). Compared
+        # in SQL, Postgres raises and SQLite quietly matches nothing -- and nothing
+        # matched looks exactly like a clean pass. The reel id in the return value
+        # is what distinguishes "took the reel down" from "found no reel".
+        path = _database(tmp_path)
+        _deliver(monkeypatch, path, duration=NINETY_MINUTES + 1)
+
+        assert _reel(path)["moderation_status"] == "blocked"
+        assert _reel(path)["video_url"], "the URL is kept: a block is not a deletion"
+
+    def test_a_video_within_the_limit_leaves_its_reel_alone(self, tmp_path, monkeypatch):
+        path = _database(tmp_path)
+        _deliver(monkeypatch, path, duration=NINETY_MINUTES)
+
+        assert _reel(path)["moderation_status"] == "approved"
+
+    def test_a_messenger_upload_cannot_block_a_reel_that_shares_its_context_id(self, tmp_path, monkeypatch):
+        # The trap this guards. A messenger upload's context_id is a *message* id,
+        # and message 31 has nothing to do with post 31. Reading it as a post id
+        # would take down an unrelated stranger's Reel on every long chat video.
+        path = _database(tmp_path, context_type="chat")
+        _deliver(monkeypatch, path, duration=NINETY_MINUTES + 1)
+
+        assert _row(path)["moderation_status"] == "blocked"
+        assert _reel(path)["moderation_status"] == "approved"
+
+    def test_the_upload_block_survives_a_reel_takedown_that_fails(self, tmp_path, monkeypatch):
+        # The upload block is already durable when the reel takedown runs. Letting a
+        # failure there raise through the caller's transaction would roll back the
+        # block itself -- trading a playable Reel for a playable everything.
+        path = _database(tmp_path)
+        conn = sqlite3.connect(path)
+        conn.execute("DROP TABLE pulse_reels")
+        conn.commit()
+        conn.close()
+
+        _deliver(monkeypatch, path, duration=NINETY_MINUTES + 1)
+
+        row = _row(path)
+        assert row["moderation_status"] == "blocked"
+        assert row["is_available"] == 0
 
 
 # --------------------------------------------------------------------------
