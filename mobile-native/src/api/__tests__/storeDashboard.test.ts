@@ -861,6 +861,37 @@ describe("storeReadiness", () => {
   });
 
   /**
+   * The state a bulk publish actually leaves behind, written the way the server
+   * writes it.
+   *
+   * Every case above reaches review through `approval_status: "pending"` over an
+   * `active` row. A real "Publish 6" does something different: `bot.py` sets
+   * *both* columns to the single word `pending_review`, so the ladder is asked
+   * about a status string it is never handed anywhere else in this file. The
+   * substring rule in {@link listingAwaitsReview} covers it — `pending_review`
+   * contains `pending` — but that is the rule holding, not the case being
+   * tested, and a future tightening to an exact-match list would pass every
+   * assertion above while turning the seller's whole store into "Paused".
+   *
+   * "Paused" is the specific wrong word here, which is why it is asserted
+   * against rather than just checking the rung: it tells a seller who has just
+   * sent six products for review that they stopped something, and hands them a
+   * "Reopen" button for a store nobody closed.
+   */
+  it("calls a store that just bulk-published 'waiting on review', not paused", () => {
+    const justPublished = [1, 2, 3, 4, 5, 6].map((id) =>
+      listing({ id, listing_id: id, status: "pending_review", approval_status: "pending_review" })
+    );
+    const state = readinessOf(justPublished);
+    expect(state.readiness).toBe("pending_review");
+    expect(state.openForOrders).toBe(false);
+    expect(state.statusLabel).not.toMatch(/paused/i);
+    // The strip's control comes with the rung. "Reopen" belongs to `paused`, and
+    // offering it here would be a button for a state the seller is not in.
+    expect(state.action.label).not.toMatch(/reopen/i);
+  });
+
+  /**
    * The subtle one. A listing can be `active` with stock *and* awaiting
    * approval — reading stock alone would call that store live while no buyer
    * can order from it.
