@@ -30,6 +30,7 @@ import type {
   MarketplaceBatchResponse,
   MarketplaceBatchPreviewResult,
   MarketplaceBatchResult,
+  MarketplaceCategoryTarget,
   MarketplacePricingRule
 } from "../api/marketplace";
 import { BULK_VERB, type StoreBulkAction, type StoreBulkPartition } from "./storeSelection";
@@ -46,7 +47,8 @@ export type StoreBulkAttempt = {
   /** Sorted and deduplicated, matching what the server hashes the request by. */
   ids: number[];
   /**
-   * The pricing rule, for a reprice; `null` for actions that take no payload.
+   * What the action is being asked to write, for the actions that need telling;
+   * `null` for the ones whose whole meaning is their name.
    *
    * Part of the attempt's identity, not a detail hanging off it. A key that
    * covers only (action, ids) is a key that cannot tell "cost + 20%" from
@@ -54,18 +56,70 @@ export type StoreBulkAttempt = {
    * answered with a *replay of the first*, because a spent key means the server
    * returns its stored result without looking at the new payload. The seller
    * would watch a confirmation for prices that were never applied.
+   *
+   * One field for both payload actions rather than a nullable `rule` beside a
+   * nullable `categoryTarget`, mirroring the server, where `evaluate_rows` takes
+   * one `plans` argument for the same reason. Two channels for one idea means
+   * two things to remember in {@link isSameAttempt}, and the thing forgotten
+   * there is a replayed batch reporting work that never happened.
    */
-  rule: MarketplacePricingRule | null;
+  payload: StoreBulkPayload | null;
   idempotencyKey: string;
 };
+
+/**
+ * The settings a payload action carries.
+ *
+ * Discriminated, so a `category` attempt cannot be handed a pricing rule and a
+ * `price` attempt cannot be handed an aisle. The alternative — one loose object
+ * — compiles for the mismatch and fails at the server as `INVALID_CATEGORY`,
+ * which reads to the seller as "that aisle is not valid" when what happened is
+ * that the phone sent the wrong thing.
+ */
+export type StoreBulkPayload =
+  | { kind: "price"; rule: MarketplacePricingRule }
+  | { kind: "category"; target: MarketplaceCategoryTarget };
 
 function normalizeIds(ids: number[]): number[] {
   return Array.from(new Set(ids.filter((id) => Number.isFinite(id) && id > 0))).sort((a, b) => a - b);
 }
 
-/** A rule as one comparable string. `null` and "no rule" are the same thing. */
-function ruleKey(rule: MarketplacePricingRule | null | undefined): string {
-  return rule ? `${rule.type}:${rule.value}` : "-";
+/**
+ * A payload as one comparable string. `null` and "no payload" are the same thing.
+ *
+ * The `kind` is part of the string so that no two payload types can ever
+ * collide, however they are later spelled. It is belt and braces today and no
+ * test holds it down — removing both prefixes leaves the suite green, because
+ * `isSameAttempt` compares the action first and the two encodings could not
+ * collide anyway (`MULTIPLIER:2` against `["Toys","Games"]`). It stays because
+ * the thing keeping them apart is otherwise an accident of how each branch
+ * happens to be spelled, and the next payload kind added here inherits that
+ * accident rather than the guarantee. The subcategory is included because
+ * moving within a parent is a real change — `Education / Trading` is not
+ * `Education / Crypto Basics` — and a key that ignored it would replay the first
+ * move's summary for the second.
+ *
+ * The pair is `JSON.stringify`d rather than joined by a separator character
+ * because categories are free text: any printable delimiter is one a seller may
+ * legitimately type, and `["A|B", ""]` colliding with `["A", "B"]` means a second
+ * tap is mistaken for the same attempt and silently dropped. An unprintable
+ * separator also works and is what this first used — with the byte written
+ * literally into the source, which made the file binary to `grep` and left the
+ * collision one editor-save away.
+ */
+function payloadKey(payload: StoreBulkPayload | null | undefined): string {
+  if (!payload) return "-";
+  if (payload.kind === "price") return `price:${payload.rule.type}:${payload.rule.value}`;
+  return `category:${JSON.stringify([payload.target.category, payload.target.subcategory])}`;
+}
+
+/** Convenience for the common case, so callers need not spell the wrapper. */
+export function pricePayload(rule: MarketplacePricingRule): StoreBulkPayload {
+  return { kind: "price", rule };
+}
+
+export function categoryPayload(target: MarketplaceCategoryTarget): StoreBulkPayload {
+  return { kind: "category", target };
 }
 
 /**
@@ -75,12 +129,12 @@ function ruleKey(rule: MarketplacePricingRule | null | undefined): string {
 export function beginAttempt(
   action: StoreBulkAction,
   ids: number[],
-  rule: MarketplacePricingRule | null = null
+  payload: StoreBulkPayload | null = null
 ): StoreBulkAttempt {
   return {
     action,
     ids: normalizeIds(ids),
-    rule,
+    payload,
     idempotencyKey: `bulk-${action}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
   };
 }
@@ -97,13 +151,13 @@ export function isSameAttempt(
   attempt: StoreBulkAttempt | null,
   action: StoreBulkAction,
   ids: number[],
-  rule: MarketplacePricingRule | null = null
+  payload: StoreBulkPayload | null = null
 ): boolean {
   if (!attempt || attempt.action !== action) return false;
-  // A changed rule is different work, even over the identical id set — see the
-  // note on `StoreBulkAttempt.rule`. Compared before the ids because it is the
-  // cheaper check and the one more likely to differ between two taps.
-  if (ruleKey(attempt.rule) !== ruleKey(rule)) return false;
+  // A changed payload is different work, even over the identical id set — see
+  // the note on `StoreBulkAttempt.payload`. Compared before the ids because it
+  // is the cheaper check and the one more likely to differ between two taps.
+  if (payloadKey(attempt.payload) !== payloadKey(payload)) return false;
   const wanted = normalizeIds(ids);
   return (
     wanted.length === attempt.ids.length && wanted.every((id, index) => id === attempt.ids[index])
@@ -296,12 +350,13 @@ export function reviewFromPreview(
     if (entry.outcome === "would_apply") {
       changing.push({
         ...line,
-        detail: priceMove(entry),
-        // The material-field rule: `price_label` sends a live, approved listing
-        // back to `pending_review`. A seller repricing their whole store needs
-        // to know that before the tap, not from a buyer who cannot find the
-        // product. The server decides it — `requires_rereview` — and says so per
-        // row, because it is not true of the drafts in the same selection.
+        detail: changeDetail(action, entry),
+        // The material-field rule: `price_label` and `category` both send a
+        // live, approved listing back to `pending_review`. A seller repricing or
+        // re-filing their whole store needs to know that before the tap, not
+        // from a buyer who cannot find the product. The server decides it —
+        // `requires_rereview` — and says so per row, because it is not true of
+        // the drafts in the same selection.
         warning: entry.returns_to_review ? "Goes back to review" : null
       });
       return;
@@ -325,6 +380,73 @@ function priceMove(entry: MarketplaceBatchPreviewResult): string | null {
   if (!to) return null;
   const from = entry.current_price_label;
   return from ? `${from} → ${to}` : `Set to ${to}`;
+}
+
+/** "Education / Crypto Basics" — a filing as one readable string, or "". */
+function filing(category: string | undefined, subcategory: string | undefined): string {
+  const parent = (category || "").trim();
+  const child = (subcategory || "").trim();
+  if (!parent) return "";
+  return child ? `${parent} / ${child}` : parent;
+}
+
+/**
+ * "Education / Crypto Basics → Home & Kitchen", or "File under …" for a listing
+ * that has no category yet.
+ *
+ * The uncategorised case is the same shape of honesty as `priceMove`'s: a
+ * listing with no category has none, and an arrow starting at "Uncategorised"
+ * would put a word in the store that nothing wrote. Worth getting right because
+ * these are the rows the action most exists for — `MISSING_CATEGORY` is a
+ * publish blocker, so a bulk move is how a seller clears it off forty drafts.
+ */
+function categoryMove(entry: MarketplaceBatchPreviewResult): string | null {
+  const to = filing(entry.category, entry.subcategory);
+  if (!to) return null;
+  const from = filing(entry.current_category, entry.current_subcategory);
+  return from ? `${from} → ${to}` : `File under ${to}`;
+}
+
+/**
+ * What this row's change looks like, for the action doing it.
+ *
+ * A table rather than a chain of `action === "price" ? …`, for the reason
+ * `BULK_VERB` is a table: the previous two-valued form was correct and would
+ * have silently rendered a category move as a price move — `price_label` is
+ * absent on a category entry, so the row would have shown no detail at all and
+ * the confirm face would have hidden every changing row behind its
+ * `line.detail` filter. A missing key here is a compile error instead.
+ */
+const CHANGE_DETAIL: Partial<
+  Record<StoreBulkAction, (entry: MarketplaceBatchPreviewResult) => string | null>
+> = {
+  price: priceMove,
+  category: categoryMove
+};
+
+function changeDetail(
+  action: StoreBulkAction,
+  entry: MarketplaceBatchPreviewResult
+): string | null {
+  return CHANGE_DETAIL[action]?.(entry) ?? null;
+}
+
+/**
+ * What a *committed* row reads back as — the last step of §31.
+ *
+ * Reads the server's stored value rather than a word, for the same reason the
+ * preview does: a figure or a filing the seller can check against the list
+ * behind the sheet is the only version of "it worked" that proves anything.
+ * Falls back to the action's `done` phrase for the actions that store no value
+ * worth echoing.
+ */
+export function resultDetail(action: StoreBulkAction, entry: MarketplaceBatchResult): string {
+  if (action === "price" && entry.price_label) return entry.price_label;
+  if (action === "category") {
+    const filed = filing(entry.category, entry.subcategory);
+    if (filed) return filed;
+  }
+  return BULK_VERB[action].done;
 }
 
 /** "Reprice 14 · 4 blocked" — the sentence on the confirm button. */

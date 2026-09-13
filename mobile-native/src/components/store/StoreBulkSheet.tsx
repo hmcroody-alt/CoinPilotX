@@ -30,14 +30,27 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View
 import { storeLight } from "../../theme/storeLight";
 import { BULK_VERB, type StoreBulkAction } from "../../marketplace/storeSelection";
 import type { StoreBulkOutcome, StoreBulkReview } from "../../marketplace/storeBulkRun";
-import { outcomeReason, reviewLabel } from "../../marketplace/storeBulkRun";
+import { outcomeReason, resultDetail, reviewLabel } from "../../marketplace/storeBulkRun";
 import type { StorePricingRuleDraft } from "../../marketplace/storeBulkPricing";
+import type { StoreCategoryDraft } from "../../marketplace/storeBulkCategory";
 import { StoreBulkPriceRule } from "./StoreBulkPriceRule";
+import { StoreBulkCategoryPicker } from "./StoreBulkCategoryPicker";
 
 const ACTION_TITLE: Record<StoreBulkAction, string> = {
   publish: "Publish listings",
   hide: "Hide listings",
-  price: "Review new prices"
+  price: "Review new prices",
+  category: "Review new categories"
+};
+
+/** What the `previewing` face says while the server works. Per action, because
+ *  "Working out the new prices" over a category move is a wrong sentence, and a
+ *  generic "Working…" throws away the one bit of reassurance the face exists for. */
+const PREVIEW_WAIT: Record<StoreBulkAction, string> = {
+  publish: "Checking your products…",
+  hide: "Checking your products…",
+  price: "Working out the new prices…",
+  category: "Checking where these will be filed…"
 };
 
 export type StoreBulkSheetPhase =
@@ -66,6 +79,13 @@ export type StoreBulkSheetProps = {
   /** Price only: the rule being edited, and how many rows it covers. */
   priceDraft: StorePricingRuleDraft;
   onChangePriceDraft: (draft: StorePricingRuleDraft) => void;
+  /** Category only: the filing being chosen. */
+  categoryDraft: StoreCategoryDraft;
+  onChangeCategoryDraft: (draft: StoreCategoryDraft) => void;
+  /** Category only: aisles this store already uses, for the suggestion chips. */
+  categorySuggestions: string[];
+  /** Category only: the selected rows' current filing, for the "already there" count. */
+  selectedFilings: { category: string; subcategory: string }[];
   selectedCount: number;
   onPreview: () => void;
   onConfirm: () => void;
@@ -125,11 +145,21 @@ function Line({
  * full-width shape when there is nothing beside it, which is what the publish and
  * hide journeys already expect.
  */
+/** "Change rule" / "Change category" — the back affordance names what it goes
+ *  back to, because "Change" alone on a sheet with two editable things is a
+ *  button whose destination the seller has to guess. */
+const BACK_LABEL: Partial<Record<StoreBulkAction, string>> = {
+  price: "Change rule",
+  category: "Change category"
+};
+
 function Footer({
+  action,
   onChangeRule,
   onClose,
   busy
 }: {
+  action: StoreBulkAction;
   onChangeRule?: () => void;
   onClose: () => void;
   busy: boolean;
@@ -148,6 +178,7 @@ function Footer({
       </Pressable>
     );
   }
+  const back = BACK_LABEL[action] ?? "Change";
   return (
     <View style={styles.footerRow}>
       <Pressable
@@ -155,11 +186,15 @@ function Footer({
         onPress={onChangeRule}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel="Change rule"
-        accessibilityHint="Goes back to the pricing rule, keeping the number you typed"
+        accessibilityLabel={back}
+        accessibilityHint={
+          action === "category"
+            ? "Goes back to the category, keeping what you chose"
+            : "Goes back to the pricing rule, keeping the number you typed"
+        }
         accessibilityState={{ disabled: busy }}
       >
-        <Text style={styles.secondaryText}>Change rule</Text>
+        <Text style={styles.secondaryText}>{back}</Text>
       </Pressable>
       <Pressable
         style={styles.secondaryHalf}
@@ -184,6 +219,10 @@ export function StoreBulkSheet({
   errorMessage,
   priceDraft,
   onChangePriceDraft,
+  categoryDraft,
+  onChangeCategoryDraft,
+  categorySuggestions,
+  selectedFilings,
   selectedCount,
   onPreview,
   onConfirm,
@@ -231,13 +270,14 @@ export function StoreBulkSheet({
                   <Line
                     key={`ok-${entry.listing_id}`}
                     title={entry.title || titleFor(entry.listing_id)}
-                    // The server names the price it stored, so a repriced row
-                    // reads back the figure rather than the word "done". §31's
-                    // last step is READ BACK, and a number the seller can check
-                    // against the list behind the sheet is the only version of
-                    // that which proves anything.
-                    detail={entry.price_label || BULK_VERB[action].done}
-                    // A reprice that pulled a live listing out of the store says
+                    // The server names the value it stored, so a repriced row
+                    // reads back the figure and a moved row reads back the aisle
+                    // rather than the word "done". §31's last step is READ BACK,
+                    // and a value the seller can check against the list behind
+                    // the sheet is the only version of that which proves
+                    // anything.
+                    detail={resultDetail(action, entry)}
+                    // A change that pulled a live listing out of the store says
                     // so here too, not only in the preview: the seller who
                     // scrolled past the warning still has to learn about it.
                     warning={entry.returns_to_review ? "Back in review" : null}
@@ -290,17 +330,33 @@ export function StoreBulkSheet({
               >
                 <Text style={styles.primaryText}>Try again</Text>
               </Pressable>
-              <Footer onChangeRule={onChangeRule} onClose={onClose} busy={false} />
+              <Footer action={action} onChangeRule={onChangeRule} onClose={onClose} busy={false} />
             </>
           ) : phase === "rule" ? (
             <>
-              <StoreBulkPriceRule
-                draft={priceDraft}
-                onChange={onChangePriceDraft}
-                selectedCount={selectedCount}
-                busy={previewing}
-                onPreview={onPreview}
-              />
+              {/* The `rule` phase is "the payload action is being set up", and
+                  which face that is depends on the action. Named `rule` rather
+                  than renamed when the second payload action arrived, because the
+                  phase is part of the screen's state machine and its meaning did
+                  not change — only the number of things it can render. */}
+              {action === "category" ? (
+                <StoreBulkCategoryPicker
+                  draft={categoryDraft}
+                  onChange={onChangeCategoryDraft}
+                  suggestions={categorySuggestions}
+                  selectedFilings={selectedFilings}
+                  busy={previewing}
+                  onPreview={onPreview}
+                />
+              ) : (
+                <StoreBulkPriceRule
+                  draft={priceDraft}
+                  onChange={onChangePriceDraft}
+                  selectedCount={selectedCount}
+                  busy={previewing}
+                  onPreview={onPreview}
+                />
+              )}
               <Pressable
                 style={styles.secondary}
                 onPress={onClose}
@@ -315,7 +371,7 @@ export function StoreBulkSheet({
           ) : previewing ? (
             <View style={styles.waiting}>
               <ActivityIndicator size="small" color={storeLight.status.success} />
-              <Text style={styles.subtitle}>Working out the new prices…</Text>
+              <Text style={styles.subtitle}>{PREVIEW_WAIT[action]}</Text>
             </View>
           ) : (
             <>
@@ -382,7 +438,7 @@ export function StoreBulkSheet({
                   </Text>
                 )}
               </Pressable>
-              <Footer onChangeRule={onChangeRule} onClose={onClose} busy={busy} />
+              <Footer action={action} onChangeRule={onChangeRule} onClose={onClose} busy={busy} />
             </>
           )}
         </View>

@@ -47,10 +47,24 @@ import { isPrecomputed, type StoreBulkAction } from "../../marketplace/storeSele
 const ACTION_LABEL: Record<StoreBulkAction, string> = {
   publish: "Publish",
   hide: "Hide",
-  price: "Price"
+  price: "Price",
+  category: "Category"
 };
 
-const ACTIONS: StoreBulkAction[] = ["publish", "hide", "price"];
+const ACTIONS: StoreBulkAction[] = ["publish", "hide", "price", "category"];
+
+/**
+ * What the CTA says for an action whose count is not knowable yet.
+ *
+ * The payload actions have no eligible count until the server has been asked, so
+ * the bar cannot say "Move 14" and does not try — it names the next screen
+ * instead, which is honest about what the tap does: it opens a face, it does not
+ * apply anything.
+ */
+const SETUP_LABEL: Partial<Record<StoreBulkAction, string>> = {
+  price: "Edit pricing",
+  category: "Set category"
+};
 
 export type StoreBulkBarProps = {
   action: StoreBulkAction;
@@ -84,7 +98,7 @@ export function StoreBulkBar({
   // `isPrecomputed` gates the count, not the tap: only an action the rows carry
   // a verdict for can be known to have nothing to do.
   const disabled = busy || (isPrecomputed(action) && eligibleCount === 0);
-  const label = isPrecomputed(action) ? ctaLabel : "Edit pricing";
+  const label = isPrecomputed(action) ? ctaLabel : SETUP_LABEL[action] ?? "Continue";
 
   return (
     <View style={styles.bar}>

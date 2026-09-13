@@ -190,19 +190,32 @@ export type StorePrecomputedBulkAction = "publish" | "hide";
  * Every action the docked bar offers, including the one no row can be
  * pre-judged for.
  *
- * `price` is the odd one and the reason this type is split in two. What blocks
- * a reprice depends on the rule the seller has not chosen yet — the same
- * listing is `PRICE_UNCHANGED` under cost+20% and a clean success under
- * cost+25% — so there is no verdict to attach to a row in advance and no honest
- * partition to compute here. The server answers a reprice with a dry run
- * (`previewMarketplaceSellerBatch`), and {@link partition} refuses `price` at
+ * `price` and `category` are the odd ones and the reason this type is split in
+ * two. What blocks either depends on a choice the seller has not made yet — the
+ * same listing is `PRICE_UNCHANGED` under cost+20% and a clean success under
+ * cost+25%, and `CATEGORY_UNCHANGED` for the aisle it is already in and a clean
+ * success for any other — so there is no verdict to attach to a row in advance
+ * and no honest partition to compute here. The server answers both with a dry
+ * run (`previewMarketplaceSellerBatch`), and {@link partition} refuses them at
  * the type level so nobody re-adds a local guess.
  */
-export type StoreBulkAction = StorePrecomputedBulkAction | "price";
+export type StoreBulkAction = StorePrecomputedBulkAction | "price" | "category";
+
+/**
+ * The actions whose meaning is incomplete without a payload.
+ *
+ * Mirrors `PAYLOAD_ACTIONS` in `listing_batch.py`, where `PRECOMPUTED_ACTIONS`
+ * is likewise derived by subtraction rather than listed twice. Spelled as a set
+ * instead of `action !== "price"` because a two-valued inequality is the same
+ * silent bug the moment there are three: `category` would have been treated as
+ * precomputable and every row in the store would have read
+ * "No category worked out" before the seller chose one.
+ */
+const PAYLOAD_ACTIONS: readonly StoreBulkAction[] = ["price", "category"];
 
 /** Narrow to the actions {@link partition} can answer, at runtime. */
 export function isPrecomputed(action: StoreBulkAction): action is StorePrecomputedBulkAction {
-  return action !== "price";
+  return !PAYLOAD_ACTIONS.includes(action);
 }
 
 export type StoreBulkPartition = {
@@ -238,7 +251,11 @@ export const BULK_VERB: Record<
     done: "Submitted for review"
   },
   hide: { imperative: "Hide", plain: "hide", past: "hidden", done: "Hidden from buyers" },
-  price: { imperative: "Reprice", plain: "reprice", past: "repriced", done: "Price updated" }
+  price: { imperative: "Reprice", plain: "reprice", past: "repriced", done: "Price updated" },
+  // "Move" rather than "Categorise": the seller is relocating products between
+  // aisles they already understand, and `done` names the new filing's effect
+  // rather than the write, for the same reason `publish`'s does.
+  category: { imperative: "Move", plain: "move", past: "moved", done: "Category updated" }
 };
 
 /**

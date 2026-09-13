@@ -57,6 +57,8 @@ function row(id: number, over: Partial<StoreListingRow> = {}): StoreListingRow {
     },
     bulkEligibility: { publish: null, hide: null },
     unitsSold7d: 0,
+    category: "Home",
+    subcategory: "",
     rating: null,
     reviewCount: null,
     ...over

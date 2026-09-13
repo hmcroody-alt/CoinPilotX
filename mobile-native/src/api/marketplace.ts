@@ -581,7 +581,55 @@ async function mutateMarketplaceSellerListingStatus(listingId: number, action: "
  * Bulk actions
  * ------------------------------------------------------------------ */
 
-export type MarketplaceBatchAction = "publish" | "hide" | "price";
+export type MarketplaceBatchAction = "publish" | "hide" | "price" | "category";
+
+/**
+ * Where a bulk move files the selected products.
+ *
+ * `subcategory` is required rather than optional, and that is the contract.
+ * A subcategory belongs to its parent, so moving "Education / Crypto Basics"
+ * into "Home & Kitchen" has to say what becomes of the child; leaving the key
+ * off would make the server guess, and the two available guesses — clear it, or
+ * keep it — differ by whether the listing ends up filed under
+ * "Home & Kitchen / Crypto Basics", which is a pair no filter or buyer can read.
+ * Callers moving into a bare category send `""`, which is a decision rather
+ * than an omission. `normalize_category` on the server clears it either way; the
+ * requirement here is so the caller cannot be unaware it made a choice.
+ */
+export type MarketplaceCategoryTarget = { category: string; subcategory: string };
+
+/**
+ * The JSON body both batch calls send.
+ *
+ * Shared because the two used to build it separately, which is one drifted
+ * `...(input.x ? …)` away from a preview that omits the payload the commit
+ * sends — a dry run answering a different question than the tap it precedes,
+ * which is the §21/§34 failure this whole path is shaped to prevent.
+ *
+ * Each payload action puts its settings under its own key rather than in one
+ * generic `settings` object, mirroring the route. Sharing a key would let a
+ * client send the wrong action with the right settings and be told it succeeded
+ * at the other thing.
+ */
+function batchBody(input: {
+  action: MarketplaceBatchAction;
+  listingIds: number[];
+  idempotencyKey: string;
+  pricingRule?: MarketplacePricingRule;
+  categoryTarget?: MarketplaceCategoryTarget;
+  dryRun?: boolean;
+}) {
+  return JSON.stringify({
+    action: input.action,
+    listing_ids: input.listingIds,
+    idempotency_key: input.idempotencyKey,
+    ...(input.dryRun ? { dry_run: true } : {}),
+    // Omitted rather than sent as null: the server refuses a payload on an
+    // action that ignores one, and `undefined` disappears from the JSON.
+    ...(input.pricingRule ? { pricing_rule: input.pricingRule } : {}),
+    ...(input.categoryTarget ? { category: input.categoryTarget } : {})
+  });
+}
 
 /**
  * How a bulk reprice works out each listing's new price.
@@ -655,13 +703,25 @@ type MarketplaceBatchEntry = {
   price_label?: string;
   /** Preview only: what the row costs today, so the sheet can draw the arrow. */
   current_price_label?: string;
+  /** The stored filing, on a move; on a preview, the filing that *would* be stored. */
+  category?: string;
+  /**
+   * The stored subcategory. `""` is meaningful and not the same as absent: a
+   * move out of a parent clears the child, so an empty string here is the server
+   * reporting that the old subcategory is gone, which the sheet has to be able
+   * to show.
+   */
+  subcategory?: string;
+  /** Preview only: where the row is filed today, so the sheet can draw the arrow. */
+  current_category?: string;
+  current_subcategory?: string;
   /**
    * The warning that matters most, and it is on **both** shapes rather than the
-   * preview alone. `price_label` is a material field, so repricing a live,
-   * approved product sends it back to the review queue and off sale. The preview
-   * says so before the tap, which is what a seller is entitled to; the commit
-   * says so afterwards, which is what a seller who tapped past the warning needs.
-   * One field, one word, both faces.
+   * preview alone. `price_label` and `category` are both material fields, so
+   * repricing *or* re-filing a live, approved product sends it back to the review
+   * queue and off sale. The preview says so before the tap, which is what a
+   * seller is entitled to; the commit says so afterwards, which is what a seller
+   * who tapped past the warning needs. One field, one word, both faces.
    */
   returns_to_review?: boolean;
 };
@@ -707,17 +767,12 @@ export async function batchMarketplaceSellerListings(input: {
   idempotencyKey: string;
   /** Required for `price`, refused for the others. */
   pricingRule?: MarketplacePricingRule;
+  /** Required for `category`, refused for the others. */
+  categoryTarget?: MarketplaceCategoryTarget;
 }) {
   return pulseApi<MarketplaceBatchResponse>("/api/pulse/marketplace/seller/listings/batch", {
     method: "POST",
-    body: JSON.stringify({
-      action: input.action,
-      listing_ids: input.listingIds,
-      idempotency_key: input.idempotencyKey,
-      // Omitted rather than sent as null: the server refuses a payload on an
-      // action that ignores one, and `undefined` disappears from the JSON.
-      ...(input.pricingRule ? { pricing_rule: input.pricingRule } : {})
-    })
+    body: batchBody(input)
   });
 }
 
@@ -777,16 +832,11 @@ export async function previewMarketplaceSellerBatch(input: {
   listingIds: number[];
   idempotencyKey: string;
   pricingRule?: MarketplacePricingRule;
+  categoryTarget?: MarketplaceCategoryTarget;
 }) {
   return pulseApi<MarketplaceBatchPreview>("/api/pulse/marketplace/seller/listings/batch", {
     method: "POST",
-    body: JSON.stringify({
-      action: input.action,
-      listing_ids: input.listingIds,
-      idempotency_key: input.idempotencyKey,
-      dry_run: true,
-      ...(input.pricingRule ? { pricing_rule: input.pricingRule } : {})
-    })
+    body: batchBody({ ...input, dryRun: true })
   });
 }
 

@@ -90,6 +90,8 @@ import {
 } from "../marketplace/storeSelection";
 import {
   beginAttempt,
+  categoryPayload,
+  pricePayload,
   idsToSend,
   isSameAttempt,
   outcomeOf,
@@ -97,6 +99,7 @@ import {
   reviewFromPreview,
   type StoreBulkAttempt,
   type StoreBulkOutcome,
+  type StoreBulkPayload,
   type StoreBulkReview
 } from "../marketplace/storeBulkRun";
 import {
@@ -104,6 +107,12 @@ import {
   parsePricingRule,
   type StorePricingRuleDraft
 } from "../marketplace/storeBulkPricing";
+import {
+  EMPTY_CATEGORY_DRAFT,
+  categoriesInUse,
+  parseCategoryTarget,
+  type StoreCategoryDraft
+} from "../marketplace/storeBulkCategory";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { refreshUnreadCounts, useBellCount } from "../core/unreadCounts";
 import { useFormatters } from "../i18n/hooks";
@@ -241,13 +250,16 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
     /** `null` only on the `rule` face, before anything has been previewed. */
     review: StoreBulkReview | null;
     /**
-     * The rule the review was computed under, carried so the commit sends the
-     * same one. Reading it back off `priceDraft` at confirm time was the
-     * alternative and is the bug: the draft is live, the review is frozen, and a
-     * seller who edits the field while the confirm face is up would apply a rule
-     * whose prices they never saw.
+     * The payload the review was computed under, carried so the commit sends the
+     * same one. Reading it back off `priceDraft` (or `categoryDraft`) at confirm
+     * time was the alternative and is the bug: the draft is live, the review is
+     * frozen, and a seller who edits the field while the confirm face is up would
+     * apply a rule whose prices — or an aisle whose moves — they never saw.
+     *
+     * One field for both payload actions rather than one per action, matching
+     * `StoreBulkAttempt.payload` and the server's single `plans` argument.
      */
-    rule: MarketplacePricingRule | null;
+    payload: StoreBulkPayload | null;
     outcome: StoreBulkOutcome | null;
     error: string | null;
   } | null>(null);
@@ -257,6 +269,12 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    * comes back finds their number still there.
    */
   const [priceDraft, setPriceDraft] = useState<StorePricingRuleDraft>(EMPTY_PRICING_DRAFT);
+  /**
+   * The category being chosen. Lives beside `priceDraft` and for the same reason:
+   * it survives closing the sheet, so a seller who cancels to check which aisle a
+   * product is in comes back to what they had picked.
+   */
+  const [categoryDraft, setCategoryDraft] = useState<StoreCategoryDraft>(EMPTY_CATEGORY_DRAFT);
   /**
    * The attempt the open sheet is sending — a ref, not state, and that is the
    * whole of §23 on the client.
@@ -400,9 +418,37 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
     [selection, allRows, pendingAction]
   );
 
-  /** How many rows the rule face says it covers. */
+  /** How many rows the payload face says it covers. */
   const selectedCount = useMemo(
     () => (selection ? selectedRows(selection, allRows).length : 0),
+    [selection, allRows]
+  );
+
+  /**
+   * Aisles already in use, for the category face's suggestion chips.
+   *
+   * From `allRows` rather than the selection — see the note at the call site.
+   * Recomputed with the list, so a seller who just created an aisle in the
+   * single-listing editor sees it here after the next reload without this screen
+   * caching a taxonomy of its own.
+   */
+  const categorySuggestions = useMemo(() => categoriesInUse(allRows), [allRows]);
+
+  /**
+   * Where the selected products are filed right now, for the "already there"
+   * count on the category face.
+   *
+   * Local and therefore a hint, not a verdict: the server decides per row when
+   * the preview runs. Its whole job is to stop the next face being a surprise.
+   */
+  const selectedFilings = useMemo(
+    () =>
+      selection
+        ? selectedRows(selection, allRows).map((row) => ({
+            category: row.category,
+            subcategory: row.subcategory
+          }))
+        : [],
     [selection, allRows]
   );
 
@@ -458,9 +504,10 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
           action,
           listingIds: idsToSend(attempt),
           idempotencyKey: attempt.idempotencyKey,
-          // Off the attempt, not off `priceDraft`: the attempt is what the seller
-          // agreed to, and it is the thing the idempotency key identifies.
-          pricingRule: attempt.rule ?? undefined
+          // Off the attempt, not off the live draft: the attempt is what the
+          // seller agreed to, and it is the thing the idempotency key identifies.
+          pricingRule: attempt.payload?.kind === "price" ? attempt.payload.rule : undefined,
+          categoryTarget: attempt.payload?.kind === "category" ? attempt.payload.target : undefined
         });
         const outcome = outcomeOf(action, response);
         await load("refresh").catch(() => undefined);
@@ -498,9 +545,9 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
     const ids = reviewedIds(bulk.review);
     const held = attemptRef.current;
     const attempt =
-      held && isSameAttempt(held, bulk.action, ids, bulk.rule)
+      held && isSameAttempt(held, bulk.action, ids, bulk.payload)
         ? held
-        : beginAttempt(bulk.action, ids, bulk.rule);
+        : beginAttempt(bulk.action, ids, bulk.payload);
     attemptRef.current = attempt;
     void runBulk(bulk.action, attempt);
   }, [bulk, runBulk]);
@@ -521,36 +568,50 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    */
   const previewBulk = useCallback(async () => {
     if (!selection) return;
-    const parsed = parsePricingRule(priceDraft);
-    if (!parsed.rule) return;
+    const action = bulk?.action ?? pendingAction;
+    // The payload is read off whichever draft this action owns, once, here — and
+    // then carried on the review rather than re-read at confirm time. A preview
+    // that asked about one payload and a commit that sent another is §34 with the
+    // guarantee removed.
+    let payload: StoreBulkPayload | null = null;
+    if (action === "category") {
+      const parsed = parseCategoryTarget(categoryDraft);
+      if (!parsed.target) return;
+      payload = categoryPayload(parsed.target);
+    } else {
+      const parsed = parsePricingRule(priceDraft);
+      if (!parsed.rule) return;
+      payload = pricePayload(parsed.rule);
+    }
     const ids = selectedRows(selection, allRows).map((row) => row.id);
     if (ids.length === 0) return;
     setBulk((current) => (current ? { ...current, phase: "previewing", error: null } : current));
     try {
       const response = await previewMarketplaceSellerBatch({
-        action: "price",
+        action,
         listingIds: ids,
         idempotencyKey: `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
-        pricingRule: parsed.rule
+        pricingRule: payload.kind === "price" ? payload.rule : undefined,
+        categoryTarget: payload.kind === "category" ? payload.target : undefined
       });
       const review = reviewFromPreview(
         response,
-        "price",
+        action,
         (listingId) => allRows.find((row) => row.id === listingId)?.title || `Listing ${listingId}`
       );
       // A fresh review is new work, so the held key is dropped. Keeping it would
-      // let a second rule be committed under the first rule's key, and a spent
-      // key is answered by replay rather than by looking at the payload.
+      // let a second payload be committed under the first payload's key, and a
+      // spent key is answered by replay rather than by looking at the payload.
       attemptRef.current = null;
       setBulk((current) =>
-        current ? { ...current, phase: "confirm", review, rule: parsed.rule, error: null } : current
+        current ? { ...current, phase: "confirm", review, payload, error: null } : current
       );
     } catch (error) {
       setBulk((current) =>
         current ? { ...current, phase: "error", error: bulkErrorMessage(error) } : current
       );
     }
-  }, [selection, allRows, priceDraft]);
+  }, [selection, allRows, priceDraft, categoryDraft, bulk?.action, pendingAction]);
 
   /**
    * Try again, on whichever request actually failed.
@@ -589,7 +650,7 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
    */
   const changeRule = useCallback(() => {
     setBulk((current) =>
-      current ? { ...current, phase: "rule", review: null, rule: null, error: null } : current
+      current ? { ...current, phase: "rule", review: null, payload: null, error: null } : current
     );
   }, []);
 
@@ -599,7 +660,7 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
     if (!isPrecomputed(pendingAction)) {
       // A reprice opens on the rule face with no review, because there is nothing
       // to review until the server has been asked.
-      setBulk({ phase: "rule", action: pendingAction, review: null, rule: null, outcome: null, error: null });
+      setBulk({ phase: "rule", action: pendingAction, review: null, payload: null, outcome: null, error: null });
       return;
     }
     if (!partitioned) return;
@@ -607,7 +668,7 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
       phase: "confirm",
       action: pendingAction,
       review: reviewFromPartition(partitioned, pendingAction),
-      rule: null,
+      payload: null,
       outcome: null,
       error: null
     });
@@ -1160,13 +1221,21 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
           errorMessage={bulk.error}
           priceDraft={priceDraft}
           onChangePriceDraft={setPriceDraft}
+          categoryDraft={categoryDraft}
+          onChangeCategoryDraft={setCategoryDraft}
+          // The aisles suggested are drawn from the whole store, not from the
+          // selection: a seller moving products *out* of one aisle is most often
+          // moving them into another they already keep, and a selection-scoped
+          // list would only ever suggest where these products already are.
+          categorySuggestions={categorySuggestions}
+          selectedFilings={selectedFilings}
           selectedCount={selectedCount}
           onPreview={() => void previewBulk()}
           onConfirm={confirmBulk}
           onRetry={retryBulk}
-          // Only a reprice has a rule to go back to. Passing this for publish or
-          // hide would put a button on their sheet that landed the seller on a
-          // rule face those actions never had.
+          // Only a payload action has settings to go back to. Passing this for
+          // publish or hide would put a button on their sheet that landed the
+          // seller on a face those actions never had.
           onChangeRule={isPrecomputed(bulk.action) ? undefined : changeRule}
           onClose={closeBulkSheet}
           // The server names most result rows; this fills in the ones it did

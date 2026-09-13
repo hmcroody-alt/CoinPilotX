@@ -321,6 +321,18 @@ export type StoreListingRow = {
   bulkEligibility: ListingBulkEligibility | null;
   /** Units of this listing sold in the trailing 7 days. Derived from orders. */
   unitsSold7d: number;
+  /**
+   * Where the product is filed, so the bulk move face can offer the aisles this
+   * store already uses.
+   *
+   * Empty string, not null, for a listing with no category. The distinction the
+   * other nullable fields here draw — "not told" versus "nothing" — does not
+   * apply: `category` is a plain column every listing payload carries, and
+   * `MISSING_CATEGORY` is how the readiness verdict reports its absence. A row
+   * with `""` is uncategorised, which is a fact and not a gap in the snapshot.
+   */
+  category: string;
+  subcategory: string;
   // MOCK-DATA: no review aggregate exists, so these stay null and the row
   // renders without a star line rather than with an invented one.
   rating: number | null;
@@ -483,6 +495,8 @@ export function deriveRows(
       readiness: listing.readiness ?? null,
       bulkEligibility: listing.bulk_eligibility ?? null,
       unitsSold7d: sold.get(String(id)) || 0,
+      category: String(listing.category || ""),
+      subcategory: String(listing.subcategory || ""),
       rating: null,
       reviewCount: null
     };

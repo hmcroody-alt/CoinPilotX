@@ -11,6 +11,8 @@ import type {
 } from "../../api/marketplace";
 import {
   beginAttempt,
+  categoryPayload,
+  pricePayload,
   idsToSend,
   isSameAttempt,
   outcomeOf,
@@ -236,6 +238,7 @@ describe("the reason beside a row", () => {
 describe("an attempt that carries a pricing rule", () => {
   const PLUS_20 = { type: "COST_PLUS_PERCENT", value: 20 } as const;
   const PLUS_25 = { type: "COST_PLUS_PERCENT", value: 25 } as const;
+  const TO_HOME = { category: "Home & Kitchen", subcategory: "" } as const;
 
   /**
    * The failure this exists for, and it is not a double-write.
@@ -248,22 +251,92 @@ describe("an attempt that carries a pricing rule", () => {
    * nothing is written twice, and the numbers on screen are fiction.
    */
   it("is not the same attempt once the rule changes", () => {
-    const attempt = beginAttempt("price", [3, 1, 2], PLUS_20);
-    expect(isSameAttempt(attempt, "price", [1, 2, 3], PLUS_20)).toBe(true);
-    expect(isSameAttempt(attempt, "price", [1, 2, 3], PLUS_25)).toBe(false);
+    const attempt = beginAttempt("price", [3, 1, 2], pricePayload(PLUS_20));
+    expect(isSameAttempt(attempt, "price", [1, 2, 3], pricePayload(PLUS_20))).toBe(true);
+    expect(isSameAttempt(attempt, "price", [1, 2, 3], pricePayload(PLUS_25))).toBe(false);
   });
 
   /** A different rule *type* at the same number is different work too. */
   it("tells a percentage from a margin at the same value", () => {
-    const attempt = beginAttempt("price", [1], { type: "COST_PLUS_PERCENT", value: 40 });
-    expect(isSameAttempt(attempt, "price", [1], { type: "TARGET_MARGIN", value: 40 })).toBe(false);
+    const attempt = beginAttempt("price", [1], pricePayload({ type: "COST_PLUS_PERCENT", value: 40 }));
+    expect(
+      isSameAttempt(attempt, "price", [1], pricePayload({ type: "TARGET_MARGIN", value: 40 }))
+    ).toBe(false);
   });
 
   /** And dropping the rule entirely is not a match for having one. */
   it("does not match a rule-less request", () => {
-    const attempt = beginAttempt("price", [1], PLUS_20);
+    const attempt = beginAttempt("price", [1], pricePayload(PLUS_20));
     expect(isSameAttempt(attempt, "price", [1], null)).toBe(false);
     expect(isSameAttempt(attempt, "price", [1])).toBe(false);
+  });
+
+  /**
+   * The same failure, one action over: a seller who previews "Home & Kitchen",
+   * goes back, picks "Education" and applies must not be handed the first move's
+   * summary. The category is in the key for the identical reason the rule is.
+   */
+  it("is not the same attempt once the category changes", () => {
+    const attempt = beginAttempt("category", [1, 2], categoryPayload(TO_HOME));
+    expect(isSameAttempt(attempt, "category", [2, 1], categoryPayload(TO_HOME))).toBe(true);
+    expect(
+      isSameAttempt(attempt, "category", [2, 1], categoryPayload({ category: "Education", subcategory: "" }))
+    ).toBe(false);
+  });
+
+  /**
+   * A move within the same parent is a real change, so the subcategory has to be
+   * in the key too. Were it not, "Education / Trading" would replay the summary
+   * of "Education / Crypto Basics" and report products filed somewhere they are
+   * not.
+   */
+  it("is not the same attempt once only the subcategory changes", () => {
+    const attempt = beginAttempt(
+      "category",
+      [1],
+      categoryPayload({ category: "Education", subcategory: "Crypto Basics" })
+    );
+    expect(
+      isSameAttempt(attempt, "category", [1], categoryPayload({ category: "Education", subcategory: "Trading" }))
+    ).toBe(false);
+  });
+
+  /**
+   * Two payload kinds cannot collide however they are spelled. Contrived on
+   * purpose: the guarantee is that the *kind* is part of the compared string, so
+   * no pair of payloads from different actions can ever hash alike.
+   */
+  it("never confuses a price payload with a category payload", () => {
+    const attempt = beginAttempt("price", [1], pricePayload(PLUS_20));
+    expect(
+      isSameAttempt(attempt, "price", [1], categoryPayload({ category: "COST_PLUS_PERCENT", subcategory: "20" }))
+    ).toBe(false);
+  });
+
+  /**
+   * The same guarantee one level down, where it is much easier to lose.
+   *
+   * Categories are free text, so every printable character is one a seller may
+   * type — including whichever one a key builder picks to glue the pair together.
+   * Joined by `|`, the aisle `"Toys|Games"` with no child and the aisle `"Toys"`
+   * with the child `"Games"` produce one string, and the second of those two
+   * moves is silently treated as a repeat of the first: the seller taps Apply,
+   * nothing is sent, and the sheet reports the previous move's results.
+   *
+   * Two spellings chosen to collide under every separator a person would reach
+   * for. This passes because the pair is encoded rather than concatenated.
+   */
+  it("keeps the pair apart even when the text contains the obvious separators", () => {
+    const separators = ["|", "/", ":", " ", ",", "\t"];
+
+    separators.forEach((sep) => {
+      const glued = categoryPayload({ category: `Toys${sep}Games`, subcategory: "" });
+      const split = categoryPayload({ category: "Toys", subcategory: "Games" });
+      const attempt = beginAttempt("category", [1], glued);
+
+      expect(isSameAttempt(attempt, "category", [1], split)).toBe(false);
+      expect(isSameAttempt(attempt, "category", [1], glued)).toBe(true);
+    });
   });
 
   /**
@@ -274,7 +347,7 @@ describe("an attempt that carries a pricing rule", () => {
    */
   it("leaves publish and hide exactly as they were", () => {
     const attempt = beginAttempt("publish", [1, 2]);
-    expect(attempt.rule).toBeNull();
+    expect(attempt.payload).toBeNull();
     expect(isSameAttempt(attempt, "publish", [2, 1])).toBe(true);
     expect(isSameAttempt(attempt, "hide", [2, 1])).toBe(false);
   });
