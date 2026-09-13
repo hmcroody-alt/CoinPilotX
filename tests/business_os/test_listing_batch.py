@@ -749,3 +749,163 @@ def test_every_previewed_row_lands_in_exactly_one_count():
     summary = b.summarize_preview("price", entries)
     assert (summary["eligible_count"] + summary["blocked_count"]
             + summary["failed_count"]) == summary["requested_count"] == 12
+
+
+# --- bulk set category -------------------------------------------------------
+#
+# The second payload action, and the reason `evaluate_rows` takes `plans` rather
+# than `price_plans`. Two things are genuinely different about re-filing, and
+# both are here: a subcategory belongs to its parent, so it cannot survive a
+# move on its own; and `category` is a MATERIAL_FIELD, so the *unchanged* row is
+# the dangerous one -- writing a listing's own category back sends a live
+# product to `pending_review` and off sale to record that nothing happened.
+
+
+def test_a_category_request_carries_the_pair():
+    normalized = b.normalize_request(
+        "category", [2, 1], "key-c", {"category": "Home & Kitchen", "subcategory": "Lighting"}
+    )
+    assert normalized["payload"] == {"category": "Home & Kitchen", "subcategory": "Lighting"}
+    assert normalized["listing_ids"] == [1, 2]
+
+
+def test_an_omitted_subcategory_is_a_cleared_subcategory_not_an_absent_key():
+    # The payload is what the fingerprint hashes and what the writer writes, so
+    # "no subcategory" has to be a value. Were the key absent, the writer would
+    # have to invent a meaning for it, and the two obvious inventions -- clear
+    # it, or leave it -- are the whole question.
+    normalized = b.normalize_request("category", [1], "key-c", {"category": "Home & Kitchen"})
+    assert normalized["payload"] == {"category": "Home & Kitchen", "subcategory": ""}
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        None,                                    # names no category at all
+        {},                                      # ditto, spelled out
+        {"category": ""},                        # empty is not a filing
+        {"category": "   "},                     # nor is whitespace
+        {"category": 7},                         # nor is a number
+        {"category": ["Home"]},                  # nor is a list
+        {"subcategory": "Lighting"},             # a child with no parent
+        {"category": "Home", "subcategory": 7},  # a child that is not text
+    ],
+)
+def test_a_category_request_without_a_usable_pair_is_refused(settings):
+    with pytest.raises(b.BatchError) as caught:
+        b.normalize_request("category", [1], "key-c", settings)
+    assert caught.value.code == "INVALID_CATEGORY"
+
+
+def test_a_setting_this_action_does_not_understand_is_refused():
+    """Silence here would be the worst kind of success.
+
+    A client that sends `{"category": "Home", "visible": False}` believes it
+    asked for two things. Accepting the key it understands and dropping the
+    other returns a success for half a request, and the seller reads the half
+    that did not happen as done.
+    """
+    with pytest.raises(b.BatchError) as caught:
+        b.normalize_request("category", [1], "key-c",
+                            {"category": "Home", "visible": False})
+    assert caught.value.code == "INVALID_CATEGORY"
+
+
+def test_the_category_is_part_of_the_request_fingerprint():
+    # Same failure the pricing rule has: without this, re-filing a selection
+    # into a second category replays the first one's summary and the seller is
+    # told the move they just asked for succeeded.
+    assert (b.request_hash("category", [1, 2], {"category": "Home", "subcategory": ""})
+            != b.request_hash("category", [1, 2], {"category": "Education", "subcategory": ""}))
+
+
+def test_the_subcategory_alone_changes_the_fingerprint_too():
+    assert (b.request_hash("category", [1], {"category": "Home", "subcategory": "Lighting"})
+            != b.request_hash("category", [1], {"category": "Home", "subcategory": ""}))
+
+
+def test_moving_a_listing_drops_the_subcategory_it_no_longer_fits():
+    """"Education / Crypto Basics" moved to "Home & Kitchen" must not stay filed
+    under "Home & Kitchen / Crypto Basics" -- a pair no filter, breadcrumb or
+    buyer can make sense of, and one the seller never typed."""
+    plan = b.category_proposal(
+        {"category": "Home & Kitchen", "subcategory": ""},
+        listing(category="Education", subcategory="Crypto Basics"),
+    )
+    assert plan == {"category": "Home & Kitchen", "subcategory": ""}
+
+
+def test_a_listing_already_in_that_filing_is_blocked_not_rewritten():
+    plan = b.category_proposal(
+        {"category": "Education", "subcategory": "Crypto Basics"},
+        listing(category="Education", subcategory="Crypto Basics"),
+    )
+    assert plan["block"]["code"] == "CATEGORY_UNCHANGED"
+
+
+def test_the_same_parent_with_a_new_child_is_a_real_change():
+    # The pair is what the listing claims, so comparing the parent alone would
+    # silently refuse every within-category re-filing.
+    plan = b.category_proposal(
+        {"category": "Education", "subcategory": "Trading"},
+        listing(category="Education", subcategory="Crypto Basics"),
+    )
+    assert plan == {"category": "Education", "subcategory": "Trading"}
+
+
+def test_whitespace_on_either_side_does_not_invent_a_change():
+    """Both sides, because trimming one is half a comparison.
+
+    The request is trimmed by `normalize_category`; the column is not
+    guaranteed clean, because a CJ feed writes it and the single-listing editor
+    predates the trimming here. A test that only varies the payload passes
+    whether or not the stored value is normalized too.
+    """
+    assert b.category_proposal(
+        {"category": "Education", "subcategory": "Crypto Basics"},
+        listing(category="  Education", subcategory="Crypto  Basics "),
+    )["block"]["code"] == "CATEGORY_UNCHANGED"
+
+
+def test_a_row_nobody_filed_is_blocked():
+    assert b.block_reason(listing(), "category", None, None) == {
+        "code": "NO_CATEGORY_PLAN",
+        "reason": "No category worked out",
+    }
+
+
+def test_a_deleted_listing_is_not_re_filed():
+    assert b.block_reason(listing(status="seller_deleted"), "category", None,
+                          {"category": "Home", "subcategory": ""})["code"] == "DELETED"
+
+
+@pytest.mark.parametrize("status", ["draft", "active", "paused", "rejected", "changes_requested"])
+def test_re_filing_reaches_listings_publish_cannot(status):
+    # Readiness is deliberately not consulted, and here the reason is stronger
+    # than it is for price: `MISSING_CATEGORY` is itself a publish blocker, so
+    # gating this on publishability would refuse exactly the rows the action
+    # exists to repair.
+    assert b.block_reason(listing(status=status), "category", None,
+                          {"category": "Home", "subcategory": ""}) is None
+
+
+def test_the_blocking_pair_and_the_written_pair_are_one_object():
+    rows = [listing(id=1, category="Education", subcategory="Crypto Basics"),
+            listing(id=2, category="Home & Kitchen", subcategory="")]
+    plans = b.build_category_plans(rows, {"category": "Home & Kitchen", "subcategory": ""})
+    decided = dict((int(row["id"]), block) for row, block in
+                   b.evaluate_rows(rows, "category", None, plans))
+    assert decided[1] is None
+    assert decided[2]["code"] == "CATEGORY_UNCHANGED"
+    assert plans[1] == {"category": "Home & Kitchen", "subcategory": ""}
+
+
+def test_neither_payload_action_is_precomputable():
+    # `PRECOMPUTED_ACTIONS` is derived by subtracting `PAYLOAD_ACTIONS`, so
+    # adding an action to the second list is what keeps it out of the per-row
+    # eligibility map. Asserted rather than assumed: a category in the
+    # precomputed set would make the store label every row `NO_CATEGORY_PLAN`
+    # before the seller has chosen anything.
+    assert "category" in b.PAYLOAD_ACTIONS
+    assert "category" not in b.PRECOMPUTED_ACTIONS
+    assert "price" not in b.PRECOMPUTED_ACTIONS

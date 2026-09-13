@@ -55727,6 +55727,100 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
             "changes_applied": applied}
 
 
+def _marketplace_batch_category_outcome(listing, plan):
+    """What re-filing this row comes to: the pair, and whether it re-reviews.
+
+    The category counterpart of ``_marketplace_batch_price_outcome``, pure and
+    called by both the preview and the write for the same reason: §34's "Home &
+    Kitchen → Education" has to be the pair that lands, not a second rendering
+    of the seller's request that happens to match.
+
+    ``category`` is a MATERIAL_FIELD, so the re-review rule here is the price
+    rule verbatim. Re-filing is arguably the change a moderator most needs to
+    see — "select all → Education" across a store is how a prohibited product
+    hides in a benign aisle, and it is one tap.
+    """
+    plan = plan or {}
+    category = str(plan.get("category") or "")
+    subcategory = str(plan.get("subcategory") or "")
+    if not category:
+        # Unreachable through the route: `normalize_category` refuses an empty
+        # category and `category_proposal` only omits the key when it blocks.
+        # Raised rather than written because a listing with no category is not
+        # publishable, and silently clearing one is a way to take a live product
+        # off sale that reports itself as a success.
+        raise ValueError("Choose a category.")
+
+    old_status = str(listing.get("status") or "draft").lower()
+    old_approval = str(listing.get("approval_status") or "draft").lower()
+    changed = set()
+    if str(listing.get("category") or "") != category:
+        changed.add("category")
+    if str(listing.get("subcategory") or "") != subcategory:
+        changed.add("subcategory")
+    rereviews = (
+        old_status in marketplace_listing_lifecycle.PUBLIC_STATUSES
+        and old_approval == "approved"
+        and marketplace_listing_lifecycle.requires_rereview(changed)
+    )
+    return {
+        "category": category,
+        "subcategory": subcategory,
+        "rereviews": rereviews,
+        "next_status": "pending_review" if rereviews else old_status,
+        "next_approval": "pending_review" if rereviews else old_approval,
+        "old_status": old_status,
+        "changed": changed,
+    }
+
+
+def _marketplace_batch_apply_category(cur, listing, user_id, now, plan):
+    """Write one re-filed row, with the same consequences the single edit has.
+
+    Structurally the price write, one column group over, and deliberately so:
+    the same shared outcome function, the same material-field re-review, the
+    same ``mark_overridden`` hand-off (§25). Without the last one the next
+    supplier sync owns ``category`` again and files the product back where the
+    provider thinks it belongs, so the seller's re-organised store quietly
+    un-organises itself on a schedule nobody is watching.
+    """
+    listing_id = int(listing.get("id") or 0)
+    outcome = _marketplace_batch_category_outcome(listing, plan)
+    old_status = outcome["old_status"]
+    next_status = outcome["next_status"]
+
+    cur.execute(
+        "UPDATE marketplace_listings SET category=?, subcategory=?, status=?, approval_status=?, "
+        "updated_at=? WHERE id=? AND seller_user_id=?",
+        (outcome["category"], outcome["subcategory"], next_status, outcome["next_approval"],
+         now, listing_id, int(user_id)),
+    )
+
+    try:
+        from services import marketplace_variants as _variants
+
+        # Both columns, because both were written. Handing over only `category`
+        # would let a sync restore the provider's subcategory under the seller's
+        # parent -- the incoherent pair `normalize_category` exists to avoid,
+        # reintroduced by the thing that was supposed to protect the change.
+        _variants.mark_overridden(
+            cur, listing_id=listing_id, seller_user_id=int(user_id),
+            fields=["category", "subcategory"]
+        )
+    except Exception:
+        # A merchant-authored listing has no supplier source and `mark_overridden`
+        # says so by raising. Not a failed re-filing: there is no provider who
+        # could overwrite a column nobody else owns.
+        pass
+
+    applied = sorted(outcome["changed"])
+    if next_status != old_status:
+        applied += ["status", "approval_status"]
+    return {"category": outcome["category"], "subcategory": outcome["subcategory"],
+            "status": next_status, "returns_to_review": bool(outcome["rereviews"]),
+            "changes_applied": applied}
+
+
 def _marketplace_batch_decide(cur, normalized, user_id):
     """Read the rows a batch names and decide each one. Writes nothing.
 
@@ -55753,7 +55847,9 @@ def _marketplace_batch_decide(cur, normalized, user_id):
     owned = {int(dict(row)["id"]): dict(row) for row in cur.fetchall()}
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, list(owned))
 
-    price_plans = None
+    plans = None
+    if normalized["action"] == "category":
+        plans = _batch.build_category_plans(owned.values(), normalized["payload"])
     if normalized["action"] == "price":
         # Supplier cost is read from the source rows, scoped to this seller. A
         # listing with no source row simply has no cost, and `price_proposal`
@@ -55777,13 +55873,13 @@ def _marketplace_batch_decide(cur, normalized, user_id):
                 row.get("price_label") or "", str(row.get("currency") or "USD").upper()
             )
             currents[listing_id] = current_cents
-        price_plans = _batch.build_price_plans(
+        plans = _batch.build_price_plans(
             owned.values(), normalized["payload"], costs, currents)
 
     decided = _batch.evaluate_rows(
-        owned.values(), normalized["action"], media_by_listing, price_plans)
+        owned.values(), normalized["action"], media_by_listing, plans)
     blocks = {int(row["id"]): block for row, block in decided}
-    return owned, blocks, price_plans
+    return owned, blocks, plans
 
 
 def _marketplace_batch_apply(cur, action, listing, user_id, now, plan=None):
@@ -55799,6 +55895,8 @@ def _marketplace_batch_apply(cur, action, listing, user_id, now, plan=None):
     listing_id = int(listing.get("id") or 0)
     if action == "price":
         return _marketplace_batch_apply_price(cur, listing, user_id, now, plan)
+    if action == "category":
+        return _marketplace_batch_apply_category(cur, listing, user_id, now, plan)
     if action == "hide":
         cur.execute(
             "UPDATE marketplace_listings SET status='paused', updated_at=? "
@@ -55856,10 +55954,19 @@ def api_pulse_marketplace_seller_listings_batch():
     from services.business_os.marketplace import listing_readiness as _readiness
 
     payload = request.get_json(silent=True) or {}
+    # Each payload action reads its own key rather than sharing one generic
+    # `settings` object. A shared key would make "reprice these forty" and
+    # "re-file these forty" the same request shape, and the action field the only
+    # thing distinguishing them — so a client that sent the wrong action with the
+    # right settings would be told it succeeded at the other thing. The name also
+    # tells `normalize_request` nothing: it validates by action, and an unknown
+    # action never reaches here.
+    action = payload.get("action")
+    settings = payload.get("category") if action == "category" else payload.get("pricing_rule")
     try:
         normalized = _batch.normalize_request(
-            payload.get("action"), payload.get("listing_ids"),
-            payload.get("idempotency_key"), payload.get("pricing_rule"))
+            action, payload.get("listing_ids"),
+            payload.get("idempotency_key"), settings)
     except _batch.BatchError as err:
         return jsonify({"ok": False, "error": err.code, "message": err.message}), err.status
 
@@ -55869,11 +55976,11 @@ def api_pulse_marketplace_seller_listings_batch():
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # `price` joins `publish` here because it writes a listing field, and the
-    # single-listing edit route already refuses an unapproved seller. Leaving it
-    # out would make the bulk endpoint the one way to edit a listing without
-    # merchant approval.
-    if normalized["action"] in ("publish", "price") and not approved_marketplace_seller_for_user(cur, user["user_id"]):
+    # `price` and `category` join `publish` here because they write listing
+    # fields, and the single-listing edit route already refuses an unapproved
+    # seller. Leaving either out would make the bulk endpoint the one way to edit
+    # a listing without merchant approval.
+    if normalized["action"] in ("publish", "price", "category") and not approved_marketplace_seller_for_user(cur, user["user_id"]):
         conn.close()
         return api_error("Merchant approval is required before publishing listings.", 403)
 
@@ -55886,7 +55993,7 @@ def api_pulse_marketplace_seller_listings_batch():
     # same rule — so a preview can never be a way around validation, and the
     # seller cannot be shown a preview of a batch that would be refused.
     if bool(payload.get("dry_run")):
-        owned, blocks, price_plans = _marketplace_batch_decide(cur, normalized, user["user_id"])
+        owned, blocks, plans = _marketplace_batch_decide(cur, normalized, user["user_id"])
         preview = []
         for listing_id in normalized["listing_ids"]:
             row = owned.get(listing_id)
@@ -55904,27 +56011,38 @@ def api_pulse_marketplace_seller_listings_batch():
                     title=row.get("title") or ""))
                 continue
             detail = {}
-            if normalized["action"] == "price":
+            if normalized["action"] in ("price", "category"):
                 try:
-                    # The same function the write calls, so the "$49.00 → $12.00"
-                    # the seller reads is the string that will be stored, not a
-                    # second formatter's opinion of it.
-                    outcome = _marketplace_batch_price_outcome(row, (price_plans or {}).get(listing_id))
+                    # The same functions the writes call, so the "$49.00 → $12.00"
+                    # or "Education → Home & Kitchen" the seller reads is what
+                    # will be stored, not a second formatter's opinion of it.
+                    plan = (plans or {}).get(listing_id)
+                    if normalized["action"] == "price":
+                        outcome = _marketplace_batch_price_outcome(row, plan)
+                        detail = {
+                            "price_label": outcome["price_label"],
+                            "current_price_label": row.get("price_label") or "",
+                        }
+                    else:
+                        outcome = _marketplace_batch_category_outcome(row, plan)
+                        detail = {
+                            "category": outcome["category"],
+                            "subcategory": outcome["subcategory"],
+                            "current_category": row.get("category") or "",
+                            "current_subcategory": row.get("subcategory") or "",
+                        }
                 except Exception as preview_error:
-                    # An amount the write would refuse is reported refused here
+                    # A change the write would refuse is reported refused here
                     # too, rather than previewed as a success the commit undoes.
                     preview.append(_batch.result_entry(
                         listing_id, _batch.FAILED, error_code="APPLY_FAILED",
                         reason=str(preview_error) or "That change could not be saved.",
                         title=row.get("title") or ""))
                     continue
-                detail = {
-                    "price_label": outcome["price_label"],
-                    "current_price_label": row.get("price_label") or "",
-                    # Named so the sheet can warn before the tap, not after: this
-                    # is a live product that will leave the storefront for review.
-                    "returns_to_review": outcome["rereviews"],
-                }
+                # Named so the sheet can warn before the tap, not after: this is
+                # a live product that will leave the storefront for review. Both
+                # actions write a MATERIAL_FIELD, so both owe the seller this.
+                detail["returns_to_review"] = outcome["rereviews"]
             preview.append(_batch.result_entry(
                 listing_id, _batch.WOULD_APPLY, title=row.get("title") or "", **detail))
         conn.close()
@@ -55944,7 +56062,7 @@ def api_pulse_marketplace_seller_listings_batch():
     conn.commit()
 
     ids = normalized["listing_ids"]
-    owned, blocks, price_plans = _marketplace_batch_decide(cur, normalized, user["user_id"])
+    owned, blocks, plans = _marketplace_batch_decide(cur, normalized, user["user_id"])
 
     results = []
     for listing_id in ids:
@@ -55965,7 +56083,7 @@ def api_pulse_marketplace_seller_listings_batch():
         try:
             applied = _marketplace_batch_apply(
                 cur, normalized["action"], row, user["user_id"], now,
-                (price_plans or {}).get(listing_id))
+                (plans or {}).get(listing_id))
         except Exception as apply_error:
             # One row that could not be written must not lose the other
             # seventeen. `failed` rather than `blocked` (§19): nothing about the

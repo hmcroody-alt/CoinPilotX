@@ -57,18 +57,24 @@ from services import db
 from services.business_os.marketplace import listing_readiness as _readiness
 from services.business_os.suppliers import pricing as _pricing
 
-#: The actions a bulk request may carry. Bulk category (§22–§33) will extend
-#: this further; unknown actions are not silently accepted, because one that
-#: fell through to a no-op would report ``successful_count`` for work nobody
-#: did.
+#: The actions a bulk request may carry. Unknown actions are not silently
+#: accepted, because one that fell through to a no-op would report
+#: ``successful_count`` for work nobody did.
 #:
 #: ``price`` is the first action that carries a *payload* — the rest of this
 #: module was written for actions whose entire meaning is their name. See
 #: :func:`normalize_request` and :func:`request_hash` for what that changes.
-ACTIONS = ("publish", "hide", "price")
+#: ``category`` is the second, and it needed no new mechanism: a payload in the
+#: request hash, a per-row plan, and a block for "this row already says that".
+ACTIONS = ("publish", "hide", "price", "category")
 
 #: Actions that take a payload, and are meaningless without one.
-PAYLOAD_ACTIONS = ("price",)
+PAYLOAD_ACTIONS = ("price", "category")
+
+#: The single-listing edit route's own column limit, mirrored rather than
+#: re-chosen. A category a seller may set one at a time but not forty at a time
+#: — or the reverse — is two answers to one question (§21).
+CATEGORY_MAX = 80
 
 #: The actions whose verdict follows from the listing row alone, so a list route
 #: can attach one to every row it returns and the phone can grey the right rows
@@ -219,6 +225,8 @@ def normalize_request(
                 "Choose how the new price should be worked out.",
             )
         normalized["payload"] = rule
+    elif action == "category":
+        normalized["payload"] = normalize_category(payload)
     elif payload is not None:
         # A payload sent with `publish` or `hide` is a client that thinks it is
         # asking for something. It is not — those actions ignore it — and the
@@ -230,6 +238,56 @@ def normalize_request(
         )
 
     return normalized
+
+
+def normalize_category(payload: Any) -> dict:
+    """The category and subcategory a batch will write, or a refusal.
+
+    Free text rather than an enum, because the single-listing edit route accepts
+    free text and this has to be the same field (§21). There is no category
+    vocabulary in this application to validate against; what makes a category
+    unacceptable is decided downstream by ``marketplace_goods_policy`` and by a
+    moderator, and a listing moved into a prohibited category goes back into the
+    review queue on its way there — see the material-field rule below. Inventing
+    a whitelist here would refuse categories the seller can set one row at a
+    time, which is the divergence, not the fix.
+
+    **Subcategory is cleared when it is not supplied.** A subcategory belongs to
+    its parent: moving "Education / Crypto Basics" into "Home & Kitchen" and
+    keeping the old subcategory leaves the listing filed under
+    "Home & Kitchen / Crypto Basics", which no filter, breadcrumb or buyer can
+    make sense of. Carrying it across was the first implementation and it is
+    worse than dropping it, because the wrong pair is indistinguishable from a
+    pair someone chose. A seller who wants a subcategory sends one.
+    """
+    if payload is None or not isinstance(payload, dict):
+        raise BatchError("INVALID_CATEGORY", "Choose a category.")
+
+    raw = payload.get("category")
+    # A number or a bool here is a client bug, and `str()` would turn it into a
+    # category named "True". Refused rather than coerced.
+    if not isinstance(raw, str):
+        raise BatchError("INVALID_CATEGORY", "Choose a category.")
+    category = " ".join(raw.split())[:CATEGORY_MAX]
+    if not category:
+        raise BatchError("INVALID_CATEGORY", "Choose a category.")
+
+    raw_sub = payload.get("subcategory")
+    if raw_sub is not None and not isinstance(raw_sub, str):
+        raise BatchError("INVALID_CATEGORY", "That subcategory is not valid.")
+    subcategory = " ".join((raw_sub or "").split())[:CATEGORY_MAX]
+
+    unexpected = set(payload) - {"category", "subcategory"}
+    if unexpected:
+        # Same rule as a payload on `publish`: a client sending a key this action
+        # does not honour believes it is asking for something, and silence would
+        # have the seller told the batch did it.
+        raise BatchError(
+            "INVALID_CATEGORY",
+            "That bulk action only sets a category and subcategory.",
+        )
+
+    return {"category": category, "subcategory": subcategory}
 
 
 def request_hash(action: str, listing_ids: Iterable[int], payload: Any = None) -> str:
@@ -327,6 +385,53 @@ def price_proposal(rule: dict, cost_cents: Any, current_cents: Any) -> dict:
     return {"price_cents": price_cents}
 
 
+def category_proposal(target: dict, listing: dict) -> dict:
+    """What this row's filing becomes, or why it will not change.
+
+    Pure, and shaped exactly like :func:`price_proposal` so that the route's
+    preview and its write can share one decision for this action the way they
+    already do for the other (§21/§34). Returns either
+    ``{"category": str, "subcategory": str}`` or ``{"block": {...}}``.
+
+    The unchanged case is a *block*, and it is the whole reason this function
+    exists rather than the route writing the payload onto every selected row.
+    ``category`` is a MATERIAL_FIELD: writing the value a listing already has
+    sends a live, approved product back to ``pending_review`` and off sale until
+    a moderator clears the queue. "Select all → Set category: Education" in a
+    store that is mostly already Education would empty the storefront and be
+    reported as a success, and the seller would have no way to tell that from
+    the change they asked for. It is the same trap ``PRICE_UNCHANGED`` exists
+    for, one column over.
+
+    Both fields are compared, so re-filing "Education" under a new subcategory
+    is a real change rather than a no-op — the pair is what the listing claims,
+    not the parent alone.
+    """
+    category = str(target.get("category") or "")
+    subcategory = str(target.get("subcategory") or "")
+    current_category = " ".join(str(listing.get("category") or "").split())
+    current_subcategory = " ".join(str(listing.get("subcategory") or "").split())
+
+    if category == current_category and subcategory == current_subcategory:
+        return {
+            "block": {
+                "code": "CATEGORY_UNCHANGED",
+                "reason": "Already in that category",
+            }
+        }
+    return {"category": category, "subcategory": subcategory}
+
+
+def build_category_plans(rows: Iterable[dict], target: dict) -> dict:
+    """Every row's new filing, keyed by listing id.
+
+    The counterpart of :func:`build_price_plans`, and it exists for the same
+    reason: the number — here, the pair — that the batch *blocks on* and the one
+    it *writes* must be one object rather than two evaluations that agree today.
+    """
+    return {int(row.get("id") or 0): category_proposal(target, row) for row in rows}
+
+
 def block_reason(
     listing: dict,
     action: str,
@@ -372,6 +477,20 @@ def block_reason(
             return {"code": "NO_PRICE_PROPOSAL", "reason": "No price worked out"}
         return proposal.get("block")
 
+    if action == "category":
+        if status == "seller_deleted":
+            return {"code": "DELETED", "reason": "Removed from your store"}
+        # Readiness is not consulted, for the reason it is not consulted for a
+        # reprice: an unfinished listing is exactly the kind a seller re-files,
+        # and blocking would make the rows most in need of tidying the only ones
+        # bulk cannot reach. Note that this is *also* how a listing gets fixed —
+        # `MISSING_CATEGORY` is a publish blocker, so setting a category in bulk
+        # is one of the few bulk actions that makes rows readier than it found
+        # them.
+        if proposal is None:
+            return {"code": "NO_CATEGORY_PLAN", "reason": "No category worked out"}
+        return proposal.get("block")
+
     if status == "seller_deleted":
         return {"code": "DELETED", "reason": "Removed from your store"}
 
@@ -408,7 +527,7 @@ def evaluate_rows(
     rows: Iterable[dict],
     action: str,
     media_by_listing: Optional[dict] = None,
-    price_plans: Optional[dict] = None,
+    plans: Optional[dict] = None,
 ) -> list:
     """Decide every row in one pass, returning ``(row, block)`` pairs.
 
@@ -424,9 +543,16 @@ def evaluate_rows(
     listing ready on the row the seller is looking at and ``NO_VALID_MEDIA`` in
     the batch that acts on it — the exact divergence between what a seller is
     shown and what the server does that this whole engine exists to end.
+
+    ``plans`` is the per-row decision for whichever payload action this is —
+    :func:`build_price_plans` for a reprice, :func:`build_category_plans` for a
+    re-filing. It was named ``price_plans`` when there was one such action; the
+    name is now the general one, because a second parameter for the second
+    payload action would be two channels for one idea and a third would be
+    three.
     """
     lookup = media_by_listing or {}
-    plans = price_plans or {}
+    plans = plans or {}
     decided = []
     for row in rows:
         listing_id = int(row.get("id") or 0)
