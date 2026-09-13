@@ -81,7 +81,7 @@ expensive.
 | **Infra** | ~~Verify R2 CORS against the **live bucket**~~ **done 2026-09-13 — confirmed absent** (`scripts/ops/r2_cors_probe.py`); **applying the policy is still owed and is a human action**, see the risk note below. ~~Shared rate-limit store (Redis) + distributed mode on~~ **done** (5920d542). ~~`GET /health/routes` as a hard deploy gate~~ **done** (4a64915f: build-time contract gate + deploy-time liveness gate), still to extend with a feature-flag snapshot. AASA health check returns 200 with non-empty `details[]` |
 | **Database** | 3 index additions (`lower(users.username)`, `lower(users.email)`, `active_sessions.session_hash`) — all `CONCURRENTLY`, all with a partial predicate for blank values. 2 duplicate-index removals. Session TTL sweep |
 | **Security** | **Fix `bot.py:28760`** |
-| **Client** | Repo scaffold, CI build producing hashed static assets, no Node in the deploy image |
+| **Client** | ~~Repo scaffold, CI build producing hashed static assets, no Node in the deploy image~~ **done** — `web/` (Vite + React 19 + TS), output committed to `static/app/` with content-hashed filenames. Because git-based deploy forces committing the bundle, it ships with a **staleness gate**: `scripts/ops/web_build_freshness_gate.py` fails when the committed artifacts were not built from the committed source. See `PULSESOC_WEB_TARGET_ARCHITECTURE.md` §2.4 |
 | **W-B** | Route-hit logging live, keyed by client |
 
 **Gated on:** nothing. This is the entry point.

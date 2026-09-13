@@ -129,6 +129,47 @@ From `PULSESOC_REUSE_VS_REBUILD_MATRIX.md`, the two items that shape the client:
   raises rather than emitting a link the shipped binary cannot resolve). The SPA consumes the
   same canonical source — see §7.4.
 
+### 2.4 How the artifacts reach the box — and the staleness that buys
+
+§2.1 says "build in CI, ship static artifacts." It does not say how they arrive, and the
+answer is forced: **Railway deploys from git, and the image has no Node.** So the build
+output is *committed*. `web/` holds the source, `static/app/` holds the built bundle, and
+both are in the repository.
+
+That is the only option available, but it is worth being explicit that it is a trade rather
+than a free choice. It converts a build problem into a **staleness** problem, and staleness
+is the worse-behaved of the two because it is silent:
+
+> Edit `web/src/`, forget to rebuild, commit. The Python tests pass. The app boots. `/health`
+> answers 200. The page renders. It renders last week's bundle.
+
+Nothing in any existing suite compares the two halves — a unit test runs the *source*, a
+browser runs the *artifact*. This is the same shape as the TestFlight build 5 failure: two
+sides disagreeing while each looks healthy alone.
+
+**The gate.** `web/scripts/fingerprint.mjs` records a sha256 per source input at build time
+into `static/app/build-source-hash.json`; `scripts/ops/web_build_freshness_gate.py`
+recomputes it and fails on any difference. `.github/workflows/web-build.yml` runs the
+protection tests, then `npm ci`, then the build, then the gate.
+
+Two details of that design are deliberate and should survive edits:
+
+- **It compares source inputs, not output bytes.** Diffing CI's bundle against the committed
+  one would make the gate depend on the bundler being byte-reproducible across machines and
+  Node versions. It mostly is — and "mostly" is precisely what produces a false alarm on a
+  Node minor bump, which is how a check gets switched off. Hashing inputs is exactly as
+  strong for the failure being prevented and is deterministic by construction. It is also
+  what lets a developer on a different Node version rebuild without tripping the gate.
+- **`package-lock.json` is one of the inputs.** A dependency bump changes the bundle with no
+  diff anywhere under `src/`, and that is the one stale case a source-only fingerprint would
+  miss.
+
+**Sourcemaps are off.** Committed artifacts mean every build adds its maps to git history
+permanently (~1 MB for even an empty scaffold), and they publish full source for a product
+behind a login wall. Nothing consumes them today — there is no error reporter to symbolicate
+against. Turn them back on together with one, and upload the map to it rather than
+committing it here.
+
 ---
 
 ## 3. Authentication architecture

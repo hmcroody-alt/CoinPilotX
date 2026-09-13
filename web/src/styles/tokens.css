@@ -1,0 +1,177 @@
+/* PulseSoc web design tokens.
+ *
+ * Ported from `docs/web-rebuild/PULSESOC_WEB_DESIGN_SYSTEM_MAP.md` §9, which is
+ * itself measured from `mobile-native/src/theme/`. The native app is the source
+ * of truth, so colour values here are a translation and not a redesign: if a
+ * value disagrees with the native theme, the native theme is right.
+ *
+ * ---------------------------------------------------------------------------
+ * The spacing system is an EIGHT-POINT GRID.
+ * ---------------------------------------------------------------------------
+ * Every layout dimension -- padding, margin, gap, control height, container
+ * width, breakpoint -- is a multiple of 8. This is the standard grid used by
+ * both Material Design and Apple's HIG, and it is chosen here for the usual
+ * reasons: it collapses an unbounded set of arbitrary values into one rhythm,
+ * it survives translation between 1x/2x/3x raster scales without fractional
+ * pixels, and it makes "is this aligned?" a question with an arithmetic answer
+ * rather than an aesthetic one.
+ *
+ * The native scale is a 4px base (4 · 8 · 12 · 16 · 20 · 24 · 32 · 40 · 48).
+ * Most of it already lands on 8. The two values that do not -- 12 and 20 -- are
+ * kept below as explicitly named half-steps rather than being rounded, because
+ * rounding them would silently change native parity for every ported component
+ * that uses `spacing.md` or `spacing.xl`. The rule is therefore: **layout is on
+ * the 8 grid; the half-steps exist for intra-component detail and for parity
+ * with a native value, and each use should be one of those two things.**
+ */
+
+:root,
+[data-theme="dark"] {
+  /* --- Surfaces --------------------------------------------------------- */
+  --pulse-bg: #050910;
+  --pulse-surface: #0b141c;
+  --pulse-surface-raised: #111f2a;
+  --pulse-border: #203746;
+
+  /* --- Text ------------------------------------------------------------- */
+  --pulse-text: #f4f7fb;
+  --pulse-muted: #9aa8b7;
+  --pulse-disabled: #51606c;
+
+  /* --- Brand + state ---------------------------------------------------- */
+  --pulse-accent: #32e6b3;
+  --pulse-accent-strong: #61d8ff;
+  --pulse-warning: #f3c461;
+  --pulse-danger: #ff5f7e;
+  --pulse-focus: #8df7ff;
+
+  /* --- Domain accents --------------------------------------------------- */
+  --pulse-intelligence: #9f7cff;
+  --pulse-creator: #42e7d4;
+  --pulse-economy: #f6c85d;
+  --pulse-safety: #3ff0a0;
+  --pulse-crypto: #62e0ff;
+
+  /* --- Translucency ----------------------------------------------------- */
+  --pulse-glass: rgba(11, 24, 34, 0.82);
+  --pulse-glass-strong: rgba(15, 36, 50, 0.94);
+  --pulse-signal-dim: rgba(50, 230, 179, 0.12);
+  --pulse-signal-soft: rgba(97, 216, 255, 0.12);
+  --pulse-danger-soft: rgba(255, 95, 126, 0.14);
+  --pulse-warning-soft: rgba(243, 196, 97, 0.14);
+
+  /* --- Scrim ramp ------------------------------------------------------- */
+  /* Native meets this need with literals (21 hardcoded uses of the first one). */
+  --pulse-scrim-1: #08110f;
+  --pulse-scrim-2: #03120f;
+  --pulse-scrim-3: #030812;
+  --pulse-scrim-4: #02050b;
+  --pulse-scrim-grad: linear-gradient(
+    180deg,
+    rgba(2, 5, 11, 0) 0%,
+    rgba(2, 5, 11, 0.72) 100%
+  );
+
+  /* --- On-accent -------------------------------------------------------- */
+  /* White on the teal accent measures ~1.8:1 and fails WCAG AA. The accent is
+   * a light colour and takes dark text. `--pulse-on-media` is the only place
+   * pure white is correct, because it sits over photo/video rather than over a
+   * brand fill. Using `#fff` on an accent button is the specific mistake these
+   * two tokens exist to make hard. */
+  --pulse-on-accent: #050910;
+  --pulse-on-media: #ffffff;
+
+  /* --- Spacing: the eight-point grid ------------------------------------ */
+  --space-0: 0;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+  --space-7: 56px;
+  --space-8: 64px;
+  --space-10: 80px;
+  --space-12: 96px;
+  --space-16: 128px;
+
+  /* Half-steps. Intra-component detail, and parity with the two native values
+   * that are not multiples of 8 (`spacing.md` 12, `spacing.xl` 20). */
+  --space-half: 4px;
+  --space-1-5: 12px;
+  --space-2-5: 20px;
+
+  /* --- Radius ----------------------------------------------------------- */
+  /* Measured native reality: 8px is the real default (309 uses) and 999 the
+   * pill (137), even though the token set nominates 12/16/18. */
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 999px;
+
+  /* --- Control sizing --------------------------------------------------- */
+  /* 48 rather than Apple's 44 floor: it clears the floor and sits on the grid,
+   * so a control stacks with grid spacing without introducing a 4px remainder. */
+  --control-height: 48px;
+  --control-height-sm: 40px;
+  --tap-target-min: 48px;
+
+  /* --- Layout ----------------------------------------------------------- */
+  --container-max: 1280px;
+  --container-reading: 720px;
+  --gutter: var(--space-3);
+  --gutter-wide: var(--space-6);
+
+  /* --- Motion ----------------------------------------------------------- */
+  /* Native `logiNexus.motion` values, unchanged. They are not adjusted onto the
+   * grid: duration is not a layout dimension, and nudging 150ms to fit an
+   * arithmetic rule would desynchronise web from native for no visual gain. */
+  --dur-instant: 80ms;
+  --dur-quick: 150ms;
+  --dur-standard: 240ms;
+  --dur-reveal: 360ms;
+  --dur-entrance: 600ms;
+  --dur-stagger: 90ms;
+
+  --ease-standard: cubic-bezier(0.45, 0, 0.55, 1);
+  --ease-exit: cubic-bezier(0.5, 1, 0.89, 1);
+  --ease-enter: cubic-bezier(0.11, 0, 0.5, 0);
+  --ease-loop: cubic-bezier(0.37, 0, 0.63, 1);
+
+  /* --- Z-index ---------------------------------------------------------- */
+  /* Stepped in 8s so there is always room to insert a layer between two
+   * existing ones without renumbering. Native has a `9000` overlay z-order
+   * hack; it does not come forward. */
+  --z-base: 0;
+  --z-raised: 8;
+  --z-sticky: 16;
+  --z-header: 24;
+  --z-drawer: 32;
+  --z-modal: 40;
+  --z-toast: 48;
+}
+
+/* The AMOLED variant. Same token names, different surface values -- theming is
+ * an attribute swap, never a second stylesheet. */
+[data-theme="black"] {
+  --pulse-bg: #000000;
+  --pulse-surface: #070a0d;
+  --pulse-surface-raised: #10161c;
+  --pulse-border: #1b2b36;
+  --pulse-glass: rgba(5, 8, 10, 0.92);
+  --pulse-glass-strong: rgba(3, 5, 7, 0.97);
+}
+
+/* Reduce-motion is a first-class input in the native app, not an afterthought:
+ * the long ambient loops are suppressed outright. The web honours the same
+ * contract at the root so no component has to remember to. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-instant: 0ms;
+    --dur-quick: 0ms;
+    --dur-standard: 0ms;
+    --dur-reveal: 0ms;
+    --dur-entrance: 0ms;
+    --dur-stagger: 0ms;
+  }
+}

@@ -1,0 +1,103 @@
+# Web client build + artifact freshness gate.
+#
+# The constraint this job exists under: `nixpacks.toml` installs `python311` and
+# `ffmpeg`, so there is no Node in the production image, and Railway deploys
+# from git. The built SPA therefore has to be committed -- which trades a build
+# problem for a staleness problem, and staleness is silent. An unrebuilt bundle
+# renders fine, boots fine, and passes every other suite.
+#
+# Design notes that matter if you edit this file:
+#
+#  * Step order is load-bearing. `npm ci` -> build -> gate means the JS writes
+#    the source record and Python immediately recomputes it. That ordering is
+#    the only check that the two hashing implementations agree; if they ever
+#    diverge, this job goes red on the next run rather than the gate quietly
+#    becoming always-green or always-red.
+#  * Exit code 3 means "could not check" and must NOT be treated as success.
+#    `continue-on-error` here would reintroduce exactly the defect class the
+#    gate exists to catch.
+#  * The protection tests run BEFORE the gate on purpose: the gate passing says
+#    the tree is healthy, the tests say the gate can still go red. Only the
+#    second is evidence about the gate itself.
+#  * `npm ci` and not `npm install` -- the lockfile is part of the fingerprint,
+#    so a job that silently updated it would invalidate its own check.
+
+name: Web build
+
+on:
+  pull_request:
+    branches: ["**"]
+    paths:
+      - "web/**"
+      - "static/app/**"
+      - "scripts/ops/web_build_freshness_gate.py"
+      - "tests/protection/test_web_build_freshness_gate.py"
+      - ".github/workflows/web-build.yml"
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: web-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: web/.nvmrc
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: The gate can still fail
+        # Before trusting a green gate, prove it is capable of going red. A gate
+        # is code that fails silently by construction, so "it passed" is only
+        # evidence once "it can fail" is established.
+        run: python3 tests/protection/test_web_build_freshness_gate.py
+
+      - name: Install (locked)
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck and build
+        working-directory: web
+        run: npm run build
+
+      - name: The committed bundle was built from the committed source
+        # `bash -e` is the default shell, so a non-zero exit would abort the
+        # step before $? could be read. `|| code=$?` keeps the failure and lets
+        # exit 3 be reported as its own thing rather than collapsing into a
+        # generic red X.
+        run: |
+          code=0
+          python3 scripts/ops/web_build_freshness_gate.py || code=$?
+          if [ "$code" = "3" ]; then
+            echo "::error::The web build could not be checked -- no source files"
+            echo "::error::resolved, or no build record was found. That is not a pass."
+            exit 1
+          fi
+          exit "$code"
+
+      - name: Assets are content-hashed
+        # A build that stops emitting hashed names would break immutable caching
+        # silently: the site keeps working, every deploy just starts serving
+        # stale files to returning visitors from disk cache.
+        run: |
+          set -e
+          missing=0
+          for f in static/app/assets/*.js static/app/assets/*.css; do
+            case "$(basename "$f")" in
+              *.*.js|*.*.css) ;;
+              *) echo "::error::$f has no content hash in its filename"; missing=1 ;;
+            esac
+          done
+          exit "$missing"

@@ -1,0 +1,8 @@
+# The build fingerprint hashes raw source bytes, and the Python gate that checks
+# it must get byte-identical results on a Linux runner and a macOS laptop. Line
+# endings are the one thing a checkout can legitimately change underneath both,
+# so they are pinned here rather than normalised in two languages.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.woff2 binary

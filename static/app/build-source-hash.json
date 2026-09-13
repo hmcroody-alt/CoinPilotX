@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "fingerprint": "26a7d2e65c4a6a419569bd8ca1a5d932e2dfd96b59444c31101b519b3714a75a",
+  "file_count": 10,
+  "files": {
+    "web/index.html": "4fdddfe6e710c9729e02361905bfbcb16aa83b09608061b783ba3c8f87dad0ca",
+    "web/package-lock.json": "290b2606abb7f824a19dbc604305bbd1458e67add256a531e0210fe4a64d1d33",
+    "web/package.json": "1499001e04ef89de6e879bba7eed511ccf23aa222f9e5c2da54100f70992049f",
+    "web/scripts/fingerprint.mjs": "cddda7430b5966b5345e7c1b6a59176c9be23eb21a21415cd0efadd6496d3c8e",
+    "web/src/App.tsx": "9a92764e5130718fd17afc1cf85a3df201d198209d35c87f833c9cbefa98f44c",
+    "web/src/main.tsx": "e35725b9f9e692b4edbe83d70f346244aaee9f1ea5535b1b919f3f8fc01fdd86",
+    "web/src/styles/base.css": "5d52c2ad5e9996f512ad8bd49674db0b34b4dbb3ed879f33a70653c65ff0ac17",
+    "web/src/styles/tokens.css": "c02c793e35794896d91d81f668100ce3532f241de6abb7ef0cbae54d56f8189a",
+    "web/tsconfig.json": "ce019c9182304a1f5a7c6f23b90fb3b4061091bbea81c182f6a08382149f0bca",
+    "web/vite.config.ts": "9df91a92532641e0d4c8938891f6832b2177e55a897cafce1be361a39e32de58"
+  }
+}
