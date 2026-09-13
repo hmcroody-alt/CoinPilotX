@@ -131,6 +131,16 @@ def assistant_response_envelope(user_id, question, pro=False, call_domain=None):
             max_tokens=850 if pro else 320,
             privacy_class=undx_privacy.SENSITIVITY_CONFIDENTIAL,
             call_domain=call_domain,
+            # Route on the question, not on the market board sitting in front of it. The
+            # snapshot measures ~8,850 characters against the classifier's 2,600-character
+            # window, so before this argument existed the user's sentence was never
+            # classified at all and every request here came out `current_web`. The cost was
+            # one category rather than all of them: CONFIDENTIAL refuses four providers,
+            # which collapses `current_web`, `repository` and `research` onto the same
+            # reachable chain — but `security` puts Claude first, so "is this wallet address
+            # a scam" was answered by OpenAI. Measured against live CoinGecko data, not
+            # inferred from reading the classifier.
+            classify_text=question,
         )
     except Exception as exc:
         # The router returns a typed miss rather than raising. If it raises anyway that

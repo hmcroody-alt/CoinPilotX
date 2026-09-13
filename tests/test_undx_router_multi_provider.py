@@ -271,6 +271,99 @@ class FreshnessRoutingTest(unittest.TestCase):
         )
 
 
+class ClassificationSubjectTest(unittest.TestCase):
+    """What the routing decision is made *from*, when that is not what is sent.
+
+    `classify_request` reads the first 2600 characters of whatever it is handed, and
+    two production callers assemble thousands of characters of context in front of the
+    user's words — a 12,106-character capability catalog in
+    `services/undx_capability_planner.py`, an 8,850-character live market board in
+    `services/intelligence.py`. Both pushed the user's sentence out of the window
+    entirely, so the routing decision was made from the scaffolding.
+
+    These tests assert on **which provider was called**, never on `ok`. An `ok` of
+    `True` is what both the fixed and the broken tree return: the request succeeds
+    either way, against the wrong model. That is the whole reason the defect survived
+    a suite this size.
+    """
+
+    #: Long enough to push the message past the 2600-character window, and carrying a
+    #: freshness cue, which is how the real catalog pins every request to `current_web`:
+    #: the classifier lets freshness win unconditionally over any number of other
+    #: signals. Built from a literal rather than by importing the real catalog on
+    #: purpose — a test that reads the live catalog would start passing for a new reason
+    #: the day someone shortens it, and the property here is about the window, not about
+    #: today's catalog length.
+    SCAFFOLD = ("Catalog of available capabilities, refreshed right now:\n"
+                + "\n".join(f"capability.{i}.read [read] - read owner-scoped record {i}"
+                            for i in range(60)))
+    #: Classifies `repository`, whose lane leads with DeepSeek rather than Perplexity.
+    MESSAGE = "write me a python function that walks a git repo and prints each commit"
+
+    def setUp(self):
+        assembled = f"{self.SCAFFOLD}\n\nUser message:\n<<<{self.MESSAGE}>>>"
+        self.assembled = assembled
+        # The fixture has to actually exhibit the defect or every assertion below is
+        # about nothing. Asserted rather than assumed: if a later edit to the classifier
+        # made these two agree, these tests would keep passing while measuring that the
+        # scaffolding happens to classify the same way.
+        self.assertGreater(len(self.SCAFFOLD), 2600, "scaffold must exceed the window")
+        self.assertNotIn(self.MESSAGE[:20], assembled[:2600],
+                         "the message must fall outside the classifier's window")
+        self.assertEqual(undx_router.classify_request(self.MESSAGE)["category"], "repository")
+        self.assertEqual(undx_router.classify_request(assembled)["category"], "current_web")
+
+    def _first_called(self, **kwargs):
+        """Drive the real routing loop and return the provider it reached first."""
+        seen: list[str] = []
+
+        def caller_for(name):
+            def call(*_args, **_kw):
+                seen.append(name)
+                return {"text": "ok", "model": name}
+            return call
+
+        table = {name: caller_for(name) for name in undx_router.CALLERS}
+        with _env(UNDX_ROUTER_ENABLED="1", UNDX_MULTI_MODEL_MODE="1",
+                  UNDX_DEFAULT_AI_PROVIDER="openai",
+                  **{c.key_env: "sk-test" for c in undx_router.PROVIDERS.values()}), \
+                mock.patch.dict(undx_router.CALLERS, table, clear=False), \
+                mock.patch.object(undx_router, "_record_usage", lambda usage: None), \
+                mock.patch.object(undx_router, "_record_provider_success", lambda p: None), \
+                mock.patch.object(undx_router, "_breaker_should_skip", lambda p: False), \
+                mock.patch.object(undx_router, "_budget_refusal", lambda snap, p: ""):
+            undx_router.route_structured_request(
+                1, "sys", self.assembled, privacy_class="PUBLIC", **kwargs)
+        return seen[0] if seen else ""
+
+    def test_the_named_subject_decides_the_route_and_not_the_text_sent(self):
+        """PUBLIC is declared so the *classification* is what this isolates.
+
+        At CONFIDENTIAL the ceiling refuses DeepSeek, Gemini, Groq and Perplexity, which
+        collapses the `repository` and `current_web` lanes onto the same reachable chain
+        and makes both the fixed and the broken tree answer `openai`. That masking is
+        real in production and is exactly why this test declares PUBLIC: a test whose
+        assertion is satisfied by a privacy gate is not a test about classification.
+        """
+        self.assertEqual(self._first_called(classify_text=self.MESSAGE), "deepseek")
+
+    def test_omitting_the_subject_still_classifies_what_is_sent(self):
+        """The default has to be byte-identical for the eight callers that pass nothing."""
+        self.assertEqual(self._first_called(), "perplexity")
+
+    def test_an_empty_subject_is_taken_at_its_word(self):
+        """`is not None`, not `or`.
+
+        A caller that names the subject and finds it empty has said "there is no user
+        text here". Falling back to `user_content` would be the router overruling that
+        and silently re-introducing the defect for exactly the requests where the caller
+        was most explicit. An empty string classifies `fast_directive`, which leads with
+        Groq — a default, and visibly not the scaffolding's answer.
+        """
+        self.assertEqual(undx_router.classify_request("")["category"], "fast_directive")
+        self.assertEqual(self._first_called(classify_text=""), "groq")
+
+
 class PerplexityCitationTest(unittest.TestCase):
     PAYLOAD = {
         "choices": [{"message": {"content": "Stablecoin rules changed in March."}, "finish_reason": "stop"}],

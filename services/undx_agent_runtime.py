@@ -3899,13 +3899,22 @@ def _planned_capability(text: str, *, user_id: int, brain_focus: Any = None,
     person typing, not an apology.
     """
     try:
-        from services import undx_capability_planner
+        from services import undx_call_domain, undx_capability_planner
     except Exception:  # pragma: no cover - absent module is degradation, not failure
         return None
     try:
         if not undx_capability_planner.enabled():
             return None
-        result = undx_capability_planner.plan(text, user_id=int(user_id))
+        # GENERAL (§5), supplied by the caller because the planner must not read a
+        # domain out of the user's own sentence. GENERAL is not a placeholder here: it
+        # is what this call site actually knows. `handle` takes no channel argument, so
+        # the runtime cannot tell a web turn from a Telegram one, and naming anything
+        # narrower would be a claim about the request rather than about the caller. The
+        # domain can only reorder providers, never widen them, so declaring the truth
+        # costs nothing and the next caller that does know its surface can say so.
+        result = undx_capability_planner.plan(
+            text, user_id=int(user_id),
+            call_domain=undx_call_domain.CALL_DOMAIN_GENERAL)
     except Exception:  # noqa: BLE001 - a planner fault must never fail a turn
         logger.warning("undx_planner_failed correlation_id=%s", correlation_id, exc_info=True)
         return None

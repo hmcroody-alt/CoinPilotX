@@ -488,7 +488,17 @@ require metering them without forcing them into a chat abstraction.
 |---|---|---|
 | NON_CHAT_IMAGE | `services/pulse_ai/automated_image_pipeline.py:167` | `urllib.request.urlopen`, `gpt-image-1`, 90 s timeout |
 | NON_CHAT_EMBEDDING | `services/undx_embedding_service.py:560` | endpoint from `configured_endpoint()` |
+| NON_CHAT_TRANSLATION | `services/translation_providers.py:88` | Google Cloud Translation v3, `requests.Session.request` |
 | NON_CHAT_TRANSCRIPTION | **none exist** | see below |
+
+**Finding N-d — translation is billed AI that no AI detector looks for.**
+`translation.googleapis.com/v3` is a per-character paid API, and the call is built from an
+f-string (`f"https://translation.googleapis.com/v3/{self.parent}{suffix}"`) so the host is
+a literal but the path is composed — §11-12's "including composed/env-pointable URLs"
+applies. It is absent from every provider-hostname sweep in this repo for the same reason
+the search providers are: Google Cloud Translation is not a model vendor, so a scanner
+looking for `api.openai.com`-shaped hosts cannot see it. Six `TRANSLATION_*` flags govern
+its behaviour and none of them governs its spend.
 
 **Finding N-a — two of the detector's three non-chat findings are not call sites.**
 It reports `services/undx_brain/config.py:710` and `services/undx_embedding_service.py:60`.
@@ -517,7 +527,7 @@ records it empty rather than manufacturing a call site to fill the row.
 
 ## 4. RESEARCH — paid API spend nobody classified as AI
 
-**Finding R-a — five unmetered paid search providers.**
+**Finding R-a — five unmetered search providers, four of them paid.**
 `services/pulse_ai_web_search.py` reaches five external search APIs, four of which bill per
 query:
 
@@ -539,6 +549,109 @@ event logging is not cost accounting: the table records that Tavily was called a
 returned 200, never that the call cost money. The one comment in the module that mentions
 budget (`:359`, "budget spent to say nothing") is about rendering, not spend. This is the
 clearest instance of the mission's own aphorism — observability is not metering.
+
+**Finding R-b — `provider_status()["ok"]` is the literal `True` (`:138`).** A function
+whose whole purpose is to answer whether research is ready cannot answer no. Four of the
+five providers are paid and each can be absent, revoked or rate-limited, and `ok` says the
+same word in every one of those states as when all five are healthy.
+
+The narrow defence is that DuckDuckGo is keyless, so "at least one provider is available"
+is always true and `ok` is never *wrong*. That is what makes this worth recording rather
+than only fixing: it is the third appearance in this mission of a field that can only ever
+say `True` — after `"installed": True` hardcoded in the guard's health surface, and
+`assertFalse(whole["ok"])` in the fabric test passing because `bool(reachable)` was already
+falsy for an unrelated reason. **A field that can never say `False` is not evidence, even
+when the thing it asserts happens to be true.** And key presence is configuration, not
+health: `provider_status()` makes no request, so it cannot know DuckDuckGo is reachable.
+
+Two things this finding deliberately does *not* say. `:144`'s
+`{"provider": "duckduckgo_instant", "configured": True}` **is correct** — that endpoint is
+keyless, so a literal is the honest value and consulting an invented `DDG_API_KEY` would
+report `False` forever for a provider that works. And `ok` should not simply be inverted
+into something that reads `False` on a clean install; what the surface is missing is the
+distinction between *only the free fallback* and *paid providers configured*, which are
+very different answers to "is research ready" and currently share one word.
+
+*(An earlier draft of this section accused `:144` instead of `:138`. Recorded because that
+would have put a false claim about a correct line three pages from the section correcting a
+false claim about the workers — the same error, in the same phase, from the same cause:
+trusting a one-line note about a file over the file.)*
+
+**Finding R-c — the paid search keys are funded in production under names no file in this
+repo contains.** Findings R-a and R-b read the code. Reading the *deployment* changes what
+they mean. The Railway service holds a Tavily credential as `Tavily_AI_API` and a Serper
+credential as `Serper_AI_API`. A whole-repo grep for each of those two strings — every file
+type, `.env.example` included — returns **zero files**. Meanwhile all five names the
+adapters actually read are **absent** from the service:
+
+| Name | Read by code | Present in Railway |
+|---|---|---|
+| `TAVILY_API_KEY` | yes (`:223`) | no |
+| `SERPAPI_API_KEY` | yes (`:204`) | no |
+| `BRAVE_SEARCH_API_KEY` | yes (`:163`) | no |
+| `BING_SEARCH_API_KEY` | yes (`:181`) | no |
+| `BING_SEARCH_V7_SUBSCRIPTION_KEY` | yes (`:181`) | no |
+| `Tavily_AI_API` | **no file contains it** | yes, funded |
+| `Serper_AI_API` | **no file contains it** | yes, funded |
+
+Two separate things are wrong and they need separate fixes. Tavily is a **naming** problem:
+the adapter is correct and complete, so exporting the same value as `TAVILY_API_KEY` makes
+it work. Serper is a **product** problem: `serper.dev` and `serpapi.com` are different
+companies with different request and response shapes, and this repo has no Serper adapter
+at all. Renaming `Serper_AI_API` to `SERPAPI_API_KEY` would authenticate against the wrong
+vendor and fail — the tempting one-line "fix" is the wrong one.
+
+This is the same defect as `GROQ_AI_API` holding a multi-line JSON document instead of a
+key (§44): a credential that exists, is paid for, and is unreachable because nothing reads
+the name it was stored under. Both were invisible to `test_environment_contract.py` because
+that suite checks one direction — *every variable production code reads must be documented*
+— and this defect lives in the other: **a variable the deployment holds that no code
+reads.** That direction cannot be tested from the repo alone, which is why it belongs to
+config-drift verification against a checked-in snapshot of the deployed names rather than to
+the env contract.
+
+**Finding R-d — measured, not inferred: production web search has never once reached a paid
+provider, and fails 96% of the time.** R-a through R-c are static reads. `pulse_ai_web_search_logs`
+in production settles it:
+
+| provider | status | calls | first | last |
+|---|---|---|---|---|
+| *(empty)* | `failed` | **73** | 2026-07-03 | **2026-09-12** |
+| `duckduckgo_instant` | `success` | **3** | 2026-07-30 | 2026-07-31 |
+
+Every one of the 73 failures carries `reason = search_unavailable`, and the per-attempt
+breakdown inside `metadata_json` is identical each time: `brave config_missing`,
+`bing config_missing`, `serpapi config_missing`, `tavily config_missing`,
+`duckduckgo empty`. The most recent failure is today.
+
+Three consequences worth separating:
+
+1. **Paid search spend to date is $0 — by accident, not by control.** The §22 exposure is
+   therefore *latent*, not active, and that is an argument for metering this path **before**
+   the credential names are fixed rather than after. The day `TAVILY_API_KEY` is exported,
+   four paid providers begin serving an unflagged live route with no ledger row.
+2. **It is a product outage, not only a FinOps finding.** `should_search` fires on any
+   freshness term — `latest`, `price`, `news`, `bitcoin`, `weather`. So for 73 of 76 real
+   user questions in that class, Pulse AI answered *"I couldn't reach live sources right
+   now"*. DuckDuckGo's instant-answer endpoint is not a search API; it returns an abstract
+   only when one exists, which is why it succeeded 3 times out of 76 and not at all since
+   July. The free fallback is not a fallback for this workload.
+3. **The evidence was in production the whole time and nobody read it.** R-a already noted
+   that outcomes land in `pulse_ai_web_search_logs`. They did. Provider, status and the full
+   `config_missing` chain have been recorded on every request for ten weeks. So the accurate
+   description is not *silent* — it is **recorded and unread**, which is a different and
+   more tractable failure: the row exists, so the fix is a query and an alert, not new
+   instrumentation. R-b's `ok: True` is what stood between that data and anyone looking at
+   it — and `pulse_ai_web_search.provider_status()` turns out to have **no caller at all**,
+   in production or in tests, so even the dishonest surface was never rendered.
+
+**Finding R-e — the chat ledger's own production state, for scale.** `undx_cost_ledger`
+holds exactly one row: `('2026-09', 'openai', calls=13, cost_micro_usd=0,
+uncosted_calls=13)`. The zero dollars is §34 working correctly rather than a bug — OpenAI
+has no verified price in `PRICE_PER_MILLION_USD`, so all 13 calls are counted as uncosted
+and the total reads as a floor. It also means the `(month, provider)` unique index has one
+row behind it, so widening the key to `(month, provider, call_kind)` and backfilling
+`'chat'` is a one-row migration.
 
 ## 5. Not a call site (checked and cleared)
 
@@ -577,6 +690,59 @@ surface with an empty provider seam and its own third model namespace (`PULSE_AI
 seam points at `undx_router` first. Cheap to do now, and the reason Phase 9's structural
 gate matters more than the count it currently reports.
 
+### P-a, resolved: the seam now points at the router (U10)
+
+`_provider_adapter` calls `undx_router.route_structured_request` with a declared privacy
+class and a declared call domain, and `PULSE_AI_PROVIDER` / `PULSE_AI_MODEL` are no longer
+read anywhere in the repo. Both are gone from `.env.example`.
+
+Three things were found in the filling that the census above could not see, because they
+were not about a transport.
+
+**The stub had already made two claims about calls that never happened.** `_run_ai_task`
+did `response.setdefault("model", ai_model())` and then recorded the literal status
+`"unavailable"`, so every row in `command_center_ai_events` carried an operator-set model
+name under a hardcoded status. The status was *true* when written — the adapter could not
+succeed — and became false at the commit that made success possible, which is the version
+of this defect that ships. An audit table is what you read when you no longer remember, so
+it is the worst place in this repo for the confusion between declaring and executing. This
+was the fifth appearance of that confusion in this mission.
+
+**The prompt asserted evidence the payload never carried.** `scam_explanation`'s only
+production caller is `bot.py:28335`, the admin security centre, which sends
+`{"security_event": {event_id, event_type, severity, details}}`. `_input_summary` searched
+`messages` plus five *string* keys, and `security_event` is a dict, so nothing matched and
+the summary fell through to "scam_explanation requested with no raw message body stored" —
+underneath a system prompt stating that a deterministic check "has already produced the
+verdict and signals recorded below". That does not fail loudly. It asks a model to explain
+signals it cannot see, and the obliging answer is an invented one. Fixed with
+`STRUCTURED_INPUT_KEYS` and a `_record_lines` renderer that applies the same
+`SECRET_KEY_MARKERS` exclusion the stored-payload sanitiser does.
+
+**The prompt was addressed to the wrong person.** The draft said "Explain, for the member"
+about a route no member can reach. Both this and the defect above came from writing the
+prompt from the task's *name* instead of reading its *call site* — the generalisable lesson
+of U10, and worth more than the migration itself.
+
+Two vestigial reads on the main-app side were found and removed while confirming the
+variables were dead: `services/command_center_client.py`'s `ai_configured()` (zero callers,
+and it gated the feature on `PULSE_AI_PROVIDER`) and the `ai_provider_configured` /
+`ai_model_configured` fields in `status()`, which reported the presence of strings nothing
+reads. Every live gate goes through `ai_enabled()`, which reads only `PULSE_AI_ENABLED`.
+
+Still true, and still the reason this was the cheapest of the migrations:
+`command_center_worker` is **not in the Procfile**, so all five tasks are unreachable in
+production. Nothing breaks if this is wrong, which is exactly the condition under which a
+suite quietly stops measuring anything — hence
+`tests/test_command_center_ai_routing.py` (56 tests) and
+`scripts/undx_command_center_ai_mutation_check.py` (45 mutations, all behaving as
+specified) rather than confirmation by inspection. Three of those mutations earned their
+place by surviving or misfiring first: a deleted `sorted()` that the stability test could
+not see because it compared one dict with itself, a deleted `if record:` guard that the
+fallback test never reached because its empty dict was rejected one guard earlier, and a
+module-scope `import openai` that died during collection instead of on the assertion it was
+meant to prove.
+
 ## Counts
 
 | Classification | Call expressions | Note |
@@ -585,13 +751,1017 @@ gate matters more than the count it currently reports.
 | UNROUTED_CHAT | **7 → 0** | 10 URL literals; detector saw 9. All seven migrated |
 | NON_CHAT_IMAGE | 1 | `urllib`, not `requests` |
 | NON_CHAT_EMBEDDING | 1 | 2 callers, 1 endpoint |
+| NON_CHAT_TRANSLATION | 1 | Google Cloud Translation v3, per-character paid |
 | NON_CHAT_TRANSCRIPTION | 0 | category genuinely empty |
-| RESEARCH (search) | 5 | previously uncounted as AI spend |
+| RESEARCH (search) | 5 | previously uncounted as AI spend; 4 of the 5 are paid — and **0 of the 5 have ever run in production** (R-d) |
 | ADMIN_TEST_ONLY | 1 | live acceptance script, spend-gated |
 | DEAD_CODE | 1 | `generate_task_response` |
-| Pending seam | 1 | command-center stub |
+| Pending seam | **1 → 0** | command-center stub, now routed (U10) |
 | UNKNOWN | **0** | every credential read is accounted for |
 
 Net correction to the previous census: **+1** unrouted chat call (composed URL), **+5**
-unmetered research calls, **−1** non-chat call site (two of three were declarations), and
-one dead function whose audit passes by substring.
+unmetered research calls (**4** of them paid), **+1** non-chat call site (translation, N-d),
+**−1** non-chat call site (two of three detector findings were declarations), and one dead
+function whose audit passes by substring.
+
+One count deliberately absent from this table: **how much of this spend is actually being
+incurred.** A census of call *sites* answers a different question from a census of call
+*volume*, and R-d is the reason to keep them apart — five unmetered paid research adapters
+is the correct static count, and the production figure behind it is zero. Stating only the
+first would overstate the exposure; stating only the second would license leaving it
+unmetered. Both are true, and the pair is what makes "meter it before the credentials are
+fixed" the obvious order of work.
+
+## 7. What the detector could not see, and what now counts the calls that run
+
+Sections 1–6 were produced by a detector, so the honest question about the count in them is
+not "is it nine or ten" but "what shape of call would this detector miss entirely". Four
+answers, each confirmed against the real tree before any code changed.
+
+**A host was required before a path counted.** `_provider_urls_in` consulted `_CHAT_PATHS`
+only to pick a *severity* after `_PROVIDER_HOSTS` had already matched, so
+`f"{base}/chat/completions"` — where `base` is an environment variable — was invisible. §12
+names composed and env-pointable URLs explicitly, and this repo has really had that shape:
+`tests/test_pulse_ai_provider_reconciliation.py:241` pins it, composed from
+`UNDX_CANDIDATE_BASE_URL`. The host is the part that is missing in exactly the case the
+constraint is about, so keying the whole check on the host inverted it. A chat path inside a
+request call is now CRITICAL on its own.
+
+**Declaring an endpoint was reported as calling one.** Two of the three findings the scanner
+reported were false *in their wording*. `services/undx_brain/config.py:710` is a URL
+constant in a module that performs no HTTP at all, and it was being told it "calls the vendor
+directly … outside the circuit breaker" with the remediation "meter the call" — advice that
+cannot be followed at a constant. The finding was reclassified to `provider_url_declared`
+(WARNING) rather than suppressed, because §12 does care about an env-pointable base URL; what
+was wrong was the claim about execution, not the attention. This is the sixth appearance in
+this mission of declaration being mistaken for execution, and the first where the thing
+mistaken was a constant.
+
+**The SDK prohibition in §11 had no detector.** There was nothing looking for
+`import openai`. It is vacuously satisfied today — zero provider SDKs are in the tree or in
+`requirements.txt`, every call being hand-rolled HTTP — which is precisely why nothing would
+have noticed the first one. `_sdk_usage_in` walks with `ast.walk`, so an import inside a
+function body counts; a lazy import is still an import.
+
+**The adapter allowlist was keyed on a filename.** `os.path.basename(path) == "undx_router.py"`
+means any new file anywhere in the repo called `undx_router.py` inherits permission to call
+providers directly. §19 asks for a small explicit allowlist and forbids a wildcard one, and a
+name-keyed entry is a wildcard spelled specifically. Now a repo-relative path.
+
+### The metric (§42–43)
+
+A structural gate is a statement about source text, and §43 asks for a runtime guard rather
+than tests alone. `services/undx_call_guard.py` wraps this interpreter's
+`urllib.request.urlopen`, `requests.{post,get,put,patch,delete,head,request}` and
+`requests.sessions.Session.request`, classifies the destination, walks the stack for an
+adapter frame, and increments `undx_unrouted_provider_calls_total` when a provider URL is
+reached from outside one. It imports `_CHAT_PATHS` and `_PROVIDER_HOSTS` from the scanner so
+there is one list of hosts in the repo and not two that can drift apart.
+
+Four facts about it that were not obvious in advance:
+
+- **It had to be installed four times, not once — and only one of those four is about
+  coverage.** The guard patches module attributes in the interpreter that installs it. Five
+  of the six Procfile processes reach `bot`: `web` *is* `bot` (`gunicorn bot:app`),
+  `email_worker` (:13), `ads_worker` (:29) and `media_worker` (:59) import it at module
+  scope, and `alert_worker` imports it lazily inside `main()` (:63). Only `undx_worker`
+  never imports it, importing `undx_router` alone — so installing in `bot.py` alone would
+  have left exactly that one process, the one that makes the most provider calls,
+  uncovered, holding the counter at zero for the least interesting reason available. The
+  other two extra installs buy **ordering**, not coverage: `media_worker` installs at :30,
+  so the guard is live for whatever `bot` does at import time at :59 — module-scope work
+  that `bot`'s own `install()` cannot cover, because it runs partway through that same
+  import — and `bot`'s call then no-ops on `_installed`. `alert_worker`'s install means the
+  guard exists during module import at all, rather than appearing only once `main()` has
+  run. Both are worth having, and the honest reason is that the guard must be live *before*
+  `bot` is imported, which also survives someone later moving that import. Claiming all
+  three bought coverage would overstate by two. Install sites: `bot.py`, `undx_worker.py`,
+  `alert_worker.py`, `media_worker.py`.
+- **The URL is never logged.** Gemini carries the API key in a query parameter, so a witness
+  record containing the URL would write a credential to the logs in the course of reporting a
+  governance breach.
+- **`requests.post` and `Session.request` are both wrapped and both run** for a single
+  outbound call, so a `threading.local()` re-entry guard stops one call counting twice.
+  Whether the number this metric exists to hold at zero moves must not depend on which of
+  two equivalent spellings the caller chose.
+- **Counters are split by whether zero is achievable.** `undx_unrouted_provider_calls_total`
+  is watched for becoming non-zero. A count of *all* provider calls never can be zero, so it
+  cannot be watched the same way and is kept separate.
+
+### Why the zero is believable
+
+A guard that never installed, a classifier that never matched, and a wrapper around a
+function nobody calls all report zero. So every zero assertion in
+`tests/test_undx_call_guard.py` is paired with a one-assertion differing by exactly one
+neutered thing. The decisive pair drives the real `undx_router` against a mocked
+`Session.send`:
+
+- `test_a_routed_call_is_not_counted` — the call succeeds and the counter is 0.
+- `test_and_that_zero_is_because_of_the_frame_walk` — the *same* call, with only
+  `guard._routed` forced to `False`, still succeeds and the counter is 1.
+
+The first test alone would pass identically if the guard had never been installed. Together
+they establish that the zero is produced by the frame walk rather than by absence.
+
+`scripts/undx_call_guard_mutation_check.py` (39 mutations across the scanner, the guard and
+the health surface) runs both test files together, so a mutation cannot survive because the
+check that would have caught it lives in the other file. Four mutations are the opposite
+shape — prose additions that name every SDK and every host in comments and docstrings, which
+**must stay GREEN**. Those are what keep an AST gate from decaying into a word filter, and
+they are only meaningful because a comment is invisible to `ast.parse` while a docstring is an
+`ast.Constant`.
+
+### What the scanner now reports on the real tree
+
+Three findings, zero CRITICAL: one `provider_url_declared` (the brain config constant) and
+two `unmetered_provider_call` — the image pipeline
+(`services/pulse_ai/automated_image_pipeline.py:168`, `urllib.request.Request`) and
+embeddings (`services/undx_embedding_service.py:560`, via `configured_endpoint()`). Both are
+real, both are non-chat, and both are Phase 10–12's subject under §20–27's rule that there is
+no unclassified AI spend. They are reported honestly now, which is the change: previously one
+of them was a declaration wearing a call's finding text.
+
+"Unmetered" is the scanner's word for *does not pass through the ledger*, and that is the
+claim §20–27 is about. It is **not** the same claim as "nobody counted it", and reading the
+two modules shows why the distinction has to be kept. Both have a spend guard. They are
+wrong in mirror images of each other:
+
+| | embeddings | images |
+|---|---|---|
+| state lives in | a process-global dict (`_budget_state`, :455) | `pulse_generated_media` rows, via SQL |
+| survives a restart | **no** | yes |
+| shared across workers | **no** | yes |
+| unit of account | billed provider tokens → USD | **images per hour / per day** |
+| reaches `undx_cost` | no | no |
+
+The embedding module reads *real* billed usage — `body["usage"]` at :665-669, preferring
+`total_tokens` — checks a monthly budget before every call (:702, default $5.00) and counts
+blocks. What it does not have is anywhere to keep the number: the module imports no
+database at all, so `_budget_state` dies with the process. The budget therefore resets on
+every deploy and each gunicorn worker holds its own, making the effective ceiling
+`$5 × worker count`. The docstring at :361-365 is not dishonest about this — it says
+"as recorded locally" and calls itself a conservative approximation because the token
+estimator over-counts — but "locally" is carrying the whole weight: a reader takes it to
+mean *on this machine rather than asked of the provider*, and it means *in this process's
+memory since boot*. The stated conservatism is real and runs the safe way; the reset and
+the multiplication are not conservative and run the other way. **A claim true of the
+mechanism and false of the deployment** is the same defect shape this phase kept finding,
+one layer in.
+
+The image pipeline's `_budget_available` (:289) is the better mechanism on every axis
+except the one §20–27 asks about: durable, shared, with a failure-based circuit breaker —
+and it counts *images*, never money. A cap of 24/day is a spend ceiling only if something
+multiplies by a price, and nothing does, so changing the model moves the dollar figure
+behind the same cap with no code change and no signal.
+
+So the fix is not "add metering" to two call sites that already have some. It is one ledger
+keyed by `call_kind`, with the embedding path's real token figure recorded where it can
+survive a restart, and `_budget_available`'s design re-pointed at that ledger rather than
+replaced.
+
+### What the mutation harness found, which is the part worth reading
+
+The 39 mutations were run once with the suite as written. **Eight did not behave**: seven
+survived and one died on a different test than predicted. The suite looked complete and was
+measuring less than it appeared to in seven places.
+
+Three were in the scanner, and each had the same shape — the fixture reached the code under
+test through a path where the mutated line did not decide anything:
+
+- `sends = _performs_http(tree)` → `sends = False` survived, because the embeddings fixture
+  hands its URL constant *directly* to `requests.post`, so one-hop name resolution already set
+  `in_request` and `sends` never spoke. Closed by a fixture with two hops
+  (`requests.post(_target())`), which is closer to the real image pipeline than the old one.
+- dropping `_is_http_call`'s client requirement survived, because the fixture meant to catch
+  it contains no attribute call at all. The receiver is the thing under test, so the fixture
+  has to have one: `CONFIG.get("timeout")`. Without this, every module that reads a dict
+  becomes a module that sends requests, and every URL constant in one becomes CRITICAL — which
+  is exactly the false finding this phase spent its time correcting.
+- dropping the `root in _PROVIDER_SDKS` branch survived, because the lazy-import fixture uses
+  plain `import openai`, matching by exact name. `import anthropic.types` is how an SDK
+  actually arrives.
+
+Four were in the guard and the health surface:
+
+- **`_routed` matched by basename** survived the test named
+  `test_the_adapter_is_matched_by_path_not_by_filename`, because that test asserts on
+  `_adapter_files()`'s *contents* and never walks a stack. Two different places; the mutation
+  was in the other one. Closed with `compile(..., "/tmp/vendor/undx_router.py", "exec")`,
+  which is the cheapest way to obtain a frame whose filename is a decoy.
+- **double-install stacking a wrapper on a wrapper** survived, because `test_install_is_idempotent`
+  returns at `install()`'s `_installed` flag and never reaches `_wrap`'s own dedup. Two guards
+  in series with the test touching only the outer one — the second time this mission has found
+  that exact shape.
+- **`"installed": True` hardcoded** survived, because the test only ever asserted the field was
+  `True`. A field that exists to refute "installed on the strength of nothing" has to be
+  observed saying `False` once, which means actually calling `uninstall()` — until now, a
+  function with no caller anywhere, and therefore a function whose own earlier bug (it could
+  not restore a *class* attribute) had no regression test.
+- **routing dropped from the fabric's `ok`** survived, and this is the instructive one:
+  `snapshot()["ok"]` is a conjunction of five things, one of which is `bool(reachable)`. No
+  provider has a key in a test process, so `ok` was already `False` before routing was
+  consulted, and `assertFalse(whole["ok"])` passed for a reason that had nothing to do with the
+  assertion's name. The unearned zero this whole file was written to prevent, committed one
+  level up — in my own assertion rather than in the counter. Closed by mocking the other three
+  sections healthy, proving `ok` can be `True`, and then changing exactly one thing.
+
+The eighth was not a suite gap but a wrong prediction: forcing `_routed` to return `True` for
+every frame was expected to fail `test_and_that_zero_is_because_of_the_frame_walk`, which
+cannot see it, because that test replaces `_routed` wholesale. It fails thirteen other tests
+instead. The harness was right and the expectation was wrong, which is the one verdict that
+needed no code change.
+
+Two defects were also found in the harness before its first run and two more after: a mutation
+naming a test that did not exist, an anchor on a docstring this phase had rewritten, and — the
+one no pre-flight can catch — an expectation pointing at a test that *does* exist but is the
+wrong one, on the adjacent entry of a pair. A pre-flight can verify that a name resolves; only
+running it can verify the name is the right one.
+
+## 8. Widening the cost ledger's key, and why Postgres had to be tested separately
+
+§22 asks for no unclassified AI spend, which the ledger could not express: its unique key was
+`(month, provider)`, so a provider had exactly one row per month and every call kind summed
+into it. The key is now `(month, provider, call_kind)` over the nine kinds in §20–27, plus
+`unknown`.
+
+Three decisions in that migration are worth recording because each one is a place where the
+obvious choice is wrong:
+
+- **Absent and unrecognised are different inputs.** A missing `call_kind` becomes `chat`, which
+  is a compatibility statement about the rows already in production — they were all chat, and
+  any other default would make history disagree with the code that wrote it. A `call_kind` that
+  is *present but unrecognised* becomes `unknown`, never `chat`: mapping a typo onto the largest
+  existing bucket is precisely how embedding spend would get laundered into the chat total, and
+  `unknown` is ugly in a report, which is the right amount of ugly for spend nobody classified.
+- **Adding a dimension must not change the measurement.** `month_snapshot()["providers"]` is
+  still summed *across* kinds, so no budget silently gains headroom the day embeddings start
+  being recorded. The new `kinds` axis is reported alongside it, never instead of it. A budget
+  reporting more room than exists, *caused by better instrumentation*, is the failure this
+  avoids.
+- **The narrow index is dropped after the wide one is created, not before.** If creating the
+  replacement fails, the table must still have *an* index — without one every write is a
+  runtime error, which is worse than writes that fail only for the new kinds.
+
+### The Postgres verification, and why it is a script
+
+The pytest suite (59 tests, green) runs on SQLite, so it exercises `PRAGMA table_info` and
+SQLite's forgiving `ON CONFLICT`. Production is Postgres, where three things differ and none
+are visible from the SQLite run: `_ledger_columns` takes the `information_schema` branch,
+`ON CONFLICT (month, provider, call_kind)` resolves against a real unique index, and
+`INTEGER PRIMARY KEY AUTOINCREMENT` / `datetime('now')` are rewritten on the way out by
+`services/db.py`. `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` is *Postgres-only*, which is why
+the guard is an introspection rather than a keyword — the SQLite run is the one that proves the
+keyword would not have worked.
+
+`scripts/undx_cost_ledger_pg_migration_probe.py` builds the ledger in its **old** shape — no
+`call_kind`, narrow unique index — carrying a replica of the single row production actually
+holds (R-e), then migrates it. Against `postgres:18` (production is 18.6) all checks pass: the
+column is appended and backfilled `chat`, the row survives, the narrow index is gone, the wide
+one exists, `ensure_schema` is idempotent across three runs, and one provider carries chat and
+embedding rows whose provider total still sums to both.
+
+It is a script and not a test because it needs a container, and it is **manually triggered**,
+which is the honest description and also a liability — this census criticises
+`pulse_ai_web_search.provider_status()` for having no caller, and a probe nobody runs is the
+same shape of dead assurance. Its trigger is recorded here so the next schema change to this
+table has a documented reason to run it:
+
+```
+docker run -d --name undx_pg_probe -e POSTGRES_PASSWORD=probe -e POSTGRES_DB=probe \
+    -p 55433:5432 postgres:18
+DATABASE_URL='postgresql://postgres:probe@127.0.0.1:55433/probe' \
+    python3 scripts/undx_cost_ledger_pg_migration_probe.py
+```
+
+The probe refuses to run unless `DATABASE_URL` names a loopback host, so it cannot be pointed
+at production by a copied shell line.
+
+**The green was checked against two neutered variants**, because a passing probe proves nothing
+until it has been shown capable of failing:
+
+| Mutation | Result |
+|---|---|
+| `_LEDGER_COLUMNS = ()` — never add the column to an old table | red: `UndefinedColumn: column "call_kind" does not exist` |
+| drop the `DROP INDEX` statement — leave the narrow index standing | red: `UniqueViolation ... Key (month, provider)=(2026-09, openai) already exists` |
+
+The second is the one worth reading: it reproduces, as a measured Postgres error, the exact
+claim the source comment makes in prose about why the old index has to go. The comment could
+not fail; this can.
+
+One incidental finding from the Postgres run, recorded because it reads as a data bug and is
+not one: `services.db.CompatRow` is a `Mapping` that *also* accepts integer subscripts, so
+`tuple(row)` yields column **names** on Postgres and **values** on SQLite. `undx_cost` is safe
+because `record()` and `month_snapshot()` both index positionally; any code that unpacks or
+casts a whole row would not be. The first version of this probe made that mistake.
+
+## 9. Metering the first non-chat call site, and two things found by doing it
+
+`services/undx_embedding_service.py` now records every successful batch through
+`undx_capabilities.record_spend(CALL_KIND_EMBEDDING, ...)`. This is the first of the four
+non-chat sites in section 3 to be wired, and it was chosen first because it is the only one
+whose provider is priced — so it is the only one where the ledger can be checked against a
+figure rather than against a row count.
+
+The call sits beside the existing `_budget_record(billed)` and is handed the *same* token
+number, deliberately. `billed` is the provider's own count when it reports one and an estimate
+otherwise; using the estimate in both places is honest, using it in one would mean the
+in-process budget that blocks spend and the durable ledger that anyone reads disagree about how
+much was bought. Metering is per batch, not per `embed_texts` call, because a batch is the unit
+the provider charges for and a run that fails on batch three has still paid for one and two.
+
+### The provider was reporting its own cost and the adapter was discarding it
+
+Perplexity's embeddings response carries a `usage.cost.total_cost` block — the same shape the
+chat completions response uses, and already visible in this repo's own wire fixture at
+`tests/undx_agent/test_embedding_wire_contract.py::wire_response`. `_parse()` read
+`total_tokens` out of `usage` and dropped `cost` on the floor, so the one non-chat provider that
+tells us what it charged was being priced from a table instead.
+
+`undx_router._normalise_usage` has preferred a reported cost over an estimate for chat since
+before this mission, setting `cost_reported=True` and skipping the estimate entirely. The two
+accounting paths should not disagree about which source of truth ranks higher, so
+`record_spend` now takes `reported_cost_usd` and prefers it. The table remains the fallback,
+and the fallback is tested, because preferring the report would otherwise have traded one blind
+spot for another.
+
+Why this matters beyond tidiness: the table's prices were read on 2026-08-30 and nothing in the
+repo can detect that they have changed. A reported cost stays correct through a price rise that
+nobody has noticed. The table is now the estimate of last resort rather than the primary.
+
+> Not done, and worth doing: the two figures are both available on a priced call, so a
+> divergence between them is a *measurable* signal that the table has gone stale. Nothing
+> compares them today.
+
+### "The report is unusable" had two different answers, one layer apart
+
+Writing the test found a real disagreement between the two pieces of code added in the same
+change. `_reported_cost_usd()` returned `None` for a garbled figure, which reaches `record_spend`
+as *no report* and lands on the price table. `record_spend`'s own `except` branch recorded the
+same garbled figure as **unknown**, contributing `uncosted_calls=1`. Identical input, two
+answers, decided by which layer happened to notice first — and only one of the two is reachable
+from any caller's tests.
+
+The table fallback is the correct answer and `record_spend` was changed to match it. An
+unreadable cost block is evidence about the provider's serialization, not about whether $0.004
+per million tokens is still the price; discarding a sourced estimate on that basis *understates*
+the month, which is the outcome §34 exists to prevent rather than an instance of obeying it.
+`uncosted_calls` is also the number that enumerates the pricing gap that
+`unpriced_providers()` reports, so putting a call with a perfectly good table price into it
+would make that number stop meaning what it says.
+
+A redundant negative-cost guard in `_reported_cost_usd` was removed in the same pass. It was
+correct and unfalsifiable: `record_spend` rejects a negative figure and falls back to the table,
+so every test written to exercise the adapter's copy would pass whether or not the copy existed.
+By this repo's own standard that is a comment with a code shape, so the rule now lives in one
+place — the place that decides what gets recorded.
+
+### The test suite has been writing into the developer's database
+
+Measured while checking that the new metering reached the ledger at all. `services/db.py`
+falls back to the *relative* path `coinpilotx.db` when `DATABASE_URL` is unset, and
+`undx_cost.ledger_enabled()` defaults to true, so any test that reaches `record()` without
+pinning `DATABASE_URL` writes a real row into the local dev database. After one run of the four
+embedding suites, the worktree's `coinpilotx.db` held **461 `embedding` rows and 851 `chat`
+rows** of accumulated test data.
+
+Two consequences, only the first of which is about this phase:
+
+* Any assertion on a month total without temp-file isolation is really an assertion about how
+  many times the suite has been run on this machine. Every test in the new `SpendIsMetered`
+  class pins `DATABASE_URL` at a `TemporaryDirectory`, and the class docstring says why so the
+  next person does not read it as boilerplate and drop it.
+* `reset_for_tests()` clears the in-process mirror and **not** the ledger file, which is a
+  related trap one level down: three subtests sharing one temp database accumulate, so a fixed
+  expectation passes only on the first iteration. The first version of
+  `test_an_unusable_report_falls_back_to_the_table_not_to_unknown` failed exactly that way and
+  now asserts a delta.
+
+Not fixed globally. An autouse fixture pointing `DATABASE_URL` at a temp file would be the real
+answer, but it would change the database under every suite that currently relies on the dev
+database having schema and data, against a baseline that already has ~325 failures — so it is a
+change to make deliberately with a measured before/after, not as a side effect of a metering
+phase. Recorded here rather than fixed quietly.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py`, 15 mutations, all behaved as specified.
+A separate harness from the classification one on purpose: that script's subject is which
+provider a request reaches, this one's is what a month's spend report says, and a shared list
+would mean every accounting change reran fourteen routing suites to learn nothing.
+`build_sandbox` is shared by import rather than copy, for the reason in its own docstring.
+
+Five of the fifteen are shapes that would plausibly survive code review:
+
+| Mutation | Why it reads as harmless |
+|---|---|
+| `cost_micro or 0` before recording | reads as defensive coercion; converts every unknown price into a measured $0.00 and changes no dollar total |
+| early `return {}` when the price is unknown | reads as "do not write garbage rows"; makes image and translation spend report as *no calls made* |
+| dollar branch delegates to `to_micro_usd` | reads as removing duplication; makes an unparseable price free in one input form and unknown in the other |
+| `if reported_cost_usd:` instead of `is not None` | visually identical; differs on exactly one value, and moves a provider-stated $0 into the unpriced column |
+| fall back to `price_micro_usd(...) or 0` | reads as satisfying the type checker; reports unpriced image spend as free |
+
+One mutation must stay **GREEN**: rewording the comment above the load-bearing `None`. Prose
+cannot fail, so if rewording it turns anything red, a test is matching on a comment instead of
+on behaviour.
+
+### Corrections made to tests written in this phase
+
+Recorded because three of them were mine and the code was right each time.
+
+| Claim asserted | What actually happened |
+|---|---|
+| 1,000 tokens at $0.004/M rounds away to nothing under integer micro-USD | it is exactly 4 micro-USD; "the unit is too coarse for our smallest call" does not hold |
+| a Perplexity embedding call costs money | every money assertion used a model name that is not in the table, so all of them recorded as uncosted — a priced *provider* does not make its models priced |
+| a garbled cost block should record as unknown | it should fall back to the table; recording unknown understates the month and overloads the pricing-gap counter |
+
+The second is now pinned as its own test, `test_an_unknown_model_on_a_priced_provider_is_uncosted`,
+because the mistake generalises: a real model rename — a new Perplexity generation, or a typo in
+`UNDX_EMBEDDING_MODEL` — moves spend into the unpriced column with no error, and
+`unpriced_providers()` will not list it either, since the provider *is* priced. The only signal
+is `uncosted_calls` going up on a provider that should never produce one.
+
+## 10. Metering image generation, and what the ledger cannot tell you
+
+`OpenAIImageProvider.generate` in `services/pulse_ai/automated_image_pipeline.py` now records
+one `image` call per generation through `undx_capabilities.record_spend`.
+
+**This gap is latent, not active, and it must not be reported as anything else.**
+`AUTOMATED_IMAGES_ENABLED = False` at `automated_image_pipeline.py:46` is a module constant —
+deliberately not an env var, so a misconfigured deploy cannot re-enable it — and it is enforced
+at three separate boundaries (`decide_image`, `enqueue_for_post`, `process_job`). So this call
+site does not execute in production today, no image dollars are currently going unrecorded, and
+metering it changes nothing about this month's report. What it changes is what someone inherits
+the day they flip the constant: a paid provider that bills with a trace, instead of one that
+bills silently. The pre-existing `images_enabled` fixture in the test file exists for exactly
+that reason and this follows its precedent.
+
+`gpt-image-1` has no published price in `undx_capabilities` — `provider_for('image', 'openai')`
+has `prices={}` and `paid=True` — so a generation lands as `calls=1, cost_micro_usd=0,
+uncosted_calls=1`. That is the §34 answer, not an oversight: a fabricated per-image figure would
+make the month's dollar total look complete while being wrong by whatever the real price is.
+`('image', 'openai')` remains in `unpriced_providers()`, which is the list that enumerates the
+remaining work.
+
+### The ledger has no model dimension
+
+Found while trying to assert that an env-overridden model reaches the record. It does not, and
+it cannot: `undx_cost_ledger` keys on `(month, provider, call_kind)` and has no `model` column,
+so `record_spend(model=...)` uses the model **only** to look up a price. Per-model attribution
+does not survive into the durable row for any kind, chat included.
+
+Consequences worth stating plainly:
+
+* A month's report cannot answer "how much of our OpenAI spend was `gpt-4o` versus `gpt-4o-mini`".
+* The mistake recorded in §9 — spend silently moving to the unpriced column after a model
+  rename — is *also* undiagnosable from the ledger. `uncosted_calls` rises, and the row does not
+  say which model caused it.
+* Adding the column is a schema change on a table that four processes upsert into concurrently,
+  and it widens the unique index, which is the same migration shape §8 needed a throwaway
+  Postgres to verify. Not attempted here; listed as follow-up work rather than done badly.
+
+The effective model is pinned at the call site instead, by asserting the arguments handed to
+`record_spend`. That is a weaker test than a ledger assertion and is labelled as such in its
+docstring, but it is the only place the distinction is currently observable.
+
+### An image that arrives undecodable may still have been billed
+
+Metering sits after `base64.b64decode(..., validate=True)` succeeds, so the `image` count stays
+a count of pictures actually received. A response that reaches us as unusable base64 was still a
+request OpenAI may have charged for, and that call is not recorded.
+
+The alternative — metering before validation — was written as a mutation and is lethal. It reads
+as an improvement ("count it, we were billed either way") and it is a defensible position, but it
+redefines the number from *pictures received* to *requests sent* without renaming anything. A
+count that is checkable and narrow beats a count that is broad and ambiguous, so the billing edge
+is named here instead of absorbed into the metric.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py` is now 19 mutations, all verified lethal
+(18 red, 1 required-green). The four added here:
+
+| Mutation | Caught by |
+|---|---|
+| stop metering image generations entirely | `test_a_generated_image_is_metered_under_its_own_kind` |
+| meter the generation as `chat` | `test_a_generated_image_is_metered_under_its_own_kind` |
+| count an attempt that decoded to nothing as an image received | `test_a_failed_generation_is_not_recorded_as_an_image_received` |
+| price the default model instead of the configured one | `test_the_model_priced_is_the_effective_model_not_the_default` |
+
+The deletion mutation is the important one, and it is deletion rather than corruption on purpose:
+because the call site is behind a disabled constant, **production would not notice if a future
+edit dropped it**. The test is the only thing that would.
+
+### A test that was written and then deleted
+
+A "bookkeeping failure does not cost the caller its image" test originally stubbed `record_spend`
+to raise. `record_spend` is documented never to raise and structurally does not, so that test was
+exercising an impossible state — it could never fail for a real reason, which makes it the same
+unfalsifiable shape §50 rejects. Replaced with one that breaks `undx_cost._connect`, a state the
+database really does enter, and which additionally pins that the in-process mirror still answers:
+`source != 'ledger'` with `kinds['image']['calls'] == 1`. Degraded and silent are different
+failures and the test now distinguishes them.
+
+## 11. Metering paid web search, and the difference between billed and useful
+
+All five providers in `services/pulse_ai_web_search.py` now record one `research`
+call per query through `undx_capabilities.record_spend`. This is the first *active*
+non-chat metering in the repo: unlike the image path, this code runs in production
+today, so four paid vendors that were billing with no record anywhere now appear in
+the month's report.
+
+The capability table needed no change — `('research', ...)` was already declared for
+all five, with `paid=True` and `prices={}` for Brave, Bing, SerpApi and Tavily, and
+`prices={'': 0.0}` with `price_source='keyless public endpoint, charges nothing'`
+for DuckDuckGo. So the four paid vendors land as `uncosted_calls=1` per query and
+stay in `unpriced_providers()`; DuckDuckGo lands as a measured `$0.00` with
+`uncosted_calls=0`.
+
+### The metering hangs off the HTTP status, not off `ok`
+
+This is the whole design decision and it is not obvious, because the obvious place
+to put the call is the wrong one.
+
+`ok` in this module means **results were found**. The billable event for every one
+of these vendors is an **accepted query**. Those are different things, and the gap
+between them is not a rounding error:
+
+* A 2xx carrying zero results is a charge. "No results for that string" is a
+  successful answer to a question the vendor was paid to answer. These are also the
+  queries most likely to be retried, so metering on `ok` would have undercounted
+  worst exactly where spend concentrates.
+* A non-2xx is not a charge. 401, 429 and 5xx are refusals. Counting them would
+  inflate the month with queries nobody was billed for, and the inflation would
+  scale with how broken the vendor was — worst during the incident when someone is
+  reading the number.
+* A missing credential is not a charge. The `_search_*` functions return before
+  `requests.get`, and four of the five providers are unconfigured in production, so
+  a metering call at the top of the function would bill four phantom queries per
+  real search — a 5x overstatement from a line that looks correctly placed.
+
+The call therefore sits immediately after the status check and **above**
+`response.json()`. A 2xx whose body will not parse was still a query the vendor
+accepted and billed; parsing is our problem, not theirs. Metering below the parse
+would make a vendor having a bad serialization day look like a vendor we had
+stopped using while they kept invoicing.
+
+Every one of those four boundaries is a separate mutation, and all four are lethal.
+
+### DuckDuckGo is recorded, and the reason is §34 read backwards
+
+Committed to in §4 of this document and honoured here. Its price is `0.0` as a
+*measurement*, not as a missing entry, so it belongs in the record. §34's rule is
+that an unknown must not look like zero; it does not say a known zero must be
+hidden. Skipping it would leave the call counts incomplete for the only search
+provider that has ever returned a result in production, and a dollar total is not
+the only thing this ledger is for.
+
+The pairing matters more than either row alone: Brave's row and DuckDuckGo's row
+carry the **same** `cost_micro_usd=0` and differ only in `uncosted_calls`. A test
+asserting both, side by side, is the only way "zero because we measured zero" and
+"zero because we do not know" can be shown to be distinguishable rather than
+merely claimed to be.
+
+### Fallback does not refund the hops before it
+
+The same property §41 requires of provider health, applied to money: a search that
+succeeds on the fourth vendor must still record what the first three cost. With all
+four paid providers configured and the first three answering 2xx-empty, the ledger
+shows four `research` calls, not one — a 4x difference on every such search, and
+the report would have been understating it silently because the payload only names
+the vendor that won.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py` is now **27 mutations**, all
+verified lethal (26 red, 1 required-green). The eight added here:
+
+| Mutation | Caught by |
+|---|---|
+| stop metering search queries entirely | `test_a_successful_query_is_recorded_as_research_not_chat` |
+| meter the query as `chat` | `test_a_successful_query_is_recorded_as_research_not_chat` |
+| attribute every query to a single provider | `test_a_query_billed_before_a_later_provider_succeeded_is_still_recorded` |
+| bill refusals as well as accepted queries | `test_a_rejected_query_is_not_recorded_as_spend` |
+| drop a billed query whose body would not parse | `test_a_two_hundred_whose_body_will_not_parse_is_still_billed` |
+| meter only the queries that returned results | `test_a_query_that_found_nothing_is_still_a_query_we_paid_for` |
+| skip the free provider because its price is zero | `test_duckduckgo_is_a_measured_zero_and_not_an_unknown` |
+| bill a query for a provider with no credentials | `test_an_unconfigured_provider_is_not_billed` |
+
+The *attribute-everything-to-one-provider* mutation is the one worth singling out.
+It leaves the total call count and the total dollar figure **exactly** right, so
+nothing about the month's bottom line looks wrong — only the answer to "which
+vendor should we drop" changes. A suite that asserted totals and not the provider
+breakdown would have passed it.
+
+### The credential problem is still open and now costs something visible
+
+`SERPAPI_API_KEY` and `TAVILY_API_KEY` are the names this module reads.
+Railway holds `Serper_AI_API` and `Tavily_AI_API`. Serper and SerpApi are
+**different companies**, so the first is not a rename. Until that is resolved, both
+providers are permanently `config_missing`, are never billed, and correctly do not
+appear in the ledger. The metering makes the consequence legible for the first time:
+a `research` report showing only `duckduckgo_instant` is now positive evidence that
+three of the four paid vendors are unreachable, rather than an absence that could
+mean anything. This is the §44 account work, unchanged and still requiring the
+owner.
+
+### Test-isolation note
+
+The new suite clears the four provider keys in its fixture rather than assuming the
+environment is empty. Without it the developer's own shell decides which providers
+the fallback chain reaches, so the test would assert something different on every
+machine — and on a machine with a real Brave key, the "unconfigured provider" test
+would have passed for the wrong reason.
+
+### A pre-existing failure found in the blast radius, and not fixed here
+
+`tests/undx_brain/test_foundation.py::test_the_specialist_coverage_numbers_are_the_real_ones`
+fails on a clean tree: it pins `len(undx_capability_registry.REGISTRY) == 82` and
+the registry now holds 140. Confirmed pre-existing — it fails identically at
+`fc846ab2` — and the pin dates from `ade1860b` (2026-08-01), when the module had
+about 32 `register(` calls. Six weeks of unrelated feature work outgrew it.
+
+Deliberately not fixed in this commit. Changing `82` to `140` would make it green
+until the next capability lands, and the interesting question is whether an exact
+count of a registry that grows with every feature should be pinned at all. Split
+out as its own task rather than smuggled into a spend-accounting change.
+
+## 12. Metering translation, and the volume the ledger throws away
+
+`services/translation_providers.py` now records one `translation` call per accepted
+Google Cloud Translation v3 request, through a single helper
+`_record_character_spend(provider, text)`. This is the last of the four non-chat
+call sites named in §3, and like web search it is live code: PulseSoc content
+translation runs in production today, and until this wiring existed the only trace
+of a translation was the HTTP log — so a month that translated ten million
+characters and a month that translated none produced identical spend reports.
+
+The capability table needed no change. `('translation', 'google')` was already
+declared with `paid=True` and `prices={}`, so every call records as
+`uncosted_calls=1` with `cost_micro_usd=0` and the pair stays in
+`unpriced_providers()`. Google's per-million-character rate is public, but it has
+not been read and dated into `undx_capabilities`, and inventing a figure here would
+make the month's total look complete while being wrong by the entire translation
+bill. This is the §34 outcome, not a completed pricing job.
+
+### Two of the three operations are billed, and the flow that pays twice
+
+Google bills per character of submitted text. `translateText` and `detectLanguage`
+are both billed at the same per-character rate; `getSupportedLanguages` is free.
+So:
+
+* **The billed string is the input, not the output.** Translated text is routinely
+  30-40% longer than its source. Metering the response would have overstated spend
+  by the expansion ratio of the language pair — largest on the pairs used most,
+  varying by locale, so no single wrong number ever appears twice and nothing in a
+  totals report ever looks anomalous.
+* **Markup is not discounted**, by Google or here. Stripping tags before counting
+  would have produced a number that was tidier and wrong. Asserted with a payload
+  that is mostly markup, so a tag-stripping implementation cannot pass by accident.
+* **Detection is billed on the same footing.** A detect-then-translate flow over
+  unknown-language content — which is the flow taken for every piece of content
+  whose language is not already known — pays twice over the same characters.
+  Metering only `translate()` would have made the more expensive path look like the
+  cheaper one.
+* **`getSupportedLanguages` is deliberately not metered.** It is free, and the
+  ledger keys on `(month, provider, call_kind)` with no operation dimension, so a
+  free metadata lookup recorded here would be indistinguishable from a paid
+  translation in the call count — and that count is currently the *only* signal,
+  for the reason in the next subsection.
+
+Placement follows §11's rule: the helper is called after `self._request(...)`
+returns and **above** the response-shape check. A 401/403 raises before it and is
+not billed; an unconfigured provider raises before any HTTP call and is not billed;
+the retry loop lives below it, so two 503s and a 200 is one charge rather than
+three; and a 2xx carrying an empty `translatedText` **is** billed, because
+`invalid_provider_response` is our judgement about the body, not Google's about the
+bill.
+
+### The character count is used for pricing and then discarded
+
+Stated verbatim in the helper's docstring, because it is the kind of finding that
+gets quietly re-broken:
+
+> `input_tokens` is deliberately left at zero. The character count goes in as
+> `units`, which `record_spend` uses to price and does not persist — the ledger's
+> only volume columns are `input_tokens` / `output_tokens` / `reasoning_tokens`, and
+> a character is not a token. `month_snapshot` sums `input_tokens` across every kind
+> into one per-provider figure, so putting characters there would corrupt the token
+> total of a provider that also does chat.
+
+Google also serves chat models elsewhere in this repo, so that corruption would not
+have been hypothetical: a thousand-character translation would have added 1000 to
+Gemini's input-token total, and nothing would have flagged it.
+
+The consequence is real and is recorded here rather than hidden. **Until Google's
+per-million-character rate is in the price table, the character volume of a
+translation is used for pricing and discarded, and the durable row carries the call
+count alone.** A month in which the average translation doubled in length is
+indistinguishable, in the ledger, from a month in which it did not. Closing that
+needs either a rate in the table (which makes the volume visible as dollars) or a
+unit-neutral volume column (a schema change on the table §8 already had to widen).
+This is the second structural limitation found by trying to assert against the
+ledger rather than by reading it; the first was the absent `model` dimension in §10.
+
+### Installing a price to make an invisible property testable
+
+Neither the input-vs-output property nor the markup property is observable through
+the real table, because an unpriced provider records `$0.00` either way. So the
+character-count tests patch `undx_capabilities.provider_for` to return the real
+entry with `prices={'': 20.0}` — $20 per million characters, a deliberately round
+number so the arithmetic in an assertion is readable, and deliberately not close to
+any published figure so nobody mistakes it for one.
+
+This is not a workaround for an untestable design. It exercises the real pricing
+path with a real rate shape, which means the plumbing is already proven the day
+someone reads Google's published rate into the table — the only change needed then
+is the number. `dataclasses.replace` on the returned entry rather than mutation of
+`CAPABILITIES`: the table holds frozen dataclasses in a module-level dict, and
+editing it in place would leak into every test that ran afterwards in the same
+process.
+
+The tests that assert the §34 behaviour — `uncosted_calls=1`, and
+`('translation','google')` present in `unpriced_providers()` — deliberately run
+against the **real** table, with no rate installed. Both properties are asserted, so
+the suite fails if a price is added without updating it, which is the reminder the
+next person needs.
+
+### Mutation coverage
+
+`scripts/undx_spend_accounting_mutation_check.py` is now **36 mutations**, all
+verified (35 red, 1 required-green): "All 36 mutations behaved as specified." The
+nine added here:
+
+| Mutation | Caught by |
+|---|---|
+| stop metering translation entirely | `test_a_translation_is_recorded_as_translation_not_chat` |
+| meter the request as `chat` | `test_a_translation_is_recorded_as_translation_not_chat` |
+| bill one unit per request instead of per character | `test_the_billed_characters_are_the_ones_we_sent` |
+| bill the translated text instead of the source | `test_the_billed_characters_are_the_ones_we_sent` |
+| strip html markup before counting characters | `test_html_markup_counts_as_characters` |
+| stop metering language detection | `test_language_detection_is_billed_on_the_same_footing` |
+| bill every retry attempt rather than the accepted request | `test_a_retried_request_is_billed_once` |
+| count the free language list as translation spend | `test_listing_supported_languages_is_not_translation_spend` |
+| bill a request that was never sent | `test_an_unconfigured_provider_is_not_billed` |
+
+**"Bill one unit per request instead of per character"** is the shape that would
+have survived review. `units=1` reads perfectly naturally next to the image call
+site three modules away, where one unit really is one image. It is invisible in
+production today, because the provider is unpriced and both answers record $0.00.
+The day a rate lands in the table it becomes a silent 1000x understatement of the
+translation bill, with no error, no log line, and a report that still balances.
+That is precisely the defect a price-table entry cannot protect against and a
+mutation check can.
+
+The *bill-the-output* mutation deserves the same note for a different reason: the
+test asserts both `== MICRO_FOR_SOURCE` **and** `!= MICRO_FOR_OUTPUT`, with the
+fixture's output three times longer than its input, so the wrong answer cannot hide
+inside rounding on a short string.
+
+### Degraded, not silent
+
+As in §10 and §11, the ledger-failure test breaks `undx_cost._connect` rather than
+stubbing `record_spend` to raise. `record_spend` is documented never to raise, so a
+test that made it raise would exercise an impossible state — the unfalsifiable shape
+§50 rejects. A dead database connection is a state the system really enters. The
+test asserts both that the caller still gets its translation and that
+`month_snapshot()` still answers from the in-process mirror with
+`source != "ledger"`, which is what separates *degraded* from *silent*.
+
+### Non-chat metering is now complete, and what that does and does not mean
+
+With this commit all four non-chat kinds that §3 found to exist are metered:
+
+| Kind | Call site | Metered in | Priced? |
+|---|---|---|---|
+| EMBEDDING | `services/undx_embedding_service.py` | §9 | yes — real rate, dated |
+| IMAGE | `services/pulse_ai/automated_image_pipeline.py` | §10 | no — `uncosted_calls` |
+| RESEARCH | `services/pulse_ai_web_search.py` (5 providers) | §11 | 1 of 5 (measured zero) |
+| TRANSLATION | `services/translation_providers.py` | §12 | no — `uncosted_calls` |
+| TRANSCRIPTION | none exist | — | — |
+
+"No unclassified AI spend" (§20-27) is satisfied in the sense the brief asks for:
+every AI call in this repo now lands in the ledger under a declared kind, and
+nothing records a fabricated $0.00. It is **not** the same as "the month's total is
+correct." Three of the four kinds are unpriced, so the report reads as *"these calls
+happened and we do not know what they cost"* — which is the honest state and is
+strictly more useful than the previous state, where the calls did not appear at all.
+`unpriced_providers()` is the list that enumerates what remains, and it is now the
+authoritative one: before this work, a provider could be absent from that list purely
+because nothing had ever recorded a call against it.
+
+The two fully unpriced kinds are also the two where the durable row carries less than
+the call knew. Image loses *which model* produced the picture, because the ledger has
+no `model` dimension — `gpt-image-1` and a future model at a different price would be
+the same row (§10). Translation loses *how many characters* were submitted, because
+there is no unit-neutral volume column and `units` is pricing-only (§12). Both were
+found by trying to assert against the ledger rather than by reading its schema, and
+both are recorded as open rather than worked around: the first is a pending schema
+change on the table §8 already had to widen, the second resolves itself the day a rate
+makes the volume visible as dollars.
+
+---
+
+## §13 — The one budget that existed, and the eight copies of it
+
+Metering makes spend visible. It does not make it *bounded*. The only enforcement
+anywhere in the AI layer was a single monthly ceiling on embeddings,
+`UNDX_EMBEDDING_MONTHLY_BUDGET_USD`, and the census would have recorded it as
+present and working. It was present. Reading it against the Procfile is what showed
+what it enforced.
+
+```python
+_budget_state: dict[str, Any] = {"month": "", "tokens": 0}
+```
+
+A module-level dict. The month-to-date it compared against the ceiling was the
+tokens embedded by **the process holding that dict**, which produced two failures
+that compound:
+
+* **It was per-process.** The ceiling that was actually enforced was the configured
+  one multiplied by the number of processes that can reach this module.
+* **It reset on deploy.** A fresh process starts at `{"month": "", "tokens": 0}`,
+  so the month-to-date went to zero on every release.
+
+Both point the same way. A runaway indexing loop is exactly the situation where
+somebody redeploys repeatedly to fix it, and every redeploy refunded the month.
+
+### Counting the copies, rather than estimating them
+
+The multiplier is not "four workers." The Procfile has six entries:
+
+```
+web: sh -c 'gunicorn bot:app --bind 0.0.0.0:${PORT:-8080} --workers ${WEB_CONCURRENCY:-4} ...'
+undx_worker / email_worker / ads_worker / alert_worker / media_worker
+```
+
+Nine OS processes. The question is how many of them *import the embedding module*,
+which is a different question, and the answer had to be traced rather than assumed —
+including the detail that the `ads_worker` entry runs `pulse_ads_worker.py`, so
+grepping for `ads_worker.py` finds nothing and would have undercounted:
+
+| Process | Reaches `undx_embedding_service` | How |
+|---|---|---|
+| `web` × 4 | yes | `bot:app` |
+| `email_worker` | yes | `email_worker.py:13 import bot` |
+| `ads_worker` | yes | `pulse_ads_worker.py:29 import bot` |
+| `alert_worker` | yes | `bot`, and directly at `:79 from services import undx_embedding_diagnostic` |
+| `media_worker` | yes | `media_worker.py:66 import bot` |
+| `undx_worker` | **no** | imports `undx_router` and `services.*`, never `bot` |
+
+**Eight.** So a configured $5.00/month ceiling was, in the worst case, $40.00/month
+— and `undx_worker` being the sole exception is worth naming, because it is the one
+process whose entire job is UNDX work. The process that looks most likely to embed
+is the one that cannot.
+
+### Reporting and blocking want the same unknown rounded in opposite directions
+
+The ledger already held the answer. Wiring it in ran straight into §34 pointing the
+wrong way.
+
+An embedding call against a model the price table does not know is recorded as
+`cost_micro_usd = 0` with `uncosted_calls = 1`. That is correct for a *report*:
+inventing a number would report money nobody was charged, which is the exact claim
+§34 exists to forbid. Feeding that same $0.00 to a *ceiling* inverts it — an
+unrecognised model becomes free to spend without limit, and a model rename is the
+likeliest way for one to appear.
+
+So the two directions are separated deliberately, in two different modules:
+
+* `undx_capabilities.month_spend()` serves reporting. It returns the components and
+  **refuses to produce a single worst-case dollar figure**: `spend_usd`,
+  `spend_is_a_floor`, `uncosted_calls`, `input_tokens`, `source`. A pessimistic
+  figure handed out here would be indistinguishable, at the call site, from a
+  measurement.
+* `services/undx_embedding_service._month_to_date()` serves blocking. It applies
+  `_UNKNOWN_MODEL_PRICE_USD` — the *highest* rate in the table, $0.05/M — to every
+  recorded token whenever `spend_is_a_floor` is set.
+
+The same row, priced $0.80 in one place and $10.00 in the other, on purpose. Which
+of the two a reader is looking at is answered by the module they are in.
+
+### `max(ledger, local)`, so the wiring can only tighten
+
+The ledger is not simply better than the dict. It is better *almost always*, and
+worse in a specific way:
+
+| | Ledger | Process dict |
+|---|---|---|
+| Covers other workers | yes | no |
+| Survives a deploy | yes | no |
+| When the database is unreachable | reports **zero** | unaffected |
+| When a write was lost | missing that call | still counted it |
+
+Replacing one with the other would have made the guard *weaker* than what it
+replaced in exactly the states where a guard matters. `max()` of the two means the
+shared figure can only ever move the ceiling down.
+
+`budget_state()` reports its own provenance for the same reason — `source` is
+`"ledger"` or `"process"`, and `shared` is the question a reader actually has. A
+figure covering one worker because the database was unreachable and a figure
+covering the deployment are different claims, and `remaining_usd` is fiction in the
+first case. A dashboard showing only the numbers would look identical either way.
+
+### A latent arithmetic bug, found by rewriting the projection
+
+The old check summed tokens and priced the total:
+
+```python
+estimated_cost_usd(month_tokens + new_tokens) > limit
+```
+
+Which re-prices every call already made at whatever `UNDX_EMBEDDING_MODEL` is set to
+*now*. Changing the model mid-month moved the recorded past, and because the
+configured model is the cheap one, it moved it downwards. The projection now prices
+only the new tokens and adds them to a month-to-date that is already in dollars.
+
+No test caught this, because with one process and one model the two forms are
+identical. It is only visible once the month-to-date can come from somewhere that
+priced it differently.
+
+### Mutation coverage
+
+Eight mutations added to `scripts/undx_spend_accounting_mutation_check.py` (44 total,
+all verified). The three worth reading are the ones that pass code review:
+
+| Mutation | Reads as | Does |
+|---|---|---|
+| `recorded = {}` | "why round-trip the database, we track our own tokens" | restores the ÷8 defect, invisible to every single-process test |
+| `"spend_usd": ledger_usd` | removing a redundant `max` | lets an empty or unreachable ledger loosen the ceiling |
+| `if False:` on the floor branch | deleting a guess | makes an unpriced model unlimited |
+| `if limit < 0` | closing a zero-ceiling loophole | refuses every call in a deployment that never set the variable |
+
+Every test in `BudgetIsSharedNotPerProcess` proves the figure came from the ledger
+**and not from this process**, by clearing the in-process mirror after seeding the
+row. Without that step a green result would be indistinguishable from the old
+behaviour, since the local dict would have held the same spend. The property under
+test is *whose* spend counts, and the only way to see it is to make this process's
+own count empty while the shared figure is not.
+
+The refusal is paired: $6.00 recorded against a $5.00 ceiling must refuse, and
+$4.00 against the same ceiling must succeed and reach the provider. A guard that
+refused everything — or that crashed on the ledger read and was swallowed — passes
+the first and fails the second.
+
+### What the guard still is not
+
+`configured_monthly_budget_usd()` now bounds *recorded* spend, which is not quite
+spend. A call already in flight when the ledger crossed the line still completes,
+and a single `embed_texts` is checked once and may then buy several batches. The
+overshoot is bounded by one call's worth of tokens rather than by nothing, and that
+is the honest claim.
+
+The ledger read is deliberately **not** cached behind a TTL. The check gates an HTTP
+round trip of hundreds of milliseconds, so one aggregated single-row read costs a
+fraction of a percent of the operation it protects — and a TTL would reintroduce, in
+miniature, the same "spend recorded elsewhere is invisible for a while" hole this
+replaces.
+
+### The test suite was writing into the developer's own ledger
+
+Making the guard read the ledger turned an untidiness into a defect.
+
+`services/db.py:23` is `LOCAL_SQLITE_FILE = "coinpilotx.db"` — a **relative** path —
+and `connect()` falls back to it whenever `DATABASE_URL` is unset. Several UNDX
+suites drive their subject under `patch.dict(os.environ, ..., clear=True)` with no
+`DATABASE_URL`, so every `embed_texts` in them recorded a row in the repository
+working directory. The accumulated total, when finally queried:
+
+```
+('2026-09', 'perplexity', 'embedding', calls=1012, input_tokens=1291304, ...)
+```
+
+Plus `chat` rows for four providers. Immaterial as money — 1.29M tokens is half a
+cent — and not immaterial as a mechanism: once the budget guard reads that table,
+test residue is spend the guard counts, and any test asserting a call is *allowed*
+becomes a test of how many times the suite has been run. Green until the total
+crosses the ceiling, then failing for a reason nothing in the test mentions.
+
+**It stayed invisible because the obvious check does not work.** `ls -l
+coinpilotx.db` reported exactly 5,971,968 bytes before and after every run across an
+entire working session, because SQLite reuses free pages. Only `md5 -q` shows it.
+Every verification in this section is now bracketed by a checksum rather than a size.
+
+The fix is one assignment, in `tests/conftest.py`:
+
+```python
+platform_db.LOCAL_SQLITE_FILE = _FALLBACK_DB_PATH
+```
+
+Patched as a module **attribute** and not by setting `DATABASE_URL`, which is the
+whole reason it works: an environment variable set in a fixture does not survive
+`patch.dict(..., clear=True)` inside the test. A Python global does. One file per
+pytest process rather than per test, deliberately — that preserves the previous
+semantics exactly, minus the part where the file was the developer's.
+
+It does not cover the SQLAlchemy engine, which resolves its URL once at import of
+`services.db`. Suites that go through a session rather than `connect()` are
+unaffected; the cost ledger, which is what prompted this, uses `connect()`.
+
+And because that assignment has no observable effect on any passing test — the
+definition of §50's "a comment with a test runner attached" —
+`tests/test_dev_database_isolation.py` exists to make it falsifiable. Neutering the
+single line fails three of its five assertions, including one that asks SQLite
+itself which file it opened rather than trusting the module attribute. The other
+two are the pairing: they reproduce the pre-fixture behaviour on purpose and assert
+that the same checks catch it, so the file demonstrates sensitivity rather than
+merely truth.

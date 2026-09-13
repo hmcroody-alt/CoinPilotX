@@ -234,6 +234,110 @@ class TheFlagIsItsOwn(unittest.TestCase):
             call.assert_not_called()
 
 
+class WhatThePlannerDeclaresToTheRouter(unittest.TestCase):
+    """The four facts this call site has to state, and why each is not decorative.
+
+    The planner assembles a 12,000-character capability catalog in front of the user's
+    message, which put the message outside the classifier's 2,600-character window
+    entirely. So every request from here classified as ``current_web`` — the catalog
+    contains "right now" and "recent", and freshness wins unconditionally — and the
+    routing decision was a fact about the catalog rather than about what was asked.
+
+    Every test here inspects the **arguments handed to the router**, never the returned
+    ``ok``. The planner succeeds either way: with the wrong classification it still gets
+    an answer, from a model chosen for a question nobody asked. A test asserting ``ok``
+    passes identically against both trees, which is how this survived a suite of 264.
+    """
+
+    MESSAGE = "please turn my newest upload into a highlight reel for my followers"
+
+    def setUp(self) -> None:
+        from services import undx_capability_planner
+
+        self.planner = undx_capability_planner
+
+    def _sent(self, **plan_kwargs):
+        """The kwargs the planner hands `route_structured_request`."""
+        import undx_router
+
+        with patch.dict(os.environ, PLANNER_ON), \
+                patch.object(undx_router, "route_structured_request",
+                             return_value=_answer("feed.post.like")) as call:
+            self.planner.plan(self.MESSAGE, user_id=OWNER_ID, **plan_kwargs)
+        self.assertEqual(call.call_count, 1)
+        return call.call_args
+
+    def test_the_routing_decision_is_made_from_the_message_not_the_catalog(self):
+        args, kwargs = self._sent()
+        sent = args[2]
+        self.assertIn("Catalog:", sent, "the catalog is still what the model is shown")
+        self.assertEqual(kwargs["classify_text"], " ".join(self.MESSAGE.split()))
+        # The two really do classify differently, so the assertion above is about
+        # something. Pinned here rather than assumed: if the catalog ever shrank inside
+        # the window these would agree and the test above would stop measuring anything.
+        import undx_router
+
+        self.assertNotEqual(undx_router.classify_request(sent)["category"],
+                            undx_router.classify_request(kwargs["classify_text"])["category"])
+
+    def test_json_is_required_rather_than_hoped_for(self):
+        """`_parse` folds a prose reply into `_miss("unparseable")`.
+
+        Routed to a provider with no JSON mode that is the expected outcome, not a
+        fault, and it surfaces as the model declining to pick a capability — a control
+        degrading with nothing recording that it degraded. Requiring the capability turns
+        it into a `capability_unmet` entry in `attempts`, refused before a key is read.
+        """
+        _, kwargs = self._sent()
+        self.assertIs(kwargs["require_json"], True)
+
+    def test_a_privacy_class_is_declared_rather_than_defaulted(self):
+        """CONFIDENTIAL is what an omitted class already normalises to, so this changes
+        no behaviour. It is still required: an undeclared class that happens to default
+        correctly is indistinguishable from one nobody considered, and §4 exists to make
+        the second impossible rather than unlikely."""
+        from services import undx_privacy
+
+        _, kwargs = self._sent()
+        self.assertEqual(kwargs["privacy_class"], undx_privacy.SENSITIVITY_CONFIDENTIAL)
+        # Not merely non-empty — a name the ranker recognises. `UNKNOWN_CLASS_RANK` ranks
+        # an unrecognised name as SECRET, which fails closed for a request and would make
+        # a typo here look like a stricter declaration than it is.
+        self.assertTrue(undx_privacy.is_known(kwargs["privacy_class"]))
+
+    def test_the_domain_comes_from_the_caller_and_never_from_the_message(self):
+        """§5: a domain may reorder providers and may never widen them, and the only way
+        to keep that true is for it to describe the caller. `text` here is the user's own
+        words, so a domain derived from it would let the person typing influence which
+        provider sees what they typed."""
+        from services import undx_call_domain
+
+        _, kwargs = self._sent(call_domain=undx_call_domain.CALL_DOMAIN_SECURITY)
+        self.assertEqual(kwargs["call_domain"], undx_call_domain.CALL_DOMAIN_SECURITY)
+        # And it is genuinely threaded, not hardcoded to one value that happens to match.
+        _, other = self._sent(call_domain=undx_call_domain.CALL_DOMAIN_COMMERCE)
+        self.assertEqual(other["call_domain"], undx_call_domain.CALL_DOMAIN_COMMERCE)
+
+    def test_the_agent_runtime_supplies_a_domain_it_can_actually_vouch_for(self):
+        """The one caller today. GENERAL is not a placeholder: `handle` takes no channel
+        argument, so the runtime cannot distinguish a web turn from a Telegram one, and
+        anything narrower would be a claim about the request rather than the caller."""
+        from services import undx_agent_runtime, undx_call_domain
+
+        seen = {}
+
+        def capture(text, **kwargs):
+            seen.update(kwargs)
+            return self.planner.PlannerResult(ok=False, reason="stop")
+
+        with patch.dict(os.environ, PLANNER_ON), \
+                patch.object(self.planner, "plan", side_effect=capture):
+            undx_agent_runtime._planned_capability("do the thing with my newest upload",
+                                                   user_id=OWNER_ID)
+        self.assertEqual(seen.get("call_domain"), undx_call_domain.CALL_DOMAIN_GENERAL)
+        self.assertTrue(undx_call_domain.is_known(seen.get("call_domain")))
+
+
 class TheCatalogAndPromptCannotDriftFromTheRegistry(unittest.TestCase):
 
     def setUp(self) -> None:

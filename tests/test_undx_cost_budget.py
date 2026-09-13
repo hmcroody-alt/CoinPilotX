@@ -85,12 +85,26 @@ def _all_keys(**overrides):
     return mock.patch.dict(os.environ, base)
 
 
-def _usage(provider="meta", cost_usd=0.001873, input_tokens=100, output_tokens=200):
-    return {"provider": provider, "model": "muse-spark-1.3",
-            "input_tokens": input_tokens, "output_tokens": output_tokens,
-            "total_tokens": input_tokens + output_tokens,
-            "reasoning_tokens": 0, "cached_tokens": 0,
-            "cost_usd": cost_usd, "cost_reported": False}
+#: Distinguishes "caller did not pass call_kind" from "caller passed None".
+#: `_usage()` must be able to build a dict with **no** `call_kind` key at all,
+#: because that is the shape `undx_router._normalise_usage` actually produces
+#: today and so the shape every historical row was written from. A default of
+#: `None` would look equivalent - `normalize_call_kind` maps both to `chat` - but
+#: it would quietly convert the omission tests into None-handling tests, and the
+#: compatibility claim being made is about a *missing key*.
+_OMITTED = object()
+
+
+def _usage(provider="meta", cost_usd=0.001873, input_tokens=100, output_tokens=200,
+           call_kind=_OMITTED):
+    usage = {"provider": provider, "model": "muse-spark-1.3",
+             "input_tokens": input_tokens, "output_tokens": output_tokens,
+             "total_tokens": input_tokens + output_tokens,
+             "reasoning_tokens": 0, "cached_tokens": 0,
+             "cost_usd": cost_usd, "cost_reported": False}
+    if call_kind is not _OMITTED:
+        usage["call_kind"] = call_kind
+    return usage
 
 
 def _snapshot(**providers):
@@ -206,18 +220,195 @@ class LedgerTest(_LedgerCase):
         providers = undx_cost.month_snapshot()["providers"]
         self.assertEqual(sorted(providers), ["meta", "openai"])
 
-    def test_the_unique_index_exists_so_the_upsert_can_work(self):
-        """`ON CONFLICT (month, provider) DO UPDATE` is not a hint; without the
-        index it is a syntax error at runtime and every write fails."""
-        undx_cost.ensure_schema()
+    def _indexes(self):
         conn = sqlite3.connect(self.db_path)
         try:
-            names = {row[0] for row in conn.execute(
+            return {row[0] for row in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?",
                 (undx_cost.LEDGER_TABLE,))}
         finally:
             conn.close()
-        self.assertIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider", names)
+
+    def test_the_unique_index_exists_so_the_upsert_can_work(self):
+        """`ON CONFLICT (month, provider, call_kind) DO UPDATE` is not a hint;
+        without the index it is a syntax error at runtime and every write fails.
+
+        Asserted as set membership rather than a substring check on purpose. The
+        new name contains the old one as a prefix — `..._month_provider_kind`
+        starts with `..._month_provider` — so an `in` against the joined names
+        would have passed unchanged through this whole migration and proved
+        nothing. Same trap as `"available" in "unavailable"`.
+        """
+        undx_cost.ensure_schema()
+        self.assertIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider_kind", self._indexes())
+
+    def test_the_narrow_index_is_dropped_only_after_the_wide_one_exists(self):
+        """The old `(month, provider)` index must go, and must go last.
+
+        It is strictly narrower than its replacement, so while it stands the
+        first embedding row for a provider that already has a chat row collides
+        and the write fails — the exact case this column was added for. Dropping
+        it is therefore part of the migration, not tidying.
+
+        The ordering half matters too: if the wide index failed to create and the
+        narrow one were already gone, the table would have no unique index at
+        all, and `ON CONFLICT` against a non-existent constraint is a runtime
+        error on *every* write rather than only the new kinds. Verified by
+        reading the statement order rather than by trusting the comment, since a
+        comment cannot fail.
+        """
+        undx_cost.ensure_schema()
+        names = self._indexes()
+        self.assertNotIn(f"ux_{undx_cost.LEDGER_TABLE}_month_provider", names)
+        statements = list(undx_cost._SCHEMA_STATEMENTS)
+        creates = next(i for i, s in enumerate(statements) if "CREATE UNIQUE INDEX" in s)
+        drops = next(i for i, s in enumerate(statements) if "DROP INDEX" in s)
+        self.assertLess(creates, drops,
+                        "the narrow index is dropped before its replacement exists")
+
+    def test_an_old_table_is_migrated_and_its_rows_are_backfilled_as_chat(self):
+        """Production had rows before this column existed; they are chat.
+
+        `undx_cost_ledger` in production held one row when the column was added
+        (`('2026-09', 'openai', 13 calls)`). Every call site that could have
+        written it was chat, so `chat` is the only backfill value that does not
+        misattribute history — and it has to agree with both the column DEFAULT
+        and `normalize_call_kind(None)`, or a row written by an old worker mid
+        deploy would land under a different name than the same call written by a
+        new one.
+        """
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.executescript(f"""
+                DROP TABLE IF EXISTS {undx_cost.LEDGER_TABLE};
+                CREATE TABLE {undx_cost.LEDGER_TABLE} (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT, month TEXT NOT NULL,
+                  provider TEXT NOT NULL, calls INTEGER NOT NULL DEFAULT 0,
+                  input_tokens INTEGER NOT NULL DEFAULT 0,
+                  output_tokens INTEGER NOT NULL DEFAULT 0,
+                  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+                  cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+                  uncosted_calls INTEGER NOT NULL DEFAULT 0,
+                  updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+                CREATE UNIQUE INDEX ux_{undx_cost.LEDGER_TABLE}_month_provider
+                  ON {undx_cost.LEDGER_TABLE}(month, provider);
+                INSERT INTO {undx_cost.LEDGER_TABLE}
+                  (month, provider, calls, uncosted_calls)
+                  VALUES ('{undx_cost.current_month()}', 'openai', 13, 13);
+            """)
+            conn.commit()
+        finally:
+            conn.close()
+
+        undx_cost.ensure_schema()
+
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                f"SELECT call_kind, calls FROM {undx_cost.LEDGER_TABLE}").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row, (undx_cost.CALL_KIND_CHAT, 13))
+        self.assertEqual(undx_cost.normalize_call_kind(None), undx_cost.CALL_KIND_CHAT)
+
+        # And the migrated table now accepts what the old index made impossible.
+        undx_cost.record(_usage(provider="openai", call_kind="embedding", cost_usd=None))
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["providers"]["openai"]["calls"], 14)
+        self.assertEqual(sorted(snapshot["kinds"]), ["chat", "embedding"])
+
+
+class CallKindTest(_LedgerCase):
+    """Which *sort* of AI call the money went on (§21-22).
+
+    A ledger keyed only on provider can say "OpenAI cost $40" and cannot say
+    whether that was chat, embeddings or images — the one question a spend
+    decision turns on. The census found four paid non-chat call sites reaching no
+    ledger at all, so the column is the place they land.
+    """
+
+    def test_a_provider_can_now_carry_more_than_one_kind(self):
+        """The whole point of widening the key. Under `(month, provider)` the
+        second kind for a provider was a unique-constraint collision."""
+        undx_cost.record(_usage(provider="openai", call_kind="chat", cost_usd=None))
+        undx_cost.record(_usage(provider="openai", call_kind="embedding", cost_usd=None))
+        undx_cost.record(_usage(provider="openai", call_kind="image", cost_usd=None))
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["providers"]["openai"]["calls"], 3)
+        self.assertEqual(sorted(snapshot["kinds"]), ["chat", "embedding", "image"])
+
+    def test_provider_totals_still_sum_across_kinds(self):
+        """Adding a dimension to a measurement must not change the measurement.
+
+        Every budget, refusal and dashboard in this module reads
+        `snapshot["providers"]`. If that started meaning "chat only", a provider's
+        month-to-date would silently *shrink* the day embeddings began being
+        recorded — a budget reporting more headroom than exists, caused by better
+        instrumentation. So `providers` is summed across kinds and `kinds` is
+        reported alongside it, never instead of it.
+        """
+        undx_cost.record(_usage(provider="openai", call_kind="chat", cost_usd=0.001))
+        undx_cost.record(_usage(provider="openai", call_kind="embedding", cost_usd=0.002))
+        providers = undx_cost.month_snapshot()["providers"]
+        self.assertEqual(providers["openai"]["cost_micro_usd"], 3000)
+        self.assertEqual(providers["openai"]["calls"], 2)
+
+    def test_an_omitted_kind_is_chat_and_an_unrecognised_one_is_not(self):
+        """The two must not collapse, and `chat` is the wrong home for a typo.
+
+        Absent means chat: every call site predating the column was chat, and the
+        column default and the backfill both say so. Present-but-unrecognised
+        means `unknown`: mapping `emmbedding` onto the largest existing bucket is
+        precisely how non-chat spend would get laundered into the chat total and
+        stay invisible, which is the failure the column exists to end. `unknown`
+        reads as a defect in a report, which is the correct amount of ugly for
+        spend nobody classified.
+        """
+        undx_cost.record(_usage(provider="meta", cost_usd=None))
+        undx_cost.record(_usage(provider="openai", call_kind="emmbedding", cost_usd=None))
+        kinds = undx_cost.month_snapshot()["kinds"]
+        self.assertEqual(sorted(kinds), ["chat", "unknown"])
+        self.assertEqual(kinds["chat"]["calls"], 1)
+        self.assertEqual(kinds["unknown"]["calls"], 1)
+
+    def test_an_unrecognised_kind_is_recorded_rather_than_dropped(self):
+        """Refusing the row would trade an unclassified dollar for a missing one.
+
+        The money is spent by the time `record` is called. A ledger that discards
+        what it cannot classify reports a smaller total than reality and calls it
+        clean, which is worse than a total with an `unknown` line in it.
+        """
+        undx_cost.record(_usage(provider="openai", call_kind="nonsense", cost_usd=0.005))
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["providers"]["openai"]["cost_micro_usd"], 5000)
+        self.assertEqual(snapshot["kinds"]["unknown"]["cost_micro_usd"], 5000)
+
+    def test_is_known_call_kind_is_a_separate_question_from_normalising(self):
+        """`normalize` cannot double as detection — the same reason
+        `undx_privacy.is_known` exists next to the ranking function. A function
+        that maps an unrecognised name onto a working default has, by that point,
+        destroyed the evidence that the name was unrecognised."""
+        self.assertTrue(undx_cost.is_known_call_kind("embedding"))
+        self.assertTrue(undx_cost.is_known_call_kind("  EMBEDDING  "))
+        self.assertFalse(undx_cost.is_known_call_kind("emmbedding"))
+        self.assertFalse(undx_cost.is_known_call_kind(None))
+        self.assertFalse(
+            undx_cost.is_known_call_kind(undx_cost.CALL_KIND_UNKNOWN),
+            "`unknown` is the bucket for unclassifiable spend, not a kind a "
+            "caller may select; if it were selectable, declaring it would look "
+            "like a classification while meaning the absence of one",
+        )
+
+    def test_the_kinds_axis_survives_a_ledger_outage(self):
+        """The process mirror keeps both axes, or a ledger outage silently
+        un-classifies every call made during it."""
+        def boom():
+            raise sqlite3.OperationalError("no such database")
+        with mock.patch.object(undx_cost, "_connect", side_effect=boom):
+            undx_cost.record(_usage(provider="openai", call_kind="embedding", cost_usd=None))
+            snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "process")
+        self.assertEqual(snapshot["kinds"]["embedding"]["calls"], 1)
 
     def test_ensure_schema_is_idempotent(self):
         undx_cost.ensure_schema()
@@ -677,6 +868,101 @@ class RecordingTest(_LedgerCase):
             result = undx_router.route_undx_request(1, "hi", privacy_class="PUBLIC")
         self.assertTrue(result["ok"])
         self.assertGreaterEqual(undx_cost.stats()["write_failures"], 1)
+
+
+class CostFieldsTest(_LedgerCase):
+    """How one call's price is read, and why there is only one function doing it.
+
+    Two input forms exist: chat providers report dollars (`cost_usd`), non-chat
+    spend is priced by `undx_capabilities` in integer micro-USD already
+    (`cost_micro_usd`). Both must produce the same two numbers the ledger stores —
+    a micro amount, and whether this call counts as one the amount excludes.
+
+    The reason this is one function rather than two is the subject of
+    :meth:`test_the_mirror_and_the_ledger_agree_about_the_micro_form`. `_apply`
+    feeds the process mirror and `record` feeds the durable row; before the
+    extraction each derived the pair separately from `cost_usd`, so teaching only
+    one of them the micro form would have left the degraded path and the durable
+    path disagreeing about what a call cost — visible only during a database
+    outage, which is the worst moment to discover it.
+    """
+
+    def test_a_known_zero_and_an_unknown_price_are_not_the_same_row(self):
+        """The whole §34 distinction, at the narrowest point it exists.
+
+        DuckDuckGo is keyless and free, so 0 is a *measurement*. `gpt-image-1`
+        has no price in the table, so 0 would be a *guess*. Both add nothing to
+        the dollar total, and if that were all the ledger stored they would be
+        indistinguishable — the difference is entirely in `uncosted_calls`.
+        """
+        self.assertEqual(undx_cost._cost_fields({"cost_micro_usd": 0}), (0, 0))
+        self.assertEqual(undx_cost._cost_fields({"cost_micro_usd": None}), (0, 1))
+        self.assertNotEqual(undx_cost._cost_fields({"cost_micro_usd": 0}),
+                            undx_cost._cost_fields({"cost_micro_usd": None}))
+
+    def test_an_absent_price_is_unknown_rather_than_free(self):
+        """Five of seven chat providers reach here with no price at all."""
+        self.assertEqual(undx_cost._cost_fields({}), (0, 1))
+        self.assertEqual(undx_cost._cost_fields({"cost_usd": None}), (0, 1))
+
+    def test_the_two_forms_agree_on_the_same_amount(self):
+        """$0.001873 is the figure `_usage()` defaults to, i.e. a real Meta call."""
+        self.assertEqual(undx_cost._cost_fields({"cost_usd": 0.001873}), (1873, 0))
+        self.assertEqual(undx_cost._cost_fields({"cost_micro_usd": 1873}), (1873, 0))
+
+    def test_the_micro_form_wins_when_both_are_present(self):
+        """Deliberate precedence, not an accident of ordering. A caller that
+        computed micro-USD did so from the capability table, which is the
+        authority for non-chat prices; a chat caller never sets the micro field.
+        Pinned so that if the two ever do arrive together the winner is the one
+        that was chosen rather than the one that happened to be checked first."""
+        self.assertEqual(
+            undx_cost._cost_fields({"cost_usd": 99.0, "cost_micro_usd": 7}), (7, 0))
+
+    def test_a_malformed_price_is_unknown_in_both_forms(self):
+        """`to_micro_usd` returns 0 for junk by contract and leaves the uncosted
+        decision to its caller, so a dollar branch that delegated to it would
+        record an unparseable price as $0.00 spent — the one reading §34 rules
+        out — while the micro branch recorded the same junk as unknown."""
+        for form in ("cost_usd", "cost_micro_usd"):
+            with self.subTest(form=form):
+                self.assertEqual(undx_cost._cost_fields({form: "not a number"}), (0, 1))
+                self.assertEqual(undx_cost._cost_fields({form: object()}), (0, 1))
+
+    def test_the_mirror_and_the_ledger_agree_about_the_micro_form(self):
+        """Record the same call twice — once with the database reachable, once
+        with `_connect` broken so only the mirror answers — and require the two
+        replies to carry the same money. This is the split-brain the extraction
+        exists to prevent, and it fails if `record` and `_apply` stop sharing
+        `_cost_fields`.
+
+        Two providers rather than one because the mirror accumulates within a
+        process and would otherwise report the second call on top of the first.
+        """
+        usage = {"provider": "perplexity", "model": "sonar", "call_kind": "embedding",
+                 "input_tokens": 1000, "output_tokens": 0, "cost_micro_usd": 4000}
+        from_ledger = undx_cost.record(usage)
+
+        degraded_usage = dict(usage, provider="brave")
+        with mock.patch.object(undx_cost, "_connect",
+                               side_effect=sqlite3.OperationalError("gone")):
+            from_mirror = undx_cost.record(degraded_usage)
+
+        for field in ("calls", "cost_micro_usd", "uncosted_calls"):
+            with self.subTest(field=field):
+                self.assertEqual(from_ledger[field], from_mirror[field])
+        self.assertEqual(from_ledger["cost_micro_usd"], 4000)
+
+    def test_an_unknown_price_reaches_the_durable_row_as_uncosted(self):
+        """Through `record`, not just `_cost_fields`, because the pair has to
+        survive the upsert's arithmetic to be readable in a spend report."""
+        undx_cost.record({"provider": "openai", "model": "gpt-image-1",
+                          "call_kind": "image", "cost_micro_usd": None})
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "ledger")
+        row = snapshot["kinds"]["image"]
+        self.assertEqual((row["calls"], row["cost_micro_usd"], row["uncosted_calls"]),
+                         (1, 0, 1))
 
 
 if __name__ == "__main__":

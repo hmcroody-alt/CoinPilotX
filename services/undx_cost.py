@@ -153,6 +153,77 @@ def from_micro_usd(micro: int) -> float:
     return round(int(micro) / MICRO_PER_USD, 6)
 
 
+# --------------------------------------------------------------- call kinds
+
+#: What sort of AI call the money was spent on (§21). A ledger keyed only on
+#: provider can say "OpenAI cost $40" and cannot say whether that was chat,
+#: embeddings or image generation - which is the one question a spend decision
+#: turns on, because those three have different unit economics and different
+#: owners. The census found four non-chat paid call sites (embeddings, images,
+#: search, translation) that reached no ledger at all; this column is where they
+#: land.
+CALL_KIND_CHAT = "chat"
+CALL_KIND_REASONING = "reasoning"
+CALL_KIND_RESEARCH = "research"
+CALL_KIND_EMBEDDING = "embedding"
+CALL_KIND_IMAGE = "image"
+CALL_KIND_TRANSCRIPTION = "transcription"
+CALL_KIND_RERANK = "rerank"
+CALL_KIND_MODERATION = "moderation"
+CALL_KIND_TRANSLATION = "translation"
+
+#: Where a call whose kind this module does not recognise is recorded. Not a
+#: member of `KNOWN_CALL_KINDS`: it is the bucket for things that should not
+#: exist, so a caller cannot select it and a query for it is a bug report.
+CALL_KIND_UNKNOWN = "unknown"
+
+KNOWN_CALL_KINDS: frozenset[str] = frozenset({
+    CALL_KIND_CHAT, CALL_KIND_REASONING, CALL_KIND_RESEARCH,
+    CALL_KIND_EMBEDDING, CALL_KIND_IMAGE, CALL_KIND_TRANSCRIPTION,
+    CALL_KIND_RERANK, CALL_KIND_MODERATION, CALL_KIND_TRANSLATION,
+})
+
+
+def is_known_call_kind(kind: Any) -> bool:
+    """Whether `kind` is a kind this module can account for.
+
+    Separate from `normalize_call_kind` on the same reasoning as
+    `undx_privacy.is_known`: a function that maps an unrecognised name onto a
+    working default cannot also be used to *detect* that the name was
+    unrecognised, and a caller that wants to refuse a typo needs the second
+    question rather than the first.
+    """
+    return isinstance(kind, str) and kind.strip().lower() in KNOWN_CALL_KINDS
+
+
+def normalize_call_kind(kind: Any) -> str:
+    """Ledger value for a caller's declared kind.
+
+    Absent and unrecognised are deliberately **different** answers, and the
+    difference is the whole point of the function:
+
+    * **Absent** (`None`, `""`) becomes `chat`. Every call site that existed
+      before this column was chat, so `chat` is what the backfill writes and
+      what the column defaults to; any other choice would make the historical
+      rows disagree with the code that wrote them.
+    * **Present but unrecognised** becomes `unknown`, never `chat`. Mapping a
+      typo onto the largest existing bucket is how `embedding` spend would get
+      laundered into the chat total and stay invisible - the failure this column
+      exists to end. `unknown` is ugly in a report, which is the correct amount
+      of ugly for spend nobody classified (§22).
+
+    The default is a compatibility statement about history, not a licence for new
+    callers to omit the argument: `test_no_ledger_write_omits_its_call_kind`
+    fails on any `record()` call site that leaves it out.
+    """
+    if kind is None:
+        return CALL_KIND_CHAT
+    text = str(kind).strip().lower()
+    if not text:
+        return CALL_KIND_CHAT
+    return text if text in KNOWN_CALL_KINDS else CALL_KIND_UNKNOWN
+
+
 # ------------------------------------------------------------------ the ledger
 
 LEDGER_TABLE = "undx_cost_ledger"
@@ -166,6 +237,7 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         month TEXT NOT NULL,
         provider TEXT NOT NULL,
+        call_kind TEXT NOT NULL DEFAULT '{CALL_KIND_CHAT}',
         calls INTEGER NOT NULL DEFAULT 0,
         input_tokens INTEGER NOT NULL DEFAULT 0,
         output_tokens INTEGER NOT NULL DEFAULT 0,
@@ -174,18 +246,35 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         uncosted_calls INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )""",
-    # Not decoration: `ON CONFLICT (month, provider) DO UPDATE` requires it, and
-    # it is what turns increment-and-read into one atomic statement instead of a
-    # read-modify-write race between nine processes.
-    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{LEDGER_TABLE}_month_provider "
-    f"ON {LEDGER_TABLE}(month, provider)",
+    # Not decoration: `ON CONFLICT (month, provider, call_kind) DO UPDATE`
+    # requires it, and it is what turns increment-and-read into one atomic
+    # statement instead of a read-modify-write race between nine processes.
+    f"CREATE UNIQUE INDEX IF NOT EXISTS ux_{LEDGER_TABLE}_month_provider_kind "
+    f"ON {LEDGER_TABLE}(month, provider, call_kind)",
+    # Dropped in the same run that creates its replacement, and **after** it.
+    # The old index is on `(month, provider)`, which is strictly narrower: while
+    # it stands, the first embedding row for a provider that already has a chat
+    # row collides and the write fails. So it has to go. It goes last because if
+    # creating the wider index fails, the table must still have *an* index -
+    # without one the upsert is a runtime error and every write fails, which is
+    # worse than a write that fails only for the new kinds.
+    f"DROP INDEX IF EXISTS ux_{LEDGER_TABLE}_month_provider",
+)
+
+#: Added by `ensure_schema` rather than by a statement in the tuple above,
+#: because `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` is Postgres-only - SQLite
+#: raises on the second run - so the guard has to be an introspection, not a
+#: keyword. `CREATE TABLE` above already carries the column, so this is a no-op
+#: on a fresh database and the migration path only for tables that predate it.
+_LEDGER_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("call_kind", f"TEXT NOT NULL DEFAULT '{CALL_KIND_CHAT}'"),
 )
 
 _UPSERT_SQL = f"""INSERT INTO {LEDGER_TABLE}
-    (month, provider, calls, input_tokens, output_tokens, reasoning_tokens,
-     cost_micro_usd, uncosted_calls, updated_at)
-    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (month, provider) DO UPDATE SET
+    (month, provider, call_kind, calls, input_tokens, output_tokens,
+     reasoning_tokens, cost_micro_usd, uncosted_calls, updated_at)
+    VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (month, provider, call_kind) DO UPDATE SET
         calls = {LEDGER_TABLE}.calls + 1,
         input_tokens = {LEDGER_TABLE}.input_tokens + ?,
         output_tokens = {LEDGER_TABLE}.output_tokens + ?,
@@ -195,7 +284,7 @@ _UPSERT_SQL = f"""INSERT INTO {LEDGER_TABLE}
         updated_at = ?
     RETURNING calls, cost_micro_usd, uncosted_calls"""
 
-_READ_SQL = f"""SELECT provider, calls, input_tokens, output_tokens,
+_READ_SQL = f"""SELECT provider, call_kind, calls, input_tokens, output_tokens,
     reasoning_tokens, cost_micro_usd, uncosted_calls
     FROM {LEDGER_TABLE} WHERE month = ?"""
 
@@ -208,7 +297,7 @@ _schema_ready = False
 #: unreachable, so a ledger outage degrades the control's *accuracy* instead of
 #: turning into either an open door or an outage. Same trade, and the same
 #: `degraded` counter, as `sentinel.rate_limit`.
-_local: dict[str, Any] = {"month": "", "providers": {}}
+_local: dict[str, Any] = {"month": "", "providers": {}, "kinds": {}}
 
 _STATS: dict[str, Any] = {
     "writes": 0,
@@ -243,6 +332,24 @@ def _connect():
     return platform_db.connect()
 
 
+def _ledger_columns(cur) -> set[str]:
+    """Column names currently on the ledger table, lowercased."""
+    if platform_db.IS_POSTGRES:
+        cur.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = ?",
+            (LEDGER_TABLE,),
+        )
+    else:
+        cur.execute(f"PRAGMA table_info({LEDGER_TABLE})")
+    found: set[str] = set()
+    for row in cur.fetchall() or []:
+        # PRAGMA puts the name at index 1; information_schema at index 0.
+        name = row[0] if platform_db.IS_POSTGRES else row[1]
+        found.add(str(name).lower())
+    return found
+
+
 def ensure_schema(conn=None) -> int:
     """Create the ledger table. Idempotent; safe at every boot.
 
@@ -252,13 +359,25 @@ def ensure_schema(conn=None) -> int:
     catalog lock is held while the next connection blocks behind it. That
     failure has already happened in this repo with `ensure_schema(conn)` — a
     route hung on Postgres, and it read as a query problem for a long time.
+
+    Statement order matters and is asserted by
+    `test_the_narrow_index_is_dropped_only_after_the_wide_one_exists`: the
+    `call_kind` column is added before the index that references it, and the old
+    narrow index is dropped only after the wide one is in place.
     """
     own = conn is None
     if own:
         conn = _connect()
     try:
         cur = conn.cursor()
-        for statement in _SCHEMA_STATEMENTS:
+        # The table first, so the column check below has something to inspect.
+        cur.execute(_SCHEMA_STATEMENTS[0])
+        existing = _ledger_columns(cur)
+        for column, definition in _LEDGER_COLUMNS:
+            if column in existing:
+                continue
+            cur.execute(f"ALTER TABLE {LEDGER_TABLE} ADD COLUMN {column} {definition}")
+        for statement in _SCHEMA_STATEMENTS[1:]:
             cur.execute(statement)
         if own:
             conn.commit()
@@ -280,21 +399,86 @@ def _ensure_schema_once() -> None:
         _schema_ready = True
 
 
-def _bump_local(month: str, provider: str, usage: dict[str, Any]) -> dict[str, Any]:
+def _empty_bucket() -> dict[str, int]:
+    return {"calls": 0, "input_tokens": 0, "output_tokens": 0,
+            "reasoning_tokens": 0, "cost_micro_usd": 0, "uncosted_calls": 0}
+
+
+def _cost_fields(usage: dict[str, Any]) -> tuple[int, int]:
+    """`(cost_micro_usd, uncosted)` for one call, from whichever form it arrived in.
+
+    Two forms exist because the two kinds of caller genuinely know different things.
+    A chat provider reports a price in dollars and `cost_usd` is the honest field for
+    it. Non-chat spend is priced from `undx_capabilities`, which computes in integer
+    micro-USD already, and routing that back through a float only to convert it again
+    would add a rounding step for nothing.
+
+    Extracted into one function rather than written twice because the ledger and the
+    process mirror both have to answer this question, and answering it separately is
+    how the degraded path would start disagreeing with the durable one about what a
+    call cost. Before this, `_apply` and `record` each derived the pair from
+    `cost_usd` independently, so adding the micro form to one of them would have
+    silently created that split.
+
+    Absent is uncosted, and uncosted is not free — a call whose price nobody knows
+    contributes 0 to the dollar total and 1 to the count of calls that total excludes.
+    An explicit `cost_micro_usd=0` is a *known* zero (a keyless free endpoint) and is
+    not counted as uncosted, which is the distinction §34 turns on.
+
+    A *malformed* price is an unknown price, in both forms. This is why the dollar
+    branch does its own float conversion instead of leaning on :func:`to_micro_usd`,
+    which returns 0 for junk by documented contract and leaves the uncosted decision
+    to its caller. Deferring to it here would have made the two forms disagree about
+    the same bad input: `cost_micro_usd="?"` recorded as unknown while
+    `cost_usd="?"` recorded as free. Nothing produces junk today — `_normalise_usage`
+    already rejects a provider-reported cost it cannot parse — but `record()` is a
+    public entry point, and "unparseable therefore $0.00" is exactly the reading §34
+    forbids.
+    """
+    micro = usage.get("cost_micro_usd")
+    if micro is not None:
+        try:
+            return int(micro), 0
+        except (TypeError, ValueError):
+            return 0, 1
+    usd = usage.get("cost_usd")
+    if usd is None:
+        return 0, 1
+    try:
+        return int(round(float(usd) * MICRO_PER_USD)), 0
+    except (TypeError, ValueError):
+        return 0, 1
+
+
+def _apply(bucket: dict[str, int], usage: dict[str, Any]) -> None:
+    cost_micro, uncosted = _cost_fields(usage)
+    bucket["calls"] += 1
+    bucket["input_tokens"] += int(usage.get("input_tokens") or 0)
+    bucket["output_tokens"] += int(usage.get("output_tokens") or 0)
+    bucket["reasoning_tokens"] += int(usage.get("reasoning_tokens") or 0)
+    bucket["cost_micro_usd"] += cost_micro
+    bucket["uncosted_calls"] += uncosted
+
+
+def _bump_local(month: str, provider: str, kind: str, usage: dict[str, Any]) -> dict[str, Any]:
+    """Bump the process mirror twice: once per provider, once per kind.
+
+    Two flat tallies rather than the provider x kind cross-product, because the
+    mirror is the *degraded* path - what it exists to do is keep a budget
+    enforceable when the ledger is unreachable, and every budget in this module
+    is per-provider or global. The cross-product lives in the ledger, which is
+    where a spend report reads from. Keeping the `providers` shape byte-identical
+    also means no budget, refusal or dashboard changes meaning when the ledger is
+    down, which is the moment to be changing the fewest things.
+    """
     with _LOCK:
         if _local["month"] != month:
             _local["month"] = month
             _local["providers"] = {}
-        bucket = _local["providers"].setdefault(provider, {
-            "calls": 0, "input_tokens": 0, "output_tokens": 0,
-            "reasoning_tokens": 0, "cost_micro_usd": 0, "uncosted_calls": 0,
-        })
-        bucket["calls"] += 1
-        bucket["input_tokens"] += int(usage.get("input_tokens") or 0)
-        bucket["output_tokens"] += int(usage.get("output_tokens") or 0)
-        bucket["reasoning_tokens"] += int(usage.get("reasoning_tokens") or 0)
-        bucket["cost_micro_usd"] += to_micro_usd(usage.get("cost_usd"))
-        bucket["uncosted_calls"] += 0 if usage.get("cost_usd") is not None else 1
+            _local["kinds"] = {}
+        bucket = _local["providers"].setdefault(provider, _empty_bucket())
+        _apply(bucket, usage)
+        _apply(_local.setdefault("kinds", {}).setdefault(kind, _empty_bucket()), usage)
         return dict(bucket)
 
 
@@ -310,13 +494,20 @@ def record(usage: dict[str, Any]) -> dict[str, Any]:
     provider = str(usage.get("provider") or "").strip().lower()
     if not provider:
         return {}
+    kind = normalize_call_kind(usage.get("call_kind"))
+    if kind == CALL_KIND_UNKNOWN:
+        # Loud, because this is §22's failure mode arriving: spend that reached
+        # the ledger without a classification anyone chose. It is still recorded
+        # - dropping the row would trade an unclassified dollar for a missing
+        # one - but it is recorded under a name that reads as a defect.
+        log.warning("UNDX cost ledger unrecognised call_kind provider=%s declared=%r",
+                    provider, usage.get("call_kind"))
     month = current_month()
-    local = _bump_local(month, provider, usage)
+    local = _bump_local(month, provider, kind, usage)
     if not ledger_enabled():
         return local
 
-    cost_micro = to_micro_usd(usage.get("cost_usd"))
-    uncosted = 0 if usage.get("cost_usd") is not None else 1
+    cost_micro, uncosted = _cost_fields(usage)
     inputs = int(usage.get("input_tokens") or 0)
     outputs = int(usage.get("output_tokens") or 0)
     reasoning = int(usage.get("reasoning_tokens") or 0)
@@ -328,7 +519,7 @@ def record(usage: dict[str, Any]) -> dict[str, Any]:
         conn = _connect()
         cur = conn.cursor()
         cur.execute(_UPSERT_SQL, (
-            month, provider, inputs, outputs, reasoning, cost_micro, uncosted, stamp,
+            month, provider, kind, inputs, outputs, reasoning, cost_micro, uncosted, stamp,
             inputs, outputs, reasoning, cost_micro, uncosted, stamp,
         ))
         row = cur.fetchone()
@@ -357,11 +548,11 @@ def record(usage: dict[str, Any]) -> dict[str, Any]:
                 pass
 
 
-def _local_snapshot(month: str) -> dict[str, dict[str, int]]:
+def _local_snapshot(month: str, axis: str = "providers") -> dict[str, dict[str, int]]:
     with _LOCK:
         if _local["month"] != month:
             return {}
-        return {name: dict(bucket) for name, bucket in _local["providers"].items()}
+        return {name: dict(bucket) for name, bucket in (_local.get(axis) or {}).items()}
 
 
 def month_snapshot(month: str | None = None) -> dict[str, Any]:
@@ -371,6 +562,13 @@ def month_snapshot(month: str | None = None) -> dict[str, Any]:
     `source` is `"ledger"` or `"process"`. A caller that cannot tell which one it
     got cannot tell a $0 month from an unreachable ledger, and those two demand
     opposite reactions.
+
+    `providers` is summed **across** call kinds and so means exactly what it
+    meant before the `call_kind` column existed - every budget, refusal and
+    dashboard reading it keeps working untouched, and a provider's total does not
+    silently shrink the day embeddings start being recorded. `kinds` is the new
+    axis, reported alongside rather than instead: adding a dimension to a
+    measurement must not change the measurement.
     """
     month = month or current_month()
     if ledger_enabled():
@@ -381,15 +579,21 @@ def month_snapshot(month: str | None = None) -> dict[str, Any]:
             cur = conn.cursor()
             cur.execute(_READ_SQL, (month,))
             providers: dict[str, dict[str, int]] = {}
+            kinds: dict[str, dict[str, int]] = {}
             for row in cur.fetchall() or []:
-                providers[str(row[0])] = {
-                    "calls": int(row[1]), "input_tokens": int(row[2]),
-                    "output_tokens": int(row[3]), "reasoning_tokens": int(row[4]),
-                    "cost_micro_usd": int(row[5]), "uncosted_calls": int(row[6]),
+                values = {
+                    "calls": int(row[2]), "input_tokens": int(row[3]),
+                    "output_tokens": int(row[4]), "reasoning_tokens": int(row[5]),
+                    "cost_micro_usd": int(row[6]), "uncosted_calls": int(row[7]),
                 }
+                for target, key in ((providers, str(row[0])), (kinds, str(row[1]))):
+                    bucket = target.setdefault(key, _empty_bucket())
+                    for field, amount in values.items():
+                        bucket[field] += amount
             with _LOCK:
                 _STATS["reads"] += 1
-            return {"month": month, "providers": providers, "source": "ledger"}
+            return {"month": month, "providers": providers, "kinds": kinds,
+                    "source": "ledger"}
         except Exception as exc:  # noqa: BLE001
             with _LOCK:
                 _STATS["read_failures"] += 1
@@ -402,7 +606,8 @@ def month_snapshot(month: str | None = None) -> dict[str, Any]:
                     conn.close()
                 except Exception:  # pragma: no cover
                     pass
-    return {"month": month, "providers": _local_snapshot(month), "source": "process"}
+    return {"month": month, "providers": _local_snapshot(month),
+            "kinds": _local_snapshot(month, axis="kinds"), "source": "process"}
 
 
 def stats() -> dict[str, Any]:
@@ -615,12 +820,18 @@ def reset_for_tests() -> None:
     with _LOCK:
         _local["month"] = ""
         _local["providers"] = {}
+        _local["kinds"] = {}
         for key in _STATS:
             _STATS[key] = "" if key == "last_error" else 0
         _schema_ready = False
 
 
 __all__ = [
+    "CALL_KIND_CHAT", "CALL_KIND_REASONING", "CALL_KIND_RESEARCH",
+    "CALL_KIND_EMBEDDING", "CALL_KIND_IMAGE", "CALL_KIND_TRANSCRIPTION",
+    "CALL_KIND_RERANK", "CALL_KIND_MODERATION", "CALL_KIND_TRANSLATION",
+    "CALL_KIND_UNKNOWN", "KNOWN_CALL_KINDS", "is_known_call_kind",
+    "normalize_call_kind",
     "PRICE_PER_MILLION_USD", "MICRO_PER_USD", "LEDGER_TABLE", "BUDGET_ENV_VARS",
     "price_for", "is_priced", "estimate_cost_usd", "to_micro_usd", "from_micro_usd",
     "ensure_schema", "record", "month_snapshot", "stats", "current_month",

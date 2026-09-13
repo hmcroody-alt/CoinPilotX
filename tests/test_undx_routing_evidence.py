@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 import undx_router
+from services import undx_call_domain
 from services import undx_eval_corpus as corpus
 from services import undx_routing_evidence as evidence
 
@@ -177,10 +178,21 @@ class GateTest(unittest.TestCase):
                 self.assertEqual(step["gate"], "privacy_refused")
 
     def test_budget_is_checked_before_the_credential(self):
+        """`PUBLIC` is declared so that the *budget* is what this isolates.
+
+        This test used to pass no class at all and assert that every step read
+        `budget_exceeded`. It passed for the wrong reason: `explain` skipped the
+        privacy gate whenever the caller declared nothing, so budget was the first
+        gate that could fire. With the ceiling now applied to an omitted class —
+        CONFIDENTIAL, which four providers cannot receive — the same call reports
+        `privacy_refused` for those four, and correctly. A test about budgets that
+        depends on the privacy gate being absent is not a test about budgets.
+        """
         with _Patched(_api_key="", _budget_refusal="cost_budget: over"):
-            record = evidence.explain("hello")
+            record = evidence.explain("hello", privacy_class="PUBLIC")
         for step in record["steps"]:
-            self.assertEqual(step["gate"], "budget_exceeded")
+            with self.subTest(provider=step["provider"]):
+                self.assertEqual(step["gate"], "budget_exceeded")
 
     def test_an_open_breaker_gates_the_provider(self):
         with _Patched(_breaker_should_skip=lambda name: name == "openai"):
@@ -194,6 +206,94 @@ class GateTest(unittest.TestCase):
         self.assertTrue(record["would_fail"])
         self.assertEqual(record["would_try"], [])
         self.assertEqual(record["first_choice"], "")
+
+    def test_an_omitted_privacy_class_still_applies_the_default_ceiling(self):
+        """The divergence this class existed to prevent, and did not.
+
+        `explain` guarded its privacy check with `if privacy_class`, which reads as
+        tolerating a missing value and is the opposite: `normalise(None)` is
+        CONFIDENTIAL, so the guard discarded the default ceiling. The result was a
+        surface reporting Perplexity as first choice for a `current_web` request
+        that the routing loop refuses there — naming a provider the request cannot
+        reach.
+
+        The two privacy tests above could not catch it: both pass `"RESTRICTED"`, a
+        truthy value, so neither enters the branch. The gates were pinned; the
+        gate's *input* was not.
+
+        `_api_key` and `_breaker_should_skip` must be healthy for this to be
+        observable at all. With no key set every provider lands on
+        `not_configured`, `would_try` is empty either way, and the assertion passes
+        in the broken tree — the same unearned zero as asserting a conjunction is
+        false when one term was already false for an unrelated reason.
+        """
+        with _Patched():
+            record = evidence.explain("what is the bitcoin price right now")
+
+        self.assertEqual(record["category"], "current_web")
+        self.assertEqual(record["plan"][0], "perplexity",
+                         "the lane must still lead with Perplexity, or this test "
+                         "is no longer measuring what it claims")
+
+        gates = {step["provider"]: step["gate"] for step in record["steps"]}
+        self.assertEqual(gates["perplexity"], "privacy_refused")
+        self.assertEqual(record["first_choice"], "openai")
+        self.assertEqual(record["would_try"], ["openai", "claude", "meta"])
+
+    def test_a_json_requirement_is_reported_as_the_loop_would_apply_it(self):
+        """`require_json` was unrepresentable here, so `capability_unmet` refusals
+        were invisible on the surface that explains routing.
+
+        The loop declines a provider with no JSON dialect *before reading its
+        credential*. `scam_shield` and `undx_capability_planner` both route this
+        way, so a chain explained without the flag omits refusals that will happen.
+        """
+        with _Patched():
+            plain = evidence.explain("hello", privacy_class="PUBLIC")
+            strict = evidence.explain("hello", privacy_class="PUBLIC",
+                                      require_json=True)
+
+        unmet = [step["provider"] for step in strict["steps"]
+                 if step["gate"] == "capability_unmet"]
+        self.assertTrue(unmet, "no provider was declined for the JSON requirement")
+        for name in unmet:
+            with self.subTest(provider=name):
+                self.assertFalse(undx_router.PROVIDERS[name].structured_output)
+                self.assertIn(name, plain["would_try"],
+                              "this provider must be reachable without the "
+                              "requirement, or the flag is not what excluded it")
+                self.assertNotIn(name, strict["would_try"])
+
+    def test_the_declared_domain_reorders_the_explained_plan(self):
+        """`_domain_ordered` must be applied here because both routing loops apply
+        it, and a surface that skips it explains a differently ordered request.
+
+        Latent rather than live at the time of writing: `undx_call_domain._PREFERENCE`
+        is empty, so `routing_preference` returns `()` for every domain and
+        `_domain_ordered` is a no-op — the omission produced no wrong output. That is
+        precisely why it needs a test with a preference *supplied*. Asserting on the
+        real table would pass with the call absent, which is the vacuous gate this
+        mission keeps finding.
+        """
+        with _Patched(), mock.patch.object(
+                undx_call_domain, "routing_preference",
+                lambda domain: ("deepseek",) if domain == "SECURITY" else ()):
+            plain = evidence.explain("hello", privacy_class="PUBLIC")
+            scoped = evidence.explain("hello", privacy_class="PUBLIC",
+                                      call_domain="SECURITY")
+
+        # The preferred provider has to already be in this lane. `_domain_ordered`
+        # partitions its input, so a name that is not there finds nothing to move
+        # and the fixture would prove nothing.
+        self.assertIn("deepseek", plain["plan"])
+        self.assertNotEqual(plain["plan"][0], "deepseek",
+                            "this fixture only means something if the domain has "
+                            "something to move")
+        self.assertEqual(scoped["plan"][0], "deepseek")
+        self.assertEqual(scoped["first_choice"], "deepseek")
+        self.assertEqual(sorted(scoped["plan"]), sorted(plain["plan"]),
+                         "a domain may reorder a settled plan and may never widen "
+                         "it: the result must be a permutation of its input")
 
     def test_every_gate_used_is_in_the_published_set(self):
         for reason in ("privacy_refused", "budget_exceeded", "not_configured",
@@ -213,8 +313,11 @@ class DisclosureTest(unittest.TestCase):
             self.assertNotIn("detail", step)
 
     def test_detail_is_available_when_asked_for(self):
+        """`PUBLIC` declared for the same reason as the budget test above: without
+        it the first step's detail is a privacy ceiling sentence, not a dollar
+        figure, and this asserts on the budget gate's wording."""
         with _Patched(_budget_refusal="cost_budget: $50.00 of $50.00 spent"):
-            record = evidence.explain("hello", detail=True)
+            record = evidence.explain("hello", privacy_class="PUBLIC", detail=True)
         self.assertIn("$50.00", record["steps"][0]["detail"])
 
     def test_explaining_contacts_no_provider(self):

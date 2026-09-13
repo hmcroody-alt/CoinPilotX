@@ -11,12 +11,62 @@ from typing import Any, Protocol
 
 import requests
 
+from services import undx_capabilities
+
 
 class ProviderError(RuntimeError):
     def __init__(self, code: str, message: str, *, retryable: bool = False):
         super().__init__(message)
         self.code = code
         self.retryable = retryable
+
+
+def _record_character_spend(provider: str, text: str) -> None:
+    """Record one billed Google Translation request of `len(text)` characters.
+
+    §22: translation is AI spend. Google Cloud Translation v3 bills per character
+    of submitted text, and until this existed the only trace of it was the HTTP
+    log — so a month that translated ten million characters and a month that
+    translated none produced identical spend reports.
+
+    **Characters of the text we submitted**, not of the text we got back. That is
+    what Google meters, and the two differ by a lot: German output is routinely
+    30-40% longer than English input. Billing on the response would have
+    overstated spend on exactly the language pairs used most.
+
+    `mime_type='text/html'` is not discounted, either here or by Google — markup
+    counts as characters. Stripping tags before counting would have produced a
+    number that was tidier and wrong.
+
+    Called only after `_request` has returned, so it counts requests Google
+    accepted. A 429 or 401 raises before this point and is not billed, and the
+    retry loop means a request that was refused twice and accepted once records
+    once rather than three times.
+
+    `undx_capabilities` has no price for this provider, so a call records as
+    `uncosted_calls=1` with `cost_micro_usd=0`. That is the §34 answer: Google's
+    per-million-character rate is public but has not been read and dated into the
+    table, and inventing it here would make the month's total look complete while
+    being wrong. `unpriced_providers()` still names `('translation', 'google')`,
+    which is the list that enumerates the remaining work.
+
+    `input_tokens` is deliberately left at zero. The character count goes in as
+    `units`, which `record_spend` uses to price and does not persist — the ledger's
+    only volume columns are `input_tokens` / `output_tokens` / `reasoning_tokens`,
+    and a character is not a token. `month_snapshot` sums `input_tokens` across
+    every kind into one per-provider figure, so putting characters there would
+    corrupt the token total of a provider that also does chat. The consequence is
+    real and is recorded in the census rather than hidden: until Google's
+    per-million-character rate is in the table, the character volume of a
+    translation is used and discarded, and the durable row carries the call count
+    alone.
+
+    Never raises — `record_spend` guarantees that, and a translation must not be
+    lost to a bookkeeping failure.
+    """
+    undx_capabilities.record_spend(
+        undx_capabilities.CALL_KIND_TRANSLATION, provider, units=len(text or ""),
+    )
 
 
 class TranslationProvider(Protocol):
@@ -129,6 +179,11 @@ class GoogleAdvancedProvider:
         if source_language and source_language != "auto":
             payload["sourceLanguageCode"] = source_language
         response = self._request("POST", ":translateText", payload=payload)
+        # Above the response check, not below it. A 2xx that carries no usable
+        # translation was still a request Google accepted and charged for; the
+        # `invalid_provider_response` below is our judgement about the body, not
+        # theirs about the bill.
+        _record_character_spend(self.name, text)
         translations = response.get("translations") or []
         if not translations or not str(translations[0].get("translatedText") or "").strip():
             raise ProviderError("invalid_provider_response", "Google returned no translated text.")
@@ -142,6 +197,11 @@ class GoogleAdvancedProvider:
 
     def detect_language(self, text: str) -> dict[str, Any]:
         response = self._request("POST", ":detectLanguage", payload={"content": text, "mimeType": "text/plain"})
+        # Detection is billed per character at the same rate as translation, so it
+        # is metered on the same footing. Leaving it out would have made a "cheap"
+        # detect-then-translate flow look half as expensive as it is, since every
+        # translation of unknown-language text pays for both.
+        _record_character_spend(self.name, text)
         languages = response.get("languages") or []
         if not languages:
             raise ProviderError("invalid_provider_response", "Google returned no detected language.")

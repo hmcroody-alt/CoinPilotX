@@ -367,12 +367,173 @@ class SourceScanTest(unittest.TestCase):
     def test_a_non_chat_endpoint_is_a_warning_not_a_duplicate(self):
         """Embeddings are a capability the router does not offer, so there is
         nothing to route them to. The finding is that they are unmetered, which
-        is true and is a different sentence."""
+        is true and is a different sentence.
+
+        The fixture sends the request. It did not used to — it was a bare
+        `ENDPOINT = "..."` assignment, and it passed, because the scanner could
+        not tell a declared URL from a called one and called everything a call.
+        A test named for a call has to make one, or it is asserting on wording.
+        """
         findings = self._scan(**{"embed.py": '''
+            import requests
             ENDPOINT = "https://api.perplexity.ai/v1/embeddings"
+            def embed(rows):
+                return requests.post(ENDPOINT, json={"input": rows}, timeout=8)
         '''})
         self.assertEqual([f["code"] for f in findings], ["unmetered_provider_call"])
         self.assertEqual(findings[0]["severity"], drift.WARNING)
+
+    def test_declaring_an_endpoint_is_reported_as_declaring_it(self):
+        """`services/undx_brain/config.py` holds `UNDX_EMBEDDING_ENDPOINT` in a
+        flag catalog and performs no HTTP anywhere in the module. It was being
+        told it "calls the vendor directly... outside the circuit breaker", and
+        advised to meter the call through `undx_cost.record` — advice that cannot
+        be followed at a constant. The endpoint is still worth reporting, because
+        a base URL a deployment can redirect is precisely what §12 is about, but a
+        finding that describes something the file does not do is a finding people
+        learn to wave past, and the true ones go with it."""
+        findings = self._scan(**{"catalog.py": '''
+            FLAGS = [("UNDX_EMBEDDING_ENDPOINT", "https://api.perplexity.ai/v1/embeddings")]
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["provider_url_declared"])
+        self.assertNotIn("calls", findings[0]["detail"])
+        self.assertNotIn("undx_cost.record", findings[0]["fix"])
+
+    def test_a_chat_path_composed_onto_a_configurable_base_is_critical(self):
+        """The shape §12 names, and one this repository has really had:
+        `services/pulse_ai_provider_router.py` built its URL as
+        `f"{base}/chat/completions"` from `UNDX_CANDIDATE_BASE_URL`. No vendor
+        host appears anywhere in the file, so a check keyed on the host list
+        cannot see it — which made the call sites that can be pointed at *any*
+        vendor, including a training tier, the ones that did not count."""
+        findings = self._scan(**{"candidate.py": '''
+            import os, requests
+            BASE = os.getenv("UNDX_CANDIDATE_BASE_URL", "")
+            def ask(body):
+                return requests.post(BASE + "/chat/completions", json=body, timeout=20)
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["unrouted_chat_call"])
+        self.assertEqual(findings[0]["severity"], drift.CRITICAL)
+
+    def test_a_bare_chat_path_nobody_sends_is_not_a_call(self):
+        """The other half of the rule above. A list of path fragments a test
+        asserts against is not a call, and a scanner that said otherwise would
+        report this repository's own protection suite — the same way it used to
+        report its own docstrings, before it started parsing instead of
+        grepping."""
+        findings = self._scan(**{"guard.py": '''
+            BANNED = ("/chat/completions", "/v1/messages", ":generateContent")
+            def clean(source):
+                return all(fragment not in source for fragment in BANNED)
+        '''})
+        self.assertEqual(findings, [])
+
+    def test_a_provider_sdk_import_is_critical_even_when_lazy(self):
+        """Every AI call here is hand-rolled HTTP, so this detector currently
+        reports nothing — which is the reason to have it, not a reason to skip
+        writing it. An SDK takes the base URL, the model, the timeout and the
+        retry policy out of the fabric in one import, and leaves behind no URL
+        literal for the checks above to find.
+
+        Lazy, and inside a function nobody calls, because that is the only shape
+        that proves anything: a module-scope `import openai` raises
+        `ModuleNotFoundError` here at collection time, so a suite with this
+        detector deleted would 'catch' it just as loudly."""
+        findings = self._scan(**{"legacy.py": '''
+            def client():
+                import openai
+                return openai.OpenAI()
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["provider_sdk_import"])
+        self.assertEqual(findings[0]["severity"], drift.CRITICAL)
+
+    def test_an_sdk_reached_through_a_submodule_is_still_an_sdk(self):
+        """`import openai.types` names a module that is not in `_PROVIDER_SDKS`.
+
+        The list holds roots, so the check is `name in _PROVIDER_SDKS or root in
+        _PROVIDER_SDKS`, and the test above only exercises the first half — its
+        fixture imports plain `openai`, which matches by exact name. A mutation
+        deleting the `root` branch therefore survived it. Importing a submodule is
+        the ordinary way an SDK actually arrives (`from anthropic.types import
+        Message`), so the half that was untested is the half that matters.
+        """
+        findings = self._scan(**{"legacy.py": '''
+            def client():
+                import anthropic.types
+                from openai.lib import azure
+                return anthropic.types, azure
+        '''})
+        self.assertEqual([f["code"] for f in findings],
+                         ["provider_sdk_import", "provider_sdk_import"])
+        self.assertTrue(all(f["severity"] == drift.CRITICAL for f in findings))
+
+    def test_a_url_that_reaches_the_wire_indirectly_is_still_a_call(self):
+        """Two hops, because one hop is resolved by name and proves less.
+
+        `_provider_urls_in` marks a literal as `in_request` when it sits inside a
+        request call or in a variable handed straight to one. When the URL travels
+        any further than that — through a helper, a dict, a class attribute — that
+        one-hop resolution loses it, and the only remaining reason to call it a
+        call is that the module performs HTTP at all (`_performs_http`).
+
+        The embeddings test above cannot see this: its fixture passes the constant
+        directly to `requests.post`, so `in_request` is already true and `sends`
+        never decides anything. Replacing `_performs_http(tree)` with `False`
+        survived it. Here `sends` is the only thing standing between a declaration
+        and a call, which is the case the real
+        `services/pulse_ai/automated_image_pipeline.py` is closer to than the
+        fixture was.
+        """
+        findings = self._scan(**{"indirect.py": '''
+            import requests
+            ENDPOINT = "https://api.perplexity.ai/v1/embeddings"
+            def _target():
+                return ENDPOINT
+            def embed(rows):
+                return requests.post(_target(), json={"input": rows}, timeout=8)
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["unmetered_provider_call"])
+
+    def test_a_dict_lookup_named_get_does_not_make_a_module_an_http_client(self):
+        """`_is_http_call` requires a verb *and* a client, and this is the `and`.
+
+        `config.get("timeout")` ends in a verb from `_HTTP_VERBS`. If the client
+        requirement is dropped, every module that reads a dict becomes a module
+        that sends requests — and every provider URL constant in one of them turns
+        from a declaration into a CRITICAL unrouted call. That is not a
+        hypothetical shape: `services/undx_brain/config.py` is a flag catalog full
+        of `.get` calls and a vendor endpoint, and it is the exact file whose
+        finding this phase had to correct.
+
+        `test_a_bare_chat_path_nobody_sends_is_not_a_call` could not catch the
+        mutation because its fixture contains no attribute call at all. The
+        receiver is the thing under test, so the fixture has to have one.
+        """
+        findings = self._scan(**{"catalog.py": '''
+            CONFIG = {"timeout": 8}
+            ENDPOINT = "https://api.openai.com/v1/chat/completions"
+            def timeout():
+                return CONFIG.get("timeout")
+        '''})
+        self.assertEqual([f["code"] for f in findings], ["provider_url_declared"])
+        self.assertEqual(findings[0]["severity"], drift.WARNING)
+
+    def test_the_adapter_allowlist_is_a_path_not_a_name(self):
+        """§19 asks for an explicit allowlist. The entry reads `undx_router.py`
+        and was compared against the bare filename, so every file in the tree
+        with that name was exempt — including one a contributor could add under
+        `services/vendor/`. An allowlist keyed on a name is a wildcard that
+        happens to be spelled specifically."""
+        findings = self._scan(**{
+            "undx_router.py":
+                'import requests\n'
+                'requests.post("https://api.openai.com/v1/chat/completions", json={}, timeout=5)',
+            "services/vendor/undx_router.py":
+                'import requests\n'
+                'requests.post("https://api.anthropic.com/v1/messages", json={}, timeout=5)',
+        })
+        self.assertEqual([f["where"] for f in findings],
+                         ["services/vendor/undx_router.py:2"])
 
     def test_tests_and_scripts_are_not_scanned(self):
         findings = self._scan(**{

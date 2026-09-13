@@ -50,35 +50,61 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
+from services import undx_capabilities
+
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- provider
 
+#: The capability entry this module is the adapter for. Declared once and reused
+#: below so the endpoint, the default model, the credential name and the prices all
+#: come from the same row of the same table — before this, four separate literals in
+#: this file each independently agreed with that row, which is three more chances to
+#: drift than the code needs.
+_CAPABILITY = undx_capabilities.provider_for(
+    undx_capabilities.CALL_KIND_EMBEDDING, "perplexity"
+)
+
 #: Verified against Perplexity's official embeddings documentation. Kept as a module
 #: constant rather than inlined so that the one place a base URL could be pointed at a
 #: proxy is visible.
-DEFAULT_ENDPOINT = "https://api.perplexity.ai/v1/embeddings"
+DEFAULT_ENDPOINT = _CAPABILITY.endpoint
 
 #: The model the owner authorised. Substituting another model silently would change
 #: both the cost per token and the vector space — vectors from two models are not
 #: comparable, so a silent substitution corrupts an index without failing anything.
 #: Selection is configurable through ``UNDX_EMBEDDING_MODEL``; it is not hardcoded at
 #: call sites, and the model name is part of every cache key.
-DEFAULT_MODEL = "pplx-embed-v1-0.6b"
+DEFAULT_MODEL = _CAPABILITY.default_model
 
-API_KEY_ENV = "PERPLEXITY_API_KEY"
+API_KEY_ENV = _CAPABILITY.key_envs[0]
 
 #: Published per-million-token prices, read from Perplexity's official pricing
 #: documentation on 2026-08-30. Used only for local cost *accounting* — this module
 #: never asserts these are current, and :func:`estimated_cost_usd` labels its output as
 #: an estimate. A model absent from this table accounts at the most expensive known
 #: rate rather than at zero, so an unrecognised model cannot look free.
-PRICE_PER_MILLION_TOKENS_USD: dict[str, float] = {
-    "pplx-embed-v1-0.6b": 0.004,
-    "pplx-embed-v1-4b": 0.03,
-    "pplx-embed-context-v1-0.6b": 0.008,
-    "pplx-embed-context-v1-4b": 0.05,
-}
+#:
+#: Sourced from `services.undx_capabilities` rather than written out here, because a
+#: price table that exists in two modules is a price table that will disagree with
+#: itself: §20-27 asks for the duplicate model defaults in this repository to be
+#: removed, and a second copy of these four figures would have been a new one. The
+#: capability table is the declared authority for what non-chat AI costs; this module
+#: stays the authority on how *this* endpoint is called. The name is kept because
+#: `scripts/undx_semantic_live_acceptance.py` reads it.
+PRICE_PER_MILLION_TOKENS_USD: dict[str, float] = dict(_CAPABILITY.prices)
+
+#: The rate charged to a model this table does not know, and the one place in the
+#: non-chat accounting where an unknown price is deliberately rounded **up**.
+#:
+#: That is the opposite of what `undx_capabilities.price_micro_usd` does, and both are
+#: correct, because they answer different questions. Here the unknown is used to
+#: decide whether to *block* a call against a budget, so assuming the worst is the
+#: safe direction — guessing low would let an unpriced model spend past the ceiling.
+#: In the ledger the same unknown is used to *report* what was spent, where assuming
+#: the worst would invent a cost nobody was charged; that path returns `None` and the
+#: call is counted under `uncosted_calls` instead. Rounding an unknown in the wrong
+#: direction for the question is how a budget either fails open or reports fiction.
 _UNKNOWN_MODEL_PRICE_USD = max(PRICE_PER_MILLION_TOKENS_USD.values())
 
 #: Provider request bounds, from the official documentation: at most 512 inputs per
@@ -359,9 +385,17 @@ def configured_monthly_budget_usd() -> float:
     """Cost guard. Zero disables the guard; the default does not.
 
     A runaway indexing loop is the failure this stops. The guard is checked before every
-    provider call and compares against tokens billed in the current calendar month as
-    recorded locally, so it is an approximation — deliberately a conservative one, since
-    the estimator over-counts tokens.
+    provider call and compares against spend recorded in the current calendar month by
+    the **shared** cost ledger, so the figure covers every worker and survives a deploy.
+    It remains an approximation, deliberately a conservative one: the token estimator
+    over-counts, and a model the price table does not know is charged at the highest
+    known rate rather than at zero.
+
+    It is a ceiling on *recorded* spend, which is not quite a ceiling on spend. A call
+    already in flight when the ledger crossed the line still completes, and a single
+    `embed_texts` call is checked once and may then buy several batches — so the
+    overshoot is bounded by one call's worth of tokens, not by nothing. Stating that is
+    cheaper than implying a hard cap this cannot provide.
     """
     return _env_float("UNDX_EMBEDDING_MONTHLY_BUDGET_USD", 5.0, minimum=0.0, maximum=100_000.0)
 
@@ -450,6 +484,33 @@ def cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
 
 
 # ------------------------------------------------------------------------ budget guard
+#
+# The month-to-date figure this guard compares against comes from the shared cost
+# ledger, with the process-local count kept as a floor. Until that was wired the
+# figure was *only* the local count, and three things were wrong with it at once:
+#
+# * It was per-process. Production runs gunicorn with four web workers
+#   (`--workers ${WEB_CONCURRENCY:-4}`) plus five other Procfile processes, and all
+#   but one of those can reach this module — `alert_worker` imports it through
+#   `pulse_ai_service`, `email_worker`, `ads_worker` and `media_worker` through
+#   `bot`; only `undx_worker` cannot, being the one process that does not import
+#   `bot`. So eight independent copies of the month-to-date, and a $5.00 ceiling
+#   that was really up to $40.00 depending on which process did the indexing. The
+#   number in the env var was not the number being enforced, and nothing said so.
+# * It reset on deploy. A restart put the month-to-date back to zero, so the guard
+#   was weakest in exactly the week someone deploys repeatedly to fix an indexing
+#   bug - the week a runaway indexing loop is most likely to exist.
+# * It was an estimate when a measurement was available. The ledger holds what the
+#   provider itself reported for calls that reported a cost, which is a better
+#   answer than re-pricing tokens against a table read on a date.
+#
+# `max(ledger, local)` rather than replacing one with the other, because the two
+# fail in opposite directions and the safe reading is the larger. Normally the
+# ledger is larger, because it has every process's spend and this one has only its
+# own - that is the whole fix. But a ledger write that failed still bumped the local
+# mirror, and a database that cannot be read at all reports zero, so the local count
+# is what keeps this guard from being *weaker* than it was before. Taking the max
+# means the ledger can only ever tighten the budget, never loosen it.
 
 _BUDGET_LOCK = threading.Lock()
 _budget_state: dict[str, Any] = {"month": "", "tokens": 0}
@@ -459,19 +520,83 @@ def _current_month() -> str:
     return time.strftime("%Y-%m", time.gmtime())
 
 
-def budget_state() -> dict[str, Any]:
+def _local_tokens(month: str) -> int:
+    """Tokens billed by *this* process this month, rolling over at the month edge."""
     with _BUDGET_LOCK:
-        month = _budget_state["month"] or _current_month()
-        tokens = int(_budget_state["tokens"])
-    limit = configured_monthly_budget_usd()
-    spent = estimated_cost_usd(tokens)
+        if _budget_state["month"] != month:
+            _budget_state["month"] = month
+            _budget_state["tokens"] = 0
+        return int(_budget_state["tokens"])
+
+
+def _month_to_date() -> dict[str, Any]:
+    """Month-to-date embedding spend from the widest source available.
+
+    Read on every budget check rather than cached behind a TTL. The check gates an
+    HTTP round trip to Perplexity that takes hundreds of milliseconds, so one
+    aggregated single-row read costs a fraction of a percent of the operation it
+    protects — and a TTL would reintroduce, in miniature, the same
+    "spend recorded elsewhere is invisible for a while" hole this replaces.
+
+    The unknown-model rate is applied *here*, not in `undx_capabilities.month_spend`:
+    this is the blocking direction, where assuming the worst is safe, and that module
+    deliberately refuses to hand out a pessimistic figure a caller could mistake for
+    a measurement.
+    """
+    recorded = undx_capabilities.month_spend(undx_capabilities.CALL_KIND_EMBEDDING)
+    month = str(recorded.get("month") or _current_month())
+    local_tokens = _local_tokens(month)
+    local_usd = estimated_cost_usd(local_tokens)
+
+    ledger_usd = float(recorded.get("spend_usd") or 0.0)
+    ledger_tokens = int(recorded.get("input_tokens") or 0)
+    if recorded.get("spend_is_a_floor"):
+        # Some recorded call was made against a model the price table does not know,
+        # so the ledger's dollar figure excludes it. Pricing every recorded token at
+        # the highest known rate is an over-estimate of the priced calls and the
+        # least-wrong available estimate of the unpriced ones. Guessing low here is
+        # how an unpriced model spends past the ceiling unnoticed.
+        ledger_usd = max(ledger_usd, round(
+            ledger_tokens * _UNKNOWN_MODEL_PRICE_USD / 1_000_000, 6))
+
     return {
         "month": month,
-        "tokens_embedded": tokens,
+        "spend_usd": max(ledger_usd, local_usd),
+        "tokens_embedded": max(ledger_tokens, local_tokens),
+        "source": str(recorded.get("source") or "process"),
+        "spend_is_a_floor": bool(recorded.get("spend_is_a_floor")),
+        "uncosted_calls": int(recorded.get("uncosted_calls") or 0),
+        "local_tokens": local_tokens,
+        "ledger_tokens": ledger_tokens,
+    }
+
+
+def budget_state() -> dict[str, Any]:
+    """Operator-facing budget position. Reports its own provenance.
+
+    `source` and `shared` are not decoration. `"process"` means the ledger could not
+    be read and the figure covers this worker alone, which is the state the previous
+    implementation was permanently in without ever saying so — and the state in which
+    a reassuring "remaining_usd" is fiction. A dashboard that showed only the numbers
+    would look identical in both cases.
+    """
+    position = _month_to_date()
+    limit = configured_monthly_budget_usd()
+    spent = position["spend_usd"]
+    return {
+        "month": position["month"],
+        "tokens_embedded": position["tokens_embedded"],
         "estimated_spend_usd": spent,
         "budget_usd": limit,
         "remaining_usd": round(limit - spent, 6) if limit > 0 else None,
         "enforced": limit > 0,
+        # Provenance. `shared` is the question a reader actually has: is this the
+        # whole deployment's spend, or just this worker's?
+        "source": position["source"],
+        "shared": position["source"] == "ledger",
+        "spend_is_a_floor": position["spend_is_a_floor"],
+        "uncosted_calls": position["uncosted_calls"],
+        "process_tokens_embedded": position["local_tokens"],
     }
 
 
@@ -479,13 +604,13 @@ def _budget_would_exceed(tokens: int) -> bool:
     limit = configured_monthly_budget_usd()
     if limit <= 0:
         return False
-    with _BUDGET_LOCK:
-        month = _current_month()
-        if _budget_state["month"] != month:
-            _budget_state["month"] = month
-            _budget_state["tokens"] = 0
-        projected = int(_budget_state["tokens"]) + int(tokens)
-    return estimated_cost_usd(projected) > limit
+    position = _month_to_date()
+    # The projection prices only the *new* tokens locally; the month-to-date part is
+    # already in dollars, from the ledger where possible. Summing tokens and pricing
+    # the total at one rate — which is what this did before — silently re-prices every
+    # call already made at whatever model is configured right now, so changing
+    # `UNDX_EMBEDDING_MODEL` mid-month used to move the recorded past.
+    return position["spend_usd"] + estimated_cost_usd(tokens) > limit
 
 
 def _budget_record(tokens: int) -> None:
@@ -498,7 +623,14 @@ def _budget_record(tokens: int) -> None:
 
 
 def reset_budget() -> None:
-    """Test-only."""
+    """Test-only: drop this process's floor.
+
+    Does **not** clear the ledger, and cannot: it is a shared table that other
+    processes are writing to. A test that needs a zeroed month-to-date has to point
+    `DATABASE_URL` at its own file and call `undx_cost.reset_for_tests()` as well —
+    which is the same discipline every other spend test in this repository follows,
+    now that this guard reads from the same place they assert against.
+    """
     with _BUDGET_LOCK:
         _budget_state["month"] = ""
         _budget_state["tokens"] = 0
@@ -673,6 +805,48 @@ def _parse(body: dict[str, Any], *, expected: int, dimensions: int) -> tuple[lis
     return vectors, tokens
 
 
+def _reported_cost_usd(body: dict[str, Any]) -> float | None:
+    """What the provider says this call cost, or `None` if it did not say.
+
+    Perplexity's embeddings response carries `usage.cost.total_cost`, in the same
+    shape the chat completions response uses, and until now this adapter threw it
+    away and priced the call from a table instead. A table is a figure someone read
+    on a date; this is a measurement of the call that just happened, and it stays
+    right through a price change nobody has noticed. `undx_router._normalise_usage`
+    already prefers it for chat, so preferring it here keeps the two accounting
+    paths from disagreeing about which source ranks higher.
+
+    Deliberately *not* folded into `_parse`. That function's contract is "vectors or
+    raise", it is called directly by the wire-contract tests, and widening its return
+    tuple would make a money question part of a correctness parse. It is also the
+    reason this returns `None` rather than raising: a response with a good vector and
+    a garbled cost block is a usable embedding, and refusing it to protect the
+    bookkeeping would be the wrong trade.
+    """
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    cost = usage.get("cost")
+    if not isinstance(cost, dict):
+        return None
+    raw = cost.get("total_cost")
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        logger.warning("undx_embedding: unparseable reported cost %r", raw)
+        return None
+    # Deliberately no range check here. A negative figure is unusable - a refund is
+    # not something the ledger can represent, and subtracting it would understate
+    # the month - but `undx_capabilities.record_spend` already rejects it and falls
+    # back to the price table. A second check would be unfalsifiable: every test
+    # that tried to exercise it would pass whether or not it existed, because the
+    # layer below produces the same outcome. This repo's own rule is that a guard
+    # no test can kill is a comment with a code shape, so the rule lives in exactly
+    # one place and it is the place that decides what gets recorded.
+
+
 def embed_texts(texts: Sequence[str], *, purpose: str = "unspecified") -> EmbeddingBatch:
     """Embed a list of texts. Returns L2-normalised vectors in input order.
 
@@ -747,6 +921,28 @@ def embed_texts(texts: Sequence[str], *, purpose: str = "unspecified") -> Embedd
             billed = tokens or sum(estimate_tokens(prepared[index]) for index in indices)
             total_tokens += billed
             _budget_record(billed)
+            # Metered on the same number the budget restrains on, at the same point,
+            # so the in-process budget and the durable ledger cannot end up
+            # disagreeing about how many tokens were bought. `billed` is the
+            # provider's own count when it reports one and an estimate otherwise;
+            # using the estimate in both places is honest, using it in one would not
+            # be. Per batch rather than per `embed_texts` call because a batch is what
+            # the provider charges for, and a run that fails on batch three has still
+            # paid for batches one and two.
+            #
+            # `model` is the *effective* model, including an env override. If that
+            # override names something the price table has not heard of, this records
+            # as an uncosted call rather than silently at the default model's rate -
+            # which is the behaviour `test_an_unknown_model_on_a_priced_provider_is_uncosted`
+            # pins, and the only signal that a rename happened.
+            undx_capabilities.record_spend(
+                undx_capabilities.CALL_KIND_EMBEDDING,
+                _CAPABILITY.name,
+                units=billed,
+                model=model,
+                input_tokens=billed,
+                reported_cost_usd=_reported_cost_usd(body),
+            )
             record_counter("embedding_texts_embedded", len(indices))
             record_counter("embedding_tokens_embedded", billed)
             for position, index in enumerate(indices):

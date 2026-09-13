@@ -262,3 +262,172 @@ def test_feed_renderer_contract_is_reused_without_generated_url_field():
     source = open("services/pulse_ai/automated_image_pipeline.py", encoding="utf-8").read()
     assert "media_ids_json" in source and "chat_media_uploads" in source
     assert "generated_image_url" not in source
+
+
+# ---------------------------------------------------------------------------
+# §22 — image generation is AI spend and must appear in the month's ledger
+# ---------------------------------------------------------------------------
+#
+# The gap these tests close is LATENT, not active. `AUTOMATED_IMAGES_ENABLED`
+# is False as a product rule, so `OpenAIImageProvider.generate` does not run in
+# production today and no image dollars are currently going unrecorded. They are
+# here for the same reason the `images_enabled` fixture above exists: the code
+# still ships, and the day someone flips the constant back they should not
+# inherit a paid provider that bills silently.
+
+
+@pytest.fixture()
+def ledger(monkeypatch, tmp_path):
+    """Point the cost ledger at a throwaway database.
+
+    Not boilerplate. `services.db` falls back to the *relative* path
+    `coinpilotx.db` when `DATABASE_URL` is unset, so a ledger assertion without
+    this is really an assertion about how many times the suite has been run on
+    this machine — and it leaves rows behind in the developer's dev database.
+    """
+    from services import undx_cost
+
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///" + str(tmp_path / "ledger.db"))
+    undx_cost.reset_for_tests()
+    yield undx_cost
+    undx_cost.reset_for_tests()
+
+
+def _image_response(b64="aGVsbG8="):
+    class _Ctx:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def read(self):
+            return json.dumps({"data": [{"b64_json": b64}]}).encode("utf-8")
+
+    return lambda *_a, **_k: _Ctx()
+
+
+def _image_row(undx_cost):
+    snapshot = undx_cost.month_snapshot()
+    assert snapshot["source"] == "ledger"
+    return snapshot
+
+
+def test_a_generated_image_is_metered_under_its_own_kind(monkeypatch, ledger):
+    """The laundering §22 forbids: this must not arrive in the chat bucket, which
+    is the only number anyone reads, nor vanish entirely."""
+    monkeypatch.setattr(pipeline.urllib.request, "urlopen", _image_response())
+    provider = pipeline.OpenAIImageProvider(api_key="k", model="gpt-image-1")
+    assert provider.generate("a prompt")["provider"] == "openai"
+
+    snapshot = _image_row(ledger)
+    row = snapshot["kinds"]["image"]
+    assert row["calls"] == 1
+    assert "chat" not in snapshot["kinds"]
+    assert "openai" in snapshot["providers"]
+
+
+def test_an_image_with_no_published_price_is_uncosted_not_free(monkeypatch, ledger):
+    """§34: unknown is not $0.00.
+
+    `gpt-image-1` has no entry in the capability price table, so the honest
+    record is "one call happened, we do not know what it cost". Recording it at
+    zero would make the month's dollar total look complete while being wrong by
+    whatever the real per-image price is, and `unpriced_providers()` — which
+    still names this provider — is what enumerates the remaining work.
+    """
+    from services import undx_capabilities as cap
+
+    assert (cap.CALL_KIND_IMAGE, "openai") in cap.unpriced_providers()
+
+    monkeypatch.setattr(pipeline.urllib.request, "urlopen", _image_response())
+    pipeline.OpenAIImageProvider(api_key="k").generate("a prompt")
+
+    row = _image_row(ledger)["kinds"]["image"]
+    assert (row["calls"], row["cost_micro_usd"], row["uncosted_calls"]) == (1, 0, 1)
+
+
+def test_the_model_priced_is_the_effective_model_not_the_default(monkeypatch, ledger):
+    """An env override changes what OpenAI bills for, so it has to be the model
+    the pricing lookup sees.
+
+    Asserted on the arguments handed to `record_spend` rather than on a ledger
+    row, because `undx_cost_ledger` has no model column — it keys on
+    (month, provider, call_kind) only. So per-model attribution does not survive
+    into the durable record at all, and the call site's arguments are the only
+    place the distinction is observable. That is a gap, noted in the census;
+    pinning it here at least means the day a price is published for one image
+    model and not another, the lookup is already being given the right name
+    instead of the default.
+    """
+    monkeypatch.setenv("PULSE_INSIGHT_IMAGE_MODEL", "gpt-image-1-mini")
+    monkeypatch.setattr(pipeline.urllib.request, "urlopen", _image_response())
+
+    seen = []
+    real = pipeline.undx_capabilities.record_spend
+    monkeypatch.setattr(
+        pipeline.undx_capabilities,
+        "record_spend",
+        lambda *a, **k: (seen.append((a, k)), real(*a, **k))[1],
+    )
+    result = pipeline.OpenAIImageProvider(api_key="k").generate("a prompt")
+
+    assert result["model"] == "gpt-image-1-mini"
+    assert seen == [(("image", "openai"), {"units": 1, "model": "gpt-image-1-mini"})]
+    assert _image_row(ledger)["kinds"]["image"]["calls"] == 1
+
+
+@pytest.mark.parametrize(
+    "urlopen, code",
+    [
+        (lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError()), "image_provider_timeout"),
+        (_image_response(b64=""), "image_provider_empty_result"),
+        (_image_response(b64="!!! not base64 !!!"), "image_provider_invalid_base64"),
+    ],
+)
+def test_a_failed_generation_is_not_recorded_as_an_image_received(monkeypatch, ledger, urlopen, code):
+    """Spend is metered after the bytes are known good, so the ledger's image
+    count stays a count of pictures we actually got.
+
+    The undecodable-base64 case is the uncomfortable one: OpenAI may well have
+    billed for it. That is a named gap in the census rather than a reason to
+    count every attempt, because inflating the received-image count to cover a
+    billing edge would corrupt the number that is checkable.
+    """
+    monkeypatch.setattr(pipeline.urllib.request, "urlopen", urlopen)
+    with pytest.raises(pipeline.ImagePipelineError, match=code):
+        pipeline.OpenAIImageProvider(api_key="k").generate("a prompt")
+
+    assert "image" not in _image_row(ledger)["kinds"]
+
+
+def test_an_unconfigured_provider_records_nothing(ledger):
+    """No key means no request, so there is nothing to bill and nothing to log.
+    Asserted because a metering call placed at the top of `generate` would count
+    a call that never left the process."""
+    with pytest.raises(pipeline.ImagePipelineError, match="image_provider_not_configured"):
+        pipeline.OpenAIImageProvider(api_key="").generate("a prompt")
+
+    assert _image_row(ledger)["kinds"] == {}
+
+
+def test_an_unreachable_ledger_does_not_cost_the_caller_its_image(monkeypatch, ledger):
+    """Metering is observation, not a precondition.
+
+    The database really does go away sometimes, and when it does the image still
+    has to come back — otherwise adding accounting made the feature less reliable
+    than it was before. Asserted by breaking the connection rather than by
+    stubbing `record_spend` to throw: `record_spend` is documented never to
+    raise, so a test that fakes it raising would be exercising an impossible
+    state and could never fail for a real reason. The in-process mirror still
+    answers, which is the distinction between "degraded" and "silent".
+    """
+    monkeypatch.setattr(pipeline.urllib.request, "urlopen", _image_response())
+    monkeypatch.setattr(
+        ledger, "_connect", lambda *_a, **_k: (_ for _ in ()).throw(sqlite3.OperationalError("gone"))
+    )
+    assert pipeline.OpenAIImageProvider(api_key="k").generate("a prompt")["bytes"] == b"hello"
+
+    snapshot = ledger.month_snapshot()
+    assert snapshot["source"] != "ledger"
+    assert snapshot["kinds"]["image"]["calls"] == 1

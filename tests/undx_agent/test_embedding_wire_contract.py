@@ -25,10 +25,15 @@ from __future__ import annotations
 
 import base64
 import json
+import os
+import sqlite3
 import struct
+import tempfile
 import unittest
 from unittest.mock import patch
 
+from services import undx_capabilities as cap
+from services import undx_cost
 from services import undx_embedding_service as embed
 
 
@@ -101,17 +106,48 @@ class FakeRequests:
         return self.response
 
 
-def run_with(response: FakeResponse, texts=("hello world",)):
+#: A throwaway ledger for the tests in this file that are *not* about the ledger.
+#:
+#: Every successful `embed_texts` records spend, and `services.db` falls back to the
+#: relative path `coinpilotx.db` when `DATABASE_URL` is unset — so before this existed
+#: the wire-contract and request-contract classes below, which care about nothing but
+#: vectors, were quietly writing rows into the developer's own dev database. The file
+#: size does not change (SQLite reuses free pages), so only a checksum shows it.
+#:
+#: Applied as a *fallback* rather than as part of `BASE_ENV`, because `SpendIsMetered`
+#: and `BudgetIsSharedNotPerProcess` pin their own per-test ledger and `BASE_ENV` is
+#: merged last inside these helpers — overriding their pin would silently pool every
+#: test's rows into one file and turn each assertion into a statement about execution
+#: order.
+_LEDGER_DIR = tempfile.TemporaryDirectory()
+_FALLBACK_LEDGER_URL = "sqlite:///" + os.path.join(_LEDGER_DIR.name, "fallback.db")
+
+
+def _env_for(extra: dict | None = None) -> dict:
+    env = {**BASE_ENV, **(extra or {})}
+    if not (os.environ.get("DATABASE_URL") or "").strip():
+        env["DATABASE_URL"] = _FALLBACK_LEDGER_URL
+    return env
+
+
+def run_with(response: FakeResponse, texts=("hello world",), env: dict | None = None):
+    """Drive one `embed_texts` against a fake provider.
+
+    `env` is merged *after* `BASE_ENV`, which is the only way to change a value
+    `BASE_ENV` already sets. A caller that wrapped this in `patch.dict` instead would
+    have its override silently reverted for the duration of the call — which is how
+    two budget tests in this file first passed for the wrong reason.
+    """
     fake = FakeRequests(response)
-    with patch.dict("os.environ", BASE_ENV, clear=False):
+    with patch.dict("os.environ", _env_for(env), clear=False):
         with patch.dict("sys.modules", {"requests": fake}):
             batch = embed.embed_texts(list(texts), purpose="test")
     return batch, fake
 
 
-def expect_failure(response: FakeResponse, texts=("hello world",)):
+def expect_failure(response: FakeResponse, texts=("hello world",), env: dict | None = None):
     fake = FakeRequests(response)
-    with patch.dict("os.environ", BASE_ENV, clear=False):
+    with patch.dict("os.environ", _env_for(env), clear=False):
         with patch.dict("sys.modules", {"requests": fake}):
             try:
                 embed.embed_texts(list(texts), purpose="test")
@@ -262,6 +298,345 @@ class StatusClassificationIsUnchanged(unittest.TestCase):
 
     def test_non_json_body_is_named(self):
         self.assertIn("non-JSON", expect_failure(FakeResponse(200, "<html>gateway</html>")).reason)
+
+
+class SpendIsMetered(unittest.TestCase):
+    """Embedding calls must land in the shared cost ledger under `embedding`.
+
+    §22: no unclassified AI spend. Until this was wired, the only record that a
+    Perplexity embedding batch had been paid for was a counter and a per-process
+    budget dict that resets on deploy — so the month's spend report showed chat
+    only, and showed it as the total.
+
+    **Every test here pins `DATABASE_URL` at a temp file**, and that is not
+    boilerplate. `services.db` falls back to the relative path `coinpilotx.db`
+    when the variable is unset, so a ledger test without this writes into the
+    developer's own dev database. That is how it was discovered: wiring the
+    metering and running the four embedding suites left 461 `embedding` rows and
+    851 `chat` rows of test data in the local `coinpilotx.db`. It proved the
+    wiring reached the ledger, and it also means any assertion on a month total
+    without this isolation is really an assertion about how many times the suite
+    has been run.
+    """
+
+    #: Big enough that the reported figure and the table figure cannot be confused
+    #: at micro-USD resolution. The published example's 4.8e-08 is a *sub*-micro
+    #: charge, which floors to 0 — correct behaviour, but useless for telling which
+    #: of the two sources was consulted.
+    MANY_TOKENS = 1_000_000
+    REPORTED_USD = 0.02          # 20,000 micro-USD
+    TABLE_MICRO_FOR_MANY = 4_000  # pplx-embed-v1-0.6b at $0.004/M
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        undx_cost.reset_for_tests()
+        env = patch.dict(
+            "os.environ",
+            {"DATABASE_URL": "sqlite:///" + os.path.join(self._dir.name, "ledger.db")},
+        )
+        env.start()
+        self.addCleanup(env.stop)
+        self.addCleanup(self._dir.cleanup)
+        self.addCleanup(undx_cost.reset_for_tests)
+
+    def _row(self):
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["source"], "ledger")
+        return snapshot["kinds"].get(cap.CALL_KIND_EMBEDDING)
+
+    def test_a_successful_batch_is_recorded_as_embedding_not_chat(self):
+        """The specific laundering §22 is about: this spend must not arrive in the
+        chat bucket, where it would be invisible because chat is the number
+        everyone already reads."""
+        run_with(FakeResponse(200, wire_response([int8_vector(1)])))
+        snapshot = undx_cost.month_snapshot()
+        self.assertEqual(snapshot["kinds"][cap.CALL_KIND_EMBEDDING]["calls"], 1)
+        self.assertNotIn(undx_cost.CALL_KIND_CHAT, snapshot["kinds"])
+        self.assertIn("perplexity", snapshot["providers"])
+
+    def test_the_provider_reported_cost_beats_the_price_table(self):
+        """A table is a price someone read on a date; a reported cost is a
+        measurement of the call that just happened. Asserted by making the two
+        disagree by 5x, so a green result cannot mean "both happened to match"."""
+        body = wire_response([int8_vector(2)], tokens=self.MANY_TOKENS)
+        body["usage"]["cost"]["total_cost"] = self.REPORTED_USD
+        run_with(FakeResponse(200, body))
+
+        row = self._row()
+        self.assertEqual(row["cost_micro_usd"], 20_000)
+        self.assertNotEqual(row["cost_micro_usd"], self.TABLE_MICRO_FOR_MANY)
+        self.assertEqual(row["uncosted_calls"], 0)
+
+    def test_the_price_table_is_used_when_the_provider_says_nothing(self):
+        """The fallback has to still work, or preferring the report would have
+        traded one blind spot for another. Same token count as the test above, so
+        the two figures are directly comparable and the 5x gap is the only
+        difference between them."""
+        body = wire_response([int8_vector(3)], tokens=self.MANY_TOKENS)
+        del body["usage"]["cost"]
+        run_with(FakeResponse(200, body))
+
+        row = self._row()
+        self.assertEqual(row["cost_micro_usd"], self.TABLE_MICRO_FOR_MANY)
+        self.assertEqual(row["uncosted_calls"], 0)
+
+    def test_a_negative_reported_cost_falls_back_rather_than_crediting_the_month(self):
+        """A refund is not something this ledger can represent, and subtracting it
+        would understate the month. Treated as no report at all."""
+        body = wire_response([int8_vector(4)], tokens=self.MANY_TOKENS)
+        body["usage"]["cost"]["total_cost"] = -5.0
+        run_with(FakeResponse(200, body))
+
+        self.assertEqual(self._row()["cost_micro_usd"], self.TABLE_MICRO_FOR_MANY)
+
+    def test_an_unparseable_reported_cost_falls_back_to_the_table(self):
+        """A garbled cost block is not a reason to refuse a usable embedding, and
+        it is also not a reason to forget the price.
+
+        The first version of this test asserted the opposite — `(0, 1)`, unknown —
+        on the reasoning that a provider contradicting the table makes neither
+        figure trustworthy. It failed, and the failure was right. An unreadable
+        cost block is evidence about the provider's serialization, not about
+        whether $0.004 per million tokens is still the price; dropping a sourced
+        estimate on that basis *understates* the month, which is the outcome §34
+        exists to prevent rather than an instance of obeying it. And
+        `uncosted_calls` is the number that enumerates the pricing gap, so putting
+        a call with a perfectly good table price into it would make that number
+        stop meaning what `unpriced_providers()` says it means.
+
+        The parse problem is not swallowed: both layers log a warning.
+        """
+        body = wire_response([int8_vector(5)], tokens=self.MANY_TOKENS)
+        body["usage"]["cost"]["total_cost"] = "quite a lot"
+        batch, _ = run_with(FakeResponse(200, body))
+
+        self.assertEqual(len(batch.vectors), 1)
+        row = self._row()
+        self.assertEqual((row["cost_micro_usd"], row["uncosted_calls"]),
+                         (self.TABLE_MICRO_FOR_MANY, 0))
+
+    def test_the_metered_token_count_is_the_one_the_budget_restrains_on(self):
+        """If these two ever diverge, the in-process budget and the durable ledger
+        disagree about how much was bought, and the one that blocks spend is not
+        the one anybody reads in a report."""
+        body = wire_response([int8_vector(6)], tokens=4_242)
+        run_with(FakeResponse(200, body))
+        self.assertEqual(self._row()["input_tokens"], 4_242)
+
+    def test_a_failed_call_is_not_recorded_as_spend(self):
+        """A 500 is not a charge. Recording it would inflate the month and could
+        trip a budget on money that was never taken — and the retry loop means one
+        logical call can produce several of these."""
+        expect_failure(FakeResponse(503, {"error": "unavailable"}))
+        self.assertIsNone(self._row())
+
+    def test_an_empty_input_list_records_nothing(self):
+        """`embed_texts([])` short-circuits before the provider. A row here would
+        mean the ledger counts calls that were never made."""
+        with patch.dict("os.environ", BASE_ENV, clear=False):
+            batch = embed.embed_texts(["", "   "], purpose="test")
+        self.assertEqual(batch.vectors, ())
+        self.assertIsNone(self._row())
+
+
+class BudgetIsSharedNotPerProcess(unittest.TestCase):
+    """`UNDX_EMBEDDING_MONTHLY_BUDGET_USD` has to mean the deployment, not a worker.
+
+    The guard was real but its month-to-date lived in a module-level dict, so the
+    ceiling that was actually enforced was the configured one multiplied by the
+    number of processes that embed — four gunicorn web workers plus four of the five
+    other Procfile processes, eight in production — and it went back to zero on every
+    deploy. Both failures point the same way: the guard was weakest when it mattered
+    most, because a runaway indexing loop is exactly the thing someone redeploys
+    repeatedly to fix.
+
+    Every test here proves the figure came from the **ledger** and not from this
+    process, by clearing the in-process mirror after seeding the row. Without that
+    step a green result would be indistinguishable from the old behaviour, since the
+    local dict would have had the same spend in it. That is the whole point: the
+    property under test is *whose* spend counts, and the only way to see it is to
+    make this process's own count empty while the shared figure is not.
+    """
+
+    #: $6.00 of embedding spend, against a $5.00 ceiling. Chosen so the overage is
+    #: unambiguous at micro-USD resolution rather than a rounding argument.
+    OTHER_PROCESS_MICRO = 6_000_000
+    BUDGET_USD = "5"
+
+    #: 200M tokens at the *unknown-model* rate of $0.05/M is $10.00; at the default
+    #: model's $0.004/M it is $0.80. A budget of $5.00 sits between the two, so which
+    #: rate the guard applies to an unpriced call decides the outcome.
+    UNPRICED_TOKENS = 200_000_000
+
+    def setUp(self):
+        self._dir = tempfile.TemporaryDirectory()
+        undx_cost.reset_for_tests()
+        embed.reset_budget()
+        self._env = patch.dict(
+            "os.environ",
+            {**BASE_ENV,
+             "DATABASE_URL": "sqlite:///" + os.path.join(self._dir.name, "ledger.db"),
+             "UNDX_EMBEDDING_MONTHLY_BUDGET_USD": self.BUDGET_USD},
+        )
+        self._env.start()
+        self.addCleanup(self._env.stop)
+        self.addCleanup(self._dir.cleanup)
+        self.addCleanup(undx_cost.reset_for_tests)
+        self.addCleanup(embed.reset_budget)
+
+    def _seed_another_process(self, **usage):
+        """Record spend in the ledger, then erase every trace of it from this process.
+
+        `reset_for_tests` drops the process mirror and the schema latch but not the
+        table, so what survives is exactly what a *different* worker's write would
+        have left behind.
+        """
+        undx_cost.record({"provider": "perplexity", "call_kind": "embedding", **usage})
+        undx_cost.reset_for_tests()
+        embed.reset_budget()
+
+    def test_spend_by_another_worker_counts_against_this_workers_budget(self):
+        """The defect, stated as a test: $6.00 already spent elsewhere, a $5.00
+        ceiling, and a process that has itself spent nothing must refuse."""
+        self._seed_another_process(input_tokens=1_000_000,
+                                   cost_micro_usd=self.OTHER_PROCESS_MICRO)
+
+        with self.assertRaises(embed.EmbeddingUnavailable) as caught:
+            run_with(FakeResponse(200, wire_response([int8_vector(1)])))
+        self.assertIn("budget", caught.exception.reason)
+        self.assertFalse(caught.exception.retryable, "retrying will not make it cheaper")
+
+    def test_the_same_call_is_allowed_when_the_shared_figure_is_under_the_ceiling(self):
+        """The pairing that makes the test above evidence rather than a coincidence.
+
+        Identical in every respect except the amount already spent — $4.00 instead of
+        $6.00 against the same $5.00 ceiling. A guard that refused everything, or one
+        that had crashed on the ledger read and been caught somewhere, would pass the
+        refusal test and fail this one.
+        """
+        self._seed_another_process(input_tokens=1_000_000, cost_micro_usd=4_000_000)
+
+        batch, fake = run_with(FakeResponse(200, wire_response([int8_vector(1)])))
+        self.assertEqual(len(batch.vectors), 1)
+        self.assertEqual(len(fake.calls), 1, "the provider should have been reached")
+
+    def test_a_restart_does_not_refund_the_month(self):
+        """The deploy-reset half of the defect, which the dict could not survive.
+
+        `reset_budget()` is precisely what a process start looks like to this module,
+        so a fresh worker must still see the month's spend. Asserted through
+        `budget_state()` rather than through a refusal so the *figure* is pinned and
+        not merely its consequence.
+        """
+        self._seed_another_process(input_tokens=1_000_000,
+                                   cost_micro_usd=self.OTHER_PROCESS_MICRO)
+
+        state = embed.budget_state()
+        self.assertEqual(state["estimated_spend_usd"], 6.0)
+        self.assertEqual(state["process_tokens_embedded"], 0,
+                         "this process has embedded nothing; the figure is not its own")
+        self.assertTrue(state["shared"])
+        self.assertEqual(state["source"], "ledger")
+        self.assertEqual(state["remaining_usd"], -1.0)
+
+    def test_an_unpriced_model_is_charged_at_the_highest_known_rate(self):
+        """§34 inverted for the blocking direction, and the one place it must be.
+
+        A recorded call against a model the price table does not know contributes
+        $0.00 and `uncosted_calls=1` to the ledger, which is right for *reporting* —
+        inventing a cost would report money nobody was charged. Reading that $0.00 as
+        the budget position would be wrong for the opposite reason: an unrecognised
+        model would then be free to spend without limit, and a model rename is the
+        most likely way for one to appear.
+
+        200M unpriced tokens is $10.00 at the highest known rate and $0.80 at the
+        default model's, against a $5.00 ceiling — so this test distinguishes the two
+        rates rather than merely asserting that something blocked.
+        """
+        self._seed_another_process(input_tokens=self.UNPRICED_TOKENS)
+
+        row = undx_cost.month_snapshot()["kinds"][cap.CALL_KIND_EMBEDDING]
+        self.assertEqual((row["cost_micro_usd"], row["uncosted_calls"]), (0, 1),
+                         "the ledger must still report an unknown as unknown")
+
+        state = embed.budget_state()
+        self.assertEqual(state["estimated_spend_usd"], 10.0)
+        self.assertTrue(state["spend_is_a_floor"])
+        with self.assertRaises(embed.EmbeddingUnavailable):
+            run_with(FakeResponse(200, wire_response([int8_vector(2)])))
+
+    def test_an_unreachable_ledger_falls_back_to_this_processs_own_count(self):
+        """The guard must never end up *weaker* than the dict it replaced.
+
+        Broken at the database connection, which is a state the system really enters,
+        rather than by stubbing the accounting layer — that layer is documented never
+        to raise. With the shared figure unavailable the local floor is all there is,
+        and it has to still stop a runaway pass.
+        """
+        runaway = ["canonical platform documentation " * 125] * 50  # ~50k tokens
+        tight = {"UNDX_EMBEDDING_MONTHLY_BUDGET_USD": "0.0001"}
+
+        def broken(*_args, **_kwargs):
+            raise sqlite3.OperationalError("ledger gone")
+
+        with patch.object(undx_cost, "_connect", broken):
+            with patch.dict("os.environ", tight):
+                state = embed.budget_state()
+                self.assertEqual(state["source"], "process")
+                self.assertFalse(state["shared"],
+                                 "a degraded figure must not be reported as the shared one")
+            # The ceiling goes through `run_with`'s `env=` and not through the
+            # `patch.dict` above, because `run_with` re-applies `BASE_ENV` — which sets
+            # this same variable to $5.00 — with `clear=False`. Wrapping the call
+            # instead silently reverts the override for exactly its duration, and this
+            # test then passed while the guard had done nothing.
+            with self.assertRaises(embed.EmbeddingUnavailable) as caught:
+                run_with(FakeResponse(200, wire_response([int8_vector(3)])),
+                         texts=runaway, env=tight)
+        self.assertIn("budget", caught.exception.reason)
+
+    def test_the_ledger_can_tighten_the_budget_but_never_loosen_it(self):
+        """A shared figure smaller than this process's own count must not win.
+
+        Reachable in practice: a ledger write that failed still bumped the process
+        mirror, and a ledger that was emptied or is being read mid-month-rollover
+        reports less than this worker knows it spent. `max(ledger, local)` is why the
+        wiring can only ever move the ceiling down.
+
+        Simulated by letting a real call accumulate a local count and then deleting
+        the row it wrote, which is the same end state as a lost write.
+        """
+        run_with(FakeResponse(200, wire_response([int8_vector(4)], tokens=1_000_000)))
+
+        connection = sqlite3.connect(os.path.join(self._dir.name, "ledger.db"))
+        connection.execute(f"DELETE FROM {undx_cost.LEDGER_TABLE}")
+        connection.commit()
+        connection.close()
+        undx_cost.reset_for_tests()   # drop the mirror; keep `embed`'s local floor
+
+        state = embed.budget_state()
+        self.assertEqual(state["source"], "ledger", "the ledger is readable, just empty")
+        self.assertEqual(state["process_tokens_embedded"], 1_000_000)
+        self.assertEqual(state["estimated_spend_usd"], 0.004,
+                         "1M tokens at $0.004 per *million*, from the local floor the "
+                         "ledger lost — a thousandth of what a per-1k reading of the "
+                         "same rate would give, which is the arithmetic this pins")
+
+    def test_a_zero_budget_is_still_an_opt_out(self):
+        """The env contract cannot change just because the figure got better. Zero
+        disables the guard, and it has to keep doing that with $6.00 recorded — the
+        one setting where a ledger read must not even happen."""
+        self._seed_another_process(input_tokens=1_000_000,
+                                   cost_micro_usd=self.OTHER_PROCESS_MICRO)
+
+        off = {"UNDX_EMBEDDING_MONTHLY_BUDGET_USD": "0"}
+        with patch.dict("os.environ", off):
+            self.assertFalse(embed.budget_state()["enforced"])
+        # `env=` again rather than the wrapper: `BASE_ENV`'s $5.00 would otherwise be
+        # restored inside the call, and the test would pass because the *ledger* figure
+        # happened to be under a ceiling it was never supposed to consult.
+        batch, _ = run_with(FakeResponse(200, wire_response([int8_vector(5)])), env=off)
+        self.assertEqual(len(batch.vectors), 1)
 
 
 if __name__ == "__main__":

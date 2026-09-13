@@ -25,7 +25,7 @@ from typing import Any
 
 from werkzeug.datastructures import FileStorage
 
-from .. import media_service, media_storage
+from .. import media_service, media_storage, undx_capabilities
 from .content_policy import sanitize_automated_text
 
 
@@ -187,6 +187,20 @@ class OpenAIImageProvider:
             content = base64.b64decode(encoded, validate=True)
         except Exception as exc:
             raise ImagePipelineError("image_provider_invalid_base64") from exc
+        # §22: an image generation is AI spend and has to appear in the month's
+        # ledger under its own kind. Recorded after the bytes are known good, so a
+        # response that decodes to nothing is not counted as a picture we received;
+        # it is still a request OpenAI may have billed for, which is a gap named in
+        # the census rather than papered over by recording every attempt.
+        #
+        # `gpt-image-1` has no price in `undx_capabilities`, so this lands as
+        # `uncosted_calls=1` rather than as $0.00. That is the §34 answer and not an
+        # oversight: inventing a per-image figure would make the month's total look
+        # complete while being wrong by whatever the real price is, and
+        # `unpriced_providers()` is what enumerates the remaining work.
+        undx_capabilities.record_spend(
+            undx_capabilities.CALL_KIND_IMAGE, self.name, units=1, model=self.model,
+        )
         return {"bytes": content, "provider": self.name, "model": self.model}
 
 

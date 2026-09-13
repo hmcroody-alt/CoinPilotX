@@ -19,12 +19,14 @@ ever turn red. That is the same defect class as a dashboard metric that renders
 a confident zero, and it is worth a test of its own.
 """
 
+import ast
 import pathlib
 import re
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 SUITE_DIR = ROOT / "tests" / "protection"
+TEST_ROOT = ROOT / "tests"
 RUNNER = ROOT / "scripts" / "protection" / "run_protection_suite.py"
 WORKFLOW = ROOT / ".github" / "workflows" / "realtime-audio.yml"
 
@@ -101,6 +103,110 @@ def test_the_backend_protection_job_is_not_gated_on_audio_path_changes():
         f"{condition.group(0).strip() if condition else ''}. A pull request that "
         "removes an admin audit row or a CSRF check touches no audio path, so a "
         "detect-gated job would skip exactly the change it should catch."
+    )
+
+
+def _shadowed_definitions(source: str):
+    """Names a module binds twice at a scope Python resolves last-wins.
+
+    Returns a list of ``"ClassName"`` / ``"ClassName.test_method"`` strings. Scoped
+    deliberately narrowly: only top-level classes and only ``test``-prefixed methods
+    inside them. A module that overwrites a helper twice is usually sloppy; a module
+    that overwrites a *test* twice has silently deleted a check, which is the thing
+    this file exists to notice.
+    """
+    tree = ast.parse(source)
+    shadowed = []
+    classes = [n for n in tree.body if isinstance(n, ast.ClassDef)]
+    names = [n.name for n in classes]
+    shadowed.extend(sorted({n for n in names if names.count(n) > 1}))
+    for node in classes:
+        methods = [
+            m.name for m in node.body
+            if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and m.name.startswith("test")
+        ]
+        shadowed.extend(
+            f"{node.name}.{m}" for m in sorted({m for m in methods if methods.count(m) > 1})
+        )
+    return shadowed
+
+
+def test_the_shadowed_definition_check_can_actually_fail():
+    """The zero below is only evidence if the thing producing it can say non-zero.
+
+    Every other assertion in this file reports a count of problems and passes when
+    that count is zero. A detector with an inverted condition, a swallowed parse
+    error or an off-by-one in `count()` reports zero too, and reports it forever.
+    So the repo-wide check is paired with a synthetic module that is known to be
+    broken in exactly the two ways it looks for.
+    """
+    broken = (
+        "import unittest\n"
+        "class Dupe(unittest.TestCase):\n"
+        "    def test_one(self):\n"
+        "        pass\n"
+        "class Dupe(unittest.TestCase):\n"
+        "    def test_two(self):\n"
+        "        pass\n"
+        "    def test_two(self):\n"
+        "        pass\n"
+    )
+    assert _shadowed_definitions(broken) == ["Dupe", "Dupe.test_two"], (
+        "The shadowed-definition detector no longer flags a module that redefines "
+        "both a class and a test method. Until it does, the repo-wide zero it "
+        f"produces means nothing. Got: {_shadowed_definitions(broken)}"
+    )
+    healthy = (
+        "import unittest\n"
+        "class A(unittest.TestCase):\n"
+        "    def test_one(self):\n"
+        "        pass\n"
+        "class B(unittest.TestCase):\n"
+        "    def test_one(self):\n"
+        "        pass\n"
+    )
+    assert _shadowed_definitions(healthy) == [], (
+        "The detector flags a clean module, so the repo-wide check would be noise "
+        "rather than signal. Two classes may share a method name; that is normal."
+    )
+
+
+def test_no_test_module_defines_the_same_test_twice():
+    """A redefined test class is a check that no change to the system can turn red.
+
+    `tests/briefings/test_pulse_briefings.py` carried `TopicIndependenceTests`
+    twice, 77 lines apart, with identical docstrings and identical method names.
+    The copies differed by one line: the first inserted into `alert_rules`, the
+    second into the legacy `crypto_alerts` table that
+    `services/pulse_briefings/facts.py` had been deliberately migrated *off*.
+
+    Python binds the later definition, so the stale copy won and three of its
+    tests failed, while the five tests in the corrected copy above it never ran at
+    all. The fix was already in the file. That is the specific failure worth
+    guarding: not a test that is wrong, but a *correct* test that was written,
+    landed, and then silently discarded by a paste — which presents as an ordinary
+    red suite and invites someone to "fix" the assertion that the stale lineage
+    broke.
+
+    This check is deliberately repo-wide rather than scoped to this directory. The
+    instance that motivated it was not in `tests/protection/`, and a guard that
+    only watches the directory it lives in would not have caught it.
+    """
+    offenders = {}
+    for path in sorted(TEST_ROOT.rglob("test_*.py")):
+        try:
+            found = _shadowed_definitions(path.read_text(encoding="utf-8"))
+        except SyntaxError as exc:  # an unparseable test file is its own problem
+            offenders[str(path.relative_to(ROOT))] = [f"unparseable: {exc}"]
+            continue
+        if found:
+            offenders[str(path.relative_to(ROOT))] = found
+    assert not offenders, (
+        "These test modules bind the same name twice, so the earlier definition is "
+        "unreachable and its checks never execute. Delete the stale copy rather "
+        "than renaming it — and confirm which copy is stale before choosing, since "
+        f"the surviving one is not necessarily the newer one: {offenders}"
     )
 
 

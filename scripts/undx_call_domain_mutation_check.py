@@ -24,9 +24,19 @@ import tempfile
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TARGET = "services/undx_call_domain.py"
 ROUTER = "undx_router.py"
+EVIDENCE = "services/undx_routing_evidence.py"
 TESTS = "tests/test_undx_call_domain.py"
+EVIDENCE_TESTS = "tests/test_undx_routing_evidence.py"
 
-#: Each mutation is (label, file, old, new, test that must fail).
+#: Each mutation is (label, file, old, new, test that must fail[, test file]).
+#:
+#: The sixth element defaults to `TESTS`. It exists because the gate ladder is now one
+#: function consumed by three callers, and a mutation to it can be caught by assertions
+#: living in either suite. Which suite is asked matters: a mutation that kills the AST
+#: order test proves the *source shape* is pinned, and one that kills the evidence test
+#: proves the *predicted chain* is pinned. Those are different claims and the first does
+#: not imply the second, so the conditional-privacy mutation below appears twice, once
+#: per suite, rather than once with whichever `expect` happened to be convenient.
 #:
 #: `expect` is the point of the exercise. A mutation that fails *some* test proves
 #: the suite is not empty; a mutation that fails *the named* test proves the
@@ -167,7 +177,15 @@ MUTATIONS = [
         '            else [default_provider()]\n'
         '    ordered = _domain_ordered(ordered, call_domain)\n',
         '            else [default_provider()]\n',
-        "test_the_domain_is_consulted_after_the_privacy_ceiling",
+        # Renamed with the test. The privacy ceiling is no longer applied inline in
+        # either entry point — it moved into `_gate` — so "after the privacy ceiling"
+        # named a line that is not there any more. A stale `expect` is the failure this
+        # harness exists to prevent, one level up: the mutation still kills the suite,
+        # the named assertion is simply not the one that caught it, and the run would
+        # have reported `died, but not on ...` rather than a pass. Worth stating because
+        # the cheaper-looking fix — deleting the `expect` — converts a proof that a
+        # specific assertion works into a proof that the file is non-empty.
+        "test_the_domain_is_consulted_before_the_gate_ladder",
     ),
     (
         "stop consulting the declared domain in the mission path",
@@ -175,14 +193,98 @@ MUTATIONS = [
         '    ordered = provider_priority(classification) if router_enabled() else ["openai"]\n'
         '    ordered = _domain_ordered(ordered, call_domain)\n',
         '    ordered = provider_priority(classification) if router_enabled() else ["openai"]\n',
-        "test_the_domain_is_consulted_after_the_privacy_ceiling",
+        "test_the_domain_is_consulted_before_the_gate_ladder",
     ),
     (
+        # Re-anchored. The original anchor ended at `) -> dict[str, Any]:`, which assumed
+        # `call_domain` was the last parameter of `route_structured_request`. A later phase
+        # added `history`, `require_json` and `json_schema` after it, so the anchor matched
+        # 0x and this mutation silently stopped being run — reported as a harness problem
+        # rather than as a pass, which is the only reason it was noticed. An anchor pinned
+        # to an exact adjacency has a shelf life of one edit to its neighbourhood; this one
+        # holds the two lines it is actually about plus the next, and no closing paren.
         "drop the declared domain from the structured signature",
         ROUTER,
-        '    privacy_class: str | None = None,\n    call_domain: str | None = None,\n) -> dict[str, Any]:',
-        '    privacy_class: str | None = None,\n) -> dict[str, Any]:',
+        '    privacy_class: str | None = None,\n    call_domain: str | None = None,\n    history: Any = None,',
+        '    privacy_class: str | None = None,\n    history: Any = None,',
         "test_both_router_entry_points_accept_a_declared_domain",
+    ),
+    # ------------------------------------------------------------------ the gate ladder
+    #
+    # `_gate` was extracted because the ladder had been transcribed four times: twice to
+    # run it and twice to predict it. The five mutations below are the three ways the
+    # predicting copies had actually drifted, plus the order property of the extracted
+    # function itself. Each one restores a real former state of this repo rather than an
+    # imagined one, which is why they are worth carrying: they are the regressions that
+    # already happened once.
+    (
+        # The exact guard `explain` used to carry. It reads as tolerance for a missing
+        # value and is the opposite — an omitted class normalises to CONFIDENTIAL, so
+        # skipping the call is what discards the default ceiling. This is the mutation
+        # direction the pre-existing suite could not catch: both of its privacy tests
+        # passed a truthy class, so a gate that only fires when a class is named looked
+        # identical to one that always fires.
+        "make the privacy gate conditional on the caller naming a class",
+        ROUTER,
+        '    refusal = _privacy_refusal(provider, privacy_class)\n',
+        '    refusal = _privacy_refusal(provider, privacy_class) if privacy_class else ""\n',
+        "test_the_gate_ladder_never_makes_the_privacy_check_conditional",
+    ),
+    (
+        # Same mutation, asked of the other suite. The AST test above pins the source
+        # shape; this pins the consequence — that a request declaring nothing is still
+        # told Perplexity is unreachable and OpenAI is the first choice.
+        "make the privacy gate conditional (as the evidence surface sees it)",
+        ROUTER,
+        '    refusal = _privacy_refusal(provider, privacy_class)\n',
+        '    refusal = _privacy_refusal(provider, privacy_class) if privacy_class else ""\n',
+        "test_an_omitted_privacy_class_still_applies_the_default_ceiling",
+        EVIDENCE_TESTS,
+    ),
+    (
+        # Read a credential before asking whether the content may be sent at all. The
+        # order is the security property, not the presence of the checks: a provider
+        # which must not see this content should not be consulted about whether it could
+        # have. Anchored on the privacy line, which is unique, rather than on
+        # `config = PROVIDERS[provider]`, which is not.
+        "read the API key before the privacy class",
+        ROUTER,
+        '    config = PROVIDERS[provider]\n'
+        '    refusal = _privacy_refusal(provider, privacy_class)\n',
+        '    config = PROVIDERS[provider]\n'
+        '    if not _api_key(provider):\n'
+        '        return {"provider": config.label, "status": "not_configured",\n'
+        '                "detail": "no API key is set for this provider"}\n'
+        '    refusal = _privacy_refusal(provider, privacy_class)\n',
+        "test_the_gate_ladder_checks_privacy_before_it_reads_a_credential",
+    ),
+    (
+        # `explain` took no `require_json` at all, so the `capability_unmet` refusals the
+        # loop applies before reading a credential were invisible to the surface that
+        # claims to describe the loop. Both `scam_shield` and `undx_capability_planner`
+        # route with it set.
+        "stop telling the gate ladder that JSON was required",
+        EVIDENCE,
+        '        refused = router._gate(name, privacy_class=privacy_class, budget=budget,\n'
+        '                               require_json=require_json) or {}\n',
+        '        refused = router._gate(name, privacy_class=privacy_class,\n'
+        '                               budget=budget) or {}\n',
+        "test_a_json_requirement_is_reported_as_the_loop_would_apply_it",
+        EVIDENCE_TESTS,
+    ),
+    (
+        # The latent one, and the reason it is here rather than filed as a nice-to-have:
+        # `_PREFERENCE` is empty today, so omitting `_domain_ordered` produces identical
+        # output and nothing observable is wrong. The test that catches this installs a
+        # preference, because a test asserting against the real empty table would agree
+        # with the broken tree. Restoring the omission has to fail *now*, otherwise the
+        # first domain to declare a preference makes this surface wrong silently.
+        "stop applying the declared domain in the evidence surface",
+        EVIDENCE,
+        '    actual = router._domain_ordered(lane_plan, call_domain)\n',
+        '    actual = list(lane_plan)\n',
+        "test_the_declared_domain_reorders_the_explained_plan",
+        EVIDENCE_TESTS,
     ),
 ]
 
@@ -190,35 +292,92 @@ MUTATIONS = [
 def build_sandbox(root: pathlib.Path, target: str) -> pathlib.Path:
     """Symlink the repo, except the one file that gets mutated.
 
-    Works for a root-level module and for one inside a package: the directory on the
-    path to the target becomes real, everything beside it stays a symlink. Nothing
-    under the repo is opened for writing at any point.
+    Every directory on the path to the target becomes real; everything beside it at each
+    level stays a symlink. Nothing under the repo is opened for writing at any point, and
+    the assertion at the end is what makes that sentence true rather than intended.
+
+    **It was not true before.** The first version handled exactly two shapes — a
+    root-level module, and `package/module.py` — and the `else` branch assumed depth two
+    by building `parts[0]/parts[-1]`. Handed
+    `services/command_center_worker/ai_messaging.py`, it made `services/` real, found no
+    entry named `ai_messaging.py` beside it, and so symlinked
+    `services/command_center_worker` straight back at the repo. The caller then wrote to
+    `sandbox/services/command_center_worker/ai_messaging.py`, which resolved *through* that
+    symlink, and `write_text` truncated and rewrote the real file. Six harnesses share this
+    function and all six happened to target depth one or two, so the bound held by luck
+    while the docstring asserted it unconditionally.
+
+    The cost was an hour of uncommitted work: each iteration wrote the repo, and the next
+    iteration read what the previous one had written, so the mutations accumulated into the
+    file under test. Worth stating plainly because it is the same mistake this mission keeps
+    finding in the code it is migrating — a claim made in prose that nothing evaluates. A
+    docstring is not a guarantee. The `raise` below is.
     """
     sandbox = root / "repo"
     sandbox.mkdir()
     parts = pathlib.Path(target).parts
-    for entry in REPO.iterdir():
-        if entry.name in {".git", parts[0]}:
-            continue
-        (sandbox / entry.name).symlink_to(entry)
+    if not parts:
+        raise ValueError("build_sandbox needs a target path")
 
-    if len(parts) == 1:
-        shutil.copy2(REPO / target, sandbox / parts[0])
-        return sandbox
+    # Walk the path one component at a time. At each level the component leading to the
+    # target is skipped and everything else is symlinked, so only the chain of directories
+    # above the mutated file is ever a real directory.
+    for depth, name in enumerate(parts[:-1]):
+        source_dir = REPO.joinpath(*parts[:depth])
+        sandbox_dir = sandbox.joinpath(*parts[:depth])
+        for entry in source_dir.iterdir():
+            if entry.name == name or (depth == 0 and entry.name == ".git"):
+                continue
+            (sandbox_dir / entry.name).symlink_to(entry)
+        (sandbox_dir / name).mkdir()
 
-    package = sandbox / parts[0]
-    package.mkdir()
-    for entry in (REPO / parts[0]).iterdir():
-        if entry.name == parts[-1]:
+    leaf_source = REPO.joinpath(*parts[:-1])
+    leaf_sandbox = sandbox.joinpath(*parts[:-1])
+    for entry in leaf_source.iterdir():
+        if entry.name == parts[-1] or (len(parts) == 1 and entry.name == ".git"):
             continue
-        (package / entry.name).symlink_to(entry)
-    shutil.copy2(REPO / target, package / parts[-1])
+        (leaf_sandbox / entry.name).symlink_to(entry)
+    shutil.copy2(REPO / target, leaf_sandbox / parts[-1])
+
+    # The guarantee, evaluated. A mutated path that resolves outside the sandbox — because
+    # some component of it turned out to be a symlink back at the repo — must stop the run
+    # rather than overwrite a real file. This is cheap and it is the only thing standing
+    # between a new target shape and destroyed uncommitted work.
+    written = sandbox / target
+    if written.is_symlink() or not str(written.resolve()).startswith(str(sandbox.resolve())):
+        raise RuntimeError(
+            f"sandbox for {target!r} resolves to {written.resolve()}, outside the sandbox; "
+            "refusing to mutate the real repository")
     return sandbox
 
 
 def main() -> int:
+    """Run every mutation, or the subset named by `--only SUBSTRING`.
+
+    The filter is a convenience with one real use: a full run is a pytest invocation per
+    mutation, so iterating on a single new mutation costs the whole set otherwise. It
+    matches on the label. Ported from `scripts/undx_call_guard_mutation_check.py`, where
+    the argument for it is already written; the one thing worth repeating is that a
+    filtered run is not evidence about the mutations it skipped, so the count printed at
+    the end says how many ran rather than how many exist.
+    """
+    only = ""
+    args = sys.argv[1:]
+    if args and args[0] == "--only":
+        if len(args) < 2:
+            print("--only needs a substring", file=sys.stderr)
+            return 2
+        only = args[1]
+
+    selected = [m for m in MUTATIONS if not only or only in m[0]]
+    if not selected:
+        print(f"no mutation label contains {only!r}", file=sys.stderr)
+        return 2
+
     failures = []
-    for label, target, old, new, expect in MUTATIONS:
+    for entry in selected:
+        label, target, old, new, expect = entry[:5]
+        tests = entry[5] if len(entry) > 5 else TESTS
         with tempfile.TemporaryDirectory() as tmp:
             sandbox = build_sandbox(pathlib.Path(tmp), target)
             path = sandbox / target
@@ -230,7 +389,7 @@ def main() -> int:
 
             env = dict(os.environ, PYTHONPATH=str(sandbox), PYTHONDONTWRITEBYTECODE="1")
             proc = subprocess.run(
-                [sys.executable, "-m", "pytest", TESTS, "-q", "--no-header", "-p", "no:cacheprovider"],
+                [sys.executable, "-m", "pytest", tests, "-q", "--no-header", "-p", "no:cacheprovider"],
                 cwd=sandbox, env=env, capture_output=True, text=True, timeout=300,
             )
             output = proc.stdout + proc.stderr
@@ -256,7 +415,8 @@ def main() -> int:
         for item in failures:
             print(f"  - {item}")
         return 1
-    print(f"All {len(MUTATIONS)} mutations behaved as specified.")
+    scope = f" (filtered to {only!r}; {len(MUTATIONS)} exist)" if only else ""
+    print(f"All {len(selected)} mutations behaved as specified{scope}.")
     return 0
 
 

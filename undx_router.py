@@ -1450,6 +1450,73 @@ CALLERS = {
 }
 
 
+#: The gate order, in the one place that decides it.
+#:
+#: Before this existed the ladder was transcribed four times: twice to *run* it
+#: (`route_structured_request`, `route_undx_request`) and twice to *predict* it
+#: (`services/undx_routing_evidence.explain`, `services/undx_shadow.plan`). A
+#: second router is easy to see; a second copy of one router's gate order is not,
+#: and it fails the same way — two paths meant to enforce the same rule, one of
+#: which quietly stops. The predicting copies had already drifted: `explain` did
+#: not apply the privacy ceiling unless the caller named a class, took no
+#: `require_json`, and never applied `_domain_ordered`, so it named a first
+#: choice the request could not reach.
+#:
+#: The order is security-relevant and the reasons are not interchangeable:
+#:
+#:   1. privacy     — before the credential, so a provider which must not see
+#:                    this content is not consulted about whether it could have.
+#:   2. capability  — after privacy, before the credential, for the same reason:
+#:                    a provider that cannot answer the question being asked is
+#:                    not asked for its key either.
+#:   3. budget      — against one snapshot per request, so every provider in a
+#:                    chain is judged against the same totals.
+#:   4. credential  — only now is a key read.
+#:   5. breaker     — last, because a resting provider is a live one.
+#:
+#: Returns the `attempts` entry describing the refusal, or `None` to proceed.
+#: Deliberately an entry and not a bool: nothing here is skipped silently, and a
+#: chain that omits the providers it declined "describes a different request than
+#: the one that ran". The `detail` strings are the same ones the operator surface
+#: renders, which is why they live here rather than at each call site.
+def _gate(provider: str, *, privacy_class: str | None, budget: dict[str, Any],
+          require_json: bool = False) -> dict[str, str] | None:
+    """Why this provider must not be tried, or ``None`` if it may be.
+
+    ``require_json`` defaults to ``False`` so that this reproduces
+    `route_undx_request`'s four-gate ladder exactly, and the five-gate one when
+    asked. That default is what made the extraction provably behaviour
+    preserving: diffing the two original ladders with comments stripped yields
+    the capability branch as the only addition and nothing present in the
+    four-gate version that is missing from the five.
+
+    ``privacy_class`` is passed through to `_privacy_refusal` **unconditionally**,
+    including when it is ``None``. Guarding this call with ``if privacy_class``
+    looks like defensive handling of a missing value and is the opposite: an
+    omitted class normalises to CONFIDENTIAL, so the guard is what throws the
+    default ceiling away. `explain` had exactly that guard.
+    """
+    config = PROVIDERS[provider]
+    refusal = _privacy_refusal(provider, privacy_class)
+    if refusal:
+        return {"provider": config.label, "status": "privacy_refused",
+                "detail": refusal}
+    if require_json and not config.structured_output:
+        return {"provider": config.label, "status": "capability_unmet",
+                "detail": "cannot be required to return JSON"}
+    over_budget = _budget_refusal(budget, provider)
+    if over_budget:
+        return {"provider": config.label, "status": "budget_exceeded",
+                "detail": over_budget}
+    if not _api_key(provider):
+        return {"provider": config.label, "status": "not_configured",
+                "detail": "no API key is set for this provider"}
+    if _breaker_should_skip(provider):
+        return {"provider": config.label, "status": "circuit_open",
+                "detail": "the breaker is resting this provider"}
+    return None
+
+
 def route_structured_request(
     user_id: Any,
     system_prompt: str,
@@ -1464,6 +1531,7 @@ def route_structured_request(
     history: Any = None,
     require_json: bool = False,
     json_schema: dict[str, Any] | None = None,
+    classify_text: str | None = None,
 ) -> dict[str, Any]:
     """One model turn whose answer is meant to be parsed, not read.
 
@@ -1508,10 +1576,50 @@ def route_structured_request(
     Refused visibly: it appears in ``attempts`` as ``capability_unmet``, because a chain
     that omits the providers it declined describes a different request than the one that
     ran. ``json_schema`` is optional and only Perplexity and Gemini can use it.
+
+    ``classify_text`` is the text the *routing decision* should be made from, when that
+    is not the same string as the text being sent. Defaulting to ``None`` keeps every
+    existing call byte-identical; naming it fixes a real misroute.
+
+    :func:`classify_request` reads ``_clean_text(message, 2600)``, so it sees the first
+    2600 characters of whatever it is handed. Two callers assemble context *in front* of
+    the user's words, and both push them past that window entirely:
+
+      * ``services/undx_capability_planner.py`` prefixes a 12,106-character capability
+        catalog. The user's message is never inside the window.
+      * ``services/intelligence.py`` prefixes an 8,850-character live market board.
+        Likewise.
+
+    The classification is therefore not merely noisy, it is *constant*: the catalog
+    contains the freshness cues "right now" and "recent", and freshness wins
+    unconditionally above — correctly, for a real user message — so every planner
+    request classified as ``current_web`` regardless of what was asked. Measured:
+    "write me a python function ..." classified ``current_web`` where the question alone
+    gives ``repository``, and "is this wallet address a scam" gave ``current_web`` where
+    the question alone gives ``security``.
+
+    What that *cost* is narrower than what it broke, and the difference is worth
+    recording rather than rounding up. Both call sites route at CONFIDENTIAL, which
+    refuses DeepSeek, Gemini, Groq and Perplexity, so the lanes for ``current_web``,
+    ``repository`` and ``research`` all collapse to the same reachable chain
+    ``[openai, claude, meta]`` — the ceiling was masking the misroute. The exception is
+    the one category where the model choice was deliberate: ``security`` puts Claude
+    first, and reachable it stays ``[claude, openai, meta]``. So a user asking the
+    assistant a security question was answered by OpenAI instead of Claude because a
+    CoinGecko snapshot sat in front of their sentence. That masking is also not a
+    defence — it holds only while these callers declare CONFIDENTIAL, and §4's "do not
+    lower a classification to make routing possible" is the pressure that would remove
+    it.
+
+    ``is not None`` rather than ``or``: a caller that names the subject of the
+    classification and finds it empty has said "there is no user text here", and falling
+    back to the scaffolding would be this function second-guessing that. An empty string
+    classifies as ``fast_directive``, which is a default, not a claim about the prompt.
     """
     ordered = [p for p in (providers or []) if p in PROVIDERS and provider_enabled(p)]
     if not ordered:
-        ordered = provider_priority(classify_request(user_content)) if router_enabled() \
+        subject = user_content if classify_text is None else classify_text
+        ordered = provider_priority(classify_request(subject)) if router_enabled() \
             else [default_provider()]
     ordered = _domain_ordered(ordered, call_domain)
     attempts: list[dict[str, str]] = []
@@ -1520,35 +1628,14 @@ def route_structured_request(
 
     for provider in ordered:
         config = PROVIDERS[provider]
-        refusal = _privacy_refusal(provider, privacy_class)
-        if refusal:
-            # Refused, not deprioritised. Checked before the credential so that a
-            # provider which must not see this content is not consulted about
-            # whether it could have.
-            attempts.append({"provider": config.label, "status": "privacy_refused",
-                             "detail": refusal})
-            continue
-        if require_json and not config.structured_output:
-            # After privacy, before the credential — for the same reason privacy comes
-            # first. A provider that must not see this content is not asked whether it
-            # could have; a provider that cannot answer the question being asked is not
-            # asked for its key either.
-            attempts.append({"provider": config.label, "status": "capability_unmet",
-                             "detail": "cannot be required to return JSON"})
-            continue
-        over_budget = _budget_refusal(budget, provider)
-        if over_budget:
-            attempts.append({"provider": config.label, "status": "budget_exceeded",
-                             "detail": over_budget})
-            continue
-        if not _api_key(provider):
-            attempts.append({"provider": config.label, "status": "not_configured"})
-            continue
-        if _breaker_should_skip(provider):
-            # Recorded as an attempt, not skipped silently. A provider that is
-            # resting has to appear in the chain, or `attempts` describes a
-            # different request than the one that ran.
-            attempts.append({"provider": config.label, "status": "circuit_open"})
+        # One ladder, defined at `_gate`, which is also what the operator surface
+        # and the shadow planner consult. Refused, not deprioritised, and never
+        # skipped silently: the entry goes into `attempts` whatever the reason, or
+        # the chain describes a different request than the one that ran.
+        refused = _gate(provider, privacy_class=privacy_class, budget=budget,
+                        require_json=require_json)
+        if refused:
+            attempts.append(refused)
             continue
         try:
             result = CALLERS[provider](
@@ -1625,27 +1712,13 @@ def route_undx_request(user_id: Any, message: str, history: Any = None, system_p
 
     for provider in ordered:
         config = PROVIDERS[provider]
-        refusal = _privacy_refusal(provider, privacy_class)
-        if refusal:
-            # Refused, not deprioritised. Checked before the credential so that a
-            # provider which must not see this content is not consulted about
-            # whether it could have.
-            attempts.append({"provider": config.label, "status": "privacy_refused",
-                             "detail": refusal})
-            continue
-        over_budget = _budget_refusal(budget, provider)
-        if over_budget:
-            attempts.append({"provider": config.label, "status": "budget_exceeded",
-                             "detail": over_budget})
-            continue
-        if not _api_key(provider):
-            attempts.append({"provider": config.label, "status": "not_configured"})
-            continue
-        if _breaker_should_skip(provider):
-            # Recorded as an attempt, not skipped silently. A provider that is
-            # resting has to appear in the chain, or `attempts` describes a
-            # different request than the one that ran.
-            attempts.append({"provider": config.label, "status": "circuit_open"})
+        # The same ladder `route_structured_request` uses, minus the capability
+        # gate, which `_gate` omits when `require_json` is not asked for. This
+        # entry point has no JSON contract to hold a provider to, so it does not
+        # ask — rather than declining providers for a requirement nobody made.
+        refused = _gate(provider, privacy_class=privacy_class, budget=budget)
+        if refused:
+            attempts.append(refused)
             continue
         try:
             result = CALLERS[provider](system_prompt, message, history or [], timeout)

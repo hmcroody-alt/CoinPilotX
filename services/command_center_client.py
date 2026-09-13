@@ -75,11 +75,21 @@ def ai_enabled() -> bool:
     return _env_bool("PULSE_AI_ENABLED", False)
 
 
-def ai_configured() -> bool:
-    return ai_enabled() and bool(_env_text("PULSE_AI_PROVIDER"))
+# `ai_configured()` used to live here as `ai_enabled() and bool(_env_text("PULSE_AI_PROVIDER"))`.
+# It had no callers — every gate in bot.py and pulse_communications_v2/routes.py goes through
+# `ai_enabled()` — and the worker no longer reads PULSE_AI_PROVIDER at all, because which
+# vendor answers is undx_router's decision and not an operator's. Kept as a note rather than
+# deleted silently: a helper whose name says "configured" is the kind of thing a future
+# caller reaches for, and it would have gated the whole feature on a variable nothing reads.
 
 
 def status() -> dict[str, Any]:
+    # `ai_provider_configured` and `ai_model_configured` used to be reported here, from
+    # PULSE_AI_PROVIDER and PULSE_AI_MODEL. Both variables are now read by nothing, so the
+    # two fields described the presence of strings rather than the state of anything —
+    # configuration is not health, and these were not even configuration any more. Removed
+    # rather than left to be believed: this dict is what an operator reads when the AI
+    # surface is quiet, and a `true` there would have sent them looking in the wrong place.
     identity = service_identity()
     return {
         **identity,
@@ -87,8 +97,6 @@ def status() -> dict[str, Any]:
         "url_configured": url_configured(),
         "token_configured": token_configured(),
         "ai_enabled": ai_enabled(),
-        "ai_provider_configured": bool(_env_text("PULSE_AI_PROVIDER")),
-        "ai_model_configured": bool(_env_text("PULSE_AI_MODEL")),
         "timeout_seconds": _timeout_seconds(),
         "last_dispatch": last_dispatch_status(),
     }
