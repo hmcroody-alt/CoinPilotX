@@ -547,7 +547,10 @@
       "voiceSent": "वॉइस मैसेज भेज दिया।",
       "voiceUnavailable": "वॉइस मैसेज उपलब्ध नहीं",
       "voiceUnavailableTitle": "वॉइस मैसेज उपलब्ध नहीं",
-      "yourMessage": "आपका मैसेज"
+      "yourMessage": "आपका मैसेज",
+      "openDocument": "खोलने के लिए टैप करें",
+      "openingDocument": "खोल रहे हैं…",
+      "a11yOpensDocument": "आपके दस्तावेज़ व्यूअर में खुलता है"
     },
     "group": {
       "createGroup": "ग्रुप बनाएँ",

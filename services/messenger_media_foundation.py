@@ -15,6 +15,7 @@ import logging
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 import uuid
@@ -26,6 +27,9 @@ from werkzeug.utils import secure_filename
 
 from services import db as db_service
 from services import media_storage
+from services import stored_video_policy
+
+MESSENGER_VIDEO_SURFACE = "messenger"
 
 
 UPLOAD_STATUSES = {"pending", "uploaded", "attached", "failed", "deleted"}
@@ -60,6 +64,11 @@ ALLOWED_MIME_TYPES: dict[str, dict[str, Any]] = {
     "image/heic": {"media_type": "photo", "extensions": {"heic"}, "disposition": "inline"},
     "image/heif": {"media_type": "photo", "extensions": {"heif"}, "disposition": "inline"},
     "video/mp4": {"media_type": "video", "extensions": {"mp4", "m4v"}, "disposition": "inline"},
+    # An iPhone's photo library hands the picker a QuickTime movie, and the
+    # picker reports it honestly as video/quicktime. Its absence here is what
+    # answered "That file type is not supported for Messenger media." to the most
+    # ordinary video an iOS user can possibly choose.
+    "video/quicktime": {"media_type": "video", "extensions": {"mov", "qt"}, "disposition": "inline"},
     "video/webm": {"media_type": "video", "extensions": {"webm"}, "disposition": "inline"},
     "audio/webm": {"media_type": "voice", "extensions": {"webm"}, "disposition": "inline"},
     "audio/mpeg": {"media_type": "voice", "extensions": {"mp3", "mpeg"}, "disposition": "inline"},
@@ -101,6 +110,7 @@ DEFAULT_EXTENSION_BY_MIME = {
     "image/heic": "heic",
     "image/heif": "heif",
     "video/mp4": "mp4",
+    "video/quicktime": "mov",
     "video/webm": "webm",
     "audio/webm": "webm",
     "audio/mpeg": "mp3",
@@ -127,11 +137,23 @@ MIME_ALIASES.update({
     "text/comma-separated-values": "text/csv",
     "application/csv": "text/csv",
     "text/markdown": "text/plain",
+    # Spellings of a QuickTime movie seen from Android pickers, older iOS
+    # versions and desktop browsers. Each resolves to the entry above.
+    "video/x-quicktime": "video/quicktime",
+    "video/mov": "video/quicktime",
+    "video/x-m4v": "video/mp4",
+    "video/x-mp4": "video/mp4",
 })
 
 SIZE_LIMIT_ENV = {
     "photo": ("MESSENGER_PHOTO_MAX_MB", 15),
-    "video": ("MESSENGER_VIDEO_MAX_MB", 200),
+    # 2 GB is what the 90-minute duration ceiling costs at a deliverable bitrate:
+    # 2048 MB over 5400 s is ~3.1 Mbps, which is 720p H.264 territory. A 200 MB
+    # cap made the duration policy unreachable -- 90 minutes inside it would be
+    # ~300 kbps. Note this is the *accepted* size, not the size a phone should
+    # send: native 1080p30 is ~17 Mbps, so a full-length capture has to be
+    # transcoded before upload rather than squeezed through this limit.
+    "video": ("MESSENGER_VIDEO_MAX_MB", 2048),
     "voice": ("MESSENGER_VOICE_MAX_MB", 25),
     "file": ("MESSENGER_FILE_MAX_MB", 50),
 }
@@ -298,6 +320,31 @@ def max_size_for(media_type: str) -> int:
     return media_limits().get(media_type, media_limits()["file"])
 
 
+def max_request_mb() -> float:
+    """The per-request ceiling for the upload route, in megabytes.
+
+    The request guard runs before the route, so if it caps lower than the
+    largest media limit the foundation will accept, the guard wins and the
+    caller gets a generic 413 instead of the specific error the client knows
+    how to present. Deriving both from this one function is what keeps the two
+    from drifting; the override exists for an operator who wants to cap the
+    whole route below the per-type limits, and is only honoured downward.
+    """
+    largest = max(media_limits().values()) / (1024.0 * 1024.0)
+    # A multipart envelope carries field boundaries and the filename alongside
+    # the bytes, so the request is always slightly larger than the payload.
+    ceiling = largest + 8.0
+    raw = os.getenv("MESSENGER_MEDIA_MAX_REQUEST_MB", "")
+    if raw:
+        try:
+            override = float(raw)
+        except (TypeError, ValueError):
+            override = 0.0
+        if 0 < override < ceiling:
+            return override
+    return ceiling
+
+
 def _normalize_mime(mime_type: str) -> str:
     cleaned = str(mime_type or "").split(";", 1)[0].strip().lower()
     return MIME_ALIASES.get(cleaned, cleaned)
@@ -332,6 +379,120 @@ def _extension_for(filename: str, mime_type: str) -> str:
     return DEFAULT_EXTENSION_BY_MIME[mime_type]
 
 
+# Reverse index of the allowlist. Insertion order decides the winner for the two
+# extensions that two entries share ("mp4" and "webm" are both a video and an
+# audio container), which resolves each to its video entry -- the right guess for
+# a file chosen out of a photo library.
+EXTENSION_TO_MIME: dict[str, str] = {}
+for _mime, _entry in ALLOWED_MIME_TYPES.items():
+    for _ext in _entry["extensions"]:
+        EXTENSION_TO_MIME.setdefault(_ext, _mime)
+del _mime, _entry, _ext
+
+
+def media_class_for_mime(mime_type: str) -> str:
+    """Return the media class ("photo"/"video"/"voice"/"file") or "" if unknown."""
+    entry = ALLOWED_MIME_TYPES.get(_normalize_mime(mime_type))
+    return str(entry["media_type"]) if entry else ""
+
+
+def resolve_media_class(filename: str, mime_type: str) -> dict[str, str]:
+    """The one authority that turns (filename, declared MIME) into a media class.
+
+    Type detection is shared; *policy* (size caps, duration caps, which surface
+    accepts which class) stays with the caller. Callers must not re-derive a type
+    from a file extension themselves -- that is how Messenger, posts and Reels
+    each ended up guessing differently about the same bytes.
+
+    Three inputs are consulted rather than one, because no single one is reliable:
+    a picker can report a container spelling the allowlist does not carry, and it
+    can equally report ``application/octet-stream`` for a file whose name says
+    exactly what it is. The extension may correct the MIME only *within the same
+    media class*, so this can never promote a document into a video -- and when it
+    rescues an unrecognised MIME it can only ever land on an already allowlisted
+    type. The declared type is not evidence about the bytes either way; that is
+    what ``sniff_media_class`` checks once the bytes are in hand.
+    """
+    declared = _normalize_mime(mime_type)
+    suffix = Path(sanitize_filename(filename)).suffix.lower().lstrip(".")
+    from_extension = EXTENSION_TO_MIME.get(suffix, "")
+
+    resolved = ""
+    if declared in ALLOWED_MIME_TYPES:
+        declared_class = ALLOWED_MIME_TYPES[declared]["media_type"]
+        if not suffix or suffix in ALLOWED_MIME_TYPES[declared]["extensions"]:
+            resolved = declared
+        elif from_extension and ALLOWED_MIME_TYPES[from_extension]["media_type"] == declared_class:
+            resolved = from_extension
+        else:
+            resolved = declared
+    elif from_extension:
+        resolved = from_extension
+
+    if not resolved:
+        raise MessengerMediaError("unsupported_mime_type", "That file type is not supported for Messenger media.", 415)
+    return {
+        "mime_type": resolved,
+        "media_type": str(ALLOWED_MIME_TYPES[resolved]["media_type"]),
+        "extension": _extension_for(filename, resolved),
+    }
+
+
+# Container signatures, checked against the bytes actually received. This exists
+# so the declared type is not the only thing standing between the allowlist and
+# an executable with a renamed extension. It answers a media *class*, not an
+# exact type: distinguishing video/mp4 from video/quicktime from their headers is
+# not something the pipeline needs, but distinguishing "a movie" from "a
+# Mach-O binary" very much is.
+_MAGIC_SIGNATURES: tuple[tuple[bytes, str], ...] = (
+    (b"\xff\xd8\xff", "photo"),          # JPEG
+    (b"\x89PNG\r\n\x1a\n", "photo"),     # PNG
+    (b"GIF87a", "photo"),
+    (b"GIF89a", "photo"),
+    (b"%PDF-", "file"),                  # PDF
+    (b"PK\x03\x04", "file"),             # zip container: docx/xlsx/pptx
+    (b"\xd0\xcf\x11\xe0", "file"),       # legacy OLE: doc/xls/ppt
+    (b"ID3", "voice"),                   # MP3 with a tag
+    (b"OggS", "voice"),
+    (b"RIFF", "voice"),                  # wav (also avi; not allowlisted)
+)
+
+# Executable and script containers. None of these can be an allowlisted media
+# class, so seeing one means the declared type was a lie.
+_FORBIDDEN_SIGNATURES: tuple[bytes, ...] = (
+    b"MZ",                  # DOS/PE executable
+    b"\x7fELF",             # ELF
+    b"\xcf\xfa\xed\xfe",    # Mach-O 64-bit little endian
+    b"\xce\xfa\xed\xfe",    # Mach-O 32-bit
+    b"\xca\xfe\xba\xbe",    # Mach-O universal / Java class
+    b"#!",                  # shebang script
+)
+
+
+def sniff_media_class(header: bytes) -> str:
+    """Return the media class the leading bytes look like, or "" if undecided.
+
+    "" is not a pass -- it means this check had nothing to say, which is the
+    honest answer for the ISO base-media containers (mp4/m4v/mov/m4a) whose
+    ``ftyp`` box sits at offset 4 and whose brand does not reliably separate
+    audio-only from video. Callers treat "" as "no evidence" and fall back to the
+    allowlist, and treat a *mismatch* as a rejection.
+    """
+    if not header:
+        return ""
+    for signature in _FORBIDDEN_SIGNATURES:
+        if header.startswith(signature):
+            return "forbidden"
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        return ""
+    if len(header) >= 4 and header[:4] == b"\x1a\x45\xdf\xa3":
+        return ""  # Matroska/WebM: video/webm and audio/webm share it
+    for signature, media_class in _MAGIC_SIGNATURES:
+        if header.startswith(signature):
+            return media_class
+    return ""
+
+
 def validate_media_request(data: dict[str, Any]) -> dict[str, Any]:
     try:
         conversation_id = int(data.get("conversation_id") or 0)
@@ -342,10 +503,10 @@ def validate_media_request(data: dict[str, Any]) -> dict[str, Any]:
     media_type = str(data.get("media_type") or "").strip().lower()
     if media_type not in MEDIA_TYPES:
         raise MessengerMediaError("invalid_media_type", "Media type must be photo, video, voice, or file.", 400)
-    mime_type = _normalize_mime(data.get("mime_type") or data.get("content_type") or "")
-    if mime_type not in ALLOWED_MIME_TYPES:
-        raise MessengerMediaError("unsupported_mime_type", "That file type is not supported for Messenger media.", 415)
-    mime_media_type = ALLOWED_MIME_TYPES[mime_type]["media_type"]
+    filename = sanitize_filename(str(data.get("filename") or data.get("original_filename") or "upload"))
+    resolved = resolve_media_class(filename, data.get("mime_type") or data.get("content_type") or "")
+    mime_type = resolved["mime_type"]
+    mime_media_type = resolved["media_type"]
     if media_type != "file" and media_type != mime_media_type:
         raise MessengerMediaError("media_type_mismatch", "The selected file does not match the requested media type.", 415)
     try:
@@ -357,8 +518,8 @@ def validate_media_request(data: dict[str, Any]) -> dict[str, Any]:
     limit = max_size_for(media_type)
     if size_bytes > limit:
         raise MessengerMediaError("file_too_large", _size_message(media_type, limit), 413)
-    filename = sanitize_filename(str(data.get("filename") or data.get("original_filename") or "upload"))
-    extension = _extension_for(filename, mime_type)
+    _reject_overlong_video(mime_media_type, _declared_duration_ms(data))
+    extension = resolved["extension"]
     return {
         "conversation_id": conversation_id,
         "media_type": media_type,
@@ -368,6 +529,37 @@ def validate_media_request(data: dict[str, Any]) -> dict[str, Any]:
         "size_bytes": size_bytes,
         "max_size_bytes": limit,
     }
+
+
+def _declared_duration_ms(data: dict[str, Any]) -> float:
+    """Read a duration out of a request in either unit the clients send."""
+    for key, scale in (("duration_ms", 1.0), ("duration_seconds", 1000.0), ("duration", 1000.0)):
+        raw = data.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            return float(raw) * scale
+        except (TypeError, ValueError):
+            continue
+    return 0.0
+
+
+def _reject_overlong_video(media_type: str, duration_ms: Any) -> None:
+    """Enforce the canonical stored-video duration ceiling.
+
+    Called at /init with the client's declared duration so an over-long file is
+    refused before its bytes are uploaded, and again whenever real metadata
+    arrives. The client's number is a courtesy, not proof -- the authoritative
+    measurement is the one the processing worker probes off the stored file.
+    """
+    if media_type != "video":
+        return
+    if stored_video_policy.exceeds_limit_ms(MESSENGER_VIDEO_SURFACE, duration_ms):
+        raise MessengerMediaError(
+            "video_too_long",
+            stored_video_policy.limit_message(MESSENGER_VIDEO_SURFACE),
+            413,
+        )
 
 
 def _size_message(media_type: str, limit: int) -> str:
@@ -651,12 +843,21 @@ def upload_file(cur: Any, conn: Any, user: dict[str, Any], attachment_id: int, f
     actual_mime = _normalize_mime(getattr(file_storage, "mimetype", "") or expected_mime)
     if actual_mime == "application/octet-stream" and expected_mime in ALLOWED_MIME_TYPES:
         actual_mime = expected_mime
+    # A multipart part may spell the container differently from the /init call
+    # that reserved this row -- an iOS picker reporting video/quicktime at init
+    # and the upload body arriving as video/mp4 is the same movie, and rejecting
+    # it here would reproduce the original failure one step later. Disagreement
+    # *across* media classes is still a refusal.
     if actual_mime and actual_mime != expected_mime:
-        raise MessengerMediaError("mime_type_mismatch", "Uploaded file type does not match the initialized attachment.", 415)
+        expected_class = media_class_for_mime(expected_mime)
+        actual_class = media_class_for_mime(actual_mime)
+        if not expected_class or actual_class != expected_class:
+            raise MessengerMediaError("mime_type_mismatch", "Uploaded file type does not match the initialized attachment.", 415)
     media_type = str(_row_get(row, "media_type", "file") or "file")
     limit = max_size_for(media_type)
     storage_key = str(_row_get(row, "storage_key", "") or "")
     temp_path, size_bytes, checksum = _spool_upload(file_storage, limit)
+    _reject_mismatched_bytes(temp_path, expected_mime)
     provider = "local_private"
     upload_error = ""
     try:
@@ -671,6 +872,7 @@ def upload_file(cur: Any, conn: Any, user: dict[str, Any], attachment_id: int, f
         else:
             _store_local_private(temp_path, storage_key)
         meta = _normalized_metadata(metadata or {})
+        _reject_overlong_video(media_type, meta.get("duration_ms"))
         waveform = meta.get("waveform")
         processing_status = _initial_processing_status(media_type, waveform if isinstance(waveform, list) else None)
         if waveform is not None:
@@ -743,6 +945,31 @@ def _spool_upload(file_storage: Any, limit: int) -> tuple[str, int, str]:
         _delete_temp(handle.name)
         raise MessengerMediaError("empty_file", "Upload file is empty.", 400)
     return handle.name, size, digest.hexdigest()
+
+
+def _reject_mismatched_bytes(temp_path: str, expected_mime: str) -> None:
+    """Refuse bytes that contradict the type the attachment was reserved for.
+
+    This runs on the spooled file rather than on the declared header, so it is
+    the first point in the pipeline that has seen actual evidence. It deletes the
+    spool before raising -- the caller's error path never gets to run for a
+    validation refusal, so leaving it behind would leak a temp file per attempt.
+    """
+    try:
+        with open(temp_path, "rb") as handle:
+            header = handle.read(16)
+    except OSError:
+        return
+    observed = sniff_media_class(header)
+    if not observed:
+        return
+    expected_class = media_class_for_mime(expected_mime)
+    if observed == "forbidden":
+        _delete_temp(temp_path)
+        raise MessengerMediaError("unsafe_file_contents", "That file cannot be sent as a Messenger attachment.", 415)
+    if expected_class and observed != expected_class:
+        _delete_temp(temp_path)
+        raise MessengerMediaError("file_contents_mismatch", "The file contents do not match its type.", 415)
 
 
 def _store_local_private(temp_path: str, storage_key: str) -> None:
@@ -839,6 +1066,7 @@ def complete_upload(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str
     row = _fetch_attachment(cur, attachment_id)
     _require_attachment_access(cur, row, user_id, require_sender=True)
     meta = _normalized_metadata(payload)
+    _reject_overlong_video(str(_row_get(row, "media_type", "file") or "file"), meta.get("duration_ms"))
     processing_status = _initial_processing_status(str(_row_get(row, "media_type", "file") or "file"), meta.get("waveform") if isinstance(meta.get("waveform"), list) else None)
     cur.execute(
         """
@@ -864,6 +1092,237 @@ def complete_upload(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str
     _enqueue_processing_jobs(cur, attachment_id, int(_row_get(row, "conversation_id", 0) or 0), str(_row_get(row, "media_type", "file") or "file"), processing_status)
     conn.commit()
     return ok_response(_attachment_payload(cur, attachment_id, user_id, include_url=False))
+
+
+PROCESSING_JOB_TYPES = {
+    "messenger_photo_thumbnail",
+    "messenger_video_metadata_thumbnail",
+    "messenger_voice_waveform",
+}
+
+THUMBNAIL_MAX_EDGE = 480
+THUMBNAIL_MIME = "image/jpeg"
+
+
+def process_attachment(cur: Any, attachment_id: int, job_type: str) -> dict[str, Any]:
+    """Produce the derived assets an attachment's bubble needs, then mark it ready.
+
+    The three job types this answers to were enqueued from the day the
+    foundation was written and consumed by nothing: the media engine's
+    ``MEDIA_JOB_TYPES`` never listed them, and its dispatcher retires an
+    unrecognised type as *done*. So every photo, video and voice note has been
+    draining its own processing job without producing a thumbnail, a duration or
+    a waveform, leaving ``processing_status`` at ``queued`` forever and the
+    thread with nothing to show but the full asset. That is the black card and
+    most of the slowness.
+
+    Raising is how a genuine failure reaches the worker's retry budget; a
+    *recoverable* absence (no ffmpeg, no bytes yet) returns instead, because
+    retrying it three times and retiring the job would strand the attachment.
+    """
+    ensure_schema(cur)
+    if job_type not in PROCESSING_JOB_TYPES:
+        return {"status": "skipped", "reason": "unknown_job_type"}
+    row = _fetch_attachment(cur, attachment_id)
+    if _row_get(row, "deleted_at"):
+        return {"status": "skipped", "reason": "deleted"}
+    if str(_row_get(row, "upload_status", "")).lower() not in {"uploaded", "attached"}:
+        return {"status": "deferred", "reason": "upload_incomplete"}
+
+    media_type = str(_row_get(row, "media_type", "") or "")
+    source = _local_source_for(row)
+    if not source:
+        return {"status": "deferred", "reason": "bytes_unavailable"}
+
+    temporary = source["temporary"]
+    path = source["path"]
+    try:
+        if media_type == "voice":
+            result = _derive_voice_assets(path)
+        elif media_type == "video":
+            result = _derive_video_assets(cur, row, path)
+        elif media_type == "photo":
+            result = _derive_photo_assets(cur, row, path)
+        else:
+            result = {"status": "skipped", "reason": "no_processing_for_type"}
+    finally:
+        if temporary:
+            _delete_temp(str(path))
+
+    if result.get("status") == "deferred":
+        return result
+
+    updates = result.get("updates") or {}
+    _write_processing_result(cur, attachment_id, updates)
+    return {"status": "processed", "updates": sorted(updates)}
+
+
+def _local_source_for(row: Any) -> dict[str, Any] | None:
+    """Local bytes for an attachment, fetched from object storage if need be.
+
+    Returns ``temporary`` so the caller knows whether deleting the path would
+    destroy the only copy of the upload.
+    """
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    if not storage_key:
+        return None
+    local_path = _local_path(storage_key)
+    if local_path.exists():
+        return {"path": local_path, "temporary": False}
+    client = media_storage.object_client()
+    bucket = os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET")
+    if not client or not bucket:
+        return None
+    handle = tempfile.NamedTemporaryFile(delete=False, prefix="messenger-process-", suffix=".bin")
+    handle.close()
+    try:
+        client.download_file(bucket, storage_key, handle.name)
+    except Exception as exc:
+        _delete_temp(handle.name)
+        logging.warning("MESSENGER_MEDIA_PROCESS_FETCH_FAILED key=%s error=%s", storage_key, exc)
+        return None
+    return {"path": Path(handle.name), "temporary": True}
+
+
+def _write_processing_result(cur: Any, attachment_id: int, updates: dict[str, Any]) -> None:
+    assignments = ["processing_status='ready'", "error_code=''", "error_message=''", "updated_at=?"]
+    params: list[Any] = [now_iso()]
+    for column in ("thumbnail_key", "duration_ms", "width", "height", "waveform_json"):
+        if column not in updates:
+            continue
+        # COALESCE so a re-run that produced nothing new cannot erase a value a
+        # previous pass, or the client's own metadata, already established.
+        assignments.insert(-1, f"{column}=COALESCE(?, {column})")
+        params.insert(-1, updates[column])
+    cur.execute(
+        f"UPDATE message_attachments SET {', '.join(assignments)} WHERE id=?",
+        (*params, attachment_id),
+    )
+
+
+def _derive_voice_assets(path: Path) -> dict[str, Any]:
+    duration_ms = _probe_duration_ms(path)
+    if duration_ms is None and not shutil.which("ffprobe"):
+        return {"status": "deferred", "reason": "ffprobe_missing"}
+    updates: dict[str, Any] = {}
+    if duration_ms:
+        updates["duration_ms"] = duration_ms
+    return {"status": "processed", "updates": updates}
+
+
+def _derive_video_assets(cur: Any, row: Any, path: Path) -> dict[str, Any]:
+    if not shutil.which("ffprobe") or not shutil.which("ffmpeg"):
+        return {"status": "deferred", "reason": "ffmpeg_missing"}
+    updates: dict[str, Any] = {}
+    duration_ms = _probe_duration_ms(path)
+    if duration_ms:
+        updates["duration_ms"] = duration_ms
+    dimensions = _probe_dimensions(path)
+    if dimensions:
+        updates["width"], updates["height"] = dimensions
+    poster = _extract_video_poster(path, duration_ms)
+    if poster:
+        key = _store_derived_thumbnail(row, poster)
+        if key:
+            updates["thumbnail_key"] = key
+    return {"status": "processed", "updates": updates}
+
+
+def _derive_photo_assets(cur: Any, row: Any, path: Path) -> dict[str, Any]:
+    if not shutil.which("ffmpeg"):
+        return {"status": "deferred", "reason": "ffmpeg_missing"}
+    updates: dict[str, Any] = {}
+    dimensions = _probe_dimensions(path)
+    if dimensions:
+        updates["width"], updates["height"] = dimensions
+    thumbnail = _scale_image(path)
+    if thumbnail:
+        key = _store_derived_thumbnail(row, thumbnail)
+        if key:
+            updates["thumbnail_key"] = key
+    return {"status": "processed", "updates": updates}
+
+
+def _store_derived_thumbnail(row: Any, temp_path: str) -> str:
+    """Put a generated thumbnail beside its source, under the same storage authority."""
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    if not storage_key:
+        _delete_temp(temp_path)
+        return ""
+    key = f"{storage_key.rsplit('.', 1)[0]}-thumb.jpg"
+    if str(_row_get(row, "signed_url_strategy", "") or "").lower() in {"r2", "s3"}:
+        uploaded, error = _upload_private_object(temp_path, key, THUMBNAIL_MIME)
+        if uploaded:
+            _delete_temp(temp_path)
+            return key
+        logging.warning("MESSENGER_MEDIA_THUMBNAIL_UPLOAD_FALLBACK key=%s error=%s", key, error)
+    _store_local_private(temp_path, key)
+    return key
+
+
+def _ffprobe_value(path: Path, entry: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", entry, "-of", "default=nw=1:nk=1", str(path)],
+            capture_output=True, text=True, timeout=45, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return completed.stdout.strip() if completed.returncode == 0 else ""
+
+
+def _probe_duration_ms(path: Path) -> int | None:
+    raw = _ffprobe_value(path, "format=duration")
+    if not raw:
+        return None
+    try:
+        seconds = float(raw.splitlines()[0])
+    except (TypeError, ValueError, IndexError):
+        return None
+    return int(seconds * 1000) if seconds > 0 else None
+
+
+def _probe_dimensions(path: Path) -> tuple[int, int] | None:
+    raw = _ffprobe_value(path, "stream=width,height")
+    values = [line.strip() for line in raw.splitlines() if line.strip().isdigit()]
+    if len(values) < 2:
+        return None
+    width, height = int(values[0]), int(values[1])
+    return (width, height) if width > 0 and height > 0 else None
+
+
+def _extract_video_poster(path: Path, duration_ms: int | None) -> str:
+    # One second in, not zero: the first frame of a phone recording is very often
+    # the black frame the sensor emits before exposure settles, which is the
+    # "black rectangle" this poster exists to prevent.
+    offset = 1.0
+    if duration_ms and duration_ms < 2000:
+        offset = max(0.0, (duration_ms / 1000.0) / 2)
+    return _run_ffmpeg_thumbnail(["-ss", f"{offset:.2f}", "-i", str(path), "-frames:v", "1"])
+
+
+def _scale_image(path: Path) -> str:
+    return _run_ffmpeg_thumbnail(["-i", str(path), "-frames:v", "1"])
+
+
+def _run_ffmpeg_thumbnail(source_args: list[str]) -> str:
+    handle = tempfile.NamedTemporaryFile(delete=False, prefix="messenger-thumb-", suffix=".jpg")
+    handle.close()
+    command = [
+        "ffmpeg", "-y", "-loglevel", "error", *source_args,
+        "-vf", f"scale='min({THUMBNAIL_MAX_EDGE},iw)':-2",
+        "-f", "image2", handle.name,
+    ]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=120, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        _delete_temp(handle.name)
+        logging.warning("MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FAILED error=%s", exc)
+        return ""
+    if completed.returncode != 0 or not Path(handle.name).exists() or Path(handle.name).stat().st_size == 0:
+        _delete_temp(handle.name)
+        return ""
+    return handle.name
 
 
 def attach_to_message(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str, Any]) -> tuple[dict[str, Any], int]:
@@ -978,6 +1437,12 @@ def _attachment_payload(cur: Any, attachment_id: int, user_id: int, include_url:
         "signed_url_strategy": _row_get(row, "signed_url_strategy") or "private",
         "download_url": f"/api/messages/media/{attachment_id}/download",
     }
+    # Advertised only once the preview actually exists. A URL offered before the
+    # pipeline has run would make every bubble in a fresh thread fetch, 404, and
+    # then fall back to the full asset -- the client must be able to tell "no
+    # preview yet" from "preview here" without paying a request to find out.
+    if _row_get(row, "thumbnail_key"):
+        payload["thumbnail_url"] = f"/api/messages/media/{attachment_id}/thumbnail"
     waveform = _row_get(row, "waveform_json")
     if waveform:
         try:
@@ -1129,3 +1594,57 @@ def attachment_download_target(cur: Any, user: dict[str, Any], attachment_id: in
             "filename": filename, "disposition": disposition,
         }
     raise MessengerMediaError("file_not_available", "Attachment file is temporarily unavailable.", 404)
+
+
+def attachment_thumbnail_target(cur: Any, user: dict[str, Any], attachment_id: int) -> dict[str, Any]:
+    """Resolve an authorized attachment to its derived preview image.
+
+    This never falls back to the original asset. A thread that renders fifty
+    bubbles asks for fifty thumbnails, and answering one of them with the full
+    video would download gigabytes to paint a card a few hundred pixels
+    wide -- which is the performance defect this route exists to remove, so
+    serving the original "just this once" would reintroduce it silently. When
+    there is no thumbnail yet the honest answer is 404, and the client shows a
+    placeholder and keeps the ``processing_status`` it already has.
+
+    The bytes are always the JPEG we produced ourselves, so the MIME type is
+    fixed rather than read from the row: the thumbnail's type is a property of
+    the pipeline, not of whatever the sender uploaded, and deriving it from the
+    row would let a document's type ride out on an image response.
+    """
+    user_id = int(user.get("user_id") or user.get("id") or 0)
+    row = _fetch_attachment(cur, attachment_id)
+    _require_attachment_access(cur, row, user_id, require_sender=False)
+    thumbnail_key = str(_row_get(row, "thumbnail_key", "") or "")
+    if not thumbnail_key:
+        raise MessengerMediaError("thumbnail_not_available", "No preview has been generated for this attachment.", 404)
+    local_path = _local_path(thumbnail_key)
+    if local_path.exists():
+        return {"kind": "local", "path": local_path, "mime_type": THUMBNAIL_MIME}
+    signed_url = _signed_thumbnail_url(row, thumbnail_key)
+    if signed_url:
+        return {"kind": "signed_redirect", "url": signed_url, "mime_type": THUMBNAIL_MIME}
+    raise MessengerMediaError("thumbnail_not_available", "Preview is temporarily unavailable.", 404)
+
+
+def _signed_thumbnail_url(row: Any, thumbnail_key: str) -> str:
+    if str(_row_get(row, "signed_url_strategy", "") or "") == "private_local_endpoint":
+        return ""
+    try:
+        client = media_storage.object_client()
+        if not client:
+            return ""
+        return client.generate_presigned_url(
+            "get_object",
+            Params={
+                "Bucket": os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"),
+                "Key": thumbnail_key,
+                "ResponseContentType": THUMBNAIL_MIME,
+            },
+            ExpiresIn=SIGNED_URL_TTL_SECONDS,
+        )
+    except Exception as exc:
+        logging.warning(
+            "MESSENGER_MEDIA_THUMBNAIL_URL_FAILED attachment_id=%s error=%s", _row_get(row, "id", ""), exc
+        )
+        return ""

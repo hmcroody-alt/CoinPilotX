@@ -544,7 +544,10 @@
       "voiceSent": "音声メッセージを送信しました。",
       "voiceUnavailable": "音声メッセージをご利用いただけません",
       "voiceUnavailableTitle": "音声メッセージをご利用いただけません",
-      "yourMessage": "あなたのメッセージ"
+      "yourMessage": "あなたのメッセージ",
+      "openDocument": "タップして開く",
+      "openingDocument": "開いています…",
+      "a11yOpensDocument": "ドキュメントビューアで開きます"
     },
     "group": {
       "createGroup": "グループを作成",

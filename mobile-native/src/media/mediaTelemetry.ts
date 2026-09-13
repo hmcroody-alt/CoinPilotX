@@ -37,7 +37,9 @@ export type MediaEventName =
   | "MEDIA_CACHE_EVICTED"
   | "MEDIA_RENDER_FAILED"
   | "MEDIA_SAVE_SUCCEEDED"
-  | "MEDIA_SAVE_FAILED";
+  | "MEDIA_SAVE_FAILED"
+  | "MEDIA_OPENED"
+  | "MEDIA_OPEN_FAILED";
 
 /**
  * A closed vocabulary. Callers pick a code; they do not pass `error.message`,

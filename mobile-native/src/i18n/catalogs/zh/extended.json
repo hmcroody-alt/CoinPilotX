@@ -544,7 +544,10 @@
       "voiceSent": "语音消息已发送。",
       "voiceUnavailable": "语音消息不可用",
       "voiceUnavailableTitle": "语音消息不可用",
-      "yourMessage": "你的消息"
+      "yourMessage": "你的消息",
+      "openDocument": "点击打开",
+      "openingDocument": "正在打开…",
+      "a11yOpensDocument": "在您的文档查看器中打开"
     },
     "group": {
       "createGroup": "创建群聊",

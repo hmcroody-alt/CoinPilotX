@@ -544,7 +544,10 @@
       "voiceSent": "음성 메시지를 보냈어요.",
       "voiceUnavailable": "음성 메시지를 사용할 수 없어요",
       "voiceUnavailableTitle": "음성 메시지를 사용할 수 없어요",
-      "yourMessage": "내 메시지"
+      "yourMessage": "내 메시지",
+      "openDocument": "탭하여 열기",
+      "openingDocument": "여는 중…",
+      "a11yOpensDocument": "문서 보기 앱에서 열립니다"
     },
     "group": {
       "createGroup": "그룹 만들기",

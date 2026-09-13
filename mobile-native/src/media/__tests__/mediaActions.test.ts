@@ -33,7 +33,7 @@ import { MediaDownloadError, downloadMedia } from "../mediaDownloader";
 import { sharePulseObject } from "../../sharing/nativeShare";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
-import { MEDIA_ACTION_ORDER, saveMediaToGallery, shareMedia } from "../mediaActions";
+import { MEDIA_ACTION_ORDER, openDocument, saveMediaToGallery, shareMedia } from "../mediaActions";
 
 const mockDownloadMedia = downloadMedia as jest.MockedFunction<typeof downloadMedia>;
 const mockSharePulseObject = sharePulseObject as jest.MockedFunction<typeof sharePulseObject>;
@@ -144,6 +144,100 @@ describe("shareMedia", () => {
   it("falls back to the link when the platform has no share sheet for files", async () => {
     mockSharing.isAvailableAsync.mockResolvedValue(false);
     await expect(shareMedia(PHOTO)).resolves.toEqual({ status: "shared", mode: "link" });
+  });
+});
+
+describe("openDocument", () => {
+  const PDF = {
+    url: "https://pulsesoc.com/api/messages/media/44/download",
+    mediaId: 44,
+    mimeType: "application/pdf",
+    surface: "messenger",
+    title: "contract.pdf"
+  };
+
+  beforeEach(() => {
+    mockDownloadMedia.mockResolvedValue({
+      key: "id:44",
+      fileUri: "file:///cache/pulsesoc-media/u1/contract.pdf",
+      bytes: 91_233,
+      mimeType: "application/pdf",
+      createdAt: Date.now(),
+      lastAccessAt: Date.now()
+    });
+  });
+
+  it("opens the downloaded file, which is the whole point of the tap", async () => {
+    await expect(openDocument(PDF)).resolves.toEqual({ status: "opened" });
+    expect(mockSharing.shareAsync).toHaveBeenCalledWith(
+      "file:///cache/pulsesoc-media/u1/contract.pdf",
+      expect.objectContaining({ mimeType: "application/pdf" })
+    );
+  });
+
+  it("asks for the document's exact UTI, because public.data opens nothing on iOS", async () => {
+    await openDocument(PDF);
+    expect(mockSharing.shareAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ UTI: "com.adobe.pdf" }));
+  });
+
+  it("knows the Office types too, not just PDF", async () => {
+    const docx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    mockDownloadMedia.mockResolvedValue({
+      key: "id:45",
+      fileUri: "file:///cache/pulsesoc-media/u1/brief.docx",
+      bytes: 2048,
+      mimeType: docx,
+      createdAt: Date.now(),
+      lastAccessAt: Date.now()
+    });
+    await openDocument({ ...PDF, mediaId: 45, mimeType: docx });
+    expect(mockSharing.shareAsync).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ UTI: "org.openxmlformats.wordprocessingml.document" })
+    );
+  });
+
+  it("tolerates a charset on the declared type", async () => {
+    mockDownloadMedia.mockResolvedValue({
+      key: "id:46",
+      fileUri: "file:///cache/pulsesoc-media/u1/notes.txt",
+      bytes: 12,
+      mimeType: "text/plain; charset=utf-8",
+      createdAt: Date.now(),
+      lastAccessAt: Date.now()
+    });
+    await openDocument({ ...PDF, mediaId: 46, mimeType: "text/plain; charset=utf-8" });
+    expect(mockSharing.shareAsync).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ UTI: "public.plain-text" }));
+  });
+
+  it("reports a real failure instead of substituting a share sheet for a link", async () => {
+    // The user asked to read this file. Handing them a URL their recipient would
+    // hit a login wall on is a silent substitution, not a fallback.
+    mockDownloadMedia.mockRejectedValue(new MediaDownloadError("network", "offline"));
+    const result = await openDocument({ ...PDF, sourceUrl: "https://pulsesoc.com/p/9" } as never);
+    expect(result).toMatchObject({ status: "failed", reason: "network" });
+    expect(mockSharePulseObject).not.toHaveBeenCalled();
+    expect(mockSharing.shareAsync).not.toHaveBeenCalled();
+  });
+
+  it("says so when the device has no viewer at all, rather than failing silently", async () => {
+    mockSharing.isAvailableAsync.mockResolvedValue(false);
+    const result = await openDocument(PDF);
+    expect(result.status).toBe("unsupported");
+    expect(mockDownloadMedia).not.toHaveBeenCalled();
+  });
+
+  it("never puts a URL in a user-facing message", async () => {
+    mockDownloadMedia.mockRejectedValue(new MediaDownloadError("forbidden", PDF.url));
+    const result = (await openDocument(PDF)) as { message: string };
+    expect(result.message).not.toContain("http");
+  });
+
+  it("downloads through the shared cache, so opening twice costs one transfer", async () => {
+    await openDocument(PDF);
+    expect(mockDownloadMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaId: 44, kind: "file", surface: "messenger" })
+    );
   });
 });
 

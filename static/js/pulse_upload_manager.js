@@ -115,6 +115,36 @@
     }
   }
 
+  /**
+   * Measures a chosen video's duration so the server can refuse an over-long clip
+   * before any bytes move. It lives here rather than in each composer because every
+   * web upload surface funnels through this module -- a composer that forgot to
+   * declare the field would be a silently unenforced surface.
+   */
+  function videoDurationMs(file, type) {
+    if (!isVideoFile(file, type)) return Promise.resolve(0);
+    return new Promise((resolve) => {
+      let settled = false;
+      const el = document.createElement("video");
+      const url = URL.createObjectURL(file);
+      const done = (ms) => {
+        if (settled) return;
+        settled = true;
+        URL.revokeObjectURL(url);
+        el.removeAttribute("src");
+        resolve(ms);
+      };
+      el.preload = "metadata";
+      el.onloadedmetadata = () => done(Number.isFinite(el.duration) ? Math.round(el.duration * 1000) : 0);
+      el.onerror = () => done(0);
+      // A container the browser cannot demux may fire neither event, and an
+      // unresolved probe would hang publish forever. Zero means unmeasured, which
+      // the server treats as "no duration claim" rather than a rejection.
+      window.setTimeout(() => done(0), 4000);
+      el.src = url;
+    });
+  }
+
   function shouldUseDirectMux(file, type, opts) {
     if (!isVideoFile(file, type)) return false;
     if (opts.directMux === false || opts.disableDirectMux) return false;
@@ -142,6 +172,10 @@
             size: Number(file.size || 0),
             context_type: fieldFromForm(form, "context_type", opts.contextType || "pulse_video"),
             context_id: fieldFromForm(form, "context_id", opts.contextId || "direct_mux"),
+            // Milliseconds, the unit HTMLMediaElement reports. This route hands back
+            // a Mux upload URL, so it is the last place the server can refuse an
+            // over-long video before gigabytes cross the wire.
+            duration_ms: Number(fieldFromForm(form, "duration_ms", 0)) || 0,
             origin: window.location.origin,
           }),
         });
@@ -222,13 +256,24 @@
     locks.set(key, true);
     const root = findProgressRoot(opts.progressTarget);
     const type = file.type || opts.mediaType || "";
+    setButtonDisabled(opts.button, true, "Uploading...");
+    render(root, { stage: "starting", percent: 1, message: textFor("starting", 1, type), type });
+    // The duration probe is asynchronous, so the transport starts once it settles.
+    // A failed probe is not a failed upload: it declares nothing and the server
+    // falls back to its size ceiling.
+    return videoDurationMs(file, type).then(
+      (durationMs) => sendUpload(opts, file, key, root, type, durationMs),
+      () => sendUpload(opts, file, key, root, type, 0)
+    );
+  }
+
+  function sendUpload(opts, file, key, root, type, durationMs) {
     const form = opts.formData || new FormData();
     if (!opts.formData) {
       form.append(opts.fileField || "file", file, opts.filename || file.name || (type.startsWith("video") ? "pulse-video.webm" : "pulse-image.jpg"));
       Object.entries(opts.fields || {}).forEach(([name, value]) => form.append(name, value == null ? "" : value));
     }
-    setButtonDisabled(opts.button, true, "Uploading...");
-    render(root, { stage: "starting", percent: 1, message: textFor("starting", 1, type), type });
+    if (durationMs > 0 && !(form.has && form.has("duration_ms"))) form.append("duration_ms", String(durationMs));
     if (shouldUseDirectMux(file, type, opts)) {
       return uploadMuxDirect(opts, file, root, type, key, form);
     }

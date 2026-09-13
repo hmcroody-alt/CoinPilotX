@@ -126,6 +126,35 @@ describe("MediaUploadManager native-file transport", () => {
     expect(ArrayBuffer.isView(sent as ArrayBufferView)).toBe(false);
   });
 
+  it("declares the clip's duration when opening the session, in milliseconds", async () => {
+    // The server refuses an over-long video at session creation. If the client
+    // never declares a duration there is nothing to refuse, and the uploader
+    // discovers the 90-minute rule after uploading a two-hour video.
+    const pulseApi = primePulseApi("single", 5 * 1024 * 1024);
+    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
+
+    await mediaUploadManager.upload({ ...asset, duration: 5_400_000 }, { contextType: "pulse_post" }).promise;
+
+    const create = pulseApi.mock.calls.find(([path, init]) => path === "/api/pulse/media/uploads" && init?.method === "POST");
+    expect(create).toBeDefined();
+    const body = JSON.parse((create as [string, { body: string }])[1].body);
+    expect(body.duration_ms).toBe(5_400_000);
+    expect(body.context_type).toBe("pulse_post");
+  });
+
+  it("omits nothing when the picker reported no duration — it sends zero, not a guess", async () => {
+    // Zero means "unmeasured" to the policy, which is not a violation. Inventing
+    // a value here would be the client deciding a question the server owns.
+    const pulseApi = primePulseApi("single", 5 * 1024 * 1024);
+    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
+
+    await mediaUploadManager.upload(asset, { contextType: "pulse_post" }).promise;
+
+    const create = pulseApi.mock.calls.find(([path, init]) => path === "/api/pulse/media/uploads" && init?.method === "POST");
+    const body = JSON.parse((create as [string, { body: string }])[1].body);
+    expect(body.duration_ms).toBe(0);
+  });
+
   it("slices the native RN blob for multipart parts (zero-copy views)", async () => {
     primePulseApi("multipart", 1024); // 2048 bytes -> 2 parts
     const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");

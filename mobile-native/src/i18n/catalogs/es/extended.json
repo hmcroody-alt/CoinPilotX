@@ -547,7 +547,10 @@
       "voiceSent": "Mensaje de voz enviado.",
       "voiceUnavailable": "Mensaje de voz no disponible",
       "voiceUnavailableTitle": "Mensaje de voz no disponible",
-      "yourMessage": "tu mensaje"
+      "yourMessage": "tu mensaje",
+      "openDocument": "Toca para abrir",
+      "openingDocument": "Abriendo…",
+      "a11yOpensDocument": "Se abre en tu visor de documentos"
     },
     "group": {
       "createGroup": "Crear grupo",

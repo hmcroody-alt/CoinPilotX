@@ -64,7 +64,7 @@ if running_on_railway() and not os.getenv("DATABASE_URL"):
 
 try:
     import bot
-    from services import agora_cloud_recording_service, agora_media_push_service, media_covers, media_service, media_storage, mux_live_service
+    from services import agora_cloud_recording_service, agora_media_push_service, media_covers, media_service, media_storage, messenger_media_foundation, mux_live_service
 except Exception as exc:
     print("CoinPilotX media engine import failed", repr(exc), flush=True)
     traceback.print_exc()
@@ -75,7 +75,7 @@ WORKER_NAME = "coinpilotx-media-engine"
 INTERVAL_SECONDS = max(5, int(os.getenv("MEDIA_WORKER_INTERVAL_SECONDS", "5")))
 BATCH_SIZE = max(1, min(int(os.getenv("MEDIA_WORKER_BATCH_SIZE", "25")), 100))
 MAX_ATTEMPTS = max(1, int(os.getenv("MEDIA_WORKER_MAX_ATTEMPTS", "3")))
-MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"}
+MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"} | messenger_media_foundation.PROCESSING_JOB_TYPES
 REPLAY_WAIT_MAX_AGE_HOURS = max(1, int(os.getenv("MEDIA_WORKER_REPLAY_WAIT_MAX_AGE_HOURS", "72")))
 RUNNING = True
 REPLAYS_READY_TO_PUBLISH: set[int] = set()
@@ -582,11 +582,44 @@ def _fail_or_retry_job(cur, job, error: Exception) -> None:
         )
 
 
+def _process_messenger_attachment_job(cur, job, job_type: str, target_id: int) -> None:
+    """Run a Messenger attachment's derived-asset job.
+
+    Deferral and failure are different answers and must not share a path. A
+    deferral means the inputs are not there yet — the bytes have not landed, or
+    this dyno has no ffmpeg — so the job goes back on the queue *without*
+    spending its error budget, because three fast retries followed by permanent
+    retirement would strand the attachment at ``queued`` forever, which is the
+    exact state this whole handler exists to end.
+    """
+    job_id = int(job.get("id") or 0)
+    if not target_id:
+        _complete_job(cur, job_id, "done")
+        return
+    try:
+        result = messenger_media_foundation.process_attachment(cur, target_id, job_type)
+    except messenger_media_foundation.MessengerMediaError as exc:
+        # A deleted or missing attachment is settled, not retryable.
+        logging.info("MESSENGER_MEDIA_PROCESS_UNAVAILABLE job_id=%s attachment_id=%s error=%s", job_id, target_id, exc.error)
+        _complete_job(cur, job_id, "done", exc.error)
+        return
+    status = str(result.get("status") or "")
+    if status == "deferred":
+        logging.info("MESSENGER_MEDIA_PROCESS_DEFERRED job_id=%s attachment_id=%s reason=%s", job_id, target_id, result.get("reason"))
+        _reschedule(cur, job, seconds=120)
+        return
+    logging.info("MESSENGER_MEDIA_PROCESS_DONE job_id=%s attachment_id=%s status=%s", job_id, target_id, status)
+    _complete_job(cur, job_id, "done")
+
+
 def _process_media_job(cur, job) -> None:
     job_type = str(job.get("job_type") or "")
     target_id = int(job.get("target_id") or 0)
     if job_type == "finalize_live_replay":
         _process_live_replay_job(cur, job)
+        return
+    if job_type in messenger_media_foundation.PROCESSING_JOB_TYPES:
+        _process_messenger_attachment_job(cur, job, job_type, target_id)
         return
     if job_type not in MEDIA_JOB_TYPES:
         _complete_job(cur, int(job.get("id") or 0), "done")

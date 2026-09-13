@@ -149,6 +149,18 @@ export class MediaUploadManager {
     const resumable = (await this.resumableUploads()).find((candidate) =>
       candidate.asset.uri === asset.uri && candidate.asset.size === actualSize && candidate.options.contextType === options.contextType
     );
+    // One body for both call sites. `duration_ms` is the picker's own unit,
+    // forwarded unconverted so the server can refuse an over-long video before it
+    // issues a signed URL -- the alternative is discovering the limit after an
+    // hour of cellular upload.
+    const createBody = JSON.stringify({
+      filename: asset.name,
+      mime_type: asset.mimeType,
+      file_size_bytes: actualSize,
+      context_type: options.contextType,
+      context_id: options.contextId || "native-draft",
+      duration_ms: Math.round(Number(asset.duration || 0))
+    });
     let session: UploadSession;
     if (resumable) {
       try {
@@ -157,10 +169,10 @@ export class MediaUploadManager {
         onProgress?.({ stage: "resuming", percent: 2, message: "Resuming upload." });
       } catch {
         await removePersisted(resumable.session.upload_id);
-        session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: JSON.stringify({ filename: asset.name, mime_type: asset.mimeType, file_size_bytes: actualSize, context_type: options.contextType, context_id: options.contextId || "native-draft" }) });
+        session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: createBody });
       }
     } else {
-      session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: JSON.stringify({ filename: asset.name, mime_type: asset.mimeType, file_size_bytes: actualSize, context_type: options.contextType, context_id: options.contextId || "native-draft" }) });
+      session = await pulseApi<UploadSession & { ok: boolean }>("/api/pulse/media/uploads", { method: "POST", body: createBody });
     }
     onSession(session.upload_id);
     const state: PersistedUpload = { session, asset: { ...asset, size: actualSize }, options, retryCount: resumable?.retryCount || 0, updatedAt: Date.now() };

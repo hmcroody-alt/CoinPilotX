@@ -25,10 +25,25 @@ const PROTECTED_DOWNLOAD_RE = /\/api\/messages\/media\/(\d+)\/download(?:$|[?#])
 /** Renew a little before real expiry so an in-flight load never races it. */
 const RENEW_MARGIN_MS = 60_000;
 
-type AccessEntry = { url: string; expiresAt: number };
+/**
+ * One grant, both URLs.
+ *
+ * The preview and the original are two different objects behind one
+ * authorization decision, so they are granted together and cached together.
+ * Asking for them separately is what the previous renderer did, and because both
+ * requests resolved the same attachment id they came back as the same
+ * `/download` URL: the "thumbnail" was the full asset, and every bubble paid for
+ * two grants to learn that.
+ *
+ * `thumbnailUrl` is empty when the pipeline has not produced a preview yet. That
+ * is a real state, not a missing value — the caller shows a placeholder rather
+ * than substituting the original, which for a 90-minute video would mean
+ * downloading gigabytes to paint a card.
+ */
+type AccessEntry = { url: string; thumbnailUrl: string; expiresAt: number };
 
 const accessCache = new Map<number, AccessEntry>();
-const inflight = new Map<number, Promise<string>>();
+const inflight = new Map<number, Promise<AccessEntry>>();
 
 export function isProtectedMessengerMediaUrl(url?: string | null): boolean {
   return PROTECTED_DOWNLOAD_RE.test(String(url || ""));
@@ -156,7 +171,7 @@ function isExpiredGrant(error: unknown): boolean {
   return errorStatus(error) === 410 || code === "media_grant_expired" || code === "media_token_expired";
 }
 
-export type MessengerMediaGrant = { url: string; attachmentId: number };
+export type MessengerMediaGrant = { url: string; thumbnailUrl: string; attachmentId: number };
 
 /**
  * Request a grant for `canonical`, with exactly ONE bounded recovery attempt.
@@ -174,27 +189,35 @@ export async function grantMessengerMediaAccess(
   canonical: Pick<CanonicalMessengerMediaId, "id" | "alternates">
 ): Promise<MessengerMediaGrant> {
   try {
-    return { url: await resolveMessengerMediaAccessUrl(canonical.id), attachmentId: canonical.id };
+    return { ...(await resolveMessengerMediaAccess(canonical.id)), attachmentId: canonical.id };
   } catch (error) {
     if (isExpiredGrant(error)) {
       invalidateMessengerMediaAccess(canonical.id);
-      return { url: await resolveMessengerMediaAccessUrl(canonical.id), attachmentId: canonical.id };
+      return { ...(await resolveMessengerMediaAccess(canonical.id)), attachmentId: canonical.id };
     }
     const alternate = isMissingMedia(error) ? canonical.alternates[0] || 0 : 0;
     if (!alternate) throw error;
-    return { url: await resolveMessengerMediaAccessUrl(alternate), attachmentId: alternate };
+    return { ...(await resolveMessengerMediaAccess(alternate)), attachmentId: alternate };
   }
 }
 
-async function requestAccessUrl(attachmentId: number): Promise<string> {
-  const response = await pulseApi<{ ok?: boolean; access_url?: string; expires_in?: number }>(
-    `/api/messages/media/${attachmentId}/access`
-  );
+async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
+  const response = await pulseApi<{
+    ok?: boolean;
+    access_url?: string;
+    thumbnail_access_url?: string;
+    expires_in?: number;
+  }>(`/api/messages/media/${attachmentId}/access`);
   const url = String(response.access_url || "");
   if (!url) throw new Error("messenger_media_access_url_missing");
   const ttlMs = Math.max(0, Number(response.expires_in || 0)) * 1000;
-  accessCache.set(attachmentId, { url, expiresAt: Date.now() + ttlMs });
-  return url;
+  const entry: AccessEntry = {
+    url,
+    thumbnailUrl: String(response.thumbnail_access_url || ""),
+    expiresAt: Date.now() + ttlMs
+  };
+  accessCache.set(attachmentId, entry);
+  return entry;
 }
 
 /**
@@ -205,10 +228,12 @@ async function requestAccessUrl(attachmentId: number): Promise<string> {
  * change is that simultaneous media loads stop looking like suspicious
  * concurrent session activity.
  */
-export async function resolveMessengerMediaAccessUrl(attachmentId: number): Promise<string> {
+export async function resolveMessengerMediaAccess(
+  attachmentId: number
+): Promise<{ url: string; thumbnailUrl: string }> {
   if (!Number.isFinite(attachmentId) || attachmentId <= 0) throw new Error("messenger_media_attachment_required");
   const cached = accessCache.get(attachmentId);
-  if (cached && cached.expiresAt - RENEW_MARGIN_MS > Date.now()) return cached.url;
+  if (cached && cached.expiresAt - RENEW_MARGIN_MS > Date.now()) return cached;
   const pending = inflight.get(attachmentId);
   if (pending) return pending;
   const request = requestAccessUrl(attachmentId).finally(() => inflight.delete(attachmentId));
@@ -216,8 +241,19 @@ export async function resolveMessengerMediaAccessUrl(attachmentId: number): Prom
   return request;
 }
 
+/** The original asset's URL. Kept for callers that never show a preview. */
+export async function resolveMessengerMediaAccessUrl(attachmentId: number): Promise<string> {
+  return (await resolveMessengerMediaAccess(attachmentId)).url;
+}
+
 type AccessSnapshot = {
   url: string;
+  /**
+   * The preview's URL, or "" when the pipeline has not produced one. Never a
+   * copy of `url`: a renderer that treats an empty preview as "use the original"
+   * turns a thumbnail slot into a full-asset download.
+   */
+  thumbnailUrl: string;
   loading: boolean;
   failed: boolean;
   /** The canonical id returned a true 404. Retrying will not help. */
@@ -255,6 +291,7 @@ export function useMessengerMediaAccessUrl(
   const unavailableFor = useRef("");
   const [state, setState] = useState<AccessSnapshot>(() => ({
     url: needsGrant ? "" : fallbackUrl,
+    thumbnailUrl: "",
     loading: needsGrant,
     failed: false,
     unavailable: false
@@ -262,21 +299,35 @@ export function useMessengerMediaAccessUrl(
 
   useEffect(() => {
     if (!needsGrant) {
-      setState({ url: fallbackUrl, loading: false, failed: false, unavailable: false });
+      setState({ url: fallbackUrl, thumbnailUrl: "", loading: false, failed: false, unavailable: false });
       return;
     }
     let active = true;
-    setState((previous) => ({ url: previous.url, loading: true, failed: false, unavailable: false }));
+    setState((previous) => ({
+      url: previous.url,
+      thumbnailUrl: previous.thumbnailUrl,
+      loading: true,
+      failed: false,
+      unavailable: false
+    }));
     const alternates = alternateKey ? alternateKey.split(",").map(Number).filter((id) => id > 0) : [];
     grantMessengerMediaAccess({ id: canonicalId, alternates })
       .then((granted) => {
-        if (active) setState({ url: granted.url, loading: false, failed: false, unavailable: false });
+        if (active) {
+          setState({
+            url: granted.url,
+            thumbnailUrl: granted.thumbnailUrl,
+            loading: false,
+            failed: false,
+            unavailable: false
+          });
+        }
       })
       .catch((error) => {
         if (!active) return;
         const gone = isMissingMedia(error);
         if (gone) unavailableFor.current = identityKey;
-        setState({ url: "", loading: false, failed: true, unavailable: gone });
+        setState({ url: "", thumbnailUrl: "", loading: false, failed: true, unavailable: gone });
       });
     return () => {
       active = false;

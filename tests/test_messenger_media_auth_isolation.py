@@ -151,7 +151,17 @@ class PersistentCookieRestorationBoundaryTest(unittest.TestCase):
                 pattern = node.value.args[0].value
         self.assertIsNotNone(pattern, "bot.py no longer defines MEDIA_BYTE_PATH_RE")
         matcher = re.compile(pattern)
-        for path in ["/api/messages/media/67/download", "/api/messages/media/1/download/"]:
+        for path in [
+            "/api/messages/media/67/download",
+            "/api/messages/media/1/download/",
+            # The preview route serves bytes to the same platform image loader
+            # that caused the original sign-outs, and a thread requests many of
+            # them at once -- which is precisely the concurrency that read as
+            # refresh_token_reuse. Omitting it here would reintroduce the
+            # incident through a new door.
+            "/api/messages/media/67/thumbnail",
+            "/api/messages/media/1/thumbnail/",
+        ]:
             self.assertTrue(matcher.match(path), path)
         for path in [
             "/api/messages/media/67",
@@ -175,6 +185,12 @@ class MediaRouteAuthIsolationTest(unittest.TestCase):
         source = ast.get_source_segment(BOT_SOURCE, _function_def("api_messages_media_get"))
         self.assertIn("_messenger_media_viewer", source)
         self.assertNotIn("_messenger_media_user", source)
+
+    def test_thumbnail_route_is_isolated_too(self):
+        source = ast.get_source_segment(BOT_SOURCE, _function_def("api_messages_media_thumbnail"))
+        self.assertIn("_messenger_media_viewer", source)
+        self.assertNotIn("_messenger_media_user", source)
+        self.assertNotIn("api_account_user", source)
 
     def test_viewer_resolver_never_calls_session_mutating_helpers(self):
         called = _called_names(_function_def("_messenger_media_viewer"))

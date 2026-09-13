@@ -16,6 +16,7 @@ from werkzeug.utils import secure_filename
 
 from . import media_covers
 from . import media_storage
+from . import stored_video_policy
 from . import user_context
 
 
@@ -49,7 +50,37 @@ def _comm_v2_limit_mb(ext):
     return float(os.getenv("COMM_V2_VIDEO_MAX_MB", "1024"))
 
 
-def _limit_bytes(ext, context_type=""):
+# A stored video is bounded by two independent things: how long it may run, and
+# how many bytes may cross the wire. Keeping them independent is right -- but
+# they must not contradict each other. The 90-minute surfaces against the old
+# 700 MB video ceiling work out to 1.04 Mbps, and the deployed
+# MEDIA_UPLOAD_MAX_VIDEO_MB=150 works out to 233 kbps: the duration policy would
+# be unreachable at any watchable quality, which is a limit that forbids the
+# feature while appearing to allow it.
+#
+# So the direct-to-storage ceiling is *derived* from the surface's own duration
+# ceiling at a sustainable 720p bitrate, rather than being a second free-floating
+# constant that can drift out of step with the duration table.
+DIRECT_VIDEO_BUDGET_BITS_PER_SECOND = int(float(os.getenv("MEDIA_UPLOAD_VIDEO_BUDGET_MBPS", "3.2")) * 1_000_000)
+
+# Short surfaces would derive a ceiling smaller than what they already allow, and
+# tightening them is not this mission's business.
+DIRECT_VIDEO_FLOOR_BYTES = 350 * 1024 * 1024
+
+
+def direct_video_limit_bytes(context_type=""):
+    """The byte ceiling for a video uploaded straight to object storage.
+
+    Only for the direct-to-storage path. The synchronous POST path keeps its own
+    much smaller ceiling because those bytes pass through the web process, where a
+    2 GB request is a memory and timeout problem rather than a storage one.
+    """
+    seconds = stored_video_policy.max_duration_seconds(context_type)
+    derived = int(seconds * DIRECT_VIDEO_BUDGET_BITS_PER_SECOND / 8)
+    return max(DIRECT_VIDEO_FLOOR_BYTES, derived)
+
+
+def _limit_bytes(ext, context_type="", direct_to_storage=False):
     if str(context_type or "").startswith("pulse_comm_v2"):
         return int(_comm_v2_limit_mb(ext) * 1024 * 1024)
     if ext in IMAGE_EXTS:
@@ -60,6 +91,8 @@ def _limit_bytes(ext, context_type=""):
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_AUDIO_MB", "15")) * 1024 * 1024)
     if ext in FILE_EXTS:
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_FILE_MB", "12")) * 1024 * 1024)
+    if direct_to_storage:
+        return direct_video_limit_bytes(context_type)
     if str(context_type or "") == "pulse_status":
         return int(float(os.getenv("MEDIA_UPLOAD_MAX_STATUS_VIDEO_MB", "350")) * 1024 * 1024)
     return int(float(os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "700")) * 1024 * 1024)

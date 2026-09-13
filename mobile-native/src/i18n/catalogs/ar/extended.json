@@ -579,7 +579,10 @@
       "voiceSent": "تم إرسال الرسالة الصوتية.",
       "voiceUnavailable": "الرسالة الصوتية غير متاحة",
       "voiceUnavailableTitle": "الرسالة الصوتية غير متاحة",
-      "yourMessage": "رسالتك"
+      "yourMessage": "رسالتك",
+      "openDocument": "اضغط للفتح",
+      "openingDocument": "جارٍ الفتح…",
+      "a11yOpensDocument": "يفتح في عارض المستندات"
     },
     "group": {
       "createGroup": "إنشاء مجموعة",

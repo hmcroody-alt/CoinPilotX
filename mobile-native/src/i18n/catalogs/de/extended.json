@@ -547,7 +547,10 @@
       "voiceSent": "Sprachnachricht gesendet.",
       "voiceUnavailable": "Sprachnachricht nicht verfügbar",
       "voiceUnavailableTitle": "Sprachnachricht nicht verfügbar",
-      "yourMessage": "deine Nachricht"
+      "yourMessage": "deine Nachricht",
+      "openDocument": "Zum Öffnen tippen",
+      "openingDocument": "Wird geöffnet…",
+      "a11yOpensDocument": "Wird im Dokumentenbetrachter geöffnet"
     },
     "group": {
       "createGroup": "Gruppe erstellen",

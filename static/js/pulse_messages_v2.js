@@ -106,12 +106,28 @@
     heif: "image/heif",
     mp4: "video/mp4",
     m4v: "video/mp4",
+    mov: "video/quicktime",
+    qt: "video/quicktime",
     webm: "video/webm",
     mp3: "audio/mpeg",
     m4a: "audio/mp4",
     wav: "audio/wav",
     ogg: "audio/ogg",
     oga: "audio/ogg",
+    // Documents. These mirror services/messenger_media_foundation.ALLOWED_MIME_TYPES;
+    // the composer refused every one of them while the backend accepted them, so
+    // a web user could not send the PDF a phone user could.
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    doc: "application/msword",
+    xls: "application/vnd.ms-excel",
+    ppt: "application/vnd.ms-powerpoint",
+    txt: "text/plain",
+    log: "text/plain",
+    md: "text/plain",
+    csv: "text/csv",
   };
   const MEDIA_FOUNDATION_MIMES = new Set(Object.values(MEDIA_FOUNDATION_MIME_BY_EXT));
   const CONTROL_THEME_OPTIONS = [

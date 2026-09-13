@@ -29,6 +29,7 @@ import {
   isProtectedMessengerMediaUrl,
   resetMessengerMediaAccess,
   resolveCanonicalMessengerMediaId,
+  resolveMessengerMediaAccess,
   resolveMessengerMediaAccessUrl
 } from "../messengerMediaAccess";
 
@@ -356,5 +357,65 @@ describe("account isolation", () => {
     mockPulseApi.mockResolvedValueOnce(grant(42, "user-b"));
     resetMessengerMediaAccess();
     await expect(resolveMessengerMediaAccessUrl(42)).resolves.toContain("mt=user-b");
+  });
+});
+
+describe("the preview and the original are different objects", () => {
+  /**
+   * The defect: the renderer called the access hook twice with the same
+   * identity, once for the bubble's thumbnail and once for the full asset. Both
+   * resolved the same attachment id, so both came back as the same `/download`
+   * URL. "Thumbnail-first" therefore downloaded every original at full size,
+   * and a video bubble handed an entire movie to an image loader. One grant now
+   * carries both URLs, and they are not the same URL.
+   */
+  function grantWithPreview(attachmentId: number, token = "tok") {
+    return {
+      ...grant(attachmentId, token),
+      thumbnail_access_url: `/api/messages/media/${attachmentId}/thumbnail?mt=${token}`
+    };
+  }
+
+  it("one grant carries both URLs and they address different routes", async () => {
+    mockPulseApi.mockResolvedValue(grantWithPreview(42));
+    const access = await resolveMessengerMediaAccess(42);
+    expect(access.url).toContain("/download");
+    expect(access.thumbnailUrl).toContain("/thumbnail");
+    expect(access.thumbnailUrl).not.toBe(access.url);
+    // Painting the bubble and opening the viewer cost one request between them.
+    expect(mockPulseApi).toHaveBeenCalledTimes(1);
+  });
+
+  it("an unprocessed attachment reports no preview rather than the original", async () => {
+    // The server omits the field until the pipeline has produced a preview.
+    // Substituting `url` here is exactly how a thumbnail slot becomes a
+    // full-asset download, so the absence has to survive as an absence.
+    mockPulseApi.mockResolvedValue(grant(43));
+    const access = await resolveMessengerMediaAccess(43);
+    expect(access.url).toContain("/download");
+    expect(access.thumbnailUrl).toBe("");
+  });
+
+  it("a re-granted identity picks up a preview that did not exist before", async () => {
+    // Processing finishes after the message arrives, so the first grant of a
+    // just-sent video legitimately has no preview and a later one does.
+    mockPulseApi.mockResolvedValueOnce(grant(44, "first"));
+    expect((await resolveMessengerMediaAccess(44)).thumbnailUrl).toBe("");
+
+    resetMessengerMediaAccess();
+    mockPulseApi.mockResolvedValueOnce(grantWithPreview(44, "second"));
+    expect((await resolveMessengerMediaAccess(44)).thumbnailUrl).toContain("/thumbnail?mt=second");
+  });
+
+  it("the recovery path carries the preview through to the corrected identity", async () => {
+    // A stale transport id 404s and the proven alternate is used instead. The
+    // corrected grant must not lose its preview on the way out.
+    mockPulseApi
+      .mockRejectedValueOnce(new FakeApiError(404, "attachment_not_found"))
+      .mockResolvedValueOnce(grantWithPreview(33));
+    await expect(grantMessengerMediaAccess({ id: 41, alternates: [33] })).resolves.toMatchObject({
+      attachmentId: 33,
+      thumbnailUrl: "/api/messages/media/33/thumbnail?mt=tok"
+    });
   });
 });

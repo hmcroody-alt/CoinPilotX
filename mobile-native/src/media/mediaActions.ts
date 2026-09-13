@@ -72,6 +72,11 @@ export type MediaShareResult =
   | { status: "shared"; mode: "file" | "link" }
   | { status: "failed"; reason: MediaFailureReason; message: string };
 
+export type MediaOpenResult =
+  | { status: "opened" }
+  | { status: "unsupported"; message: string }
+  | { status: "failed"; reason: MediaFailureReason; message: string };
+
 /** Photos accepts pictures and movies. Audio and documents go to the share sheet. */
 const SAVEABLE_KINDS = new Set<MediaDownloadKind>(["image", "video"]);
 
@@ -225,12 +230,78 @@ export async function shareMedia(
 }
 
 /**
- * iOS wants a Uniform Type Identifier. Passing the broad family type rather than
- * a specific one (`public.image`, not `public.jpeg`) lets the share sheet offer
- * every app that handles pictures, which is what the user expects.
+ * Open a document in the OS document viewer.
+ *
+ * Distinct from `shareMedia` in one way that matters: there is no link
+ * fallback. The user asked to read this file, and answering with a share sheet
+ * for a URL their recipient would hit a login wall on is not the same thing —
+ * a real error is more useful than a silent substitution.
+ *
+ * The bytes come through `downloadMedia`, which is where the media access grant,
+ * the retry/backoff and the on-disk cache already live. Opening the same
+ * attachment twice costs one download.
  */
+export async function openDocument(target: MediaActionTarget): Promise<MediaOpenResult> {
+  const available = await Sharing.isAvailableAsync().catch(() => false);
+  if (!available) {
+    return { status: "unsupported", message: "This device cannot open documents from PulseSoc." };
+  }
+
+  let fileUri: string;
+  let mimeType: string | undefined;
+  try {
+    const entry = await downloadMedia({
+      url: target.url,
+      mediaId: target.mediaId,
+      mimeType: target.mimeType,
+      kind: "file",
+      surface: target.surface,
+      expectedBytes: target.expectedBytes
+    });
+    fileUri = entry.fileUri;
+    mimeType = entry.mimeType || target.mimeType;
+  } catch (error) {
+    const reason = error instanceof MediaDownloadError ? error.reason : mediaFailureReason(error);
+    trackMediaEvent({ name: "MEDIA_OPEN_FAILED", kind: "file", surface: target.surface, reason });
+    return { status: "failed", reason, message: downloadMessageFor(reason) };
+  }
+
+  try {
+    await Sharing.shareAsync(fileUri, {
+      mimeType,
+      UTI: utiFor("file", mimeType),
+      dialogTitle: target.title || "Open document"
+    });
+  } catch (error) {
+    const reason = mediaFailureReason(error);
+    trackMediaEvent({ name: "MEDIA_OPEN_FAILED", kind: "file", surface: target.surface, reason });
+    return { status: "failed", reason, message: "PulseSoc could not open this document." };
+  }
+  trackMediaEvent({ name: "MEDIA_OPENED", kind: "file", surface: target.surface });
+  return { status: "opened" };
+}
+
+/**
+ * Documents need their *exact* UTI or iOS offers nothing that can read them —
+ * `public.data` produces a sheet with no viewer. Media is the opposite: the
+ * broad family type (`public.image`, not `public.jpeg`) lets every picture app
+ * appear, which is what a user sharing a photo expects.
+ */
+const DOCUMENT_UTI: Record<string, string> = {
+  "application/pdf": "com.adobe.pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "org.openxmlformats.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "org.openxmlformats.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": "org.openxmlformats.presentationml.presentation",
+  "application/msword": "com.microsoft.word.doc",
+  "application/vnd.ms-excel": "com.microsoft.excel.xls",
+  "application/vnd.ms-powerpoint": "com.microsoft.powerpoint.ppt",
+  "text/plain": "public.plain-text",
+  "text/csv": "public.comma-separated-values-text"
+};
+
 function utiFor(kind: MediaDownloadKind, mimeType?: string): string | undefined {
-  if (mimeType === "application/pdf") return "com.adobe.pdf";
+  const documentUti = DOCUMENT_UTI[String(mimeType || "").split(";")[0].trim().toLowerCase()];
+  if (documentUti) return documentUti;
   switch (kind) {
     case "image":
       return "public.image";

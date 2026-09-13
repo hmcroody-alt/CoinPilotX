@@ -13,7 +13,7 @@ from pathlib import PurePosixPath
 
 from werkzeug.utils import secure_filename
 
-from . import media_service, media_storage, user_context
+from . import media_service, media_storage, stored_video_policy, user_context
 
 
 SESSION_TTL_SECONDS = int(os.getenv("MEDIA_UPLOAD_SESSION_TTL_SECONDS", "3600"))
@@ -79,7 +79,7 @@ def _extension(filename):
     return safe.rsplit(".", 1)[-1].lower() if "." in safe else ""
 
 
-def _validate(filename, mime_type, file_size, context_type):
+def _validate(filename, mime_type, file_size, context_type, duration_ms=0):
     safe = secure_filename(filename or "")[:220]
     ext = _extension(safe)
     declared = str(mime_type or "").split(";", 1)[0].strip().lower()
@@ -91,7 +91,12 @@ def _validate(filename, mime_type, file_size, context_type):
         return None, "mime_mismatch"
     if int(file_size or 0) <= 0:
         return None, "invalid_size"
-    if int(file_size) > media_service._limit_bytes(ext, context_type):
+    # Refused before a single signed URL is issued, so an over-long video costs
+    # the uploader one request instead of an hour of bandwidth followed by a
+    # rejection. An absent duration is not a refusal -- see stored_video_policy.
+    if media_type == "video" and stored_video_policy.exceeds_limit_ms(context_type, duration_ms):
+        return None, "video_too_long"
+    if int(file_size) > media_service._limit_bytes(ext, context_type, direct_to_storage=True):
         return None, "file_too_large"
     return {"filename": safe, "ext": ext, "mime_type": declared or expected or "application/octet-stream", "media_type": media_type}, ""
 
@@ -123,10 +128,16 @@ def _public(row):
 def create_session(user_id, payload):
     if media_storage.provider() not in {"r2", "s3"} or not media_storage.storage_status().get("configured"):
         return {"ok": False, "error": "storage_not_configured", "message": "Direct media storage is unavailable."}, 503
-    active, error = _validate(payload.get("filename"), payload.get("mime_type"), payload.get("file_size_bytes"), payload.get("context_type") or "pulse_post")
+    context_type = payload.get("context_type") or "pulse_post"
+    active, error = _validate(payload.get("filename"), payload.get("mime_type"), payload.get("file_size_bytes"), context_type, payload.get("duration_ms"))
     if error:
-        messages = {"file_too_large": "Media is too large.", "mime_mismatch": "Media type does not match the file.", "invalid_size": "Media size is required."}
-        return {"ok": False, "error": error, "message": messages.get(error, "That media type is not supported.")}, 413 if error == "file_too_large" else 400
+        messages = {
+            "file_too_large": "Media is too large.",
+            "mime_mismatch": "Media type does not match the file.",
+            "invalid_size": "Media size is required.",
+            "video_too_long": stored_video_policy.limit_message(context_type),
+        }
+        return {"ok": False, "error": error, "message": messages.get(error, "That media type is not supported.")}, 413 if error in {"file_too_large", "video_too_long"} else 400
     if media_service.rate_limited(user_id, active["media_type"]):
         return {"ok": False, "error": "rate_limited", "message": "Uploads are temporarily limited. Please wait a moment."}, 429
     upload_id = secrets.token_urlsafe(24)

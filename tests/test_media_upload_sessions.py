@@ -3,6 +3,7 @@ from io import BytesIO
 
 import pytest
 
+from services import media_service
 from services import media_upload_sessions as uploads
 
 
@@ -69,8 +70,27 @@ def upload_env(tmp_path, monkeypatch):
 def test_rejects_mime_mismatch_and_oversize(upload_env):
     result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "image/jpeg", "file_size_bytes": 100, "context_type": "pulse_post"})
     assert status == 400 and result["error"] == "mime_mismatch"
-    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 701 * 1024 * 1024, "context_type": "pulse_post"})
+    # Derived from the surface's duration ceiling rather than pinned to a literal:
+    # a 90-minute post needs roughly 2 GB at a watchable bitrate, so hard-coding
+    # the old 700 MB here would re-pin the limit that made 90 minutes impossible.
+    over = media_service.direct_video_limit_bytes("pulse_post") + 1
+    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": over, "context_type": "pulse_post"})
     assert status == 413 and result["error"] == "file_too_large"
+
+
+def test_rejects_a_video_longer_than_the_surface_allows(upload_env):
+    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 50 * 1024 * 1024, "context_type": "pulse_post", "duration_ms": 5_401_000})
+    assert status == 413 and result["error"] == "video_too_long"
+    # Refused before the session row exists: no object key burned, nothing to resume.
+    assert "upload_id" not in result
+
+
+def test_accepts_a_ninety_minute_post_at_a_realistic_size(upload_env):
+    result, status = uploads.create_session(7, {"filename": "feature.mp4", "mime_type": "video/mp4", "file_size_bytes": 1500 * 1024 * 1024, "context_type": "pulse_post", "duration_ms": 5_400_000})
+    assert status == 201, result
+    # Multipart is what makes this survivable on a phone: a dropped connection
+    # resumes from the last completed part instead of restarting 1.5 GB.
+    assert result["strategy"] == "multipart"
 
 
 @pytest.mark.parametrize("size_mb", [10, 50, 100, 250, 500])

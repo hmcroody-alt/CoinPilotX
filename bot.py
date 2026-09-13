@@ -328,6 +328,7 @@ from services import (
     media_service,
     media_storage,
     media_upload_sessions,
+    stored_video_policy,
     messenger_media_foundation,
     mux_live_service,
     agora_media_push_service,
@@ -3170,7 +3171,11 @@ def interactive_security_guard():
         if request.path.startswith("/api/pulse/communications/v2/attachments/upload"):
             max_request_mb = float(os.getenv("PULSE_COMM_V2_MAX_REQUEST_MB", os.getenv("COMM_V2_FILE_MAX_MB", "1024")))
         elif request.path == "/api/messages/media/upload":
-            max_request_mb = float(os.getenv("MESSENGER_MEDIA_MAX_REQUEST_MB", os.getenv("MESSENGER_VIDEO_MAX_MB", "200")))
+            # Derived from the foundation's own table rather than re-reading the
+            # env with a second default. A guard that caps lower than the
+            # foundation accepts rejects the upload here, before any route can
+            # produce the specific error the client knows how to show.
+            max_request_mb = messenger_media_foundation.max_request_mb()
         elif request.path == "/api/pulse/media/upload":
             max_request_mb = float(os.getenv("PULSE_MEDIA_MAX_REQUEST_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")))
         max_request_bytes = int(max_request_mb * 1024 * 1024)
@@ -3700,7 +3705,7 @@ def clear_persistent_session_cookie(response):
     return response
 
 
-MEDIA_BYTE_PATH_RE = re.compile(r"^/api/messages/media/\d+/download/?$")
+MEDIA_BYTE_PATH_RE = re.compile(r"^/api/messages/media/\d+/(?:download|thumbnail)/?$")
 
 
 def is_media_byte_delivery_path(path):
@@ -92548,13 +92553,23 @@ def api_messages_media_access(attachment_id):
             user["user_id"],
             MESSENGER_MEDIA_TOKEN_TTL_SECONDS,
         )
-        return jsonify({
+        payload = {
             "ok": True,
             "attachment_id": int(attachment_id),
             "access_url": "/api/messages/media/%d/download?%s=%s" % (int(attachment_id), MESSENGER_MEDIA_TOKEN_ARG, token),
             "expires_in": max(0, expires_at - int(time.time())),
             "attachment": result,
-        }), 200
+        }
+        # The same token, because it already names this one attachment and this
+        # one viewer -- the preview is not a second object to be authorized, it is
+        # the same authorization decision rendered small. Offered only when the
+        # attachment payload proved a preview exists, so the client can tell
+        # "not processed yet" from "here it is" without spending a request.
+        if result.get("thumbnail_url"):
+            payload["thumbnail_access_url"] = "/api/messages/media/%d/thumbnail?%s=%s" % (
+                int(attachment_id), MESSENGER_MEDIA_TOKEN_ARG, token,
+            )
+        return jsonify(payload), 200
     except Exception as exc:
         return _messenger_media_json_error(conn, exc)
 
@@ -92595,6 +92610,48 @@ def api_messages_media_download(attachment_id):
         response.headers["Pragma"] = "no-cache"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        return response
+    except Exception as exc:
+        return _messenger_media_json_error(conn, exc)
+
+
+@webhook_app.route("/api/messages/media/<int:attachment_id>/thumbnail", methods=["GET"])
+def api_messages_media_thumbnail(attachment_id):
+    """Serve the small derived preview for one attachment.
+
+    Separate from /download on purpose. The thumbnail is the only thing a thread
+    needs to paint a bubble, it is a fixed small JPEG, and unlike the original it
+    is safe to cache: the pipeline writes it once and never rewrites it, so a
+    long max-age is honest rather than a bet. /download stays no-store because
+    the original may be a document whose bytes should not persist in a cache.
+    """
+    user, credential, auth_error = _messenger_media_viewer(attachment_id)
+    if auth_error:
+        return auth_error
+    conn = None
+    try:
+        conn, cur = _messenger_media_open_db()
+        target = messenger_media_foundation.attachment_thumbnail_target(cur, user, attachment_id)
+        conn.close()
+        if target.get("kind") == "signed_redirect":
+            response = redirect(target["url"], code=302)
+        else:
+            response = send_file(
+                target["path"],
+                mimetype=target["mime_type"],
+                as_attachment=False,
+                conditional=True,
+                max_age=0,
+            )
+        response.headers["Cache-Control"] = "private, max-age=86400, immutable"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        logging.info(
+            "MESSENGER_MEDIA_THUMBNAIL_SERVED attachment_id=%s user_id=%s credential=%s",
+            attachment_id,
+            user.get("user_id"),
+            credential,
+        )
         return response
     except Exception as exc:
         return _messenger_media_json_error(conn, exc)
@@ -104151,6 +104208,14 @@ def api_pulse_media_mux_direct_upload():
     ext = lowered_name.rsplit(".", 1)[-1] if "." in lowered_name else ""
     if ext not in {"mp4", "mov", "webm", "m4v"} and not mime_type.startswith("video/"):
         return api_error("Direct upload is only available for MP4, MOV, or WEBM videos.", 400, trace_id, error="unsupported_video_type")
+    # Duration is checked here and not only on the multipart session path, because
+    # this route is where web video over ~8 MB actually goes: it hands out a Mux
+    # upload URL, so the bytes never pass through a validator again. Refusing before
+    # the URL exists costs the uploader one request instead of a multi-gigabyte
+    # transfer that ends in a rejection. Absent duration is unmeasured, not a
+    # violation -- see services/stored_video_policy.py.
+    if stored_video_policy.exceeds_limit_ms(context_type, payload.get("duration_ms")):
+        return api_error(stored_video_policy.limit_message(context_type), 413, trace_id, error="video_too_long")
     max_gb = float(os.getenv("MEDIA_DIRECT_UPLOAD_MAX_VIDEO_GB", "25"))
     max_bytes = int(max_gb * 1024 * 1024 * 1024)
     if file_size and file_size > max_bytes:
@@ -104478,6 +104543,10 @@ def api_pulse_media_upload():
             file,
             context_type=context_type,
             context_id=context_id,
+            # Milliseconds, the unit both the browser's HTMLMediaElement and the
+            # native picker report. Absent for older clients, which is treated as
+            # an unmeasured duration rather than a zero-length video.
+            duration_ms=request.form.get("duration_ms") or 0,
         )
     except Exception as exc:
         logging.exception("PULSE_MEDIA_UPLOAD_ROUTE_FAILED trace_id=%s user_id=%s error=%s", trace_id, user.get("user_id"), exc)

@@ -544,7 +544,10 @@
       "voiceSent": "Mesaj vokal la voye.",
       "voiceUnavailable": "Mesaj vokal pa disponib",
       "voiceUnavailableTitle": "Mesaj vokal pa disponib",
-      "yourMessage": "mesaj ou a"
+      "yourMessage": "mesaj ou a",
+      "openDocument": "Peze pou ouvri",
+      "openingDocument": "Ap ouvri…",
+      "a11yOpensDocument": "Ouvri nan vizyonè dokiman ou"
     },
     "group": {
       "createGroup": "Kreye yon gwoup",

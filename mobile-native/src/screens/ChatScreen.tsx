@@ -68,6 +68,8 @@ import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTap
 import { goBackFromUndxChat } from "../undx/undxChatTarget";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { useMessengerMediaAccessUrl } from "../media/messengerMediaAccess";
+import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
+import { openDocument } from "../media/mediaActions";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
@@ -1005,16 +1007,26 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Videos,
         allowsEditing: false,
-        videoMaxDuration: 120,
+        videoMaxDuration: maxDurationSeconds("messenger"),
         videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium
       });
       if (result.canceled || !result.assets[0]) return;
       const asset = result.assets[0];
+      // expo-image-picker reports duration in milliseconds. Sending it lets the
+      // server refuse an overlong clip during init, before the bytes move.
+      const durationSeconds = asset.duration ? asset.duration / 1000 : undefined;
+      if (exceedsLimit("messenger", durationSeconds)) {
+        const message = limitMessage("messenger");
+        setStatusMessage(message);
+        Alert.alert(t("messaging:chat.videoSharingUnavailableTitle"), message);
+        return;
+      }
       await uploadAndSend({
         uri: asset.uri,
         name: asset.fileName || `pulsesoc-video-${Date.now()}.mov`,
         mimeType: asset.mimeType || "video/quicktime",
-        sizeBytes: asset.fileSize || 0
+        sizeBytes: asset.fileSize || 0,
+        durationSeconds
       });
     } catch (videoError) {
       const message = videoError instanceof Error ? videoError.message : t("messaging:chat.videoPickerFailed");
@@ -2210,22 +2222,20 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   // media_upload_id (the foundation message_attachments row) addresses the
   // access endpoint. attachment_id is passed for completeness and is
   // deliberately NOT marked as proven foundation media.
+  //
+  // ONE grant per bubble, carrying both the original and its preview. This used
+  // to be two calls to the same hook with the same identity, which resolved to
+  // the same attachment id and therefore returned the same `/download` URL
+  // twice: the thumbnail slot was handed the full asset, so a video bubble fed
+  // an entire movie to `<Image>` and a thread of photos downloaded every
+  // original at full size to paint cards a few hundred pixels wide.
   const mediaIdentity = { mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id };
   const mediaAccess = useMessengerMediaAccessUrl(mediaIdentity, String(message.media_url || ""));
-  const thumbnailAccess = useMessengerMediaAccessUrl(
-    mediaIdentity,
-    String(message.thumbnail_url || message.media_url || "")
-  );
-  const retryThumbnail = thumbnailAccess.retry;
-  const retryMediaUrl = mediaAccess.retry;
   // One bounded re-grant when the platform loader rejects a URL we handed it —
-  // an expired grant is the ordinary cause. Both are single-shot per identity.
-  const retryMedia = useCallback(() => {
-    retryThumbnail();
-    retryMediaUrl();
-  }, [retryThumbnail, retryMediaUrl]);
+  // an expired grant is the ordinary cause. Single-shot per identity.
+  const retryMedia = mediaAccess.retry;
   const mediaUrl = absoluteMediaUrl(mediaAccess.url);
-  const thumbnailUrl = absoluteMediaUrl(thumbnailAccess.url);
+  const thumbnailUrl = absoluteMediaUrl(mediaAccess.thumbnailUrl);
   if ((type === "image" || type === "gif") && mediaAccess.failed && !mediaUrl) {
     return (
       <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Image unavailable.`} style={styles.voiceUnavailable}>
@@ -2263,6 +2273,10 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
           accessibilityHint={t("messaging:chat.a11yOpensViewer")}
           onPress={() => setViewerOpen(true)}
         >
+          {/* A photo may fall back to the original because its size is bounded by
+              the photo limit and the viewer is about to need those bytes anyway.
+              Video deliberately does not: there is no bound worth falling back
+              through, so a missing poster stays missing. */}
           <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" onError={retryMedia} />
         </Pressable>
         <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
@@ -2272,11 +2286,75 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   if (isVoiceType(type)) {
     return <VoiceMessageCard message={message} url={mediaUrl} />;
   }
+  if (type === "video") {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t("messaging:chat.videoAttachment")}
+        accessibilityHint={t("messaging:chat.a11yOpensViewer")}
+        style={styles.attachment}
+        onPress={() => setViewerOpen(true)}
+      >
+        {thumbnailUrl ? (
+          <Image source={{ uri: thumbnailUrl }} style={styles.videoPoster} resizeMode="cover" onError={retryMedia} />
+        ) : null}
+        <Text style={styles.attachmentTitle}>{t("messaging:chat.videoAttachment")}</Text>
+        <Text style={styles.attachmentMeta}>{t("messaging:chat.openViewer")}</Text>
+        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
+      </Pressable>
+    );
+  }
+  return <DocumentAttachmentCard message={message} url={mediaUrl} />;
+}
+
+/**
+ * A document attachment that actually opens.
+ *
+ * The card this replaced rendered a filename and a byte count under an
+ * `onPress` that evaluated to `undefined` for every non-video attachment, so a
+ * PDF arrived, said "Sent", and did nothing when tapped for the life of the
+ * conversation. Opening goes through the shared `openDocument` action rather
+ * than a Messenger-local implementation, so the access grant, the retry policy
+ * and the on-disk cache are the same ones every other surface uses.
+ */
+function DocumentAttachmentCard({ message, url }: { message: MessengerMessage; url: string }) {
+  const { t } = useTranslation();
+  const [opening, setOpening] = useState(false);
+  const [failure, setFailure] = useState("");
+  const filename = String(message.body || "").trim() || t("messaging:chat.fileAttachment");
+
+  const open = useCallback(async () => {
+    if (opening) return;
+    setOpening(true);
+    setFailure("");
+    const result = await openDocument({
+      url,
+      mediaId: message.media_upload_id || message.attachment_id || null,
+      mimeType: message.mime_type || undefined,
+      expectedBytes: Number(message.file_size || 0) || undefined,
+      surface: "messenger",
+      title: filename
+    });
+    setOpening(false);
+    if (result.status !== "opened") setFailure(result.message);
+  }, [filename, message.attachment_id, message.file_size, message.media_upload_id, message.mime_type, opening, url]);
+
   return (
-    <Pressable style={styles.attachment} onPress={() => (type === "video" ? setViewerOpen(true) : undefined)}>
-      <Text style={styles.attachmentTitle}>{type === "video" ? t("messaging:chat.videoAttachment") : t("messaging:chat.fileAttachment")}</Text>
-      <Text style={styles.attachmentMeta}>{type === "video" ? t("messaging:chat.openViewer") : formatFileSize(message.file_size)}</Text>
-      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={filename}
+      accessibilityHint={t("messaging:chat.a11yOpensDocument")}
+      accessibilityState={{ busy: opening }}
+      style={styles.attachment}
+      onPress={open}
+    >
+      <Text style={styles.attachmentTitle}>{filename}</Text>
+      <Text style={styles.attachmentMeta}>
+        {opening
+          ? t("messaging:chat.openingDocument")
+          : `${formatFileSize(message.file_size)} · ${t("messaging:chat.openDocument")}`}
+      </Text>
+      {failure ? <Text style={styles.voiceError}>{failure}</Text> : null}
     </Pressable>
   );
 }
@@ -2694,6 +2772,13 @@ const styles = StyleSheet.create({
     gap: 3,
     minWidth: 190,
     padding: 10
+  },
+  videoPoster: {
+    aspectRatio: 1.6,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 10,
+    marginBottom: 4,
+    width: 200
   },
   voiceCard: { minWidth: 222, paddingVertical: 1 },
   voiceSemanticSummary: { height: 1, left: 0, opacity: 0, position: "absolute", top: 0, width: 1 },

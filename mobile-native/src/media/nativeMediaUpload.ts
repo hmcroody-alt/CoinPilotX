@@ -5,6 +5,7 @@ import { PulseMedia, mediaDisplayUrl, mediaKind } from "../api/feed";
 import { pulseApi } from "../api/pulseApi";
 import { getSessionCookie, setSessionCookie } from "../session/sessionStore";
 import { mediaUploadManager } from "./MediaUploadManager";
+import { exceedsLimit, limitMessage, maxDurationSeconds, maxVideoBytes } from "./storedVideoPolicy";
 
 export type NativeMediaContext =
   | "pulse_status"
@@ -74,8 +75,6 @@ export type UploadController = {
 // remains authoritative when an environment-specific limit is lower.
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const MAX_GIF_BYTES = 8 * 1024 * 1024;
-const MAX_VIDEO_BYTES = 700 * 1024 * 1024;
-const MAX_STATUS_VIDEO_BYTES = 350 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif"]);
 const VIDEO_EXTENSIONS = new Set(["mp4", "mov", "webm"]);
 
@@ -130,7 +129,7 @@ export async function pickNativeVideo() {
     allowsEditing: false,
     mediaTypes: ImagePicker.MediaTypeOptions.Videos,
     quality: 1,
-    videoMaxDuration: 180
+    videoMaxDuration: maxDurationSeconds("post")
   });
   if (result.canceled || !result.assets?.[0]) return { asset: null, progress: idleProgress("Video selection cancelled.") };
   const asset = await normalizePickedAsset(result.assets[0], "video");
@@ -178,8 +177,8 @@ export function cameraCompressionPolicy(mode: "photo" | "video" | "status" | "re
     key: video ? (status ? "native_status_video_v1" : "native_video_v1") : "native_photo_v1",
     imageQuality: status ? 0.86 : 0.9,
     videoQuality: status ? "720p" : "1080p",
-    maxVideoDurationSeconds: status ? 60 : 180,
-    maxVideoBytes: video ? (status ? MAX_STATUS_VIDEO_BYTES : MAX_VIDEO_BYTES) : 0,
+    maxVideoDurationSeconds: maxDurationSeconds(status ? "status" : mode === "reel" ? "reel" : "post"),
+    maxVideoBytes: video ? maxVideoBytes(status ? "status" : mode === "reel" ? "reel" : "post") : 0,
     serverAuthoritative: true,
     deviceVerified: false,
     note: "The app asks your camera for efficient settings. PulseSoc checks, stores, and reviews whatever you upload."
@@ -194,8 +193,13 @@ export function validateNativeMedia(asset: NativeMediaAsset, contextType = "") {
     if (asset.size && asset.size > limit) return `Image is too large. Choose ${ext === "gif" ? "a GIF under 8 MB" : "an image under 5 MB"}.`;
   } else {
     if (ext && !VIDEO_EXTENSIONS.has(ext)) return "Choose an MP4, MOV, or WEBM video.";
-    const limit = contextType === "pulse_status" ? MAX_STATUS_VIDEO_BYTES : MAX_VIDEO_BYTES;
-    if (asset.size && asset.size > limit) return `This video is too large to upload. The maximum is ${limit / (1024 * 1024)} MB.`;
+    // The picker reports duration in milliseconds. This check is UX only -- it
+    // saves the person an upload they were going to lose, and the server refuses
+    // independently. A missing duration is not a refusal: some library assets
+    // report none, and rejecting on absence would block valid short clips.
+    if (exceedsLimit(contextType, Number(asset.duration || 0) / 1000)) return limitMessage(contextType);
+    const limit = maxVideoBytes(contextType);
+    if (asset.size && asset.size > limit) return `This video is too large to upload. The maximum is ${Math.round(limit / (1024 * 1024))} MB.`;
   }
   if (!asset.uri) return "Media file is missing.";
   return "";
@@ -238,6 +242,7 @@ function uploadLegacyMedia(asset: NativeMediaAsset, options: NativeMediaUploadOp
       };
       const form = new FormData();
       form.append("context_type", options.contextType); form.append("context_id", options.contextId || "native-draft");
+      if (asset.duration) form.append("duration_ms", String(Math.round(Number(asset.duration))));
       Object.entries(options.extraFields || {}).forEach(([key, value]) => { if (value !== undefined && value !== null) form.append(key, String(value)); });
       form.append("file", { uri: asset.uri, name: asset.name, type: asset.mimeType } as unknown as Blob);
       xhr.send(form);

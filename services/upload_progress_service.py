@@ -8,7 +8,7 @@ import logging
 import shutil
 from typing import Any
 
-from . import media_service, media_storage
+from . import media_service, media_storage, stored_video_policy
 
 
 VIDEO_MIME_TYPES = {"video/mp4", "video/webm", "video/quicktime", "video/x-m4v"}
@@ -84,7 +84,7 @@ def _limit_bytes_for(media_type: str, *, context_type: str = "") -> tuple[int, s
     return int(mb * 1024 * 1024), f"{int(mb)} MB"
 
 
-def validate_media_file(file_storage, *, context_type: str = "") -> dict:
+def validate_media_file(file_storage, *, context_type: str = "", duration_ms: Any = 0) -> dict:
     if not file_storage or not getattr(file_storage, "filename", ""):
         return {"ok": False, "message": "Choose an image, video, audio clip, or safe file to upload.", "status": 400}
     filename = file_storage.filename or ""
@@ -122,6 +122,8 @@ def validate_media_file(file_storage, *, context_type: str = "") -> dict:
         file_storage.stream.seek(0)
     except Exception:
         size = 0
+    if media_type == "video" and stored_video_policy.exceeds_limit_ms(context_type, duration_ms):
+        return {"ok": False, "message": stored_video_policy.limit_message(context_type), "status": 413}
     max_bytes, max_label = _limit_bytes_for(media_type, context_type=context_type)
     if size and size > max_bytes:
         return {"ok": False, "message": f"This {media_type if media_type != 'gif' else 'image'} is too large. Limit: {max_label}.", "status": 400}
@@ -144,9 +146,9 @@ def verify_media(media: dict) -> dict:
     return {**resolved, "verified": available}
 
 
-def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_upload", context_id: str = "") -> tuple[dict, int]:
+def stage_upload(user_id: int, file_storage, *, context_type: str = "pulse_upload", context_id: str = "", duration_ms: Any = 0) -> tuple[dict, int]:
     tid = trace_id()
-    validation = validate_media_file(file_storage, context_type=context_type)
+    validation = validate_media_file(file_storage, context_type=context_type, duration_ms=duration_ms)
     if not validation.get("ok"):
         logging.warning("PULSE_UPLOAD_VALIDATION_FAILED trace_id=%s user_id=%s context_type=%s message=%s", tid, user_id, context_type, validation.get("message"))
         return {

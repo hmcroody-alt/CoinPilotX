@@ -97,6 +97,12 @@ export type MessengerMessage = {
   media_url?: string;
   thumbnail_url?: string;
   file_size?: number;
+  /**
+   * The attachment's canonical MIME type. Load-bearing for documents: it is what
+   * picks the iOS UTI, and without it the document viewer is handed an opaque
+   * blob and offers nothing that can read it.
+   */
+  mime_type?: string;
   duration?: number;
   duration_seconds?: number;
   waveform?: number[];
@@ -1247,7 +1253,8 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         body,
         message_type: messageType,
         delivery_status: safeText(item.delivery_status) || safeText(item.status) || safeText(item.local_status) || "sent",
-        file_size: Number(item.file_size || 0),
+        file_size: Number(item.file_size || attachment?.file_size || attachment?.file_size_bytes || 0),
+        mime_type: safeText(item.mime_type) || attachmentValue(item, "mime_type"),
         duration_seconds: Number(item.duration_seconds || item.duration || attachment?.duration_seconds || attachment?.duration || 0),
         waveform: normalizeVoiceWaveform(item.waveform || attachment?.waveform || attachment?.waveform_json),
         attachment_id: Number(item.attachment_id || attachment?.attachment_id || attachment?.id || 0) || undefined,
