@@ -18,13 +18,30 @@ def test_apple_association_requires_valid_team_id(monkeypatch):
 
 
 def test_apple_association_scopes_links_to_pulsesoc_paths(monkeypatch):
+    """The association is scoped, not total.
+
+    This deliberately does not pin the exact component set. That list grows as
+    the web rebuild claims more of what the native app already declares, and an
+    exact-literal assert here would turn every correct addition into a failing
+    test — which trains people to update the literal without reading it.
+    Whether the set is *right* is checked exhaustively against
+    `linking.ts` in `tests/web_parity/test_aasa_claims.py`. What is asserted
+    here is the thing that must never change: the file identifies this app, and
+    it does not claim the whole domain.
+    """
     monkeypatch.setenv("PULSESOC_APPLE_TEAM_ID", "A1B2C3D4E5")
     monkeypatch.setenv("PULSESOC_APPLE_ASSOCIATED_BUNDLE_IDS", "com.pulsesoc.app")
     payload, error = apple_app_site_association()
     assert error == ""
     detail = payload["applinks"]["details"][0]
     assert detail["appID"] == "A1B2C3D4E5.com.pulsesoc.app"
-    assert {item["/"] for item in detail["components"]} == {"/pulse/*", "/search*"}
+    patterns = {item["/"] for item in detail["components"]}
+    assert "/pulse/*" in patterns
+    assert "/search*" in patterns
+    assert not patterns & {"/", "/*", "*"}, (
+        "a root claim would send every page of the website to the app and "
+        "leave no web product behind"
+    )
 
 
 def test_android_association_requires_a_sha256_fingerprint(monkeypatch):
