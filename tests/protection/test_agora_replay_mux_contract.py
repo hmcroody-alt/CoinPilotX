@@ -12,11 +12,26 @@ WORKER = (ROOT / "media_worker.py").read_text(encoding="utf-8")
 def test_private_r2_recording_is_prepared_for_mux_without_public_objects():
     assert "prepare_private_mux_input" in RECORDING
     assert 'Config(signature_version="s3v4")' in RECORDING
-    assert 'ContentType="application/vnd.apple.mpegurl"' in RECORDING
     assert "generate_presigned_url" in RECORDING
-    assert "get_object(Bucket=bucket, Key=segment_key)" not in RECORDING
     assert "upload_fileobj" not in RECORDING
+    assert '"public-read"' not in RECORDING
     assert "create_mux_asset_from_private_recording" in MUX
+
+
+def test_mux_input_is_a_muxed_media_file_not_an_hls_playlist():
+    """Mux VOD ingest rejects a playlist with invalid_input; it needs one muxed file."""
+    assert 'mux_key = posixpath.join(base_dir, "mux-ingest.ts")' in RECORDING
+    assert 'ContentType="video/mp2t"' in RECORDING
+    assert 'Params={"Bucket": bucket, "Key": mux_key}' in RECORDING
+    assert 'ContentType="application/vnd.apple.mpegurl"' not in RECORDING
+    assert '"input_url": input_url' in RECORDING
+
+
+def test_segments_are_joined_through_a_bounded_stream_that_cleans_up():
+    assert "create_multipart_upload" in RECORDING
+    assert "abort_multipart_upload" in RECORDING
+    assert "part_size = max(5 * 1024 ** 2" in RECORDING
+    assert "body.read(1024 ** 2)" in RECORDING
 
 
 def test_end_live_enqueues_exactly_one_replay_job_without_moving_video_in_flask():

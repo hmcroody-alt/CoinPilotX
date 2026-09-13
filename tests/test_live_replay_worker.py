@@ -23,7 +23,7 @@ def test_live_replay_job_creates_one_mux_asset_then_reconciles_ready(tmp_path, m
           run_after TEXT, created_at TEXT, updated_at TEXT, completed_at TEXT
         );
         CREATE TABLE pulse_live_sessions (
-          id INTEGER PRIMARY KEY, status TEXT, agora_recording_sid TEXT,
+          id INTEGER PRIMARY KEY, status TEXT, feed_post_id INTEGER, agora_recording_sid TEXT,
           agora_recording_filename TEXT, agora_recording_prefix TEXT,
           agora_converter_id TEXT, webrtc_room_id TEXT, agora_recording_resource_id TEXT,
           agora_recording_uid TEXT, mux_recording_asset_id TEXT,
@@ -97,7 +97,7 @@ def _mux_native_database(tmp_path):
           run_after TEXT, created_at TEXT, updated_at TEXT, completed_at TEXT
         );
         CREATE TABLE pulse_live_sessions (
-          id INTEGER PRIMARY KEY, status TEXT, agora_recording_sid TEXT,
+          id INTEGER PRIMARY KEY, status TEXT, feed_post_id INTEGER, agora_recording_sid TEXT,
           agora_recording_filename TEXT, agora_recording_prefix TEXT,
           agora_converter_id TEXT, webrtc_room_id TEXT, agora_recording_resource_id TEXT,
           agora_recording_uid TEXT, mux_live_stream_id TEXT, mux_recording_asset_id TEXT,
@@ -220,7 +220,7 @@ def _backlog_database(tmp_path, rows, ended_at="2026-01-01T00:00:00"):
           run_after TEXT, created_at TEXT, updated_at TEXT, completed_at TEXT
         );
         CREATE TABLE pulse_live_sessions (
-          id INTEGER PRIMARY KEY, status TEXT, agora_recording_sid TEXT,
+          id INTEGER PRIMARY KEY, status TEXT, feed_post_id INTEGER, agora_recording_sid TEXT,
           agora_recording_filename TEXT, agora_recording_prefix TEXT,
           agora_converter_id TEXT, webrtc_room_id TEXT, agora_recording_resource_id TEXT,
           agora_recording_uid TEXT, mux_live_stream_id TEXT, mux_recording_asset_id TEXT,
@@ -364,3 +364,132 @@ def test_a_fresh_session_still_waits_for_its_mux_asset(tmp_path, monkeypatch):
     conn.close()
     assert status == "pending", "a recent session must keep polling for its asset"
     assert attempts == 0, f"polling a fresh session burned {attempts} of the retry budget"
+
+
+def _errored_asset_database(tmp_path):
+    """An ended Agora session whose Mux asset came back errored."""
+    database = str(tmp_path / "replay-worker-errored.sqlite3")
+    conn = _connect(database)
+    conn.executescript(
+        """
+        CREATE TABLE pulse_jobs (
+          id INTEGER PRIMARY KEY, job_type TEXT, target_type TEXT, target_id INTEGER,
+          status TEXT, attempts INTEGER, max_attempts INTEGER, error_message TEXT,
+          run_after TEXT, created_at TEXT, updated_at TEXT, completed_at TEXT
+        );
+        CREATE TABLE pulse_live_sessions (
+          id INTEGER PRIMARY KEY, status TEXT, feed_post_id INTEGER, agora_recording_sid TEXT,
+          agora_recording_filename TEXT, agora_recording_prefix TEXT,
+          agora_converter_id TEXT, webrtc_room_id TEXT, agora_recording_resource_id TEXT,
+          agora_recording_uid TEXT, mux_live_stream_id TEXT, mux_recording_asset_id TEXT,
+          mux_recording_playback_id TEXT, replay_url TEXT, recording_status TEXT,
+          recording_error TEXT, replay_retry_key TEXT, thumbnail_url TEXT,
+          viewer_count INTEGER, updated_at TEXT
+        );
+        CREATE TABLE pulse_posts (
+          id INTEGER PRIMARY KEY, live_session_id INTEGER, live_status TEXT,
+          live_viewer_count INTEGER, replay_url TEXT, playback_url TEXT,
+          preview_url TEXT, body TEXT, title TEXT, status TEXT, deleted_at TEXT,
+          updated_at TEXT
+        );
+        INSERT INTO pulse_live_sessions
+          (id,status,agora_recording_sid,agora_recording_filename,agora_recording_prefix,
+           mux_live_stream_id,mux_recording_asset_id,mux_recording_playback_id,replay_url,
+           recording_status,recording_error,replay_retry_key,thumbnail_url,viewer_count,updated_at)
+        VALUES (11,'ended','sid-11','recording.m3u8','pulsesoc/live-recordings/11',
+                '','dead-asset','dead-play','','processing_replay','','','poster.jpg',4,
+                '2026-01-01T00:00:00');
+        INSERT INTO pulse_posts
+          (id,live_session_id,live_status,live_viewer_count,replay_url,playback_url,
+           preview_url,body,title,status,updated_at)
+        VALUES (110,11,'processing',4,'','','poster.jpg','Live','Live','published','2026-01-01T00:00:00');
+        INSERT INTO pulse_jobs
+          (id,job_type,target_type,target_id,status,attempts,max_attempts,run_after,created_at,updated_at)
+        VALUES (1,'finalize_live_replay','live',11,'pending',0,5,'2026-01-01T00:00:00',
+                '2026-01-01T00:00:00','2026-01-01T00:00:00');
+        """
+    )
+    conn.commit()
+    conn.close()
+    return database
+
+
+def test_errored_asset_is_rebuilt_from_the_original_recording_without_a_host_retry(tmp_path, monkeypatch):
+    database = _errored_asset_database(tmp_path)
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+    created = []
+    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_live_recording",
+                        lambda **kwargs: {"ok": True, "mux_status": "errored"})
+    monkeypatch.setattr(media_worker.agora_cloud_recording_service, "prepare_private_mux_input",
+                        lambda prefix, filename: {"ok": True, "input_url": "https://signed.example/rebuilt.ts"})
+    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_private_recording",
+                        lambda url, **kwargs: created.append(kwargs.get("marker")) or {"ok": True, "mux_recording_asset_id": "asset-11", "mux_recording_playback_id": "play-11", "mux_status": "preparing"})
+
+    assert media_worker.process_media_jobs(1) == {"queued": 1, "processed": 1, "failed": 0}
+
+    conn = _connect(database)
+    session = conn.execute("SELECT mux_recording_asset_id,mux_recording_playback_id,recording_status,replay_retry_key FROM pulse_live_sessions WHERE id=11").fetchone()
+    job = conn.execute("SELECT status,attempts FROM pulse_jobs WHERE id=1").fetchone()
+    conn.close()
+    assert session == ("asset-11", "play-11", "processing_replay", "dead-asset")
+    assert created == ["pulse_replay:11:sid-11:dead-asset"]
+    assert job == ("pending", 0)
+
+
+def test_a_rebuild_that_errors_again_fails_instead_of_making_more_assets(tmp_path, monkeypatch):
+    database = _errored_asset_database(tmp_path)
+    conn = _connect(database)
+    conn.execute("UPDATE pulse_live_sessions SET replay_retry_key='dead-asset', mux_recording_asset_id='rebuilt-asset' WHERE id=11")
+    conn.execute("UPDATE pulse_jobs SET attempts=4 WHERE id=1")
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+    created = []
+    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_live_recording",
+                        lambda **kwargs: {"ok": True, "mux_status": "errored"})
+    monkeypatch.setattr(media_worker.mux_live_service, "create_mux_asset_from_private_recording",
+                        lambda url, **kwargs: created.append(url) or {"ok": True, "mux_recording_asset_id": "asset-x", "mux_status": "preparing"})
+
+    assert media_worker.process_media_jobs(1) == {"queued": 1, "processed": 0, "failed": 1}
+
+    conn = _connect(database)
+    session = conn.execute("SELECT mux_recording_asset_id,recording_status FROM pulse_live_sessions WHERE id=11").fetchone()
+    job = conn.execute("SELECT status,error_message FROM pulse_jobs WHERE id=1").fetchone()
+    conn.close()
+    assert created == []
+    assert session[0] == "rebuilt-asset"
+    assert session[1] == "replay_failed"
+    assert job[0] == "failed"
+
+
+def test_ready_replay_whose_feed_post_was_deleted_is_not_requeued_forever(tmp_path, monkeypatch):
+    """The publisher will not resurrect a deleted post, so requeueing it never ends.
+
+    Production accumulated 1.08M finalize_live_replay rows this way: 70 sessions
+    held a ready VOD whose creator had deleted the Feed post, so replay_reel_id
+    stayed 0 and the publication arm re-queued them on every cycle.
+    """
+    database = _backlog_database(tmp_path, [
+        (21, "ls-21", "asset-21", "mux_asset_ready"),  # post deleted -> unpublishable
+        (22, "ls-22", "asset-22", "mux_asset_ready"),  # post alive -> still repairable
+    ])
+    conn = _connect(database)
+    conn.execute("UPDATE pulse_live_sessions SET feed_post_id=121, replay_url='https://stream.mux.com/play-21.m3u8' WHERE id=21")
+    conn.execute("UPDATE pulse_live_sessions SET feed_post_id=122, replay_url='https://stream.mux.com/play-22.m3u8' WHERE id=22")
+    conn.execute(
+        "INSERT INTO pulse_posts (id,live_session_id,live_status,live_viewer_count,replay_url,"
+        "playback_url,preview_url,body,title,status,deleted_at,updated_at) VALUES "
+        "(121,21,'processing',5,'','','p.jpg','Live','Live','published','2026-06-14T12:57:00','2026-01-01T00:00:00'),"
+        "(122,22,'processing',5,'','','p.jpg','Live','Live','published',NULL,'2026-01-01T00:00:00')"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(media_worker.bot, "db", lambda: _connect(database))
+
+    first = media_worker.reconcile_live_replay_backlog(25)
+
+    conn = _connect(database)
+    queued = sorted(r[0] for r in conn.execute("SELECT target_id FROM pulse_jobs WHERE job_type='finalize_live_replay'"))
+    conn.close()
+    assert queued == [22], "a replay whose Feed post is deleted must not be re-queued"
+    assert first["queued"] == 1
