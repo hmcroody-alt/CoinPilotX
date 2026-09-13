@@ -414,7 +414,7 @@ poll until processing_status=ready`.
 | Concern | Native today | Web requirement |
 |---|---|---|
 | File selection | native picker, SDK gives a path + known size | `<input type=file>` / drag-drop; `File.size` is available so the presign flow works |
-| **CORS on direct-to-R2** | irrelevant — RN issues the PUT outside a browser origin | **Blocking.** The R2 bucket needs a CORS policy allowing `PUT` + `Origin: https://pulsesoc.com` and exposing `ETag` (required to complete a multipart upload). No CORS config was found in the repo — it is bucket-side. **UNVERIFIED, and the single most likely thing to break first.** |
+| **CORS on direct-to-R2** | irrelevant — RN issues the PUT outside a browser origin | **Blocking, and now CONFIRMED (2026-09-13).** A browser preflight against `pulse-media2` returns HTTP 403 with no `Access-Control-Allow-Origin`; R2's own body says `CORS not configured for this bucket`. So *every* browser upload fails at preflight, not just multipart — worse than the missing `ExposeHeaders: ["ETag"]` anticipated here. Probe: `scripts/ops/r2_cors_probe.py`. Bucket-side fix, not applied: see `PULSESOC_BACKEND_INVENTORY.md` §closing findings. |
 | Multipart part signing | same API | Browser must chunk with `Blob.slice()`, honour the **12-parts-per-sign** cap (`media_upload_sessions.py:24`), and re-sign as the ≤900s URL TTL expires mid-upload on slow connections |
 | Progress | native SDK callbacks | `XMLHttpRequest.upload.onprogress` (note: `fetch()` has **no** upload progress). Server-side `services/upload_progress_service.py` + `GET /api/pulse/media/uploads/<id>` give a polled fallback |
 | Resume | session TTL 3600s | Persist `upload_id` + completed part ETags in `localStorage`; `/refresh` re-signs |

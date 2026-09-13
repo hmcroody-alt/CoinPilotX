@@ -1291,7 +1291,7 @@ poll until processing_status=ready`.
 | Concern | Native today | Web requirement |
 |---|---|---|
 | File selection | native picker, SDK gives a path + known size | `<input type=file>` / drag-drop; `File.size` is available so the presign flow works |
-| **CORS on direct-to-R2** | irrelevant — RN issues the PUT outside a browser origin | **Blocking.** The R2 bucket needs a CORS policy allowing `PUT` + `Origin: https://pulsesoc.com` and exposing `ETag` (required to complete a multipart upload). No CORS config was found in the repo — it is bucket-side. **UNVERIFIED, and the single most likely thing to break first.** |
+| **CORS on direct-to-R2** | irrelevant — RN issues the PUT outside a browser origin | **Blocking, and now CONFIRMED (2026-09-13).** A browser preflight against `pulse-media2` returns HTTP 403 with no `Access-Control-Allow-Origin`; R2's own body says `CORS not configured for this bucket`. So *every* browser upload fails at preflight, not just multipart — worse than the missing `ExposeHeaders: ["ETag"]` anticipated here. Probe: `scripts/ops/r2_cors_probe.py`. Bucket-side fix, not applied: see `PULSESOC_BACKEND_INVENTORY.md` §closing findings. |
 | Multipart part signing | same API | Browser must chunk with `Blob.slice()`, honour the **12-parts-per-sign** cap (`media_upload_sessions.py:24`), and re-sign as the ≤900s URL TTL expires mid-upload on slow connections |
 | Progress | native SDK callbacks | `XMLHttpRequest.upload.onprogress` (note: `fetch()` has **no** upload progress). Server-side `services/upload_progress_service.py` + `GET /api/pulse/media/uploads/<id>` give a polled fallback |
 | Resume | session TTL 3600s | Persist `upload_id` + completed part ETags in `localStorage`; `/refresh` re-signs |
@@ -1612,9 +1612,34 @@ Route line numbers are `bot.py` unless noted.
    Web must poll, or `services/command_center_worker/` must be promoted to a deployed
    service with Redis pub/sub. Adding browser tabs to a polling backend multiplies load
    against 32 threads.
-2. **R2 bucket CORS is unconfigured and unverifiable from the repo.** Direct-to-R2 upload
-   is the only path for anything over 12 MB, and it cannot work from a browser without a
-   CORS policy exposing `ETag`. This will be the first thing to break.
+2. **R2 bucket CORS is unconfigured — CONFIRMED, 2026-09-13.** This was written here as
+   "unverifiable from the repo" and predicted to be the first thing to break. It is now
+   measured, and the prediction was right. A CORS preflight against `pulse-media2` —
+   `OPTIONS` with `Origin: https://pulsesoc.com` and `Access-Control-Request-Method: PUT`,
+   which is exactly what a browser sends — returns **HTTP 403 with no
+   `Access-Control-Allow-Origin`**, and R2 names the reason itself:
+   `<Code>Unauthorized</Code><Message>CORS not configured for this bucket</Message>`.
+
+   So it is worse than the `ExposeHeaders: ["ETag"]` gap this file anticipated. There is no
+   CORS configuration at all, which means **every** browser upload fails at preflight, not
+   only the multipart ones. The ETag problem is real and sits behind this one.
+
+   Nothing shipped is broken: React Native's fetch is not subject to CORS, so the native
+   app reads the part ETag unconditionally and every upload works. That is precisely why
+   no existing test, suite or user could have surfaced it — it is an unmet precondition
+   for a client that does not exist yet.
+
+   Probe: `scripts/ops/r2_cors_probe.py` (read-only; needs no credentials, because a
+   preflight is unauthenticated). Note that the credentialed route does **not** work here:
+   `get_bucket_cors` returns `AccessDenied`, as the R2 token is scoped to objects rather
+   than bucket configuration. A probe built on reading the config would have reported
+   "unknown" forever. Measuring the behaviour a browser observes is both cheaper and
+   better evidence.
+
+   **Not fixed here.** Bucket CORS is production infrastructure and the blast radius of a
+   wrong `AllowedOrigins` is every origin on the internet holding an intercepted presigned
+   URL. The probe prints the exact policy to apply; applying it needs a human who can name
+   the real origins. Re-running the probe afterwards confirms it took.
 3. **Three workers are not deployed** — and one of them (`pulse_worker`) owns both feed
    precompute (`pulse_jobs`) and the marketplace reservation sweep. Building web features
    on either will surface an existing production gap.
