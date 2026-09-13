@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import re
 import sqlite3
 import sys
@@ -7,6 +8,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+# This script sends CF-IPCountry and asserts the value comes back out of
+# auth_events. That assertion used to hold because bot.request_country() read
+# any of four geo headers straight off the request -- which is exactly why a
+# caller could write whatever country it liked into a security alert. The header
+# is now only believed when an operator names the edge that sets it, so the
+# script has to say which edge it is pretending to be. Set before importing bot
+# only for symmetry with the rest of this file; request_country() reads it per
+# call, so it is honoured either way.
+os.environ.setdefault("PULSESOC_TRUSTED_GEO_HEADER", "CF-IPCountry")
 
 import bot  # noqa: E402
 

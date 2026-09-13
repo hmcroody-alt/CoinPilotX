@@ -110,6 +110,38 @@ workstream, not a leftover phase.
 
 ---
 
+## SEC-4 — Security alerts recorded a country the caller chose (confirmed live, MEDIUM) — FIXED
+
+Verified by probe against production, 2026-09-13. A request to
+`https://pulsesoc.com/api/mobile/auth/login` carrying `X-Country-Code: ZZ` was stored as `ZZ` in
+`auth_events.country`; the control request with no such header stored `''`.
+
+`request_country()` read any of four geo headers (`CF-IPCountry`, `X-Country-Code`,
+`X-Appengine-Country`, `CloudFront-Viewer-Country`) straight off the request with no validation,
+and `login_security_details()` feeds the result into admin security alerts as evidence of *where a
+login came from*. Nothing in front of this deployment sets any of those headers, so the field was
+never geolocation — it was a free-text field addressable by the caller, presented to an operator
+as fact. Two further call sites wrote the header directly without going through
+`request_country()` at all, which is how a fixed resolver can still leave the injection open.
+
+Now gated on `PULSESOC_TRUSTED_GEO_HEADER` (`services/client_address.py`), **default unset**, and
+validated to two alphabetic characters. Returning `''` is not a regression: `''` is what
+production already produced for real visitors. Region and city had no trusted source at all and
+now record nothing rather than recording a claim.
+
+**Related, latent rather than live:** every per-IP control keyed on the *leftmost*
+`X-Forwarded-For` element. The same probe proved Railway's edge replaces that header, so forged
+values never reached the app and the vulnerability was not exploitable — correct by accident, with
+nothing that would have noticed the accident ending. Detail and remedy in
+`PULSESOC_WEB_SECURITY_MODEL.md` §6.1.
+
+**Not fixed, documented in code:** `ANALYTICS_SALT` is unset in production, so every stored
+`ip_hash` is `sha256` of the address under a constant that lives in this repository, and is
+therefore reversible across the 2\*\*32 IPv4 space. `ip_hash` is a correlation key, so rotating the
+salt orphans history rather than invalidating it; this needs a migration. §6.1.
+
+---
+
 ## Cross-reference
 
 Full context for these findings lives in:

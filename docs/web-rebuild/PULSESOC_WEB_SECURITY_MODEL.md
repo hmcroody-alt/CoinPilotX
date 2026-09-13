@@ -422,15 +422,138 @@ effect is close to none:
 | Issue | Detail |
 |---|---|
 | **Device keying is native-only** | `X-PulseSoc-Device-Id` / `X-Device-Id`. A browser sends neither, so the fingerprint reduces to the User-Agent — every Chrome-on-Windows visitor shares a bucket, including the 180/60s API mutation catch-all |
-| **Per-worker state** | `RATE_LIMIT_BUCKETS` and `_RATE_BUCKETS` are process dicts. The real limit is `N × WEB_CONCURRENCY`; the in-code comment notes a documented 6/300s actually permits 24 with 4 workers. The shared Postgres counter exists but is **default OFF** |
-| **IP keying behind shared egress** | `client_ip_hash()` takes the **leftmost** `X-Forwarded-For` element with no trusted-proxy count. Railway's edge normalises it, but a NAT still puts hundreds of browsers in one bucket — including `/login` at 12/300s |
+| **Per-worker state** | `RATE_LIMIT_BUCKETS` and `_RATE_BUCKETS` are process dicts. The real limit is `N × WEB_CONCURRENCY`; `WEB_CONCURRENCY` is **unset in production**, so the gunicorn default of 4 applies and a documented 6/300s in fact permits 24. The shared Postgres counter exists but is **default OFF** — see §6.2 |
+| **IP keying** | Every per-IP control keyed on the **leftmost** `X-Forwarded-For` element until 2026-09-13 — see §6.1. Now resolved through `services/client_address.py`. The NAT collapse in §6.3 is unchanged by that fix and is the real launch blocker |
 | **GET is never limited** | A browser-driven scraper of `/api/pulse/*` reads is unthrottled |
 | **Uncovered mutating surface** | Anything not under `/api/*` and not one of 11 exact paths has no limit at all |
 
+### 6.1 The rate-limit subject — safe by accident, now safe by property
+
+`client_ip_address()` and `client_ip_hash()` read `X-Forwarded-For.split(",")[0]` — the
+**leftmost** element, which is the end of the chain nearest the client and therefore the part a
+caller can type. Every per-IP control in the product keys on that value, including the
+`failed_login_controls` lockout that can block an address for 900 seconds.
+
+This was **probed, not assumed.** Three requests to `https://pulsesoc.com/api/mobile/auth/login`
+on 2026-09-13 — two carrying forged `X-Forwarded-For` values, one of them two elements long, and
+one carrying none — all recorded the same real peer address in `auth_events.ip_address`.
+**Railway's edge replaces the header rather than appending to it,** so the forgery never reaches
+the app and the vulnerability is not live.
+
+That is not a reason to leave it. It is correct *by accident*, and nothing in the repository
+would have noticed the accident ending. Adding a CDN (the CSP already names
+`static.cloudflareinsights.com`), moving hosts, or Railway changing an Envoy default — Envoy's
+own `use_remote_address` default **appends** — would silently convert every rate limit and that
+900-second lockout into controls keyed on attacker-chosen strings. No deploy, no diff, no alarm.
+
+`services/client_address.py` makes the assumption a property:
+
+- **Reads from the right,** `chain[-hops]`, governed by `PULSESOC_TRUSTED_PROXY_HOPS`
+  (default 1). Correct under a replacing edge *and* an appending one, so the answer no longer
+  depends on which edge is in front. **In production today this is a no-op by design** — same
+  address in, same address out.
+- **An unparseable hop count falls back to the default, not to zero.** Zero looks like the
+  cautious reading — trust no header — but behind an edge it returns the *edge's* address for
+  every request in the fleet, collapsing all traffic into one bucket and locking out the
+  internet in the first busy minute. A typo in a Railway variable must not be able to do that.
+- **`element_counts` is the observable that replaces the assumption.** Today the distribution
+  reads `{1: everything}`. The first `{2: ...}` is the day the edge started appending — which is
+  exactly the day the old code became exploitable and the day nothing would have said so. A
+  counter and not a log line, because on a replacing edge a second element is a surprise and on
+  an appending edge it is every client that sends its own header; a distribution is readable
+  under both, a warning is noise under one. The key space is caller-chosen, so it folds to a
+  single `-1` bucket past 16 keys rather than growing unbounded.
+- 19 locks in `tests/protection/test_client_address_trust.py`, including a regex that fails the
+  build if the leftmost read reappears in `bot.py`. Mutation-verified: 17 mutations, 43/43
+  checks, both negative controls silent.
+
+**Country was never geolocation.** The same probe sent `X-Country-Code: ZZ` and the server stored
+`ZZ`; the control stored `''`. `request_country()` read any of four geo headers with no
+validation, and `login_security_details()` feeds the result into security alerts as evidence of
+where a login came from — so the alert reported a country the attacker chose. Two further call
+sites bypassed `request_country()` entirely, which is how a "fixed" resolver still leaves an
+injection open. It is now gated on `PULSESOC_TRUSTED_GEO_HEADER`, **default unset**, which
+reproduces the empty string production already returned for real visitors. Region and city have
+no trusted source at all and now record nothing rather than recording a claim.
+
+**Known and deliberately not fixed here:** `ANALYTICS_SALT` is unset in production, so
+`client_ip_hash()` is `sha256("coinpilotxai-inc:" + ip)` with a constant that lives in this
+repository. IPv4 is 2\*\*32 wide, so every `ip_hash` the platform has stored is reversible by
+anyone holding both — pseudonymisation that does not pseudonymise. It is not fixed in place
+because `ip_hash` is a *correlation* key, not a signature: rotating the salt invalidates nothing,
+it silently stops old and new rows for one address from grouping together. Same trap as the
+password-reset lookup hash in `services/signing_keys.py`. Fixing it is a migration, not an edit.
+
+### 6.2 Turning the distributed limiter on
+
+`services/sentinel/rate_limit.py` is complete, wired into `bot.basic_abuse_guard`, and its table
+`sentinel_rate_counters` plus both indexes already exist in production. It ships **default OFF**
+behind `SENTINEL_DISTRIBUTED_LIMITS_MODE`, which is unset. That default is correct and must not
+be changed by a code edit: production has only ever experienced limits multiplied by four, so
+correct enforcement is a **~4x tightening on real users of a shipped iOS client that cannot be
+updated.**
+
+`shadow` mode counts without refusing, so the tightening can be measured first. The reason it was
+still off is that *nothing could read what shadow measured*: the mode's only outputs are a
+`logger.warning` into Railway logs, which age out of the queryable window within the hour, and
+`rate_limit.stats()`, which lives in one gunicorn worker's memory and dies with it. A rollout flag
+whose observations cannot be read is an off switch with extra steps, and the predictable outcome
+is that it is either never turned on or turned on blind.
+
+`scripts/ops/rate_limit_shadow_report.py` is the reader.
+
+```
+railway run --service Postgres python scripts/ops/rate_limit_shadow_report.py
+railway run --service Postgres python scripts/ops/rate_limit_shadow_report.py --json
+```
+
+Three things it is careful about, each locked by a test in
+`tests/protection/test_rate_limit_rollout.py`:
+
+- **An empty table is not a clean bill of health.** Zero rows means the mode is off, *or* every
+  check degraded to process memory, *or* no protected path was hit. Only the third is good news
+  and the report cannot tell them apart, so it prints `NO DATA`, names all three, and exits **3** —
+  distinct from success (0) and from error (1). Merging no-data into success makes a broken
+  counter invisible; merging it into error makes a quiet hour page someone. Same defect class as
+  the hard-coded `"ok": True` removed from `/health`.
+- **It reads the limits, it does not restate them.** `ABUSE_GUARD_PROTECTED` in `bot.py` is the
+  single deployed policy; the script parses it out with `ast.literal_eval` rather than importing
+  (which would boot the monolith) or copying (which would create a second policy that disagrees
+  eventually). A test compares the parsed set against the deployed set, because a parser that
+  silently returned `{}` would report every path as unknown and every subject as under its limit —
+  a clean bill of health from a broken reader.
+- **Every number is a lower bound, and the report says so in its own body.** `check()` consults
+  the process-local bucket first and skips the database entirely once one worker is over the
+  limit — correct for a limiter, because one worker over proves the fleet is, but it means the
+  shared counter stops being written at exactly the moment traffic gets interesting. And rows
+  older than `PRUNE_RETENTION_WINDOWS` (4) are deleted — twenty minutes at the 300-second windows
+  every protected path uses. Both caveats travel *inside* the report, so a table pasted into a
+  ticket carries them.
+
+**Runbook.** (1) Set `SENTINEL_DISTRIBUTED_LIMITS_MODE=shadow` in Railway — a variable change, not
+a deploy, and by design it changes no response. (2) Run the report on a schedule at least every
+20 minutes, or you are sampling a fraction of the traffic and calling it a period; exit 3 on the
+first run after the switch means the mode did not take or nothing was hit, and
+`rate_limit.stats()['degraded']` on a live worker separates those. (3) Read `over-subj` — each
+one is a real caller that is **not** refused today. Decide whether it is abuse or a shared NAT
+(§6.3) before enforcing. (4) Only then consider `enforce`, and only per-path.
+
+### 6.3 The NAT collapse — the actual launch blocker
+
+Fixing §6.1 sharpens the subject; it does not widen it. Browsers send no `X-PulseSoc-Device-Id`,
+so **all** web traffic keys per-IP — and per-IP is now proven to be the real client IP. A
+200-person office, a university, or a mobile carrier behind one NAT shares a single `/login`
+bucket of 12 per 300 seconds. The eleventh person to mistype a password locks out the building.
+
+This is the argument for ordering item (1) below first: device keying is what makes per-IP limits
+survivable for a browser client. The distributed counter (item 2) makes the limits *correct*,
+which without item (1) means correctly collapsing a whole NAT four times faster than today.
+
 **Required before launch, in order:** (1) the web client mints and sends a stable
-`X-PulseSoc-Device-Id`; (2) a shared store (Redis) so limits are global, not per-worker; (3) a
-GET limit on the read-heavy `/api/pulse` families. Item 2 in particular must land *before* a
-second client multiplies traffic, not after.
+`X-PulseSoc-Device-Id`; (2) the shared store from §6.2 promoted past `shadow` so limits are
+global, not per-worker; (3) a GET limit on the read-heavy `/api/pulse` families. Item 2 in
+particular must land *before* a second client multiplies traffic, not after — but it must land
+*after* item 1, or it lands as an outage.
 
 ---
 
