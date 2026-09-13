@@ -265,6 +265,142 @@ FOLLOWED_MUTATIONS: list[tuple[str, str, str, str]] = [
 ]
 
 
+#: The three lanes, and the structural suite that judges their wiring.
+#:
+#: The gate mutations above ask "does the gate decide correctly". These ask the
+#: question no unit test of the gate can reach: does anybody still call it, in the
+#: right place, through the one entry point. A §22 gate nothing calls reads as done.
+WIRING_SUITE = "tests/marketplace/test_supplier_checkout_wiring.py"
+
+CART = "services/marketplace_cart_routes.py"
+OFFERS = "services/marketplace_offers_routes.py"
+BOT = "bot.py"
+
+#: Each lane's gate block, verbatim. Relocating one of these below the lane's first
+#: ``INSERT INTO seller_transactions`` is the defect the ordering assertion exists for:
+#: the refusal still reaches the buyer with the same sentence, and the only trace is a
+#: ``created`` transaction row nobody is looking at.
+CART_GATE = '''        screened = supplier_checkout.screen(
+            cur, [l["listing_id"] for l in lines], now=now)
+        if screened["refusal"]:
+            refusal = screened["refusal"]
+            return _error(refusal["message"], 409,
+                          code=supplier_checkout.refusal_code(refusal),
+                          listing_id=screened["refused_listing_id"])
+'''
+
+OFFERS_GATE = '''        screened = supplier_checkout.screen(cur, [listing_id], now=now)
+        if screened["refusal"]:
+            refusal = screened["refusal"]
+            return _error(refusal["message"], 409,
+                          code=supplier_checkout.refusal_code(refusal))
+'''
+
+BOT_GATE = '''    if item_type == "marketplace_product":
+        from services import marketplace_supplier_checkout
+        supplier_screened = marketplace_supplier_checkout.screen(cur, [item_id], now=now)
+        if supplier_screened["refusal"]:
+            supplier_refusal = supplier_screened["refusal"]
+            conn.close()
+            return api_error(
+                supplier_refusal["message"], 409,
+                error_code=marketplace_supplier_checkout.refusal_code(supplier_refusal))
+        transaction_details.update(
+            marketplace_supplier_checkout.audit_for(supplier_screened, item_id))
+'''
+
+#: Unique lines that sit *after* each lane's first transaction INSERT.
+CART_AFTER = "            tx_ids.append(int(cur.lastrowid))\n"
+OFFERS_AFTER = "        tx_id = int(cur.lastrowid)\n"
+BOT_AFTER = ('    pulse_emit_payment_checkout_event(cur, tx_event, "payment_pending", '
+             'status=initial_status, actor_user_id=buyer["user_id"])\n')
+
+#: One mutation whose only job is to prove this harness reads the mutated tree.
+#:
+#: Every wiring mutation below is judged by a suite that opens source files by path.
+#: If those paths resolved back through the overlay's symlinks to the real repo, the
+#: suite would read the unmutated lanes and *every* wiring mutation would survive —
+#: a uniform sweep of holes that is indistinguishable, in the report, from a suite
+#: that genuinely checks nothing. Deleting a lane's gate outright is the most
+#: obviously-catchable defect available. If this one survives, nothing else in the
+#: wiring group means anything, so it is run first and reported separately.
+CANARY_MUTATIONS: list[tuple[str, str, str, str, str]] = [
+    (
+        "the cart lane drops §22 altogether",
+        CART, CART_GATE, "", WIRING_SUITE,
+    ),
+]
+
+WIRING_MUTATIONS: list[tuple[str, str, object, object, str]] = [
+    (
+        "the cart gate slides below the transaction INSERT",
+        CART, [(CART_GATE, ""), (CART_AFTER, CART_AFTER + CART_GATE)], None,
+        WIRING_SUITE,
+    ),
+    (
+        "the offers gate slides below the transaction INSERT",
+        OFFERS, [(OFFERS_GATE, ""), (OFFERS_AFTER, OFFERS_AFTER + OFFERS_GATE)], None,
+        WIRING_SUITE,
+    ),
+    (
+        "the buy-now gate slides below the transaction INSERT",
+        BOT, [(BOT_GATE, ""), (BOT_AFTER, BOT_AFTER + BOT_GATE)], None,
+        WIRING_SUITE,
+    ),
+    (
+        "the cart lane grows its own copy of the gate's decision loop",
+        CART,
+        '''        screened = supplier_checkout.screen(
+            cur, [l["listing_id"] for l in lines], now=now)''',
+        '''        evidence = supplier_checkout.reconciliation_evidence(cur, now=now)
+        screened = {"refusal": None, "refused_listing_id": None, "decisions": {
+            l["listing_id"]: supplier_checkout.evaluate(
+                cur, listing_id=l["listing_id"], evidence=evidence, now=now)
+            for l in lines}}''',
+        WIRING_SUITE,
+    ),
+    (
+        "the cart stops annotating the sale it could not confirm",
+        CART, '                      **supplier_checkout.audit_for(screened, l["listing_id"]),\n',
+        "", WIRING_SUITE,
+    ),
+    (
+        "the offers lane stops annotating the sale it could not confirm",
+        OFFERS, "                  **supplier_checkout.audit_for(screened, listing_id),\n",
+        "", WIRING_SUITE,
+    ),
+    (
+        "the buy-now lane stops annotating the sale it could not confirm",
+        BOT, """        transaction_details.update(
+            marketplace_supplier_checkout.audit_for(supplier_screened, item_id))
+""", "", WIRING_SUITE,
+    ),
+    (
+        "the cart sends the internal reason as the client-facing code",
+        CART, "code=supplier_checkout.refusal_code(refusal),",
+        'code=refusal["reason"],', WIRING_SUITE,
+    ),
+    (
+        "the offers lane sends the internal reason as the client-facing code",
+        OFFERS, "                          code=supplier_checkout.refusal_code(refusal))",
+        '                          code=refusal["reason"])', WIRING_SUITE,
+    ),
+    (
+        "the buy-now lane sends the internal reason as the client-facing code",
+        BOT, "                error_code=marketplace_supplier_checkout.refusal_code(supplier_refusal))",
+        '                supplier_refusal["reason"])', WIRING_SUITE,
+    ),
+    (
+        "the buy-now gate loses its marketplace_product scope and screens courses",
+        BOT, '''    if item_type == "marketplace_product":
+        from services import marketplace_supplier_checkout''',
+        """    if True:
+        from services import marketplace_supplier_checkout""",
+        WIRING_SUITE,
+    ),
+]
+
+
 def _overlay(root: str, real_dirs: set[str] | None = None) -> str:
     """A symlink mirror of the repo, deep only where we need to write."""
     real_dirs = REAL_DIRS if real_dirs is None else real_dirs
@@ -334,6 +470,10 @@ GROUPS: list[tuple[str, str, list[tuple], bool]] = [
     ("Numbers that must stay derived", SUITE, DERIVATION_MUTATIONS, False),
     ("Numbers that follow their owner (expected to survive)", SUITE,
      FOLLOWED_MUTATIONS, True),
+    ("Harness self-check — this must be caught or nothing below counts",
+     WIRING_SUITE, CANARY_MUTATIONS, False),
+    ("A gate nobody calls, or calls in the wrong place", WIRING_SUITE,
+     WIRING_MUTATIONS, False),
 ]
 
 

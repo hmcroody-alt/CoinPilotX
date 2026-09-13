@@ -54,6 +54,7 @@ from services import marketplace_goods_policy
 from services import marketplace_payment_pause
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_reservation_schema as reservation_schema
+from services import marketplace_supplier_checkout as supplier_checkout
 
 LOGGER = logging.getLogger(__name__)
 
@@ -777,6 +778,23 @@ def cart_checkout():
                           code=below_minimum["code"], total_cents=total_minor,
                           minimum_charge_cents=below_minimum["minimum_minor"])
 
+        # §22. The last point at which refusing is still free. `_line_state` above
+        # judged this cart against `marketplace_listings`, which a drop-shipped
+        # listing only learns the truth through every 900 seconds; this asks the
+        # supplier evidence itself whether the order can still be filled. It has to
+        # sit here, after the commercial guards and before the first
+        # `seller_transactions` row: a refusal below this point would leave a
+        # `created` transaction behind for `settle_failed_transactions` to clean up,
+        # and a refusal above it would reject carts that were going to fail the
+        # cheaper checks anyway.
+        screened = supplier_checkout.screen(
+            cur, [l["listing_id"] for l in lines], now=now)
+        if screened["refusal"]:
+            refusal = screened["refusal"]
+            return _error(refusal["message"], 409,
+                          code=supplier_checkout.refusal_code(refusal),
+                          listing_id=screened["refused_listing_id"])
+
         tx_ids = []
         initial_status = "cash_pending" if cash_payment else "created"
         payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
@@ -795,6 +813,10 @@ def cart_checkout():
                  marketplace_quote_service.transaction_metadata(
                      {"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"],
                       "payment_method": payment_mode,
+                      # Present only when the sale was allowed without a current
+                      # supplier confirmation, which is the case a post-mortem
+                      # needs to find. Annotating every order would bury it.
+                      **supplier_checkout.audit_for(screened, l["listing_id"]),
                       **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
                      commercial_quote, payout_state=payout_state),
                  now, now),

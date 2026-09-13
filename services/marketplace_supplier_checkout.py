@@ -78,8 +78,13 @@ __all__ = [
     "REASON_SOLD_OUT",
     "REASON_STALE_CONFIRMATION",
     "REFUSAL_CODES",
+    "WIRE_CODES",
     "reconciliation_evidence",
     "evaluate",
+    "screen",
+    "refusal_code",
+    "audit",
+    "audit_for",
 ]
 
 #: Three inventory cadences. The reconciler re-reads inventory every 900s
@@ -115,6 +120,24 @@ REASON_STALE_CONFIRMATION = "SUPPLIER_UNCONFIRMED"
 #: The only two codes a lane may return from this gate. Enumerated so the client
 #: strings and the tests are written against one list.
 REFUSAL_CODES = (REASON_SOLD_OUT, REASON_STALE_CONFIRMATION)
+
+#: The code that goes on the wire, which is not the same as the reason recorded
+#: internally. ``marketplace_cart_routes._error`` documents a fixed vocabulary
+#: shared with ``mobile-native/src/api/marketplaceErrors.ts``, and a code outside it
+#: falls through to the server's own prose.
+#:
+#: A supplier sell-out is, to the buyer, the same fact as any other sell-out, and
+#: the client already has copy for ``OUT_OF_STOCK`` — inventing a second code for
+#: one fact would leave the buyer's screen depending on which subsystem noticed.
+#:
+#: ``SUPPLIER_UNCONFIRMED`` deliberately has no mapping. The nearest existing code
+#: is ``ITEM_UNAVAILABLE``, whose copy ("no longer available") describes something
+#: permanent, and this state is transient by definition — the buyer's next move is
+#: to try again shortly, which that copy forecloses. So it travels as itself and
+#: relies on ``buyerErrorCopy``'s documented fallback to server prose for a handled
+#: 4xx. That is why :data:`MESSAGES` has to be buyer-complete on its own, including
+#: saying that no charge was made.
+WIRE_CODES = {REASON_SOLD_OUT: "OUT_OF_STOCK"}
 
 #: What the buyer reads. Neither names the supplier, the provider or the
 #: connection — §27 applies to a refusal as much as to a success, and "our
@@ -335,6 +358,65 @@ def _allow(*, unverified: bool, **extra) -> dict:
 def _refuse(reason: str, **extra) -> dict:
     return {**_base(DECISION_REFUSE), "reason": reason, "code": reason,
             "message": MESSAGES[reason], **extra}
+
+
+def screen(cur, listing_ids: Sequence[Any], *, now: Any = None) -> dict:
+    """The whole basket, one answer. The only entry point a checkout lane calls.
+
+    Returns ``{"refusal", "refused_listing_id", "decisions"}``. ``refusal`` is None
+    when every line may be charged for; otherwise it is the first refusing
+    decision, already carrying the buyer's message and wire code.
+
+    This exists so the three lanes do not each grow their own copy of the loop.
+    The cart settles many lines, the offers and buy-now lanes settle one, and the
+    temptation is for each to iterate and interpret in its own way — which is how
+    the three of them end up disagreeing about whether an unverified line is
+    allowed, or about which refusal wins when two lines fail differently. §21:
+    one authority. A fourth lane gets this function or it gets nothing.
+
+    The drain latch is read **once per checkout**, not once per line. Every line
+    of one basket is being judged at one instant against one reconciler, so
+    re-reading it per line would let a two-line cart refuse its second line on
+    evidence its first line was allowed under.
+
+    First refusal wins, and the loop stops there. A basket that cannot be filled
+    is refused whole — the lanes charge per basket, so there is no partial outcome
+    to report, and continuing would only collect reasons nobody will read.
+    """
+    evidence = reconciliation_evidence(cur, now=now)
+    decisions: dict[int, dict] = {}
+    for listing_id in listing_ids:
+        decision = evaluate(cur, listing_id=listing_id, evidence=evidence, now=now)
+        try:
+            decisions[int(listing_id)] = decision
+        except (TypeError, ValueError):
+            pass
+        if decision["decision"] == DECISION_REFUSE:
+            return {"refusal": decision, "refused_listing_id": listing_id,
+                    "decisions": decisions}
+    return {"refusal": None, "refused_listing_id": None, "decisions": decisions}
+
+
+def refusal_code(decision: Mapping[str, Any]) -> str:
+    """The wire code for a refusal — the client's vocabulary, not the internal one.
+
+    See :data:`WIRE_CODES` for why the two differ.
+    """
+    reason = str(decision.get("reason") or "")
+    return WIRE_CODES.get(reason, reason)
+
+
+def audit_for(screened: Mapping[str, Any], listing_id: Any) -> dict:
+    """The audit annotation for one line of a screened basket.
+
+    A convenience so a lane writing per-line transaction metadata does not have to
+    know how ``screen`` keys its decisions.
+    """
+    try:
+        key = int(listing_id)
+    except (TypeError, ValueError):
+        return {}
+    return audit((screened.get("decisions") or {}).get(key) or {})
 
 
 def audit(decision: Mapping[str, Any]) -> dict:

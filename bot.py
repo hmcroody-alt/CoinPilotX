@@ -94054,6 +94054,24 @@ def api_pulse_payments_checkout():
         transaction_details["qty"] = buy_quantity
     if fulfillment_snapshot:
         transaction_details["fulfillment"] = fulfillment_snapshot
+    # §22, the same authority the cart and offers lanes call, at the same seam:
+    # after the commercial guards, before the first `seller_transactions` row.
+    #
+    # Scoped to `marketplace_product` deliberately. This route also sells courses,
+    # subscriptions and tips, whose `item_id` counts in a different table — handing
+    # one to a lookup keyed on `marketplace_listings.id` would be asking about
+    # whichever listing happens to share that number.
+    if item_type == "marketplace_product":
+        from services import marketplace_supplier_checkout
+        supplier_screened = marketplace_supplier_checkout.screen(cur, [item_id], now=now)
+        if supplier_screened["refusal"]:
+            supplier_refusal = supplier_screened["refusal"]
+            conn.close()
+            return api_error(
+                supplier_refusal["message"], 409,
+                error_code=marketplace_supplier_checkout.refusal_code(supplier_refusal))
+        transaction_details.update(
+            marketplace_supplier_checkout.audit_for(supplier_screened, item_id))
     initial_status = "cash_pending" if marketplace_cash_payment else "created"
     payout_state_for_metadata = "cash_collect_in_person" if marketplace_cash_payment else "pending_checkout"
     cur.execute(

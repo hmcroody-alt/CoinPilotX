@@ -55,6 +55,7 @@ from services.marketplace_payment_errors import (
 from services import marketplace_quote_service
 from services import marketplace_goods_policy
 from services import marketplace_payment_pause
+from services import marketplace_supplier_checkout as supplier_checkout
 
 LOGGER = logging.getLogger(__name__)
 
@@ -577,6 +578,17 @@ def offer_checkout(offer_id: int):
         fulfillment_snapshot = marketplace_fulfillment.snapshot(fulfillment_kind, details)
         stripe_shipping_object = marketplace_fulfillment.stripe_shipping(details)
         now = _now()
+
+        # §22, same authority and same seam as the cart and buy-now lanes: after
+        # the commercial guards, before the first `seller_transactions` row. An
+        # accepted offer is the lane most exposed to this, because the buyer may
+        # have accepted hours ago and nothing re-checked the supplier since.
+        screened = supplier_checkout.screen(cur, [listing_id], now=now)
+        if screened["refusal"]:
+            refusal = screened["refusal"]
+            return _error(refusal["message"], 409,
+                          code=supplier_checkout.refusal_code(refusal))
+
         initial_status = "cash_pending" if cash_payment else "created"
         payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
         cur.execute(
@@ -591,6 +603,7 @@ def offer_checkout(offer_id: int):
              marketplace_quote_service.transaction_metadata(
                  {"title": listing.get("title") or "Marketplace item",
                   "offer_id": offer_id, "qty": qty, "payment_method": payment_mode,
+                  **supplier_checkout.audit_for(screened, listing_id),
                   **({"fulfillment": fulfillment_snapshot} if fulfillment_snapshot else {})},
                  commercial_quote,
                  payout_state=payout_state),

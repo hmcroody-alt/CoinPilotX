@@ -64,6 +64,7 @@ SELLER = 1001
 DROPSHIP = 10      # a supplier-fulfilled listing
 STOCKED = 20       # imported, but the merchant holds the stock
 UNSOURCED = 30     # authored in PulseSoc, no supplier at all
+DROPSHIP_B = 40    # a second supplier-fulfilled listing, for multi-line baskets
 
 NOW = datetime(2026, 9, 13, 12, 0, 0)
 
@@ -102,7 +103,8 @@ def cur():
     """)
     for listing_id, title in ((DROPSHIP, 'Dropshipped tee'),
                               (STOCKED, 'Self-stocked tee'),
-                              (UNSOURCED, 'Hand-authored tee')):
+                              (UNSOURCED, 'Hand-authored tee'),
+                              (DROPSHIP_B, 'Second dropshipped tee')):
         cursor.execute(
             "INSERT INTO marketplace_listings (id, seller_user_id, title, price_label, "
             "status, approval_status, quantity) VALUES (?, ?, ?, '$20.00', 'live', "
@@ -606,6 +608,126 @@ def test_a_refusal_tells_the_buyer_nothing_about_the_merchants_supplier(cur):
         for leak in ("cj", "supplier", "provider", "warehouse", "connection"):
             assert leak not in lowered, f"{code} names {leak}: {message}"
         assert "not been charged" in lowered
+
+
+# ---------------------------------------------------------------------------
+# The basket entry point the lanes actually call
+# ---------------------------------------------------------------------------
+
+def test_a_basket_is_refused_whole_on_its_first_bad_line(cur):
+    """The lanes charge per basket, so there is no partial outcome to report."""
+    bind(cur, listing_id=DROPSHIP_B, provider_variant_id="20002")
+    add_variant(cur, listing_id=DROPSHIP_B, stock_state=schema.STOCK_OUT_OF_STOCK,
+                stock_quantity=0)
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    draining(cur)
+
+    screened = gate.screen(cur, [DROPSHIP_B, DROPSHIP], now=NOW)
+    assert screened["refusal"]["reason"] == gate.REASON_SOLD_OUT
+    assert screened["refused_listing_id"] == DROPSHIP_B
+    # Stopped at the first refusal rather than judging the rest of the basket.
+    assert DROPSHIP not in screened["decisions"]
+
+
+def test_a_basket_every_line_of_which_is_sellable_is_not_refused(cur):
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    draining(cur)
+    screened = gate.screen(cur, [DROPSHIP, UNSOURCED], now=NOW)
+    assert screened["refusal"] is None
+    assert screened["refused_listing_id"] is None
+    assert screened["decisions"][DROPSHIP]["decision"] == gate.DECISION_ALLOW
+    assert screened["decisions"][UNSOURCED]["decision"] == gate.NOT_APPLICABLE
+
+
+def test_one_basket_is_judged_against_one_reading_of_the_latch(cur):
+    """The latch is read once per checkout, not once per line.
+
+    Two lines of one cart are being judged at one instant against one reconciler.
+    Re-reading per line would let a basket refuse its second line on evidence its
+    first was allowed under — and the read is a query on the caller's cursor, so
+    the cost is real and paid per line.
+    """
+    bind(cur)
+    add_variant(cur)
+    confirm(cur)
+    draining(cur)
+
+    reads = {"count": 0}
+    real_execute = cur.execute
+
+    class Counting:
+        def __init__(self, inner):
+            self._inner = inner
+
+        def execute(self, sql, *args, **kwargs):
+            if "business_os_supplier_drain_ticks" in sql:
+                reads["count"] += 1
+            return real_execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+    gate.screen(Counting(cur), [DROPSHIP, DROPSHIP, DROPSHIP], now=NOW)
+    assert reads["count"] == 1, f"latch read {reads['count']} times for one basket"
+
+
+def test_a_sell_out_reaches_the_buyer_as_a_code_their_client_already_knows(cur):
+    """One fact, one buyer-facing code, whichever subsystem noticed it.
+
+    ``mobile-native/src/api/marketplaceErrors.ts`` maps a fixed vocabulary to
+    copy. A supplier sell-out is the same fact to a buyer as any other sell-out, so
+    it travels as ``OUT_OF_STOCK`` and gets the copy that already exists. Inventing
+    a second code for one fact would make the buyer's screen depend on which part
+    of PulseSoc found out.
+    """
+    copy = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "mobile-native", "src", "api", "marketplaceErrors.ts")
+    with open(copy, encoding="utf-8") as handle:
+        client = handle.read()
+
+    wire = gate.refusal_code({"reason": gate.REASON_SOLD_OUT})
+    assert wire == "OUT_OF_STOCK"
+    assert f"  {wire}: \"" in client, f"{wire} is not in the client's copy map"
+
+
+def test_the_unconfirmed_refusal_carries_its_own_prose_because_the_client_cannot_map_it(cur):
+    """The deliberate gap, asserted so it cannot become an accident.
+
+    ``SUPPLIER_UNCONFIRMED`` has no client mapping on purpose: the nearest existing
+    code, ``ITEM_UNAVAILABLE``, reads as permanent and this state is transient, so
+    that copy would tell the buyer to give up on an item that will be back. It
+    therefore relies on ``buyerErrorCopy``'s fallback to server prose for a handled
+    4xx — which only works if the message is complete on its own, and only stays
+    true while that fallback exists. Both halves are checked here, because if
+    somebody adds the code to the client this test should fail and be deleted
+    rather than quietly keep passing.
+    """
+    copy = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__)))), "mobile-native", "src", "api", "marketplaceErrors.ts")
+    with open(copy, encoding="utf-8") as handle:
+        client = handle.read()
+
+    wire = gate.refusal_code({"reason": gate.REASON_STALE_CONFIRMATION})
+    assert wire == gate.REASON_STALE_CONFIRMATION
+    assert wire not in client
+    assert "error.message" in client, ("the client no longer falls back to server "
+                                       "prose; this refusal now needs a mapped code")
+    message = gate.MESSAGES[gate.REASON_STALE_CONFIRMATION]
+    assert "not been charged" in message.lower()
+    assert "try again" in message.lower()
+
+
+def test_the_audit_helper_finds_a_lines_own_decision(cur):
+    bind(cur)
+    add_variant(cur)
+    screened = gate.screen(cur, [DROPSHIP], now=NOW)
+    assert gate.audit_for(screened, DROPSHIP)["supplier_unverified"]
+    assert gate.audit_for(screened, UNSOURCED) == {}
+    assert gate.audit_for(screened, "nonsense") == {}
 
 
 def test_audit_records_the_unverified_sale_and_nothing_else(cur):
