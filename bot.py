@@ -28790,10 +28790,46 @@ def admin_analytics_page():
     data = analytics_summary()
 
     def table(rows, headers):
-        body = "".join("<tr>" + "".join(f"<td>{str(cell)[:180]}</td>" for cell in row) + "</tr>" for row in rows)
-        head = "<tr>" + "".join(f"<th>{h}</th>" for h in headers) + "</tr>"
+        """Every cell is escaped. This table renders attacker-controlled text.
+
+        `analytics_summary()` reads `analytics_events` and `leads`, and both are
+        written by `POST /api/track` and the public lead form — unauthenticated,
+        by anyone. Rendering those rows unescaped is stored XSS on the
+        highest-privilege page in the product: the payload sits in the database
+        until an admin opens /admin/analytics, then runs with their session.
+
+        `clean_html()` at the ingest site is not the defence it looks like. It
+        is `re.sub(r"<[^>]+>", " ")` — a tag *stripper*, so it removes only
+        syntactically complete tags. `<img src=x onerror=alert(1)` has no
+        closing bracket, survives untouched, and the browser happily completes
+        it against the next `>` in the document. It also leaves `"` and `&`
+        alone, so a value landing in an attribute can break out of it. And
+        `metadata` never passes through it at all: it is stored as
+        `json.dumps(...)`, which escapes quotes but not `<`.
+
+        The fix belongs here rather than at ingest. Output encoding is
+        contextual and this is the context; filtering on the way in has to
+        anticipate every sink, and the rows above are already in the table.
+        """
+        def cell(value):
+            return html_escape(str(value)[:180])
+
+        body = "".join(
+            "<tr>" + "".join(f"<td>{cell(value)}</td>" for value in row) + "</tr>"
+            for row in rows
+        )
+        head = "<tr>" + "".join(f"<th>{html_escape(str(h))}</th>" for h in headers) + "</tr>"
         empty = f'<tr><td colspan="{len(headers)}">No data yet.</td></tr>'
         return f"<table>{head}{body or empty}</table>"
+
+    # The export links carry the password through, and it is reflected from the
+    # query string. Escaping it is not optional even though a wrong password
+    # 401s: `require_admin_password()` returns True on an `admin_user_id`
+    # session *without looking at the query arg at all*, so a logged-in admin
+    # who opens `/admin/analytics?password="><img src=x onerror=...>` renders
+    # whatever was in that parameter. Percent-encode for the URL context, then
+    # HTML-escape for the attribute context — the value crosses both.
+    password_param = html_escape(quote(request.args.get("password", ""), safe=""), quote=True)
 
     html = f"""
     <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -28809,7 +28845,7 @@ def admin_analytics_page():
     @media(max-width:800px){{.grid{{grid-template-columns:1fr 1fr}}}} @media(max-width:520px){{.grid{{grid-template-columns:1fr}} table{{font-size:12px}}}}
     </style></head><body><div class="wrap">
     <h1>CoinPlotXAI Inc. Analytics</h1>
-    <div class="actions"><a href="/admin/analytics/export/emails?password={request.args.get('password','')}">Export email opt-ins</a><a href="/admin/analytics/export/sms?password={request.args.get('password','')}">Export SMS opt-ins</a></div>
+    <div class="actions"><a href="/admin/analytics/export/emails?password={password_param}">Export email opt-ins</a><a href="/admin/analytics/export/sms?password={password_param}">Export SMS opt-ins</a></div>
     <div class="grid">
       <div class="card"><div>Live visitors</div><div class="metric">{data['live_visitors']}</div></div>
 	      <div class="card"><div>Visitors today</div><div class="metric">{data['visitors_today']}</div></div>
