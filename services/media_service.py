@@ -1332,6 +1332,83 @@ def report_media(user_id, media_id, reason=""):
     return {"ok": True, "message": "Media reported for review."}
 
 
+def enforce_measured_video_duration(cur, *, asset_id="", media_id=0, duration_seconds=0.0):
+    """Record a measured duration, and take the asset down if it breaks the ceiling.
+
+    The upload-time check can only ever test a claim: `duration_ms` arrives from
+    the client, and a caller talking to the API directly sends whatever number
+    gets it a signed URL. The measurement is the first thing on the server that
+    nobody outside can choose, so this is where the ceiling is actually enforced
+    -- everything before it is a courtesy that saves an honest uploader an hour of
+    bandwidth.
+
+    The ceiling is per-surface, so the verdict cannot be reached in SQL: the
+    webhook updates by `mux_asset_id` and does not know whether that row is a
+    Reel (90 minutes) or a marketplace listing (10). Hence a read, a decision per
+    row through the one policy authority, then a write.
+
+    Takedown here is `moderation_status='blocked'`, which is the lever feed
+    hydration already respects, rather than a new flag that every reader would
+    have to learn. It does not delete bytes: an over-long upload is a rule
+    violation, not an attack, and the owner may want the file back if a surface's
+    limit is raised.
+
+    The caller owns the transaction. This runs inside the webhook's cursor so a
+    row cannot be published ready-and-available by one statement and blocked by a
+    second one that fails to commit.
+    """
+    reference = str(asset_id or "").strip()
+    if not reference and not int(media_id or 0):
+        return {"checked": 0, "blocked": [], "measured_seconds": 0.0}
+    try:
+        measured = max(0.0, float(duration_seconds or 0))
+    except (TypeError, ValueError):
+        measured = 0.0
+    if int(media_id or 0):
+        cur.execute("SELECT id, context_type FROM chat_media_uploads WHERE id=?", (int(media_id),))
+    else:
+        cur.execute("SELECT id, context_type FROM chat_media_uploads WHERE mux_asset_id=?", (reference,))
+    rows = [dict(row) for row in (cur.fetchall() or [])]
+    blocked = []
+    for row in rows:
+        row_id = int(row.get("id") or 0)
+        surface = str(row.get("context_type") or "")
+        if measured > 0:
+            cur.execute("UPDATE chat_media_uploads SET duration_seconds=?, updated_at=? WHERE id=?", (measured, _now(), row_id))
+        reason = stored_video_policy.measured_violation(surface, measured)
+        if not reason:
+            # A long video on a surface nobody registered is deliberately left
+            # alone (see measured_violation), but it is still the one case where
+            # this function declines to enforce a rule that may well apply. Logged
+            # so the missing surface is findable, instead of looking like a video
+            # that was measured and found to be within the limit.
+            if measured > stored_video_policy.strictest_seconds() and not stored_video_policy.is_known_surface(surface):
+                logging.warning(
+                    "MEDIA_DURATION_SURFACE_UNREGISTERED media_id=%s surface=%s measured_seconds=%s",
+                    row_id, surface, int(measured),
+                )
+            continue
+        # Re-asserted on every delivery rather than written once, because Mux
+        # redelivers `video.asset.ready` and the ready-handler ahead of this one
+        # sets is_available back to 1. Last word has to belong to the measurement.
+        cur.execute(
+            """
+            UPDATE chat_media_uploads
+            SET moderation_status='blocked', moderation_reason=?, is_available=0,
+                processing_status=?, error_message=?, updated_at=?
+            WHERE id=?
+            """,
+            (reason[:500], "rejected_too_long", reason[:1000], _now(), row_id),
+        )
+        blocked.append(row_id)
+        logging.warning(
+            "MEDIA_DURATION_ENFORCED media_id=%s surface=%s measured_seconds=%s limit_seconds=%s code=%s",
+            row_id, surface, int(measured), stored_video_policy.max_duration_seconds(surface),
+            stored_video_policy.MEASURED_REJECTION_CODE,
+        )
+    return {"checked": len(rows), "blocked": blocked, "measured_seconds": measured}
+
+
 def migrate_local_media_row(row, *, force=False):
     """Upload a legacy local media row to durable object storage when possible."""
     item = dict(row or {})

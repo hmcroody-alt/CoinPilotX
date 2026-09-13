@@ -50538,6 +50538,16 @@ def api_pulse_live_mux_webhook():
                     """,
                     (status, playback_id, playback_url, processing_status, now, mux_asset_id),
                 )
+                if status == "ready":
+                    # Mux has already told us how long the video really is -- the
+                    # duration was parsed above and, until now, spent only on live
+                    # replay rows. For a stored upload this event is the first
+                    # measurement the uploader could not choose, so the ceiling is
+                    # enforced here rather than left to the claim made at /create.
+                    # After the UPDATE above on purpose: that one restores
+                    # is_available, and the measurement has to outrank it.
+                    media_service.enforce_measured_video_duration(
+                        cur, asset_id=mux_asset_id, duration_seconds=mux_duration_seconds)
                 cur.execute(
                     """
                     UPDATE pulse_live_sessions

@@ -1157,6 +1157,16 @@ def _fetch_attachment(cur: Any, attachment_id: int) -> Any:
 def _require_attachment_access(cur: Any, row: Any, user_id: int, require_sender: bool = False) -> str:
     if _row_get(row, "deleted_at") or str(_row_get(row, "upload_status", "")).lower() == "deleted":
         raise MessengerMediaError("attachment_deleted", "Attachment has been deleted.", 410)
+    # Every read of an attachment comes through here, which is the only reason a
+    # measured-too-long video can be taken back after it was already attached to a
+    # message. Gating the download route alone would leave the thumbnail and the
+    # metadata still serving it.
+    if str(_row_get(row, "upload_status", "")).lower() == "blocked":
+        raise MessengerMediaError(
+            "attachment_blocked",
+            str(_row_get(row, "error_message", "") or "This attachment is not available."),
+            410,
+        )
     conversation_id = int(_row_get(row, "conversation_id", 0) or 0)
     model = require_conversation_access(cur, user_id, conversation_id)
     if require_sender and int(_row_get(row, "sender_id", 0) or 0) != user_id:
@@ -1462,6 +1472,12 @@ def process_attachment(cur: Any, attachment_id: int, job_type: str) -> dict[str,
     row = _fetch_attachment(cur, attachment_id)
     if _row_get(row, "deleted_at"):
         return {"status": "skipped", "reason": "deleted"}
+    # Settled, not deferred. A blocked attachment is never going to become
+    # uploaded again, and deferral reschedules rather than spending the error
+    # budget -- so calling this "incomplete" would retry it every two minutes for
+    # as long as the row exists.
+    if str(_row_get(row, "upload_status", "")).lower() == "blocked":
+        return {"status": "skipped", "reason": "blocked"}
     if str(_row_get(row, "upload_status", "")).lower() not in {"uploaded", "attached"}:
         return {"status": "deferred", "reason": "upload_incomplete"}
 
@@ -1489,8 +1505,45 @@ def process_attachment(cur: Any, attachment_id: int, job_type: str) -> dict[str,
         return result
 
     updates = result.get("updates") or {}
+    # ffprobe has just read the real length off the container. Until now that
+    # number was only ever written down; the ceiling was enforced against the
+    # client's declared `duration_ms` at /init and /finish, which a caller talking
+    # to the API directly simply gets to choose. This is the same rule applied to
+    # the one duration nobody outside the server picked.
+    reason = stored_video_policy.measured_violation_ms(MESSENGER_VIDEO_SURFACE, updates.get("duration_ms")) if media_type == "video" else ""
+    if reason:
+        _block_overlong_attachment(cur, attachment_id, updates, reason)
+        return {"status": "rejected", "reason": stored_video_policy.MEASURED_REJECTION_CODE, "measured_duration_ms": updates.get("duration_ms")}
     _write_processing_result(cur, attachment_id, updates)
     return {"status": "processed", "updates": sorted(updates)}
+
+
+def _block_overlong_attachment(cur: Any, attachment_id: int, updates: dict[str, Any], reason: str) -> None:
+    """Take an attachment away once its measured length is known to break the rule.
+
+    `blocked` rather than `failed`: the upload did not fail, and a sender told
+    "upload failed" would reasonably retry the same file forever. It is also the
+    state `attach_attachments` refuses, so an attachment measured before the
+    sender attaches it never reaches a message at all -- and `_require_attachment_access`
+    turns the already-attached case into the same 410 a deleted attachment gets.
+
+    The measurement is stored alongside the refusal. Without it the row says only
+    that something was wrong, and the next person to look has to re-download 2 GB
+    to find out what.
+    """
+    cur.execute(
+        """
+        UPDATE message_attachments
+        SET upload_status='blocked', processing_status='rejected_too_long',
+            duration_ms=COALESCE(?, duration_ms), error_code=?, error_message=?, updated_at=?
+        WHERE id=?
+        """,
+        (updates.get("duration_ms"), stored_video_policy.MEASURED_REJECTION_CODE, reason[:1000], now_iso(), attachment_id),
+    )
+    logging.warning(
+        "MESSENGER_MEDIA_DURATION_ENFORCED attachment_id=%s measured_duration_ms=%s limit_seconds=%s",
+        attachment_id, updates.get("duration_ms"), stored_video_policy.max_duration_seconds(MESSENGER_VIDEO_SURFACE),
+    )
 
 
 def _local_source_for(row: Any) -> dict[str, Any] | None:

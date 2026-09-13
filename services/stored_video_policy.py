@@ -171,3 +171,50 @@ def limit_message(surface: str) -> str:
         unit = "minute" if minutes == 1 else "minutes"
         return f"Videos can be up to {minutes} {unit} long."
     return f"Videos can be up to {seconds} seconds long."
+
+
+# The code every surface records when a *measured* duration breaks the ceiling.
+# Distinct from the upload-time refusal only in where it is written, never in
+# what it means -- a reader comparing a blocked asset against a refused upload
+# should not have to work out whether two spellings are the same rule.
+MEASURED_REJECTION_CODE = "video_too_long"
+
+
+def measured_violation(surface: str, duration_seconds: float | int | None) -> str:
+    """The reason to record when a measurement breaks the ceiling, else "".
+
+    Why a reason string rather than a bool: the measurement arrives after the
+    bytes are already stored, so every call site has to *write down* why it took
+    an asset away from its owner. Handing back the sentence keeps that wording
+    identical across the Mux webhook, the Mux reconciler and the worker's ffprobe
+    pass, and makes the call site `if reason:` -- which cannot be misread the way
+    `if not within_limit(...)` can.
+
+    Absence is not a violation. A measurement of 0/None means nobody has measured
+    yet, and treating that as over-long would block every video in the window
+    between finalize and the first probe. The distinction lives in
+    `exceeds_limit`; this function must not add a second opinion about it.
+
+    An unregistered surface is not a violation either, and this is the one place
+    that departs from the strictest-cap fallback. That fallback is right when the
+    question is "may this upload start" -- the caller still has its bytes and gets
+    an error. It inverts once the question is "take this stored video away from its
+    owner", because `context_type` is free-form data written by many call sites:
+    `asset_focus`, `native` and `pulse_comment` all reach this table today without
+    being in the table above, so convicting on the 60s fallback would silently
+    delete valid video on a name nobody registered. Refusing to judge leaves the
+    asset alone and the surface visible in the log.
+    """
+    if not is_known_surface(surface):
+        return ""
+    if not exceeds_limit(surface, duration_seconds):
+        return ""
+    try:
+        measured = int(float(duration_seconds or 0))
+    except (TypeError, ValueError):
+        measured = 0
+    return f"Video runs {measured}s, over the {max_duration_seconds(surface)}s limit for this surface."
+
+
+def measured_violation_ms(surface: str, duration_ms: float | int | str | None) -> str:
+    return measured_violation(surface, declared_seconds(duration_ms))

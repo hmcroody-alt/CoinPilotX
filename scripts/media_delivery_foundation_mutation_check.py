@@ -41,6 +41,13 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 
 FOUNDATION = "services/messenger_media_foundation.py"
 POLICY = "services/stored_video_policy.py"
+MEDIA_SERVICE = "services/media_service.py"
+# The first depth-1 targets this harness has been given. `build_sandbox` walks an
+# arbitrary depth now and its closing `raise` evaluates the claim, but a root-level
+# module is a new shape for it -- see that docstring for the run where an unhandled
+# shape truncated real files.
+BOT = "bot.py"
+MEDIA_WORKER = "media_worker.py"
 CHAT_SCREEN = "mobile-native/src/screens/ChatScreen.tsx"
 MEDIA_ACTIONS = "mobile-native/src/media/mediaActions.ts"
 MEDIA_CONTRACT = "mobile-native/src/media/mediaContract.ts"
@@ -253,6 +260,163 @@ MUTATIONS = [
         "sends a long video as parts and never through the single-request route",
         "src/api/__tests__/messengerResumableUpload.test.ts",
         "jest",
+    ),
+    # ------------------------------------------------------------------
+    # The measured duration. Everything above enforces the ceiling against a
+    # number the client sent; these nine defend the one number it cannot choose.
+    # The failure they all share is silence: every one of them leaves a server
+    # that measures the video, writes the measurement down, and never compares it
+    # to the limit -- which reads exactly like a platform whose videos are all
+    # within the limit.
+    # ------------------------------------------------------------------
+    (
+        # The defect this whole seam exists for. The measurement arrives, is stored,
+        # and decides nothing.
+        "measured duration recorded but never enforced",
+        MEDIA_SERVICE,
+        "        reason = stored_video_policy.measured_violation(surface, measured)",
+        '        reason = ""',
+        "test_a_lying_client_does_not_help_itself",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
+    ),
+    (
+        # The ceiling is per-surface, so the verdict cannot be reached once for the
+        # platform. Collapsing it lets a 10-minute marketplace listing run 90.
+        "per-surface ceiling collapsed to one global limit",
+        MEDIA_SERVICE,
+        '        surface = str(row.get("context_type") or "")',
+        '        surface = "post"',
+        "test_the_ceiling_is_read_per_row_not_once_for_the_platform",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
+    ),
+    (
+        # A takedown that leaves the asset available is not a takedown. This is also
+        # what keeps a redelivered `video.asset.ready` from republishing the video,
+        # since that handler sets is_available back to 1 on every delivery.
+        "blocked asset left available",
+        MEDIA_SERVICE,
+        "            SET moderation_status='blocked', moderation_reason=?, is_available=0,",
+        "            SET moderation_status='blocked', moderation_reason=?,",
+        "test_the_block_is_reasserted_on_every_delivery",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
+    ),
+    (
+        # The inverted fallback. `max_duration_seconds` answers an unregistered
+        # surface with the *strictest* cap, which is right for refusing an upload and
+        # catastrophic for a post-hoc takedown: `asset_focus`, `native` and
+        # `pulse_comment` all reach this table today, so convicting on the fallback
+        # silently blocks valid video against a 60s limit nobody chose.
+        "unregistered surface convicted on the strictest cap",
+        POLICY,
+        '    if not is_known_surface(surface):\n        return ""\n',
+        "",
+        "test_an_unregistered_surface_is_not_convicted_however_long",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
+    ),
+    (
+        # Mux's `duration` was parsed by this route long before this mission and spent
+        # only on live-replay rows. Removing the call restores that: the one
+        # measurement the uploader could not choose, thrown away again.
+        "Mux webhook discards the measurement",
+        BOT,
+        "                    media_service.enforce_measured_video_duration(\n"
+        "                        cur, asset_id=mux_asset_id, duration_seconds=mux_duration_seconds)",
+        "                    pass",
+        "test_an_over_long_asset_is_blocked_by_the_delivery_that_reports_it",
+        "tests/test_measured_duration_wiring.py",
+        "pytest",
+    ),
+    (
+        # Ordering, not presence. Enforcement sits after the UPDATE that restores
+        # `is_available=1` for a ready asset. Hoisted above it, every delivery blocks
+        # the video and then immediately republishes it -- and no unit test of either
+        # statement alone would see anything wrong.
+        "measurement overwritten by the ready update",
+        BOT,
+        """                cur.execute(
+                    \"\"\"
+                    UPDATE chat_media_uploads
+                    SET mux_status=?, mux_playback_id=COALESCE(NULLIF(?, ''), mux_playback_id),
+                        playback_url=COALESCE(NULLIF(?, ''), playback_url),
+                        processing_status=?, is_available=CASE WHEN ?='ready' THEN 1 ELSE is_available END,
+                        error_message=CASE WHEN ?='errored' THEN 'Mux video asset errored.' ELSE COALESCE(error_message, '') END,
+                        updated_at=?
+                    WHERE mux_asset_id=?
+                    \"\"\",
+                    (status, playback_id, playback_url, processing_status, status, status, now, mux_asset_id),
+                )
+""",
+        """                if status == "ready":
+                    media_service.enforce_measured_video_duration(
+                        cur, asset_id=mux_asset_id, duration_seconds=mux_duration_seconds)
+                cur.execute(
+                    \"\"\"
+                    UPDATE chat_media_uploads
+                    SET mux_status=?, mux_playback_id=COALESCE(NULLIF(?, ''), mux_playback_id),
+                        playback_url=COALESCE(NULLIF(?, ''), playback_url),
+                        processing_status=?, is_available=CASE WHEN ?='ready' THEN 1 ELSE is_available END,
+                        error_message=CASE WHEN ?='errored' THEN 'Mux video asset errored.' ELSE COALESCE(error_message, '') END,
+                        updated_at=?
+                    WHERE mux_asset_id=?
+                    \"\"\",
+                    (status, playback_id, playback_url, processing_status, status, status, now, mux_asset_id),
+                )
+""",
+        "test_the_measurement_outranks_the_ready_update_in_the_same_request",
+        "tests/test_measured_duration_wiring.py",
+        "pytest",
+    ),
+    (
+        # The webhook is the fast path, not the guaranteed one -- it needs a secret set
+        # and an endpoint registered, and one lost delivery leaves a video permanently
+        # unmeasured, which is indistinguishable from a video within the limit.
+        "worker cycle never polls for unmeasured video",
+        MEDIA_WORKER,
+        '    durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))',
+        '    durations = {"skipped": "disabled"}',
+        "test_the_cycle_calls_the_duration_pass_and_reports_it",
+        "tests/test_measured_duration_wiring.py",
+        "pytest",
+    ),
+    (
+        # Messenger's ffprobe pass has always produced the real length and only ever
+        # written it down. This is that original defect, restored.
+        "Messenger records its probe without enforcing it",
+        FOUNDATION,
+        '    reason = stored_video_policy.measured_violation_ms(MESSENGER_VIDEO_SURFACE, updates.get("duration_ms")) if media_type == "video" else ""',
+        '    reason = ""',
+        "test_an_over_long_video_is_blocked_after_measurement",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
+    ),
+    (
+        # `deferred` reschedules without spending the error budget, so treating a
+        # blocked row as merely incomplete retries it every two minutes for as long as
+        # the row exists. The queue never drains and nothing ever reports an error.
+        "blocked attachment retried forever",
+        FOUNDATION,
+        '    if str(_row_get(row, "upload_status", "")).lower() == "blocked":\n        return {"status": "skipped", "reason": "blocked"}',
+        "    pass",
+        "test_a_blocked_attachment_is_settled_not_deferred",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
+    ),
+    (
+        # Every read of an attachment passes through this gate, which is the only
+        # reason an over-long video can be taken back after it was already attached to
+        # a message. Gating the download route alone would leave the thumbnail and the
+        # metadata still serving it.
+        "blocked attachment still served to readers",
+        FOUNDATION,
+        '    if str(_row_get(row, "upload_status", "")).lower() == "blocked":\n        raise MessengerMediaError(\n            "attachment_blocked",',
+        '    if False:\n        raise MessengerMediaError(\n            "attachment_blocked",',
+        "test_a_blocked_attachment_is_refused_to_every_reader",
+        "tests/test_measured_video_duration_enforcement.py",
+        "pytest",
     ),
 ]
 
