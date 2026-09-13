@@ -780,8 +780,21 @@ def _process_live_replay_job(cur, job) -> None:
             mux_live_service.disable_mux_live_stream(live_stream_id)
         mux_status = (mux_asset.get("mux_status") or "").lower()
         if mux_status == "errored":
-            raise RuntimeError("Mux confirmed that the recording could not be processed.")
-        if mux_status == "ready" and mux_asset.get("mux_recording_playback_id") and mux_asset.get("playback_url"):
+            # A dead asset used to retire the job here, so a recording that is
+            # intact in R2 stayed unplayable until the host pressed retry. Drop
+            # the dead identity and rebuild from the original once, keyed on the
+            # dead asset id so a rebuild that errors again does not loop.
+            if not str(live.get("agora_recording_filename") or "") or str(live.get("replay_retry_key") or ""):
+                raise RuntimeError("Mux confirmed that the recording could not be processed.")
+            cur.execute(
+                "UPDATE pulse_live_sessions SET replay_retry_key=?, mux_recording_asset_id='', mux_recording_playback_id='', replay_url='', recording_status='processing_replay', recording_error='', updated_at=? WHERE id=?",
+                (asset_id, _now(), live_id),
+            )
+            logging.info("LIVE_REPLAY_REBUILD_AFTER_ERRORED_ASSET live_id=%s dead_asset_id=%s", live_id, asset_id)
+            live["replay_retry_key"] = asset_id
+            live["recording_status"] = "processing_replay"
+            asset_id = ""
+        elif mux_status == "ready" and mux_asset.get("mux_recording_playback_id") and mux_asset.get("playback_url"):
             playback_id = mux_asset.get("mux_recording_playback_id") or live.get("mux_recording_playback_id") or ""
             playback_url = mux_asset.get("playback_url") or ""
             cur.execute(
@@ -802,11 +815,12 @@ def _process_live_replay_job(cur, job) -> None:
             REPLAYS_READY_TO_PUBLISH.add(live_id)
             _complete_job(cur, int(job.get("id") or 0), "done")
             return
-        # A provider-confirmed preparing asset is delayed, not failed, regardless
-        # of its age. Slow checks are bounded per cycle and never recreate it.
-        age = bot.live_archive_service.replay_age_seconds(live)
-        _reschedule(cur, job, seconds=300 if age >= 300 else 30)
-        return
+        else:
+            # A provider-confirmed preparing asset is delayed, not failed, regardless
+            # of its age. Slow checks are bounded per cycle and never recreate it.
+            age = bot.live_archive_service.replay_age_seconds(live)
+            _reschedule(cur, job, seconds=300 if age >= 300 else 30)
+            return
 
     filename = str(live.get("agora_recording_filename") or "")
     marker = "pulse_replay:" + str(live_id) + ":" + str(live.get("agora_recording_sid") or "") + ":" + str(live.get("replay_retry_key") or "")
@@ -934,6 +948,11 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
     # still recoverable. The source predicate below is what makes that safe, and the
     # drain is one-way: a session either resolves to mux_asset_ready or exhausts its
     # attempts into 'replay_failed', which stays excluded.
+    #
+    # A ready replay whose canonical Feed post the creator deleted is the one
+    # exception that is not one-way: the publisher refuses to resurrect the post,
+    # so replay_reel_id can never be claimed and the publication arm below would
+    # requeue the session on every cycle forever.
     cur.execute(
         """
         SELECT id, recording_status
@@ -943,7 +962,7 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
           AND COALESCE(recording_status,'') NOT IN ('replay_failed')
           AND COALESCE(record_replay,1)=1
           AND NOT EXISTS (SELECT 1 FROM pulse_jobs j WHERE j.job_type='finalize_live_replay' AND j.target_type='live' AND j.target_id=pulse_live_sessions.id AND j.status IN ('pending','processing'))
-          AND (COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready') OR (COALESCE(replay_reel_id,0)=0 AND COALESCE(replay_publish_enabled,1)=1))
+          AND (COALESCE(recording_status,'') NOT IN ('mux_asset_ready','replay_ready') OR (COALESCE(replay_reel_id,0)=0 AND COALESCE(replay_publish_enabled,1)=1 AND NOT EXISTS (SELECT 1 FROM pulse_posts p WHERE p.id=pulse_live_sessions.feed_post_id AND p.deleted_at IS NOT NULL)))
         ORDER BY updated_at ASC, id ASC LIMIT ?
         """,
         (max(1, int(limit or 25)),),
@@ -983,13 +1002,75 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
     return {"queued": queued, "stale_recovered": recovered, "terminal_posts_repaired": terminal_repaired}
 
 
+DURATION_RECONCILE_MAX_AGE_DAYS = max(1, int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_MAX_AGE_DAYS", "7")))
+
+
+def reconcile_stored_video_durations(limit: int = 25) -> dict:
+    """Measure stored videos Mux never told us about, and enforce the ceiling.
+
+    The webhook is the fast path, not the guaranteed one: it needs
+    MUX_WEBHOOK_SECRET set and the endpoint registered in the Mux dashboard, and
+    a single lost delivery would otherwise leave a video permanently unmeasured --
+    which is indistinguishable, to every reader, from a video that is within the
+    limit. So the asset is polled as well, and both paths reach the same
+    enforcement function rather than each deciding for themselves.
+
+    Bounded by age because an asset Mux has since deleted can never be measured;
+    without the window those rows would be re-fetched every cycle forever.
+    """
+    if not media_service.mux_diagnostics().get("configured"):
+        return {"skipped": "mux_not_configured"}
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=DURATION_RECONCILE_MAX_AGE_DAYS)).isoformat(timespec="seconds")
+    cur.execute(
+        """
+        SELECT id, mux_asset_id
+        FROM chat_media_uploads
+        WHERE media_type='video'
+          AND COALESCE(mux_asset_id,'')<>''
+          AND COALESCE(duration_seconds,0)<=0
+          AND COALESCE(moderation_status,'')<>'blocked'
+          AND deleted_at IS NULL
+          AND COALESCE(created_at,'')>=?
+        ORDER BY created_at ASC, id ASC LIMIT ?
+        """,
+        (cutoff, max(1, int(limit or 25))),
+    )
+    candidates = [(int(row["id"]), str(row["mux_asset_id"] or "")) for row in cur.fetchall()]
+    measured = 0
+    blocked: list[int] = []
+    for media_id, asset_id in candidates:
+        try:
+            asset = media_service.get_mux_asset(asset_id)
+        except Exception as exc:
+            logging.warning("MEDIA_DURATION_RECONCILE_FETCH_FAILED media_id=%s error=%s", media_id, str(exc)[:200])
+            continue
+        if not asset.get("ok") or str(asset.get("mux_status") or "").lower() not in {"ready", "asset_ready", "available"}:
+            continue
+        try:
+            duration = float((asset.get("asset") or {}).get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        if duration <= 0:
+            continue
+        outcome = media_service.enforce_measured_video_duration(cur, media_id=media_id, duration_seconds=duration)
+        measured += 1
+        blocked.extend(outcome.get("blocked") or [])
+    conn.commit()
+    conn.close()
+    return {"candidates": len(candidates), "measured": measured, "blocked": blocked}
+
+
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
-    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers}
+    durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
+    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations}
 
 
 def main() -> None:

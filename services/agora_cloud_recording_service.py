@@ -138,12 +138,17 @@ def find_finalized_recording(prefix: str) -> dict:
 
 
 def prepare_private_mux_input(prefix: str, filename: str) -> dict:
-    """Build a private HLS input Mux can fetch directly from R2.
+    """Build a private single-file input Mux can fetch directly from R2.
 
     Agora returns a finalized HLS playlist whose segments remain private in R2.
-    Replace only its relative segment references with short-lived SigV4 URLs;
-    Mux then reads the original packets provider-to-provider. This avoids
-    downloading and re-uploading the complete recording through PulseSoc.
+    Mux VOD ingest takes a muxed media file (MP4/MOV/MKV/TS) and rejects a
+    playlist with ``invalid_input``, so the playlist itself can never be the
+    input. The segments are MPEG-TS from one encoder with stable PIDs, which
+    concatenate byte-for-byte into a single valid TS.
+
+    The join streams R2 -> R2 through a bounded buffer so a long recording
+    never lands on disk or sits in memory, and the result is reused when it is
+    already present because the replay job retries.
     """
     try:
         import boto3
@@ -167,27 +172,83 @@ def prepare_private_mux_input(prefix: str, filename: str) -> dict:
             return {"ok": False, "reason": "recording_upload_pending", "message": "The recording is still uploading."}
         base_dir = posixpath.dirname(manifest_key)
         expires = max(900, min(int(os.getenv("R2_MUX_SIGNED_URL_TTL_SECONDS", "7200")), 21600))
-        rewritten = []
-        segment_count = 0
+        segment_keys = []
         for line in manifest.splitlines():
             uri = line.strip()
             if not uri or uri.startswith("#"):
-                rewritten.append(line)
                 continue
             if "://" in uri:
                 return {"ok": False, "reason": "external_segment"}
             segment_key = posixpath.normpath(posixpath.join(base_dir, uri))
             if not segment_key.startswith(f"{base_dir}/"):
                 return {"ok": False, "reason": "invalid_segment_path"}
-            rewritten.append(client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": segment_key}, ExpiresIn=expires))
-            segment_count += 1
-        if not segment_count:
+            segment_keys.append(segment_key)
+        if not segment_keys:
             return {"ok": False, "reason": "empty_recording"}
-        mux_key = posixpath.join(base_dir, "mux-ingest.m3u8")
-        mux_manifest = ("\n".join(rewritten) + "\n").encode("utf-8")
-        client.put_object(Bucket=bucket, Key=mux_key, Body=mux_manifest, ContentType="application/vnd.apple.mpegurl")
+
+        mux_key = posixpath.join(base_dir, "mux-ingest.ts")
+        expected_bytes = 0
+        for segment_key in segment_keys:
+            expected_bytes += int(client.head_object(Bucket=bucket, Key=segment_key)["ContentLength"])
+        if expected_bytes > int(os.getenv("R2_MUX_INPUT_MAX_BYTES", str(32 * 1024 ** 3))):
+            return {"ok": False, "reason": "recording_too_large"}
+
+        try:
+            existing = int(client.head_object(Bucket=bucket, Key=mux_key)["ContentLength"])
+        except Exception:
+            existing = -1
+        if existing != expected_bytes:
+            _concatenate_segments(client, bucket, segment_keys, mux_key)
+
         input_url = client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": mux_key}, ExpiresIn=expires)
-        return {"ok": True, "input_url": input_url, "object_key": mux_key, "bytes": len(mux_manifest), "segments": segment_count}
+        return {"ok": True, "input_url": input_url, "object_key": mux_key, "bytes": expected_bytes, "segments": len(segment_keys)}
     except Exception as exc:
         logging.warning("AGORA_RECORDING_MUX_INPUT_FAILED error_type=%s", type(exc).__name__)
         return {"ok": False, "reason": "mux_input_failed", "message": "The private recording could not be prepared for Mux."}
+
+
+def _concatenate_segments(client, bucket: str, segment_keys: list, destination_key: str) -> None:
+    """Join TS segments into one R2 object, flushing fixed-size parts.
+
+    R2 requires every multipart part except the last to be the same size, so
+    the buffer is drained in exact ``part_size`` slices rather than once per
+    segment.
+    """
+    part_size = max(5 * 1024 ** 2, int(os.getenv("R2_MUX_INPUT_PART_BYTES", str(16 * 1024 ** 2))))
+    upload_id = ""
+    parts = []
+    buffer = bytearray()
+
+    def flush(final: bool) -> None:
+        nonlocal upload_id, buffer
+        while len(buffer) >= part_size or (final and buffer):
+            chunk = bytes(buffer[:part_size])
+            del buffer[:len(chunk)]
+            if not upload_id:
+                upload_id = client.create_multipart_upload(Bucket=bucket, Key=destination_key, ContentType="video/mp2t")["UploadId"]
+            result = client.upload_part(Bucket=bucket, Key=destination_key, PartNumber=len(parts) + 1, UploadId=upload_id, Body=chunk)
+            parts.append({"ETag": result["ETag"], "PartNumber": len(parts) + 1})
+            if final and not buffer:
+                return
+
+    try:
+        for segment_key in segment_keys:
+            body = client.get_object(Bucket=bucket, Key=segment_key)["Body"]
+            while True:
+                block = body.read(1024 ** 2)
+                if not block:
+                    break
+                buffer += block
+            flush(False)
+        if not upload_id:
+            client.put_object(Bucket=bucket, Key=destination_key, Body=bytes(buffer), ContentType="video/mp2t")
+            return
+        flush(True)
+        client.complete_multipart_upload(Bucket=bucket, Key=destination_key, UploadId=upload_id, MultipartUpload={"Parts": parts})
+    except Exception:
+        if upload_id:
+            try:
+                client.abort_multipart_upload(Bucket=bucket, Key=destination_key, UploadId=upload_id)
+            except Exception:
+                logging.warning("AGORA_RECORDING_MUX_INPUT_ABORT_FAILED")
+        raise
