@@ -2666,6 +2666,15 @@ def pulse_inject_design_tokens(response):
             return response
         if request.path.startswith(("/api/", "/static/")):
             return response
+        # The SPA ships its own token layer (web/src/styles/tokens.css, bundled
+        # into the hashed stylesheet). Splicing this file in as well is not a
+        # duplicate but a conflict: the two define only six names in common and
+        # disagree on four of them -- --pulse-bg, --pulse-danger, --pulse-muted,
+        # --pulse-text -- and this file resolves them through tokens that exist
+        # only in this file. Whichever loads last wins, which is a rendering
+        # difference decided by injection order.
+        if getattr(g, "pulse_spa_response", False):
+            return response
         body = response.get_data()
         if not body or b"pulsesoc-tokens.css" in body:
             return response
@@ -2750,7 +2759,17 @@ def add_pwa_headers(response):
             # scripts (see tests/admin_auth/test_pre_auth_gateway.py). Favicon
             # tags above are inert markup and stay; the PWA/i18n scripts below
             # are public-app concerns and are not injected into the gateway.
-            gateway_isolated = request.path == "/admin/login"
+            #
+            # The SPA shell takes the same deal for a different reason. The
+            # favicon/manifest/theme-color block above is inert markup its
+            # index.html genuinely lacks, so it keeps that. The three scripts
+            # below all query for server-rendered DOM at `defer` time -- when a
+            # React app's body is still an empty <div id="root"> -- so they bind
+            # to nothing and then never run again. They are not merely useless
+            # there: pulse_i18n.js rewrites text nodes, which is a race against
+            # React's first paint over nodes React owns.
+            spa_isolated = bool(getattr(g, "pulse_spa_response", False))
+            gateway_isolated = request.path == "/admin/login" or spa_isolated
             if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
                 pwa_install_script = '<script src="/static/js/pulse_pwa_install.js?v=brand-20260813" defer></script>'
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
@@ -2761,7 +2780,12 @@ def add_pwa_headers(response):
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            call_overlay_allowed = bool(session.get("account_user_id")) and (
+            # `not spa_isolated` because this stylesheet dresses the
+            # server-rendered global call overlay, whose markup the SPA does not
+            # have. Skipping it changes nothing for any existing path -- the SPA
+            # shell is the only route that sets the flag, and it is new. The
+            # call overlay itself is untouched.
+            call_overlay_allowed = not spa_isolated and bool(session.get("account_user_id")) and (
                 request.path == "/pulse" or request.path.startswith(("/pulse/", "/dashboard"))
             )
             if call_overlay_allowed and "</head>" in html.lower() and "/static/css/pulsesoc_global_call_overlay.css" not in html:
@@ -54038,6 +54062,122 @@ def pulse_creator_camera_page():
     const preview=document.getElementById('cameraPreview');let selectedFilter='';document.getElementById('cameraFile').addEventListener('change',e=>{const file=e.target.files[0];if(!file)return;const url=URL.createObjectURL(file);preview.innerHTML=file.type.startsWith('video/')?`<video src="${url}" controls playsinline style="width:100%;border-radius:14px"></video>`:`<img src="${url}" alt="filter preview" style="width:100%;border-radius:14px">`;});document.addEventListener('click',e=>{const b=e.target.closest('[data-filter]');if(!b)return;selectedFilter=b.dataset.filter;preview.style.filter=selectedFilter.includes('Bright')?'brightness(1.18) contrast(1.05)':selectedFilter.includes('Night')?'contrast(1.25) saturate(.8)':selectedFilter.includes('Sharp')?'contrast(1.16) saturate(1.1)':'saturate(1.15)';toast(selectedFilter+' preview applied. Original is preserved.');});document.getElementById('cameraPost').addEventListener('click',()=>toast('Filtered posting pipeline is ready for media upload. Use Full Composer for final publish.'));
     """
     return pulse_social_shell("Creator Camera", "Mobile-first creator filters, captions, stickers-ready architecture, and short media upload.", main, "", script)
+
+
+#: The one CSP the SPA runs under, and the only reason it is not served straight
+#: out of /static/.
+#:
+#: `add_pwa_headers` applies the site-wide CSP with `setdefault`, so a route that
+#: sets its own header first keeps it -- that is the opt-out, and it is why this
+#: is set inside the view rather than by another after_request hook. Serving the
+#: shell from /static/app/index.html would have skipped CSP entirely: the hook
+#: returns early for /static/, so every file under it ships with no policy at
+#: all. A React app with no CSP is the single largest XSS surface in the product.
+#:
+#: **`script-src 'self'` with no `'unsafe-inline'`** is the whole point. The
+#: site-wide policy carries `'unsafe-inline'` because ~1,500 server-rendered
+#: Jinja routes inline their scripts; the SPA has none -- Vite emits one hashed
+#: module -- so it does not need the exemption and must not inherit it. It also
+#: drops `https://static.cloudflareinsights.com`: analytics on a login-walled
+#: product surface buys nothing and reopens the hole.
+#:
+#: **`style-src` keeps `'unsafe-inline'`, deliberately.** React's `style={{...}}`
+#: compiles to a `style=` attribute, governed by `style-src-attr` falling back to
+#: `style-src`. web/src/components/PulseBackground.tsx has nine of them driving
+#: the mesh backdrop. Tightening this would need `style-src-attr` support that
+#: is not universal, and where it is missing the browser falls back and the
+#: backdrop silently disappears. Inline *style* is not the XSS vector inline
+#: *script* is; the requirement was always scoped to script-src.
+from services.route_auth import public_route
+
+PULSE_WEB_APP_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob: https:; "
+    "media-src 'self' blob: https:; "
+    "font-src 'self' data:; "
+    "connect-src 'self' https: wss:; "
+    "worker-src 'self'; "
+    "manifest-src 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'self'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "upgrade-insecure-requests;"
+)
+
+PULSE_WEB_APP_SHELL = Path(__file__).resolve().parent / "static" / "app" / "index.html"
+
+
+@webhook_app.route("/pulse/app", methods=["GET"])
+@webhook_app.route("/pulse/app/<path:spa_path>", methods=["GET"])
+@public_route(
+    reason=(
+        "Static shell only -- an empty <div id=\"root\"> plus one hashed script "
+        "and one hashed stylesheet. It carries no member data, so there is "
+        "nothing here for a gate to protect. Gating it would be actively wrong: "
+        "the server would redirect to the legacy login before the client could "
+        "boot and route to its own login screen, losing the destination URL. "
+        "Every /api/ call the shell goes on to make is authenticated "
+        "independently -- that is where the member data actually crosses the "
+        "wire, and that is where the gates are."
+    )
+)
+def pulse_web_app_shell(spa_path: str = ""):
+    """The web client's shell. Every /pulse/app/* URL returns the same document.
+
+    Client-side routing means the server cannot know which screen a URL names,
+    so it returns the shell and lets the app resolve it. The catch-all is scoped
+    to /pulse/app/ rather than /pulse/, which still belongs to the 172
+    server-rendered routes above and below this one.
+
+    Deliberately unauthenticated. The shell is an empty <div id="root"> and a
+    script tag; there is nothing in it to protect, and gating it would mean the
+    login redirect fires before the app can route to its own login screen and
+    preserve the destination. It is marked `noindex` in the document itself.
+
+    On iOS this path is *excluded* from the universal-link association -- see
+    APPLE_LINK_COMPONENTS in services/native_app_links.py. Everything else under
+    /pulse/ opens the native app, which is the intent; this one path has no
+    native route, and iOS does not fall back to Safari when routing fails.
+    """
+    try:
+        document = PULSE_WEB_APP_SHELL.read_text(encoding="utf-8")
+    except OSError as exc:
+        # The shell is a build artefact (`npm run build` in web/ writes
+        # static/app/). A checkout that never ran it has no SPA, which is a
+        # deployment fault and not a 500 -- say so rather than rendering a
+        # traceback into a product surface.
+        logging.error("PULSE_WEB_APP_SHELL_MISSING path=%s error=%s", PULSE_WEB_APP_SHELL, exc)
+        response = webhook_app.make_response(("The web client has not been built.", 503))
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        return response
+
+    response = webhook_app.make_response(document)
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+
+    # Set before add_pwa_headers runs, so its setdefault leaves it alone.
+    response.headers["Content-Security-Policy"] = PULSE_WEB_APP_CSP
+
+    # The shell names hashed asset filenames. Those are immutable and cached for
+    # a year; the document that points at them must never be, or a deploy leaves
+    # browsers asking for asset hashes that no longer exist.
+    #
+    # Redundant today, and kept deliberately. `add_pwa_headers` already forces
+    # no-store on everything under /pulse/, and it assigns rather than
+    # setdefaults, so it overwrites this line on the way out -- the guarantee
+    # currently comes from the family rule, not from here. This matters if the
+    # shell is ever mounted outside /pulse/, where the family rule stops
+    # applying and nothing else would set it. The 503 branch above sets it for
+    # the same reason.
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+
+    # Consumed by pulse_inject_design_tokens and add_pwa_headers. A flag rather
+    # than a path comparison in each hook: the hooks then cannot drift from the
+    # route, and a second SPA mount gets the same treatment by construction.
+    g.pulse_spa_response = True
+    return response
 
 
 @webhook_app.route("/pulse/spaces", methods=["GET"])

@@ -36,8 +36,29 @@ BUNDLE_ID_PATTERN = re.compile(r"^[A-Za-z0-9.-]+$")
 #: to. Handing those to the app closes the last door at the moment it is needed.
 #: The screens still work from in-app navigation and from `pulsesoc://`; only the
 #: https handoff is withheld.
+#:
+#: **Order is load-bearing.** iOS evaluates `components` top to bottom and stops
+#: at the first match, so an `exclude` entry only does anything if it sits
+#: *above* the pattern it is carving out of. `/pulse/app*` below `/pulse/*`
+#: would be dead configuration that reads as if it worked.
 APPLE_LINK_COMPONENTS = [
     {"/": "/pulse", "comment": "PulseSoc home"},
+    # The web client's own shell, carved out of /pulse/* immediately above it.
+    #
+    # /pulse/* is the app's territory by design: on iPhone a /pulse URL should
+    # open the app, and the website's job is to promote that. /pulse/app is the
+    # one path under it that is not a native object -- it is the browser client,
+    # served from bot.py's pulse_web_app_shell. Claiming it would hand iOS a URL
+    # that mobile-native/src/navigation/linking.ts declares no route for, and an
+    # unresolvable universal link does not fall back to Safari: the app opens on
+    # whatever screen was last showing. The user asked for a page and got an
+    # unrelated screen, with nothing logged anywhere.
+    #
+    # Two entries for the same reason /pulse and /pulse/* are two entries:
+    # Apple's `*` matches a run of characters but the literal `/` before it
+    # still has to be present, so /pulse/app/* does not match /pulse/app.
+    {"/": "/pulse/app", "exclude": True, "comment": "Web client shell -- browser surface, no native route"},
+    {"/": "/pulse/app/*", "exclude": True, "comment": "Web client routes -- browser surface, no native route"},
     {"/": "/pulse/*", "comment": "PulseSoc native objects and workflows"},
     {"/": "/search*", "comment": "PulseSoc search"},
     {"/": "/dashboard", "comment": "Creator and business dashboard"},

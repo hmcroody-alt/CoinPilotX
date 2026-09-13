@@ -61,6 +61,11 @@ def patterns(payload):
 
 
 @pytest.fixture(scope="module")
+def components(payload):
+    return health.ordered_components(payload)
+
+
+@pytest.fixture(scope="module")
 def families():
     return health.declared_native_paths()
 
@@ -72,12 +77,12 @@ def test_the_native_route_table_was_actually_found(families):
 
 
 @pytest.mark.parametrize("family", sorted(health.DECISIONS))
-def test_every_declared_family_matches_its_decision(family, families, patterns):
+def test_every_declared_family_matches_its_decision(family, families, components):
     paths = families.get(family)
     if paths is None:
         pytest.skip(f"{family} is no longer declared in linking.ts")
     decision, reason = health.DECISIONS[family]
-    missed = health.unclaimed_urls(paths, patterns)
+    missed = health.unclaimed_urls(paths, components)
     total = sum(len(health.concrete_urls(p)) for p in paths)
     if decision == "CLAIMED":
         assert not missed, (
@@ -105,7 +110,7 @@ def test_no_family_is_undecided(families):
     )
 
 
-def test_the_bare_home_path_is_claimed(patterns):
+def test_the_bare_home_path_is_claimed(components):
     """`/pulse/*` does not match `/pulse`.
 
     Apple's `*` matches a run of characters but the literal `/` in front of it
@@ -113,15 +118,15 @@ def test_the_bare_home_path_is_claimed(patterns):
     product misses its own front door. `/search*` has no slash and so has never
     had this problem, which is exactly why the asymmetry survived unnoticed.
     """
-    assert any(health.component_matches(p, "/pulse") for p in patterns)
-    assert any(health.component_matches(p, "/pulse/post/812") for p in patterns)
+    assert health.opens_in_app(components, "/pulse")
+    assert health.opens_in_app(components, "/pulse/post/812")
 
 
 def test_the_association_never_claims_the_whole_site(payload):
     assert not health.check_payload_shape(payload)
 
 
-def test_support_surfaces_stay_on_the_web(patterns):
+def test_support_surfaces_stay_on_the_web(components):
     """Named individually, because the reasoning is specific and easy to lose.
 
     Each of these is reached by someone for whom the app is not a working
@@ -129,7 +134,7 @@ def test_support_surfaces_stay_on_the_web(patterns):
     whether a link is a scam, or they have not installed it and are deciding.
     """
     for url in ("/help", "/trust-center", "/security", "/privacy-center", "/scam-shield"):
-        assert not any(health.component_matches(p, url) for p in patterns), (
+        assert not health.opens_in_app(components, url), (
             f"{url} must stay reachable in a browser"
         )
 
@@ -153,3 +158,118 @@ def test_optional_segments_expand_to_both_urls():
         "/pulse/safety",
         "/pulse/safety/sample",
     ]
+
+
+def test_the_web_client_shell_stays_in_the_browser(components):
+    """`/pulse/app` is the browser client, sitting inside the app's own prefix.
+
+    Everything else under `/pulse/` is a native object, so `/pulse/*` claims the
+    lot -- correctly. The web client shell is the exception: `linking.ts`
+    declares no route for it, and an unresolvable universal link is not a
+    graceful fallback. iOS has already decided to open the app by then; React
+    Navigation simply fails to resolve the URL and the user is left on whatever
+    screen was showing.
+    """
+    for url in ("/pulse/app", "/pulse/app/", "/pulse/app/feed", "/pulse/app/profile/812"):
+        assert not health.opens_in_app(components, url), (
+            f"{url} is the web client and must open in a browser"
+        )
+
+
+def test_carving_out_the_web_client_did_not_carve_out_the_app(components):
+    """The exclusion must be surgical.
+
+    `/pulse/app*` without the slash would also swallow `/pulse/apple-pay` or any
+    future `/pulse/app...` object. This is the check that the carve-out cost
+    nothing, and it is why the components are `/pulse/app` and `/pulse/app/*`
+    rather than one `/pulse/app*`.
+    """
+    for url in ("/pulse/post/812", "/pulse/apparel", "/pulse/applications", "/pulse/apple-pay"):
+        assert health.opens_in_app(components, url), f"{url} must still open the app"
+
+
+def test_the_exclusion_sits_above_the_pattern_it_carves_out(components):
+    """Position, not presence. This is the half a flat pattern list cannot see.
+
+    iOS stops at the first matching component, so `/pulse/app (exclude)` below
+    `/pulse/*` is unreachable configuration: the file still contains the
+    exclusion, still reviews as correct, and does nothing at all. Nothing about
+    the *set* of components changes when they are reordered, which is exactly
+    why this has to be asserted on the order.
+    """
+    patterns_in_order = [pattern for pattern, _ in components]
+    broad = patterns_in_order.index("/pulse/*")
+    for carved in ("/pulse/app", "/pulse/app/*"):
+        assert patterns_in_order.index(carved) < broad, (
+            f"{carved} is listed after /pulse/*, so iOS never reaches it"
+        )
+
+
+def test_reordering_the_exclusion_below_the_broad_pattern_breaks_the_carve_out():
+    """Anti-vacuity for the test above, and for `opens_in_app` itself.
+
+    If the resolver ignored order -- as `claimed_patterns` does by construction
+    -- every assertion about the exclusion would pass no matter where it sat.
+    Ordering must be *observable*, so here it is observed: the same components
+    in the wrong order give the opposite answer.
+    """
+    correct = [("/pulse/app", True), ("/pulse/*", False)]
+    reversed_order = [("/pulse/*", False), ("/pulse/app", True)]
+    assert not health.opens_in_app(correct, "/pulse/app")
+    assert health.opens_in_app(reversed_order, "/pulse/app")
+
+
+def test_the_flat_pattern_view_is_the_one_that_gets_this_wrong():
+    """Documents why `claimed_patterns` must not be used for URL questions.
+
+    Kept as a test rather than a comment because it is a live trap: the function
+    is still exported, still used by the shape check, and reads like it answers
+    "is this URL claimed?". It does not, and this pins the exact disagreement.
+    """
+    payload = {
+        "applinks": {
+            "details": [
+                {
+                    "components": [
+                        {"/": "/pulse/app", "exclude": True},
+                        {"/": "/pulse/*"},
+                    ]
+                }
+            ]
+        }
+    }
+    flat = health.claimed_patterns(payload)
+    ordered = health.ordered_components(payload)
+    assert any(health.component_matches(p, "/pulse/app") for p in flat), (
+        "the flat view claims /pulse/app ..."
+    )
+    assert not health.opens_in_app(ordered, "/pulse/app"), "... and iOS does not"
+
+
+def test_both_bundle_ids_get_the_same_component_list(payload):
+    """Production ships the release and dev bundle IDs the same list.
+
+    `ordered_components` speaks for "the app" in the singular and is only
+    entitled to when there is one answer. If the two ever diverge it raises
+    rather than silently answering for whichever appID happens to be first.
+    """
+    lists = health.component_lists(payload)
+    assert len(lists) == 2, f"expected release + dev bundle IDs, got {len(lists)}"
+    assert lists[0] == lists[1]
+    assert health.ordered_components(payload) == lists[0]
+
+
+def test_divergent_component_lists_raise_instead_of_guessing():
+    payload = {
+        "applinks": {
+            "details": [
+                {"appID": "A.one", "components": [{"/": "/pulse/*"}]},
+                {"appID": "A.two", "components": [{"/": "/saved"}]},
+            ]
+        }
+    }
+    with pytest.raises(ValueError):
+        health.ordered_components(payload)
+    # The per-app question still has an answer, and it is per-app.
+    assert health.opens_in_app_anywhere(payload, "/pulse/post/1")
+    assert health.opens_in_app_anywhere(payload, "/saved")

@@ -109,16 +109,80 @@ def component_matches(pattern: str, path: str) -> bool:
     return re.fullmatch(regex, path) is not None
 
 
-def claimed_patterns(payload: dict) -> list[str]:
-    patterns = []
+def component_lists(payload: dict) -> list[list[tuple[str, bool]]]:
+    """One ordered (pattern, excluded) list per `details` entry -- per appID.
+
+    Kept separate rather than concatenated. Each appID is matched independently,
+    so flattening them puts the first app's patterns in front of the second's
+    and lets one app's `exclude` suppress another app's claim. Today both
+    entries share the same `APPLE_LINK_COMPONENTS` object and the answer is the
+    same either way, which is precisely why the flattened version would survive
+    review until the day the two lists differ.
+    """
+    lists = []
     for detail in payload.get("applinks", {}).get("details", []):
-        for component in detail.get("components", []):
-            if component.get("exclude"):
-                continue
-            value = component.get("/")
-            if value:
-                patterns.append(value)
-    return patterns
+        entries = [
+            (component["/"], bool(component.get("exclude")))
+            for component in detail.get("components", [])
+            if component.get("/")
+        ]
+        if entries:
+            lists.append(entries)
+    return lists
+
+
+def ordered_components(payload: dict) -> list[tuple[str, bool]]:
+    """The single ordered component list every associated app shares.
+
+    Raises when the apps disagree, because past that point there is no one
+    answer to "what does the site claim" and every caller here assumes there is.
+    The production builder hands the same list to both bundle IDs.
+    """
+    lists = component_lists(payload)
+    if not lists:
+        return []
+    if any(entries != lists[0] for entries in lists[1:]):
+        raise ValueError(
+            "associated apps declare different component lists; use "
+            "component_lists() and decide which app you are asking about"
+        )
+    return lists[0]
+
+
+def opens_in_app_anywhere(payload: dict, path: str) -> bool:
+    """Does any associated app receive this URL?"""
+    return any(opens_in_app(entries, path) for entries in component_lists(payload))
+
+
+def opens_in_app(components: list[tuple[str, bool]], path: str) -> bool:
+    """Does iOS hand this URL to the app? First match wins, exclusions included.
+
+    iOS evaluates `components` top to bottom and stops at the first entry whose
+    pattern matches; if that entry carries `"exclude": true` the URL goes to the
+    browser. So a pattern's effect depends on everything above it, and an
+    exclusion placed below the pattern it means to carve out is unreachable.
+
+    `claimed_patterns` used to answer this by filtering the excluded entries out
+    and matching against the rest. That inverts the answer for exactly the URLs
+    an exclusion exists for: drop `/pulse/app (exclude)` from the list and
+    `/pulse/*` matches it, so the checker reports the app receives a URL that
+    iOS actually sends to Safari -- and reports it while looking at a correct
+    file. The order has to be walked, not summarised.
+    """
+    for pattern, excluded in components:
+        if component_matches(pattern, path):
+            return not excluded
+    return False
+
+
+def claimed_patterns(payload: dict) -> list[str]:
+    """Non-excluded patterns, order discarded.
+
+    Kept for the shape check, which asks "does any pattern claim the whole
+    site?" -- a question about the set, not about precedence. Anything asking
+    whether a *specific URL* reaches the app must use `opens_in_app`.
+    """
+    return [pattern for pattern, excluded in ordered_components(payload) if not excluded]
 
 
 def concrete_urls(declared: str) -> list[str]:
@@ -142,12 +206,17 @@ def concrete_urls(declared: str) -> list[str]:
     return sorted({"/" + "/".join(v) for v in variants if v})
 
 
-def unclaimed_urls(paths: list[str], patterns: list[str]) -> list[str]:
-    """Every concrete URL the app declares that no AASA component claims."""
+def unclaimed_urls(paths: list[str], components: list[tuple[str, bool]]) -> list[str]:
+    """Every concrete URL the app declares that iOS will not hand to the app.
+
+    Takes ordered components rather than a flat pattern list so that a URL
+    sitting under an `exclude` is reported as unclaimed, which is what iOS
+    does with it.
+    """
     missed = []
     for declared in paths:
         for url in concrete_urls(declared):
-            if not any(component_matches(p, url) for p in patterns):
+            if not opens_in_app(components, url):
                 missed.append(url)
     return sorted(set(missed))
 
@@ -226,13 +295,13 @@ def main() -> int:
         return 1
 
     problems = check_payload_shape(payload)
-    patterns = claimed_patterns(payload)
+    components = ordered_components(payload)
     families = declared_native_paths()
 
     rows = []
     for family, paths in sorted(families.items()):
         decision, reason = DECISIONS.get(family, (None, ""))
-        missed = unclaimed_urls(paths, patterns)
+        missed = unclaimed_urls(paths, components)
         total = sum(len(concrete_urls(p)) for p in paths)
         if decision is None:
             status = "UNCLASSIFIED"
@@ -260,13 +329,18 @@ def main() -> int:
         rows.append({"family": family, "urls": total, "unclaimed": missed,
                      "decision": decision, "status": status})
 
+    # Rendered in file order, not sorted: the order is the configuration. A
+    # sorted list would print an exclusion that iOS never reaches identically
+    # to one that works.
+    listing = [f"NOT {pattern}" if excluded else pattern for pattern, excluded in components]
+
     if args.json:
-        print(json.dumps({"source": source, "patterns": patterns,
+        print(json.dumps({"source": source, "components": listing,
                           "families": rows, "problems": problems}, indent=2))
         return 1 if problems else 0
 
     print(f"AASA source: {source}")
-    print(f"claims: {', '.join(sorted(set(patterns))) or '(nothing)'}\n")
+    print(f"claims (in order): {', '.join(listing) or '(nothing)'}\n")
     print(f"{'family':16} {'urls':>5} {'missed':>7}  {'decision':10} status")
     for row in rows:
         print(f"{row['family']:16} {row['urls']:5} {len(row['unclaimed']):7}  "

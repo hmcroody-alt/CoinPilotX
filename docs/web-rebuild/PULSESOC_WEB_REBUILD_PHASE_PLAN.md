@@ -168,9 +168,58 @@ CSP). `script-src` has **no `'unsafe-inline'`** on the SPA surface. Reduced-moti
 high-contrast blocks mirror native `theme.duration()` / `HIGH_CONTRAST_*`. A single service
 worker is registered.
 
-**Risk:** three `after_request` hooks currently string-splice tokens, favicon and i18n into HTML
-response bodies. They will also splice into the SPA's `index.html`. Decide explicitly whether
-the SPA opts out or consumes them.
+**Risk — resolved (1f).** The hooks question is decided: the SPA **opts out of three injections
+and opts in to one**, via a `g.pulse_spa_response` flag set by the view and read by both hooks. A
+flag rather than a path comparison inside each hook, so the hooks cannot drift from the route.
+
+- **Out — the legacy token stylesheet.** `static/css/pulsesoc-tokens.css` and
+  `web/src/styles/tokens.css` are not duplicates but a *conflict*: of ~170 names each they share
+  only six, and disagree on four — `--pulse-bg`, `--pulse-danger`, `--pulse-muted`, `--pulse-text`
+  — which the legacy file defines through tokens that exist only in the legacy file. Whichever
+  loads last wins, so consuming it would make the SPA's palette a function of injection order.
+- **Out — `pulse_i18n.js` and `pulse_pwa_install.js`.** Both query for server-rendered DOM at
+  `defer` time, when a React body is still an empty `<div id="root">`. `pulse_i18n.js` rewrites
+  text nodes, which is a race against React's first paint over nodes React owns.
+- **In — the favicon / manifest / theme-color block.** Inert markup the shell genuinely lacks. This
+  mirrors the existing `/admin/login` `gateway_isolated` precedent, which keeps the same block for
+  the same reason. Asserted present, so "opt out" cannot quietly become "skip the document".
+
+**Correction — the mount is `/pulse/app`, and it is carved out of the universal-link association.**
+The exit criterion above says `/pulse/*`, and the parenthetical says why: `add_pwa_headers` returns
+before the CSP block for `/static/`, so a shell served from there ships **no policy at all**. What
+the criterion did not anticipate is that `/pulse/*` is claimed by the AASA — deliberately, since
+every other path under it is a native object. `linking.ts` declares no route for `/pulse/app`, and
+an unresolvable universal link does not fall back to Safari: iOS has already opened the app, and
+the user lands on whatever screen was showing. So `services/native_app_links.py` now carries
+`/pulse/app` and `/pulse/app/*` as `exclude` components **above** `/pulse/*` — iOS stops at the
+first matching component, so an exclusion below the pattern it carves out is unreachable
+configuration that still reviews as correct.
+
+That ordering was not checkable before: `aasa_health.claimed_patterns()` filtered excluded entries
+out and matched against the rest, which inverts the answer for exactly the URLs an exclusion exists
+for. It now has an order-walking `opens_in_app()`, and `component_lists()` keeps each appID's list
+separate rather than concatenating them.
+
+**Note for later phases:** `/pulse/*` is permanently the app's territory on iOS. Any web-designed
+surface added under it needs the same carve-out, and `scripts/web_rebuild/aasa_health.py` is what
+says so.
+
+**The route-contract gate fired on its first real customer.** `tests/protection/test_route_auth.py`
+refused the commit until `pulse_web_app_shell` declared itself, which is the first evidence that
+gate is not vacuous — it was built in P0/Infra against a baseline of 2,160 legacy routes, all
+exempt, so until now nothing had ever exercised the default-deny path in anger. The route is
+`@public_route(...)` with the reason recorded in `bot.py`: the shell carries no member data, and
+gating it would redirect to the legacy login before the client could boot and route to its own
+login screen, losing the destination URL. Authentication happens on the `/api/` calls the shell
+then makes, which is where member data actually crosses the wire.
+
+Deliberately **not** added to the route-auth baseline. A declared route outside the baseline stays
+covered by `test_new_routes_must_declare_their_auth` forever — delete the declaration later and the
+gate fires again. Baselining it would move it under `test_no_route_loses_its_gate`, which only
+catches *downgrades*. Staying out is the stronger position, and every web-rebuild route should.
+
+**Gate:** `tests/protection/test_web_spa_shell.py` (12 checks) — mutation-tested 30/30 with five
+behaviour-preserving controls silent. Full suite: 643 checks across 43 suites, green.
 
 ---
 

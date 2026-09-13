@@ -542,6 +542,14 @@ WEB_INTENT_PREFIXES = (
     # The livestream studio is a browser broadcasting surface. Classified here
     # so link handling leaves it strictly alone.
     "/pulse/live/studio",
+    # The web client shell. Everything else under /pulse/ is a native object and
+    # belongs to the app; this is the browser's own copy of the product, served
+    # by bot.py's pulse_web_app_shell. Classifying it is only half the job --
+    # this registry has no effect on iOS. The enforcing half is the pair of
+    # `exclude` components in services/native_app_links.py, which sit above
+    # /pulse/* so the association hands these URLs to Safari. Change one and the
+    # other is wrong.
+    "/pulse/app",
     "/api/",
     "/static/",
     "/.well-known/",
