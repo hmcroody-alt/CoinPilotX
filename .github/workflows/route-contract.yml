@@ -1,0 +1,79 @@
+# Client/server route contract gate.
+#
+# The failure this blocks has shipped here before: TestFlight build 5 was built
+# against endpoints the deployed server did not have. Every Settings write
+# returned the generic 404 body, the screens rendered perfectly, and `/health`
+# answered 200 the whole time. Nothing in CI noticed, because the client built
+# fine and the server started fine -- the break lived in the space between them,
+# which no single suite owned.
+#
+# Design notes that matter if you edit this file:
+#
+#  * The gate derives its contract from client source on every run. There is no
+#    list to maintain, so this job does not need updating when an API call is
+#    added -- which is the whole reason it can be trusted to stay accurate.
+#  * Exit code 3 means "could not check" and must NOT be treated as success.
+#    `continue-on-error` anywhere in this job would reintroduce the exact defect
+#    class the gate exists to catch.
+#  * The gate imports bot.py, which boots a 124k-line Flask monolith and calls
+#    init_db(). DATABASE_URL points at a throwaway SQLite file so the job never
+#    touches a real database.
+#  * The protection tests run separately from the gate on purpose: the gate
+#    passing says the tree is healthy, and the tests say the gate can still go
+#    red. Only the second one is evidence about the gate itself.
+
+name: Route contract
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: route-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: The gate can still fail
+        # Before trusting a green gate, prove it is capable of going red. A gate
+        # is code that fails silently by construction, so "it passed" is only
+        # evidence once "it can fail" is established.
+        run: python3 tests/protection/test_route_contract_gate.py
+
+      - name: Every client call path has a server route
+        env:
+          DATABASE_URL: sqlite:////tmp/route_contract_ci.db
+          SECRET_KEY: ci-not-a-real-secret
+          SESSION_SECRET: ci-not-a-real-secret
+        # `bash -e` is the default shell, so the gate's non-zero exit would
+        # abort this step before $? could be read. `|| code=$?` keeps the
+        # failure and lets exit 3 be reported as its own thing rather than
+        # collapsing into a generic red X.
+        run: |
+          code=0
+          python3 scripts/ops/route_contract_gate.py || code=$?
+          if [ "$code" = "3" ]; then
+            echo "::error::The route contract could not be checked -- some client"
+            echo "::error::call sites did not resolve, or nothing was found to check."
+            echo "::error::That is not a pass. See the output above."
+            exit 1
+          fi
+          exit "$code"

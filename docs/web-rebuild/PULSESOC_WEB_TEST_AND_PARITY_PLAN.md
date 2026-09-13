@@ -300,7 +300,8 @@ native behaviour, because it changes which credential wins.
 |---|---|---|
 | `tsc --noEmit` + client jest | merge | every PR |
 | Boot-time default-deny auth assertion | **deploy** | every deploy |
-| `GET /health/routes` all packs registered + flag snapshot | **deploy** | every deploy |
+| `scripts/ops/route_contract_gate.py` — every client call path has a server route | merge | every PR |
+| `scripts/ops/deploy_route_liveness.py` — `/health/routes` healthy on the deployed box | **deploy** | every deploy |
 | AASA 200 with non-empty `details[]` | **deploy** | every deploy + continuous |
 | No `'unsafe-inline'` in the SPA route's `script-src` | merge | every PR |
 | No provider key / `DATABASE_URL` in any built artifact | merge | every PR |
@@ -310,8 +311,49 @@ native behaviour, because it changes which credential wins.
 
 The deploy gates exist because **~382 routes live inside `except Exception` registrations**, and
 **pack #1 alone is 162 routes owning all messaging and calling.** A silent registration failure
-is a 404 on the entire messaging product, and `/health/routes` already reports it — it just
-isn't wired to anything yet.
+is a 404 on the entire messaging product. `/health/routes` has always reported it; as of
+2026-09-13 something reads the answer.
+
+### 6.1 The two route gates are not the same gate
+
+They look redundant and are not. Running only one leaves open the hole that produced the
+TestFlight build 5 incident, where a client shipped against endpoints the deployed server did
+not have, every Settings write returned the generic 404 body, and `/health` answered 200
+throughout.
+
+**`route_contract_gate.py` — build time, offline, complete.** Proves *the code in this repo has
+a route for every path its clients call*. It derives the contract from client source on every
+run rather than from a list: 449 `pulseApi()` call sites in `mobile-native/src/api/`, matched
+against the 2,067 rules in `webhook_app.url_map`. Nothing has to be maintained by hand, so a
+call site added today is covered today. The web client joins by adding one line to `CLIENTS`.
+
+**`deploy_route_liveness.py` — deploy time, against a URL, shallow.** Proves the thing the
+first one structurally cannot: *the process now serving traffic is that code*. A green build
+gate says nothing about a deployment built from a different commit, or one where a pack raised
+during registration. Production on 2026-09-13: healthy, 10 required endpoints, 24 packs.
+
+Three design points carried over from the `edge_status()` work in
+`PULSESOC_WEB_SECURITY_MODEL.md` §6.1, because the same failure modes apply to any gate:
+
+- **Could-not-check is not a pass.** Both scripts use three exit codes — `0` ok, `1` contract
+  broken, `3` no data — so a caller can tell "this is broken" from "I could not tell". A gate
+  that finds zero call sites, or cannot reach the deployment, exits `3`. The single most likely
+  moment for a connection to fail is the moment a deploy is broken.
+- **The allowlist fails in both directions.** Known-pending endpoints live in
+  `config/route-contract-allowlist.json` with a reason and a reference, because a permanently
+  red gate is a gate nobody reads. But an entry whose route *now exists* also fails, as stale. A
+  list that can only ever suppress failures rots until it is suppressing a real one.
+- **The gate is mutation-tested.** 16 mutations / 32 checks, including two negative controls,
+  in `tests/protection/test_route_contract_gate.py`. A gate is code that fails silently by
+  construction: every way it can break — a regex that stops matching, an extractor that finds
+  nothing — makes it quieter, not louder. Running it on a healthy tree demonstrates nothing.
+
+Its first run found two client call sites with no server route: `POST /api/calls/voip-token`
+and `/api/calls/voip-token/revoke`. Both are **known and deliberate**, not defects — CallKit
+Stage 2 scaffolding written ahead of a backend blocked on the COINPLOTXAI INC. app transfer,
+and unreachable today because `setNativeCallKitProvider()` is never called outside tests. They
+are allowlisted against `reports/native_callkit_voip_integration.md`. Worth recording that the
+gate found them from source in seconds with no knowledge of that report.
 
 ---
 
