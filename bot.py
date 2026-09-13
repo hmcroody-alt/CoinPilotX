@@ -54146,7 +54146,7 @@ def pulse_creator_camera_page():
 #: is not universal, and where it is missing the browser falls back and the
 #: backdrop silently disappears. Inline *style* is not the XSS vector inline
 #: *script* is; the requirement was always scoped to script-src.
-from services.route_auth import public_route
+from services.route_auth import auth_required, public_route
 
 PULSE_WEB_APP_CSP = (
     "default-src 'self'; "
@@ -92227,9 +92227,6 @@ def api_pulse_messages_upload():
         "file_size": int(media.get("file_size_bytes") or 0),
         "media": media,
     }), 200
-
-
-from services.route_auth import auth_required
 
 
 @schema_guard.run_once_per_process
