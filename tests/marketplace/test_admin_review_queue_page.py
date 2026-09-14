@@ -148,6 +148,14 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
                          response.get_data(as_text=True)[:2000])
         return response.get_data(as_text=True)
 
+    def stored(self, listing_id):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM marketplace_listings WHERE id=?",
+                           (listing_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else {}
+
     def ticks(self, html):
         """``{listing_id: predicted block reason}`` for the rendered page."""
         return {int(listing_id): block for listing_id, block in TICK.findall(html)}
@@ -487,6 +495,90 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
         self.assertIn(f"data-quick='approve' data-listing='{banned}' disabled", html)
         self.assertIn(f"data-quick='reject' data-listing='{banned}'>", html)
         self.assertNotIn(f"data-quick='reject' data-listing='{banned}' disabled", html)
+
+    # -- one vocabulary for one column -----------------------------------------
+
+    def test_the_row_form_speaks_the_same_reason_language_as_the_bulk_bar(self):
+        """§36/§1. Two controls write one column, so two option lists is a bug
+        even while both of them "work".
+
+        The row form carried a hand-written prose list -- ``Prohibited item``,
+        ``Media problem``, ``Other`` -- six inches above a bulk bar offering
+        ``REASON_CODES``. Nothing failed. The column just held two different
+        kinds of value depending on which control the reviewer reached for, and
+        only one of them is a key ``seller_message`` can look up.
+        """
+        self.insert_listing()
+        html = self.load()
+        for code in rv.REASON_CODES:
+            self.assertIn(f"<option value='{code}'>", html, code)
+        for prose in ("<option>Prohibited item</option>", "<option>Media problem</option>",
+                      "<option>Counterfeit concern</option>", "<option>Other</option>"):
+            self.assertNotIn(prose, html, prose)
+
+    def test_every_reason_the_page_offers_resolves_to_a_seller_sentence(self):
+        """The test that ties the menu to the consequence. An option whose value
+        ``seller_message`` does not recognise silently degrades to the generic
+        sentence, so the seller is told "this needs a change" about a product
+        rejected for being counterfeit."""
+        self.insert_listing()
+        html = self.load()
+        offered = set(re.findall(r"<option value='([A-Z_]+)'>", html))
+        self.assertTrue(offered)
+        for code in offered:
+            self.assertEqual(rv.seller_message(code), rv.SELLER_MESSAGES[code], code)
+
+    def test_a_reason_category_the_vocabulary_does_not_contain_is_refused(self):
+        """Refused, not coerced. ``normalize_reason`` refuses an unknown code for
+        the same reason: a typo stored as a real category is a wrong fact in the
+        audit trail, and the only moment anyone can fix it is this one."""
+        listing_id = self.insert_listing()
+        response = self.client.post(PAGE, data={
+            "listing_id": listing_id, "action": "reject",
+            "reason": "Counterfeit packaging.", "reason_category": "Counterfeit concern"})
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("not recognised", response.get_data(as_text=True))
+
+        row = self.stored(listing_id)
+        self.assertEqual(row["moderation_category"] or "", "")
+        self.assertEqual(str(row["approval_status"]).lower(), lifecycle.PENDING_REVIEW)
+
+    def test_a_rejection_from_the_row_needs_a_structured_code_not_just_prose(self):
+        """§36 on the page, matching what the batch endpoint already enforces.
+
+        A free-text note alone cannot be counted, cannot be translated and
+        cannot become the sentence the seller reads.
+        """
+        listing_id = self.insert_listing()
+        response = self.client.post(PAGE, data={
+            "listing_id": listing_id, "action": "reject",
+            "reason": "The photos are somebody else's."})
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(str(self.stored(listing_id)["approval_status"]).lower(),
+                         lifecycle.PENDING_REVIEW)
+
+    def test_a_rejection_carrying_a_real_code_lands_and_stores_the_code(self):
+        """The other half — the refusals above are only correct if the valid
+        path still works and stores something ``seller_message`` can read."""
+        listing_id = self.insert_listing()
+        response = self.client.post(PAGE, data={
+            "listing_id": listing_id, "action": "reject",
+            "reason": "The photos are somebody else's.",
+            "reason_category": rv.INVALID_MEDIA})
+        self.assertEqual(response.status_code, 200)
+
+        row = self.stored(listing_id)
+        self.assertEqual(row["moderation_category"], rv.INVALID_MEDIA)
+        self.assertEqual(rv.seller_message(row["moderation_category"]),
+                         "The product images need to be replaced.")
+
+    def test_an_approval_needs_no_reason_category(self):
+        """An approval carries no rejection category, so requiring one would
+        make the common verdict the one that takes an extra click."""
+        listing_id = self.insert_listing()
+        response = self.client.post(PAGE, data={"listing_id": listing_id, "action": "approve"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(str(self.stored(listing_id)["approval_status"]).lower(), "approved")
 
     def test_a_selection_cannot_exceed_what_one_batch_will_accept(self):
         """Select-all ticks the page. If a page can hold more rows than

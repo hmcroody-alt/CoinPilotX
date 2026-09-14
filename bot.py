@@ -100747,12 +100747,33 @@ def admin_marketplace_command_page():
         listing_id = int(request.form.get("listing_id") or 0)
         action = clean_html(request.form.get("action") or "")[:40]
         reason = clean_html(request.form.get("reason") or "")[:1200]
-        reason_category = clean_html(request.form.get("reason_category") or "")[:80]
+        # §36. Normalised on the way in, so what reaches `moderation_category` is
+        # a code `seller_message()` can resolve rather than whatever string the
+        # form happened to submit.
+        reason_category = clean_html(request.form.get("reason_category") or "")[:80].strip().upper()
         now = datetime.utcnow().isoformat(timespec="seconds")
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         allowed_actions = {"approve", "reject", "request_changes", "suspend", "archive", "feature"}
         reason_required = {"reject", "request_changes", "suspend", "archive"}
-        if listing_id and action in allowed_actions and (action not in reason_required or reason):
+        # §36/§1. The page refuses an off-vocabulary category rather than storing
+        # it, for the same reason `normalize_reason` refuses one: a value that is
+        # not a REASON_CODE is a rejection the seller will never be given a
+        # sentence for, and it lands in the audit trail looking like a real
+        # category. Coercing it to OTHER would be worse -- it would hide the
+        # mistake at the one moment the reviewer could still correct it.
+        category_unknown = bool(reason_category) and (
+            reason_category not in marketplace_review_authority.REASON_CODES)
+        # A structured code is required exactly where the batch endpoint requires
+        # one. `suspend` and `archive` are not review verdicts and keep taking a
+        # free-text note alone.
+        category_missing = (not reason_category) and (
+            action in marketplace_review_authority.REASON_REQUIRED)
+        if listing_id and action in allowed_actions and (category_unknown or category_missing):
+            message = ("Pick a reason category from the list."
+                       if category_missing else "That reason category is not recognised.")
+            message_tone = "blocked"
+            message_status = 422
+        elif listing_id and action in allowed_actions and (action not in reason_required or reason):
             status, approval = {
                 "approve": ("published", "approved"),
                 "reject": ("rejected", "rejected"),
@@ -100888,6 +100909,21 @@ def admin_marketplace_command_page():
             media_by_listing.setdefault(int(item.get("product_id") or 0), []).append(item)
     conn.close()
     cards = "".join(f"<div class='card'><h2>{html_escape(clean_html(k.replace('_',' ').title()))}</h2><p class='metric'>{v}</p></div>" for k, v in counts.items())
+    # §36/§1. One vocabulary for the whole page. The per-row form used to carry
+    # its own hand-written prose list -- "Prohibited item", "Media problem",
+    # "Other" -- while the bulk bar six inches below it offered REASON_CODES.
+    # Two controls, one column, two languages, and the page POST wrote whichever
+    # one it was handed straight into `moderation_category` unvalidated. The
+    # consequence lands on the seller: `seller_message()` looks the stored value
+    # up in SELLER_MESSAGES, finds no "Media problem", and the person whose
+    # product was rejected is told nothing specific about why.
+    #
+    # The option label is the seller-facing sentence, matching the bulk bar, so
+    # the reviewer chooses a reason by reading what the seller will read (§20).
+    reason_options = "".join(
+        "<option value='" + code + "'>"
+        + html_escape(marketplace_review_authority.SELLER_MESSAGES[code]) + "</option>"
+        for code in marketplace_review_authority.REASON_CODES)
     rows = ""
     for l in listings:
         media_items = media_by_listing.get(int(l.get("id") or 0), [])
@@ -100955,7 +100991,7 @@ def admin_marketplace_command_page():
                 ("approve", "Approve + Publish"), ("request_changes", "Request Changes"),
                 ("reject", "Reject"), ("suspend", "Suspend"),
                 ("archive", "Archive"), ("feature", "Feature")))
-        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
+        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option>{reason_options}</select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
     # §26/§28. Every control carries the rest of the query with it, so changing
     # the sort does not silently drop the reviewer's search back to page one of
     # everything -- which is the version of "the filters don't work" that looks
@@ -100982,13 +101018,6 @@ def admin_marketplace_command_page():
         + ">" + label + "</option>"
         for name, label in (("oldest", "Waiting longest"), ("newest", "Newest first"),
                             ("risk", "Highest risk"), ("seller", "By seller")))
-    # The seller-facing sentence is the option label, so a reviewer picks a
-    # reason by reading what the seller will be told rather than by decoding a
-    # constant (§36/§20).
-    reason_options = "".join(
-        "<option value='" + code + "'>"
-        + html_escape(marketplace_review_authority.SELLER_MESSAGES[code]) + "</option>"
-        for code in marketplace_review_authority.REASON_CODES)
     pager_prev = ("<a class='button' href='" + html_escape(queue_link(page=window["page"] - 1))
                   + "'>Previous</a>") if window["has_prev"] else ""
     pager_next = ("<a class='button' href='" + html_escape(queue_link(page=window["page"] + 1))

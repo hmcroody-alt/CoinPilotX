@@ -696,6 +696,58 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
             Restore(bot, "_marketplace_review_supplier_sync", report_without_queuing),
             detector)
 
+    # -- 17. §36 the page's reason vocabulary ----------------------------------
+
+    def test_letting_the_page_store_an_off_vocabulary_reason_is_caught(self):
+        """The mutation is the defect that was actually shipped, minus the form.
+
+        The row form used to offer its own prose list while the bulk bar six
+        inches below offered ``REASON_CODES``, and the page POST wrote whichever
+        it was handed straight into ``moderation_category``. Widening the
+        vocabulary to admit the prose is the tempting one-line "fix" -- it makes
+        the refusal go away and leaves ``seller_message`` unable to resolve the
+        stored value, so the rejected seller is told nothing specific.
+
+        Anchored on what reaches the column rather than on the 422, because a
+        page that answers 422 and stores it anyway is the same defect.
+        """
+        def detector():
+            listing_id = self.insert_listing()
+            response = self.client.post(PAGE, data={
+                "listing_id": listing_id, "action": "reject",
+                "reason": "Counterfeit packaging.",
+                "reason_category": "Counterfeit concern"})
+            stored = self.stored(listing_id)
+            self.assertEqual(stored.get("moderation_category") or "", "",
+                             "the page stored a category seller_message cannot read")
+            self.assertEqual(str(stored.get("approval_status") or "").lower(),
+                             lifecycle.PENDING_REVIEW)
+            self.assertEqual(response.status_code, 422)
+
+        self.assert_mutation_is_caught(
+            "§36 page accepts a reason category outside REASON_CODES",
+            Restore(rv, "REASON_CODES", tuple(rv.REASON_CODES) + ("COUNTERFEIT CONCERN",)),
+            detector)
+
+    def test_dropping_the_structured_code_requirement_on_the_page_is_caught(self):
+        """§36/§1. A free-text note alone is not a reason code, and the page must
+        refuse it exactly where the batch endpoint does. Otherwise the same
+        verdict is structured or unstructured depending on which control the
+        reviewer used."""
+        def detector():
+            listing_id = self.insert_listing()
+            response = self.client.post(PAGE, data={
+                "listing_id": listing_id, "action": "reject",
+                "reason": "The photos are somebody else's."})
+            self.assertEqual(str(self.stored(listing_id).get("approval_status") or "").lower(),
+                             lifecycle.PENDING_REVIEW,
+                             "a rejection landed with no structured reason code")
+            self.assertEqual(response.status_code, 422)
+
+        self.assert_mutation_is_caught(
+            "§36 page rejects without a structured code",
+            Restore(rv, "REASON_REQUIRED", frozenset()), detector)
+
 
 if __name__ == "__main__":
     unittest.main()
