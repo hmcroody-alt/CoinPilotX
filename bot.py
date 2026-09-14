@@ -100179,6 +100179,308 @@ def admin_marketplace_decision_message(cur, action, listing_id):
             + marketplace_listing_lifecycle.blocker_note(blocker) + ".")
 
 
+# §7. The review detail view. A reviewer deciding from the queue row is
+# deciding from a title, a price and a thumbnail; everything that would change
+# their mind lives in four other tables. This page is the only place those are
+# assembled, and it assembles them without forming an opinion -- the verdict on
+# every button comes back from `listing_review.inspection`, which asks the same
+# `block_reason` the batch endpoint asks.
+ADMIN_REVIEW_DETAIL_JS = r"""
+(function () {
+  var out = document.getElementById('detail-outcome');
+  function post(action) {
+    var node = document.getElementById('detail-root');
+    var listingId = parseInt(node.getAttribute('data-listing'), 10);
+    var category = (document.getElementById('detail-reason-category') || {}).value || '';
+    var note = (document.getElementById('detail-reason-note') || {}).value || '';
+    var needsReason = ['reject', 'request_changes', 'restrict'].indexOf(action) >= 0;
+    if (needsReason && !category) {
+      out.textContent = 'Choose a reason category first — the seller reads it.';
+      return;
+    }
+    out.textContent = 'Working…';
+    fetch('/api/admin/marketplace/review/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        action: action,
+        listing_ids: [listingId],
+        reason_code: category,
+        reason_note: note,
+        idempotency_key: 'rvw_' + (window.crypto && window.crypto.randomUUID
+          ? window.crypto.randomUUID() : String(Date.now()) + Math.random())
+      })
+    }).then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+      .then(function (pair) {
+        var data = pair[1] || {};
+        var entry = (data.results || [])[0] || {};
+        if (data.successful_count === 1) {
+          out.textContent = (entry.note || 'Decision recorded.')
+            + ' Reloading to read the listing back…';
+          setTimeout(function () { window.location.reload(); }, 1400);
+          return;
+        }
+        // Not "something went wrong". The endpoint already said which rule and
+        // why; repeating its sentence is the only honest thing to show.
+        out.textContent = entry.note || data.message
+          || 'That decision was not applied.';
+      })
+      .catch(function () {
+        out.textContent = 'The decision did not reach the server. Nothing was changed.';
+      });
+  }
+  Array.prototype.forEach.call(
+    document.querySelectorAll('[data-detail-action]'), function (b) {
+      b.addEventListener('click', function () {
+        post(b.getAttribute('data-detail-action'));
+      });
+    });
+})();
+"""
+
+
+def _admin_review_detail_rows(cur, listing_id):
+    """The four tables the dossier needs, fetched once each.
+
+    Media and variants are optional in this schema's history -- an older listing
+    predates both. A missing table has to read as "no rows", not as a 500 on the
+    review page, because the listings most likely to be missing them are exactly
+    the stranded imports this queue was built to clear.
+    """
+    cur.execute("SELECT l.*, " + marketplace_seller_identity.store_name_select("ms")
+                + " FROM marketplace_listings l "
+                  "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+                  "WHERE l.id=? LIMIT 1", (listing_id,))
+    listing = dict(cur.fetchone() or {})
+    if not listing:
+        return None, None, [], []
+
+    seller = None
+    try:
+        cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1",
+                    (listing.get("seller_user_id"),))
+        seller = dict(cur.fetchone() or {}) or None
+    except Exception:
+        seller = None
+
+    media = []
+    try:
+        cur.execute("SELECT * FROM marketplace_product_media WHERE product_id=? "
+                    "ORDER BY is_cover DESC, position ASC, id ASC LIMIT 40", (listing_id,))
+        media = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        media = []
+
+    variants = []
+    try:
+        cur.execute("SELECT * FROM marketplace_listing_variants WHERE listing_id=? "
+                    "ORDER BY position ASC, id ASC LIMIT 100", (listing_id,))
+        variants = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        variants = []
+
+    return listing, seller, media, variants
+
+
+def _money(cents, currency=""):
+    """Absent money is "—", not "$0.00". Rendering an unknown supplier cost as
+    zero is what makes a listing with no cost data look like pure margin."""
+    if cents is None:
+        return "—"
+    return ((currency + " ") if currency else "") + "%0.2f" % (int(cents) / 100.0)
+
+
+@webhook_app.route("/admin/marketplace-command/listing/<int:listing_id>", methods=["GET"])
+def admin_marketplace_listing_review_page(listing_id):
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    from services.business_os.marketplace import listing_review as marketplace_review_authority
+
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    listing, seller, media, variants = _admin_review_detail_rows(cur, listing_id)
+    conn.close()
+
+    if not listing:
+        return admin_page_html(
+            "Listing Review",
+            "<h1>Listing Review</h1><p class='review-note blocked'>Listing #"
+            + str(int(listing_id)) + " does not exist.</p>"
+            "<p><a class='button' href='/admin/marketplace-command'>Back to the queue</a></p>",
+            admin), 404
+
+    dossier = marketplace_review_authority.inspection(
+        listing, variants=variants, media=media, seller=seller,
+        reviewer_id=admin.get("id"))
+    internal = dossier[marketplace_review_authority.INTERNAL_SECTION]
+
+    def esc(value):
+        return html_escape(clean_html(str(value if value is not None else "")))
+
+    # §7 gallery. Each tile says its moderation state, because eight images of
+    # which three are rejected is a different product to eight images.
+    tiles = "".join(
+        ("<figure class='detail-tile'>"
+         + ("<video src='" + esc(item["media_url"]) + "' muted></video>"
+            if item["media_type"] == "video"
+            else "<img src='" + esc(item["thumbnail_url"] or item["media_url"]) + "' alt=''>")
+         + "<figcaption>" + ("cover · " if item["is_cover"] else "")
+         + esc(item["moderation_status"] or "pending") + "</figcaption></figure>")
+        for item in dossier["media"]["items"]) or "<p class='muted'>No media on this listing.</p>"
+
+    variant_rows = "".join(
+        ("<tr><td>" + esc(row["variant_key"] or "default") + "<br><small class='muted'>"
+         + esc(row["sku"]) + "</small></td>"
+         + "<td>" + esc(_money(row["price_cents"], row["currency"])) + "</td>"
+         + "<td>" + esc(_money(row["cost_cents"], row["currency"])) + "</td>"
+         + "<td>" + esc(_money(row["margin_cents"], row["currency"]))
+         + ("" if row["margin_pct"] is None
+            else " <small class='muted'>" + esc(row["margin_pct"]) + "%</small>") + "</td>"
+         + "<td>" + ("—" if row["stock_quantity"] is None else esc(row["stock_quantity"]))
+         + "<br><small class='muted'>" + esc(row["stock_state"]) + "</small></td>"
+         + "<td><small class='muted'>" + esc(row["stock_synced_at"] or "never")
+         + "</small></td></tr>")
+        for row in internal["variants"])
+    variant_table = (
+        "<table class='table'><tr><th>Variant</th><th>Price</th><th>Supplier cost</th>"
+        "<th>Margin</th><th>Stock</th><th>Last supplier sync</th></tr>"
+        + variant_rows + "</table>") if variant_rows else (
+        "<p class='muted'>No variants. Listing price is "
+        + esc(internal["price_label"] or "unset")
+        + ", and no supplier cost is recorded against it.</p>")
+
+    gaps = "".join("<li>" + esc(entry["note"]) + "</li>"
+                   for entry in dossier["gap_notes"])
+    gaps_block = ("<ul class='detail-gaps'>" + gaps + "</ul>") if gaps else (
+        "<p class='muted'>Nothing flagged. This is not an approval — it means "
+        "the automated checks found nothing to point at.</p>")
+
+    readback = dossier["publication_if_approved"]
+    if readback["live"]:
+        forecast = ("<p class='review-note'>Approving this would make it visible "
+                    "to buyers.</p>")
+    else:
+        forecast = ("<p class='review-note blocked'>Approving this would <strong>not"
+                    "</strong> make it visible to buyers: " + esc(readback["note"])
+                    + ". The decision would still be recorded.</p>")
+
+    # §31. Same rule as the queue: a button the endpoint would refuse is not
+    # offered, and it says which refusal rather than merely going grey.
+    verdict_buttons = "".join(
+        ("<button type='button' data-detail-action='" + action + "'"
+         + ((" disabled title=\"" + esc(
+             marketplace_review_authority.BLOCK_NOTES.get(
+                 dossier["verdicts"][action], "That decision is not available."))
+             + "\"") if dossier["verdicts"][action] else "")
+         + ">" + label + "</button>")
+        for action, label in (
+            (marketplace_review_authority.APPROVE, "Approve"),
+            (marketplace_review_authority.REQUEST_CHANGES, "Request changes"),
+            (marketplace_review_authority.REJECT, "Reject"),
+            (marketplace_review_authority.RESTRICT, "Restrict")))
+
+    reason_options = "".join(
+        "<option value='" + esc(code) + "'>" + esc(code.replace("_", " ").title())
+        + "</option>" for code in marketplace_review_authority.REASON_CODES)
+
+    safety = dossier["safety"]
+    standing = dossier["seller"]
+    fulfilment = dossier["fulfilment"]
+
+    body = (
+        "<style>"
+        ".detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}"
+        ".detail-tile{margin:0;width:104px}"
+        ".detail-tile img,.detail-tile video{width:104px;height:104px;object-fit:cover;"
+        "border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}"
+        ".detail-tile figcaption{font-size:11px;color:#9aa7b4;margin-top:3px}"
+        ".detail-gallery{display:flex;gap:10px;flex-wrap:wrap}"
+        ".detail-gaps{margin:6px 0 0 18px;color:#f2b544}"
+        ".detail-verdicts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}"
+        ".detail-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}"
+        ".detail-kv dt{color:#9aa7b4}.detail-kv dd{margin:0}"
+        ".review-note{margin:10px 0;padding:9px 12px;border-radius:8px;"
+        "border:1px solid rgba(54,229,143,.45);background:rgba(54,229,143,.08)}"
+        ".review-note.blocked{border-color:rgba(240,173,78,.55);"
+        "background:rgba(240,173,78,.10)}"
+        ".detail-internal{border-color:rgba(240,173,78,.35)}"
+        "#detail-outcome{margin:10px 0;white-space:pre-line}"
+        "</style>"
+        "<div id='detail-root' data-listing='" + str(int(listing_id)) + "'>"
+        "<p><a href='/admin/marketplace-command'>&larr; Review queue</a></p>"
+        "<h1>" + esc(dossier["title"] or "Untitled listing") + "</h1>"
+        "<p class='muted'>#" + str(int(listing_id)) + " · "
+        + esc(dossier["category"] or "uncategorised") + " · review state <strong>"
+        + esc(dossier["review_state"]) + "</strong> · merchant state <strong>"
+        + esc(dossier["publication_state"]) + "</strong>"
+        + (" · revision " + str(dossier["review_version"])
+           if dossier["review_version"] else "") + "</p>"
+        + forecast
+        + "<section class='card'><h2>Decision</h2>"
+        "<div class='detail-verdicts'>" + verdict_buttons + "</div>"
+        "<p><select id='detail-reason-category'><option value=''>Reason category</option>"
+        + reason_options + "</select></p>"
+        "<p><textarea id='detail-reason-note' placeholder='Note to the seller — they "
+        "read this. Required detail for reject, request changes and restrict.'></textarea></p>"
+        "<div id='detail-outcome'></div>"
+        "<p class='muted'>This posts the same batch endpoint the queue posts, with one "
+        "id — so a decision made here and a bulk decision are the same code, the same "
+        "idempotency ledger and the same audit row.</p>"
+        "</section>"
+        "<section class='card'><h2>Needs a look</h2>" + gaps_block + "</section>"
+        "<div class='detail-grid'>"
+        "<section class='card'><h2>Gallery</h2>"
+        "<p class='muted'>" + str(dossier["media"]["total"]) + " item(s) · "
+        + str(dossier["media"]["approved"]) + " approved · "
+        + str(dossier["media"]["pending"]) + " pending · "
+        + str(dossier["media"]["rejected"]) + " rejected</p>"
+        "<div class='detail-gallery'>" + tiles + "</div></section>"
+        "<section class='card'><h2>Seller</h2><dl class='detail-kv'>"
+        "<dt>Store</dt><dd>" + esc(standing["display_name"] or "unnamed") + "</dd>"
+        "<dt>User</dt><dd>#" + esc(standing["user_id"] or "—") + "</dd>"
+        "<dt>Standing</dt><dd>" + esc(standing["status"] or "no seller record") + "</dd>"
+        "<dt>Verification</dt><dd>" + esc(standing["verification_status"] or "none") + "</dd>"
+        "<dt>Risk score</dt><dd>" + esc(standing["risk_score"]
+                                        if standing["risk_score"] is not None else "—") + "</dd>"
+        "<dt>Country</dt><dd>" + esc(standing["country"] or "—") + "</dd>"
+        "</dl></section>"
+        "<section class='card'><h2>Fulfilment</h2><dl class='detail-kv'>"
+        "<dt>Product type</dt><dd>" + esc(fulfilment["product_type"] or "—") + "</dd>"
+        "<dt>Delivery</dt><dd>" + esc(fulfilment["delivery_type"] or "not set") + "</dd>"
+        "<dt>Estimate</dt><dd>" + esc(fulfilment["estimated_delivery"] or "not set") + "</dd>"
+        "<dt>Refunds</dt><dd>" + esc(fulfilment["refund_policy"] or "not set") + "</dd>"
+        "<dt>Quantity</dt><dd>" + esc(fulfilment["quantity"]
+                                      if fulfilment["quantity"] is not None else "—") + "</dd>"
+        "</dl></section>"
+        "<section class='card'><h2>Safety</h2><dl class='detail-kv'>"
+        "<dt>Score</dt><dd>" + esc(safety["score"]) + "</dd>"
+        "<dt>Goods policy</dt><dd>" + esc(safety["policy_decision"] or "—")
+        + (" (" + esc(safety["policy_reason"]) + ")" if safety["policy_reason"] else "")
+        + "</dd>"
+        "<dt>Flags</dt><dd>" + (esc(", ".join(safety["flags"])) or "none") + "</dd>"
+        "</dl></section>"
+        "</div>"
+        # §43. Supplier cost and margin. This block is why the whole page is
+        # behind `monetization.manage` and why nothing on it is reachable from a
+        # seller or buyer route.
+        "<section class='card detail-internal'><h2>Pricing and supplier cost</h2>"
+        "<p class='muted'>Internal. Supplier cost and margin are never sent to a "
+        "seller or a buyer.</p>" + variant_table + "</section>"
+        "<section class='card'><h2>Description</h2><p>"
+        + (esc(dossier["description"]) or "<span class='muted'>Empty.</span>")
+        + "</p></section>"
+        + ("<section class='card'><h2>Last decision</h2><p>"
+           + esc(dossier["moderation_category"]) + " — "
+           + esc(dossier["moderation_reason"]) + "</p><p class='muted'>"
+           + esc(dossier["reviewed_at"]) + " by #" + esc(dossier["reviewed_by"])
+           + "</p></section>" if dossier["moderation_reason"] else "")
+        + "</div><script>" + ADMIN_REVIEW_DETAIL_JS + "</script>"
+    )
+    return admin_page_html("Listing Review", body, admin)
+
+
 # §11-§15. The bulk bar. Everything it says about a selection it says from
 # `data-block`, which the server computed with the same `block_reason` the
 # endpoint will call -- so "23 eligible \u00b7 2 blocked" is a prediction the
@@ -100585,7 +100887,14 @@ def admin_marketplace_command_page():
         # single-decision path -- so an Approve & Next and a bulk approve of one
         # listing are the same code, the same idempotency ledger and the same
         # audit row. A separate one-at-a-time route is how the two drift.
-        quick = "<div class='review-quick'>" + "".join(
+        # §7. The row is a title, a price and a thumbnail. Everything that would
+        # change a reviewer's mind -- margin, supplier freshness, seller standing,
+        # what the gallery actually contains -- is one click away rather than
+        # four admin pages away, which is the difference between inspecting a
+        # product and recognising its name.
+        inspect_link = ("<a class='button' href='/admin/marketplace-command/listing/"
+                        + str(int(l.get('id') or 0)) + "'>Inspect</a>")
+        quick = "<div class='review-quick'>" + inspect_link + "".join(
             ("<button type='button' class='review-next' data-quick='" + verb
              + "' data-listing='" + str(int(l.get('id') or 0)) + "'"
              + (" disabled" if (row_block if verb == marketplace_review_authority.APPROVE
