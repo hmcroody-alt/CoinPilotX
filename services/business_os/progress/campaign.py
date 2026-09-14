@@ -31,6 +31,13 @@ from typing import Optional
 #: Milestones are awarded at most once per user per campaign, forever.
 ONE_TIME = "one_time"
 
+#: THE Live Creator gate, in certified invites. The ``live_creator`` milestone
+#: below carries this number, ``Campaign.live_threshold`` reads it back, and
+#: every gate, status and string derives from that one call. No other module
+#: may hardcode a Live requirement — a second copy is how the server came to
+#: unlock Live at one number while the page asked for another.
+LIVE_MIN_VERIFIED_MEMBERS = 2
+
 #: Milestone unlock kinds. These name what the milestone *unlocks*; the
 #: engine maps them onto existing canonical grant paths and never invents a
 #: new benefit surface of its own.
@@ -181,7 +188,7 @@ FOUNDING_PATH = Campaign(
     required_posting_days=2,
     milestones=(
         Milestone(
-            "live_creator", "Live Creator", 2, LIVE_ELIGIBILITY,
+            "live_creator", "Live Creator", LIVE_MIN_VERIFIED_MEMBERS, LIVE_ELIGIBILITY,
             badge_key="live_creator",
             description="You can broadcast LIVE on PulseSoc.",
         ),

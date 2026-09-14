@@ -6,9 +6,10 @@ Before Progress OS, ``pulse_referral_status_for_user`` counted rows in
 ``referral_conversions`` where ``counted=1``. ``record_referral_signup`` writes
 that row, with ``counted=1``, **at signup time** — before the invited person has
 completed a profile, posted anything, or proved they are a person. That count
-feeds ``privilege_engine.get_user_privileges``, where ``referral_count >= 30``
-unlocks Live. In other words the pre-existing system unlocked Live Creator for
-thirty bare signups.
+feeds ``privilege_engine.get_user_privileges``, which at the time unlocked Live
+at ``referral_count >= 30``. In other words the pre-existing system unlocked
+Live Creator for thirty bare signups. The gate is now
+``campaign.LIVE_MIN_VERIFIED_MEMBERS`` invites that actually qualified.
 
 This module replaces that arithmetic with earned qualification. It does not
 replace the *attribution* — ``users.referred_by`` and ``referral_conversions``
