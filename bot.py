@@ -55784,6 +55784,24 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         next_status, next_approval = "pending_review", "pending_review"
     else:
         next_status, next_approval = old_status, old_approval
+    # §23. A material edit produces a different product than the one the queue
+    # already holds, and it has to arrive carrying the same two marks the two
+    # explicit submit routes write (`...:submit` and the seller batch resume):
+    # a new revision number, and no leftover verdict text.
+    #
+    # Neither was written here, and the consequence is the one thing re-review
+    # exists to prevent. A reviewer approves revision 3; the seller rewrites the
+    # title and triples the price; the listing comes back to the queue still
+    # labelled revision 3, still carrying "Looked fine to me." under the last
+    # decision. The reviewer recognises their own approval on a product they
+    # have never seen, and the fastest thing to do with it -- wave it through --
+    # is also the wrong thing.
+    #
+    # `approved_at`, `reviewed_by` and `reviewed_at` are deliberately left
+    # alone, matching the submit routes: they record when the product was last
+    # decided, which is a true fact about the past. The revision number is what
+    # says that fact is about a different version.
+    resubmitted = 1 if (material_change and next_status == "pending_review") else 0
     cur.execute(
         """
         UPDATE marketplace_listings
@@ -55791,6 +55809,9 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             price_label=?, currency=?, quantity=?,
             refund_policy=?, estimated_delivery=?, seller_notes=?,
             status=?, approval_status=?, safety_score=?, safety_flags_json=?,
+            review_version=CASE WHEN ?=1 THEN COALESCE(review_version,0)+1 ELSE review_version END,
+            moderation_reason=CASE WHEN ?=1 THEN '' ELSE moderation_reason END,
+            moderation_category=CASE WHEN ?=1 THEN '' ELSE moderation_category END,
             submitted_at=CASE WHEN ?='pending_review' THEN ? ELSE submitted_at END,
             published_at=CASE WHEN ?='pending_review' THEN NULL ELSE published_at END, updated_at=?
         WHERE id=? AND seller_user_id=?
@@ -55812,6 +55833,9 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             next_approval,
             int(review["risk_score"]),
             json.dumps(review["flags"], default=str),
+            resubmitted,
+            resubmitted,
+            resubmitted,
             next_status,
             now,
             next_status,
