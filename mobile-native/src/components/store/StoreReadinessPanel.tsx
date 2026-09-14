@@ -34,6 +34,24 @@
  *    surface to render these codes, and the fourth private translation table is
  *    how the store row and the bulk sheet start disagreeing about the same
  *    listing. `section` is routed on, never displayed.
+ *
+ * 5. **`resubmittable` overrides decision 1, and only it may.** A rejected
+ *    listing is the one row where the two gates above are both wrong: it is
+ *    `publishable: false` because the rejection is a blocker, and its
+ *    `bulk_eligibility.publish` reason is "1 thing left" — so the seller who
+ *    read the reviewer's reason and fixed the product found the button dead
+ *    under a label counting the very rejection they had just answered. There
+ *    was no way out of it; a rejected listing could not be resubmitted by
+ *    anyone, from anywhere.
+ *
+ *    The fix stays faithful to §21 by not re-deriving anything: the server
+ *    answers "may this go back for review" as its own field, computed beside
+ *    `publishable` in `listing_readiness.evaluate`, and the submit route admits
+ *    exactly the same field. This card renders that answer. What it must never
+ *    do is infer the state from `approval_status === "rejected"`, which would
+ *    be the second implementation — the server's version also requires that
+ *    policy allows the product and that nothing else is still missing, and a
+ *    client that skipped those would offer a button the backend refuses.
  */
 
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
@@ -64,18 +82,54 @@ export function StoreReadinessPanel({
   publishing
 }: StoreReadinessPanelProps) {
   const blockedReason = publishBlock?.reason || null;
-  const canPublish = Boolean(readiness?.publishable) && !blockedReason && !publishing;
-  // Server prose in every branch. The one string invented here covers the case
-  // where the server said nothing at all, which it has no prose for.
+  // A rejected listing whose seller has fixed it. The server answers this
+  // separately from `publishable` because the two genuinely disagree here: the
+  // rejection makes publishing impossible and is itself the thing this button
+  // clears. Checked first, and deliberately ignoring `publishBlock`, because
+  // that field is the server's reason a *publish* would fail — on this row it
+  // reads "1 thing left", and letting it win is what left the seller staring at
+  // a disabled button whose one remaining task was the rejection they had
+  // already dealt with.
+  const resubmit = Boolean(readiness?.resubmittable);
+  const canPublish = resubmit
+    ? !publishing
+    : Boolean(readiness?.publishable) && !blockedReason && !publishing;
+  // Server prose in every branch that states a *reason*. The strings invented
+  // here name the action or cover the case where the server said nothing at
+  // all, which it has no prose for.
   const ctaLabel = publishing
-    ? "Publishing…"
-    : blockedReason
-      ? blockedReason
-      : !readiness
-        ? "Not checked yet"
-        : readiness.publishable
-          ? "Publish"
-          : readiness.summary;
+    ? resubmit
+      ? "Sending…"
+      : "Publishing…"
+    : resubmit
+      ? "Resubmit for review"
+      : blockedReason
+        ? blockedReason
+        : !readiness
+          ? "Not checked yet"
+          : readiness.publishable
+            ? "Publish"
+            : readiness.summary;
+
+  // What the panel says above the button, which has to agree with it. On a
+  // resubmittable row the server's own words are "1 thing left" and "Resolve
+  // policy review" — both counting the rejection, neither naming a task the
+  // seller can do anything about, and the policies section they point at is
+  // empty. Printed beside an enabled Resubmit button they read as a warning not
+  // to press it.
+  //
+  // So the non-actionable blocker is dropped from the list rather than
+  // relabelled: RESTRICTED_PRODUCT is the only blocker a resubmittable listing
+  // can have (that is what `resubmittable` means), and every other fix shown
+  // here stays exactly as the server worded it. The reviewer's actual reason is
+  // not invented in its place — it reaches the seller on the listing row, from
+  // `review.message`, which is the one place it is worded for them.
+  const fixes = resubmit ? [] : (readiness?.fixes ?? []);
+  const summaryText = !readiness
+    ? "Not checked yet"
+    : resubmit
+      ? "Fixed? Send it back for review"
+      : readiness.summary;
 
   return (
     <View style={styles.card}>
@@ -84,7 +138,7 @@ export function StoreReadinessPanel({
         <Text
           style={[styles.summary, readiness?.publishable ? styles.summaryOk : styles.summaryWork]}
         >
-          {readiness ? readiness.summary : "Not checked yet"}
+          {summaryText}
         </Text>
       </View>
 
@@ -95,9 +149,9 @@ export function StoreReadinessPanel({
         </Text>
       ) : null}
 
-      {readiness?.fixes.length ? (
+      {fixes.length ? (
         <View style={styles.list}>
-          {readiness.fixes.map((fix) => (
+          {fixes.map((fix) => (
             <FixRow key={`fix-${fix.code}`} fix={fix} kind="blocker" onPress={() => onFix(fix)} />
           ))}
         </View>

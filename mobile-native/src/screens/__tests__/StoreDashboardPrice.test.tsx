@@ -96,6 +96,7 @@ import { StoreDashboardScreen } from "../StoreDashboardScreen";
 
 const READY = {
   publishable: true,
+  resubmittable: false,
   checkout_ready: true,
   blockers: [],
   warnings: [],

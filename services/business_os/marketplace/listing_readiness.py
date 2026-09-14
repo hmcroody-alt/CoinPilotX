@@ -204,9 +204,32 @@ def _restricted(listing: dict) -> bool:
     listing read "Ready to publish" on the seller's row and was refused the
     moment they tapped it -- and a bulk publish, which had no second gate to
     fall back on, would have taken it live.
+
+    They are computed by two helpers rather than inline because the difference
+    between them turns out to matter: one is a fact about the *row* that a
+    resubmission clears, the other is a fact about the *product* that it does
+    not. See :func:`_verdict_refuses` and :func:`_policy_refuses`.
     """
-    if _text(listing.get("approval_status")).lower() in {"rejected", "suspended"}:
-        return True
+    return _verdict_refuses(listing) or _policy_refuses(listing)
+
+
+def _verdict_refuses(listing: dict) -> bool:
+    """A moderator's standing verdict on this row, as a publication refusal.
+
+    Temporary by nature: it describes what was last decided about a version of
+    this listing, and the seller correcting the listing is what clears it.
+    """
+    return _text(listing.get("approval_status")).lower() in {"rejected", "suspended"}
+
+
+def _policy_refuses(listing: dict) -> bool:
+    """The standing rule about what this product *is*.
+
+    Not temporary, and not something resubmitting changes: a prohibited item
+    reads the same on its fifth submission as its first. Keeping this apart
+    from the verdict is what lets :func:`evaluate` say "this may go back for
+    review" without also saying "this may go live".
+    """
     return _goods.evaluate(listing).get("decision") != "ALLOWED"
 
 
@@ -336,8 +359,32 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
     publishable = not blockers
     checkout_ready = publishable and not any(
         code in CHECKOUT_BLOCKING for code in warnings)
+    # "May this go back to the review queue", which is a different question from
+    # "may this go live" and had no answer here at all. A rejected listing fails
+    # `publishable` by definition -- `_verdict_refuses` is what a rejection *is*
+    # -- so every surface that gated on `publishable` gated the seller out of
+    # the one action a rejection is asking them to take. The merchant read the
+    # reviewer's reason on the row, fixed the product, and found the button
+    # disabled under the label "1 thing left", where the one thing left was the
+    # rejection they were trying to answer.
+    #
+    # True only when the rejection is genuinely the last thing standing: the
+    # product itself must pass policy (a prohibited item is not resubmittable at
+    # any revision, or the queue becomes a retry loop it eventually wins) and
+    # every content blocker must already be cleared. A rejected listing that is
+    # also missing its price stays false until the price is fixed, which is
+    # correct -- sending it back now just spends a reviewer's turn.
+    #
+    # `publishable` is deliberately untouched, so bulk publish and the buyer
+    # surfaces keep refusing this row exactly as before.
+    resubmittable = (
+        _text(listing.get("approval_status")).lower() == "rejected"
+        and not _policy_refuses(listing)
+        and not [code for code in blockers if code != RESTRICTED_PRODUCT]
+    )
     return {
         "publishable": publishable,
+        "resubmittable": resubmittable,
         "checkout_ready": checkout_ready,
         "blockers": blockers,
         "warnings": warnings,
