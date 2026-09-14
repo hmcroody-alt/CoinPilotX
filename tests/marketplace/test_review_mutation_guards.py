@@ -114,6 +114,7 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
         try:
             cur = conn.cursor()
             cur.execute("DELETE FROM marketplace_listings")
+            cur.execute("DELETE FROM marketplace_listing_variants")
             cur.execute("DELETE FROM marketplace_review_batches")
             cur.execute("DELETE FROM admin_audit_logs")
             cur.execute("DELETE FROM pulse_notifications WHERE user_id IN (?,?)",
@@ -159,6 +160,23 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
         return listing_id
+
+    def insert_variant(self, listing_id, **overrides):
+        row = {
+            "listing_id": listing_id, "seller_user_id": SELLER,
+            "variant_key": "default", "sku": "LAMP-1", "currency": "USD",
+            "price_cents": 2400, "cost_cents": 900, "stock_quantity": 12,
+            "stock_state": "in_stock", "stock_synced_at": NOW, "position": 0,
+            "status": "active", "created_at": NOW, "updated_at": NOW,
+        }
+        row.update(overrides)
+        cols = ", ".join(row)
+        marks = ", ".join("?" for _ in row)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(f"INSERT INTO marketplace_listing_variants ({cols}) VALUES ({marks})",
+                     tuple(row.values()))
+        conn.commit()
+        conn.close()
 
     def review(self, action, listing_ids, key=None, **extra):
         body = {"action": action, "listing_ids": listing_ids,
@@ -448,6 +466,101 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
         self.assert_mutation_is_caught(
             "§38 queue predicate narrower than the approve gate",
             Restore(rv, "queue_where", hide_the_oldest), detector)
+
+    # -- 11. §7/§1 the dossier growing an opinion -------------------------------
+
+    def test_the_detail_page_deciding_for_itself_is_caught(self):
+        real_inspection = rv.inspection
+
+        def trusting_dossier(listing, **kwargs):
+            """The plausible refactor: "we already know whether it's awaiting
+            review, why call `block_reason` four times". One boolean replaces
+            four verdicts, §18 and §34 both vanish from the page, and the buttons
+            go live on listings the endpoint will refuse. Nothing errors — the
+            reviewer just gets a 403 after clicking, which is what the last one
+            of these looked like in production."""
+            result = real_inspection(listing, **kwargs)
+            if result.get("found"):
+                result["verdicts"] = {action: None for action in rv.ACTIONS}
+            return result
+
+        def detector():
+            listing_id = self.insert_listing(seller_user_id=REVIEWER)
+            response = self.client.get(f"{PAGE}/listing/{listing_id}")
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            for action in rv.ACTIONS:
+                markup = re.search(
+                    r"<button type='button' data-detail-action='"
+                    + re.escape(action) + r"'([^>]*)>", html)
+                self.assertIsNotNone(markup, f"no {action} button")
+                self.assertIn("disabled", markup.group(1),
+                              f"{action} is offered on the reviewer's own listing")
+
+        self.assert_mutation_is_caught(
+            "§7 dossier verdicts replaced with a blanket yes",
+            Restore(rv, "inspection", trusting_dossier), detector)
+
+    # -- 12. §7 unknown supplier cost rendered as zero --------------------------
+
+    def test_treating_an_absent_supplier_cost_as_zero_is_caught(self):
+        real_economics = rv.variant_economics
+
+        def coerce_missing_to_zero(variant):
+            """`int(variant.get("cost_cents") or 0)` — the one-character version
+            of this bug, and the reason `_int_or_none` exists. Every listing with
+            no supplier data reports a 100% margin, so the products the reviewer
+            knows least about are the ones that look most worth approving. No
+            exception, no log line, a plausible number on every row."""
+            return real_economics(dict(variant, cost_cents=int(variant.get("cost_cents") or 0)))
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.insert_variant(listing_id, price_cents=2400, cost_cents=None)
+            response = self.client.get(f"{PAGE}/listing/{listing_id}")
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertNotIn("100.0%", html,
+                             "an unrecorded supplier cost is reporting a perfect margin")
+            self.assertIn("margin cannot be checked", html)
+
+        self.assert_mutation_is_caught(
+            "§7 missing supplier cost coerced to zero",
+            Restore(rv, "variant_economics", coerce_missing_to_zero), detector)
+
+    # -- 13. §43 supplier cost escaping its section ------------------------------
+
+    def test_supplier_cost_leaving_the_internal_section_is_caught(self):
+        real_inspection = rv.inspection
+
+        def flatten_the_economics(listing, **kwargs):
+            """The convenience refactor that ends the §43 guarantee: hoist the
+            pricing summary to the top level "so callers don't have to reach into
+            a nested dict". The admin page renders identically. The next caller
+            to build a seller payload from `inspection()` now ships supplier cost
+            to the merchant, and no reviewer of that diff sees a cost field —
+            they see `dossier["min_margin_pct"]`."""
+            result = real_inspection(listing, **kwargs)
+            if result.get("found"):
+                result.update(result[rv.INTERNAL_SECTION])
+            return result
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.insert_variant(listing_id, price_cents=2400, cost_cents=900)
+            row = self.stored(listing_id)
+            variants = self.query(
+                "SELECT * FROM marketplace_listing_variants WHERE listing_id=?",
+                (listing_id,))
+            dossier = rv.inspection(row, variants=variants, reviewer_id=REVIEWER)
+            outside = {key: value for key, value in dossier.items()
+                       if key != rv.INTERNAL_SECTION}
+            self.assertNotIn("cost", repr(outside).lower(),
+                             "supplier cost is reachable outside the internal section")
+
+        self.assert_mutation_is_caught(
+            "§43 supplier economics hoisted out of the internal section",
+            Restore(rv, "inspection", flatten_the_economics), detector)
 
 
 if __name__ == "__main__":
