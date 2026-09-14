@@ -28,6 +28,7 @@ import {
   READINESS_CODES,
   type ListingBulkEligibility,
   type ListingReadiness,
+  type ListingReviewVerdict,
   type MarketplaceListing,
   type MarketplaceSellerOrder,
   type SellerStoreSnapshot
@@ -314,6 +315,15 @@ export type StoreListingRow = {
    */
   readiness: ListingReadiness | null;
   /**
+   * Why this listing was rejected, restricted or sent back for changes.
+   *
+   * `null` when the payload carried none — "not told", not "nothing wrong". The
+   * row's stock copy for a rejected listing is "Hidden from buyers", which
+   * states the effect and none of the cause; this is the cause, and it is the
+   * only thing on the seller's screen that can tell them what to fix.
+   */
+  review: ListingReviewVerdict | null;
+  /**
    * What a bulk action would do to this row, as decided by the server function
    * the batch itself uses. `null` when the payload carried none — and a caller
    * must read that as "not eligible", not as "go ahead".
@@ -493,6 +503,7 @@ export function deriveRows(
       quantity: stockCount(listing),
       health: listingHealth(listing),
       readiness: listing.readiness ?? null,
+      review: listing.review ?? null,
       bulkEligibility: listing.bulk_eligibility ?? null,
       unitsSold7d: sold.get(String(id)) || 0,
       category: String(listing.category || ""),
