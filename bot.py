@@ -16113,7 +16113,7 @@ def admin_page_html(title, body, admin=None):
         "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=shell-nav-20260909a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260914a'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260914b'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
