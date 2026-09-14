@@ -1844,6 +1844,17 @@ def _run_ffmpeg_thumbnail(source_args: list[str]) -> str:
         logging.warning("MESSENGER_MEDIA_THUMBNAIL_FFMPEG_FAILED error=%s", exc)
         return ""
     if completed.returncode != 0 or not Path(handle.name).exists() or Path(handle.name).stat().st_size == 0:
+        # Say why. An empty return here is indistinguishable from "this media has
+        # no frame to take", and the caller turns both into a `processed` result
+        # with no thumbnail -- so a silent failure leaves the attachment looking
+        # deliberately preview-less and leaves no trace anywhere. Recovering the
+        # five rows this stranded on 2026-09-14 meant pulling the originals out
+        # of R2 and guessing, because ffmpeg's own account of the failure had
+        # been captured and then dropped on the floor.
+        logging.warning(
+            "MESSENGER_MEDIA_THUMBNAIL_EMPTY returncode=%s args=%s stderr=%s",
+            completed.returncode, " ".join(source_args), (completed.stderr or "").strip()[:500],
+        )
         _delete_temp(handle.name)
         return ""
     return handle.name

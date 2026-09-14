@@ -665,5 +665,43 @@ class AThumbnailKeyMeansTheObjectIsWhereTheReadPathWillLookForIt(ProcessingHarne
         self.assertNotIn("private", foundation.REMOTE_OBJECT_STRATEGIES)
 
 
+@unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required to generate and probe fixtures")
+class AThumbnailThatCannotBeGeneratedSaysSo(ProcessingHarness):
+    """A failure that writes nothing to the log is a failure nobody can diagnose.
+
+    An empty return from ``_run_ffmpeg_thumbnail`` is indistinguishable from
+    "this media has no frame to take": either way ``_derive_photo_assets``
+    reports ``processed`` with no ``thumbnail_key``, so the attachment ends up
+    looking deliberately preview-less and leaves no trace anywhere. Five rows
+    reached that state in production on 2026-09-14, and working out why meant
+    pulling the originals back out of R2 and guessing -- because ffmpeg had
+    explained itself to a ``stderr`` this function captured and then dropped.
+    """
+
+    def test_a_failed_thumbnail_records_ffmpegs_own_explanation(self):
+        broken = self.storage / "not-an-image.jpg"
+        broken.write_bytes(b"this is not a JPEG, and ffmpeg will say so")
+
+        with self.assertLogs(level="WARNING") as captured:
+            self.assertEqual(foundation._run_ffmpeg_thumbnail(["-i", str(broken), "-frames:v", "1"]), "")
+
+        line = "\n".join(captured.output)
+        self.assertIn("MESSENGER_MEDIA_THUMBNAIL_EMPTY", line)
+        # The point is the diagnosis, not the alarm: the log has to carry what
+        # ffmpeg said, and which input it said it about. A marker with an empty
+        # stderr= would leave the next investigation exactly where this one was.
+        self.assertIn("not-an-image.jpg", line)
+        self.assertRegex(line, r"stderr=\S")
+
+    def test_a_thumbnail_that_works_stays_quiet(self):
+        source = self._place(
+            "messenger/44/fine.jpg",
+            ["-f", "lavfi", "-i", "testsrc=size=800x600:rate=1:duration=1", "-frames:v", "1"],
+        )
+        produced = foundation._run_ffmpeg_thumbnail(["-i", str(source), "-frames:v", "1"])
+        self.assertTrue(produced and Path(produced).stat().st_size > 0)
+        foundation._delete_temp(produced)
+
+
 if __name__ == "__main__":
     unittest.main()
