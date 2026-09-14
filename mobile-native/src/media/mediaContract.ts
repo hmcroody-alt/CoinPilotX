@@ -141,6 +141,22 @@ export function hasRenderableImage(media: CanonicalMediaRecord | null | undefine
   return (width > 0 && height > 0) || (Number.isFinite(aspect) && aspect > 0);
 }
 
+/**
+ * Server-marked unavailability: the row survives, its media does not.
+ *
+ * `hasRenderableMediaUrl` only asks whether some URL is present, and the
+ * serializer keeps `media_url` pointing at the original source even for a row
+ * whose bytes are gone — it blanks only `valid_url`. An image caught that via
+ * the dimension check in `hasRenderableImage`; a video has no equivalent, so it
+ * mounted a player over a dead URL and drew a black rectangle until (or unless)
+ * the player happened to report an error. This flag is what separates "lost"
+ * from "still loading", and only the server can know the difference.
+ */
+export function isMediaUnavailable(media: CanonicalMediaRecord | null | undefined) {
+  if (!media) return false;
+  return media.is_available === false || isCanonicalMediaTerminal(media);
+}
+
 /** Drop records that cannot be drawn, preserving order of the rest. */
 export function renderableMedia<T extends CanonicalMediaRecord>(list: readonly T[] | null | undefined): T[] {
   return (list || []).filter((media) => hasRenderableMediaUrl(media));
