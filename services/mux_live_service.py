@@ -61,11 +61,24 @@ def _request(path: str, *, method: str = "GET", payload: dict | None = None, tim
         return {"ok": False, "status": "api_failed", "message": str(exc)[:500]}
 
 
+def _preferred_playback_id(playback_ids: list | None) -> str:
+    """Pick the public playback id, falling back to the first usable one.
+
+    The old test read `policy == "public" or item.get("id")`, and the `or` made the
+    policy half dead: the first entry with an id won whatever its policy. On an asset
+    carrying both policies that hands back the signed id, and a signed id resolves to
+    an empty URL whenever the signing keys are unset, which strands the replay in the
+    worker's "still preparing" branch instead of publishing it.
+    """
+    usable = [item for item in (playback_ids or []) if item.get("id")]
+    for item in usable:
+        if item.get("policy") == "public":
+            return str(item.get("id"))
+    return str(usable[0].get("id")) if usable else ""
+
+
 def _playback_id_from_live_stream(data: dict) -> str:
-    for item in data.get("playback_ids") or []:
-        if item.get("policy") == "public" or item.get("id"):
-            return item.get("id") or ""
-    return ""
+    return _preferred_playback_id(data.get("playback_ids"))
 
 
 def playback_url(playback_id: str) -> str:
@@ -189,11 +202,7 @@ def create_mux_asset_from_live_recording(*, recording_asset_id: str = "", source
         if not response.get("ok"):
             return response
         data = response.get("data") or {}
-        playback_id = ""
-        for item in data.get("playback_ids") or []:
-            if item.get("policy") == "public" or item.get("id"):
-                playback_id = item.get("id") or ""
-                break
+        playback_id = _preferred_playback_id(data.get("playback_ids"))
         return {
             "ok": True,
             "mux_recording_asset_id": data.get("id") or recording_asset_id,

@@ -35,6 +35,34 @@ def test_mux_live_asset_is_not_final_vod(monkeypatch):
     assert mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")["mux_status"] == "preparing"
 
 
+def test_public_playback_id_wins_over_signed(monkeypatch):
+    """A signed id picked ahead of an available public one yields no URL without keys."""
+    monkeypatch.delenv("MUX_SIGNING_KEY_ID", raising=False)
+    monkeypatch.delenv("MUX_SIGNING_PRIVATE_KEY", raising=False)
+    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": {"id": "asset", "status": "ready", "playback_ids": [{"id": "signed-one", "policy": "signed"}, {"id": "public-one", "policy": "public"}]}})
+    asset = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")
+    assert asset["mux_recording_playback_id"] == "public-one"
+    assert asset["playback_url"] == "https://stream.mux.com/public-one.m3u8"
+
+
+def test_signed_only_asset_still_selects_its_playback_id(monkeypatch):
+    """Preferring public must not strand an asset that only ever had a signed id."""
+    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": {"id": "asset", "status": "ready", "playback_ids": [{"id": "only-signed", "policy": "signed"}]}})
+    assert mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")["mux_recording_playback_id"] == "only-signed"
+
+
+def test_live_stream_playback_id_prefers_public(monkeypatch):
+    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": {"id": "live", "status": "active", "playback_ids": [{"id": "sig", "policy": "signed"}, {"id": "pub", "policy": "public"}]}})
+    stream = mux_live_service.get_mux_live_stream("live")
+    assert stream["mux_playback_id"] == "pub"
+    assert stream["playback_url"] == "https://stream.mux.com/pub.m3u8"
+
+
+@pytest.mark.parametrize("playback_ids", [None, [], [{"policy": "public"}]])
+def test_playback_id_absent_returns_empty(playback_ids):
+    assert mux_live_service._preferred_playback_id(playback_ids) == ""
+
+
 def test_signed_replay_never_falls_back_to_unsigned(monkeypatch):
     monkeypatch.delenv("MUX_SIGNING_KEY_ID", raising=False)
     monkeypatch.delenv("MUX_SIGNING_PRIVATE_KEY", raising=False)
