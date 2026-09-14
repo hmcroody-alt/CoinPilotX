@@ -114,6 +114,7 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
         try:
             cur = conn.cursor()
             cur.execute("DELETE FROM marketplace_listings")
+            cur.execute("DELETE FROM marketplace_listing_variants")
             cur.execute("DELETE FROM marketplace_review_batches")
             cur.execute("DELETE FROM admin_audit_logs")
             cur.execute("DELETE FROM pulse_notifications WHERE user_id IN (?,?)",
@@ -159,6 +160,23 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
         return listing_id
+
+    def insert_variant(self, listing_id, **overrides):
+        row = {
+            "listing_id": listing_id, "seller_user_id": SELLER,
+            "variant_key": "default", "sku": "LAMP-1", "currency": "USD",
+            "price_cents": 2400, "cost_cents": 900, "stock_quantity": 12,
+            "stock_state": "in_stock", "stock_synced_at": NOW, "position": 0,
+            "status": "active", "created_at": NOW, "updated_at": NOW,
+        }
+        row.update(overrides)
+        cols = ", ".join(row)
+        marks = ", ".join("?" for _ in row)
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(f"INSERT INTO marketplace_listing_variants ({cols}) VALUES ({marks})",
+                     tuple(row.values()))
+        conn.commit()
+        conn.close()
 
     def review(self, action, listing_ids, key=None, **extra):
         body = {"action": action, "listing_ids": listing_ids,
@@ -448,6 +466,343 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
         self.assert_mutation_is_caught(
             "§38 queue predicate narrower than the approve gate",
             Restore(rv, "queue_where", hide_the_oldest), detector)
+
+    # -- 11. §7/§1 the dossier growing an opinion -------------------------------
+
+    def test_the_detail_page_deciding_for_itself_is_caught(self):
+        real_inspection = rv.inspection
+
+        def trusting_dossier(listing, **kwargs):
+            """The plausible refactor: "we already know whether it's awaiting
+            review, why call `block_reason` four times". One boolean replaces
+            four verdicts, §18 and §34 both vanish from the page, and the buttons
+            go live on listings the endpoint will refuse. Nothing errors — the
+            reviewer just gets a 403 after clicking, which is what the last one
+            of these looked like in production."""
+            result = real_inspection(listing, **kwargs)
+            if result.get("found"):
+                result["verdicts"] = {action: None for action in rv.ACTIONS}
+            return result
+
+        def detector():
+            listing_id = self.insert_listing(seller_user_id=REVIEWER)
+            response = self.client.get(f"{PAGE}/listing/{listing_id}")
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            for action in rv.ACTIONS:
+                markup = re.search(
+                    r"<button[^>]*data-detail-action='"
+                    + re.escape(action) + r"'([^>]*)>", html)
+                self.assertIsNotNone(markup, f"no {action} button")
+                self.assertIn("disabled", markup.group(1),
+                              f"{action} is offered on the reviewer's own listing")
+
+        self.assert_mutation_is_caught(
+            "§7 dossier verdicts replaced with a blanket yes",
+            Restore(rv, "inspection", trusting_dossier), detector)
+
+    # -- 12. §7 unknown supplier cost rendered as zero --------------------------
+
+    def test_treating_an_absent_supplier_cost_as_zero_is_caught(self):
+        real_economics = rv.variant_economics
+
+        def coerce_missing_to_zero(variant):
+            """`int(variant.get("cost_cents") or 0)` — the one-character version
+            of this bug, and the reason `_int_or_none` exists. Every listing with
+            no supplier data reports a 100% margin, so the products the reviewer
+            knows least about are the ones that look most worth approving. No
+            exception, no log line, a plausible number on every row."""
+            return real_economics(dict(variant, cost_cents=int(variant.get("cost_cents") or 0)))
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.insert_variant(listing_id, price_cents=2400, cost_cents=None)
+            response = self.client.get(f"{PAGE}/listing/{listing_id}")
+            self.assertEqual(response.status_code, 200)
+            html = response.get_data(as_text=True)
+            self.assertNotIn("100.0%", html,
+                             "an unrecorded supplier cost is reporting a perfect margin")
+            self.assertIn("margin cannot be checked", html)
+
+        self.assert_mutation_is_caught(
+            "§7 missing supplier cost coerced to zero",
+            Restore(rv, "variant_economics", coerce_missing_to_zero), detector)
+
+    # -- 13. §43 supplier cost escaping its section ------------------------------
+
+    def test_supplier_cost_leaving_the_internal_section_is_caught(self):
+        real_inspection = rv.inspection
+
+        def flatten_the_economics(listing, **kwargs):
+            """The convenience refactor that ends the §43 guarantee: hoist the
+            pricing summary to the top level "so callers don't have to reach into
+            a nested dict". The admin page renders identically. The next caller
+            to build a seller payload from `inspection()` now ships supplier cost
+            to the merchant, and no reviewer of that diff sees a cost field —
+            they see `dossier["min_margin_pct"]`."""
+            result = real_inspection(listing, **kwargs)
+            if result.get("found"):
+                result.update(result[rv.INTERNAL_SECTION])
+            return result
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.insert_variant(listing_id, price_cents=2400, cost_cents=900)
+            row = self.stored(listing_id)
+            variants = self.query(
+                "SELECT * FROM marketplace_listing_variants WHERE listing_id=?",
+                (listing_id,))
+            dossier = rv.inspection(row, variants=variants, reviewer_id=REVIEWER)
+            outside = {key: value for key, value in dossier.items()
+                       if key != rv.INTERNAL_SECTION}
+            self.assertNotIn("cost", repr(outside).lower(),
+                             "supplier cost is reachable outside the internal section")
+
+        self.assert_mutation_is_caught(
+            "§43 supplier economics hoisted out of the internal section",
+            Restore(rv, "inspection", flatten_the_economics), detector)
+
+    # -- §24 supplier refresh helpers -------------------------------------------
+
+    def bind_supplier(self, listing_id, seller_user_id=SELLER, **overrides):
+        from services import marketplace_supplier_schema as supplier_schema
+
+        row = {
+            "listing_id": listing_id, "seller_user_id": seller_user_id,
+            "provider": "cj", "provider_product_id": f"CJ-PROD-{listing_id}",
+            "fulfillment_mode": "DROPSHIP", "supplier_connection_id": "conn_7",
+            "business_id": "biz_2", "store_id": "store_5",
+            "created_at": NOW, "updated_at": NOW,
+        }
+        row.update(overrides)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            supplier_schema.ensure_supplier_schema(cur, force=True)
+            cur.execute(
+                f"INSERT INTO {supplier_schema.SOURCE_TABLE} ({', '.join(row)}) "
+                f"VALUES ({', '.join('?' for _ in row)})", tuple(row.values()))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def sync_jobs(self):
+        from services.business_os.suppliers import worker as supplier_worker
+
+        supplier_worker.ensure_schema()
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM business_os_supplier_sync_jobs")]
+        conn.execute("DELETE FROM business_os_supplier_sync_jobs")
+        conn.commit()
+        conn.close()
+        return rows
+
+    # -- 14. §24 refreshing on a verdict that sells nothing ---------------------
+
+    def test_refreshing_the_supplier_on_a_rejection_is_caught(self):
+        real_plan = rv.supplier_sync_plan
+
+        def refresh_everything(source, *, action):
+            """"Why gate it on the action at all -- keeping supplier data fresh
+            is always good." It is, until a bulk reject of forty imported
+            products spends eighty metered supplier reads on pages no buyer can
+            reach, and the quota controller then throttles the approvals that
+            needed it. Nothing errors; the queue just gets slower on the days it
+            is busiest."""
+            return real_plan(source, action=rv.APPROVE)
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.bind_supplier(listing_id)
+            self.sync_jobs()
+            self.review(rv.REJECT, [listing_id],
+                        reason_code=rv.REASON_CODES[0], note="No.")
+            self.assertEqual(self.sync_jobs(), [],
+                             "a rejected listing queued a supplier refresh")
+
+        self.assert_mutation_is_caught(
+            "§24 supplier refresh scheduled for every verdict",
+            Restore(rv, "supplier_sync_plan", refresh_everything), detector)
+
+    # -- 15. §24 a job written outside its connection scope ---------------------
+
+    def test_queuing_a_refresh_with_half_a_connection_scope_is_caught(self):
+        real_plan = rv.supplier_sync_plan
+
+        def scope_by_connection_alone(source, *, action):
+            """"The connection id is unique, so business and store are
+            redundant." They are not redundant, they are how every later read is
+            matched. A job missing them is claimed, resolves against a scope no
+            binding matches, and goes back on the queue -- a row that is
+            permanently scheduled and permanently useless, with no error
+            anywhere. This is the failure that looks exactly like success in
+            every dashboard that counts queued jobs."""
+            plan = real_plan(source, action=action)
+            if not plan["scheduled"] and plan["skip_reason"] == "UNBOUND_SUPPLIER":
+                connection_id = str((source or {}).get("supplier_connection_id") or "")
+                product_id = str((source or {}).get("provider_product_id") or "")
+                if connection_id and product_id:
+                    return dict(plan, scheduled=True, skip_reason="", jobs=[
+                        {"connection_id": connection_id, "business_id": "",
+                         "store_id": "", "kind": kind, "resource_id": product_id}
+                        for kind in rv.SUPPLIER_SYNC_KINDS])
+            return plan
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.bind_supplier(listing_id, store_id="")
+            self.sync_jobs()
+            _, results = self.outcomes(self.review(rv.APPROVE, [listing_id]))
+            self.assertEqual(results[listing_id]["supplier_sync"], "skipped",
+                             "a listing with no reachable connection was queued anyway")
+            self.assertEqual(self.sync_jobs(), [])
+
+        self.assert_mutation_is_caught(
+            "§24 refresh queued without the full connection scope",
+            Restore(rv, "supplier_sync_plan", scope_by_connection_alone), detector)
+
+    # -- 16. §24 a refresh reported as queued when it was not -------------------
+
+    def test_reporting_a_refresh_that_never_reached_the_queue_is_caught(self):
+        real_helper = bot._marketplace_review_supplier_sync
+
+        def report_without_queuing(plans, results):
+            """The optimistic version: mark the entries and enqueue, but let the
+            enqueue fail quietly because "the worker will pick it up on its next
+            cadence sweep anyway". It will not -- there is no row for it to
+            sweep. The reviewer is told stock was refreshed, the listing goes
+            live on the count it was imported with, and the first sign of
+            trouble is an oversold order."""
+            for listing_id in plans:
+                for entry in results:
+                    if int(entry.get("listing_id") or 0) == listing_id:
+                        entry["supplier_sync"] = "queued"
+                        entry["supplier_sync_note"] = "Queued a supplier refresh."
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.bind_supplier(listing_id)
+            self.sync_jobs()
+            _, results = self.outcomes(self.review(rv.APPROVE, [listing_id]))
+            self.assertEqual(results[listing_id]["supplier_sync"], "queued")
+            self.assertTrue(self.sync_jobs(),
+                            "the response claims a refresh was queued and the "
+                            "job table is empty")
+
+        self.assert_mutation_is_caught(
+            "§24 refresh reported as queued with no job row",
+            Restore(bot, "_marketplace_review_supplier_sync", report_without_queuing),
+            detector)
+
+    # -- 17. §36 the page's reason vocabulary ----------------------------------
+
+    def test_letting_the_page_store_an_off_vocabulary_reason_is_caught(self):
+        """The mutation is the defect that was actually shipped, minus the form.
+
+        The row form used to offer its own prose list while the bulk bar six
+        inches below offered ``REASON_CODES``, and the page POST wrote whichever
+        it was handed straight into ``moderation_category``. Widening the
+        vocabulary to admit the prose is the tempting one-line "fix" -- it makes
+        the refusal go away and leaves ``seller_message`` unable to resolve the
+        stored value, so the rejected seller is told nothing specific.
+
+        Anchored on what reaches the column rather than on the 422, because a
+        page that answers 422 and stores it anyway is the same defect.
+        """
+        def detector():
+            listing_id = self.insert_listing()
+            response = self.client.post(PAGE, data={
+                "listing_id": listing_id, "action": "reject",
+                "reason": "Counterfeit packaging.",
+                "reason_category": "Counterfeit concern"})
+            stored = self.stored(listing_id)
+            self.assertEqual(stored.get("moderation_category") or "", "",
+                             "the page stored a category seller_message cannot read")
+            self.assertEqual(str(stored.get("approval_status") or "").lower(),
+                             lifecycle.PENDING_REVIEW)
+            self.assertEqual(response.status_code, 422)
+
+        self.assert_mutation_is_caught(
+            "§36 page accepts a reason category outside REASON_CODES",
+            Restore(rv, "REASON_CODES", tuple(rv.REASON_CODES) + ("COUNTERFEIT CONCERN",)),
+            detector)
+
+    def test_dropping_the_structured_code_requirement_on_the_page_is_caught(self):
+        """§36/§1. A free-text note alone is not a reason code, and the page must
+        refuse it exactly where the batch endpoint does. Otherwise the same
+        verdict is structured or unstructured depending on which control the
+        reviewer used."""
+        def detector():
+            listing_id = self.insert_listing()
+            response = self.client.post(PAGE, data={
+                "listing_id": listing_id, "action": "reject",
+                "reason": "The photos are somebody else's."})
+            self.assertEqual(str(self.stored(listing_id).get("approval_status") or "").lower(),
+                             lifecycle.PENDING_REVIEW,
+                             "a rejection landed with no structured reason code")
+            self.assertEqual(response.status_code, 422)
+
+        self.assert_mutation_is_caught(
+            "§36 page rejects without a structured code",
+            Restore(rv, "REASON_REQUIRED", frozenset()), detector)
+
+    # -- 19. §31 a destructive verdict wearing the approval treatment ----------
+
+    def test_flattening_the_verdict_weights_is_caught(self):
+        """§31. The admin shell paints every ``<button>`` with one gradient, so
+        without this table the six verdicts on a row render identically — and on
+        a phone they are stacked full-width under a thumb at 38px apiece.
+        "Approve + Publish" and "Archive" become the same rectangle in the same
+        place, and the reviewer's first clue that they hit the wrong one is the
+        confirmation afterwards.
+
+        The mutation is the one that looks like cleanup: the table is a dict
+        mapping verbs to class names that the default already covers, so delete
+        it and let everything fall through. Uniform *is* the defect.
+
+        Both halves are asserted, because they fail to different mutations: a
+        flattened table makes approve stop looking like a go-ahead, and a
+        copy-paste in the table makes reject start looking like one.
+        """
+        def detector():
+            self.insert_listing()
+            html = self.client.get(PAGE).get_data(as_text=True)
+            classes = {verb: cls for cls, verb in re.findall(
+                r"<button[^>]*class='([^']*)'[^>]*name='action' value='(\w+)'", html)}
+            self.assertIn("approve", classes, "no approve button on the queue page")
+            self.assertIn("reject", classes, "no reject button on the queue page")
+            self.assertIn("review-verb-go", classes["approve"],
+                          "approve does not read as the go-ahead")
+            self.assertIn("review-verb-stop", classes["reject"],
+                          "reject does not read as destructive")
+            self.assertNotEqual(classes["approve"], classes["reject"],
+                                "approve and reject render identically")
+
+        self.assert_mutation_is_caught(
+            "§31 every verdict button renders the same weight",
+            Restore(bot, "REVIEW_VERB_WEIGHT", {}), detector)
+
+    def test_a_destructive_verdict_mapped_to_the_approval_weight_is_caught(self):
+        """The copy-paste, rather than the deletion. A new verb is added to the
+        table by duplicating the line above it and forgetting to change the
+        value, and ``reject`` ships wearing solid green. Nothing else on the
+        page contradicts it."""
+        def detector():
+            self.insert_listing()
+            html = self.client.get(PAGE).get_data(as_text=True)
+            classes = {verb: cls for cls, verb in re.findall(
+                r"<button[^>]*class='([^']*)'[^>]*name='action' value='(\w+)'", html)}
+            self.assertIn("reject", classes, "no reject button on the queue page")
+            self.assertNotIn("review-verb-go", classes["reject"],
+                             "reject renders as a go-ahead")
+
+        self.assert_mutation_is_caught(
+            "§31 reject carries the approval weight",
+            Restore(bot, "REVIEW_VERB_WEIGHT",
+                    dict(bot.REVIEW_VERB_WEIGHT, reject="review-verb-go")),
+            detector)
 
 
 if __name__ == "__main__":

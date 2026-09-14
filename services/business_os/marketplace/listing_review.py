@@ -49,6 +49,7 @@ from typing import Any, Iterable, Mapping, Optional
 from services import db
 from services import marketplace_goods_policy as _goods
 from services import marketplace_listing_lifecycle as _lifecycle
+from services import marketplace_variants as _variants
 from services.business_os.marketplace.listing_batch import (
     BLOCKED,
     FAILED,
@@ -64,10 +65,14 @@ __all__ = [
     "block_reason", "claim", "ensure_schema", "evaluate_rows", "finalize",
     "normalize_request", "normalize_reason", "publication_readback",
     "queue_sql", "request_hash", "seller_message",
+    "seller_verdict", "SELLER_MUST_ACT", "SELLER_DECIDED",
     "MISSING_REVIEW_STATE", "UNKNOWN_REVIEW_STATE", "APPROVED_BUT_UNRELEASED",
     "KNOWN_REVIEW_STATES", "zombie_reason", "zombie_repair", "zombie_sql",
     "duplicate_decision_sql",
     "QUEUE_FILTERS", "QUEUE_SORTS", "PAGE_SIZE",
+    "INTERNAL_SECTION", "GAP_NOTES", "SUPPLIER_STALE_DAYS", "inspection",
+    "variant_economics", "media_summary", "seller_standing", "safety_signals",
+    "SUPPLIER_SYNC_KINDS", "SYNC_SKIP_NOTES", "supplier_sync_plan",
     "normalize_query", "queue_where", "queue_order", "page_window",
 ]
 
@@ -214,6 +219,79 @@ def block_reason(
 def seller_message(reason_code: str) -> str:
     """The sentence the seller reads. Never the reviewer's internal note (§43)."""
     return SELLER_MESSAGES.get(str(reason_code or "").upper(), SELLER_MESSAGES[OTHER])
+
+
+#: Review states the seller must do something about before the listing can sell.
+#:
+#: ``restricted`` is here deliberately. It parks the moderation axis rather than
+#: moving the merchant axis, so a restricted listing can sit in a store reading
+#: "live" on the seller's own release switch while no buyer can reach it. That is
+#: the one state where saying nothing looks exactly like nothing being wrong.
+SELLER_MUST_ACT = frozenset({
+    _lifecycle.REJECTED, _lifecycle.CHANGES_REQUESTED, "restricted",
+})
+
+#: States that mean a decision was made, whether or not the seller must act.
+SELLER_DECIDED = SELLER_MUST_ACT | {_lifecycle.APPROVED, _lifecycle.PUBLISHED}
+
+
+def seller_verdict(listing: Optional[Mapping[str, Any]]) -> dict:
+    """What the listing's own merchant is told about the last review decision.
+
+    §9 says a rejection is never silent, and until this existed it was silent in
+    the only place the seller actually looks. The decision was written to
+    ``moderation_category``, announced once through the notification path, and
+    then dropped: every seller-facing payload runs through the buyer serializer,
+    which strips the moderation columns by design (§43), and neither seller
+    ``SELECT`` named them in the first place. A merchant who missed the push
+    notification — or read it on a different device, or opened the app a week
+    later — saw the word ``rejected`` and nothing else. There was no surface
+    anywhere in the product that would tell them why, so "send rejected items
+    back to the seller for correction" ended at "back to the seller".
+
+    What crosses and what does not:
+
+    ``reason_code`` and ``message`` cross. The message is the canonical sentence
+    for the code, looked up here rather than stored, so a seller cannot be shown
+    a verdict this build has no words for.
+
+    ``moderation_reason`` — the reviewer's note — does **not** cross, and is not
+    read by this function at all. It is typed on a screen that displays supplier
+    cost and unit margin, which makes "paste the relevant line into the note" a
+    natural thing for a reviewer to do and a §43 leak when it happens. The note's
+    job is the audit trail and the next reviewer's dossier.
+
+    An undecided listing gets ``message: ""`` rather than the ``OTHER`` sentence.
+    ``seller_message`` falls back to "This listing needs a change before it can
+    go live", which is true of a rejection and a lie about a listing that is
+    merely waiting in the queue — and it is a lie the seller would act on by
+    editing a product nobody has found fault with yet.
+    """
+    row = dict(listing or {})
+    state = str(row.get("approval_status") or "").strip().lower()
+    code = str(row.get("moderation_category") or "").strip().upper()
+    decided = state in SELLER_DECIDED
+    return {
+        "state": state,
+        "decided": decided,
+        "needs_action": state in SELLER_MUST_ACT,
+        # A code is only meaningful alongside the decision it describes. After a
+        # material edit sends an approved listing back to the queue (§23) the
+        # column is blanked, but a *stale* code surviving some other path must
+        # not be rendered against the new pending state as though it were this
+        # version's verdict.
+        "reason_code": code if decided else "",
+        "message": seller_message(code) if (decided and code) else "",
+        "review_version": _safe_int(row.get("review_version")),
+        "decided_at": str(row.get("reviewed_at") or "") if decided else "",
+    }
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # --- request validation -------------------------------------------------------
@@ -600,6 +678,394 @@ def publication_readback(listing: Mapping[str, Any]) -> dict:
         "live": not blocker,
         "blockers": [blocker] if blocker else [],
         "note": _lifecycle.blocker_note(blocker) if blocker else "",
+    }
+
+
+# --- §7: what a reviewer needs on the screen before deciding --------------------
+
+#: §43. Everything under this key is priced from supplier data. It is legitimate
+#: on the admin dossier and forbidden on anything a merchant or a buyer can read,
+#: so it lives under one name that is greppable rather than being spread across
+#: sibling fields that each have to be remembered separately.
+INTERNAL_SECTION = "internal_economics"
+
+#: A gap is something the reviewer should look at. It is *not* a verdict --
+#: `block_reason` is the only thing that decides, and a dossier that also decided
+#: would be the §1 defect rebuilt one module further in.
+GAP_NOTES = {
+    "NO_MEDIA": "No images or video. A buyer sees an empty product page.",
+    "NO_COVER": "No cover image chosen, so the listing has nothing to show in a feed.",
+    "MEDIA_PENDING": "Some media has not cleared media moderation yet.",
+    "MEDIA_REJECTED": "Some media was rejected and will not render for buyers.",
+    "NO_DESCRIPTION": "No description. Nothing distinguishes this from a duplicate.",
+    "THIN_DESCRIPTION": "Description is under 40 characters.",
+    "NO_PRICE": "No price on the listing or on any variant.",
+    "NO_STOCK": "Quantity is zero, so approving cannot make it buyable.",
+    "COST_UNKNOWN": "No supplier cost recorded, so margin cannot be checked.",
+    "SELLING_BELOW_COST": "Price is at or under supplier cost on at least one variant.",
+    "SUPPLIER_NEVER_SYNCED": "No variant has ever synced with the supplier.",
+    "SUPPLIER_STALE": "Supplier stock was last synced more than 7 days ago.",
+    "NO_SHIPPING": "No delivery type or estimate for a physical product.",
+    "SELLER_UNVERIFIED": "Seller has not completed verification.",
+    "SELLER_NOT_APPROVED": "Seller account is not in good standing.",
+    "SELLER_HIGH_RISK": "Seller risk score is 60 or above.",
+    "SAFETY_FLAGGED": "Automated safety scoring flagged this listing.",
+}
+
+#: Older than this and "in stock" is a claim about a supplier nobody has spoken
+#: to in a week.
+SUPPLIER_STALE_DAYS = 7
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    """``None`` for absent, which is not the same number as zero.
+
+    A missing ``cost_cents`` read as ``0`` reports a 100%% margin, and it reports
+    it on exactly the listings where the supplier data is thinnest -- so the rows
+    the reviewer knows least about are the ones that look most attractive.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def variant_economics(variant: Mapping[str, Any]) -> dict:
+    """Price, cost and margin for one variant. Unknown stays unknown."""
+    price = _int_or_none(variant.get("price_cents"))
+    cost = _int_or_none(variant.get("cost_cents"))
+    # Delegated, not restated. `marketplace_variants.margin_cents` already owns
+    # this subtraction and already makes the two calls that matter -- unknown
+    # cost returns None rather than a 100% margin, and a negative result is
+    # returned rather than clamped. A second copy here would agree on the day it
+    # was written and be the place the seller dashboard and the review page
+    # start disagreeing about the same product's margin.
+    margin_cents = _variants.margin_cents({"cost_cents": cost}, price)
+    margin_pct = None
+    if margin_cents is not None and price:
+        margin_pct = round(margin_cents * 100.0 / price, 1)
+    return {
+        "variant_key": str(variant.get("variant_key") or ""),
+        "sku": str(variant.get("sku") or ""),
+        "currency": str(variant.get("currency") or "").upper(),
+        "price_cents": price,
+        "cost_cents": cost,
+        "margin_cents": margin_cents,
+        "margin_pct": margin_pct,
+        "stock_quantity": _int_or_none(variant.get("stock_quantity")),
+        "stock_state": str(variant.get("stock_state") or ""),
+        "stock_synced_at": str(variant.get("stock_synced_at") or ""),
+        "status": str(variant.get("status") or ""),
+    }
+
+
+def _days_since(stamp: Any, *, now: Optional[datetime] = None) -> Optional[float]:
+    text = str(stamp or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    reference = now or datetime.now(timezone.utc)
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=timezone.utc)
+    return (reference - parsed).total_seconds() / 86400.0
+
+
+def media_summary(media: Iterable[Mapping[str, Any]]) -> dict:
+    """§7 gallery. Counts by moderation state, because "has 8 images" and "has 8
+    images, 3 of which buyers will never see" are different products."""
+    items = []
+    for entry in media or ():
+        items.append({
+            "media_type": str(entry.get("media_type") or "image"),
+            "media_url": str(entry.get("media_url") or ""),
+            "thumbnail_url": str(entry.get("thumbnail_url") or ""),
+            "is_cover": bool(entry.get("is_cover")),
+            "moderation_status": str(entry.get("moderation_status") or "").lower(),
+            "position": _int_or_none(entry.get("position")) or 0,
+        })
+    items.sort(key=lambda row: (not row["is_cover"], row["position"]))
+    states = [row["moderation_status"] for row in items]
+    return {
+        "items": items,
+        "total": len(items),
+        "has_cover": any(row["is_cover"] for row in items),
+        "approved": sum(1 for state in states if state == "approved"),
+        "pending": sum(1 for state in states if state in ("", "pending", "pending_review")),
+        "rejected": sum(1 for state in states if state in ("rejected", "removed")),
+    }
+
+
+def seller_standing(seller: Optional[Mapping[str, Any]]) -> dict:
+    """§7. Who is behind the listing, from the seller record rather than from the
+    listing's own copy of it."""
+    seller = seller or {}
+    return {
+        "user_id": _int_or_none(seller.get("user_id")),
+        "display_name": str(seller.get("display_name") or ""),
+        "status": str(seller.get("status") or "").lower(),
+        "verification_status": str(seller.get("verification_status") or "").lower(),
+        "risk_score": _int_or_none(seller.get("risk_score")),
+        "seller_type": str(seller.get("seller_type") or ""),
+        "country": str(seller.get("country") or ""),
+        "created_at": str(seller.get("created_at") or ""),
+    }
+
+
+def safety_signals(listing: Mapping[str, Any]) -> dict:
+    """Automated scoring plus the goods-policy decision, side by side.
+
+    The policy decision is repeated here even though `block_reason` already
+    consults it, because a reviewer looking at a row that Approve refuses is
+    entitled to see *which* rule refused it rather than being told no twice.
+    """
+    flags: list = []
+    raw = listing.get("safety_flags_json")
+    if raw:
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError):
+            parsed = None
+        if isinstance(parsed, list):
+            flags = [str(flag) for flag in parsed]
+        elif isinstance(parsed, dict):
+            flags = [str(key) for key, value in parsed.items() if value]
+    # `evaluate` returns a plain dict. Reading it with `getattr(..., "")`
+    # compiles, never raises, and yields "" for every listing -- so the policy
+    # section renders blank on exactly the prohibited products it exists to
+    # explain, and nothing anywhere reports an error.
+    verdict = _goods.evaluate(listing) or {}
+    return {
+        "score": _int_or_none(listing.get("safety_score")) or 0,
+        "flags": flags,
+        "policy_decision": str(verdict.get("decision") or ""),
+        "policy_reason": str(verdict.get("reason_code") or ""),
+        "policy_version": str(verdict.get("policy_version") or ""),
+    }
+
+
+def inspection(listing: Optional[Mapping[str, Any]], *,
+               variants: Iterable[Mapping[str, Any]] = (),
+               media: Iterable[Mapping[str, Any]] = (),
+               seller: Optional[Mapping[str, Any]] = None,
+               reviewer_id: Any = None,
+               now: Optional[datetime] = None) -> dict:
+    """§7. Everything the reviewer needs on one screen, and no verdict of its own.
+
+    The verdicts come back from :func:`block_reason` -- the same call the queue
+    row, the bulk bar and the batch endpoint make -- so the detail page cannot
+    offer a decision the endpoint would refuse, which is the failure this
+    codebase has now produced twice on two different surfaces.
+
+    ``gaps`` are advisory and deliberately separate from ``verdicts``. Most of
+    them describe a listing that is perfectly approvable and merely bad; folding
+    them into the block reasons would let the queue accumulate rows no reviewer
+    is permitted to clear, which is worse than the backlog it replaces.
+    """
+    if not listing:
+        return {"found": False, "listing_id": 0}
+
+    listing = dict(listing)
+    priced = [variant_economics(row) for row in (variants or ())]
+    gallery = media_summary(media)
+    standing = seller_standing(seller)
+    safety = safety_signals(listing)
+
+    gaps: list = []
+
+    def flag(code: str) -> None:
+        if code not in gaps:
+            gaps.append(code)
+
+    if gallery["total"] == 0:
+        flag("NO_MEDIA")
+    else:
+        if not gallery["has_cover"] and not str(listing.get("cover_image_url") or ""):
+            flag("NO_COVER")
+        if gallery["pending"]:
+            flag("MEDIA_PENDING")
+        if gallery["rejected"]:
+            flag("MEDIA_REJECTED")
+
+    description = str(listing.get("description") or "").strip()
+    if not description:
+        flag("NO_DESCRIPTION")
+    elif len(description) < 40:
+        flag("THIN_DESCRIPTION")
+
+    known_prices = [row["price_cents"] for row in priced if row["price_cents"] is not None]
+    if not known_prices and not str(listing.get("price_label") or "").strip():
+        flag("NO_PRICE")
+
+    quantity = _int_or_none(listing.get("quantity"))
+    variant_stock = [row["stock_quantity"] for row in priced
+                     if row["stock_quantity"] is not None]
+    if not (quantity or 0) and not any(variant_stock):
+        flag("NO_STOCK")
+
+    if priced and all(row["cost_cents"] is None for row in priced):
+        flag("COST_UNKNOWN")
+    if any(row["margin_cents"] is not None and row["margin_cents"] <= 0 for row in priced):
+        flag("SELLING_BELOW_COST")
+
+    if priced:
+        ages = [_days_since(row["stock_synced_at"], now=now) for row in priced]
+        if all(age is None for age in ages):
+            flag("SUPPLIER_NEVER_SYNCED")
+        elif min(age for age in ages if age is not None) > SUPPLIER_STALE_DAYS:
+            flag("SUPPLIER_STALE")
+
+    physical = str(listing.get("product_type") or listing.get("listing_type")
+                   or "").lower() in ("", "physical", "goods")
+    if physical and not (str(listing.get("delivery_type") or "").strip()
+                         or str(listing.get("estimated_delivery") or "").strip()):
+        flag("NO_SHIPPING")
+
+    if standing["status"] and standing["status"] != "approved":
+        flag("SELLER_NOT_APPROVED")
+    if standing["verification_status"] not in ("verified", "approved"):
+        flag("SELLER_UNVERIFIED")
+    if (standing["risk_score"] or 0) >= 60:
+        flag("SELLER_HIGH_RISK")
+
+    if safety["score"] >= 30 or safety["flags"]:
+        flag("SAFETY_FLAGGED")
+
+    margins = [row["margin_cents"] for row in priced if row["margin_cents"] is not None]
+    pcts = [row["margin_pct"] for row in priced if row["margin_pct"] is not None]
+
+    return {
+        "found": True,
+        "listing_id": int(listing.get("id") or 0),
+        "title": str(listing.get("title") or ""),
+        "description": description,
+        "category": str(listing.get("category") or ""),
+        "review_state": _lifecycle.normalized(listing.get("approval_status")),
+        "publication_state": _lifecycle.normalized(listing.get("status")),
+        "awaiting_moderation": _lifecycle.awaiting_moderation(listing),
+        "review_version": _int_or_none(listing.get("review_version")) or 0,
+        "submitted_at": str(listing.get("submitted_at") or ""),
+        "reviewed_at": str(listing.get("reviewed_at") or ""),
+        "reviewed_by": _int_or_none(listing.get("reviewed_by")),
+        "moderation_reason": str(listing.get("moderation_reason") or ""),
+        "moderation_category": str(listing.get("moderation_category") or ""),
+        # One call per action, so the page's buttons and the endpoint's gate are
+        # the same function evaluated once each rather than two rule sets.
+        "verdicts": {action: block_reason(listing, action, reviewer_id=reviewer_id)
+                     for action in ACTIONS},
+        "media": gallery,
+        "seller": standing,
+        "safety": safety,
+        "fulfilment": {
+            "product_type": str(listing.get("product_type") or ""),
+            "listing_type": str(listing.get("listing_type") or ""),
+            "delivery_type": str(listing.get("delivery_type") or ""),
+            "estimated_delivery": str(listing.get("estimated_delivery") or ""),
+            "refund_policy": str(listing.get("refund_policy") or ""),
+            "quantity": quantity,
+        },
+        INTERNAL_SECTION: {
+            # §43. Supplier cost and margin. Admin dossier only -- never assemble
+            # a merchant or buyer payload from this dict.
+            "variants": priced,
+            "variant_count": len(priced),
+            "currency": (priced[0]["currency"] if priced else
+                         str(listing.get("currency") or "").upper()),
+            "price_label": str(listing.get("price_label") or ""),
+            "min_price_cents": min(known_prices) if known_prices else None,
+            "max_price_cents": max(known_prices) if known_prices else None,
+            "min_margin_cents": min(margins) if margins else None,
+            "min_margin_pct": min(pcts) if pcts else None,
+            "cost_known": any(row["cost_cents"] is not None for row in priced),
+        },
+        "publication_if_approved": publication_readback(dict(
+            listing, status=_lifecycle.PUBLISHED, approval_status=_lifecycle.APPROVED)),
+        "gaps": gaps,
+        "gap_notes": [{"code": code, "note": GAP_NOTES.get(code, code)} for code in gaps],
+    }
+
+
+# --- §24: refreshing the supplier once the listing is allowed to sell ----------
+
+
+#: The two facts that go stale between import and approval.
+#:
+#: ``product`` is title, images and supplier price; ``inventory`` is stock. Both
+#: are read from the supplier at import time and then sit unread for as long as
+#: the listing waits in the queue -- which is precisely the interval this review
+#: pipeline exists to create. A product imported on Monday, reviewed on Friday
+#: and approved is published against Monday's stock count.
+SUPPLIER_SYNC_KINDS = ("product", "inventory")
+
+#: Why a refresh was not scheduled. Every value here is a *fact about the
+#: listing*, not an error: a hand-made product has no supplier, and saying
+#: "sync failed" about it would send someone looking for a broken integration.
+SYNC_SKIP_NOTES = {
+    "NOT_AN_APPROVAL": "Only an approval refreshes supplier data.",
+    "MERCHANT_AUTHORED": "This product was created in PulseSoc. There is no supplier to refresh.",
+    "UNBOUND_SUPPLIER": ("This product records a supplier but no connection to reach it "
+                         "through, so its stock and cost cannot be refreshed."),
+    "NO_PROVIDER_PRODUCT": ("This product has no supplier product id, so there is nothing "
+                            "to ask the supplier about."),
+}
+
+
+def supplier_sync_plan(source: Optional[Mapping[str, Any]], *, action: str) -> dict:
+    """What to re-read from the supplier now that this listing may be sold.
+
+    Pure. It schedules nothing and touches no database -- it decides, and the
+    caller enqueues. That split is not tidiness: ``suppliers.worker.schedule``
+    opens its own connection and commits it, so calling it from inside the
+    review batch's open write transaction is the ``log_admin_audit`` failure
+    again -- the insert is refused, the exception is swallowed, and the batch
+    returns 200 having scheduled nothing. Deciding here and enqueuing after the
+    commit is the only ordering in which both halves are true.
+
+    Only ``approve`` schedules. A rejection does not make anyone buy the
+    product, so spending supplier quota on it would be paying to refresh a page
+    nobody can reach.
+
+    A skip is returned with a reason, never as an empty result. "No jobs" and
+    "no supplier" are the same shape and opposite meanings, and the reviewer has
+    to be able to tell which one they are looking at.
+    """
+    if action != APPROVE:
+        return {"scheduled": False, "skip_reason": "NOT_AN_APPROVAL",
+                "note": SYNC_SKIP_NOTES["NOT_AN_APPROVAL"], "jobs": []}
+    if not source:
+        return {"scheduled": False, "skip_reason": "MERCHANT_AUTHORED",
+                "note": SYNC_SKIP_NOTES["MERCHANT_AUTHORED"], "jobs": []}
+
+    connection_id = str(source.get("supplier_connection_id") or "").strip()
+    business_id = str(source.get("business_id") or "").strip()
+    store_id = str(source.get("store_id") or "").strip()
+    product_id = str(source.get("provider_product_id") or "").strip()
+
+    # All three parts of the scope, not just the connection id. `worker.schedule`
+    # stores the tuple and every later read is matched against it, so a job
+    # written with a blank business or store is a row no claim will ever match --
+    # queued, never run, and invisible as a failure.
+    if not (connection_id and business_id and store_id):
+        return {"scheduled": False, "skip_reason": "UNBOUND_SUPPLIER",
+                "note": SYNC_SKIP_NOTES["UNBOUND_SUPPLIER"], "jobs": []}
+    if not product_id:
+        return {"scheduled": False, "skip_reason": "NO_PROVIDER_PRODUCT",
+                "note": SYNC_SKIP_NOTES["NO_PROVIDER_PRODUCT"], "jobs": []}
+
+    return {
+        "scheduled": True,
+        "skip_reason": "",
+        "note": "Queued a supplier refresh of stock and cost.",
+        "provider": str(source.get("provider") or ""),
+        "jobs": [{"connection_id": connection_id, "business_id": business_id,
+                  "store_id": store_id, "kind": kind, "resource_id": product_id}
+                 for kind in SUPPLIER_SYNC_KINDS],
     }
 
 

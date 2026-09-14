@@ -522,6 +522,190 @@ class AdminReviewBatchRouteTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.get_json()["error"], "BATCH_TOO_LARGE")
 
+    # -- §24: an approval refreshes the supplier ------------------------------
+    #
+    # `tests/business_os/test_review_supplier_sync.py` pins what the plan
+    # *decides*, without a database. What only the route can get wrong is the
+    # ordering: `suppliers.worker.schedule` opens its own connection and commits
+    # it, so run from inside the batch's open write transaction it is the
+    # `log_admin_audit` failure -- refused insert, swallowed exception, a 200
+    # that queued nothing. That failure is completely invisible from the pure
+    # side, and completely invisible from the response unless the response is
+    # built after the enqueue. So these tests read the job table.
+
+    def bind_supplier(self, listing_id, seller_user_id=SELLER, **overrides):
+        """Give a listing a CJ binding, the way an import would have."""
+        from services import marketplace_supplier_schema as supplier_schema
+
+        row = {
+            "listing_id": listing_id,
+            "seller_user_id": seller_user_id,
+            "provider": "cj",
+            "provider_product_id": f"CJ-PROD-{listing_id}",
+            "fulfillment_mode": "DROPSHIP",
+            "supplier_connection_id": "conn_7",
+            "business_id": "biz_2",
+            "store_id": "store_5",
+            "created_at": NOW,
+            "updated_at": NOW,
+        }
+        row.update(overrides)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            supplier_schema.ensure_supplier_schema(cur, force=True)
+            cols = ", ".join(row)
+            marks = ", ".join("?" for _ in row)
+            cur.execute(f"INSERT INTO {supplier_schema.SOURCE_TABLE} ({cols}) "
+                        f"VALUES ({marks})", tuple(row.values()))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def sync_jobs(self):
+        from services.business_os.suppliers import worker as supplier_worker
+
+        supplier_worker.ensure_schema()
+        return self.query("SELECT * FROM business_os_supplier_sync_jobs "
+                          "ORDER BY resource_id, kind")
+
+    def clear_sync_jobs(self):
+        from services.business_os.suppliers import worker as supplier_worker
+
+        supplier_worker.ensure_schema()
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("DELETE FROM business_os_supplier_sync_jobs")
+        conn.commit()
+        conn.close()
+
+    def test_approving_a_dropshipped_product_queues_a_real_supplier_refresh(self):
+        """The row must exist in the table, not merely be reported in the JSON.
+
+        A response that says "queued" is exactly what the swallowed-exception
+        bug produces, so the response is the one piece of evidence that cannot
+        be trusted here.
+        """
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing()
+        self.bind_supplier(listing_id)
+
+        body = self.review(rv.APPROVE, [listing_id], key="sync-1").get_json()
+        self.assertEqual(body["successful_count"], 1, body)
+
+        jobs = self.sync_jobs()
+        self.assertEqual({job["kind"] for job in jobs}, {"product", "inventory"}, jobs)
+        for job in jobs:
+            self.assertEqual(job["resource_id"], f"CJ-PROD-{listing_id}")
+            self.assertEqual(job["connection_id"], "conn_7")
+            self.assertEqual(job["business_id"], "biz_2")
+            self.assertEqual(job["store_id"], "store_5")
+
+    def test_the_response_says_queued_only_once_the_row_is_there(self):
+        """`pending` is the in-loop value and must never survive to the client.
+
+        If it does, the post-commit enqueue did not run at all -- which is worth
+        seeing precisely because every other signal in the response would still
+        read as a clean success.
+        """
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing()
+        self.bind_supplier(listing_id)
+
+        entry = self.outcomes(self.review(rv.APPROVE, [listing_id], key="sync-2").get_json())[listing_id]
+        self.assertEqual(entry["supplier_sync"], "queued", entry)
+        self.assertNotEqual(entry["supplier_sync"], "pending")
+        self.assertTrue(self.sync_jobs())
+
+    def test_a_hand_made_product_is_skipped_with_words_not_silence(self):
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing()
+
+        entry = self.outcomes(self.review(rv.APPROVE, [listing_id], key="sync-3").get_json())[listing_id]
+        self.assertEqual(entry["supplier_sync"], "skipped")
+        self.assertIn("no supplier to refresh", entry["supplier_sync_note"].lower())
+        self.assertEqual(self.sync_jobs(), [])
+
+    def test_rejecting_a_dropshipped_product_queues_nothing(self):
+        """§24 is scoped to approvals. A rejected listing cannot be bought, so a
+        supplier read against it is quota spent on a page no buyer reaches."""
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing()
+        self.bind_supplier(listing_id)
+
+        entry = self.outcomes(self.review(
+            rv.REJECT, [listing_id], key="sync-4",
+            reason_code=rv.REASON_CODES[0], note="No.").get_json())[listing_id]
+        self.assertEqual(entry["supplier_sync"], "skipped")
+        self.assertEqual(self.sync_jobs(), [])
+
+    def test_a_blocked_listing_earns_no_refresh(self):
+        """The reviewer's own listing is refused under §18 and never moves, so
+        there is nothing newly sellable and nothing to refresh."""
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing(seller_user_id=REVIEWER)
+        self.bind_supplier(listing_id, seller_user_id=REVIEWER)
+
+        body = self.review(rv.APPROVE, [listing_id], key="sync-5").get_json()
+        self.assertEqual(body["blocked_count"], 1, body)
+        self.assertEqual(self.sync_jobs(), [])
+
+    def test_a_mixed_batch_refreshes_only_the_rows_that_moved(self):
+        """§15 again, one layer down. A batch that queued a refresh per *ticked*
+        listing rather than per *approved* one would look identical in the
+        summary and spend quota on products that were refused."""
+        self.clear_sync_jobs()
+        approved = self.insert_listing()
+        blocked = self.insert_listing(seller_user_id=REVIEWER)
+        self.bind_supplier(approved)
+        self.bind_supplier(blocked, seller_user_id=REVIEWER)
+
+        body = self.review(rv.APPROVE, [approved, blocked], key="sync-6").get_json()
+        self.assertEqual((body["successful_count"], body["blocked_count"]), (1, 1), body)
+
+        resources = {job["resource_id"] for job in self.sync_jobs()}
+        self.assertEqual(resources, {f"CJ-PROD-{approved}"})
+
+    def test_a_replayed_batch_does_not_queue_a_second_refresh(self):
+        """§17 reaches the supplier too. Two jobs for one approval is two reads
+        of the same product, and the second one is bought with quota.
+        """
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing()
+        self.bind_supplier(listing_id)
+
+        self.review(rv.APPROVE, [listing_id], key="sync-7")
+        first = len(self.sync_jobs())
+        self.review(rv.APPROVE, [listing_id], key="sync-7")
+        self.assertEqual(len(self.sync_jobs()), first)
+
+    def test_an_approval_still_lands_when_the_supplier_queue_refuses(self):
+        """The listing is approved; only the refresh failed. Rolling the verdict
+        back would mean a supplier outage silently blocks moderation -- and the
+        reviewer, who did nothing wrong, would see their decision vanish.
+        """
+        self.clear_sync_jobs()
+        listing_id = self.insert_listing()
+        self.bind_supplier(listing_id)
+
+        from services.business_os.suppliers import worker as supplier_worker
+
+        real_schedule = supplier_worker.schedule
+
+        def _boom(**kwargs):
+            raise RuntimeError("supplier queue unavailable")
+
+        supplier_worker.schedule = _boom
+        try:
+            entry = self.outcomes(self.review(
+                rv.APPROVE, [listing_id], key="sync-8").get_json())[listing_id]
+        finally:
+            supplier_worker.schedule = real_schedule
+
+        self.assertEqual(entry["outcome"], rv.SUCCEEDED)
+        self.assertEqual(self.stored(listing_id)["approval_status"], lifecycle.APPROVED)
+        self.assertEqual(entry["supplier_sync"], "failed")
+        self.assertIn("supplier queue unavailable", entry["supplier_sync_note"])
+
 
 if __name__ == "__main__":
     unittest.main()

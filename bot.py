@@ -54903,6 +54903,18 @@ MARKETPLACE_REVIEWER_ONLY_FIELDS = (
     "moderation_category",
     "review_version",
     "moderation_notes",
+    # `reviewed_at` is load-bearing: the seller route SELECTs it to build
+    # `seller_verdict`, so without this line the raw column ships beside the
+    # verdict's own `decided_at` -- two names for one fact, drifting the first
+    # time one of them is formatted.
+    "reviewed_at",
+    # `reviewed_by` is not selected by any route that reaches this serializer,
+    # so this entry guards nothing today and is here deliberately anyway. It is
+    # an admin's user id -- platform staff identity on a merchant's, or a
+    # buyer's, payload -- and the list is documented above as the durable place
+    # to say "not this one" precisely so that a later `SELECT *`, or one more
+    # column added to a seller query, does not have to remember.
+    "reviewed_by",
 )
 
 
@@ -55099,6 +55111,12 @@ def api_pulse_marketplace_seller_listings():
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
+               -- §9. Read for `seller_verdict` and stripped from the payload
+               -- again by `MARKETPLACE_REVIEWER_ONLY_FIELDS` before it
+               -- ships, so naming them here widens what the merchant is
+               -- told about their own listing without widening the row.
+               -- `moderation_reason` is deliberately not among them.
+               l.moderation_category, l.review_version, l.reviewed_at,
                COALESCE(ms.status,'missing') AS seller_status,
                {marketplace_seller_identity.store_name_select('ms')},
                COALESCE(u.username,'') AS seller_username
@@ -55146,6 +55164,7 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
     """
     from services.business_os.marketplace import listing_readiness as _readiness
     from services.business_os.marketplace import listing_batch as _batch
+    from services.business_os.marketplace import listing_review as _review
 
     payload = pulse_marketplace_listing_payload(row, media_rows)
     verdict = _readiness.evaluate(row, media=media_rows)
@@ -55166,6 +55185,20 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
         action: _batch.block_reason(row, action, verdict if action == "publish" else None)
         for action in _batch.PRECOMPUTED_ACTIONS
     }
+    # §9. Why the reviewer decided what they decided, on the listing itself.
+    #
+    # It was announced once through the notification path and then existed
+    # nowhere a merchant could go back to. The push is a moment; a rejected
+    # product is a thing the seller opens later, on another device, wanting to
+    # know what to fix. Attached here rather than in either route because the
+    # list view and the single-listing view answering differently is the bug
+    # `readiness` was moved here to stop.
+    #
+    # Built from `row`, not from `payload`: the serializer strips the moderation
+    # columns for the buyer (§43) and it is right to keep doing that. This adds
+    # back only the structured code and its canonical sentence — never the
+    # reviewer's note, which `seller_verdict` does not read.
+    payload["review"] = _review.seller_verdict(row)
     return payload
 
 
@@ -55176,6 +55209,12 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
+               -- §9. Read for `seller_verdict` and stripped from the payload
+               -- again by `MARKETPLACE_REVIEWER_ONLY_FIELDS` before it
+               -- ships, so naming them here widens what the merchant is
+               -- told about their own listing without widening the row.
+               -- `moderation_reason` is deliberately not among them.
+               l.moderation_category, l.review_version, l.reviewed_at,
                COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                -- Selected for `seller_label`, which answers "Live" from the
                -- publication rules and not from the merchant's own two columns.
@@ -55793,6 +55832,24 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         next_status, next_approval = "pending_review", "pending_review"
     else:
         next_status, next_approval = old_status, old_approval
+    # §23. A material edit produces a different product than the one the queue
+    # already holds, and it has to arrive carrying the same two marks the two
+    # explicit submit routes write (`...:submit` and the seller batch resume):
+    # a new revision number, and no leftover verdict text.
+    #
+    # Neither was written here, and the consequence is the one thing re-review
+    # exists to prevent. A reviewer approves revision 3; the seller rewrites the
+    # title and triples the price; the listing comes back to the queue still
+    # labelled revision 3, still carrying "Looked fine to me." under the last
+    # decision. The reviewer recognises their own approval on a product they
+    # have never seen, and the fastest thing to do with it -- wave it through --
+    # is also the wrong thing.
+    #
+    # `approved_at`, `reviewed_by` and `reviewed_at` are deliberately left
+    # alone, matching the submit routes: they record when the product was last
+    # decided, which is a true fact about the past. The revision number is what
+    # says that fact is about a different version.
+    resubmitted = 1 if (material_change and next_status == "pending_review") else 0
     cur.execute(
         """
         UPDATE marketplace_listings
@@ -55800,6 +55857,9 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             price_label=?, currency=?, quantity=?,
             refund_policy=?, estimated_delivery=?, seller_notes=?,
             status=?, approval_status=?, safety_score=?, safety_flags_json=?,
+            review_version=CASE WHEN ?=1 THEN COALESCE(review_version,0)+1 ELSE review_version END,
+            moderation_reason=CASE WHEN ?=1 THEN '' ELSE moderation_reason END,
+            moderation_category=CASE WHEN ?=1 THEN '' ELSE moderation_category END,
             submitted_at=CASE WHEN ?='pending_review' THEN ? ELSE submitted_at END,
             published_at=CASE WHEN ?='pending_review' THEN NULL ELSE published_at END, updated_at=?
         WHERE id=? AND seller_user_id=?
@@ -55821,6 +55881,9 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             next_approval,
             int(review["risk_score"]),
             json.dumps(review["flags"], default=str),
+            resubmitted,
+            resubmitted,
+            resubmitted,
             next_status,
             now,
             next_status,
@@ -100193,6 +100256,357 @@ def admin_marketplace_decision_message(cur, action, listing_id):
             + marketplace_listing_lifecycle.blocker_note(blocker) + ".")
 
 
+# §7. The review detail view. A reviewer deciding from the queue row is
+# deciding from a title, a price and a thumbnail; everything that would change
+# their mind lives in four other tables. This page is the only place those are
+# assembled, and it assembles them without forming an opinion -- the verdict on
+# every button comes back from `listing_review.inspection`, which asks the same
+# `block_reason` the batch endpoint asks.
+ADMIN_REVIEW_DETAIL_JS = r"""
+(function () {
+  var out = document.getElementById('detail-outcome');
+  function post(action) {
+    var node = document.getElementById('detail-root');
+    var listingId = parseInt(node.getAttribute('data-listing'), 10);
+    var category = (document.getElementById('detail-reason-category') || {}).value || '';
+    var note = (document.getElementById('detail-reason-note') || {}).value || '';
+    var needsReason = ['reject', 'request_changes', 'restrict'].indexOf(action) >= 0;
+    if (needsReason && !category) {
+      out.textContent = 'Choose a reason category first — the seller reads it.';
+      return;
+    }
+    out.textContent = 'Working…';
+    fetch('/api/admin/marketplace/review/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        action: action,
+        listing_ids: [listingId],
+        reason_code: category,
+        reason_note: note,
+        idempotency_key: 'rvw_' + (window.crypto && window.crypto.randomUUID
+          ? window.crypto.randomUUID() : String(Date.now()) + Math.random())
+      })
+    }).then(function (r) { return r.json().then(function (d) { return [r.ok, d]; }); })
+      .then(function (pair) {
+        var data = pair[1] || {};
+        var entry = (data.results || [])[0] || {};
+        if (data.successful_count === 1) {
+          out.textContent = (entry.note || 'Decision recorded.')
+            + ' Reloading to read the listing back…';
+          setTimeout(function () { window.location.reload(); }, 1400);
+          return;
+        }
+        // Not "something went wrong". The endpoint already said which rule and
+        // why; repeating its sentence is the only honest thing to show.
+        out.textContent = entry.note || data.message
+          || 'That decision was not applied.';
+      })
+      .catch(function () {
+        out.textContent = 'The decision did not reach the server. Nothing was changed.';
+      });
+  }
+  Array.prototype.forEach.call(
+    document.querySelectorAll('[data-detail-action]'), function (b) {
+      b.addEventListener('click', function () {
+        post(b.getAttribute('data-detail-action'));
+      });
+    });
+})();
+"""
+
+
+def _admin_review_detail_rows(cur, listing_id):
+    """The four tables the dossier needs, fetched once each.
+
+    Media and variants are optional in this schema's history -- an older listing
+    predates both. A missing table has to read as "no rows", not as a 500 on the
+    review page, because the listings most likely to be missing them are exactly
+    the stranded imports this queue was built to clear.
+    """
+    cur.execute("SELECT l.*, " + marketplace_seller_identity.store_name_select("ms")
+                + " FROM marketplace_listings l "
+                  "LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id "
+                  "WHERE l.id=? LIMIT 1", (listing_id,))
+    listing = dict(cur.fetchone() or {})
+    if not listing:
+        return None, None, [], []
+
+    seller = None
+    try:
+        cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1",
+                    (listing.get("seller_user_id"),))
+        seller = dict(cur.fetchone() or {}) or None
+    except Exception:
+        seller = None
+
+    media = []
+    try:
+        cur.execute("SELECT * FROM marketplace_product_media WHERE product_id=? "
+                    "ORDER BY is_cover DESC, position ASC, id ASC LIMIT 40", (listing_id,))
+        media = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        media = []
+
+    variants = []
+    try:
+        cur.execute("SELECT * FROM marketplace_listing_variants WHERE listing_id=? "
+                    "ORDER BY position ASC, id ASC LIMIT 100", (listing_id,))
+        variants = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        variants = []
+
+    return listing, seller, media, variants
+
+
+def _money(cents, currency=""):
+    """Absent money is "—", not "$0.00". Rendering an unknown supplier cost as
+    zero is what makes a listing with no cost data look like pure margin."""
+    if cents is None:
+        return "—"
+    return ((currency + " ") if currency else "") + "%0.2f" % (int(cents) / 100.0)
+
+
+@webhook_app.route("/admin/marketplace-command/listing/<int:listing_id>", methods=["GET"])
+def admin_marketplace_listing_review_page(listing_id):
+    admin, denied = require_admin_page("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+    from services.business_os.marketplace import listing_review as marketplace_review_authority
+
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    listing, seller, media, variants = _admin_review_detail_rows(cur, listing_id)
+    conn.close()
+
+    if not listing:
+        return admin_page_html(
+            "Listing Review",
+            "<h1>Listing Review</h1><p class='review-note blocked'>Listing #"
+            + str(int(listing_id)) + " does not exist.</p>"
+            "<p><a class='button' href='/admin/marketplace-command'>Back to the queue</a></p>",
+            admin), 404
+
+    dossier = marketplace_review_authority.inspection(
+        listing, variants=variants, media=media, seller=seller,
+        reviewer_id=admin.get("id"))
+    internal = dossier[marketplace_review_authority.INTERNAL_SECTION]
+
+    def esc(value):
+        return html_escape(clean_html(str(value if value is not None else "")))
+
+    # §7 gallery. Each tile says its moderation state, because eight images of
+    # which three are rejected is a different product to eight images.
+    tiles = "".join(
+        ("<figure class='detail-tile'>"
+         + ("<video src='" + esc(item["media_url"]) + "' muted></video>"
+            if item["media_type"] == "video"
+            else "<img src='" + esc(item["thumbnail_url"] or item["media_url"]) + "' alt=''>")
+         + "<figcaption>" + ("cover · " if item["is_cover"] else "")
+         + esc(item["moderation_status"] or "pending") + "</figcaption></figure>")
+        for item in dossier["media"]["items"]) or "<p class='muted'>No media on this listing.</p>"
+
+    variant_rows = "".join(
+        ("<tr><td>" + esc(row["variant_key"] or "default") + "<br><small class='muted'>"
+         + esc(row["sku"]) + "</small></td>"
+         + "<td>" + esc(_money(row["price_cents"], row["currency"])) + "</td>"
+         + "<td>" + esc(_money(row["cost_cents"], row["currency"])) + "</td>"
+         + "<td>" + esc(_money(row["margin_cents"], row["currency"]))
+         + ("" if row["margin_pct"] is None
+            else " <small class='muted'>" + esc(row["margin_pct"]) + "%</small>") + "</td>"
+         + "<td>" + ("—" if row["stock_quantity"] is None else esc(row["stock_quantity"]))
+         + "<br><small class='muted'>" + esc(row["stock_state"]) + "</small></td>"
+         + "<td><small class='muted'>" + esc(row["stock_synced_at"] or "never")
+         + "</small></td></tr>")
+        for row in internal["variants"])
+    variant_table = (
+        "<table class='table'><tr><th>Variant</th><th>Price</th><th>Supplier cost</th>"
+        "<th>Margin</th><th>Stock</th><th>Last supplier sync</th></tr>"
+        + variant_rows + "</table>") if variant_rows else (
+        "<p class='muted'>No variants. Listing price is "
+        + esc(internal["price_label"] or "unset")
+        + ", and no supplier cost is recorded against it.</p>")
+
+    gaps = "".join("<li>" + esc(entry["note"]) + "</li>"
+                   for entry in dossier["gap_notes"])
+    gaps_block = ("<ul class='detail-gaps'>" + gaps + "</ul>") if gaps else (
+        "<p class='muted'>Nothing flagged. This is not an approval — it means "
+        "the automated checks found nothing to point at.</p>")
+
+    readback = dossier["publication_if_approved"]
+    if readback["live"]:
+        forecast = ("<p class='review-note'>Approving this would make it visible "
+                    "to buyers.</p>")
+    else:
+        forecast = ("<p class='review-note blocked'>Approving this would <strong>not"
+                    "</strong> make it visible to buyers: " + esc(readback["note"])
+                    + ". The decision would still be recorded.</p>")
+
+    # §31. Same rule as the queue: a button the endpoint would refuse is not
+    # offered, and it says which refusal rather than merely going grey.
+    verdict_buttons = "".join(
+        ("<button type='button' class='"
+         + REVIEW_VERB_WEIGHT.get(action, "review-verb-neutral")
+         + "' data-detail-action='" + action + "'"
+         + ((" disabled title=\"" + esc(
+             marketplace_review_authority.BLOCK_NOTES.get(
+                 dossier["verdicts"][action], "That decision is not available."))
+             + "\"") if dossier["verdicts"][action] else "")
+         + ">" + label + "</button>")
+        for action, label in (
+            (marketplace_review_authority.APPROVE, "Approve"),
+            (marketplace_review_authority.REQUEST_CHANGES, "Request changes"),
+            (marketplace_review_authority.REJECT, "Reject"),
+            (marketplace_review_authority.RESTRICT, "Restrict")))
+
+    # §36/§20. The third surface that writes `moderation_category`, and the
+    # third that used to label it differently -- this one rendered the constant
+    # Title-cased ("Misleading Description"), the queue rendered prose of its
+    # own, the bulk bar rendered the seller's sentence. One column, one menu:
+    # the label is what the seller will be told, so the reviewer picks a reason
+    # by reading the consequence rather than by decoding a constant.
+    reason_options = "".join(
+        "<option value='" + esc(code) + "'>"
+        + esc(marketplace_review_authority.SELLER_MESSAGES[code])
+        + "</option>" for code in marketplace_review_authority.REASON_CODES)
+
+    safety = dossier["safety"]
+    standing = dossier["seller"]
+    fulfilment = dossier["fulfilment"]
+
+    body = (
+        "<style>"
+        ".detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}"
+        ".detail-tile{margin:0;width:104px}"
+        ".detail-tile img,.detail-tile video{width:104px;height:104px;object-fit:cover;"
+        "border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}"
+        ".detail-tile figcaption{font-size:11px;color:#9aa7b4;margin-top:3px}"
+        ".detail-gallery{display:flex;gap:10px;flex-wrap:wrap}"
+        ".detail-gaps{margin:6px 0 0 18px;color:#f2b544}"
+        ".detail-verdicts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}"
+        ".detail-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}"
+        ".detail-kv dt{color:#9aa7b4}.detail-kv dd{margin:0}"
+        ".review-note{margin:10px 0;padding:9px 12px;border-radius:8px;"
+        "border:1px solid rgba(54,229,143,.45);background:rgba(54,229,143,.08)}"
+        ".review-note.blocked{border-color:rgba(240,173,78,.55);"
+        "background:rgba(240,173,78,.10)}"
+        ".detail-internal{border-color:rgba(240,173,78,.35)}"
+        ".review-verb-go{background:#0f9d58;background-image:none;color:#fff;"
+        "border-color:#0f9d58;font-weight:700}"
+        ".review-verb-stop{background:#b3261e;background-image:none;color:#fff;"
+        "border-color:#b3261e;font-weight:700}"
+        ".review-verb-neutral{background:rgba(255,255,255,.04);background-image:none;"
+        "color:#e6edf3;border-color:rgba(255,255,255,.28);font-weight:700}"
+        ".review-verb-go[disabled],.review-verb-stop[disabled],"
+        ".review-verb-neutral[disabled]{opacity:.4}"
+        "#detail-outcome{margin:10px 0;white-space:pre-line}"
+        # §32. `.detail-grid` already collapses to one column on its own, so the
+        # only things that need saying here are the two that do not: a two
+        # column definition list squeezes the value into a sliver once the label
+        # column is a long word, and the verdict buttons and the note box have
+        # to be big enough to hit with a thumb. This is the screen a reviewer
+        # actually decides on, so the decision controls are the ones that get
+        # the width.
+        "@media (max-width:820px){"
+        ".detail-kv{grid-template-columns:1fr;gap:0 0}"
+        ".detail-kv dt{margin-top:8px;font-size:11px;text-transform:uppercase;"
+        "letter-spacing:.05em}"
+        ".detail-verdicts{display:grid;grid-template-columns:1fr 1fr;gap:8px}"
+        ".detail-verdicts button{width:100%;padding:11px 8px}"
+        "#detail-reason-category,#detail-reason-note{width:100%;box-sizing:border-box}"
+        "#detail-reason-note{min-height:96px}"
+        "}"
+        "</style>"
+        "<div id='detail-root' data-listing='" + str(int(listing_id)) + "'>"
+        "<p><a href='/admin/marketplace-command'>&larr; Review queue</a></p>"
+        "<h1>" + esc(dossier["title"] or "Untitled listing") + "</h1>"
+        "<p class='muted'>#" + str(int(listing_id)) + " · "
+        + esc(dossier["category"] or "uncategorised") + " · review state <strong>"
+        + esc(dossier["review_state"]) + "</strong> · merchant state <strong>"
+        + esc(dossier["publication_state"]) + "</strong>"
+        + (" · revision " + str(dossier["review_version"])
+           if dossier["review_version"] else "") + "</p>"
+        + forecast
+        + "<section class='card'><h2>Decision</h2>"
+        "<div class='detail-verdicts'>" + verdict_buttons + "</div>"
+        "<p><select id='detail-reason-category'><option value=''>Reason category</option>"
+        + reason_options + "</select></p>"
+        # §1/§20. This used to read "Note to the seller — they read this." They
+        # do not. `seller_message` is documented as never carrying the note, the
+        # notification path sends the category sentence instead, and the seller
+        # payload builds its verdict without reading this column at all. So a
+        # reviewer was being invited to write the specific, actionable half of a
+        # rejection into a field that reaches the audit trail and the next
+        # reviewer's dossier and stops there.
+        #
+        # Keeping it internal is the right call rather than an accident: this
+        # form sits on a screen displaying supplier cost and unit margin, which
+        # makes pasting a line of it into a "note to the seller" a natural
+        # reviewer action and a §43 leak. What the merchant is told is the
+        # category — which is why the menu above is labelled with the sentences
+        # they will read, and why this says so instead of claiming otherwise.
+        "<p><textarea id='detail-reason-note' placeholder='Internal note — kept on the "
+        "audit record and shown to the next reviewer, not to the seller. The seller is "
+        "told the reason category above. Required for reject, request changes and "
+        "restrict.'></textarea></p>"
+        "<div id='detail-outcome'></div>"
+        "<p class='muted'>This posts the same batch endpoint the queue posts, with one "
+        "id — so a decision made here and a bulk decision are the same code, the same "
+        "idempotency ledger and the same audit row.</p>"
+        "</section>"
+        "<section class='card'><h2>Needs a look</h2>" + gaps_block + "</section>"
+        "<div class='detail-grid'>"
+        "<section class='card'><h2>Gallery</h2>"
+        "<p class='muted'>" + str(dossier["media"]["total"]) + " item(s) · "
+        + str(dossier["media"]["approved"]) + " approved · "
+        + str(dossier["media"]["pending"]) + " pending · "
+        + str(dossier["media"]["rejected"]) + " rejected</p>"
+        "<div class='detail-gallery'>" + tiles + "</div></section>"
+        "<section class='card'><h2>Seller</h2><dl class='detail-kv'>"
+        "<dt>Store</dt><dd>" + esc(standing["display_name"] or "unnamed") + "</dd>"
+        "<dt>User</dt><dd>#" + esc(standing["user_id"] or "—") + "</dd>"
+        "<dt>Standing</dt><dd>" + esc(standing["status"] or "no seller record") + "</dd>"
+        "<dt>Verification</dt><dd>" + esc(standing["verification_status"] or "none") + "</dd>"
+        "<dt>Risk score</dt><dd>" + esc(standing["risk_score"]
+                                        if standing["risk_score"] is not None else "—") + "</dd>"
+        "<dt>Country</dt><dd>" + esc(standing["country"] or "—") + "</dd>"
+        "</dl></section>"
+        "<section class='card'><h2>Fulfilment</h2><dl class='detail-kv'>"
+        "<dt>Product type</dt><dd>" + esc(fulfilment["product_type"] or "—") + "</dd>"
+        "<dt>Delivery</dt><dd>" + esc(fulfilment["delivery_type"] or "not set") + "</dd>"
+        "<dt>Estimate</dt><dd>" + esc(fulfilment["estimated_delivery"] or "not set") + "</dd>"
+        "<dt>Refunds</dt><dd>" + esc(fulfilment["refund_policy"] or "not set") + "</dd>"
+        "<dt>Quantity</dt><dd>" + esc(fulfilment["quantity"]
+                                      if fulfilment["quantity"] is not None else "—") + "</dd>"
+        "</dl></section>"
+        "<section class='card'><h2>Safety</h2><dl class='detail-kv'>"
+        "<dt>Score</dt><dd>" + esc(safety["score"]) + "</dd>"
+        "<dt>Goods policy</dt><dd>" + esc(safety["policy_decision"] or "—")
+        + (" (" + esc(safety["policy_reason"]) + ")" if safety["policy_reason"] else "")
+        + "</dd>"
+        "<dt>Flags</dt><dd>" + (esc(", ".join(safety["flags"])) or "none") + "</dd>"
+        "</dl></section>"
+        "</div>"
+        # §43. Supplier cost and margin. This block is why the whole page is
+        # behind `monetization.manage` and why nothing on it is reachable from a
+        # seller or buyer route.
+        "<section class='card detail-internal'><h2>Pricing and supplier cost</h2>"
+        "<p class='muted'>Internal. Supplier cost and margin are never sent to a "
+        "seller or a buyer.</p>" + variant_table + "</section>"
+        "<section class='card'><h2>Description</h2><p>"
+        + (esc(dossier["description"]) or "<span class='muted'>Empty.</span>")
+        + "</p></section>"
+        + ("<section class='card'><h2>Last decision</h2><p>"
+           + esc(dossier["moderation_category"]) + " — "
+           + esc(dossier["moderation_reason"]) + "</p><p class='muted'>"
+           + esc(dossier["reviewed_at"]) + " by #" + esc(dossier["reviewed_by"])
+           + "</p></section>" if dossier["moderation_reason"] else "")
+        + "</div><script>" + ADMIN_REVIEW_DETAIL_JS + "</script>"
+    )
+    return admin_page_html("Listing Review", body, admin)
+
+
 # §11-§15. The bulk bar. Everything it says about a selection it says from
 # `data-block`, which the server computed with the same `block_reason` the
 # endpoint will call -- so "23 eligible \u00b7 2 blocked" is a prediction the
@@ -100202,6 +100616,30 @@ def admin_marketplace_decision_message(cur, action, listing_id):
 # only the eligible ones would make `requested_count` disagree with what the
 # reviewer ticked, and the two products they need told about would be the two
 # that silently never appeared in the results (§15).
+#: §31. What each verdict button *weighs*, as a class the stylesheet can read.
+#:
+#: Every button on the review form used to render identically -- the admin shell
+#: paints every ``<button>`` with one gradient -- so a stack of six full-width
+#: controls read "Approve + Publish", "Reject", "Suspend", "Archive" in the same
+#: colour, the same size, one above the other. On a desktop that is merely
+#: undifferentiated. On a phone, where the stacked card puts them under a thumb
+#: at 38px apiece, it is a mis-tap that publishes or destroys a listing, and the
+#: reviewer's only clue is the confirmation afterwards.
+#:
+#: Green is the go-ahead, red is the one that takes something away, outline is
+#: neither. Anything not named here falls to the outline treatment rather than
+#: inheriting the primary one, so a verdict added later has to *ask* to look
+#: like an approval.
+REVIEW_VERB_WEIGHT = {
+    "approve": "review-verb-go",
+    "feature": "review-verb-go",
+    "request_changes": "review-verb-neutral",
+    "reject": "review-verb-stop",
+    "restrict": "review-verb-stop",
+    "suspend": "review-verb-stop",
+    "archive": "review-verb-stop",
+}
+
 ADMIN_REVIEW_BULK_JS = r"""
 (function () {
   var bar = document.getElementById('review-bulk');
@@ -100430,12 +100868,33 @@ def admin_marketplace_command_page():
         listing_id = int(request.form.get("listing_id") or 0)
         action = clean_html(request.form.get("action") or "")[:40]
         reason = clean_html(request.form.get("reason") or "")[:1200]
-        reason_category = clean_html(request.form.get("reason_category") or "")[:80]
+        # §36. Normalised on the way in, so what reaches `moderation_category` is
+        # a code `seller_message()` can resolve rather than whatever string the
+        # form happened to submit.
+        reason_category = clean_html(request.form.get("reason_category") or "")[:80].strip().upper()
         now = datetime.utcnow().isoformat(timespec="seconds")
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         allowed_actions = {"approve", "reject", "request_changes", "suspend", "archive", "feature"}
         reason_required = {"reject", "request_changes", "suspend", "archive"}
-        if listing_id and action in allowed_actions and (action not in reason_required or reason):
+        # §36/§1. The page refuses an off-vocabulary category rather than storing
+        # it, for the same reason `normalize_reason` refuses one: a value that is
+        # not a REASON_CODE is a rejection the seller will never be given a
+        # sentence for, and it lands in the audit trail looking like a real
+        # category. Coercing it to OTHER would be worse -- it would hide the
+        # mistake at the one moment the reviewer could still correct it.
+        category_unknown = bool(reason_category) and (
+            reason_category not in marketplace_review_authority.REASON_CODES)
+        # A structured code is required exactly where the batch endpoint requires
+        # one. `suspend` and `archive` are not review verdicts and keep taking a
+        # free-text note alone.
+        category_missing = (not reason_category) and (
+            action in marketplace_review_authority.REASON_REQUIRED)
+        if listing_id and action in allowed_actions and (category_unknown or category_missing):
+            message = ("Pick a reason category from the list."
+                       if category_missing else "That reason category is not recognised.")
+            message_tone = "blocked"
+            message_status = 422
+        elif listing_id and action in allowed_actions and (action not in reason_required or reason):
             status, approval = {
                 "approve": ("published", "approved"),
                 "reject": ("rejected", "rejected"),
@@ -100571,6 +101030,21 @@ def admin_marketplace_command_page():
             media_by_listing.setdefault(int(item.get("product_id") or 0), []).append(item)
     conn.close()
     cards = "".join(f"<div class='card'><h2>{html_escape(clean_html(k.replace('_',' ').title()))}</h2><p class='metric'>{v}</p></div>" for k, v in counts.items())
+    # §36/§1. One vocabulary for the whole page. The per-row form used to carry
+    # its own hand-written prose list -- "Prohibited item", "Media problem",
+    # "Other" -- while the bulk bar six inches below it offered REASON_CODES.
+    # Two controls, one column, two languages, and the page POST wrote whichever
+    # one it was handed straight into `moderation_category` unvalidated. The
+    # consequence lands on the seller: `seller_message()` looks the stored value
+    # up in SELLER_MESSAGES, finds no "Media problem", and the person whose
+    # product was rejected is told nothing specific about why.
+    #
+    # The option label is the seller-facing sentence, matching the bulk bar, so
+    # the reviewer chooses a reason by reading what the seller will read (§20).
+    reason_options = "".join(
+        "<option value='" + code + "'>"
+        + html_escape(marketplace_review_authority.SELLER_MESSAGES[code]) + "</option>"
+        for code in marketplace_review_authority.REASON_CODES)
     rows = ""
     for l in listings:
         media_items = media_by_listing.get(int(l.get("id") or 0), [])
@@ -100599,8 +101073,17 @@ def admin_marketplace_command_page():
         # single-decision path -- so an Approve & Next and a bulk approve of one
         # listing are the same code, the same idempotency ledger and the same
         # audit row. A separate one-at-a-time route is how the two drift.
-        quick = "<div class='review-quick'>" + "".join(
-            ("<button type='button' class='review-next' data-quick='" + verb
+        # §7. The row is a title, a price and a thumbnail. Everything that would
+        # change a reviewer's mind -- margin, supplier freshness, seller standing,
+        # what the gallery actually contains -- is one click away rather than
+        # four admin pages away, which is the difference between inspecting a
+        # product and recognising its name.
+        inspect_link = ("<a class='button' href='/admin/marketplace-command/listing/"
+                        + str(int(l.get('id') or 0)) + "'>Inspect</a>")
+        quick = "<div class='review-quick'>" + inspect_link + "".join(
+            ("<button type='button' class='review-next "
+             + REVIEW_VERB_WEIGHT.get(verb, "review-verb-neutral")
+             + "' data-quick='" + verb
              + "' data-listing='" + str(int(l.get('id') or 0)) + "'"
              + (" disabled" if (row_block if verb == marketplace_review_authority.APPROVE
                                 else neg_block) else "")
@@ -100621,7 +101104,8 @@ def admin_marketplace_command_page():
             "suspend": "", "archive": "", "feature": "",
         }
         form_buttons = "".join(
-            "<button name='action' value='" + verb + "'"
+            "<button class='" + REVIEW_VERB_WEIGHT.get(verb, "review-verb-neutral")
+            + "' name='action' value='" + verb + "'"
             + ((" disabled title=\""
                 + html_escape(clean_html(marketplace_review_authority.BLOCK_NOTES.get(
                     verdict_blocks[verb], "That decision is not available.")))
@@ -100631,7 +101115,12 @@ def admin_marketplace_command_page():
                 ("approve", "Approve + Publish"), ("request_changes", "Request Changes"),
                 ("reject", "Reject"), ("suspend", "Suspend"),
                 ("archive", "Archive"), ("feature", "Feature")))
-        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
+        # §32. Every cell names itself. On a phone the header row is gone -- a
+        # stacked card cannot keep a column header eight rows above the value it
+        # labels -- so `data-label` is what the value is read against. Without
+        # it the card is eight unlabelled fragments, and "approved" and
+        # "physical" are indistinguishable from each other.
+        rows += f"<tr><td data-label='Select'>{tick}</td><td data-label='ID'>{l.get('id')}</td><td data-label='Product'><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td data-label='Seller'>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td data-label='Commerce'>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td data-label='State'>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td data-label='Risk'>{int(l.get('safety_score') or 0)}</td><td data-label='Actions' class='review-cell-actions'>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option>{reason_options}</select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
     # §26/§28. Every control carries the rest of the query with it, so changing
     # the sort does not silently drop the reviewer's search back to page one of
     # everything -- which is the version of "the filters don't work" that looks
@@ -100658,13 +101147,6 @@ def admin_marketplace_command_page():
         + ">" + label + "</option>"
         for name, label in (("oldest", "Waiting longest"), ("newest", "Newest first"),
                             ("risk", "Highest risk"), ("seller", "By seller")))
-    # The seller-facing sentence is the option label, so a reviewer picks a
-    # reason by reading what the seller will be told rather than by decoding a
-    # constant (§36/§20).
-    reason_options = "".join(
-        "<option value='" + code + "'>"
-        + html_escape(marketplace_review_authority.SELLER_MESSAGES[code]) + "</option>"
-        for code in marketplace_review_authority.REASON_CODES)
     pager_prev = ("<a class='button' href='" + html_escape(queue_link(page=window["page"] - 1))
                   + "'>Previous</a>") if window["has_prev"] else ""
     pager_next = ("<a class='button' href='" + html_escape(queue_link(page=window["page"] + 1))
@@ -100689,6 +101171,18 @@ def admin_marketplace_command_page():
         ".review-bulk.is-open{display:flex}"
         ".review-quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}"
         ".review-quick button{padding:5px 9px;font-size:12px}"
+        # A class beats the shell's bare `button` selector on specificity, so
+        # none of this needs `!important` -- which matters, because an
+        # `!important` here would be the thing a later theme change cannot
+        # override and nobody would find.
+        ".review-verb-go{background:#0f9d58;background-image:none;color:#fff;"
+        "border-color:#0f9d58;font-weight:700}"
+        ".review-verb-stop{background:#b3261e;background-image:none;color:#fff;"
+        "border-color:#b3261e;font-weight:700}"
+        ".review-verb-neutral{background:rgba(255,255,255,.04);background-image:none;"
+        "color:#e6edf3;border-color:rgba(255,255,255,.28);font-weight:700}"
+        ".review-verb-go[disabled],.review-verb-stop[disabled],"
+        ".review-verb-neutral[disabled]{opacity:.4}"
         "tr.is-decided{opacity:.45}tr.is-decided .review-quick{display:none}"
         ".review-pager{display:flex;gap:12px;align-items:center;margin-top:12px}"
         "#review-outcome{margin:10px 0;white-space:pre-line}"
@@ -100698,7 +101192,53 @@ def admin_marketplace_command_page():
         ".review-note{margin:10px 0;padding:9px 12px;border-radius:8px;"
         "border:1px solid rgba(54,229,143,.45);background:rgba(54,229,143,.08)}"
         ".review-note.blocked{border-color:rgba(240,173,78,.55);"
-        "background:rgba(240,173,78,.10)}</style>"
+        "background:rgba(240,173,78,.10)}"
+        # §32. The queue on a phone. The shell already turns every admin table
+        # into a horizontally scrolling block below 960px, and for an eight
+        # column table that is not a mobile layout -- it is the desktop layout
+        # behind a letterbox. The tick is in column one and the verdict buttons
+        # are in column eight, so deciding one listing means scrolling right,
+        # reading nothing, and scrolling back. Reachable, and unusable.
+        #
+        # So below 820px each row becomes a card: the header row is taken out
+        # of the flow and each cell carries its own label instead. Nothing is
+        # hidden -- the risk score, the blocker note and the seller's standing
+        # are all still on screen, because a reviewer deciding on a phone needs
+        # the same facts as one deciding at a desk, and a "mobile queue" that
+        # drops them is a queue that produces worse decisions rather than fewer.
+        "@media (max-width:820px){"
+        ".review-table{display:block;overflow-x:visible}"
+        ".review-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}"
+        ".review-table tbody,.review-table tr,.review-table td{display:block;width:auto}"
+        ".review-table tr{border:1px solid rgba(255,255,255,.14);border-radius:12px;"
+        "padding:12px;margin:0 0 12px;background:rgba(255,255,255,.02)}"
+        # The label goes *above* the value, not beside it. A two column grid on
+        # the cell reads better in a mockup and is wrong here: `display:grid`
+        # makes every child of the cell its own grid item, so the product cell's
+        # title, description and media strip each claim a row and the
+        # description ends up rendering inside the 84px label column. A block
+        # label is correct whatever the cell contains.
+        ".review-table td{border:0;padding:6px 0;display:block;text-align:left}"
+        ".review-table td:before{content:attr(data-label);display:block;font-size:11px;"
+        "line-height:1.6;text-transform:uppercase;letter-spacing:.05em;opacity:.55;"
+        "margin-bottom:2px}"
+        # The actions cell is the one that must not be squeezed into a 1fr
+        # column -- three quick verdicts, a reason menu, a note box and six
+        # buttons need the full width of the card.
+        ".review-table td.review-cell-actions{margin-top:6px;padding-top:10px;"
+        "border-top:1px solid rgba(255,255,255,.10)}"
+        ".review-table td.review-cell-actions button,"
+        ".review-table td.review-cell-actions .button{min-height:38px}"
+        ".review-table td.review-cell-actions textarea,"
+        ".review-table td.review-cell-actions select{width:100%;box-sizing:border-box}"
+        ".review-table td form{min-width:0}"
+        ".review-table .review-blocked{max-width:none}"
+        ".review-table td[colspan]{display:block}"
+        ".review-table td[colspan]:before{content:none}"
+        # A sticky bulk bar on a 667px-tall screen eats the rows it acts on.
+        ".review-bulk{position:static}"
+        ".review-controls{gap:8px}"
+        "}</style>"
         "<h1>Marketplace Review</h1>"
         "<p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p>"
         + (("<p class='review-note " + message_tone + "'>"
@@ -100726,9 +101266,10 @@ def admin_marketplace_command_page():
         "<button type='button' id='review-clear'>Clear</button>"
         "</div>"
         "<div id='review-outcome' class='muted'></div>"
-        "<table class='table'><tr><th><input type='checkbox' id='review-all' title='Select every listing on this page'></th>"
+        "<table class='table review-table'><thead>"
+        "<tr><th><input type='checkbox' id='review-all' title='Select every listing on this page'></th>"
         "<th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>"
-        + (rows or empty_row) + "</table>"
+        "</thead><tbody>" + (rows or empty_row) + "</tbody></table>"
         + pager +
         "</section>"
         "<p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
@@ -100841,6 +101382,70 @@ def _marketplace_review_audit(cur, reviewer_id, action, listing_id, payload):
     )
 
 
+def _marketplace_review_supplier_sync(plans, results):
+    """§24. Enqueue the supplier refreshes an approval earned. After the commit.
+
+    Called with the review transaction already committed, deliberately.
+    ``suppliers.worker.schedule`` opens its own connection and commits it; run
+    from inside the batch's open write transaction it is the ``log_admin_audit``
+    failure verbatim -- SQLite refuses the insert, the exception is discarded,
+    and the endpoint answers 200 having queued nothing at all.
+
+    A scheduling failure does not undo an approval and must not pretend to. The
+    listing is already approved and that is correct; what is wrong is that its
+    stock is still the number we imported. So the entry says ``failed`` and
+    names the error rather than staying on ``pending``, because the one outcome
+    nobody can act on is a refresh that is silently never going to happen.
+
+    Mutates the result entries in place, before ``summarize`` reads them, so the
+    response describes what was actually queued rather than what was intended.
+    """
+    if not plans:
+        return
+    by_id = {int(entry.get("listing_id") or 0): entry for entry in results}
+    try:
+        from services.business_os.suppliers import worker as _supplier_worker
+    except Exception:
+        # The CJ package is an optional route pack here like every other. A
+        # review queue that cannot be used because the supplier integration
+        # failed to import would be a worse outcome than a stale stock count.
+        app.logger.exception("supplier sync unavailable for review batch")
+        for listing_id in plans:
+            entry = by_id.get(listing_id)
+            if entry is not None:
+                entry["supplier_sync"] = "failed"
+                entry["supplier_sync_note"] = (
+                    "Approved, but the supplier integration is unavailable, so stock "
+                    "and cost were not refreshed.")
+        return
+
+    for listing_id, plan in plans.items():
+        entry = by_id.get(listing_id)
+        queued = 0
+        error = ""
+        for job in plan.get("jobs") or ():
+            try:
+                _supplier_worker.schedule(
+                    connection_id=job["connection_id"], business_id=job["business_id"],
+                    store_id=job["store_id"], kind=job["kind"],
+                    resource_id=job["resource_id"], dirty=True)
+                queued += 1
+            except Exception as sync_error:
+                app.logger.exception("supplier sync schedule failed for listing %s (%s)",
+                                     listing_id, job.get("kind"))
+                error = error or str(sync_error)
+        if entry is None:
+            continue
+        if queued == len(plan.get("jobs") or ()):
+            entry["supplier_sync"] = "queued"
+            entry["supplier_sync_note"] = plan.get("note") or ""
+        else:
+            entry["supplier_sync"] = "failed"
+            entry["supplier_sync_note"] = (
+                "Approved, but the supplier refresh could not be queued"
+                + (": " + error if error else "."))
+
+
 @webhook_app.route("/api/admin/marketplace/review/batch", methods=["POST"])
 def api_admin_marketplace_review_batch():
     """§16. One request, one batch, one verdict per listing.
@@ -100900,6 +101505,7 @@ def api_admin_marketplace_review_batch():
 
     by_id = {int(r.get("id") or 0): r for r in rows}
     results = list(verdict["blocked"])
+    sync_plans = {}
     for listing_id in verdict["eligible"]:
         row = by_id[listing_id]
         try:
@@ -100925,19 +101531,44 @@ def api_admin_marketplace_review_batch():
              "new_approval_status": readback["review_state"],
              "reason_category": normalized.get("reason_code") or "",
              "reason": normalized.get("note") or "",
-             "batch_id": claim["batch_id"]})
+             "batch_id": claim["batch_id"],
+             "supplier_refresh": ""})
+        # §24. Read on this cursor, inside the transaction that just moved the
+        # listing, so the plan is built from the supplier binding as it stands
+        # after the decision rather than from a second look taken later.
+        try:
+            from services import marketplace_variants as _variants
+            source = _variants.source_for(cur, listing_id)
+        except Exception:
+            app.logger.exception("supplier source unreadable for listing %s", listing_id)
+            source = None
+        plan = _review.supplier_sync_plan(source, action=normalized["action"])
+        if plan["scheduled"]:
+            sync_plans[listing_id] = plan
         results.append(_review.result_entry(
             listing_id, _review.SUCCEEDED, title=row.get("title") or "",
             old_review_state=str(row.get("approval_status") or "").lower(),
             new_review_state=readback["review_state"],
             publication_state=readback["publication_state"],
             live=readback["live"], blockers=readback["blockers"] or None,
-            note=readback["note"] or None))
+            note=readback["note"] or None,
+            # "pending" only survives to the client if the post-commit enqueue
+            # never ran, which is itself the thing worth seeing.
+            supplier_sync=("pending" if plan["scheduled"] else "skipped"),
+            supplier_sync_note=(plan["note"] if not plan["scheduled"] else None)))
 
     # Ordered back into the reviewer's selection order. `evaluate_rows` returns
     # the blocked entries together, and a results list that reads in a different
     # order than the rows they ticked is a list they have to search rather than
     # read down.
+    # §24. The verdicts are made durable here, before anything is enqueued,
+    # because the enqueue runs on its own connections and cannot be allowed to
+    # sit behind this transaction's locks -- and because a supplier refresh
+    # scheduled for a decision that then rolled back would be a job pointing at
+    # a listing nobody approved.
+    conn.commit()
+    _marketplace_review_supplier_sync(sync_plans, results)
+
     position = {listing_id: index for index, listing_id in enumerate(ids)}
     results.sort(key=lambda entry: position.get(entry["listing_id"], 0))
 
