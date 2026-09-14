@@ -69,12 +69,17 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
         bot.init_db()
         rv.ensure_schema()
         cls._real_require_admin_page = bot.require_admin_page
+        # `/admin/dashboard` does not go through `require_admin_page` -- it calls
+        # `admin_login_required()` directly. Patching only the first gate makes
+        # the dashboard test look like a rendering failure when it is a 302.
+        cls._real_admin_login_required = bot.admin_login_required
         bot.webhook_app.config["TESTING"] = True
         cls.client = bot.webhook_app.test_client()
 
     @classmethod
     def tearDownClass(cls):
         bot.require_admin_page = cls._real_require_admin_page
+        bot.admin_login_required = cls._real_admin_login_required
 
     def setUp(self):
         self.sign_in(REVIEWER)
@@ -97,10 +102,17 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
     # -- harness ---------------------------------------------------------------
 
     def sign_in(self, admin_id):
+        admin = {"id": admin_id, "username": f"admin{admin_id}",
+                 "email": f"admin{admin_id}@example.com", "role": "owner"}
+
         def _require_admin_page(permission="users.view"):
-            return {"id": admin_id, "username": f"admin{admin_id}",
-                    "email": f"admin{admin_id}@example.com", "role": "owner"}, None
+            return dict(admin), None
+
+        def _admin_login_required():
+            return dict(admin)
+
         bot.require_admin_page = _require_admin_page
+        bot.admin_login_required = _admin_login_required
 
     def insert_listing(self, seller_user_id=SELLER, **overrides):
         row = {
@@ -178,6 +190,39 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
         for code in rv.REASON_CODES:
             self.assertIn(f"<option value='{code}'>", html, code)
         self.assertIn("This product is not permitted on PulseSoc.", html)
+
+    # -- can anyone find it ----------------------------------------------------
+
+    def test_the_review_queue_is_in_the_admin_navigation(self):
+        """The original complaint -- "there is no backend review queue" -- was a
+        true statement about the navigation, not about the routes. The page
+        existed and was linked from exactly one place: the bottom of the
+        merchant-applications sidebar. That is indistinguishable from absent."""
+        html = self.load()
+        self.assertIn("Product Review", html)
+        self.assertIn("href='/admin/marketplace-command'", html)
+
+    def test_the_dashboard_offers_the_queue_with_a_real_count(self):
+        """§29. The number on the button comes from the same predicate the queue
+        filters on. A dashboard badge that drifts from the queue is worse than
+        no badge -- the reviewer opens it, sees a different number, and stops
+        believing either."""
+        for index in range(3):
+            self.insert_listing(title=f"Lamp {index}")
+        response = self.client.get("/admin/dashboard")
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("Review Products", html)
+        self.assertIn("/admin/marketplace-command", html)
+        self.assertIn("3 waiting", html)
+        self.assertEqual(self.chip(self.load(), "Needs review"), 3)
+
+    def test_an_empty_queue_does_not_advertise_a_number(self):
+        """"0 waiting" is a claim, and a surface confidently saying nothing needs
+        doing is the exact failure this queue exists to end."""
+        html = self.client.get("/admin/dashboard").get_data(as_text=True)
+        self.assertIn("Review Products", html)
+        self.assertNotIn("0 waiting", html)
 
     # -- §38/§42: nothing is stranded -----------------------------------------
 
@@ -307,6 +352,97 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
         self.assertEqual(rendered[ordinary], "")
         self.assertEqual(rendered[own], rv.SELF_REVIEW)
         self.assertEqual(rendered[prohibited], rv.PROHIBITED)
+
+    # -- §31: the page must not offer a decision the endpoint will refuse -------
+
+    def test_the_approve_button_on_your_own_listing_is_not_clickable(self):
+        """Observed in production: an owner-admin clicked "Approve + Publish" on a
+        listing from their own store and got a refusal. The refusal was correct.
+        Offering the button was not — the server had already computed
+        ``SELF_REVIEW`` for that row in order to draw the checkbox beside it."""
+        own = self.insert_listing(seller_user_id=REVIEWER, title="Reviewer's own lamp")
+        other = self.insert_listing(title="Someone else's lamp")
+        html = self.load(page_size=50)
+
+        forms = {}
+        for chunk in html.split("<form method='post'>")[1:]:
+            listing_id = int(re.search(r"name='listing_id' value='(\d+)'", chunk).group(1))
+            forms[listing_id] = chunk.split("</form>")[0]
+
+        blocked = re.search(r"<button name='action' value='approve'([^>]*)>",
+                            forms[own]).group(1)
+        self.assertIn("disabled", blocked)
+        # And it says which refusal, so a disabled control is not just dead UI.
+        self.assertIn("cannot decide their own listing", blocked)
+
+        live = re.search(r"<button name='action' value='approve'([^>]*)>",
+                         forms[other]).group(1)
+        self.assertNotIn("disabled", live)
+
+    def test_a_prohibited_product_stays_rejectable_while_approve_is_dead(self):
+        """§34. The listings a reviewer most needs to clear are the ones the goods
+        policy forbids. Disabling every verdict on them would leave the queue
+        permanently holding rows nobody can act on."""
+        self.insert_listing(title="Case of whisky", category="Alcohol")
+        html = self.load(page_size=50)
+        form = html.split("<form method='post'>")[1].split("</form>")[0]
+        self.assertIn("disabled",
+                      re.search(r"value='approve'([^>]*)>", form).group(1))
+        self.assertNotIn("disabled",
+                         re.search(r"value='reject'([^>]*)>", form).group(1))
+
+    def test_a_refused_decision_comes_back_as_the_queue_not_as_json(self):
+        """The production symptom: the browser address bar still said
+        ``/admin/marketplace-command`` but the body was
+        ``{"message":"A reviewer cannot decide their own listing.",...,"trace_id":...}``.
+        A page route answering a form post with an API error body throws away the
+        queue, the filters and the rest of the reviewer's batch to say one
+        sentence — and shows them a trace id they cannot use."""
+        own = self.insert_listing(seller_user_id=REVIEWER)
+        response = self.client.post("/admin/marketplace-command",
+                                    data={"listing_id": str(own), "action": "approve"})
+
+        # Still a refusal on the wire -- 403, not a 200 dressed up as one.
+        self.assertEqual(response.status_code, 403)
+        body = response.get_data(as_text=True)
+        self.assertNotIn("trace_id", body)
+        self.assertIn("A reviewer cannot decide their own listing.", body)
+        # Still the queue: the row it refused is on the page it returned.
+        self.assertIn("Listing Review Queue", body)
+        self.assertIn(str(own), body)
+        # Marked as a refusal rather than sharing the confirmation's styling.
+        self.assertIn("review-note blocked", body)
+
+    def test_a_refused_decision_does_not_write_anything(self):
+        """A readable refusal is worse than a JSON one if it only *reads* as a
+        refusal. The listing must be exactly where it was."""
+        own = self.insert_listing(seller_user_id=REVIEWER)
+        self.client.post("/admin/marketplace-command",
+                         data={"listing_id": str(own), "action": "approve"})
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = dict(conn.execute("SELECT * FROM marketplace_listings WHERE id=?",
+                                (own,)).fetchone())
+        conn.close()
+        self.assertEqual(str(row["approval_status"]).lower(), "pending_review")
+        self.assertIsNone(row["reviewed_by"])
+
+    def test_a_permitted_decision_still_goes_through_this_form(self):
+        """The refusal path was reshaped around the write path. If the reshaping
+        also broke approving somebody else's listing, the queue is worse than it
+        was before this fix."""
+        other = self.insert_listing()
+        response = self.client.post("/admin/marketplace-command",
+                                    data={"listing_id": str(other), "action": "approve"})
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("review-note blocked", response.get_data(as_text=True))
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        row = dict(conn.execute("SELECT * FROM marketplace_listings WHERE id=?",
+                                (other,)).fetchone())
+        conn.close()
+        self.assertEqual(str(row["approval_status"]).lower(), "approved")
+        self.assertEqual(int(row["reviewed_by"]), REVIEWER)
 
     def test_a_blocked_row_says_why_in_words_next_to_the_tick(self):
         """An unexplained disabled-looking row is indistinguishable from a bug.

@@ -15991,6 +15991,12 @@ def admin_page_html(title, body, admin=None):
             ("↺", "Data Recovery", "/admin/data-recovery", False),
         ]),
         ("Moderation & Trust", [
+            # First in the group on purpose. The product review queue existed for
+            # months and was linked from exactly one place -- the bottom of the
+            # merchant-applications sidebar -- which is indistinguishable from
+            # not existing. "There is no admin review queue" was a true
+            # statement about the navigation.
+            ("▤", "Product Review", "/admin/marketplace-command", False),
             ("⚑", "PulseSoc Mod", "/admin/pulse-moderation", False),
             ("▣", "Ads Review Board", "/admin/pulse-ads-review-board", False),
             ("♫", "Music Review", "/admin/pulse-music-review", False),
@@ -16612,6 +16618,35 @@ def admin_dashboard_page():
             "<p><a class='button command-center-link' href='/admin/command-center'>Backend Command Center</a></p>"
             "</div>"
         )
+    # §29. The number on this button is the same predicate the queue filters on
+    # and the Approve gate asks -- `marketplace_listing_lifecycle`, not a count
+    # kept beside it. A dashboard badge that drifts from the queue is worse than
+    # no badge: the reviewer opens it, sees a different number, and stops
+    # trusting both.
+    review_pending = None
+    try:
+        _rc = db(); _rcur = _rc.cursor()
+        _rcur.execute("SELECT COUNT(*) FROM marketplace_listings l WHERE "
+                      + marketplace_listing_lifecycle.awaiting_moderation_sql("l"))
+        review_pending = int((_rcur.fetchone() or [0])[0] or 0)
+        _rc.close()
+    except Exception:
+        # Never render an unreadable count as a measured zero -- "0 waiting" is a
+        # claim, and the whole defect this queue exists to fix was a surface
+        # confidently saying nothing needed doing.
+        review_pending = None
+    review_cta = (
+        "<div class='card' style='border-color:rgba(54,229,143,.45)'>"
+        "<h2>Product Review</h2>"
+        "<p class='muted'>Approve, reject or request changes on marketplace listings "
+        "waiting on a decision. Bulk select, or decide one and move to the next.</p>"
+        "<p><a class='button' href='/admin/marketplace-command'>Review Products"
+        + (f" &middot; {review_pending} waiting" if review_pending else "")
+        + "</a>"
+        + ("" if review_pending is not None
+           else " <span class='muted'>(queue count unavailable)</span>")
+        + "</p></div>"
+    )
     attn_pay = "attention" if stats.get("failed_payments") else ""
     attn_unm = "attention" if stats.get("unmatched") else ""
     kpis = (
@@ -16691,7 +16726,7 @@ def admin_dashboard_page():
     )
     body = (
         "<h1>Command Center</h1><p class='muted'>Live SaaS visibility across accounts, billing, emails, Telegram, analytics, and support.</p>"
-        f"{profile_prompt}{command_center_cta}"
+        f"{profile_prompt}{review_cta}{command_center_cta}"
         f"{kpis}{exec_metrics}{subs}{attention}{activity}"
         f"<form method='post' action='/admin/billing/recalculate' class='card' style='margin-top:18px'><input type='hidden' name='csrf_token' value='{get_csrf_token()}' /><button type='submit'>Recalculate Billing Metrics</button><p class='muted'>Scans successful Stripe payment records and fixes any paid users still marked trialing.</p></form>"
     )
@@ -100362,6 +100397,17 @@ def admin_marketplace_command_page():
     init_db()
     from services.business_os.marketplace import listing_review as marketplace_review_authority
     message = ""
+    # A refusal on this route is not an API error, it is an answer the reviewer
+    # has to read on the page they are working on. Returning `api_error` here
+    # replaced the whole queue with a raw JSON body in the browser -- "A reviewer
+    # cannot decide their own listing." plus a trace id -- which throws away the
+    # page, the filters and the rest of the batch in order to say one sentence.
+    message_tone = ""
+    # A refused decision is still a 4xx. Rendering the queue instead of a JSON
+    # body is a change of *representation*, not of outcome -- a browser shows the
+    # body of a 409 exactly as it shows the body of a 200, so there is no reason
+    # to lie about the status to get a readable page.
+    message_status = 200
     if request.method == "POST":
         listing_id = int(request.form.get("listing_id") or 0)
         action = clean_html(request.form.get("action") or "")[:40]
@@ -100385,7 +100431,9 @@ def admin_marketplace_command_page():
             previous_status = str(listing_row.get("status") or "").lower()
             previous_approval = str(listing_row.get("approval_status") or "").lower()
             if not listing_row:
-                conn.close(); return api_error("Listing not found.", 404)
+                message = "That listing no longer exists."
+                message_tone = "blocked"
+                message_status = 404
             # §1. The review verdicts ask `listing_review`, which is also what the
             # batch endpoint asks -- so "may this be approved" has one answer.
             # This used to be an inline `awaiting_moderation` call, and the two
@@ -100393,47 +100441,53 @@ def admin_marketplace_command_page():
             # approve their own listing, and a human could approve a product the
             # goods policy prohibits. `suspend`, `archive` and `feature` keep
             # their own guards below; they are not review verdicts.
-            if action in marketplace_review_authority.ACTIONS:
+            if not message_tone and action in marketplace_review_authority.ACTIONS:
                 blocked = marketplace_review_authority.block_reason(
                     listing_row, action, reviewer_id=admin.get("id"))
                 if blocked:
-                    conn.close()
-                    return api_error(
-                        marketplace_review_authority.BLOCK_NOTES.get(
-                            blocked, "That decision is not available."),
-                        403 if blocked in {
-                            marketplace_review_authority.SELF_REVIEW,
-                            marketplace_review_authority.PROHIBITED} else 409)
-            if action == "feature" and (previous_status not in marketplace_listing_lifecycle.PUBLIC_STATUSES or previous_approval != "approved"):
-                conn.close(); return api_error("Only an approved published listing can be featured.", 409)
-            cur.execute("""UPDATE marketplace_listings SET status=?, approval_status=?,
-                featured=CASE WHEN ?='feature' THEN 1 ELSE COALESCE(featured,0) END,
-                reviewed_by=?, reviewed_at=?, approved_at=CASE WHEN ?='approved' THEN ? ELSE approved_at END,
-                published_at=CASE WHEN ?='published' THEN ? ELSE NULL END,
-                moderation_reason=?, moderation_category=?, updated_at=? WHERE id=?""",
-                (status, approval, action, admin.get("id"), now, approval, now, status, now,
-                 reason, reason_category, now, listing_id))
-            if action in {"approve", "feature"}:
-                cur.execute("UPDATE marketplace_product_media SET moderation_status='approved' WHERE product_id=? AND moderation_status NOT IN ('rejected','removed')", (listing_id,))
-            pulse_emit_marketplace_inventory_event(
-                cur,
-                listing_row.get("seller_user_id"),
-                "seller_listing_review_changed",
-                listing_id=listing_id,
-                actor_user_id=admin.get("id") or 0,
-                status=status,
-                approval_status=approval,
-                title=listing_row.get("title") or "Marketplace listing",
-                extra={"review_action": action, "reason": reason, "reason_category": reason_category},
-            )
-            conn.commit()
-            log_admin_audit(admin.get("id"), f"marketplace_listing_{action}", "marketplace_listing", str(listing_id),
-                {"previous_status": previous_status, "previous_approval_status": previous_approval,
-                 "new_status": status, "new_approval_status": approval, "reason": reason,
-                 "reason_category": reason_category, "trace_id": request.headers.get("X-Request-ID") or request.environ.get("request_id") or ""})
-            message = admin_marketplace_decision_message(cur, action, listing_id)
+                    message = marketplace_review_authority.BLOCK_NOTES.get(
+                        blocked, "That decision is not available.")
+                    message_tone = "blocked"
+                    message_status = 403 if blocked in {
+                        marketplace_review_authority.SELF_REVIEW,
+                        marketplace_review_authority.PROHIBITED} else 409
+            if not message_tone and action == "feature" and (
+                    previous_status not in marketplace_listing_lifecycle.PUBLIC_STATUSES
+                    or previous_approval != "approved"):
+                message = "Only an approved published listing can be featured."
+                message_tone = "blocked"
+                message_status = 409
+            if not message_tone:
+                cur.execute("""UPDATE marketplace_listings SET status=?, approval_status=?,
+                    featured=CASE WHEN ?='feature' THEN 1 ELSE COALESCE(featured,0) END,
+                    reviewed_by=?, reviewed_at=?, approved_at=CASE WHEN ?='approved' THEN ? ELSE approved_at END,
+                    published_at=CASE WHEN ?='published' THEN ? ELSE NULL END,
+                    moderation_reason=?, moderation_category=?, updated_at=? WHERE id=?""",
+                    (status, approval, action, admin.get("id"), now, approval, now, status, now,
+                     reason, reason_category, now, listing_id))
+                if action in {"approve", "feature"}:
+                    cur.execute("UPDATE marketplace_product_media SET moderation_status='approved' WHERE product_id=? AND moderation_status NOT IN ('rejected','removed')", (listing_id,))
+                pulse_emit_marketplace_inventory_event(
+                    cur,
+                    listing_row.get("seller_user_id"),
+                    "seller_listing_review_changed",
+                    listing_id=listing_id,
+                    actor_user_id=admin.get("id") or 0,
+                    status=status,
+                    approval_status=approval,
+                    title=listing_row.get("title") or "Marketplace listing",
+                    extra={"review_action": action, "reason": reason, "reason_category": reason_category},
+                )
+                conn.commit()
+                log_admin_audit(admin.get("id"), f"marketplace_listing_{action}", "marketplace_listing", str(listing_id),
+                    {"previous_status": previous_status, "previous_approval_status": previous_approval,
+                     "new_status": status, "new_approval_status": approval, "reason": reason,
+                     "reason_category": reason_category, "trace_id": request.headers.get("X-Request-ID") or request.environ.get("request_id") or ""})
+                message = admin_marketplace_decision_message(cur, action, listing_id)
         elif listing_id and action in reason_required and not reason:
             message = "A moderation reason is required for this action."
+            message_tone = "blocked"
+            message_status = 422
         conn.close()
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     counts = {}
@@ -100537,7 +100591,29 @@ def admin_marketplace_command_page():
                                 (marketplace_review_authority.REQUEST_CHANGES, "Changes &amp; Next"),
                                 (marketplace_review_authority.REJECT, "Reject &amp; Next"))
         ) + "</div>"
-        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+        # §31. The verdict buttons on this form were all live regardless of
+        # what the server had already decided about the row, so an admin could
+        # click "Approve + Publish" on their own listing and be answered with a
+        # refusal. The block reason is already computed above for the checkbox --
+        # the same value gates the buttons, so the page cannot offer a decision
+        # the endpoint will not take. Suspend/archive/feature are not review
+        # verdicts and keep their own guards.
+        verdict_blocks = {
+            "approve": row_block, "request_changes": neg_block, "reject": neg_block,
+            "suspend": "", "archive": "", "feature": "",
+        }
+        form_buttons = "".join(
+            "<button name='action' value='" + verb + "'"
+            + ((" disabled title=\""
+                + html_escape(clean_html(marketplace_review_authority.BLOCK_NOTES.get(
+                    verdict_blocks[verb], "That decision is not available.")))
+                + "\"") if verdict_blocks[verb] else "")
+            + ">" + label + "</button>"
+            for verb, label in (
+                ("approve", "Approve + Publish"), ("request_changes", "Request Changes"),
+                ("reject", "Reject"), ("suspend", "Suspend"),
+                ("archive", "Archive"), ("feature", "Feature")))
+        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
     # §26/§28. Every control carries the rest of the query with it, so changing
     # the sort does not silently drop the reviewer's search back to page one of
     # everything -- which is the version of "the filters don't work" that looks
@@ -100597,11 +100673,19 @@ def admin_marketplace_command_page():
         ".review-quick button{padding:5px 9px;font-size:12px}"
         "tr.is-decided{opacity:.45}tr.is-decided .review-quick{display:none}"
         ".review-pager{display:flex;gap:12px;align-items:center;margin-top:12px}"
-        "#review-outcome{margin:10px 0;white-space:pre-line}</style>"
+        "#review-outcome{margin:10px 0;white-space:pre-line}"
+        # A refusal has to look different to a confirmation. Both used to render
+        # in the same unstyled paragraph, so "Approved" and "cannot decide their
+        # own listing" were the same grey sentence in the same place.
+        ".review-note{margin:10px 0;padding:9px 12px;border-radius:8px;"
+        "border:1px solid rgba(54,229,143,.45);background:rgba(54,229,143,.08)}"
+        ".review-note.blocked{border-color:rgba(240,173,78,.55);"
+        "background:rgba(240,173,78,.10)}</style>"
         "<h1>Marketplace Review</h1>"
         "<p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p>"
-        "<p>" + html_escape(clean_html(message)) + "</p>"
-        "<section class='grid'>" + cards + "</section>"
+        + (("<p class='review-note " + message_tone + "'>"
+            + html_escape(clean_html(message)) + "</p>") if message else "")
+        + "<section class='grid'>" + cards + "</section>"
         "<section class='card'><h2>Listing Review Queue</h2>"
         "<div class='review-controls'>" + chips + "</div>"
         "<form class='review-controls' method='get' action='/admin/marketplace-command'>"
@@ -100631,7 +100715,7 @@ def admin_marketplace_command_page():
         "</section>"
         "<p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
         "<script>" + ADMIN_REVIEW_BULK_JS + "</script>")
-    return admin_page_html("Marketplace Command", body, admin)
+    return admin_page_html("Marketplace Command", body, admin), message_status
 
 
 def _marketplace_review_apply(cur, action, row, reviewer_id, now, reason, batch_id=""):

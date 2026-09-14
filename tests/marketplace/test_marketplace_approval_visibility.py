@@ -177,8 +177,16 @@ for lid, uid, quantity, product_type in %(seed)r:
         # Only the part of the page the moderator reads as the result of their
         # click. Taking the whole body would match the word "stock" anywhere in
         # the queue table below it.
-        "message": (body.split("<p>", 1)[1].split("</p>", 1)[0]
-                    if "<p>" in body else ""),
+        #
+        # Matched by class, not by "the first bare <p> on the page". The old
+        # extractor worked only because the decision message happened to be the
+        # one paragraph with no attributes; the moment it grew a class it
+        # silently started reading a listing description instead, and every
+        # assertion about what the moderator was told compared two strings that
+        # had nothing to do with each other.
+        "message": (body.split("class='review-note", 1)[1].split(">", 1)[1]
+                    .split("</p>", 1)[0]
+                    if "class='review-note" in body else ""),
     }
 report["decisions"] = decisions
 
