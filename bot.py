@@ -16113,7 +16113,7 @@ def admin_page_html(title, body, admin=None):
         "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=shell-nav-20260909a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260914b'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260914c'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
@@ -100494,49 +100494,13 @@ def admin_marketplace_listing_review_page(listing_id):
     standing = dossier["seller"]
     fulfilment = dossier["fulfilment"]
 
+    # §32. The screen's CSS lives in static/css/admin_ops_center.css, under
+    # "Listing review — detail screen", not in a page-local style block. The
+    # shell already loads that file, the rules are all namespaced .detail-* /
+    # .review-verb-* / #detail-*, and bot.py is budgeted on inline style blocks
+    # (tests/web_parity/test_design_tokens.py, which counts the raw opening tag
+    # anywhere in the file -- prose in a comment counts too). Add rules there.
     body = (
-        "<style>"
-        ".detail-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}"
-        ".detail-tile{margin:0;width:104px}"
-        ".detail-tile img,.detail-tile video{width:104px;height:104px;object-fit:cover;"
-        "border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}"
-        ".detail-tile figcaption{font-size:11px;color:#9aa7b4;margin-top:3px}"
-        ".detail-gallery{display:flex;gap:10px;flex-wrap:wrap}"
-        ".detail-gaps{margin:6px 0 0 18px;color:#f2b544}"
-        ".detail-verdicts{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}"
-        ".detail-kv{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px}"
-        ".detail-kv dt{color:#9aa7b4}.detail-kv dd{margin:0}"
-        ".review-note{margin:10px 0;padding:9px 12px;border-radius:8px;"
-        "border:1px solid rgba(54,229,143,.45);background:rgba(54,229,143,.08)}"
-        ".review-note.blocked{border-color:rgba(240,173,78,.55);"
-        "background:rgba(240,173,78,.10)}"
-        ".detail-internal{border-color:rgba(240,173,78,.35)}"
-        ".review-verb-go{background:#0f9d58;background-image:none;color:#fff;"
-        "border-color:#0f9d58;font-weight:700}"
-        ".review-verb-stop{background:#b3261e;background-image:none;color:#fff;"
-        "border-color:#b3261e;font-weight:700}"
-        ".review-verb-neutral{background:rgba(255,255,255,.04);background-image:none;"
-        "color:#e6edf3;border-color:rgba(255,255,255,.28);font-weight:700}"
-        ".review-verb-go[disabled],.review-verb-stop[disabled],"
-        ".review-verb-neutral[disabled]{opacity:.4}"
-        "#detail-outcome{margin:10px 0;white-space:pre-line}"
-        # §32. `.detail-grid` already collapses to one column on its own, so the
-        # only things that need saying here are the two that do not: a two
-        # column definition list squeezes the value into a sliver once the label
-        # column is a long word, and the verdict buttons and the note box have
-        # to be big enough to hit with a thumb. This is the screen a reviewer
-        # actually decides on, so the decision controls are the ones that get
-        # the width.
-        "@media (max-width:820px){"
-        ".detail-kv{grid-template-columns:1fr;gap:0 0}"
-        ".detail-kv dt{margin-top:8px;font-size:11px;text-transform:uppercase;"
-        "letter-spacing:.05em}"
-        ".detail-verdicts{display:grid;grid-template-columns:1fr 1fr;gap:8px}"
-        ".detail-verdicts button{width:100%;padding:11px 8px}"
-        "#detail-reason-category,#detail-reason-note{width:100%;box-sizing:border-box}"
-        "#detail-reason-note{min-height:96px}"
-        "}"
-        "</style>"
         "<div id='detail-root' data-listing='" + str(int(listing_id)) + "'>"
         "<p><a href='/admin/marketplace-command'>&larr; Review queue</a></p>"
         "<h1>" + esc(dossier["title"] or "Untitled listing") + "</h1>"
