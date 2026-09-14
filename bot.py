@@ -13745,7 +13745,7 @@ def admin_users_page():
     )
 
     filter_links = " ".join(
-        f"<a class='button' style='{'border-color:var(--cyan);color:var(--text)' if key == current_filter else ''}' href='/admin/users?filter={key}'>{label}</a>"
+        f"<a class='button' style='{'border-color:var(--accent);color:var(--text)' if key == current_filter else ''}' href='/admin/users?filter={key}'>{label}</a>"
         for key, label in [
             ("all", "All"), ("pro", "Pro"), ("trial", "Trials"), ("free", "Free"),
             ("restricted", "Restricted"), ("suspended", "Suspended"), ("deleted", "Deleted"), ("payment_issue", "Payment Issues"),
@@ -16630,7 +16630,7 @@ def admin_dashboard_page():
     command_center_cta = ""
     if admin_is_owner_level(admin):
         command_center_cta = (
-            "<div class='card' style='border-color:rgba(54,229,143,.45);background:linear-gradient(135deg,rgba(54,229,143,.14),rgba(110,223,246,.08))'>"
+            "<div class='card' style='border-color:rgba(54,229,143,.45);background:rgba(54,229,143,.14)'>"
             "<h2>Backend Command Center</h2>"
             "<p class='muted'>Open the department operations control rooms for Trust & Safety, PulseSoc, Alerts, Security, Analytics, Growth, and live platform health.</p>"
             "<p><a class='button command-center-link' href='/admin/command-center'>Backend Command Center</a></p>"
@@ -16839,12 +16839,12 @@ def admin_system_page():
     }
     mission_css = """
     <style>
-      .system-admin-hero{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(54,229,143,.16),transparent 24rem),radial-gradient(circle at 88% 0,rgba(155,92,255,.14),transparent 24rem),linear-gradient(135deg,rgba(6,15,28,.98),rgba(7,35,42,.72));padding:18px;margin-bottom:18px}
-      .system-admin-hero:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,#36e58f,#6edff6,#9b5cff);opacity:.72}
-      .system-admin-pill{display:inline-flex;border:1px solid rgba(110,223,246,.24);border-radius:999px;padding:6px 10px;color:#6edff6;background:rgba(110,223,246,.08);font-weight:900;letter-spacing:.05em;text-transform:uppercase}
-      .system-admin-map{position:relative;min-height:260px;border:1px solid rgba(110,223,246,.18);border-radius:18px;background:radial-gradient(circle at 50% 48%,rgba(110,223,246,.12),transparent 18rem),linear-gradient(135deg,rgba(6,14,26,.92),rgba(9,24,38,.74));overflow:hidden;margin:18px 0}
-      .system-admin-map:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(110,223,246,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(110,223,246,.05) 1px,transparent 1px);background-size:42px 42px;mask-image:radial-gradient(circle at center,#000 45%,transparent 88%)}
-      .system-admin-node{position:absolute;display:grid;place-items:center;width:88px;height:88px;border-radius:999px;border:1px solid rgba(110,223,246,.34);background:rgba(7,17,30,.72);box-shadow:0 0 28px rgba(110,223,246,.12);font-size:.72rem;font-weight:950;text-align:center;color:#dffcff;transform:translate(-50%,-50%)}
+      .system-admin-hero{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:rgba(6,15,28,.98);padding:18px;margin-bottom:18px}
+      .system-admin-hero:before{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--accent);opacity:.72}
+      .system-admin-pill{display:inline-flex;border:1px solid var(--line);border-radius:999px;padding:6px 10px;color:var(--text);background:rgba(255,255,255,.06);font-weight:900;letter-spacing:.05em;text-transform:uppercase}
+      .system-admin-map{position:relative;min-height:260px;border:1px solid var(--line);border-radius:18px;background:rgba(6,14,26,.92);overflow:hidden;margin:18px 0}
+      
+      .system-admin-node{position:absolute;display:grid;place-items:center;width:88px;height:88px;border-radius:999px;border:1px solid var(--line);background:rgba(7,17,30,.72);box-shadow:none;font-size:.72rem;font-weight:950;text-align:center;color:var(--text);transform:translate(-50%,-50%)}
       .system-admin-node[data-state="WARNING"],.system-admin-node[data-state="ACTION REQUIRED"]{border-color:rgba(255,209,102,.56)}
       .system-admin-node[data-state="OFFLINE"]{border-color:rgba(255,77,109,.62)}
       .system-admin-table{width:100%;border-collapse:collapse}.system-admin-table th,.system-admin-table td{text-align:left;padding:10px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top}
@@ -17500,16 +17500,16 @@ def admin_visitors_dashboard_page():
     body = """
     <style>
       .analytics-hero{display:grid;grid-template-columns:1.1fr .9fr;gap:16px;align-items:stretch}
-      .live-map{min-height:320px;border:1px solid var(--line);border-radius:18px;background:radial-gradient(circle at 50% 45%,rgba(110,223,246,.16),transparent 12rem),linear-gradient(135deg,rgba(2,7,14,.98),rgba(5,16,30,.94));position:relative;overflow:hidden}
+      .live-map{min-height:320px;border:1px solid var(--line);border-radius:18px;background:rgba(2,7,14,.98);position:relative;overflow:hidden}
       .live-map canvas{width:100%;height:360px;display:block}
-      .live-map:before{content:"";position:absolute;inset:12%;border:1px solid rgba(255,255,255,.08);border-radius:45% 55% 48% 52%;box-shadow:0 0 70px rgba(110,223,246,.16) inset;animation:mapPulse 5s ease-in-out infinite}
-      .analytics-card{position:relative;overflow:hidden}.analytics-card:after{content:"";position:absolute;inset:auto -20% -60% -20%;height:80%;background:radial-gradient(circle,rgba(110,223,246,.18),transparent 65%);pointer-events:none}
+      .live-map:before{content:"";position:absolute;inset:12%;border:1px solid rgba(255,255,255,.08);border-radius:45% 55% 48% 52%;box-shadow:0 0 70px rgba(255,255,255,.10) inset;animation:mapPulse 5s ease-in-out infinite}
+      .analytics-card{position:relative;overflow:hidden}
       .metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0}
       .metric-card{border:1px solid var(--line);border-radius:14px;padding:16px;background:rgba(255,255,255,.045);box-shadow:0 18px 60px rgba(0,0,0,.22)}
       .metric-card strong{display:block;font-size:28px;color:var(--accent)}
-      .bars{display:grid;gap:8px}.bar-row{display:grid;grid-template-columns:1fr 4fr auto;gap:8px;align-items:center}.bar-fill{height:10px;border-radius:99px;background:linear-gradient(90deg,var(--cyan),var(--accent));min-width:4px}
+      .bars{display:grid;gap:8px}.bar-row{display:grid;grid-template-columns:1fr 4fr auto;gap:8px;align-items:center}.bar-fill{height:10px;border-radius:99px;background:var(--accent);min-width:4px}
       .stream{max-height:420px;overflow:auto}.stream-row{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:10px;border-bottom:1px solid rgba(255,255,255,.07)}
-      .tag{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 8px;color:var(--cyan)}
+      .tag{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:3px 8px;color:var(--text)}
       @keyframes mapPulse{50%{transform:scale(1.03);filter:brightness(1.25)}} @media(max-width:820px){.analytics-hero{grid-template-columns:1fr}.bar-row{grid-template-columns:1fr}.live-map{min-height:240px}}
     </style>
     <h1>Visitor Intelligence Center</h1>
@@ -17534,7 +17534,7 @@ def admin_visitors_dashboard_page():
       async function loadVisitors(){ const data = await fetch(api,{cache:"no-store",credentials:"same-origin"}).then(r=>r.json()); const c=data.conversion_events||{}; const cards=[
         ["Active Visitors Now",data.active_now],["Unique Visitors 24h",data.unique_24h],["Logged-In Users",data.logged_in_24h],["Anonymous Visitors",data.anonymous_24h],["Mobile Users",data.mobile_24h],["Desktop Users",data.desktop_24h],["Bot/Monitor Traffic",data.bot_traffic_24h]
       ]; document.getElementById("summaryCards").innerHTML=cards.map(([label,value])=>`<div class="metric-card"><span class="muted">${label}</span><strong>${fmt(value)}</strong></div>`).join(""); bars(document.getElementById("topPages"),data.top_pages||[]); bars(document.getElementById("devices"),data.device_type||[]); bars(document.getElementById("geoTop"),data.country||[]); bars(document.getElementById("funnel"),Object.entries(c).map(([value,count])=>({value:value.replaceAll("_"," "),count}))); stream(document.getElementById("activityStream"),data.recent_visit_stream||[]); }
-      function initFallbackGlobe(){const box=document.querySelector('.live-map'); if(!box || box.querySelector('canvas')) return; const c=document.createElement('canvas'); box.appendChild(c); const ctx=c.getContext('2d'); function draw(){const w=c.width=box.clientWidth*devicePixelRatio,h=c.height=360*devicePixelRatio, cx=w/2, cy=h/2, r=Math.min(w,h)*.34; ctx.clearRect(0,0,w,h); ctx.fillStyle='#020817'; ctx.fillRect(0,0,w,h); const grad=ctx.createRadialGradient(cx-r*.25,cy-r*.35,r*.1,cx,cy,r); grad.addColorStop(0,'#2bd3ff'); grad.addColorStop(.55,'#0b5790'); grad.addColorStop(1,'#05243f'); ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='rgba(110,223,246,.28)'; for(let i=-3;i<=3;i++){ctx.beginPath();ctx.ellipse(cx,cy,r,Math.abs(i)*r/4,0,0,Math.PI*2);ctx.stroke()} ctx.shadowColor='#36e58f'; ctx.shadowBlur=18; ctx.fillStyle='#36e58f'; [[-.35,-.18],[.18,-.25],[.4,.08],[-.08,.28]].forEach(p=>{ctx.beginPath();ctx.arc(cx+p[0]*r,cy+p[1]*r,5*devicePixelRatio,0,Math.PI*2);ctx.fill()}); requestAnimationFrame(draw)} draw();}
+      function initFallbackGlobe(){const box=document.querySelector('.live-map'); if(!box || box.querySelector('canvas')) return; const c=document.createElement('canvas'); box.appendChild(c); const ctx=c.getContext('2d'); function draw(){const w=c.width=box.clientWidth*devicePixelRatio,h=c.height=360*devicePixelRatio, cx=w/2, cy=h/2, r=Math.min(w,h)*.34; ctx.clearRect(0,0,w,h); ctx.fillStyle='#020817'; ctx.fillRect(0,0,w,h); ctx.fillStyle='#0b2033'; ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill(); ctx.strokeStyle='rgba(255,255,255,.16)'; for(let i=-3;i<=3;i++){ctx.beginPath();ctx.ellipse(cx,cy,r,Math.abs(i)*r/4,0,0,Math.PI*2);ctx.stroke()} ctx.shadowColor='#36e58f'; ctx.shadowBlur=18; ctx.fillStyle='#36e58f'; [[-.35,-.18],[.18,-.25],[.4,.08],[-.08,.28]].forEach(p=>{ctx.beginPath();ctx.arc(cx+p[0]*r,cy+p[1]*r,5*devicePixelRatio,0,Math.PI*2);ctx.fill()}); requestAnimationFrame(draw)} draw();}
       initFallbackGlobe();
       loadVisitors().catch(()=>{}); setInterval(()=>loadVisitors().catch(()=>{}),15000);
     </script>
@@ -17890,10 +17890,10 @@ def admin_emails_page():
       .email-admin-card strong{{display:block;color:#9fb5c0;font-size:13px}}.email-admin-card span{{font-size:28px;font-weight:950}}
       .email-notice{{border:1px solid rgba(255,209,102,.34);background:rgba(255,209,102,.1);color:#ffe6a6;border-radius:10px;padding:12px;margin:12px 0;font-weight:800}}
       .email-notice.ok{{border-color:rgba(54,229,143,.32);background:rgba(54,229,143,.1);color:#b9ffd8}}
-      .email-filters{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}}.email-filter{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 10px;text-decoration:none;color:#dffcff;background:rgba(255,255,255,.04);font-weight:850}}.email-filter.active{{background:linear-gradient(135deg,#36e58f,#6edff6);color:#04101a;border:0}}
+      .email-filters{{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0}}.email-filter{{border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:8px 10px;text-decoration:none;color:var(--text);background:rgba(255,255,255,.04);font-weight:850}}.email-filter.active{{background:var(--accent);color:#04101a;border:0}}
       .email-table-wrap{{overflow:auto}}.email-table{{min-width:980px;width:100%;border-collapse:collapse}}.email-table th,.email-table td{{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;text-align:left}}.email-subject{{max-width:260px}}
       .email-table td{{word-break:break-word}}.email-table td:nth-child(2),.email-table td:nth-child(11){{white-space:nowrap}}
-      .email-badge{{display:inline-flex;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:900}}.email-badge.sent{{background:rgba(54,229,143,.15);color:#b9ffd8}}.email-badge.failed,.email-badge.unauthorized{{background:rgba(255,107,122,.16);color:#ffd4dc}}.email-badge.not-configured{{background:rgba(255,209,102,.14);color:#ffe6a6}}.email-badge.queued{{background:rgba(110,223,246,.14);color:#c9fbff}}.email-badge.neutral{{background:rgba(255,255,255,.08);color:#dbeafe}}
+      .email-badge{{display:inline-flex;border-radius:999px;padding:5px 8px;font-size:12px;font-weight:900}}.email-badge.sent{{background:rgba(54,229,143,.15);color:#b9ffd8}}.email-badge.failed,.email-badge.unauthorized{{background:rgba(255,107,122,.16);color:#ffd4dc}}.email-badge.not-configured{{background:rgba(255,209,102,.14);color:#ffe6a6}}.email-badge.queued{{background:rgba(255,255,255,.14);color:var(--text)}}.email-badge.neutral{{background:rgba(255,255,255,.08);color:var(--muted)}}
       .email-pager{{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;flex-wrap:wrap}}
       @media(max-width:720px){{.email-admin-card span{{font-size:22px}}.email-table{{min-width:860px}}}}
     </style>
@@ -29256,9 +29256,9 @@ def admin_analytics_page():
     body{{margin:0;font-family:Inter,system-ui,Arial;background:#070b14;color:#f2fbff;line-height:1.5}}
     .wrap{{width:min(100% - 28px,1180px);margin:0 auto;padding:30px 0}}
     .grid{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}}
-    .card,table{{border:1px solid rgba(110,223,246,.18);background:rgba(13,22,39,.88);border-radius:10px;box-shadow:0 20px 58px rgba(0,0,0,.28)}}
+    .card,table{{border:1px solid var(--line);background:rgba(13,22,39,.88);border-radius:10px;box-shadow:0 20px 58px rgba(0,0,0,.28)}}
     .card{{padding:18px}} .metric{{font-size:32px;font-weight:900}} h1,h2{{letter-spacing:0}} table{{width:100%;border-collapse:collapse;margin:12px 0 28px;overflow:hidden}}
-    th,td{{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top}} th{{color:#6edff6}}
+    th,td{{padding:10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left;vertical-align:top}} th{{color:var(--text)}}
     a{{color:#36e58f}} .actions{{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0 24px}}
     @media(max-width:800px){{.grid{{grid-template-columns:1fr 1fr}}}} @media(max-width:520px){{.grid{{grid-template-columns:1fr}} table{{font-size:12px}}}}
     </style></head><body><div class="wrap">
@@ -44110,9 +44110,9 @@ def admin_pulse_music_review_page():
         recent_rows += f"<tr><td>{r.get('id')}</td><td>{html_escape(clean_html(r.get('title') or ''))}</td><td>{html_escape(clean_html(r.get('artist') or ''))}</td><td>{html_escape(clean_html(r.get('uploader_name') or r.get('uploader_email') or ''))}</td><td>{html_escape(clean_html(r.get('safety_status') or ''))}</td><td>{'yes' if safe_int(r.get('approved_by_admin'), 0) else 'no'}</td><td>{'yes' if safe_int(r.get('active'), 0) else 'no'}</td><td title='{public_title}'>{public_state}</td><td>{html_escape(clean_html(r.get('updated_at') or r.get('created_at') or ''))}</td></tr>"
     body = f"""
     <style>
-      .music-review-card{{border:1px solid rgba(110,223,246,.22);border-radius:16px;background:linear-gradient(145deg,rgba(13,22,39,.96),rgba(5,11,20,.92));padding:16px;margin:14px 0;box-shadow:0 22px 80px rgba(0,0,0,.25)}}
+      .music-review-card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.96);padding:16px;margin:14px 0;box-shadow:0 22px 80px rgba(0,0,0,.25)}}
       .music-review-main{{display:grid;grid-template-columns:112px minmax(0,1fr);gap:14px;align-items:start}}
-      .music-review-cover{{width:112px;height:112px;border-radius:16px;object-fit:cover;border:1px solid rgba(110,223,246,.22);background:rgba(255,255,255,.05);display:grid;place-items:center;font-size:34px;color:#6edff6}}
+      .music-review-cover{{width:112px;height:112px;border-radius:16px;object-fit:cover;border:1px solid var(--line);background:rgba(255,255,255,.05);display:grid;place-items:center;font-size:34px;color:var(--muted)}}
       .music-review-card audio{{width:100%;margin:10px 0}}
       .music-review-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:12px 0}}
       .music-review-grid span,.music-review-proof{{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:rgba(255,255,255,.04);padding:10px}}
@@ -98988,12 +98988,12 @@ def admin_payments_command_center_page():
     provider_status = provider.get("status") or ("ready" if provider.get("stripe_secret_configured") else "setup_required")
     body = f"""
     <style>
-    .payments-hero{{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:28px;padding:26px;background:radial-gradient(circle at 12% 0,rgba(54,229,143,.22),transparent 34%),radial-gradient(circle at 86% 12%,rgba(110,223,246,.18),transparent 30%),linear-gradient(135deg,rgba(8,16,32,.98),rgba(4,9,18,.98));box-shadow:0 26px 90px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.08)}}
+    .payments-hero{{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:28px;padding:26px;background:rgba(8,16,32,.98);box-shadow:0 26px 90px rgba(0,0,0,.38),inset 0 1px 0 rgba(255,255,255,.08)}}
     .payments-hero h1{{font-size:clamp(38px,6vw,76px);line-height:.96;margin:8px 0}}.payments-hero p{{max-width:900px}}
-    .pay-pulse{{height:10px;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166,#9b5cff);box-shadow:0 0 36px rgba(110,223,246,.35);margin-top:18px;animation:payFlow 6s ease-in-out infinite}}
-    .pay-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:16px 0}}.pay-kpi,.pay-insight{{border:1px solid rgba(110,223,246,.18);border-radius:20px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));padding:16px;box-shadow:0 18px 54px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.07)}}.pay-kpi span,.pay-insight span{{display:block;color:#9fb5c0;font-size:.84rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}}.pay-kpi strong{{display:block;font-size:clamp(24px,4vw,36px);margin:8px 0;color:#f4fdff}}.pay-insight strong{{display:block;font-size:1.35rem;margin:8px 0;color:#b9fff0}}.pay-kpi p,.pay-insight p{{margin:0;color:#9fb5c0}}
-    .treasury-flow{{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;align-items:stretch}}.flow-step{{position:relative;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.055);padding:13px;min-height:108px}}.flow-step:after{{content:'→';position:absolute;right:-12px;top:42%;color:#6edff6;font-weight:950}}.flow-step:last-child:after{{display:none}}.flow-step strong{{display:block;color:#f4fdff}}.flow-step span{{display:block;color:#9fb5c0;font-size:.9rem;margin-top:6px}}
-    .finance-event{{display:grid;grid-template-columns:86px minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(255,255,255,.045);padding:10px;margin:8px 0}}.event-kind{{display:inline-flex;justify-content:center;border-radius:999px;border:1px solid rgba(110,223,246,.24);padding:5px 8px;color:#b9f7ff;font-weight:900}}.finance-event p{{margin:3px 0 0}}.finance-event code{{color:#ffd166;white-space:nowrap}}
+    .pay-pulse{{height:10px;border-radius:999px;background:var(--accent);margin-top:18px;animation:payFlow 6s ease-in-out infinite}}
+    .pay-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:16px 0}}.pay-kpi,.pay-insight{{border:1px solid var(--line);border-radius:20px;background:rgba(255,255,255,.06);padding:16px;box-shadow:0 18px 54px rgba(0,0,0,.24),inset 0 1px 0 rgba(255,255,255,.07)}}.pay-kpi span,.pay-insight span{{display:block;color:#9fb5c0;font-size:.84rem;font-weight:900;text-transform:uppercase;letter-spacing:.04em}}.pay-kpi strong{{display:block;font-size:clamp(24px,4vw,36px);margin:8px 0;color:#f4fdff}}.pay-insight strong{{display:block;font-size:1.35rem;margin:8px 0;color:#b9fff0}}.pay-kpi p,.pay-insight p{{margin:0;color:#9fb5c0}}
+    .treasury-flow{{display:grid;grid-template-columns:repeat(6,minmax(120px,1fr));gap:10px;align-items:stretch}}.flow-step{{position:relative;border:1px solid rgba(255,255,255,.12);border-radius:18px;background:rgba(255,255,255,.055);padding:13px;min-height:108px}}.flow-step:after{{content:'→';position:absolute;right:-12px;top:42%;color:var(--muted);font-weight:950}}.flow-step:last-child:after{{display:none}}.flow-step strong{{display:block;color:#f4fdff}}.flow-step span{{display:block;color:#9fb5c0;font-size:.9rem;margin-top:6px}}
+    .finance-event{{display:grid;grid-template-columns:86px minmax(0,1fr) auto;gap:10px;align-items:center;border:1px solid rgba(255,255,255,.09);border-radius:16px;background:rgba(255,255,255,.045);padding:10px;margin:8px 0}}.event-kind{{display:inline-flex;justify-content:center;border-radius:999px;border:1px solid var(--line);padding:5px 8px;color:var(--text);font-weight:900}}.finance-event p{{margin:3px 0 0}}.finance-event code{{color:#ffd166;white-space:nowrap}}
     @keyframes payFlow{{0%,100%{{filter:saturate(1);transform:translateY(0)}}50%{{filter:saturate(1.35);transform:translateY(-1px)}}}}
     @media(max-width:820px){{.treasury-flow{{grid-template-columns:1fr 1fr}}.flow-step:after{{display:none}}.finance-event{{grid-template-columns:1fr}}.finance-event code{{white-space:normal}}}}
     </style>
@@ -99054,11 +99054,11 @@ def admin_treasury_page():
     creator_rows = "".join(f"<tr><td>{int(c.get('user_id') or 0)}</td><td>{html_escape(clean_html(c.get('seller_type') or ''))}</td><td>{dollars(c.get('pending_balance_cents'))}</td><td>{dollars(c.get('available_balance_cents'))}</td><td>{dollars(c.get('lifetime_gross_cents'))}</td><td>{dollars(c.get('lifetime_fees_cents'))}</td><td>{dollars(c.get('lifetime_net_cents'))}</td><td>{'frozen' if c.get('frozen') else 'clear'}</td></tr>" for c in (data.get("creator_balances") or []))
     body = f"""
     <style>
-    .treasury-hero{{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.2);border-radius:24px;padding:24px;background:radial-gradient(circle at top left,rgba(120,255,214,.2),transparent 32%),linear-gradient(135deg,rgba(9,14,30,.96),rgba(6,9,19,.98));box-shadow:0 24px 80px rgba(0,0,0,.35)}}
+    .treasury-hero{{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:24px;padding:24px;background:rgba(9,14,30,.96);box-shadow:0 24px 80px rgba(0,0,0,.35)}}
     .treasury-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin:16px 0}}
-    .treasury-card{{border:1px solid rgba(122,245,211,.18);border-radius:20px;padding:16px;background:linear-gradient(145deg,rgba(255,255,255,.08),rgba(255,255,255,.025));box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 14px 40px rgba(0,0,0,.22)}}
+    .treasury-card{{border:1px solid rgba(122,245,211,.18);border-radius:20px;padding:16px;background:rgba(255,255,255,.06);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 14px 40px rgba(0,0,0,.22)}}
     .treasury-card span{{display:block;color:#9fb2c3;font-weight:800;font-size:.86rem}}.treasury-card strong{{display:block;font-size:1.75rem;margin:7px 0;color:#ecfbff}}.treasury-card p{{color:#9fb2c3;margin:0}}
-    .treasury-orbit{{height:8px;border-radius:999px;background:linear-gradient(90deg,#7af5d3,#69d7ff,#f5d76e);box-shadow:0 0 28px rgba(105,215,255,.45);margin-top:16px}}
+    .treasury-orbit{{height:8px;border-radius:999px;background:var(--accent);margin-top:16px}}
     </style>
     <section class='treasury-hero'><p class='pill'>Creator Economy Treasury</p><h1>CoinPlotXAI Treasury OS</h1><p class='muted'>Every platform fee, creator net amount, escrow hold, payout queue item, refund, dispute, and settlement batch now has a visible ledger home.</p><div class='treasury-orbit'></div></section>
     <section class='treasury-grid'>{card_html}</section>
@@ -99958,34 +99958,34 @@ def admin_merchant_applications_page():
     body = f"""
     <style>
     .merchant-review-shell{{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:16px;align-items:start}}
-    .review-sidebar{{position:sticky;top:92px;border:1px solid rgba(110,223,246,.18);border-radius:16px;background:rgba(7,19,33,.92);padding:14px}}
+    .review-sidebar{{position:sticky;top:92px;border:1px solid var(--line);border-radius:16px;background:rgba(7,19,33,.92);padding:14px}}
     .doc-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;min-width:260px}}
-    .doc-card{{text-align:left;display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;align-items:center;border:1px solid rgba(110,223,246,.22);border-radius:14px;background:linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025));color:#f2fbff;padding:9px;cursor:pointer;min-height:82px;width:100%}}
+    .doc-card{{text-align:left;display:grid;grid-template-columns:54px minmax(0,1fr);gap:10px;align-items:center;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.05);color:#f2fbff;padding:9px;cursor:pointer;min-height:82px;width:100%}}
     .doc-card:hover{{border-color:rgba(54,229,143,.58);box-shadow:0 0 28px rgba(54,229,143,.12)}}
-    .doc-card.compare{{grid-template-columns:1fr;background:linear-gradient(135deg,rgba(54,229,143,.18),rgba(110,223,246,.12));font-weight:950;justify-content:center;text-align:center}}
+    .doc-card.compare{{grid-template-columns:1fr;background:rgba(54,229,143,.18);font-weight:950;justify-content:center;text-align:center}}
     .doc-thumb{{width:54px;height:64px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.12);background:#020817;display:flex;align-items:center;justify-content:center}}
     .doc-thumb img{{width:100%;height:100%;object-fit:cover}}
-    .pdf-thumb{{font-weight:950;color:#06101b;background:linear-gradient(135deg,#ffd166,#6edff6);width:100%;height:100%;display:flex;align-items:center;justify-content:center}}
+    .pdf-thumb{{font-weight:950;color:#06101b;background:var(--accent);width:100%;height:100%;display:flex;align-items:center;justify-content:center}}
     .doc-card small,.doc-card em{{display:block;color:#9fb5c0;font-size:12px;white-space:normal;overflow-wrap:anywhere}}
     .doc-status{{width:max-content;margin-top:3px;border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:3px 7px;font-style:normal;text-transform:capitalize}}
     .doc-status.verified{{color:#36e58f;border-color:rgba(54,229,143,.45)}}.doc-status.rejected{{color:#ff7a88;border-color:rgba(255,122,136,.45)}}.doc-status.suspicious{{color:#ffd166;border-color:rgba(255,209,102,.45)}}
     .doc-modal{{position:fixed;inset:0;z-index:9999;display:none;background:rgba(0,0,0,.82);backdrop-filter:blur(18px);padding:max(18px,env(safe-area-inset-top)) 16px max(18px,env(safe-area-inset-bottom))}}
     .doc-modal.open{{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px}}
-    .doc-viewer{{min-height:0;border:1px solid rgba(110,223,246,.22);border-radius:20px;background:#020817;overflow:auto;display:flex;align-items:center;justify-content:center;position:relative}}
+    .doc-viewer{{min-height:0;border:1px solid var(--line);border-radius:20px;background:#020817;overflow:auto;display:flex;align-items:center;justify-content:center;position:relative}}
     .doc-viewer img{{max-width:100%;max-height:82dvh;transform:scale(var(--zoom,1)) rotate(var(--rot,0deg));transition:transform .18s ease;transform-origin:center}}
     .doc-viewer iframe{{width:100%;height:82dvh;border:0;background:#fff;border-radius:16px}}
     .compare-view{{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;padding:12px}}
     .compare-pane{{min-height:70dvh;border:1px solid rgba(255,255,255,.1);border-radius:16px;background:#050b14;display:flex;align-items:center;justify-content:center;overflow:auto;position:relative}}
-    .doc-panel{{border:1px solid rgba(110,223,246,.22);border-radius:20px;background:#071321;padding:14px;display:grid;gap:10px;align-content:start}}
+    .doc-panel{{border:1px solid var(--line);border-radius:20px;background:#071321;padding:14px;display:grid;gap:10px;align-content:start}}
     .doc-panel button,.doc-panel a{{width:100%;justify-content:center}}
     .queue-filters{{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0}}
-    .chip{{display:inline-flex;align-items:center;gap:7px;border:1px solid rgba(110,223,246,.24);border-radius:999px;padding:6px 13px;color:#cfe6f2;text-decoration:none;font-weight:800;font-size:13px}}
-    .chip b{{background:rgba(110,223,246,.16);border-radius:999px;padding:1px 8px;font-size:12px}}
+    .chip{{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;padding:6px 13px;color:var(--text);text-decoration:none;font-weight:800;font-size:13px}}
+    .chip b{{background:rgba(255,255,255,.12);border-radius:999px;padding:1px 8px;font-size:12px}}
     .chip.active{{border-color:rgba(54,229,143,.6);color:#36e58f;background:rgba(54,229,143,.1)}}
     .queue-search{{display:flex;gap:8px;flex-wrap:wrap;align-items:center}}
     .queue-search input[type=search]{{min-width:220px}}
     .pill{{display:inline-block;border-radius:999px;padding:3px 10px;font-size:12px;font-weight:900;text-transform:capitalize;border:1px solid rgba(255,255,255,.14)}}
-    .pill.submitted,.pill.resubmitted{{color:#6edff6;border-color:rgba(110,223,246,.5)}}
+    .pill.submitted,.pill.resubmitted{{color:var(--text);border-color:rgba(255,255,255,.45)}}
     .pill.under_review{{color:#ffd166;border-color:rgba(255,209,102,.5)}}
     .pill.information_requested{{color:#ffa94d;border-color:rgba(255,169,77,.5)}}
     .pill.approved{{color:#36e58f;border-color:rgba(54,229,143,.5)}}
@@ -99994,7 +99994,7 @@ def admin_merchant_applications_page():
     .risk-high{{color:#ff7a88;font-weight:950}}.risk-mid{{color:#ffd166;font-weight:900}}.risk-low{{color:#36e58f;font-weight:800}}
     .missing{{color:#ffa94d;font-size:12px;margin:6px 0 0}}
     .workspace{{min-width:320px}}
-    .workspace .panel{{margin:0 0 8px;border:1px solid rgba(110,223,246,.16);border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.03)}}
+    .workspace .panel{{margin:0 0 8px;border:1px solid var(--line);border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.03)}}
     .workspace summary{{cursor:pointer;font-weight:900;font-size:13px}}
     .signals,.notes,.timeline{{margin:8px 0 0;padding-left:16px;display:grid;gap:7px;font-size:12.5px}}
     .signals li.high{{color:#ff7a88}}.signals li.medium{{color:#ffd166}}.signals li.low{{color:#9fb5c0}}
@@ -100091,7 +100091,7 @@ def admin_teacher_applications_page():
         doc_html = "".join(f"<a class='doc-card' href='/admin/teacher-document/{int(d.get('id') or 0)}' target='_blank'><strong>{html_escape(clean_html((d.get('document_type') or 'document').replace('_',' ').title()))}</strong><small>{html_escape(clean_html(d.get('original_filename') or ''))}</small><em>{html_escape(clean_html(d.get('review_status') or 'pending'))}</em></a>" for d in docs) or "<span class='muted'>No documents</span>"
         rows += f"<tr><td>{app_row.get('id')}</td><td>{html_escape(clean_html(app_row.get('teacher_display_name') or app_row.get('account_name') or ''))}<br><small>{html_escape(clean_html(app_row.get('email') or ''))}</small></td><td>{html_escape(clean_html(app_row.get('teaching_category') or ''))}</td><td>{html_escape(clean_html(app_row.get('status') or ''))}</td><td>{int(app_row.get('completeness') or 0)}%</td><td>{int(app_row.get('safety_score') or 0)}</td><td>{doc_html}</td><td><details><summary>Safety Answers</summary><p>{html_escape(clean_html(app_row.get('learner_safety_plan') or ''))}</p><p>{html_escape(clean_html(app_row.get('trust_reason') or ''))}</p></details><form method='post'><input type='hidden' name='application_id' value='{int(app_row.get('id') or 0)}'><input name='note' placeholder='Internal note'><button name='action' value='review'>Under Review</button><button name='action' value='approve'>Approve</button><button name='action' value='more_info'>Request Info</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button></form></td></tr>"
     body = f"""
-    <style>.doc-card{{display:grid;gap:3px;padding:9px;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:rgba(255,255,255,.045);text-decoration:none;color:#f2fbff;margin:4px 0}}.doc-card small,.doc-card em{{color:#9fb5c0}}</style>
+    <style>.doc-card{{display:grid;gap:3px;padding:9px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.045);text-decoration:none;color:#f2fbff;margin:4px 0}}.doc-card small,.doc-card em{{color:#9fb5c0}}</style>
     <h1>Teacher Applications</h1><p class='muted'>Review teaching quality, safety answers, identity/credential documents, public reputation, and course readiness before approving teacher tools.</p><p>{html_escape(clean_html(message))}</p>
     <section class='card'><table class='table'><tr><th>ID</th><th>Teacher</th><th>Category</th><th>Status</th><th>Complete</th><th>Safety</th><th>Documents</th><th>Review</th></tr>{rows or '<tr><td colspan=8>No teacher applications yet.</td></tr>'}</table></section>
     """
@@ -102878,10 +102878,9 @@ def admin_global_command_page():
     ) or "<li>No failed AI actions.</li>"
     command_css = """
     <style>
-    .global-command-stage{position:relative;overflow:hidden;border:1px solid rgba(110,223,246,.22);border-radius:22px;padding:18px;background:radial-gradient(circle at 20% 10%,rgba(110,223,246,.16),transparent 28rem),radial-gradient(circle at 82% 18%,rgba(54,229,143,.12),transparent 20rem),linear-gradient(145deg,rgba(4,12,24,.96),rgba(8,18,34,.94));box-shadow:0 30px 100px rgba(0,0,0,.38)}
-    .global-command-stage:before{content:"";position:absolute;inset:-40%;background:conic-gradient(from 130deg,transparent,rgba(110,223,246,.12),transparent 35%,rgba(255,209,102,.08),transparent 70%);pointer-events:none}
-    .global-command-stage>*{position:relative}.live-card{overflow:hidden}.spark{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}.spark span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#6edff6,#ffd166);box-shadow:0 0 18px rgba(110,223,246,.45)}
-    .orb-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.planet{min-height:360px;width:100%;border-radius:18px;background:rgba(0,0,0,.24)}.event-feed,.brain-list{list-style:none;padding:0;margin:0;display:grid;gap:8px}.event-feed li,.brain-list li{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.045)}.event-feed span{display:block;font-weight:950}.event-feed small{color:#9fb5c0}.status-healthy{color:#36e58f}.status-watch{color:#ffd166}.status-degraded,.status-critical{color:#ff6b7a}.brainstem{border-color:rgba(255,209,102,.28);background:linear-gradient(135deg,rgba(255,209,102,.08),rgba(110,223,246,.06)),rgba(255,255,255,.035)}
+    .global-command-stage{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:22px;padding:18px;background:rgba(4,12,24,.96);box-shadow:0 30px 100px rgba(0,0,0,.38)}
+    .global-command-stage>*{position:relative}.live-card{overflow:hidden}.spark{height:8px;border-radius:999px;background:rgba(255,255,255,.07);overflow:hidden}.spark span{display:block;height:100%;border-radius:999px;background:var(--accent)}
+    .orb-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.planet{min-height:360px;width:100%;border-radius:18px;background:rgba(0,0,0,.24)}.event-feed,.brain-list{list-style:none;padding:0;margin:0;display:grid;gap:8px}.event-feed li,.brain-list li{border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:10px;background:rgba(255,255,255,.045)}.event-feed span{display:block;font-weight:950}.event-feed small{color:#9fb5c0}.status-healthy{color:#36e58f}.status-watch{color:#ffd166}.status-degraded,.status-critical{color:#ff6b7a}.brainstem{border-color:rgba(255,209,102,.28);background:rgba(255,209,102,.08)}
     @media(max-width:820px){.orb-grid{grid-template-columns:1fr}.planet{min-height:260px}.global-command-stage{padding:12px}}
     @media(prefers-reduced-motion:reduce){.global-command-stage:before{animation:none}}
     </style>
@@ -102891,7 +102890,7 @@ def admin_global_command_page():
     const graphHealth={int(health['health_score'])}, trustHeat={int(health['trust_score'])}, riskHeat={100-int(system_health['overall_score'])};
     const canvas=document.getElementById('globalCommandCanvas'); const ctx=canvas?.getContext('2d');
     function sizeCanvas(){{if(!canvas)return;canvas.width=canvas.clientWidth*2;canvas.height=canvas.clientHeight*2}}
-    function draw(){{if(!ctx)return;sizeCanvas();const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.fillStyle='rgba(3,10,20,.9)';ctx.fillRect(0,0,w,h);const cx=w/2,cy=h/2,r=Math.min(w,h)*.28;ctx.strokeStyle='rgba(110,223,246,.28)';ctx.lineWidth=2;for(let i=0;i<6;i++){{ctx.beginPath();ctx.arc(cx,cy,r+i*18,0,Math.PI*2);ctx.stroke()}}const points=[graphHealth,trustHeat,riskHeat,{int(predictions['energy']['energy_score'])},{int(system_health['overall_score'])}];points.forEach((v,i)=>{{const a=(Date.now()/1800+i*1.25)%(Math.PI*2);const rr=r+v;const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;ctx.beginPath();ctx.fillStyle=i===2?'rgba(255,107,122,.88)':i===3?'rgba(255,209,102,.88)':'rgba(110,223,246,.9)';ctx.shadowBlur=22;ctx.shadowColor=ctx.fillStyle;ctx.arc(x,y,8+v/14,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.12)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(x,y);ctx.stroke()}});requestAnimationFrame(draw)}}
+    function draw(){{if(!ctx)return;sizeCanvas();const w=canvas.width,h=canvas.height;ctx.clearRect(0,0,w,h);ctx.fillStyle='rgba(3,10,20,.9)';ctx.fillRect(0,0,w,h);const cx=w/2,cy=h/2,r=Math.min(w,h)*.28;ctx.strokeStyle='rgba(255,255,255,.14)';ctx.lineWidth=2;for(let i=0;i<6;i++){{ctx.beginPath();ctx.arc(cx,cy,r+i*18,0,Math.PI*2);ctx.stroke()}}const points=[graphHealth,trustHeat,riskHeat,{int(predictions['energy']['energy_score'])},{int(system_health['overall_score'])}];points.forEach((v,i)=>{{const a=(Date.now()/1800+i*1.25)%(Math.PI*2);const rr=r+v;const x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;ctx.beginPath();ctx.fillStyle=i===2?'rgba(255,107,122,.88)':i===3?'rgba(255,209,102,.88)':'rgba(54,229,143,.88)';ctx.shadowBlur=22;ctx.shadowColor=ctx.fillStyle;ctx.arc(x,y,8+v/14,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='rgba(255,255,255,.12)';ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(x,y);ctx.stroke()}});requestAnimationFrame(draw)}}
     draw();
     async function refreshCommand(){{try{{const d=await fetch('/api/admin/global-command/live',{{cache:'no-store'}}).then(r=>r.json());if(!d.ok)return;Object.entries(d.counts||{{}}).forEach(([k,v])=>{{document.querySelectorAll(`[data-live-key="${{k}}"]`).forEach(el=>el.textContent=v)}});document.getElementById('systemState').textContent=d.system_health?.state||'unknown';document.getElementById('systemState').className='status-'+(d.system_health?.state||'watch');}}catch(e){{}}}}
     setInterval(refreshCommand,7000);
@@ -102996,7 +102995,7 @@ def admin_realtime_grid_page():
     channel_rows = "".join(f"<tr><td>{html_escape(clean_html(name))}</td><td>{count}</td></tr>" for name, count in websocket.get("top_channels", []))
     css = """
     <style>
-    .ops-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.pressure{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.pressure span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#36e58f,#ffd166,#ff6b7a);box-shadow:0 0 18px rgba(110,223,246,.32)}@media(max-width:720px){.table{font-size:13px}}
+    .ops-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.pressure{height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden}.pressure span{display:block;height:100%;border-radius:999px;background:var(--accent)}@media(max-width:720px){.table{font-size:13px}}
     </style>
     """
     body = f"""
@@ -103038,7 +103037,7 @@ def admin_intelligence_graph_page():
     graph_json = script_json({"nodes": nodes, "edges": edges})
     body = f"""
     <style>
-    .graph-shell{{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px}}.graph-canvas{{width:100%;height:68vh;min-height:420px;border-radius:18px;border:1px solid rgba(110,223,246,.22);background:radial-gradient(circle at 50% 45%,rgba(110,223,246,.12),transparent 32rem),#030914;touch-action:none}}.legend-dot{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:#6edff6;box-shadow:0 0 14px #6edff6}}.legend-dot.risk{{background:#ff6b7a;box-shadow:0 0 14px #ff6b7a}}@media(max-width:820px){{.graph-shell{{grid-template-columns:1fr}}.graph-canvas{{height:58vh;min-height:320px}}}}
+    .graph-shell{{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px}}.graph-canvas{{width:100%;height:68vh;min-height:420px;border-radius:18px;border:1px solid var(--line);background:#030914;touch-action:none}}.legend-dot{{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;background:#9fb5c0;box-shadow:none}}.legend-dot.risk{{background:#ff6b7a;box-shadow:0 0 14px #ff6b7a}}@media(max-width:820px){{.graph-shell{{grid-template-columns:1fr}}.graph-canvas{{height:58vh;min-height:320px}}}}
     </style>
     <h1>Global Intelligence Graph</h1><p class='muted'>Force-directed view of users, creators, posts, communities, trust relationships, scam clusters, and trend propagation.</p>
     <section class='graph-shell'><canvas id='intelligenceGraph' class='graph-canvas'></canvas><aside class='card'><h2>Graph Controls</h2><p><span class='legend-dot'></span> Trusted/neutral entity</p><p><span class='legend-dot risk'></span> Risk or report signal</p><p><span class='pill'>Nodes {len(nodes)}</span> <span class='pill'>Edges {len(edges)}</span></p><p class='muted'>Drag nodes. Scroll/touch remains page-safe on mobile.</p><p><a class='button' href='/admin/global-command'>Back to Global Command</a></p></aside></section>
@@ -103048,7 +103047,7 @@ def admin_intelligence_graph_page():
     function resize(){{canvas.width=canvas.clientWidth*2;canvas.height=canvas.clientHeight*2}}resize();
     const nodes=graph.nodes.map((n,i)=>({{...n,x:(Math.random()*canvas.width*.7)+canvas.width*.15,y:(Math.random()*canvas.height*.7)+canvas.height*.15,vx:0,vy:0,r:8+Math.min(12,Number(n.score||0)/10)}}));const byId=Object.fromEntries(nodes.map(n=>[n.id,n]));
     function tick(){{for(const e of graph.edges){{const a=byId[e.source],b=byId[e.target];if(!a||!b)continue;const dx=b.x-a.x,dy=b.y-a.y,d=Math.max(40,Math.hypot(dx,dy));const f=(d-160)*.0008*(Number(e.weight||1));a.vx+=dx/d*f;a.vy+=dy/d*f;b.vx-=dx/d*f;b.vy-=dy/d*f}}for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){{const a=nodes[i],b=nodes[j],dx=b.x-a.x,dy=b.y-a.y,d=Math.max(1,Math.hypot(dx,dy));if(d<90){{const f=(90-d)*.0015;a.vx-=dx/d*f;a.vy-=dy/d*f;b.vx+=dx/d*f;b.vy+=dy/d*f}}}}for(const n of nodes){{if(n!==drag){{n.vx+=(canvas.width/2-n.x)*.00008;n.vy+=(canvas.height/2-n.y)*.00008;n.x+=n.vx;n.y+=n.vy;n.vx*=.88;n.vy*=.88}}}}
-    function draw(){{tick();ctx.clearRect(0,0,canvas.width,canvas.height);ctx.lineWidth=1.2;for(const e of graph.edges){{const a=byId[e.source],b=byId[e.target];if(!a||!b)continue;ctx.strokeStyle='rgba(110,223,246,.16)';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}}for(const n of nodes){{ctx.beginPath();ctx.fillStyle=n.risk?'rgba(255,107,122,.9)':n.type==='user'?'rgba(54,229,143,.9)':'rgba(110,223,246,.86)';ctx.shadowBlur=18;ctx.shadowColor=ctx.fillStyle;ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}}requestAnimationFrame(draw)}}draw();
+    function draw(){{tick();ctx.clearRect(0,0,canvas.width,canvas.height);ctx.lineWidth=1.2;for(const e of graph.edges){{const a=byId[e.source],b=byId[e.target];if(!a||!b)continue;ctx.strokeStyle='rgba(255,255,255,.14)';ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}}for(const n of nodes){{ctx.beginPath();ctx.fillStyle=n.risk?'rgba(255,107,122,.9)':n.type==='user'?'rgba(54,229,143,.9)':'rgba(159,181,192,.86)';ctx.shadowBlur=18;ctx.shadowColor=ctx.fillStyle;ctx.arc(n.x,n.y,n.r,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}}requestAnimationFrame(draw)}}draw();
     function pos(e){{const r=canvas.getBoundingClientRect(),t=e.touches?e.touches[0]:e;return{{x:(t.clientX-r.left)*2,y:(t.clientY-r.top)*2}}}}function pick(p){{return nodes.find(n=>Math.hypot(n.x-p.x,n.y-p.y)<n.r+10)}}canvas.addEventListener('pointerdown',e=>{{drag=pick(pos(e));if(drag)canvas.setPointerCapture(e.pointerId)}});canvas.addEventListener('pointermove',e=>{{if(!drag)return;const p=pos(e);drag.x=p.x;drag.y=p.y;drag.vx=drag.vy=0}});canvas.addEventListener('pointerup',()=>drag=null);
     </script>
     """
@@ -103063,9 +103062,12 @@ def admin_trust_map_page():
     snapshot = global_command_snapshot(persist=False)
     health = snapshot["summary"]["health"]
     clusters = snapshot["summary"]["scam_clusters"]
+    # the heat bar used to encode severity as a red->amber->green ramp; with the ramp
+    # gone the fill itself has to carry it
+    trust_fill = "#ff6b7a" if health["trust_score"] < 50 else ("#ffd166" if health["trust_score"] < 75 else "var(--accent)")
     cluster_html = "".join(f"<div class='card'><h2>{html_escape(clean_html(c.get('cluster_key')))}</h2><p class='metric'>{html_escape(clean_html(c.get('risk_weight')))}</p><p class='muted'>{len(c.get('members') or [])} connected entities</p></div>" for c in clusters) or "<div class='card'><h2>No active scam cluster</h2><p class='muted'>Trust map is calm right now.</p></div>"
     body = f"""
-    <style>.heat{{height:18px;border-radius:999px;background:linear-gradient(90deg,#ff6b7a,#ffd166,#36e58f);position:relative;overflow:hidden}}.heat:after{{content:"";position:absolute;inset:0 {max(0,100-health['trust_score'])}% 0 0;background:rgba(255,255,255,.16);box-shadow:0 0 20px rgba(110,223,246,.35)}}.trust-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}</style>
+    <style>.heat{{height:18px;border-radius:999px;background:rgba(255,255,255,.08);position:relative;overflow:hidden}}.heat:after{{content:"";position:absolute;inset:0 {max(0,100-health['trust_score'])}% 0 0;background:{trust_fill}}}.trust-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}}</style>
     <h1>Trust Map</h1><p class='muted'>Trust clusters, scam propagation, creator reliability, reputation spread, and suspicious behavior overlays.</p>
     <section class='card'><h2>Trust Heat</h2><p class='metric'>{health['trust_score']}%</p><div class='heat'></div><p><span class='pill'>Safety {health['safety_score']}%</span> <span class='pill'>Coverage {health['coverage_score']}%</span></p></section>
     <section class='trust-grid'>{cluster_html}</section>
@@ -103445,18 +103447,18 @@ def admin_command_center_page():
     owner_links = " <a class='button primary' href='/admin/pulse-users'>PulseSoc Users</a> <a class='button primary' href='/admin/pulse-core'>PulseSoc Core</a> <a class='button primary' href='/admin/global-command'>Global Command</a>" if admin_is_owner_level(admin) else ""
     body = f"""
     <style>
-      .command-os-hero{{background:radial-gradient(circle at 16% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(14,25,48,.9));}}
+      .command-os-hero{{background:rgba(6,18,34,.96);}}
       .ops-module-card{{position:relative;overflow:hidden}}
-      .ops-module-card:before{{content:"";position:absolute;inset:0 0 auto;height:2px;background:linear-gradient(90deg,#36e58f,#6edff6,#9b5cff);opacity:.55}}
+      .ops-module-card:before{{content:"";position:absolute;inset:0 0 auto;height:2px;background:var(--accent);opacity:.55}}
       .ops-metrics{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0}}
-      .ops-metric{{border:1px solid rgba(110,223,246,.16);border-radius:12px;background:rgba(255,255,255,.045);padding:8px;min-width:0}}
+      .ops-metric{{border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.045);padding:8px;min-width:0}}
       .ops-metric strong{{display:block;font-size:22px;color:#f4fdff;line-height:1}}
       .ops-metric span{{display:block;color:#9fb5c0;font-size:12px;white-space:normal}}
       .ops-actions{{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}}
-      .ops-action{{border:1px solid rgba(54,229,143,.24);border-radius:999px;background:rgba(54,229,143,.08);padding:4px 8px;color:#dffcff;font-size:12px;font-weight:800}}
-      code{{white-space:normal;color:#dffcff}}
-      .seller-queue-card{{position:relative;overflow:hidden;text-decoration:none;color:#f2fbff;border:1px solid rgba(54,229,143,.34);background:radial-gradient(circle at 88% -10%,rgba(54,229,143,.2),transparent 22rem),linear-gradient(140deg,rgba(8,24,20,.96),rgba(9,20,38,.94))}}
-      .seller-queue-card:before{{content:"";position:absolute;inset:0 0 auto;height:3px;background:linear-gradient(90deg,#36e58f,#6edff6,#36e58f)}}
+      .ops-action{{border:1px solid rgba(54,229,143,.24);border-radius:999px;background:rgba(54,229,143,.08);padding:4px 8px;color:var(--text);font-size:12px;font-weight:800}}
+      code{{white-space:normal;color:var(--text)}}
+      .seller-queue-card{{position:relative;overflow:hidden;text-decoration:none;color:#f2fbff;border:1px solid rgba(54,229,143,.34);background:rgba(8,24,20,.96)}}
+      .seller-queue-card:before{{content:"";position:absolute;inset:0 0 auto;height:3px;background:var(--accent)}}
       .seller-queue-card .metric{{display:flex;align-items:baseline;gap:10px;color:#36e58f}}
       .seller-queue-unit{{font-size:13px;font-weight:800;color:#9fb5c0;letter-spacing:.3px}}
       .seller-queue-cta{{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(54,229,143,.5);border-radius:999px;background:rgba(54,229,143,.12);padding:7px 15px;font-weight:950;color:#36e58f}}
@@ -103544,7 +103546,7 @@ def admin_backend_management_module_page(module_key):
     <style>
       .module-search{{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end}}
       .ops-metrics{{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}}
-      .ops-metric{{border:1px solid rgba(110,223,246,.16);border-radius:12px;background:rgba(255,255,255,.045);padding:8px;min-width:0}}
+      .ops-metric{{border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.045);padding:8px;min-width:0}}
       .ops-metric strong{{display:block;font-size:22px;color:#f4fdff;line-height:1}}
       .ops-metric span{{display:block;color:#9fb5c0;font-size:12px}}
       @media(max-width:760px){{.module-search{{grid-template-columns:1fr}}.ops-metrics{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
@@ -103648,7 +103650,7 @@ def admin_crypto_command_center_page():
     provider_state = "READY" if state.get("market_provider_ready") else "PARTIAL"
     body = f"""
     <style>
-      .crypto-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(255,209,102,.16),transparent 26rem),radial-gradient(circle at 88% 0,rgba(110,223,246,.13),transparent 26rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(35,30,10,.88));padding:18px;margin-bottom:16px}}
+      .crypto-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
       .crypto-admin-note{{border:1px solid rgba(255,209,102,.24);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#fff2c7}}
     </style>
     <section class="crypto-admin-hero">
@@ -103778,8 +103780,8 @@ def admin_network_command_center_page():
     sections = state.get("sections") or []
     body = f"""
     <style>
-      .network-admin-hero{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:radial-gradient(circle at 16% 0,rgba(110,223,246,.16),transparent 28rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(21,12,42,.88));padding:18px;margin-bottom:16px}}
-      .network-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:#dffcff}}
+      .network-admin-hero{{border:1px solid var(--line);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
+      .network-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:var(--text)}}
     </style>
     <section class="network-admin-hero">
       <h1>Network Command Center</h1>
@@ -103951,8 +103953,8 @@ def admin_intelligence_command_center_page():
     sections = state.get("sections") or []
     body = f"""
     <style>
-      .intel-admin-hero{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(54,229,143,.15),transparent 26rem),radial-gradient(circle at 88% 0,rgba(155,92,255,.15),transparent 26rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(21,12,42,.88));padding:18px;margin-bottom:16px}}
-      .intel-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:#dffcff}}
+      .intel-admin-hero{{border:1px solid var(--line);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
+      .intel-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:var(--text)}}
     </style>
     <section class="intel-admin-hero">
       <h1>Intelligence Command Center</h1>
@@ -104117,8 +104119,8 @@ def admin_creator_command_center_page():
     sections = state.get("sections") or []
     body = f"""
     <style>
-      .creator-admin-hero{{border:1px solid rgba(110,223,246,.22);border-radius:18px;background:radial-gradient(circle at 16% 0,rgba(155,92,255,.16),transparent 28rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(6,45,40,.88));padding:18px;margin-bottom:16px}}
-      .creator-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:#dffcff}}
+      .creator-admin-hero{{border:1px solid var(--line);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
+      .creator-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:var(--text)}}
     </style>
     <section class="creator-admin-hero">
       <h1>Creator Command Center</h1>
@@ -104292,7 +104294,7 @@ def admin_economy_command_center_page():
     sections = state.get("sections") or []
     body = f"""
     <style>
-      .economy-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(255,209,102,.16),transparent 26rem),radial-gradient(circle at 88% 0,rgba(54,229,143,.13),transparent 26rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(41,29,9,.88));padding:18px;margin-bottom:16px}}
+      .economy-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
       .economy-admin-note{{border:1px solid rgba(255,209,102,.24);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#fff2c7}}
     </style>
     <section class="economy-admin-hero">
@@ -104487,7 +104489,7 @@ def admin_ads_command_center_page():
     )
     body = f"""
     <style>
-      .ads-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(255,209,102,.16),transparent 26rem),radial-gradient(circle at 88% 0,rgba(155,92,255,.13),transparent 26rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(41,29,9,.88));padding:18px;margin-bottom:16px}}
+      .ads-admin-hero{{border:1px solid rgba(255,209,102,.24);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
       .ads-admin-note{{border:1px solid rgba(255,209,102,.24);border-radius:14px;background:rgba(255,209,102,.06);padding:14px;color:#fff2c7}}
     </style>
     <section class="ads-admin-hero">
@@ -104656,8 +104658,8 @@ def admin_ai_command_center_page():
     sections = state.get("sections") or []
     body = f"""
     <style>
-      .ai-admin-hero{{border:1px solid rgba(181,122,255,.24);border-radius:18px;background:radial-gradient(circle at 14% 0,rgba(181,122,255,.16),transparent 26rem),radial-gradient(circle at 88% 0,rgba(110,223,246,.13),transparent 26rem),linear-gradient(135deg,rgba(6,18,34,.96),rgba(25,15,48,.88));padding:18px;margin-bottom:16px}}
-      .ai-admin-note{{border:1px solid rgba(181,122,255,.24);border-radius:14px;background:rgba(181,122,255,.06);padding:14px;color:#efe4ff}}
+      .ai-admin-hero{{border:1px solid var(--line);border-radius:18px;background:rgba(6,18,34,.96);padding:18px;margin-bottom:16px}}
+      .ai-admin-note{{border:1px solid rgba(54,229,143,.24);border-radius:14px;background:rgba(54,229,143,.06);padding:14px;color:var(--text)}}
     </style>
     <section class="ai-admin-hero">
       <h1>PulseSoc AI Command Center</h1>
