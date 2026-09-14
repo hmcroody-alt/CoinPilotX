@@ -748,6 +748,62 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
             "§36 page rejects without a structured code",
             Restore(rv, "REASON_REQUIRED", frozenset()), detector)
 
+    # -- 19. §31 a destructive verdict wearing the approval treatment ----------
+
+    def test_flattening_the_verdict_weights_is_caught(self):
+        """§31. The admin shell paints every ``<button>`` with one gradient, so
+        without this table the six verdicts on a row render identically — and on
+        a phone they are stacked full-width under a thumb at 38px apiece.
+        "Approve + Publish" and "Archive" become the same rectangle in the same
+        place, and the reviewer's first clue that they hit the wrong one is the
+        confirmation afterwards.
+
+        The mutation is the one that looks like cleanup: the table is a dict
+        mapping verbs to class names that the default already covers, so delete
+        it and let everything fall through. Uniform *is* the defect.
+
+        Both halves are asserted, because they fail to different mutations: a
+        flattened table makes approve stop looking like a go-ahead, and a
+        copy-paste in the table makes reject start looking like one.
+        """
+        def detector():
+            self.insert_listing()
+            html = self.client.get(PAGE).get_data(as_text=True)
+            classes = {verb: cls for cls, verb in re.findall(
+                r"<button[^>]*class='([^']*)'[^>]*name='action' value='(\w+)'", html)}
+            self.assertIn("approve", classes, "no approve button on the queue page")
+            self.assertIn("reject", classes, "no reject button on the queue page")
+            self.assertIn("review-verb-go", classes["approve"],
+                          "approve does not read as the go-ahead")
+            self.assertIn("review-verb-stop", classes["reject"],
+                          "reject does not read as destructive")
+            self.assertNotEqual(classes["approve"], classes["reject"],
+                                "approve and reject render identically")
+
+        self.assert_mutation_is_caught(
+            "§31 every verdict button renders the same weight",
+            Restore(bot, "REVIEW_VERB_WEIGHT", {}), detector)
+
+    def test_a_destructive_verdict_mapped_to_the_approval_weight_is_caught(self):
+        """The copy-paste, rather than the deletion. A new verb is added to the
+        table by duplicating the line above it and forgetting to change the
+        value, and ``reject`` ships wearing solid green. Nothing else on the
+        page contradicts it."""
+        def detector():
+            self.insert_listing()
+            html = self.client.get(PAGE).get_data(as_text=True)
+            classes = {verb: cls for cls, verb in re.findall(
+                r"<button[^>]*class='([^']*)'[^>]*name='action' value='(\w+)'", html)}
+            self.assertIn("reject", classes, "no reject button on the queue page")
+            self.assertNotIn("review-verb-go", classes["reject"],
+                             "reject renders as a go-ahead")
+
+        self.assert_mutation_is_caught(
+            "§31 reject carries the approval weight",
+            Restore(bot, "REVIEW_VERB_WEIGHT",
+                    dict(bot.REVIEW_VERB_WEIGHT, reject="review-verb-go")),
+            detector)
+
 
 if __name__ == "__main__":
     unittest.main()
