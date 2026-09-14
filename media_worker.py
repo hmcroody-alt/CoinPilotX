@@ -308,6 +308,11 @@ def _needs_playback_transcode(row: dict) -> bool:
         return False
     if str(row.get("playback_storage_key") or "").strip():
         return False
+    # Mux is the primary transcoder; this R2 path is the fallback. A row Mux has already
+    # made playable has a playback_url but never a playback_storage_key, so keying only on
+    # the storage key leaves it in the backlog forever.
+    if str(row.get("playback_url") or "").strip():
+        return False
     mime_type = str(row.get("mime_type") or "").lower()
     storage_key = str(row.get("storage_key") or row.get("object_key") or row.get("media_url") or "").lower()
     return mime_type in {"video/quicktime", "application/quicktime"} or storage_key.split("?", 1)[0].endswith((".mov", ".qt"))
@@ -357,7 +362,10 @@ def _transcode_video_to_mp4(source: Path, target: Path) -> None:
         "-map",
         "0:v:0",
         "-map",
-        "0:a?",
+        # Only the first audio track. iPhone spatial-audio .mov files carry a second
+        # apple_apac track that ffmpeg has no decoder for, and "0:a?" would map it too:
+        # the `?` only tolerates *zero* matches, it does not skip undecodable ones.
+        "0:a:0?",
         "-c:v",
         "libx264",
         "-preset",
@@ -476,6 +484,8 @@ def process_playback_backlog(limit: int = 2) -> dict:
         WHERE deleted_at IS NULL
           AND media_type='video'
           AND COALESCE(playback_storage_key, '')=''
+          AND COALESCE(playback_url, '')=''
+          AND COALESCE(processing_status, '') <> 'processing_blocked'
           AND (
             LOWER(COALESCE(mime_type, '')) IN ('video/quicktime', 'application/quicktime')
             OR LOWER(COALESCE(storage_key, object_key, media_url, '')) LIKE ?
