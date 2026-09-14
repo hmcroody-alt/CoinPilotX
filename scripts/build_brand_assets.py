@@ -130,6 +130,13 @@ def main():
     save(place(mono, (360, 260), 0.92), os.path.join(WEB, f"pulsesoc-gateway-mark-{STAMP}.png"))
     for px in (16, 32):
         save(place(mark, (px, px), 0.92, NAVY), os.path.join(ROOT, "static", "img", f"favicon-{px}.png"))
+    # Legacy unstamped PWA icons behind the public /icons/<file> route. Installed
+    # home-screen apps still hold these exact URLs, so they are rewritten in place
+    # rather than renamed -- a stamped filename would orphan them on the old art.
+    ICONS = os.path.join(ROOT, "static", "icons")
+    save(place(mark, (180, 180), 0.84, NAVY), os.path.join(ICONS, "apple-touch-icon.png"))
+    save(place(mark, (192, 192), 0.84, NAVY), os.path.join(ICONS, "icon-192.png"))
+    save(place(mark, (512, 512), 0.84, NAVY), os.path.join(ICONS, "icon-512.png"))
 
 
 if __name__ == "__main__":
