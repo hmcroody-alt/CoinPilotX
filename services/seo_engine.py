@@ -50,7 +50,10 @@ def page_meta(path="/"):
         "canonical": BASE_URL + path,
         "robots": "index,follow",
         "og_type": "website",
-        "og_image": BASE_URL + "/static/img/og-coinpilotxai.png",
+        # Was /static/img/og-coinpilotxai.png, which 404'd -- the file predates
+        # the PulseSoc rename and was never carried over, so every share of a
+        # /learn/ page rendered with no preview image at all.
+        "og_image": BASE_URL + "/static/brand/pulsesoc-og-20260913.png",
     }
 
 
