@@ -54,16 +54,65 @@ ADMIN_EMAIL = "owner@test.local"
 ADMIN_PASSWORD = "Sup3r-Secret-Passw0rd!"
 
 
-def _seed_admin():
+def _seed_admin(must_change_password=0):
+    """Seed a fully provisioned owner.
+
+    `must_change_password` has to be written explicitly: the column is
+    `INTEGER DEFAULT 1`, because an admin who was just handed a temporary
+    password must rotate it before reaching anything. Leaving it defaulted
+    makes `enforce_admin_first_password_change` bounce every login to
+    /admin/change-password, which is correct behaviour and the wrong subject
+    for these tests -- they are about the gateway, not the rotation flow.
+    `test_first_password_change_is_enforced_before_the_shell` covers the
+    default, so opting out here cannot quietly become opting out everywhere.
+    """
     conn = sqlite3.connect(_DB_PATH)
     cur = conn.cursor()
     cur.execute("DELETE FROM admin_users WHERE email=?", (ADMIN_EMAIL,))
     now = datetime.now().isoformat()
     cur.execute(
-        "INSERT INTO admin_users (email, password_hash, role, status, failed_login_count, created_at, updated_at) "
-        "VALUES (?, ?, 'owner', 'active', 0, ?, ?)",
-        (ADMIN_EMAIL, generate_password_hash(ADMIN_PASSWORD), now, now),
+        "INSERT INTO admin_users (email, password_hash, role, status, failed_login_count, "
+        "must_change_password, created_at, updated_at) "
+        "VALUES (?, ?, 'owner', 'active', 0, ?, ?, ?)",
+        (ADMIN_EMAIL, generate_password_hash(ADMIN_PASSWORD),
+         int(must_change_password), now, now),
     )
+    conn.commit()
+    conn.close()
+
+
+def _reset_login_throttle():
+    """Forget every attempt these tests just made. There are two limiters.
+
+    `basic_abuse_guard` caps /admin/login at 8 POSTs per 300s per hashed IP in
+    the in-process dict `bot.RATE_LIMIT_BUCKETS`. It counts *every* post, not
+    just the failures, so it is the one this file trips first -- it runs out of
+    budget somewhere in the middle and every later login gets a 429 that the
+    test reads as a broken login.
+
+    `admin_gateway.login_rate_limited` meters two further dimensions over a
+    10-minute window -- ten failures per source IP, six per login identifier --
+    counted out of `admin_audit_logs`, where a CSRF-rejected post counts
+    deliberately because it is still an attempt.
+
+    Both are process-wide and neither is reset by rebuilding the admin row, so
+    from the limiters' point of view this file is a brute-force burst from one
+    IP against one identifier. Every test owns its own client, but they share
+    the process and the table, so both have to be cleared per test.
+
+    `_MEMORY_WINDOW` is the gateway's fallback for when the audit table is
+    unreadable, so it decides nothing here; it is cleared anyway so a future
+    test that does break the audit read cannot inherit a poisoned bucket.
+    """
+    bot.RATE_LIMIT_BUCKETS.clear()
+    admin_gateway._MEMORY_WINDOW.clear()
+    conn = sqlite3.connect(_DB_PATH)
+    cur = conn.cursor()
+    actions = (*admin_gateway.FAILED_LOGIN_ACTIONS,
+               admin_gateway.IDENTIFIER_FAILED_ACTION)
+    cur.execute(
+        "DELETE FROM admin_audit_logs WHERE action IN (%s)"
+        % ",".join("?" for _ in actions), actions)
     conn.commit()
     conn.close()
 
@@ -87,6 +136,8 @@ class PreAuthGatewayTests(unittest.TestCase):
 
     def setUp(self):
         self.client = bot.webhook_app.test_client()
+        _seed_admin()
+        _reset_login_throttle()
 
     # ------------------------------------------------------------------
     # Unauthenticated surface
@@ -181,6 +232,30 @@ class PreAuthGatewayTests(unittest.TestCase):
         self.assertIn("ops-status-strip", body)
         self.client.get("/admin/logout")
 
+    def test_first_password_change_is_enforced_before_the_shell(self):
+        """The other half of what `_seed_admin` opts out of.
+
+        `must_change_password` is `INTEGER DEFAULT 1`, so this is the state a
+        freshly provisioned admin is actually in, and the redirect has to come
+        before any admin page renders -- otherwise a temporary password reaches
+        the operations centre. Pinned here because every other test in this file
+        sets the column to 0 to get past it, and a fixture that silences a
+        control should not be the only thing describing it.
+        """
+        _seed_admin(must_change_password=1)
+        token = _csrf_token(self.client)
+        response = self.client.post("/admin/login", data={
+            "csrf_token": token, "email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/admin/change-password", response.headers.get("Location", ""))
+        # Not just the landing: the whole admin surface stays behind it.
+        for path in ("/admin/dashboard", "/admin/users", "/admin/security"):
+            bounced = self.client.get(path)
+            self.assertIn(bounced.status_code, (301, 302), path)
+            self.assertIn("/admin/change-password",
+                          bounced.headers.get("Location", ""), path)
+        self.client.get("/admin/logout")
+
     def test_logout_invalidates_session_and_blocks_back_navigation(self):
         _seed_admin()
         token = _csrf_token(self.client)
@@ -220,6 +295,7 @@ class AdminAuthHardeningTests(unittest.TestCase):
     def setUp(self):
         self.client = bot.webhook_app.test_client()
         _seed_admin()
+        _reset_login_throttle()
 
     def _audit_count(self, action, since=None):
         conn = sqlite3.connect(_DB_PATH)
