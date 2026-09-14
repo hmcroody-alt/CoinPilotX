@@ -219,3 +219,16 @@ def test_live_015_no_surface_hardcodes_an_invite_count():
         source = fh.read()
     offenders = re.findall(r"Invite \d+ (?:real|verified) members?", source)
     assert offenders == [], f"hardcoded invite counts in bot.py: {offenders}"
+
+
+def test_live_016_no_surface_defaults_the_required_count_to_a_literal():
+    """The number can also re-enter as a default, where no copy contains it.
+
+    ``/pulse/live`` read ``safe_int(refs.get("required"), 30)``, so the moment
+    the referral payload was missing a field the page composed the thirty-invite
+    ask again — from generated copy, on the path least likely to be reviewed.
+    """
+    with open(BOT_PY, encoding="utf-8") as fh:
+        source = fh.read()
+    offenders = re.findall(r"[\"']required[\"']\)?\s*(?:,|or)\s*(\d+)", source)
+    assert offenders == [], f"literal fallbacks for the live gate in bot.py: {offenders}"

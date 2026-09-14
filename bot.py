@@ -49398,7 +49398,7 @@ def pulse_live_page():
     refs = profile["referrals"]
     privileges = profile["privileges"]
     completed = safe_int(refs.get("completed"), 0)
-    required = max(1, safe_int(refs.get("required"), 30))
+    required = max(1, safe_int(refs.get("required"), privilege_engine.live_creator_threshold()))
     progress = min(100, int(completed / required * 100))
     studio_context_type = clean_html(request.args.get("context_type") or "general")[:40]
     studio_context_id = clean_html(request.args.get("context_id") or "")[:120]
