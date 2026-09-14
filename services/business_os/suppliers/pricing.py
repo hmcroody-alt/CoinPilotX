@@ -15,6 +15,32 @@ margin" — a claim the merchant will act on and which is not true.
 Margin states are named, not numeric, for the same reason: a caller that
 receives ``0.59`` has to decide what counts as healthy, and a caller that
 receives a state cannot accidentally decide that ``None`` is a low number.
+
+Item cost is not landed cost
+----------------------------
+The supplier's per-item cost is not what the merchant pays the supplier. CJ
+bills freight on every order, and a 45% target margin computed against the item
+alone is not a 45% margin — on a cheap, heavy product it can be a negative one.
+The merchant is nonetheless shown ``HEALTHY``, because the number is arithmetically
+correct about the wrong quantity.
+
+So shipping is a first-class, nullable input here, and every quote says which
+cost its margin was measured against via ``margin_basis``. Two things that look
+like simplifications must not happen:
+
+* ``shipping_cents or 0`` — an unknown freight cost then reads as free shipping,
+  which is the same fabrication as ``cost or 0`` and produces the same
+  confidently wrong margin.
+* dropping ``margin_basis`` because "the caller knows" — the caller is a JSON
+  payload rendered by a screen written by someone else, and a 45% that silently
+  means two different things depending on a store setting is worse than either.
+
+There is deliberately **no platform default shipping number**. A default margin
+is a policy choice the platform is entitled to make; a default freight cost is a
+claim about what a supplier charges, and §1 forbids inventing one. When nobody
+has declared an allowance, shipping is unknown, the basis is :data:`ITEM`, and
+the margin is exactly the number this module produced before landed cost
+existed — correct about the item, and now labelled as such.
 """
 
 from __future__ import annotations
@@ -47,6 +73,16 @@ LOW_BELOW = 25.0
 
 #: A price of a billion minor units is a fat-finger, not a product.
 MAX_PRICE_CENTS = 1_000_000_000
+
+#: Margin measured against the supplier's item cost alone. What every margin in
+#: this system meant before landed cost existed, and still the honest answer when
+#: no shipping figure has been declared.
+ITEM = "ITEM"
+#: Margin measured against item cost plus the merchant's declared per-unit
+#: shipping allowance. Only reachable when that allowance exists.
+LANDED = "LANDED"
+
+MARGIN_BASES = (ITEM, LANDED)
 
 
 class PricingRejected(ValueError):
@@ -128,6 +164,58 @@ def apply_rule(rule, cost_cents) -> int | None:
     return price
 
 
+def normalize_shipping(shipping_cents) -> int | None:
+    """A per-unit shipping allowance as a usable integer, or ``None``.
+
+    ``None`` for anything that is not a plain non-negative integer within
+    :data:`MAX_PRICE_CENTS` — including ``True``, which ``isinstance(x, int)``
+    accepts and which would otherwise become a one-cent freight charge.
+
+    Zero is a real answer and must survive: suppliers do ship free, and a
+    merchant who declares "freight is included in the item cost" has said
+    something specific. Collapsing ``0`` into ``None`` here would turn that
+    declaration into "unknown" and downgrade their quotes to :data:`ITEM` basis
+    for stating the very fact that makes the two bases identical.
+    """
+    if shipping_cents is None or isinstance(shipping_cents, bool):
+        return None
+    if not isinstance(shipping_cents, (int, float)):
+        return None
+    value = float(shipping_cents)
+    if value != value or value in (float("inf"), float("-inf")):
+        return None
+    if value < 0 or value > MAX_PRICE_CENTS:
+        return None
+    return int(value)
+
+
+def landed_cost_cents(cost_cents, shipping_cents) -> int | None:
+    """Item cost plus shipping, or ``None`` when either half is unknown.
+
+    The one rule, applied to a second input. An unknown freight cost does not
+    make landed cost equal to item cost — that is the ``shipping_cents or 0``
+    fabrication with an extra step, and it produces a landed margin identical to
+    the item margin while claiming to have accounted for shipping.
+
+    A known cost with unknown shipping therefore returns ``None``, and the caller
+    is expected to fall back to the item basis *explicitly* rather than receive a
+    number that quietly already has.
+    """
+    shipping = normalize_shipping(shipping_cents)
+    if shipping is None or cost_cents is None:
+        return None
+    try:
+        cost = int(cost_cents)
+    except (TypeError, ValueError):
+        return None
+    if cost < 0:
+        return None
+    total = cost + shipping
+    if total > MAX_PRICE_CENTS:
+        return None
+    return total
+
+
 def margin_cents(retail_cents, cost_cents) -> int | None:
     """Gross profit in minor units, or None when either side is unknown.
 
@@ -179,20 +267,57 @@ def margin_state(retail_cents, cost_cents) -> str:
     return HEALTHY
 
 
-def quote(rule, cost_cents, retail_cents=None) -> dict:
+def basis(cost_cents, shipping_cents) -> tuple[str, int | None]:
+    """Which cost this quote is measured against, and what it is.
+
+    :data:`LANDED` exactly when a landed cost could be computed, :data:`ITEM`
+    otherwise. Returned as a pair so that the name and the number cannot drift
+    apart: every caller that reports one reports the other from the same call,
+    rather than recomputing the condition and getting it subtly different.
+    """
+    landed = landed_cost_cents(cost_cents, shipping_cents)
+    if landed is None:
+        return ITEM, cost_cents
+    return LANDED, landed
+
+
+def quote(rule, cost_cents, retail_cents=None, shipping_cents=None) -> dict:
     """The full economics of one variant, for display.
 
     ``retail_cents`` overrides the rule when the merchant has already set a
     price — merchant-entered prices always win over a computed proposal, which
     is the storefront half of the merchant/supplier field-ownership split.
+
+    ``shipping_cents`` is the merchant's declared per-unit shipping allowance, and
+    when it is present *everything* here moves onto the landed basis: the proposed
+    price, the margin, and the state. A store that declares its freight and then
+    receives a price computed as though freight were free would have declared it
+    for nothing.
+
+    Omitting it reproduces this function's output before landed cost existed,
+    plus the four new keys — ``shipping_cents`` and ``landed_cost_cents`` as
+    ``None``, ``basis_cost_cents`` equal to ``cost_cents``, and ``margin_basis``
+    as :data:`ITEM`. Existing callers therefore see no number change, which is
+    the point: the new basis arrives only where a merchant asked for it.
+
+    ``cost_cents`` stays the *item* cost in the payload. It is the number the
+    supplier stated and the one the variant row stores, and overwriting it with
+    the landed figure would make the quote disagree with the database about what
+    the supplier charges for the product.
     """
-    proposed = apply_rule(rule, cost_cents)
+    shipping = normalize_shipping(shipping_cents)
+    margin_basis, basis_cents = basis(cost_cents, shipping)
+    proposed = apply_rule(rule, basis_cents)
     retail = retail_cents if retail_cents is not None else proposed
     return {
         "cost_cents": cost_cents,
+        "shipping_cents": shipping,
+        "landed_cost_cents": landed_cost_cents(cost_cents, shipping),
+        "basis_cost_cents": basis_cents,
+        "margin_basis": margin_basis,
         "retail_cents": retail,
         "proposed_retail_cents": proposed,
-        "margin_cents": margin_cents(retail, cost_cents),
-        "margin_percent": margin_percent(retail, cost_cents),
-        "margin_state": margin_state(retail, cost_cents),
+        "margin_cents": margin_cents(retail, basis_cents),
+        "margin_percent": margin_percent(retail, basis_cents),
+        "margin_state": margin_state(retail, basis_cents),
     }

@@ -546,7 +546,16 @@ def test_import_selected_accepts_no_economic_input_from_the_caller():
     accepted = set(inspect.signature(importer.import_selected).parameters)
     forbidden = {"cost_cents", "cost", "price_cents", "price", "retail_cents",
                  "title", "description", "stock", "stock_quantity", "inventory",
-                 "variants", "product", "products", "media", "supplier_cost_cents"}
+                 "variants", "product", "products", "media", "supplier_cost_cents",
+                 # Freight belongs on this list, and it is here because the rule
+                 # was learned the hard way: a `shipping_allowance_cents` override
+                 # was written onto this function and this test failed before it
+                 # could reach a price. `pricing_rule` is a *strategy* whose every
+                 # input is server-read; an allowance is a *cost*, and this
+                 # boundary is about costs. It is declared on the store-policy
+                 # PATCH, authenticated and attributable, and read from there.
+                 "shipping_cents", "shipping_allowance_cents", "shipping",
+                 "landed_cost_cents", "freight_cents"}
     assert not (accepted & forbidden), sorted(accepted & forbidden)
     assert accepted == {"business_id", "store_id", "actor_user_id", "connection_id",
                         "item_ids", "pricing_rule", "context", "adapter"}

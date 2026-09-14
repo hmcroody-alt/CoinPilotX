@@ -35,7 +35,8 @@ from decimal import Decimal
 from services import db, marketplace_variants as variants
 from services import marketplace_listing_lifecycle as lifecycle
 from services import marketplace_supplier_schema as supplier_schema
-from services.business_os.suppliers import connections, normalize, policy, pricing
+from services.business_os.suppliers import (connections, normalize, policy, pricing,
+                                            store_policy)
 from services.business_os.suppliers.errors import SupplierError
 
 # Publication validation codes. Every one names a specific thing the merchant
@@ -202,6 +203,13 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
     try:
         _, seller_user_id = _scope(conn, business_id, store_id, actor_user_id,
                                    connection_id, context=context)
+        # The Review screen's margin must be the margin the publish gate will
+        # judge. Two different bases between the number a merchant reads and the
+        # number that decides whether their product goes live is the worst
+        # possible place for this to disagree: they would be told HEALTHY and
+        # then refused for NEGATIVE_MARGIN on the same listing.
+        shipping_cents, shipping_source = store_policy.resolve_shipping_allowance(
+            conn, business_id, store_id)
         cur = conn.cursor()
         listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
         source = variants.source_for(cur, listing_id)
@@ -215,7 +223,8 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
 
     priced = []
     for variant in rows:
-        economics = pricing.quote(rule, variant.get("cost_cents"), _retail_of(variant))
+        economics = pricing.quote(rule, variant.get("cost_cents"), _retail_of(variant),
+                                  shipping_cents=shipping_cents)
         priced.append({
             "variant_id": variant.get("id"),
             "options": variant.get("options"),
@@ -241,6 +250,13 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
         "media": media,
         "cover_image_url": _cover_of(listing),
         "variants": priced,
+        # Stated once at the top level rather than only implied by each
+        # variant's `margin_basis`. A screen showing "45%" beside a cost needs to
+        # be able to say what that percentage is *of* without inspecting a
+        # variant, and `None` here is the honest report that no freight figure
+        # exists -- not that shipping is free.
+        "shipping_allowance_cents": shipping_cents,
+        "shipping_allowance_source": shipping_source,
         "supplier": {
             "provider": source.get("provider"),
             "fulfillment_mode": source.get("fulfillment_mode"),
@@ -618,7 +634,7 @@ def _validate(listing, priced, source, media):
     return {"publishable": not problems, "problems": problems}
 
 
-def _publish_core(cur, listing_id, seller_user_id, listing):
+def _publish_core(cur, listing_id, seller_user_id, listing, shipping_cents=None):
     """The publish gate and the write it guards, against an open cursor.
 
     Extracted so that the merchant's explicit Publish and the importer's
@@ -651,7 +667,8 @@ def _publish_core(cur, listing_id, seller_user_id, listing):
         "stock_quantity": v.get("stock_quantity"),
         "retail_cents": _retail_of(v),
         "availability": variants.availability(v),
-        "margin_state": pricing.margin_state(_retail_of(v), v.get("cost_cents")),
+        "margin_state": pricing.margin_state(
+            _retail_of(v), pricing.basis(v.get("cost_cents"), shipping_cents)[1]),
     } for v in rows]
     media = _media_of(listing)
     verdict = _validate(listing, priced, source, media)
@@ -782,7 +799,15 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
                                    connection_id, context=context, write=True)
         cur = conn.cursor()
         listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
-        _, result = _publish_core(cur, listing_id, seller_user_id, listing)
+        # The gate has to weigh the same cost the importer priced against. A
+        # store that declared its freight and whose product is above water on
+        # item cost but under it once shipping is counted is exactly the listing
+        # NEGATIVE_MARGIN exists to stop, and resolving the rule but not the
+        # allowance would wave it through.
+        shipping_cents, _ = store_policy.resolve_shipping_allowance(
+            conn, business_id, store_id)
+        _, result = _publish_core(cur, listing_id, seller_user_id, listing,
+                                  shipping_cents)
         if result is None:
             raise SupplierError("publication_blocked", http_status=422)
         # The same read-back the automatic path performs. A merchant who tapped
@@ -799,7 +824,7 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
     return result
 
 
-def autopublish(cur, listing_id, seller_user_id) -> dict:
+def autopublish(cur, listing_id, seller_user_id, shipping_cents=None) -> dict:
     """Finish a freshly imported listing: run the gate, publish, read it back.
 
     The importer's half of §18. It exists so that :mod:`importer` never contains
@@ -819,7 +844,8 @@ def autopublish(cur, listing_id, seller_user_id) -> dict:
     rather than a merchant-facing outcome.
     """
     listing_id, listing = _owned_listing(cur, listing_id, seller_user_id)
-    verdict, result = _publish_core(cur, listing_id, seller_user_id, listing)
+    verdict, result = _publish_core(cur, listing_id, seller_user_id, listing,
+                                    shipping_cents)
     if result is None:
         return {"published": False, "problems": verdict["problems"]}
     readback = verify_published(cur, listing_id, seller_user_id)

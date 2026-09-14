@@ -343,13 +343,24 @@ def _iso():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _write_variants(cur, listing_id, seller_user_id, chosen, rule):
+def _write_variants(cur, listing_id, seller_user_id, chosen, rule,
+                    shipping_cents=None):
     """Create the listing's variants from authoritative provider facts.
 
     ``price_cents`` comes from the pricing rule and is ``None`` under manual
     pricing or unknown cost — a variant with no price defers to the listing, and
     the publish gate refuses to publish a listing whose variants have no price.
     That chain is what stops an unpriced import from reaching a buyer.
+
+    The rule is applied to ``pricing.basis``'s cost, not to ``cost_cents``, so a
+    store that has declared a per-unit shipping allowance gets a target margin on
+    what it actually pays the supplier. With no allowance the basis *is* the item
+    cost and this is the arithmetic it always was.
+
+    ``cost_cents`` is still written as the item cost. It is what the supplier
+    said, it is what a later ``plan_cost_revision`` compares its next read
+    against, and storing the landed figure there would make every subsequent
+    supplier read look like a price change of exactly the allowance.
 
     ``stock_state`` goes through ``storage_stock_state``, which maps every
     indeterminate state onto ``UNKNOWN``. It must not map onto ``OUT_OF_STOCK``:
@@ -358,6 +369,7 @@ def _write_variants(cur, listing_id, seller_user_id, chosen, rule):
     written = []
     for position, variant in enumerate(chosen):
         cost = variant.get("cost_cents")
+        _, basis_cost = pricing.basis(cost, shipping_cents)
         cur_variant_id = variants.upsert_variant(
             cur,
             listing_id=listing_id,
@@ -365,7 +377,7 @@ def _write_variants(cur, listing_id, seller_user_id, chosen, rule):
             options=variant.get("options"),
             sku=variant.get("external_sku"),
             provider_variant_id=variant.get("external_variant_id"),
-            price_cents=pricing.apply_rule(rule, cost),
+            price_cents=pricing.apply_rule(rule, basis_cost),
             cost_cents=cost,
             currency=variant.get("currency"),
             stock_state=normalize.storage_stock_state(variant.get("stock_state")),
@@ -424,7 +436,7 @@ def _sole_orderable(chosen):
 
 def _import_one(conn, *, seller_user_id, business_id, store_id,
                 actor_user_id, connection_id, provider, external_product_id,
-                selection, rule, auto_publish, marketplace_autolist,
+                selection, rule, shipping_cents, auto_publish, marketplace_autolist,
                 context, adapter):
     """One cart item, one transaction. Returns (outcome, payload).
 
@@ -457,7 +469,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
 
     listing_id = _create_draft_listing(cur, seller_user_id, product,
                                        marketplace_autolist=marketplace_autolist)
-    _write_variants(cur, listing_id, seller_user_id, chosen, rule)
+    _write_variants(cur, listing_id, seller_user_id, chosen, rule, shipping_cents)
 
     low, high = normalize.cost_range(chosen)
     variants.link_source(
@@ -513,7 +525,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
     # same transaction, so there is no window in which a half-finished listing
     # is visible to another reader and no outcome that is committed before it is
     # known. `autopublish` does the read-back (§35) and returns codes, not prose.
-    finish = drafts.autopublish(cur, listing_id, seller_user_id)
+    finish = drafts.autopublish(cur, listing_id, seller_user_id, shipping_cents)
     if not finish["published"]:
         return NEEDS_ATTENTION, {
             **payload,
@@ -557,6 +569,19 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
     every import landed unpriced. It now means "the store has not been asked" and
     resolution falls to :func:`store_policy.resolve_rule`. The Import Cart's rule
     picker is unaffected and still wins.
+
+The store's per-unit shipping allowance is resolved here too, and unlike the
+    rule it has **no request tier**. ``pricing_rule`` is a client-nameable
+    *strategy* whose every input is server-read; an allowance is a *cost*, and
+    the module rule above is that the client does not send costs. It is also the
+    one §1 names specifically. So it comes from the store's saved policy only,
+    set on the settings screen through ``store_policy.write``, where it is
+    authenticated, persisted and attributable — rather than asserted per request
+    by whatever is holding the token.
+
+    ``test_import_selected_accepts_no_economic_input_from_the_caller`` pins that,
+    and pinned it the hard way: this function briefly took the override, and the
+    test failed before it could reach a price. Which is what it is for.
     """
     policy.require_enabled()
     import_cart.ensure_schema()
@@ -583,6 +608,8 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
         store = store_policy.get_policy(conn, business_id, store_id)
         rule, pricing_source = store_policy.resolve_rule(
             conn, business_id, store_id, pricing_rule)
+        shipping_cents, shipping_source = store_policy.resolve_shipping_allowance(
+            conn, business_id, store_id)
     finally:
         conn.close()
 
@@ -618,7 +645,8 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
                 business_id=business_id, store_id=store_id, actor_user_id=actor_user_id,
                 connection_id=connection_id, provider=provider,
                 external_product_id=external_product_id, selection=selection,
-                rule=rule, auto_publish=store["auto_publish"],
+                rule=rule, shipping_cents=shipping_cents,
+                auto_publish=store["auto_publish"],
                 marketplace_autolist=store["marketplace_autolist"],
                 context=context, adapter=adapter)
             conn.commit()
@@ -676,6 +704,14 @@ def import_selected(business_id, store_id, actor_user_id, connection_id, *,
         # *why* their products are priced the way they are, and a test can tell
         # "the store chose 45%" from "nobody chose and the platform did".
         "pricing_source": pricing_source,
+        # Reported beside the rule because they are one answer, not two: "45%"
+        # means a different price depending on whether freight was in the basis,
+        # and a merchant reading the import summary cannot tell which they got
+        # without being told. `None` here is the honest report that nobody has
+        # declared a shipping cost, not that shipping is free.
+        "shipping_allowance_cents": shipping_cents,
+        "shipping_allowance_source": shipping_source,
+        "margin_basis": pricing.LANDED if shipping_cents is not None else pricing.ITEM,
         "auto_publish": store["auto_publish"],
         "marketplace_autolist": store["marketplace_autolist"],
     }

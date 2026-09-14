@@ -213,9 +213,23 @@ def set_store_policy():
         rule = body.get("pricing_rule")
         if rule is not None and not isinstance(rule, dict):
             raise SupplierError("invalid_input", http_status=400)
-        if rule is None and not fields:
+        # Three accepted shapes, and the third is why this is more than a type
+        # check. Absent/null means "leave it alone", like every other field on
+        # this PATCH; a non-negative integer declares it; and the string
+        # `CLEAR_ALLOWANCE` erases it, because a merchant who declared their
+        # freight and then realised they could not stand behind the number needs
+        # a way back to "unknown" that is not zero. Zero is a claim that shipping
+        # is free, and it will be priced as one.
+        allowance = body.get("shipping_allowance_cents")
+        if allowance is not None and allowance != store_policy.CLEAR_ALLOWANCE:
+            # `type(...) is not int`, not `isinstance`: True is an int to
+            # isinstance and would be saved as a one-cent freight charge.
+            if type(allowance) is not int:
+                raise SupplierError("invalid_shipping_allowance", http_status=400)
+        if rule is None and allowance is None and not fields:
             raise SupplierError("invalid_input", http_status=400)
         result = store_policy.write(business_id, store_id, actor, pricing_rule=rule,
+                                    shipping_allowance_cents=allowance,
                                     context=context, **fields)
         return _respond({"ok": True, "policy": result})
     except Exception as exc:
@@ -323,6 +337,10 @@ def import_selected(connection_id):
         actor, context = _request_context(write=True)
         body = _body()
         business_id, store_id = _scope(body)
+        # No `shipping_allowance_cents` here, deliberately. The store's freight
+        # allowance is a cost, and this route accepts no costs -- it is set on
+        # the store-policy PATCH above and read from there. See
+        # `importer.import_selected`.
         result = importer.import_selected(business_id, store_id, actor, connection_id,
                                           item_ids=body.get("item_ids"),
                                           pricing_rule=body.get("pricing_rule"),

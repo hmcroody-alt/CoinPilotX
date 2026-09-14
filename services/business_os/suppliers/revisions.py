@@ -176,7 +176,8 @@ def _int_or_none(value):
         return None
 
 
-def plan_cost_revision(*, source, variant, rule, observed_cost_cents) -> dict:
+def plan_cost_revision(*, source, variant, rule, observed_cost_cents,
+                       shipping_cents=None) -> dict:
     """Decide what one variant's cost and price become after a supplier read.
 
     Pure. Returns ``cost_cents`` / ``price_cents`` where ``None`` means "leave
@@ -196,12 +197,31 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents) -> dict:
     variant's figure, so comparing every variant against it would report a
     "change" for each sibling whose cost merely differs from the bound one, on
     every single tick.
+
+    ``shipping_cents`` is the store's declared per-unit shipping allowance and it
+    is threaded here for the same reason ``rule`` is: the importer prices against
+    ``pricing.basis``, and a reprice that dropped back to the item cost would
+    undo the allowance on the first supplier cost change. That is the "two
+    pricing engines" failure §9 names, arrived at by omission rather than by
+    someone writing a second formula.
+
+    Note what it does *not* change: the cost comparison. ``observed == stored_cost``
+    is a question about what the supplier charges for the item, and adding a
+    constant to both sides of it would answer identically while making the
+    intent unreadable. Only the margin and the proposed price move onto the
+    landed basis.
     """
     stored_cost = _int_or_none((variant or {}).get("cost_cents"))
     if stored_cost is None:
         stored_cost = _int_or_none((source or {}).get("supplier_cost_cents"))
     retail = _int_or_none((variant or {}).get("price_cents"))
     observed = _int_or_none(observed_cost_cents)
+    # Resolved once each, so no branch below can measure its margin against a
+    # different basis than the one beside it. `pricing.basis` answers ITEM with
+    # the cost unchanged whenever there is no usable allowance, which is what
+    # every one of these calls did before.
+    _, stored_basis = pricing.basis(stored_cost, shipping_cents)
+    _, observed_basis = pricing.basis(observed, shipping_cents)
 
     if observed is None or observed < 0:
         # An unreadable or nonsense cost is not a cost. Writing it would replace
@@ -210,7 +230,7 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents) -> dict:
             "action": COST_UNREADABLE,
             "cost_cents": None,
             "price_cents": None,
-            "margin_state": pricing.margin_state(retail, stored_cost),
+            "margin_state": pricing.margin_state(retail, stored_basis),
             "attention": COST_UNAVAILABLE if stored_cost is None else None,
         }
 
@@ -219,7 +239,7 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents) -> dict:
             "action": UNCHANGED,
             "cost_cents": None,
             "price_cents": None,
-            "margin_state": pricing.margin_state(retail, stored_cost),
+            "margin_state": pricing.margin_state(retail, stored_basis),
             "attention": None,
         }
 
@@ -240,12 +260,12 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents) -> dict:
     may_reprice = "price_label" in variants.sync_updates_allowed(
         source, {"price_label": True})
     kind = (rule or {}).get("type", pricing.MANUAL_PRICE)
-    proposed = pricing.apply_rule(rule, observed) if may_reprice else None
+    proposed = pricing.apply_rule(rule, observed_basis) if may_reprice else None
 
     if kind == pricing.MANUAL_PRICE or not may_reprice:
         # Cost recorded, price untouched. The margin is now whatever it is, and
         # saying so is the only service this branch can render.
-        state = pricing.margin_state(retail, observed)
+        state = pricing.margin_state(retail, observed_basis)
         return {
             "action": COST_RECORDED,
             "cost_cents": observed,
@@ -268,11 +288,11 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents) -> dict:
             "action": COST_RECORDED,
             "cost_cents": observed,
             "price_cents": None,
-            "margin_state": pricing.margin_state(retail, observed),
+            "margin_state": pricing.margin_state(retail, observed_basis),
             "attention": REPRICE_IMPOSSIBLE,
         }
 
-    state = pricing.margin_state(proposed, observed)
+    state = pricing.margin_state(proposed, observed_basis)
     return {
         "action": REPRICED,
         "cost_cents": observed,
@@ -508,7 +528,7 @@ def _apply_stock(cur, *, source, rows, readings, now) -> dict:
     return {"variants": touched, "attention": attention, "sync_state": sync_state}
 
 
-def _apply_cost(cur, *, source, listing, rows, costs, rule, now) -> dict:
+def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, now) -> dict:
     """Write one listing's costs and rule-held prices from a product read."""
     listing_id = int(source["listing_id"])
     seller_user_id = int(source["seller_user_id"])
@@ -520,7 +540,8 @@ def _apply_cost(cur, *, source, listing, rows, costs, rule, now) -> dict:
         if not reference or reference not in costs:
             continue
         plan = plan_cost_revision(source=source, variant=row, rule=rule,
-                                  observed_cost_cents=costs[reference])
+                                  observed_cost_cents=costs[reference],
+                                  shipping_cents=shipping_cents)
         assignments, args = [], []
         if plan["cost_cents"] is not None:
             assignments.append("cost_cents=?")
@@ -595,7 +616,7 @@ def _readings(kind, provider, payload) -> dict:
         return {}
 
 
-def _apply_to_listing(binding, *, kind, readings, rule, now) -> dict:
+def _apply_to_listing(binding, *, kind, readings, rule, shipping_cents, now) -> dict:
     """Everything one listing's revision writes, in one transaction.
 
     A connection per listing, not per tick. One listing whose write fails must
@@ -626,7 +647,8 @@ def _apply_to_listing(binding, *, kind, readings, rule, now) -> dict:
             result = _apply_stock(cur, source=source, rows=rows, readings=readings, now=now)
         else:
             result = _apply_cost(cur, source=source, listing=listing, rows=rows,
-                                 costs=readings, rule=rule, now=now)
+                                 costs=readings, rule=rule,
+                                 shipping_cents=shipping_cents, now=now)
         if result["variants"]:
             cur.execute(
                 f"UPDATE {variants.SOURCE_TABLE} SET sync_state=?, last_synced_at=?, "
@@ -673,12 +695,19 @@ def apply_supplier_read(*, connection_id, business_id, store_id, kind, resource_
             business_id=business_id, store_id=store_id,
             provider_product_id=resource_id)
         rule = None
+        shipping_cents = None
         if kind == "product":
             # Resolved once for the whole read, on the same connection, exactly
             # as `importer` resolves it once for a whole batch: per listing would
             # be the same answer plus N reads, and would let a policy edited
             # mid-tick reprice half of one product's listings differently.
             rule, _ = store_policy.resolve_rule(conn, business_id, store_id)
+            # Resolved beside the rule, never separately. The importer priced
+            # against `pricing.basis(cost, allowance)`; a reprice that resolved
+            # the rule but not the allowance would hold the merchant's margin
+            # policy against the wrong cost on the first supplier price move.
+            shipping_cents, _ = store_policy.resolve_shipping_allowance(
+                conn, business_id, store_id)
     finally:
         conn.close()
 
@@ -688,7 +717,8 @@ def apply_supplier_read(*, connection_id, business_id, store_id, kind, resource_
         if not readings or str(binding.get("fulfillment_mode") or "").strip().upper() == MODE_STOCKED:
             out["skipped"] += 1
             continue
-        result = _apply_to_listing(binding, kind=kind, readings=readings, rule=rule, now=now)
+        result = _apply_to_listing(binding, kind=kind, readings=readings, rule=rule,
+                                   shipping_cents=shipping_cents, now=now)
         if result.get("skipped"):
             out["skipped"] += 1
             continue

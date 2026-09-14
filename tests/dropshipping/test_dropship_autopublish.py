@@ -773,10 +773,12 @@ def test_mutation_i_removing_the_read_back_is_caught(provider):
                     " published_at=NULL WHERE id=?", (listing_id,))
         original = drafts._publish_core
 
-        def publish_to_nobody(cursor, lid, seller_user_id, row):
+        def publish_to_nobody(cursor, lid, seller_user_id, row, shipping_cents=None):
             # The gate runs for real against the real listing; only the write is
-            # aimed at an identity that owns nothing.
-            return original(cursor, lid, 999999, row)
+            # aimed at an identity that owns nothing. The shipping allowance is
+            # forwarded untouched: this mutation is about the read-back, and a
+            # stub that dropped it would silently test item-cost margins instead.
+            return original(cursor, lid, 999999, row, shipping_cents)
 
         drafts._publish_core = publish_to_nobody
         try:

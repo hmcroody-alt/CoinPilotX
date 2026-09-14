@@ -231,6 +231,125 @@ def test_an_empty_patch_is_refused(client):
 
 
 # ---------------------------------------------------------------------------
+# The shipping allowance — §12
+# ---------------------------------------------------------------------------
+#
+# This route is the *only* way a freight figure enters the system. §12's whole
+# arithmetic (``tests/dropshipping/test_dropship_landed_cost.py``) is reachable
+# by exactly one merchant action, and it is a PATCH here — the import route
+# deliberately accepts no cost, and there is no platform default. So a route that
+# dropped the field would leave landed-cost pricing implemented and unreachable,
+# which is the §31 failure: a feature that exists only in tests.
+
+def test_a_merchant_can_declare_what_their_supplier_charges_to_ship(client):
+    scope = scope_of(client, SELLER)
+    response = patch_policy(client, scope, shipping_allowance_cents=900)
+    policy = response.get_json()["policy"]
+
+    assert response.status_code == 200
+    assert policy["shipping_allowance_cents"] == 900
+    assert policy["shipping_allowance_source"] == store_policy.SOURCE_STORE
+    # And it is the answer the next read gives, not just the one the write echoed.
+    assert read_policy(client, scope).get_json()["policy"][
+        "shipping_allowance_cents"] == 900
+
+
+def test_an_unconfigured_store_reports_no_allowance_rather_than_a_free_one(client):
+    """``None`` over the wire, not ``0``.
+
+    A client reading ``0`` would render "Shipping: free" for every store that has
+    never opened the screen, and the margin beside it would be the item margin
+    claiming to be a landed one.
+    """
+    scope = scope_of(client, SELLER)
+    policy = read_policy(client, scope).get_json()["policy"]
+    assert policy["shipping_allowance_cents"] is None
+    assert policy["shipping_allowance_source"] == store_policy.SOURCE_PLATFORM
+
+
+def test_a_merchant_can_take_the_declaration_back(client):
+    """``None`` already means "leave this alone", so un-declaring needs a third value.
+
+    It has to survive a JSON round trip to get here at all, which is why
+    ``CLEAR_ALLOWANCE`` is a string rather than a sentinel object.
+    """
+    scope = scope_of(client, SELLER)
+    patch_policy(client, scope, shipping_allowance_cents=900)
+    response = patch_policy(client, scope,
+                            shipping_allowance_cents=store_policy.CLEAR_ALLOWANCE)
+    assert response.status_code == 200
+    assert response.get_json()["policy"]["shipping_allowance_cents"] is None
+    assert read_policy(client, scope).get_json()["policy"][
+        "shipping_allowance_cents"] is None
+
+
+def test_declaring_shipping_leaves_the_margin_alone(client):
+    scope = scope_of(client, SELLER)
+    patch_policy(client, scope, pricing_rule={"type": pricing.MULTIPLIER, "value": 3})
+    patch_policy(client, scope, shipping_allowance_cents=900)
+    policy = read_policy(client, scope).get_json()["policy"]
+    assert policy["pricing_rule"] == {"type": pricing.MULTIPLIER, "value": 3.0}
+    assert policy["shipping_allowance_cents"] == 900
+
+
+def test_true_is_not_nine_dollars_of_freight(client):
+    """``isinstance(True, int)`` is ``True``, which is why the route uses ``type(...) is``.
+
+    ``{"shipping_allowance_cents": true}`` is a shape a buggy client sends, and
+    accepting it stores a one-cent freight charge — small enough that no margin
+    badge ever changes, so nothing would ever surface it.
+    """
+    scope = scope_of(client, SELLER)
+    # `"0"` is in the list deliberately: it is the shape a text input produces,
+    # and it is the one wrong value that would otherwise be stored as the
+    # perfectly plausible "shipping is free".
+    for value in (True, False, "900", "0", 900.5, [], {}):
+        response = patch_policy(client, scope, shipping_allowance_cents=value)
+        assert response.status_code == 400, (value, response.get_json())
+    assert read_policy(client, scope).get_json()["policy"][
+        "shipping_allowance_cents"] is None
+
+
+def test_a_negative_allowance_is_refused_as_an_allowance(client):
+    """A 400 naming the field, not a 503 blaming the supplier.
+
+    ``PricingRejected`` carries no HTTP status, so an untranslated one reaches
+    ``_error`` as ``supplier_unavailable``. The merchant typed a number; they are
+    entitled to be told it was the number. The route pre-checks the type for the
+    same reason.
+    """
+    scope = scope_of(client, SELLER)
+    response = patch_policy(client, scope, shipping_allowance_cents=-100)
+    body = response.get_json()
+    assert response.status_code == 400
+    assert body["error_code"] == "invalid_shipping_allowance"
+
+
+def test_zero_is_accepted_because_it_is_a_real_answer(client):
+    """A merchant whose supplier bundles freight into the item price says so this way.
+
+    Refusing zero would leave them no way to distinguish "shipping is included"
+    from "we do not know", and those two produce different margins and different
+    badges.
+    """
+    scope = scope_of(client, SELLER)
+    assert patch_policy(client, scope, shipping_allowance_cents=0).status_code == 200
+    policy = read_policy(client, scope).get_json()["policy"]
+    assert policy["shipping_allowance_cents"] == 0
+    assert policy["shipping_allowance_source"] == store_policy.SOURCE_STORE
+
+
+def test_one_merchant_cannot_declare_anothers_freight(client):
+    """Consequential: it reprices a stranger's whole catalogue on the next sync."""
+    victim = scope_of(client, SELLER)
+    sign_in(client, OTHER)
+    assert patch_policy(client, victim, shipping_allowance_cents=900).status_code == 404
+    sign_in(client, SELLER)
+    assert read_policy(client, victim).get_json()["policy"][
+        "shipping_allowance_cents"] is None
+
+
+# ---------------------------------------------------------------------------
 # Refusals
 # ---------------------------------------------------------------------------
 
