@@ -406,6 +406,33 @@ def test_a_cost_nudge_the_merchant_absorbed_harmlessly_is_not_news(provider):
     assert trail() == []
 
 
+def test_a_loss_that_is_merely_continuing_does_not_refile_itself(provider):
+    """Restraint, checked against the change that made it fragile.
+
+    `plan_cost_revision` used to report `attention` only on the tick a cost moved,
+    which made "did anything need a human" and "did anything change" the same
+    question and let the trail trigger on the raw flag. It now restates the loss
+    on every tick, because the merchant's screen has to describe the present --
+    so the trail has to compare against what was already stored instead.
+
+    Get that wrong and `worker`, re-reading every imported product every 900s,
+    files the same SELLING_BELOW_COST row ninety-six times a day and buries the
+    price history it exists to preserve under a fact that never changed.
+    """
+    listing_id = live_listing(provider)
+    own_the_price(listing_id)
+
+    apply_read("product", cost_rise("400.00"))
+    assert len(trail()) == 1, "sanity: the collapse was filed once"
+
+    # Nothing has moved: same supplier cost, same merchant price, same loss.
+    apply_read("product", cost_rise("400.00"))
+    apply_read("product", cost_rise("400.00"))
+
+    assert len(trail()) == 1, \
+        "an ongoing loss is one event, not one per reconciliation tick"
+
+
 # ---------------------------------------------------------------------------
 # 5. The half that is not a reprice
 # ---------------------------------------------------------------------------

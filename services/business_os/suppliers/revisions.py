@@ -124,6 +124,7 @@ not revisions, and pointing revisions at it would reuse a vocabulary that means
 
 from __future__ import annotations
 
+import json
 import time
 from datetime import datetime, timezone
 
@@ -167,6 +168,68 @@ REPRICE_IMPOSSIBLE = "REPRICE_IMPOSSIBLE"
 
 ATTENTION_REASONS = (MARGIN_LOST, SELLING_BELOW_COST, COST_UNAVAILABLE,
                      SUPPLIER_OUT_OF_STOCK, STOCK_UNREADABLE, REPRICE_IMPOSSIBLE)
+
+#: Which read can speak about which reason, because clearing is the whole
+#: difficulty of storing these at all.
+#:
+#: A reason that never clears is worse than no reason: a merchant who fixes their
+#: price and still sees "selling below cost" learns to ignore the flag, and then
+#: the flag has cost them the next real one. So each read rewrites the reasons it
+#: is *entitled* to rewrite and leaves the rest alone. A ``product`` read knows
+#: the cost side and knows nothing whatever about a warehouse; if it cleared the
+#: whole list it would erase a sell-out that is still true, on a cadence, every
+#: time a supplier's price held steady.
+#:
+#: The equality assertion below is the point of the two tuples. Adding a seventh
+#: reason without deciding which read owns it would otherwise produce a reason
+#: that is raised and never cleared by anything, and that failure would surface
+#: months later as a stuck flag rather than here as an import error.
+COST_REASONS = (MARGIN_LOST, SELLING_BELOW_COST, COST_UNAVAILABLE, REPRICE_IMPOSSIBLE)
+STOCK_REASONS = (SUPPLIER_OUT_OF_STOCK, STOCK_UNREADABLE)
+assert set(COST_REASONS) | set(STOCK_REASONS) == set(ATTENTION_REASONS)
+assert not set(COST_REASONS) & set(STOCK_REASONS)
+
+#: The read kind each family belongs to, keyed as ``apply_supplier_read`` names it.
+REASONS_BY_KIND = {"product": COST_REASONS, "inventory": STOCK_REASONS}
+
+
+def merge_attention(stored, kind, raised):
+    """The listing's attention list after a read of ``kind`` raised ``raised``.
+
+    Replaces this read's own family wholesale — including with nothing, which is
+    how a resolved problem disappears — and preserves every reason belonging to
+    the other family untouched.
+
+    Order is the declaration order of :data:`ATTENTION_REASONS`, not the order the
+    planner happened to append in. Two reads that concluded the same thing must
+    produce the same stored text, or every unchanged tick looks like a change to
+    anything comparing rows.
+    """
+    owned = set(REASONS_BY_KIND.get(kind) or ())
+    keep = {r for r in (stored or []) if r in ATTENTION_REASONS and r not in owned}
+    keep |= {r for r in (raised or []) if r in owned}
+    return [reason for reason in ATTENTION_REASONS if reason in keep]
+
+
+def stored_attention(source) -> list:
+    """The reasons already on a source row, tolerating every shape it can hold.
+
+    The column arrives NULL on every row imported before it existed, and JSON is
+    not a guarantee the database makes. A reconciler that raised on a malformed
+    blob would take down the reprice of a listing whose *price* was perfectly
+    readable, so an unreadable list is treated as an empty one and the current
+    read simply re-states what it finds.
+    """
+    raw = (source or {}).get("attention_json")
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed if str(item) in ATTENTION_REASONS]
 
 
 def _row_time(now) -> str:
@@ -279,12 +342,25 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents,
         }
 
     if stored_cost is not None and observed == stored_cost:
+        # The cost did not move; the margin is still whatever it is. `attention`
+        # was `None` here for as long as this function only fed a per-tick counter,
+        # and that was survivable while nothing stored the answer. It is not
+        # survivable now that it does: a listing selling below cost would raise the
+        # reason on the one tick the cost moved and have it cleared by the next
+        # tick fifteen minutes later, leaving the merchant's screen clean while the
+        # loss continued. "Still true" and "newly true" are the same fact to a
+        # column describing the present.
+        #
+        # This makes `attention` a statement of current state rather than of
+        # change, which is why `_cost_audit` compares it against what was already
+        # stored: the *trail* still wants only the transition.
+        state = pricing.margin_state(retail, stored_basis)
         return {
             "action": UNCHANGED,
             "cost_cents": None,
             "price_cents": None,
-            "margin_state": pricing.margin_state(retail, stored_basis),
-            "attention": None,
+            "margin_state": state,
+            "attention": _cost_attention(state),
         }
 
     # `sync_updates_allowed` is the authority on who owns `price`, rather than a
@@ -665,16 +741,20 @@ def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, econ
             source=source, economics=economics,
             label_before=label_before, label_after=label_after,
             cost_before=bound_cost_before, cost_after=bound_cost_after,
-            margin_state=bound_state, attention=attention, variants_written=touched),
+            margin_state=bound_state, attention=attention,
+            attention_before=[reason for reason in stored_attention(source)
+                              if reason in COST_REASONS],
+            variants_written=touched),
     }
 
 
 def _cost_audit(*, source, economics, label_before, label_after, cost_before,
-                cost_after, margin_state, attention, variants_written):
+                cost_after, margin_state, attention, attention_before,
+                variants_written):
     """The trail row a cost read earned, or ``None`` if it earned none.
 
-    Two things earn one: the number a buyer's card is charged moved, or something
-    about the margin now needs a human. Nothing else does, and the restraint is the
+    Two things earn one: the number a buyer's card is charged moved, or the set of
+    things needing a human *changed*. Nothing else does, and the restraint is the
     design rather than an optimisation. ``worker`` re-reads every imported product
     every 900–3600 seconds; a row per read would put ninety-six rows per listing
     per day into the same timeline a merchant opens to find out what happened to
@@ -682,9 +762,15 @@ def _cost_audit(*, source, economics, label_before, label_after, cost_before,
     supplier who has not changed their price has not done anything worth telling
     the merchant about.
 
-    ``UNCHANGED`` ticks cannot reach this in the first place -- ``plan_cost_revision``
-    returns both cents as ``None`` when the observed cost matches the stored one --
-    but the comparison below is on the *label*, not on whether a write happened,
+    The comparison against ``attention_before`` is what keeps that true, and it is
+    the price of ``attention`` having become a statement of the present rather than
+    of change. ``plan_cost_revision`` now restates ``SELLING_BELOW_COST`` on every
+    tick while the loss continues — it has to, or the flag on the merchant's screen
+    would clear itself fifteen minutes after it appeared — so "there is attention"
+    can no longer be the trigger. "This became true" is. The timeline records that
+    a margin collapsed once, on the read where it collapsed.
+
+    The label comparison is on the *label*, not on whether a write happened,
     because "did the buyer's charge move" is the question the row answers. A cost
     that moved a cent and rounded to the same price is not a price change.
 
@@ -694,7 +780,11 @@ def _cost_audit(*, source, economics, label_before, label_after, cost_before,
     fell.
     """
     moved = label_after is not None and label_after != label_before
-    if not moved and not attention:
+    # Sorted into the declared order on both sides, so the comparison is about the
+    # set and not about which variant the planner happened to visit first.
+    arose = [reason for reason in ATTENTION_REASONS if reason in set(attention or ())] \
+        != [reason for reason in ATTENTION_REASONS if reason in set(attention_before or ())]
+    if not moved and not arose:
         return None
     identity = {
         "listing_id": int(source["listing_id"]),
@@ -789,6 +879,28 @@ def _apply_to_listing(binding, *, kind, readings, rule, shipping_cents, business
                 f"UPDATE {variants.SOURCE_TABLE} SET sync_state=?, last_synced_at=?, "
                 f"updated_at=? WHERE listing_id=? AND seller_user_id=?",
                 (result["sync_state"], _row_time(now), _row_time(now), listing_id,
+                 int(source["seller_user_id"])))
+        # Outside the branch above, deliberately. That branch is guarded on a
+        # *write* having happened, and the reads that write nothing are exactly
+        # the ones with something to say: `plan_cost_revision` returns
+        # COST_UNAVAILABLE with both cents `None`, so a listing whose cost we can
+        # no longer read touches no variant and would never have recorded why.
+        # Clearing needs the same from the other direction — the read that
+        # resolves a problem is frequently the read that changes nothing.
+        #
+        # Guarded on the list having *moved* rather than written every tick, and
+        # that guard is why `updated_at` can move with it. `worker` re-reads every
+        # imported product every 900–3600s; an unconditional write would restate
+        # the same list ninety-six times a day and, with the timestamp, make every
+        # source row permanently look freshly modified to anything that sorts or
+        # diffs on it.
+        before_reasons = stored_attention(source)
+        after_reasons = merge_attention(before_reasons, kind, result["attention"])
+        if after_reasons != before_reasons:
+            cur.execute(
+                f"UPDATE {variants.SOURCE_TABLE} SET attention_json=?, updated_at=? "
+                f"WHERE listing_id=? AND seller_user_id=?",
+                (json.dumps(after_reasons), _row_time(now), listing_id,
                  int(source["seller_user_id"])))
         conn.commit()
         return result

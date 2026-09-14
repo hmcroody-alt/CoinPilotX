@@ -2544,6 +2544,11 @@ describe("DropshippingProductsScreen", () => {
       updatedAt: null,
       provider: "cj",
       syncState: "OK",
+      // Always present, never undefined. `normalizeImportedRow` fills it on every
+      // row it hands out, so a fixture that omitted it would be describing a shape
+      // production cannot produce. This screen iterates it, so the omission showed
+      // up as a crash rather than as a wrong answer -- which is the good outcome.
+      attention: [] as string[],
       supplierCostCents: 450,
       providerProductId: "ext-1",
       ...over
@@ -3042,6 +3047,11 @@ describe("DropshippingSyncScreen", () => {
       updatedAt: null,
       provider: "cj",
       syncState: "OK",
+      // Always present, never undefined. `normalizeImportedRow` fills it on every
+      // row it hands out, so a fixture that omitted it would be describing a shape
+      // production cannot produce. This screen iterates it, so the omission showed
+      // up as a crash rather than as a wrong answer -- which is the good outcome.
+      attention: [] as string[],
       supplierCostCents: 450,
       providerProductId: "ext-1",
       ...over
@@ -3106,6 +3116,68 @@ describe("DropshippingSyncScreen", () => {
     DROPSHIPPING_DATA_GAPS.forEach((gap) => {
       expect(view.getByText(gap.needs)).toBeTruthy();
     });
+  });
+
+  /* ------------------------------------------------------------------
+   * The second kind of wrong
+   *
+   * `syncState` answers "can we still reach the supplier about this". It reads
+   * OK for a product whose cost quadrupled overnight, because that sync
+   * succeeded -- so a screen keyed on sync state alone printed "Nothing needs
+   * your attention" over a listing losing money on every sale. Every test above
+   * this line passes on that screen. These are the ones that do not.
+   * ------------------------------------------------------------------ */
+
+  it("does not call a catalogue healthy when a synced product is selling below cost", async () => {
+    const { view } = await renderSync({
+      items: [product({ syncState: "OK", attention: ["SELLING_BELOW_COST"] })]
+    });
+    await waitFor(() =>
+      expect(view.getByText("Selling below what the supplier charges")).toBeTruthy()
+    );
+    // The whole defect in one assertion: sync state is fine and the screen used
+    // to have nothing else to look at.
+    expect(view.queryByText("Nothing needs your attention")).toBeNull();
+  });
+
+  it("puts the attention reason in words and never its code", async () => {
+    const { view } = await renderSync({ items: [product({ attention: ["MARGIN_LOST"] })] });
+    await waitFor(() => expect(view.getByText("Almost no margin left")).toBeTruthy());
+    expect(view.queryByText("MARGIN_LOST")).toBeNull();
+  });
+
+  it("files what the merchant can act on apart from what they can only be told", async () => {
+    // "Needs you" is only read if everything in it is actionable. An unreadable
+    // stock count is real and entirely outside the merchant's control, so it
+    // belongs beneath the things they can fix, not among them.
+    const { view } = await renderSync({
+      items: [product({ attention: ["SELLING_BELOW_COST", "STOCK_UNREADABLE"] })]
+    });
+    await waitFor(() => expect(view.getByText("Needs you")).toBeTruthy());
+    expect(view.getByText("Worth knowing")).toBeTruthy();
+    expect(view.getByText("Stock could not be read")).toBeTruthy();
+  });
+
+  it("shows a sync problem and a supplier problem on the same product as two rows", async () => {
+    // These used to be keyed by listing id alone, which collapsed two distinct
+    // problems on one product into a single row -- and a duplicate React key.
+    const { view } = await renderSync({
+      items: [product({ syncState: "UNAVAILABLE", attention: ["SUPPLIER_OUT_OF_STOCK"] })]
+    });
+    await waitFor(() =>
+      expect(view.getByText("Your supplier no longer offers this product")).toBeTruthy()
+    );
+    expect(view.getByText("The supplier has none left")).toBeTruthy();
+  });
+
+  it("ignores an attention reason this build has no words for", async () => {
+    // Same rule as an unknown sync state. A reason the backend grew and this
+    // build cannot translate is dropped by `revisionAttention` rather than shown
+    // raw -- and `test_revision_attention_copy.py` is what stops that silence
+    // from becoming permanent.
+    const { view } = await renderSync({ items: [product({ attention: ["TELEPORTED"] })] });
+    await waitFor(() => expect(view.getByText("Nothing needs your attention")).toBeTruthy());
+    expect(view.queryByText("TELEPORTED")).toBeNull();
   });
 
   it("says a broken connection needs attention instead of showing it as working", async () => {

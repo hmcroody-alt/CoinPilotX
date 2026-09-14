@@ -206,6 +206,22 @@ SOURCE_COLUMNS = (
     ("sync_state", "TEXT"),
     ("last_synced_at", "TEXT"),
     ("last_sync_error", "TEXT"),
+    # What the last supplier read concluded a human needs to know about, as a
+    # JSON list of ``revisions.ATTENTION_REASONS``. Distinct from the two columns
+    # above and not foldable into either: ``sync_state`` answers "how current is
+    # the provider side" and ``last_sync_error`` answers "did the call fail", and
+    # a listing that is now selling below cost has a perfectly current, perfectly
+    # successful read. Storing that under STALE or ERROR would make "the supplier
+    # is unreachable" and "the supplier doubled their price" the same fact.
+    #
+    # Stored rather than derived because most of these are not recoverable from
+    # the row afterwards: ``REPRICE_IMPOSSIBLE`` describes a price the rule
+    # computed and we refused to write, and ``COST_UNAVAILABLE`` describes a read
+    # that returned nothing. The two that *are* recomputable from retail-vs-cost
+    # are stored beside them anyway, because a second implementation of
+    # ``revisions._cost_attention`` on a read path is the §9/§10 two-engines
+    # defect arrived at by convenience.
+    ("attention_json", "TEXT"),
 )
 
 # Uniqueness is expressed as an index rather than a table constraint because the

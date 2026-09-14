@@ -359,6 +359,87 @@ export const PUBLISH_PROBLEMS = [
 ] as const;
 export type PublishProblem = (typeof PUBLISH_PROBLEMS)[number];
 
+/**
+ * What a supplier read concluded needs a human, on a listing that is already live.
+ *
+ * Deliberately *not* `PUBLISH_PROBLEMS`, though the temptation to reuse it is
+ * strong and the two lists even share the string "NEGATIVE_MARGIN" in spirit. A
+ * publish problem describes a product that never went live and whose fix is
+ * "finish it". These describe a product that is live right now, that a stranger
+ * can buy this second, and whose fix is usually "stop selling it or change the
+ * price". Rendering them through one table would tell a merchant their published
+ * product "could not be published".
+ *
+ * Mirrors `revisions.ATTENTION_REASONS`. `tests/dropshipping/test_revision_attention_copy.py`
+ * pins this list against the Python one, for the same reason the publish list is
+ * pinned: only the backend can grow it, and nothing on this side would notice.
+ */
+export const REVISION_ATTENTION = [
+  "SELLING_BELOW_COST",
+  "MARGIN_LOST",
+  "COST_UNAVAILABLE",
+  "REPRICE_IMPOSSIBLE",
+  "SUPPLIER_OUT_OF_STOCK",
+  "STOCK_UNREADABLE"
+] as const;
+export type RevisionAttention = (typeof REVISION_ATTENTION)[number];
+
+/**
+ * Merchant-facing copy for each reason, with what to do about it.
+ *
+ * `severity` follows the same rule the sync screen already applies to sync
+ * states: "fix" means there is an action this merchant can take today, "info"
+ * means the situation is real, worth knowing, and not theirs to resolve. Grading
+ * an unreadable stock count as "fix" would put an item in a list titled "Needs
+ * you" that the merchant can only stare at, and a list like that stops being read.
+ */
+export const REVISION_ATTENTION_COPY: Record<
+  RevisionAttention,
+  { text: string; action: string; severity: "fix" | "info" }
+> = {
+  SELLING_BELOW_COST: {
+    text: "Selling below what the supplier charges",
+    action: "Every sale loses money. Raise the price or unpublish it.",
+    severity: "fix"
+  },
+  MARGIN_LOST: {
+    text: "Almost no margin left",
+    action: "The supplier's cost rose. Raise the price to restore your margin.",
+    severity: "fix"
+  },
+  COST_UNAVAILABLE: {
+    text: "Supplier cost is unknown",
+    action: "We cannot work out your margin, so we cannot tell you if this is profitable.",
+    severity: "info"
+  },
+  REPRICE_IMPOSSIBLE: {
+    text: "Your pricing rule could not be applied",
+    action: "The old price is still live. Set a price yourself to take control of it.",
+    severity: "fix"
+  },
+  SUPPLIER_OUT_OF_STOCK: {
+    text: "The supplier has none left",
+    action: "Orders cannot be fulfilled. Unpublish it until stock returns.",
+    severity: "fix"
+  },
+  STOCK_UNREADABLE: {
+    text: "Stock could not be read",
+    action: "The last count still stands. We will try again on the next sync.",
+    severity: "info"
+  }
+};
+
+/** Drops anything this build has no copy for, rather than showing a raw code. */
+export function revisionAttention(value: unknown): RevisionAttention[] {
+  const seen = list<unknown>(value)
+    .map((entry) => text(entry).toUpperCase())
+    .filter((entry): entry is RevisionAttention =>
+      (REVISION_ATTENTION as readonly string[]).includes(entry));
+  // Declaration order, not arrival order, so two products with the same problems
+  // list them the same way down a screen.
+  return REVISION_ATTENTION.filter((reason) => seen.includes(reason));
+}
+
 /* ------------------------------------------------------------------ *
  * Supplier connections
  * ------------------------------------------------------------------ */
@@ -1405,6 +1486,14 @@ export type ImportedProductRow = {
   updatedAt: string | null;
   provider: string;
   syncState: string | null;
+  /**
+   * What the last supplier read concluded needs a human. Beside `syncState`,
+   * never folded into it: a listing that is now selling below cost synced
+   * perfectly, so `syncState` reads SYNCED and is right to. A screen keyed on
+   * sync state alone shows that product as healthy, which is not silence but a
+   * false all-clear.
+   */
+  attention: RevisionAttention[];
   supplierCostCents: number | null;
   providerProductId: string | null;
 };
@@ -1420,6 +1509,7 @@ function normalizeImportedRow(raw: Record<string, unknown>): ImportedProductRow 
     updatedAt: textOrNull(raw.updated_at),
     provider: text(raw.provider).toLowerCase(),
     syncState: textOrNull(raw.sync_state),
+    attention: revisionAttention(raw.attention),
     supplierCostCents: centsOrNull(raw.supplier_cost_cents),
     providerProductId: textOrNull(raw.provider_product_id)
   };

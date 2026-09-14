@@ -39,6 +39,22 @@ from services.business_os.suppliers import (connections, normalize, policy, pric
                                             store_policy)
 from services.business_os.suppliers.errors import SupplierError
 
+
+def _revisions():
+    """``revisions``, imported on call because it imports this module.
+
+    ``revisions`` needs ``_sold_variant`` and ``_checkout_price_label`` from here,
+    so the module-scope edge runs one way only and this direction has to be
+    deferred; ``worker`` reaches for it the same way. What the two functions below
+    borrow is the *reader* for ``attention_json`` — a column ``revisions`` owns and
+    writes. Re-implementing the parse on this side is how a merchant's product
+    screen and the reconciler that wrote the row end up disagreeing about what an
+    unrecognised reason, or a malformed blob, means.
+    """
+    from . import revisions
+    return revisions
+
+
 # Publication validation codes. Every one names a specific thing the merchant
 # can act on; there is deliberately no generic catch-all in this list.
 MISSING_TITLE = "MISSING_TITLE"
@@ -261,6 +277,13 @@ def get_draft(business_id, store_id, actor_user_id, connection_id, listing_id, *
             "provider": source.get("provider"),
             "fulfillment_mode": source.get("fulfillment_mode"),
             "sync_state": source.get("sync_state"),
+            # Beside `sync_state`, never instead of it, and the pair is the
+            # point: SYNCED + ["SELLING_BELOW_COST"] is the state this column
+            # exists for. The tile and this screen have to agree about what is
+            # wrong with a product for the same reason they have to agree about
+            # its cover image, so both read the same column through the same
+            # parser -- see `list_drafts`, which explains the import direction.
+            "attention": _revisions().stored_attention(source),
             "last_synced_at": source.get("last_synced_at"),
             "supplier_cost_cents": source.get("supplier_cost_cents"),
             "supplier_cost_currency": source.get("supplier_cost_currency"),
@@ -906,16 +929,25 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
         if wanted:
             source += " AND LOWER(l.status)=?"
             params.append(wanted)
+        revisions = _revisions()
         cur = conn.cursor()
         cur.execute(
             "SELECT l.id, l.title, l.status, l.approval_status, l.currency, "
             "l.cover_image_url, l.listing_metadata_json, l.updated_at, "
-            "s.provider, s.sync_state, "
+            "s.provider, s.sync_state, s.attention_json, "
             "s.supplier_cost_cents, s.provider_product_id " + source +
             " ORDER BY l.id DESC LIMIT ?", tuple(params) + (limit,))
         rows = []
         for row in cur.fetchall():
             row = dict(row)
+            # What the last supplier read concluded needs a human, parsed here so
+            # the wire carries a list rather than a string containing a list.
+            # `sync_state` alone cannot carry it: a listing that is now selling
+            # below cost synced perfectly, so every screen keyed on sync state
+            # shows it as healthy -- which is not silence, it is a false
+            # all-clear, and worse than saying nothing.
+            row["attention"] = revisions.stored_attention(row)
+            row.pop("attention_json", None)
             # The list tile and the detail screen have to agree about the cover,
             # so they have to ask the same question. This read used to take the
             # column raw while `get_draft` derived it from the metadata media,

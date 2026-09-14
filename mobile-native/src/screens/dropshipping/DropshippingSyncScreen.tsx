@@ -3,11 +3,24 @@
  *
  * ## Derived, not stored
  *
- * There is no issues table. This screen reads the connection's own status and
- * the sync state carried on each imported product, and groups them. That is a
- * deliberate choice over inventing an issue log: an issue log drifts from
- * reality the moment something is fixed elsewhere, and a merchant who resolves
- * a problem then sees it still listed stops trusting the list.
+ * There is no issues table. This screen reads the connection's own status, the
+ * sync state carried on each imported product, and what the last supplier read
+ * concluded about that product, and groups them. That is a deliberate choice
+ * over inventing an issue log: an issue log drifts from reality the moment
+ * something is fixed elsewhere, and a merchant who resolves a problem then sees
+ * it still listed stops trusting the list. Every source here is current state
+ * that the next sync overwrites, which is what keeps a fixed thing fixed.
+ *
+ * ## Two kinds of wrong, and the second one used to be invisible
+ *
+ * `syncState` answers "can we still talk to the supplier about this product".
+ * `attention` answers "is what the supplier told us a problem". They are not the
+ * same question and the second is the one that costs money: a supplier who
+ * quadruples their cost at 3am produces a perfectly successful sync, so
+ * `syncState` reads SYNCED and this screen — which keyed on nothing else — said
+ * "Nothing needs your attention" over a product that lost money on every sale.
+ * A false all-clear is worse than no screen, because it is the answer the
+ * merchant stops double-checking.
  *
  * ## An empty list is a claim, so it needs both sources
  *
@@ -29,6 +42,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "r
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   DROPSHIPPING_DATA_GAPS,
+  REVISION_ATTENTION_COPY,
   connectionNeedsAttention,
   listImportedProducts,
   listSupplierConnections,
@@ -63,7 +77,9 @@ type Props = {
  * a problem, and reporting one would fill the screen with noise on the day a
  * provider adds a new value.
  */
-const PRODUCT_ISSUES: Record<string, { text: string; action: string; severity: "fix" | "info" }> = {
+type IssueCopy = { text: string; action: string; severity: "fix" | "info" };
+
+const PRODUCT_ISSUES: Record<string, IssueCopy> = {
   ERROR: {
     text: "The last update from your supplier failed",
     action: "Check the connection, then open the product.",
@@ -91,7 +107,12 @@ const PRODUCT_ISSUES: Record<string, { text: string; action: string; severity: "
   }
 };
 
-type ProductIssue = { row: ImportedProductRow; state: string };
+/**
+ * `code` is only here to key the list. One product can hold several issues at
+ * once — a supplier can be out of stock *and* have doubled their price — so the
+ * listing id alone stopped being unique the moment attention reasons arrived.
+ */
+type ProductIssue = { row: ImportedProductRow; code: string; copy: IssueCopy };
 
 export function DropshippingSyncScreen({ route, navigation }: Props) {
   const { connectionId } = route.params;
@@ -143,14 +164,37 @@ export function DropshippingSyncScreen({ route, navigation }: Props) {
 
   const issues = useMemo<ProductIssue[]>(
     () =>
-      rows
-        .map((row) => ({ row, state: (row.syncState || "").toUpperCase() }))
-        .filter((entry) => Boolean(PRODUCT_ISSUES[entry.state])),
+      rows.flatMap((row) => {
+        const found: ProductIssue[] = [];
+        // The sync state first, because it qualifies everything after it: if we
+        // could not reach the supplier, whatever we last concluded about their
+        // price is a report about old news and the merchant should read it that
+        // way. Unrecognised states produce nothing — a state this build has not
+        // seen is not evidence of a problem.
+        const state = (row.syncState || "").toUpperCase();
+        if (PRODUCT_ISSUES[state]) found.push({ row, code: state, copy: PRODUCT_ISSUES[state] });
+        // `revisionAttention` already dropped the reasons this build has no copy
+        // for and sorted the rest into declaration order, so a product with two
+        // problems lists them the same way as every other product with those two.
+        //
+        // Looked up defensively anyway, on the same rule as the unrecognised sync
+        // state above. The type says this cannot miss, and through the normalizer
+        // it cannot; but an unrecognised string reaching here through any other
+        // route would make `copy` `undefined` and the first `.severity` read below
+        // would take down the entire screen — turning "we grew a seventh reason"
+        // into "the merchant cannot see any of their problems". A reason without
+        // words is silence, which is bad. A blank screen is worse.
+        for (const reason of row.attention) {
+          const copy = REVISION_ATTENTION_COPY[reason];
+          if (copy) found.push({ row, code: reason, copy });
+        }
+        return found;
+      }),
     [rows]
   );
 
-  const fixable = issues.filter((issue) => PRODUCT_ISSUES[issue.state].severity === "fix");
-  const informational = issues.filter((issue) => PRODUCT_ISSUES[issue.state].severity === "info");
+  const fixable = issues.filter((issue) => issue.copy.severity === "fix");
+  const informational = issues.filter((issue) => issue.copy.severity === "info");
   const connectionProblem = connection ? connectionNeedsAttention(connection) : false;
 
   const stateBlock = stateOwnsScreen(state) ? (
@@ -294,11 +338,10 @@ function IssueGroup({
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
-      {issues.map(({ row, state }) => {
-        const copy = PRODUCT_ISSUES[state];
+      {issues.map(({ row, code, copy }) => {
         return (
           <Pressable
-            key={row.listingId}
+            key={`${row.listingId}:${code}`}
             style={styles.issue}
             onPress={() =>
               navigate("DropshippingDraft", {
