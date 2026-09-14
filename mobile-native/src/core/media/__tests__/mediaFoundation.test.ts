@@ -89,6 +89,29 @@ describe("media identity", () => {
     expect(renditionUrl(noPoster, "full")).toBe("https://cdn.pulsesoc.com/uploads/a.jpg");
   });
 
+  /**
+   * The chains have to end where the app's own display resolver ends.
+   *
+   * `mediaAccess.mediaDisplayUrl` falls through to `url` / `hls_url` /
+   * `mux_hls_url`, and the messenger serializer emits a bare `url`. When those
+   * spellings were missing here the media was not broken -- it was invisible:
+   * `renditionUrl` returned null, the planner produced no target, and the asset
+   * silently never warmed while every other test stayed green. A benchmark
+   * caught it; no assertion did.
+   */
+  it("resolves the spellings the display resolver accepts", () => {
+    const bare = { type: "image", url: "https://cdn.pulsesoc.com/uploads/bare.jpg" };
+    expect(renditionUrl(bare, "full")).toBe("https://cdn.pulsesoc.com/uploads/bare.jpg");
+    expect(renditionUrl(bare, "feed")).toBe("https://cdn.pulsesoc.com/uploads/bare.jpg");
+    expect(mediaIdentityOf(bare)).toBe("url:https://cdn.pulsesoc.com/uploads/bare.jpg");
+    // Still no substitution into a thumbnail slot.
+    expect(renditionUrl(bare, "thumb")).toBeNull();
+
+    const hls = { type: "video", hls_url: "https://stream.pulsesoc.com/v/9.m3u8?token=x" };
+    expect(renditionUrl(hls, "manifest")).toBe("https://stream.pulsesoc.com/v/9.m3u8?token=x");
+    expect(mediaIdentityOf(hls)).toBe("url:https://stream.pulsesoc.com/v/9.m3u8");
+  });
+
   it("knows the aspect ratio before a byte is fetched", () => {
     expect(knownAspectRatio(photo({ aspect_ratio: 1.5 }))).toBe(1.5);
     expect(knownAspectRatio(photo({ width: 200, height: 100 }))).toBe(2);

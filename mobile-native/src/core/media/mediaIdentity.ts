@@ -41,9 +41,13 @@ export type MediaDescriptor = {
   media_id?: number | string | null;
   mux_playback_id?: string | null;
   playback_url?: string | null;
+  hls_url?: string | null;
+  mux_hls_url?: string | null;
   media_url?: string | null;
   valid_url?: string | null;
   cdn_url?: string | null;
+  /** Last resort. The messenger serializer emits this and nothing else. */
+  url?: string | null;
   thumbnail_url?: string | null;
   poster_url?: string | null;
   mux_thumbnail_url?: string | null;
@@ -89,7 +93,15 @@ export function mediaIdentityOf(media: MediaDescriptor | null | undefined): Medi
   if (typeof rowId === "number" && Number.isFinite(rowId)) return `media:${rowId}`;
   if (typeof rowId === "string" && rowId.trim()) return `media:${rowId.trim()}`;
 
-  const url = firstNonEmpty(media.playback_url, media.valid_url, media.cdn_url, media.media_url);
+  const url = firstNonEmpty(
+    media.playback_url,
+    media.hls_url,
+    media.mux_hls_url,
+    media.valid_url,
+    media.cdn_url,
+    media.media_url,
+    media.url
+  );
   if (url) return `url:${stripVolatileUrlParts(url)}`;
 
   return null;
@@ -148,6 +160,15 @@ export function isMediaReady(media: MediaDescriptor | null | undefined): boolean
  * poster should show a placeholder (§35); silently substituting the original
  * would download a multi-megabyte image to fill a thumbnail slot, which is the
  * exact failure §11 and §45 exist to prevent.
+ *
+ * The full-size and manifest chains end where the app's own display resolver
+ * ends -- `media.url` for images, `hls_url`/`mux_hls_url` for video. Those are
+ * not hypothetical spellings: `mediaAccess.mediaDisplayUrl` falls through to
+ * them, and the messenger serializer emits a bare `url`. Leaving them out here
+ * did not break anything loudly; it made the prefetcher silently blind to that
+ * media, so the asset was never warmed and the zero-wait guarantee quietly did
+ * not apply to it while every test stayed green. A rendition that cannot name
+ * its URL is indistinguishable from one that does not exist.
  */
 export function renditionUrl(media: MediaDescriptor, rendition: MediaRendition): string | null {
   switch (rendition) {
@@ -156,11 +177,11 @@ export function renditionUrl(media: MediaDescriptor, rendition: MediaRendition):
     case "thumb":
       return firstNonEmpty(media.thumbnail_url, media.mux_thumbnail_url, media.poster_url);
     case "feed":
-      return firstNonEmpty(media.cdn_url, media.valid_url, media.media_url);
+      return firstNonEmpty(media.cdn_url, media.valid_url, media.media_url, media.url);
     case "full":
-      return firstNonEmpty(media.media_url, media.valid_url, media.cdn_url);
+      return firstNonEmpty(media.media_url, media.valid_url, media.cdn_url, media.url);
     case "manifest":
-      return firstNonEmpty(media.playback_url, media.valid_url);
+      return firstNonEmpty(media.playback_url, media.hls_url, media.mux_hls_url, media.valid_url);
     default:
       return null;
   }
