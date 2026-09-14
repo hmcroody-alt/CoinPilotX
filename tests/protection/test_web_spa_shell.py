@@ -242,7 +242,7 @@ def test_the_spa_still_receives_the_inert_favicon_markup():
     markup with no script in it.
     """
     body = _response().get_data(as_text=True)
-    for wanted in ('rel="manifest"', "pulse-favicon-32", "theme-color"):
+    for wanted in ('rel="manifest"', "pulsesoc-favicon-32", "theme-color"):
         assert wanted in body, (
             f"{wanted} is missing from the SPA shell. The favicon block is the "
             f"one injection the SPA is meant to keep."

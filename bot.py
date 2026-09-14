@@ -16104,12 +16104,17 @@ def admin_page_html(title, body, admin=None):
         "<link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_design_system.css?v=shell-nav-20260909a'/>"
         "<link rel='stylesheet' href='/static/css/pulse_mobile_system.css'/>"
-        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260722i'/>"
+        "<link rel='stylesheet' href='/static/css/admin_ops_center.css?v=opsv2-20260914a'/>"
         "</head><body>"
         "<a class='ops-skip' href='#ops-main'>Skip to content</a>"
         "<div class='ops-scrim-mobile' aria-hidden='true'></div>"
         "<aside class='ops-sidebar' aria-label='Primary navigation'>"
-        "<div class='ops-brand'><span class='dot' aria-hidden='true'></span>"
+        # The sidebar mark was a CSS gradient square -- a placeholder that
+        # predates the brand system and was the last visible logo slot in the
+        # product still showing no PulseSoc artwork. Square slot, so the
+        # icon-only mark is the correct variant.
+        "<div class='ops-brand'><img class='dot' src='/static/brand/pulsesoc-mark-20260913.png' "
+        "alt='' width='30' height='30' decoding='async'/>"
         "<span><b>PulseSoc</b><small>Operations Center</small></span></div>"
         f"<nav class='ops-nav'>{sidebar_html}</nav>"
         "</aside>"

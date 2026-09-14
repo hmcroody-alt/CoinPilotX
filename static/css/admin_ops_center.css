@@ -67,10 +67,12 @@ a { color: var(--cyan); text-decoration: none; }
   border-bottom: 1px solid var(--line-soft);
   min-height: var(--topbar-h);
 }
+/* Now an <img> of the PulseSoc mark, which ships on its own navy tile --
+   hence no background gradient, which would only show through the corners. */
 .ops-brand .dot {
   width: 30px; height: 30px; border-radius: 9px;
-  background: linear-gradient(135deg, var(--accent), var(--cyan));
-  box-shadow: 0 0 22px rgba(54, 229, 143, .35);
+  object-fit: contain;
+  box-shadow: 0 0 22px rgba(54, 229, 143, .28);
   flex: none;
 }
 .ops-brand b { font-size: .98rem; letter-spacing: .2px; }
