@@ -394,9 +394,21 @@ function readStatusSavedFlag(item: PulseStatus): boolean | undefined {
  * check keeps photos on their current path — for an image the backend fills
  * `playback_url` with a first-party `/stream` route, which is not what an
  * `<Image>` should be pointed at.
+ *
+ * Mux is the transcode pipeline, so the playback id is the primary source and
+ * not a fallback: as of 2026-09-14 all 68 video Statuses in production carry a
+ * `ready` Mux asset. `reelVideoUrl`, `reelMediaKind`'s `slideVideoUrl` and every
+ * web surface build the HLS URL from the id first and only then look at stored
+ * URL columns, and Statuses were the one surface that didn't. Deriving from the
+ * id means a row whose `playback_url` was never persisted still plays, instead
+ * of falling through the chain to `valid_url` and the challenge page.
  */
 export function statusMediaUrl(status: PulseStatus) {
   const media = (status.media || [])[0] || {};
+  if (mediaKind(media) === "video") {
+    const playbackId = String(media.mux_playback_id || "").trim();
+    if (playbackId) return `https://stream.mux.com/${playbackId}.m3u8`;
+  }
   const preferred = mediaKind(media) === "video"
     ? media.playback_url || media.hls_url || media.mux_hls_url || media.valid_url || media.media_url || media.url
     : media.valid_url || media.media_url || media.url;

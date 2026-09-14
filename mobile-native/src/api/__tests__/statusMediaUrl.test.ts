@@ -69,6 +69,39 @@ describe("statusMediaUrl", () => {
     expect(url).not.toContain("/stream");
   });
 
+  it("builds the stream from the Mux playback id before trusting any stored URL", () => {
+    // Mux is the transcode pipeline, so the id is the primary source, matching
+    // reelVideoUrl and every web surface. A stored playback_url that disagrees
+    // with the id loses: the id is what Mux itself is authoritative about.
+    expect(
+      statusMediaUrl(
+        videoStatus({
+          media_type: "video",
+          mux_playback_id: "pid123",
+          playback_url: "https://stream.mux.com/stale.m3u8",
+          valid_url: `${CDN}/clip.mov`
+        })
+      )
+    ).toBe("https://stream.mux.com/pid123.m3u8");
+  });
+
+  it("plays from the playback id even when no URL column was ever persisted", () => {
+    // This is the case the fallback chain cannot serve: without the id the only
+    // candidate left is valid_url, which is the .mov Cloudflare answers with a
+    // challenge page -- a black Status.
+    const url = statusMediaUrl(videoStatus({ media_type: "video", mux_playback_id: "pid456", valid_url: `${CDN}/clip.mov` }));
+    expect(url).toBe("https://stream.mux.com/pid456.m3u8");
+    expect(url).not.toContain(".mov");
+  });
+
+  it("ignores a playback id on a photo, which has no Mux asset to stream", () => {
+    expect(
+      statusMediaUrl(
+        videoStatus({ media_type: "image", mux_playback_id: "pid789", valid_url: `${CDN}/shot.jpg` })
+      )
+    ).toBe(`${CDN}/shot.jpg`);
+  });
+
   it("returns empty rather than a partial URL when a Status carries no media", () => {
     expect(statusMediaUrl({ id: 1 } as unknown as PulseStatus)).toBe("");
   });
