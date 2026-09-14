@@ -192,6 +192,29 @@ export function ReelsScreen({ route, navigation }: Props) {
   const spatialReels = spatialReelsEnabled();
   const isFocused = useIsFocused();
   const overlayOpen = Boolean(shareOpen || commentReel || reactionReel || musicReel || moreReel);
+  /**
+   * The screen-level half of "should this reel be playing".
+   *
+   * Reels is a bottom-tab screen (AppNavigator: `Tabs.Screen name="Reels"`) with
+   * no `unmountOnBlur`, so navigating to Home, Messages or a profile *blurs* the
+   * screen but never unmounts it. `activeIndex` keeps its value, the cell stays
+   * rendered, and the card's `active` prop — which is what actually drives
+   * `playAsync()` — stayed true. The reel the user walked away from kept playing
+   * behind whatever they opened next, audibly, until they came back and swiped.
+   *
+   * `isFocused` is the missing input. It flips on the navigator's `blur` event,
+   * which fires as the transition begins rather than at teardown, so the pause
+   * lands immediately and does not wait for an unmount that is never coming.
+   * It also covers the foreground-on-another-route case for free: returning to
+   * the app on Home re-arms `appActive`, but `isFocused` is still false, so
+   * nothing resumes.
+   *
+   * Keeping this as one derived value rather than a longer `active={...}`
+   * expression is deliberate — it is the single place the rule
+   * "focused AND foreground AND no overlay" is stated, and the regression test
+   * asserts against it.
+   */
+  const playbackAllowed = isFocused && appActive && !overlayOpen;
   // Reels is the only surface allowed to hide the dock immersively. Passing
   // `!overlayOpen` as the focus signal is what keeps the dock on screen while
   // comments, sharing or a reel menu is up: the hook treats a child surface
@@ -862,7 +885,7 @@ export function ReelsScreen({ route, navigation }: Props) {
           <View style={[styles.page, { height: viewportHeight }, spatialReels ? { width: viewportWidth } : null]}>
             <ReelPlayerCard
               reel={item}
-              active={index === activeIndex && appActive && !shareOpen && !commentReel && !reactionReel && !musicReel && !moreReel}
+              active={index === activeIndex && playbackAllowed}
               muted={muted}
               offline={offline}
               fullBleed={spatialReels}

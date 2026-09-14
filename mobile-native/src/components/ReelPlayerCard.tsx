@@ -106,6 +106,8 @@ export function ReelPlayerCard({
   const muteGlyphRef = useRef<MuteGlyphPulseHandle>(null);
   const refreshAttempted = useRef(false);
   const watchStartedAt = useRef(0);
+  /** Monotonic stamp for the playback effect; see the claim race note below. */
+  const playGeneration = useRef(0);
   const [buffering, setBuffering] = useState(false);
   const [progress, setProgress] = useState(0);
   const [failed, setFailed] = useState(false);
@@ -150,6 +152,18 @@ export function ReelPlayerCard({
       }
       return;
     }
+    /**
+     * Which run of this effect is allowed to start playback.
+     *
+     * `claimMediaPlayback` is asynchronous — it awaits the outgoing owner's
+     * `pause()` before it resolves — so there is a real window between asking to
+     * play and being told yes. If the user leaves Reels inside that window, the
+     * inactive branch below pauses the video and *then* the stale claim resolves
+     * and calls `playAsync()`, restarting the reel on a screen that is no longer
+     * on display. Stamping the run and re-checking it on resolution is what
+     * makes "paused" stick.
+     */
+    const generation = ++playGeneration.current;
     if (active && !muted) {
       watchStartedAt.current = Date.now();
       claimMediaPlayback({
@@ -164,6 +178,13 @@ export function ReelPlayerCard({
           attachedSoundRef.current?.stopAsync().catch(() => undefined)
         ]).then(() => undefined)
       }).then((granted) => {
+        if (generation !== playGeneration.current) {
+          // Superseded while the claim was in flight. Hand ownership straight
+          // back rather than playing: releasing also pauses, so a grant that
+          // arrives late cannot leave a reel running behind another screen.
+          if (granted) releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+          return undefined;
+        }
         setOwnsPlayback(granted);
         return granted ? videoRef.current?.playAsync() : undefined;
       }).catch(() => setOwnsPlayback(false));
@@ -179,6 +200,13 @@ export function ReelPlayerCard({
         watchStartedAt.current = 0;
       }
       videoRef.current?.pauseAsync().catch(() => undefined);
+      // Silence the attached music bed directly instead of relying on
+      // `releaseMediaPlayback`, which no-ops unless this card happens to be the
+      // registered owner — and a muted reel deliberately owns nothing. The
+      // unload in `syncAttachedAudio` does eventually catch it, but only after
+      // `setOwnsPlayback(false)` has re-rendered, which is a window where the
+      // bed is still audible on a screen the user has already left.
+      attachedSoundRef.current?.pauseAsync().catch(() => undefined);
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
     }
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
