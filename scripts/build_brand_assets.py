@@ -94,9 +94,15 @@ def main():
     save(wide(mono, 768), os.path.join(RN, "pulsesoc-monochrome.png"))
 
     print("ios native")
-    # App Store / home-screen icon. iOS rejects alpha, and the corner mask eats
-    # ~11% per side, so the mark stays well inside a solid navy tile.
-    icon = place(mark, (1024, 1024), 0.80, NAVY)
+    # The iOS home-screen icon is gold, not navy, and is composed from a
+    # different pack -- see scripts/build_gold_app_icon.py for why it cannot be
+    # a crop. It is copied here rather than derived so that a run of this script
+    # cannot quietly revert the shipped icon; the gold master is the source of
+    # truth for both files. Everything else on this page stays navy.
+    gold_icon = os.path.join(MASTERS, "pulsesoc-appicon-gold-1024.png")
+    if not os.path.exists(gold_icon):
+        sys.exit(f"missing gold app icon master: {gold_icon} (run scripts/build_gold_app_icon.py)")
+    icon = Image.open(gold_icon).convert("RGB")
     save(icon, os.path.join(ROOT, "mobile-native", "assets", "icon.png"))
     save(icon, os.path.join(XCASSETS, "AppIcon.appiconset", "App-Icon-1024x1024@1x.png"))
     save(place(mark, (1024, 1024), 0.58), os.path.join(ROOT, "mobile-native", "assets", "adaptive-icon.png"))
