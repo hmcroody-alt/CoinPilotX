@@ -26,7 +26,40 @@ const PROTECTED_DOWNLOAD_RE = /\/api\/messages\/media\/(\d+)\/download(?:$|[?#])
 const RENEW_MARGIN_MS = 60_000;
 
 /**
- * One grant, both URLs.
+ * What the bubble needs to draw a card before any pixel of media arrives.
+ *
+ * The server has always sent this — `/access` embeds the whole attachment row —
+ * and this module used to read two URLs off that response and drop the rest. So
+ * the renderer knew a video existed but not its shape, its length, or whether
+ * the poster was still being made, and the only card it could honestly draw was
+ * a file card with the filename on it.
+ *
+ * `processingStatus` is the difference between "no poster yet" and "no poster
+ * ever", which are the same empty string in `thumbnailUrl` and must not look the
+ * same on screen.
+ */
+export type MessengerMediaMeta = {
+  mediaType: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  processingStatus: string;
+  sizeBytes: number;
+  filename: string;
+};
+
+export const EMPTY_MESSENGER_MEDIA_META: MessengerMediaMeta = {
+  mediaType: "",
+  durationMs: 0,
+  width: 0,
+  height: 0,
+  processingStatus: "",
+  sizeBytes: 0,
+  filename: ""
+};
+
+/**
+ * One grant, both URLs, and the row they describe.
  *
  * The preview and the original are two different objects behind one
  * authorization decision, so they are granted together and cached together.
@@ -40,7 +73,7 @@ const RENEW_MARGIN_MS = 60_000;
  * than substituting the original, which for a 90-minute video would mean
  * downloading gigabytes to paint a card.
  */
-type AccessEntry = { url: string; thumbnailUrl: string; expiresAt: number };
+type AccessEntry = { url: string; thumbnailUrl: string; meta: MessengerMediaMeta; expiresAt: number };
 
 const accessCache = new Map<number, AccessEntry>();
 const inflight = new Map<number, Promise<AccessEntry>>();
@@ -171,7 +204,7 @@ function isExpiredGrant(error: unknown): boolean {
   return errorStatus(error) === 410 || code === "media_grant_expired" || code === "media_token_expired";
 }
 
-export type MessengerMediaGrant = { url: string; thumbnailUrl: string; attachmentId: number };
+export type MessengerMediaGrant = { url: string; thumbnailUrl: string; meta: MessengerMediaMeta; attachmentId: number };
 
 /**
  * Request a grant for `canonical`, with exactly ONE bounded recovery attempt.
@@ -201,12 +234,31 @@ export async function grantMessengerMediaAccess(
   }
 }
 
+function nonNegative(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function readMeta(attachment: Record<string, unknown> | undefined): MessengerMediaMeta {
+  const row = attachment || {};
+  return {
+    mediaType: String(row.media_type || ""),
+    durationMs: nonNegative(row.duration_ms),
+    width: nonNegative(row.width),
+    height: nonNegative(row.height),
+    processingStatus: String(row.processing_status || ""),
+    sizeBytes: nonNegative(row.size_bytes),
+    filename: String(row.filename || "")
+  };
+}
+
 async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
   const response = await pulseApi<{
     ok?: boolean;
     access_url?: string;
     thumbnail_access_url?: string;
     expires_in?: number;
+    attachment?: Record<string, unknown>;
   }>(`/api/messages/media/${attachmentId}/access`);
   const url = String(response.access_url || "");
   if (!url) throw new Error("messenger_media_access_url_missing");
@@ -214,6 +266,7 @@ async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
   const entry: AccessEntry = {
     url,
     thumbnailUrl: String(response.thumbnail_access_url || ""),
+    meta: readMeta(response.attachment),
     expiresAt: Date.now() + ttlMs
   };
   accessCache.set(attachmentId, entry);
@@ -230,7 +283,7 @@ async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
  */
 export async function resolveMessengerMediaAccess(
   attachmentId: number
-): Promise<{ url: string; thumbnailUrl: string }> {
+): Promise<{ url: string; thumbnailUrl: string; meta: MessengerMediaMeta }> {
   if (!Number.isFinite(attachmentId) || attachmentId <= 0) throw new Error("messenger_media_attachment_required");
   const cached = accessCache.get(attachmentId);
   if (cached && cached.expiresAt - RENEW_MARGIN_MS > Date.now()) return cached;
@@ -254,6 +307,11 @@ type AccessSnapshot = {
    * turns a thumbnail slot into a full-asset download.
    */
   thumbnailUrl: string;
+  /**
+   * The attachment row behind the grant. Empty until the grant resolves, so a
+   * renderer must treat zeroes as "not known yet" rather than as measurements.
+   */
+  meta: MessengerMediaMeta;
   loading: boolean;
   failed: boolean;
   /** The canonical id returned a true 404. Retrying will not help. */
@@ -292,6 +350,7 @@ export function useMessengerMediaAccessUrl(
   const [state, setState] = useState<AccessSnapshot>(() => ({
     url: needsGrant ? "" : fallbackUrl,
     thumbnailUrl: "",
+    meta: EMPTY_MESSENGER_MEDIA_META,
     loading: needsGrant,
     failed: false,
     unavailable: false
@@ -299,13 +358,14 @@ export function useMessengerMediaAccessUrl(
 
   useEffect(() => {
     if (!needsGrant) {
-      setState({ url: fallbackUrl, thumbnailUrl: "", loading: false, failed: false, unavailable: false });
+      setState({ url: fallbackUrl, thumbnailUrl: "", meta: EMPTY_MESSENGER_MEDIA_META, loading: false, failed: false, unavailable: false });
       return;
     }
     let active = true;
     setState((previous) => ({
       url: previous.url,
       thumbnailUrl: previous.thumbnailUrl,
+      meta: previous.meta,
       loading: true,
       failed: false,
       unavailable: false
@@ -317,6 +377,7 @@ export function useMessengerMediaAccessUrl(
           setState({
             url: granted.url,
             thumbnailUrl: granted.thumbnailUrl,
+            meta: granted.meta,
             loading: false,
             failed: false,
             unavailable: false
@@ -327,7 +388,7 @@ export function useMessengerMediaAccessUrl(
         if (!active) return;
         const gone = isMissingMedia(error);
         if (gone) unavailableFor.current = identityKey;
-        setState({ url: "", thumbnailUrl: "", loading: false, failed: true, unavailable: gone });
+        setState({ url: "", thumbnailUrl: "", meta: EMPTY_MESSENGER_MEDIA_META, loading: false, failed: true, unavailable: gone });
       });
     return () => {
       active = false;

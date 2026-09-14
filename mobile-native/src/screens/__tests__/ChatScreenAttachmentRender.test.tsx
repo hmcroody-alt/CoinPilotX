@@ -72,7 +72,12 @@ const POSTER_ACCESS_URL = "https://media.pulsesoc.test/grants/clip-poster.jpg?to
 const PHOTO_ACCESS_URL = "https://media.pulsesoc.test/grants/photo.jpg?token=photo-grant";
 
 /** What `/api/messages/media/<id>/access` answers, per test. */
-const mockGrants = new Map<number, { access_url: string; thumbnail_access_url: string }>();
+const mockGrants = new Map<number, {
+  access_url: string;
+  thumbnail_access_url: string;
+  /** The attachment row `/access` embeds. Absent means the grant reported none. */
+  attachment?: Record<string, unknown>;
+}>();
 /** Every attachment id the screen asked a grant for, in order. */
 const mockAccessRequests: number[] = [];
 
@@ -388,17 +393,19 @@ describe("a video bubble never hands the movie to the image loader", () => {
     mockGrants.set(VIDEO_MEDIA_ID, { access_url: MOVIE_ACCESS_URL, thumbnail_access_url: "" });
     await renderConversation([videoMessage()]);
 
-    expect(await screen.findByLabelText("Video attachment")).toBeTruthy();
+    expect(await screen.findByLabelText("Video, tap to play")).toBeTruthy();
     expect(imageUris()).not.toContain(MOVIE_ACCESS_URL);
-    // And the bubble is still a usable control rather than a blank rectangle.
-    expect(screen.getByText("Open viewer")).toBeTruthy();
+    // Still a usable control rather than a blank rectangle -- and specifically
+    // not the file card, whose two labels were the whole reported defect.
+    expect(screen.queryByText("Video attachment")).toBeNull();
+    expect(screen.queryByText("Open viewer")).toBeNull();
   });
 
   it("draws the poster when there is one, and still not the movie", async () => {
     mockGrants.set(VIDEO_MEDIA_ID, { access_url: MOVIE_ACCESS_URL, thumbnail_access_url: POSTER_ACCESS_URL });
     await renderConversation([videoMessage()]);
 
-    await screen.findByLabelText("Video attachment");
+    await screen.findByLabelText("Video, tap to play");
     expect(imageUris()).toContain(POSTER_ACCESS_URL);
     expect(imageUris()).not.toContain(MOVIE_ACCESS_URL);
   });
@@ -410,7 +417,7 @@ describe("a video bubble never hands the movie to the image loader", () => {
     mockGrants.set(VIDEO_MEDIA_ID, { access_url: MOVIE_ACCESS_URL, thumbnail_access_url: POSTER_ACCESS_URL });
     await renderConversation([videoMessage()]);
 
-    await screen.findByLabelText("Video attachment");
+    await screen.findByLabelText("Video, tap to play");
     expect(mockAccessRequests.filter((id) => id === VIDEO_MEDIA_ID)).toHaveLength(1);
     // And never for the transport id, which would 404.
     expect(mockAccessRequests).not.toContain(TRANSPORT_ATTACHMENT_ID);

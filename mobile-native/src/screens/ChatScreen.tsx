@@ -27,6 +27,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -67,7 +68,11 @@ import { buildUndxSendContext, clearMarketContext, peekMarketContext } from "../
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
 import { goBackFromUndxChat } from "../undx/undxChatTarget";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
-import { useMessengerMediaAccessUrl } from "../media/messengerMediaAccess";
+import {
+  MessengerMediaAccessState,
+  MessengerMediaMeta,
+  useMessengerMediaAccessUrl
+} from "../media/messengerMediaAccess";
 import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
 import { openDocument } from "../media/mediaActions";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
@@ -2208,6 +2213,23 @@ function SheetAction({ label, onPress, tone = "default" }: { label: string; onPr
   );
 }
 
+/**
+ * Media card geometry.
+ *
+ * A share of the window, not a pixel count, so the card is proportionate on a
+ * phone and on a tablet. `MEDIA_MAX_HEIGHT` is what stops a tall portrait clip
+ * from filling the thread; past that bound the card crops and the viewer shows
+ * the whole frame.
+ */
+const MEDIA_WIDTH_RATIO = 0.78;
+const MEDIA_MAX_WIDTH = 420;
+const MEDIA_MAX_HEIGHT = 380;
+/** Portrait 9:16 through landscape 16:9, the range real camera media lives in. */
+const MEDIA_MIN_RATIO = 0.5625;
+const MEDIA_MAX_RATIO = 1.7778;
+/** Used only when the grant reported no dimensions at all. */
+const MEDIA_DEFAULT_RATIO = 1.25;
+
 function MessageMedia({ message }: { message: MessengerMessage }) {
   const { t } = useTranslation();
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -2277,7 +2299,9 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
               the photo limit and the viewer is about to need those bytes anyway.
               Video deliberately does not: there is no bound worth falling back
               through, so a missing poster stays missing. */}
-          <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.image} resizeMode="cover" onError={retryMedia} />
+          <MediaSurface meta={mediaAccess.meta} message={message}>
+            <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.mediaFill} resizeMode="cover" onError={retryMedia} />
+          </MediaSurface>
         </Pressable>
         <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
       </>
@@ -2287,24 +2311,147 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     return <VoiceMessageCard message={message} url={mediaUrl} />;
   }
   if (type === "video") {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t("messaging:chat.videoAttachment")}
-        accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-        style={styles.attachment}
-        onPress={() => setViewerOpen(true)}
-      >
-        {thumbnailUrl ? (
-          <Image source={{ uri: thumbnailUrl }} style={styles.videoPoster} resizeMode="cover" onError={retryMedia} />
-        ) : null}
-        <Text style={styles.attachmentTitle}>{t("messaging:chat.videoAttachment")}</Text>
-        <Text style={styles.attachmentMeta}>{t("messaging:chat.openViewer")}</Text>
-        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
-      </Pressable>
-    );
+    return <VideoMessageCard message={message} access={mediaAccess} viewerItem={viewerItem} />;
   }
   return <DocumentAttachmentCard message={message} url={mediaUrl} />;
+}
+
+/**
+ * The bubble-width media frame every photo and video poster is drawn into.
+ *
+ * Width is a share of the window rather than the 200-220pt constants this
+ * replaced, which made a photo read as a chip regardless of screen size. Height
+ * comes from the media's own dimensions when the grant reported them, so a
+ * portrait video stops being letterboxed into a 1.6 landscape box — bounded,
+ * because one tall photo must not take the whole thread.
+ *
+ * A square placeholder is NOT a neutral default: it reflows the row the moment
+ * the real ratio arrives. Absent dimensions keep the previous card shape.
+ */
+function MediaSurface({ meta, message, children }: { meta: MessengerMediaMeta; message: MessengerMessage; children: React.ReactNode }) {
+  const { width: windowWidth } = useWindowDimensions();
+  const cardWidth = Math.min(MEDIA_MAX_WIDTH, Math.round(windowWidth * MEDIA_WIDTH_RATIO));
+  const declaredWidth = meta.width;
+  const declaredHeight = meta.height;
+  const ratio = declaredWidth > 0 && declaredHeight > 0
+    ? clamp(declaredWidth / declaredHeight, MEDIA_MIN_RATIO, MEDIA_MAX_RATIO)
+    : MEDIA_DEFAULT_RATIO;
+  const height = Math.min(Math.round(cardWidth / ratio), MEDIA_MAX_HEIGHT);
+  return <View style={[styles.mediaSurface, { width: cardWidth, height }]}>{children}</View>;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+/**
+ * A video message, as a poster with a play control over it.
+ *
+ * What this replaced drew the words "Video attachment" and "Open viewer" over a
+ * 200pt box and put the generated filename in the bubble underneath, so an
+ * iPhone `.MOV` arrived looking like a file attachment with a UUID for a name.
+ * The poster was already being granted and was already being rendered — it was
+ * just small, unlabelled, and optional, and the text stayed regardless.
+ *
+ * The three states below are distinguishable on purpose. A poster that has not
+ * been generated yet and one that never will are both an empty `thumbnailUrl`,
+ * and collapsing them is how a permanently broken card ends up claiming it is
+ * still working.
+ */
+function VideoMessageCard({ message, access, viewerItem }: {
+  message: MessengerMessage;
+  access: MessengerMediaAccessState;
+  viewerItem: NativeMediaViewerItem;
+}) {
+  const { t } = useTranslation();
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const poster = absoluteMediaUrl(access.thumbnailUrl);
+  const durationMs = access.meta.durationMs || Number(message.duration_seconds || 0) * 1000;
+  const duration = formatMediaDuration(durationMs);
+  const processing = !poster && isPosterPending(access.meta.processingStatus);
+  const posterFailed = !poster && isPosterFailed(access.meta.processingStatus);
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={duration
+        ? t("messaging:chat.a11yVideoAttachmentDuration", { duration: spokenDuration(durationMs) })
+        : t("messaging:chat.a11yVideoAttachment")}
+      accessibilityHint={t("messaging:chat.a11yOpensViewer")}
+      onPress={() => setViewerOpen(true)}
+    >
+      <MediaSurface meta={access.meta} message={message}>
+        {poster ? (
+          <Image source={{ uri: poster }} style={styles.mediaFill} resizeMode="cover" onError={access.retry} />
+        ) : (
+          <View style={[styles.mediaFill, styles.mediaPlaceholder]}>
+            <Ionicons
+              name={posterFailed ? "alert-circle-outline" : "videocam-outline"}
+              size={26}
+              color={posterFailed ? colors.danger : colors.muted}
+            />
+          </View>
+        )}
+        {/* The play affordance stays up in every state: the asset is playable
+            even when its poster is not ready, so hiding it would make a
+            perfectly good video look broken while a frame is being cut. */}
+        <View pointerEvents="none" style={styles.videoPlayBadge}>
+          <Ionicons name="play" size={24} color="#04121c" />
+        </View>
+        {duration ? (
+          <View pointerEvents="none" style={styles.videoDurationBadge}>
+            <Text style={styles.videoDurationText}>{duration}</Text>
+          </View>
+        ) : null}
+        {processing ? (
+          <View pointerEvents="none" style={styles.videoStatusBadge}>
+            <Text style={styles.videoStatusText}>{t("messaging:chat.videoProcessing")}</Text>
+          </View>
+        ) : null}
+        {posterFailed ? (
+          <View pointerEvents="none" style={styles.videoStatusBadge}>
+            <Text style={styles.videoStatusText}>{t("messaging:chat.videoPosterFailed")}</Text>
+          </View>
+        ) : null}
+      </MediaSurface>
+      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
+    </Pressable>
+  );
+}
+
+/** Statuses that mean a poster is still coming. `queued` included: the job row exists. */
+function isPosterPending(status: string) {
+  return ["queued", "processing"].includes(String(status || "").toLowerCase());
+}
+
+function isPosterFailed(status: string) {
+  return ["failed", "rejected_too_long"].includes(String(status || "").toLowerCase());
+}
+
+/**
+ * `0:45`, `13:42`, `1:12:08` — hours only once there are hours.
+ *
+ * Duration is read off the attachment row, which the processing worker filled in
+ * from the container itself. Nothing here measures the file, and a 90-minute
+ * video formats by the same rule as a 10-second one.
+ */
+function formatMediaDuration(durationMs: number): string {
+  const total = Math.round(Math.max(0, Number(durationMs) || 0) / 1000);
+  if (total <= 0) return "";
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${minutes}:${pad(seconds)}`;
+}
+
+/** The same length, said rather than shown, for VoiceOver. */
+function spokenDuration(durationMs: number): string {
+  const total = Math.round(Math.max(0, Number(durationMs) || 0) / 1000);
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (minutes && seconds) return translate("messaging:chat.durationMinutesSeconds", { minutes, seconds });
+  if (minutes) return translate("messaging:chat.durationMinutes", { minutes });
+  return translate("messaging:chat.durationSeconds", { seconds });
 }
 
 /**
@@ -2451,8 +2598,27 @@ function isVoiceLikeMessage(message: MessengerMessage) {
   return isVoiceType(message.message_type || message.type);
 }
 
+/**
+ * The text of a bubble, which for a photo or video is nothing.
+ *
+ * Messenger sends the picked file's name as the message body (`body:
+ * input.name` in the attach flow) because there is no caption field — so the
+ * bubble was printing `81084427942__310C6CDB-....MOV` under the media as if the
+ * user had typed it. A document keeps its name, because for a document the name
+ * *is* the content; the media itself is the content of a photo or a video, and
+ * the filename is retained on the attachment row for the viewer and downloads.
+ */
 function displayMessageBody(message: MessengerMessage) {
-  return message.body || "";
+  const body = message.body || "";
+  if (!body) return "";
+  const type = (message.message_type || "text").toLowerCase();
+  if (!["image", "gif", "video"].includes(type)) return body;
+  return looksLikeFilename(body) ? "" : body;
+}
+
+/** A bare filename: one token, no spaces, with an extension on the end. */
+function looksLikeFilename(value: string) {
+  return /^[^\s/]+\.[A-Za-z0-9]{2,5}$/.test(value.trim());
 }
 
 function mediaPreviewLabel(type: string, hasMedia: boolean) {
@@ -2764,6 +2930,50 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: 220
   },
+  mediaSurface: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: "rgba(97,216,255,0.22)",
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    position: "relative"
+  },
+  mediaFill: { height: "100%", width: "100%" },
+  mediaPlaceholder: { alignItems: "center", justifyContent: "center" },
+  videoPlayBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 26,
+    height: 52,
+    justifyContent: "center",
+    left: "50%",
+    marginLeft: -26,
+    marginTop: -26,
+    paddingLeft: 3,
+    position: "absolute",
+    top: "50%",
+    width: 52
+  },
+  videoDurationBadge: {
+    backgroundColor: "rgba(4,18,28,0.78)",
+    borderRadius: 6,
+    bottom: 8,
+    left: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    position: "absolute"
+  },
+  videoDurationText: { color: "#ffffff", fontSize: 12, fontWeight: "700" },
+  videoStatusBadge: {
+    backgroundColor: "rgba(4,18,28,0.78)",
+    borderRadius: 6,
+    bottom: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    position: "absolute",
+    right: 8
+  },
+  videoStatusText: { color: "#ffffff", fontSize: 11, fontWeight: "600" },
   attachment: {
     backgroundColor: "rgba(255,255,255,0.08)",
     borderColor: "rgba(97,216,255,0.24)",
