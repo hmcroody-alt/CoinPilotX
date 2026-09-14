@@ -37,7 +37,7 @@ def ensure_other_user():
     if not cur.fetchone():
         cur.execute(
             "INSERT INTO users (user_id, username, display_name, email, signup_time, onboarding_complete, avatar_url) VALUES (?, ?, ?, ?, ?, 1, ?)",
-            (940005, "pulse_status_public", "Pulse Public Status", "pulse-status-public@example.test", bot.datetime.utcnow().isoformat(timespec="seconds"), "/static/brand/pulsesoc-logo-20260606.png"),
+            (940005, "pulse_status_public", "Pulse Public Status", "pulse-status-public@example.test", bot.datetime.utcnow().isoformat(timespec="seconds"), "/static/brand/pulsesoc-logo-20260913.png"),
         )
     conn.commit(); conn.close()
     return 940005
