@@ -49,6 +49,7 @@ from typing import Any, Iterable, Mapping, Optional
 from services import db
 from services import marketplace_goods_policy as _goods
 from services import marketplace_listing_lifecycle as _lifecycle
+from services import marketplace_variants as _variants
 from services.business_os.marketplace.listing_batch import (
     BLOCKED,
     FAILED,
@@ -660,12 +661,16 @@ def variant_economics(variant: Mapping[str, Any]) -> dict:
     """Price, cost and margin for one variant. Unknown stays unknown."""
     price = _int_or_none(variant.get("price_cents"))
     cost = _int_or_none(variant.get("cost_cents"))
-    margin_cents = None
+    # Delegated, not restated. `marketplace_variants.margin_cents` already owns
+    # this subtraction and already makes the two calls that matter -- unknown
+    # cost returns None rather than a 100% margin, and a negative result is
+    # returned rather than clamped. A second copy here would agree on the day it
+    # was written and be the place the seller dashboard and the review page
+    # start disagreeing about the same product's margin.
+    margin_cents = _variants.margin_cents({"cost_cents": cost}, price)
     margin_pct = None
-    if price is not None and cost is not None:
-        margin_cents = price - cost
-        if price > 0:
-            margin_pct = round((price - cost) * 100.0 / price, 1)
+    if margin_cents is not None and price:
+        margin_pct = round(margin_cents * 100.0 / price, 1)
     return {
         "variant_key": str(variant.get("variant_key") or ""),
         "sku": str(variant.get("sku") or ""),
