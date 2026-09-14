@@ -64,6 +64,9 @@ __all__ = [
     "block_reason", "claim", "ensure_schema", "evaluate_rows", "finalize",
     "normalize_request", "normalize_reason", "publication_readback",
     "queue_sql", "request_hash", "seller_message",
+    "MISSING_REVIEW_STATE", "UNKNOWN_REVIEW_STATE", "APPROVED_BUT_UNRELEASED",
+    "KNOWN_REVIEW_STATES", "zombie_reason", "zombie_repair", "zombie_sql",
+    "duplicate_decision_sql",
     "QUEUE_FILTERS", "QUEUE_SORTS", "PAGE_SIZE",
     "normalize_query", "queue_where", "queue_order", "page_window",
 ]
@@ -427,6 +430,125 @@ def page_window(query: Mapping[str, Any], total: int) -> dict:
     return {"page": page, "pages": pages, "page_size": page_size, "total": total,
             "offset": (page - 1) * page_size,
             "has_prev": page > 1, "has_next": page < pages}
+
+
+# --- §40/§41: listings that are in review according to nobody -----------------
+
+#: The merchant released it and the moderation column is blank. Nothing decided
+#: it, nothing can: :func:`awaiting_moderation` needs a recognised awaiting
+#: state on the approval axis, and an empty string is not one.
+MISSING_REVIEW_STATE = "MISSING_REVIEW_STATE"
+
+#: The moderation column holds a word this build does not know -- ``in_review``,
+#: ``submitted``, ``needs_review``, whatever an older route or an import script
+#: wrote. It reads as "in review" to a human scanning the table and as nothing
+#: at all to every predicate.
+UNKNOWN_REVIEW_STATE = "UNKNOWN_REVIEW_STATE"
+
+#: A decision exists, but on the wrong axis to matter: approved while the
+#: merchant axis still says pending. Reported, never repaired — see
+#: :func:`zombie_repair`.
+APPROVED_BUT_UNRELEASED = "APPROVED_BUT_UNRELEASED"
+
+#: Every value either axis may legitimately hold on the moderation side. A row
+#: outside this set is not "some other state", it is a row no code path in this
+#: application can act on.
+KNOWN_REVIEW_STATES = frozenset(
+    set(_lifecycle.AWAITING_DECISION_STATES)
+    | {_lifecycle.APPROVED, _lifecycle.REJECTED, _lifecycle.CHANGES_REQUESTED,
+       "restricted", _lifecycle.SUSPENDED, _lifecycle.ARCHIVED, _lifecycle.DRAFT}
+)
+
+
+def zombie_reason(listing: Mapping[str, Any]) -> Optional[str]:
+    """Why this row is telling its seller "in review" with nobody able to review it.
+
+    The §40 defect is not a listing in the wrong state. It is a listing in a
+    state that *no* screen contradicts: the seller's store shows "In review —
+    not live yet" because the row is released and not public, the review queue
+    does not show it because :func:`_lifecycle.awaiting_moderation` is false,
+    and buyer discovery does not show it because approval never happened. Three
+    surfaces agree, all three are correct, and the product sits there forever.
+
+    Deliberately narrow on one point: a ``draft`` with a blank approval column
+    is *not* a zombie. Its merchant has not released it, so nobody is waiting
+    and nothing is stuck. Sweeping drafts into ``pending_review`` would push
+    every unfinished product a seller ever started into the moderation queue —
+    the reviewer's backlog would fill with listings whose own authors are not
+    done with them.
+    """
+    if not listing:
+        return None
+    status = _lifecycle.normalized(listing.get("status"))
+    approval = _lifecycle.normalized(listing.get("approval_status"))
+
+    if status not in _lifecycle.MERCHANT_RELEASED_STATUSES:
+        # Not released. Whatever the approval column says, no seller is being
+        # told this is in review and no reviewer is missing work.
+        return None
+    if approval in _lifecycle.AWAITING_DECISION_STATES:
+        return None  # Reachable. This is the healthy case.
+    if not approval:
+        return MISSING_REVIEW_STATE
+    if approval not in KNOWN_REVIEW_STATES:
+        return UNKNOWN_REVIEW_STATE
+    if (approval in _lifecycle.APPROVED_STATES
+            and status in _lifecycle.AWAITING_DECISION_STATES):
+        return APPROVED_BUT_UNRELEASED
+    return None
+
+
+def zombie_repair(listing: Mapping[str, Any]) -> Optional[dict]:
+    """The single column write that makes a stuck listing decidable again.
+
+    ``{"approval_status": "pending_review", "reason": ...}`` or ``None``.
+
+    What this deliberately does not do is decide anything. The repair puts the
+    row *into* the queue and leaves the verdict to a human, because the states
+    it is repairing from carry no information about whether the product is
+    acceptable — that is precisely what went missing. A backfill that inferred
+    "released and unblank, so presumably fine, mark it approved" would publish
+    an unreviewed catalogue in one transaction and every §34 guard in this
+    module would have been bypassed by a maintenance script.
+
+    ``APPROVED_BUT_UNRELEASED`` returns ``None`` for the mirror-image reason.
+    Its fix is on the merchant axis, and writing ``status='published'`` here
+    would publish a listing whose merchant never released it.
+    """
+    reason = zombie_reason(listing)
+    if reason in (MISSING_REVIEW_STATE, UNKNOWN_REVIEW_STATE):
+        return {"approval_status": _lifecycle.PENDING_REVIEW, "reason": reason}
+    return None
+
+
+def zombie_sql(alias: str = "l") -> str:
+    """The sweep's predicate: released, and not in any state the queue accepts.
+
+    Broader than :func:`zombie_reason` by exactly one case (it also matches
+    genuinely decided rows), because a SQL ``NOT IN`` cannot tell
+    ``APPROVED_BUT_UNRELEASED`` from a normal approval without repeating the
+    whole rule. The sweep re-checks every row it fetches through
+    :func:`zombie_reason`, so the SQL only has to be a superset that is small —
+    and this one is bounded by "released but not awaiting", which on a healthy
+    catalogue is the decided rows and nothing else.
+    """
+    released = "', '".join(sorted(_lifecycle.MERCHANT_RELEASED_STATUSES))
+    awaiting = "', '".join(sorted(_lifecycle.AWAITING_DECISION_STATES))
+    return (f"LOWER(COALESCE({alias}.status,'')) IN ('{released}') "
+            f"AND LOWER(COALESCE({alias}.approval_status,'')) NOT IN ('{awaiting}')")
+
+
+def duplicate_decision_sql(alias: str = "b") -> str:
+    """§41. Two ledger rows claiming the same key for the same reviewer.
+
+    The unique index makes this impossible going forward, which is exactly why
+    it is worth asking: an index added after the fact does not clean up what
+    landed before it, and a silently-deduplicated replay is indistinguishable
+    from a decision that never happened.
+    """
+    return (f"SELECT {alias}.reviewer_user_id, {alias}.idempotency_key, COUNT(*) AS copies "
+            f"FROM marketplace_review_batches {alias} "
+            f"GROUP BY {alias}.reviewer_user_id, {alias}.idempotency_key HAVING COUNT(*) > 1")
 
 
 def evaluate_rows(rows: Iterable[Mapping[str, Any]], listing_ids: Iterable[int],
