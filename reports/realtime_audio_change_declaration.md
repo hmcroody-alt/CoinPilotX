@@ -3106,3 +3106,93 @@ its previous behaviour: range mode unchanged, file-list mode silently skipping
 `bot.py`. The new test file is independent and can be reverted with it or left in
 place, where it would fail and document the hole. Nothing else in the repository
 imports either file.
+
+## Brand addendum — an Android launcher icon block in app.json (2026-09-13)
+
+### Why the change is required
+
+`mobile-native/app.json` sits in `dependency_watch/files`, so the global logo
+replacement trips this gate on a four-line addition that has nothing to do with
+audio:
+
+```json
+"adaptiveIcon": {
+  "foregroundImage": "./assets/adaptive-icon.png",
+  "backgroundColor": "#000730"
+}
+```
+
+`mobile-native/android/` is gitignored — it is prebuild output. Without this
+block, the regenerated Android launcher icon reverts to the Expo default on the
+next `expo prebuild`, and the new brand mark survives only until someone runs
+it. The block is what makes the Android icon reproducible from config.
+
+`app.json` is watched as a whole file rather than by key, because the keys that
+matter for audio (`ios.infoPlist.NSMicrophoneUsageDescription`,
+`UIBackgroundModes: audio`, the Agora/expo-av pins) live in the same document as
+every cosmetic setting. The tripwire cannot tell them apart, so a brand change
+pays the same toll as a dependency bump. That is the lock working as designed,
+and the toll is paid here rather than routed around.
+
+### Which feature required it
+
+The global PulseSoc logo replacement (commit `02edf493`). No audio, call,
+livestream, or media feature was in scope.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | Added `expo.android.adaptiveIcon` (`foregroundImage`, `backgroundColor`). Nothing else in the document was edited. |
+
+Supporting non-protected files in the same commit are brand assets, the
+generator `scripts/build_brand_assets.py`, the new `BrandLogo` component, two
+auth headers that now call it, and web template/favicon/OG references.
+
+### Expected behavior change
+
+**None at runtime, on either platform.** The added keys are consumed by
+`expo prebuild` when generating `android/app/src/main/res/mipmap-*`. They are
+not read by the app at runtime and have no iOS effect at all.
+
+Audio-relevant values in `app.json` are byte-identical: `NSMicrophoneUsageDescription`,
+`NSCameraUsageDescription`, `UIBackgroundModes` (`audio`, `fetch`,
+`remote-notification`), `RECORD_AUDIO`, and the plugin list are unchanged. No
+package version moved — `package.json` and `package-lock.json` are not in this
+commit, so the `react-native-agora` 4.6.2 and `expo-av ~16.0.8` pins stand.
+
+### Regression risk
+
+Confined to the Android launcher icon. The worst realistic failure is a
+mis-rendered adaptive icon — visible on a home screen, invisible to audio. No
+session, track, publication, engine, route, or permission line is touched.
+
+### Tests run
+
+Against the exact pushed tree (`02edf493`, gated in a detached worktree, not the
+shared checkout):
+
+- `npm run test:realtime-audio-critical` — **11 suites, 191 tests, 0 failures.**
+- `npm run test:realtime-audio` — **21 suites, 377 tests, 0 failures.**
+- `npm run test:realtime-audio-architecture` — **22 tests, 0 failures.**
+- `python -m unittest tests.protection.test_realtime_audio_architecture` — **19 tests, OK.**
+- `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` — **13 passed.**
+- `npm run verify` (typecheck + i18n + jest) — **411 suites / 7126 tests, exit 0.**
+- `python -m py_compile bot.py seo/schema.py services/admin_gateway.py` — clean.
+- Release simulator build (iPhone 11 Pro Max, iOS 26.5): built, installed,
+  launched, splash and auth header render, app icon correct on springboard.
+
+### Physical validation required
+
+**Not required, and none is claimed.** The protected diff is two JSON keys that
+only `expo prebuild` reads, and they configure an Android launcher icon. There
+is no audible behaviour for a human to confirm. The iOS build carrying this
+commit was launched on a simulator; no call or livestream path was exercised,
+and none is asserted.
+
+### Rollback procedure
+
+Remove the `expo.android.adaptiveIcon` block from `mobile-native/app.json`. The
+Android launcher icon reverts to the Expo default on the next prebuild; nothing
+else changes. Reverting the whole brand commit `02edf493` is also safe and
+self-contained — it touches no audio, call, or live code.
