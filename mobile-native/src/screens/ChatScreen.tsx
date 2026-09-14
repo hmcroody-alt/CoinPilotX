@@ -2305,7 +2305,11 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
               there is no bound worth falling back through. */}
           <MediaSurface meta={mediaAccess.meta} message={message}>
             {photoPreviewUrl ? (
-              <MediaPreviewImage uri={photoPreviewUrl} onRetry={retryMedia} />
+              <MediaPreviewImage
+                uri={photoPreviewUrl}
+                fallbackUri={isPreviewTerminal(mediaAccess.meta.processingStatus) ? mediaUrl : ""}
+                onRetry={retryMedia}
+              />
             ) : (
               <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
                 <ActivityIndicator color={colors.muted} size="small" />
@@ -2370,17 +2374,43 @@ function clamp(value: number, min: number, max: number) {
  * access layer before this gives up, because an expired signature is the
  * ordinary cause and it is invisible from here.
  */
-function MediaPreviewImage({ uri, onRetry, onLoad }: { uri: string; onRetry?: () => void; onLoad?: () => void }) {
+/**
+ * `fallbackUri` covers the case the dispatch above cannot see: a rendition that
+ * the record says exists and does not.
+ *
+ * The caller only falls back to the original when `thumbnailUrl` is *absent*.
+ * But an attachment can sit at processing_status='ready' with a thumbnail_key
+ * pointing at an object that was never written — the row claims a preview, the
+ * access endpoint signs a perfectly valid URL for it, and the object 404s. That
+ * is indistinguishable from a good preview until the image actually fails to
+ * load, so the recovery has to live here, at the point of failure, rather than
+ * in the branch that picks the URL. Falling through to the full-size photo is
+ * the same trade the dispatch already makes when the rendition is known to be
+ * missing, and it is bounded by the photo upload limit.
+ */
+function MediaPreviewImage({ uri, fallbackUri, onRetry, onLoad }: { uri: string; fallbackUri?: string; onRetry?: () => void; onLoad?: () => void }) {
   const { t } = useTranslation();
   const [phase, setPhase] = useState<"loading" | "ready" | "failed">("loading");
+  const [source, setSource] = useState(uri);
   // Keyed on the URL: a re-grant hands over a new signature for the same
   // picture, and leaving the previous attempt's `failed` up would make the
   // retry look like it did nothing.
-  useEffect(() => { setPhase(uri ? "loading" : "failed"); }, [uri]);
+  useEffect(() => { setSource(uri); setPhase(uri ? "loading" : "failed"); }, [uri]);
+  const handleError = useCallback(() => {
+    // One step down, and only ever one: the fallback is a different object, so
+    // if it fails too there is nothing further to try and the card must say so.
+    if (fallbackUri && fallbackUri !== source) {
+      setSource(fallbackUri);
+      setPhase("loading");
+      return;
+    }
+    setPhase("failed");
+  }, [fallbackUri, source]);
   const retry = useCallback(() => {
+    setSource(uri);
     setPhase("loading");
     onRetry?.();
-  }, [onRetry]);
+  }, [onRetry, uri]);
   if (phase === "failed") {
     return (
       <Pressable
@@ -2398,11 +2428,11 @@ function MediaPreviewImage({ uri, onRetry, onLoad }: { uri: string; onRetry?: ()
   return (
     <>
       <Image
-        source={{ uri }}
+        source={{ uri: source }}
         style={styles.mediaFill}
         resizeMode="cover"
         onLoad={() => { setPhase("ready"); onLoad?.(); }}
-        onError={() => setPhase("failed")}
+        onError={handleError}
       />
       {phase === "loading" ? (
         <View pointerEvents="none" style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>

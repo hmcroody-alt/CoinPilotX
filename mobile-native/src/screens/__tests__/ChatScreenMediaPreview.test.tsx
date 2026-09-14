@@ -634,10 +634,25 @@ describe("a frame without a bitmap is never a silent dark block", () => {
     expect(screen.queryByText("Processing video…")).toBeNull();
   });
 
-  it("offers a retry on a photo whose preview will not load", async () => {
-    // MUTATION: dropping the failure branch from MediaPreviewImage, so a photo
-    // that fails to decode leaves its correctly-shaped frame up empty forever,
-    // fails here.
+  /** Drive the loader's error path for whichever URL the frame is showing. */
+  async function failCurrentPhotoImage(uri: string) {
+    const image = screen.UNSAFE_getAllByType(Image).find(
+      (node) => String((node.props as { source?: { uri?: string } }).source?.uri || "") === uri
+    );
+    expect(image).toBeTruthy();
+    await act(async () => {
+      (image!.props as { onError?: () => void }).onError?.();
+    });
+  }
+
+  it("falls back to the full photo when the rendition the record promised is not there", async () => {
+    // MUTATION: dropping the fallback, so the first preview error goes straight
+    // to the failure card, fails here. This is the production state, not a
+    // hypothetical: on 2026-09-14, 38 of the 39 messenger attachments carrying
+    // a thumbnail_key had no object behind it in R2 while the row still read
+    // processing_status 'ready'. The grant is valid and the URL is signed, so
+    // the renderer cannot know the preview is dead until it fails to load --
+    // and the original is both present and bounded by the photo upload limit.
     mockGrants.set(PHOTO_MEDIA_ID, {
       access_url: PHOTO_ACCESS_URL,
       thumbnail_access_url: PHOTO_PREVIEW_URL,
@@ -645,13 +660,30 @@ describe("a frame without a bitmap is never a silent dark block", () => {
     });
     await renderConversation([photoMessage()]);
 
-    const image = screen.UNSAFE_getAllByType(Image).find(
-      (node) => String((node.props as { source?: { uri?: string } }).source?.uri || "") === PHOTO_PREVIEW_URL
+    await failCurrentPhotoImage(PHOTO_PREVIEW_URL);
+
+    const fallback = screen.UNSAFE_getAllByType(Image).find(
+      (node) => String((node.props as { source?: { uri?: string } }).source?.uri || "") === PHOTO_ACCESS_URL
     );
-    expect(image).toBeTruthy();
-    await act(async () => {
-      (image!.props as { onError?: () => void }).onError?.();
+    expect(fallback).toBeTruthy();
+    expect(screen.queryByText("Preview unavailable")).toBeNull();
+  });
+
+  it("offers a retry on a photo whose preview will not load", async () => {
+    // MUTATION: dropping the failure branch from MediaPreviewImage, so a photo
+    // that fails to decode leaves its correctly-shaped frame up empty forever,
+    // fails here. The fallback above buys exactly one step — once the original
+    // fails too there is nothing further to try, and the card has to say so
+    // rather than sit on a spinner.
+    mockGrants.set(PHOTO_MEDIA_ID, {
+      access_url: PHOTO_ACCESS_URL,
+      thumbnail_access_url: PHOTO_PREVIEW_URL,
+      attachment: { media_type: "photo", width: 3024, height: 4032, processing_status: "ready" }
     });
+    await renderConversation([photoMessage()]);
+
+    await failCurrentPhotoImage(PHOTO_PREVIEW_URL);
+    await failCurrentPhotoImage(PHOTO_ACCESS_URL);
 
     expect(screen.getByText("Preview unavailable")).toBeTruthy();
     expect(screen.getByText("Tap to retry")).toBeTruthy();
@@ -668,12 +700,8 @@ describe("a frame without a bitmap is never a silent dark block", () => {
     });
     await renderConversation([photoMessage()]);
 
-    const image = screen.UNSAFE_getAllByType(Image).find(
-      (node) => String((node.props as { source?: { uri?: string } }).source?.uri || "") === PHOTO_PREVIEW_URL
-    );
-    await act(async () => {
-      (image!.props as { onError?: () => void }).onError?.();
-    });
+    await failCurrentPhotoImage(PHOTO_PREVIEW_URL);
+    await failCurrentPhotoImage(PHOTO_ACCESS_URL);
     const before = mockAccessRequests.length;
 
     await act(async () => {

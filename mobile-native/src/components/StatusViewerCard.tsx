@@ -223,8 +223,13 @@ export function StatusViewerCard({
           }}
           onError={() => setFailed(true)}
         />
-      ) : kind === "image" && mediaUrl ? (
-        <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="cover" />
+      ) : kind === "image" && mediaUrl && !failed ? (
+        // onError is load-bearing, not defensive. Without it a photo whose URL
+        // 404s or is refused renders nothing at all, and the card's own dark
+        // background reads as a deliberately black Status -- an error wearing
+        // the empty state's clothes. Failing into the branch below at least
+        // says so and offers the share link.
+        <Image source={{ uri: mediaUrl }} style={styles.media} resizeMode="cover" onError={() => setFailed(true)} />
       ) : (
         <View style={styles.textStatus}>
           {status.body ? (
