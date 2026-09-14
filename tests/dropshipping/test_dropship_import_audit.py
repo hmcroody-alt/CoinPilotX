@@ -619,39 +619,51 @@ def test_facts_keeps_an_explicit_null():
     # The §12 rule, at the level of the serializer. `{k: v for ... if v is not
     # None}` is the one-line version of this bug and it erases the difference
     # between "no freight declared" and "field did not exist".
-    assert audit._facts({"shipping_allowance_cents": None}) == {
+    assert audit._facts(audit._ALLOWED, {"shipping_allowance_cents": None}) == {
         "shipping_allowance_cents": None}
 
 
 def test_facts_keeps_a_zero():
-    assert audit._facts({"shipping_allowance_cents": 0}) == {
+    assert audit._facts(audit._ALLOWED, {"shipping_allowance_cents": 0}) == {
         "shipping_allowance_cents": 0}
 
 
 def test_facts_keeps_a_false():
     # `published: False` is the entire content of a needs-attention row.
-    assert audit._facts({"published": False}) == {"published": False}
+    assert audit._facts(audit._ALLOWED, {"published": False}) == {"published": False}
 
 
 def test_facts_omits_a_key_nobody_supplied():
     # Distinct from the two above: absent stays absent, so a row does not sprout
     # twenty-odd nulls for facts that were never in play. Equality with a
     # one-key dict is the assertion -- `_ALLOWED` has the rest.
-    assert audit._facts({"listing_id": 7}) == {"listing_id": 7}
+    assert audit._facts(audit._ALLOWED, {"listing_id": 7}) == {"listing_id": 7}
 
 
 def test_facts_drops_a_key_that_is_not_on_the_allowlist():
     # The §27 control, stated as a unit fact so it does not only exist inside an
     # end-to-end test. Anything not named in `_ALLOWED` is not disclosed, whether
     # or not anyone realises it is sensitive.
-    assert audit._facts({"credential_reference": "cred-x",
+    assert audit._facts(audit._ALLOWED,
+                        {"credential_reference": "cred-x",
                          "listing_id": 7}) == {"listing_id": 7}
 
 
 def test_facts_merges_in_order_with_the_last_source_winning():
-    assert audit._facts({"status": "DRAFT"}, {"status": "PUBLISHED"}) == {
+    assert audit._facts(audit._ALLOWED, {"status": "DRAFT"}, {"status": "PUBLISHED"}) == {
         "status": "PUBLISHED"}
 
 
 def test_facts_ignores_a_source_that_is_not_a_dict():
-    assert audit._facts(None, {"listing_id": 1}, "nope") == {"listing_id": 1}
+    assert audit._facts(audit._ALLOWED, None, {"listing_id": 1}, "nope") == {"listing_id": 1}
+
+
+def test_the_two_vocabularies_are_two_different_filters():
+    # `_facts` takes the allowlist as a parameter so both event families share one
+    # copy of the rules above. This pins that the parameter is actually honoured:
+    # if it were ignored in favour of a module lookup, a reprice row would start
+    # disclosing whatever an import row discloses, which is the failure the split
+    # exists to prevent.
+    facts = {"margin_state": "HELD", "auto_publish": True}
+    assert audit._facts(audit._ALLOWED_REPRICE, facts) == {"margin_state": "HELD"}
+    assert audit._facts(audit._ALLOWED, facts) == {"auto_publish": True}

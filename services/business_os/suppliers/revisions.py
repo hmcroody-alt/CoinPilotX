@@ -81,14 +81,45 @@ were settled by reading the code that already owns them rather than by guessing:
   a healthy read of bad news, and filing it as a sync error would make it
   indistinguishable from a connection that is actually broken.
 
+## Somebody has to be able to ask why
+
+A reprice here changes ``marketplace_listings.price_label`` — what a stranger's
+card is charged — with no merchant awake and no tap anywhere. Afterwards the
+column holds one number and has always held one number, so without a record the
+honest answer to "why is this priced at $21.50" is that nobody can tell.
+
+So a cost read that moves the buyer's price, or that raises a reason the merchant
+needs to see, writes one row to the same append-only trail :mod:`audit` files
+imports in. Same table, same timeline, deliberately a different subject type:
+"why was this price *chosen*" and "why did it *change*" are two questions, and a
+merchant looking for the second should not have to page through the first.
+
+Two things about the shape of that write:
+
+* **It rides this transaction.** The row is inserted on the same connection as
+  the ``UPDATE`` it describes, before the commit. A row that survived a rolled-back
+  reprice would assert a change that never happened; a commit without the row
+  would be a silent change to a stranger's bill.
+* **Restraint is the design.** ``worker`` re-reads every imported product every
+  900–3600 seconds. A row per read is ninety-six rows per listing per day, and a
+  trail that long has nothing findable in it. A supplier who did not move their
+  price has not done anything worth telling anyone about.
+
+Stock is deliberately not audited yet. A count flickers on a cadence a price does
+not, and the rows worth keeping there are buyer-visible threshold crossings — in
+stock to out of stock — rather than every reading. Filing those under the reprice
+verb to get them landed would make the price history unreadable.
+
 ## What is still not wired
 
 ``worker.run_once`` calls :func:`apply_supplier_read` after a successful
-``product`` or ``inventory`` read, so §23 and §24 now reach the listing. What
-still does not exist is any *notification*: a merchant learns their margin
-collapsed by opening the product, not by being told. §27's needs-attention
-surface covers imports, not revisions, and pointing revisions at it would reuse a
-vocabulary that means "this never went live" for listings that are live now.
+``product`` or ``inventory`` read, so §23 and §24 now reach the listing, and the
+trail above means the reason a price moved is durable rather than inferred. What
+still does not exist is any *notification*: the record is something a merchant has
+to go and look at, so they still learn their margin collapsed by opening the
+product rather than by being told. §27's needs-attention surface covers imports,
+not revisions, and pointing revisions at it would reuse a vocabulary that means
+"this never went live" for listings that are live now.
 """
 
 from __future__ import annotations
@@ -107,7 +138,7 @@ from services.marketplace_supplier_schema import (
     SYNC_SYNCED,
     SYNC_STALE,
 )
-from . import drafts, normalize, pricing, store_policy
+from . import audit, drafts, normalize, pricing, store_policy
 
 #: Mirrored from ``drafts`` rather than restated, so the ceiling the planner
 #: refuses to cross and the ceiling publication refuses to cross are one number.
@@ -176,6 +207,21 @@ def _int_or_none(value):
         return None
 
 
+def _stored_cost(source, variant):
+    """The cost we believe we are paying for one variant, before this read.
+
+    Extracted so the planner's comparison and the audit trail's ``before`` figure
+    are one rule rather than two copies of it. The fallback order is explained at
+    length in :func:`plan_cost_revision`; what matters here is that a trail row
+    saying "the cost went from X to Y" has to use the same X the reprice decision
+    used, or it describes a change that did not happen.
+    """
+    stored = _int_or_none((variant or {}).get("cost_cents"))
+    if stored is None:
+        stored = _int_or_none((source or {}).get("supplier_cost_cents"))
+    return stored
+
+
 def plan_cost_revision(*, source, variant, rule, observed_cost_cents,
                        shipping_cents=None) -> dict:
     """Decide what one variant's cost and price become after a supplier read.
@@ -211,9 +257,7 @@ def plan_cost_revision(*, source, variant, rule, observed_cost_cents,
     intent unreadable. Only the margin and the proposed price move onto the
     landed basis.
     """
-    stored_cost = _int_or_none((variant or {}).get("cost_cents"))
-    if stored_cost is None:
-        stored_cost = _int_or_none((source or {}).get("supplier_cost_cents"))
+    stored_cost = _stored_cost(source, variant)
     retail = _int_or_none((variant or {}).get("price_cents"))
     observed = _int_or_none(observed_cost_cents)
     # Resolved once each, so no branch below can measure its margin against a
@@ -528,12 +572,33 @@ def _apply_stock(cur, *, source, rows, readings, now) -> dict:
     return {"variants": touched, "attention": attention, "sync_state": sync_state}
 
 
-def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, now) -> dict:
-    """Write one listing's costs and rule-held prices from a product read."""
+def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, economics,
+                now) -> dict:
+    """Write one listing's costs and rule-held prices from a product read.
+
+    Returns the usual counts plus an ``audit`` entry: either ``None`` when nothing
+    happened that a merchant would want a record of, or the ``before``/``after``
+    pair and action for one trail row. It *computes* that row and does not write
+    it — the write belongs to :func:`_apply_to_listing`, which owns the transaction
+    the price change commits in, and this function does not know the
+    ``business_id`` the trail is keyed to.
+    """
     listing_id = int(source["listing_id"])
     seller_user_id = int(source["seller_user_id"])
     bound = drafts._sold_variant(rows, source)
     attention, touched, repriced_bound = [], 0, None
+    # The bound variant's figures, because that is the variant a buyer can
+    # actually order -- `drafts._sold_variant` is the authority on why there is
+    # exactly one -- and therefore the only one whose cost movement changes what a
+    # card is charged. A sibling's cost moving is recorded on the variant row and
+    # is not a story about this listing's price.
+    bound_cost_before = None if bound is None else _stored_cost(source, bound)
+    bound_cost_after = bound_cost_before
+    bound_state = None
+    # Captured before any write, because the row the caller read is the only place
+    # the old label still exists once the UPDATE below runs.
+    label_before = listing.get("price_label")
+    label_after = label_before
 
     for row in rows:
         reference = str(row.get("provider_variant_id") or "").strip()
@@ -558,7 +623,9 @@ def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, now)
         if plan["attention"]:
             attention.append(plan["attention"])
         if bound is not None and int(row["id"]) == int(bound["id"]):
+            bound_state = plan["margin_state"]
             if plan["cost_cents"] is not None:
+                bound_cost_after = plan["cost_cents"]
                 # The source row's cost is the listing-level headline the Review
                 # screen shows, and it tracks the bound variant because that is
                 # the variant the merchant is actually billed for.
@@ -584,13 +651,68 @@ def _apply_cost(cur, *, source, listing, rows, costs, rule, shipping_cents, now)
         # `plan_cost_revision` refuses above `MAX_CHECKOUT_PRICE_CENTS`; and the
         # price is positive by the same branch. `_publish_core` calls the same
         # helper directly on the same reasoning.
+        label_after = drafts._checkout_price_label(repriced_bound, listing.get("currency"))
         cur.execute(
             "UPDATE marketplace_listings SET price_label=?, updated_at=? "
             "WHERE id=? AND seller_user_id=?",
-            (drafts._checkout_price_label(repriced_bound, listing.get("currency")),
-             _listing_time(now), listing_id, seller_user_id))
+            (label_after, _listing_time(now), listing_id, seller_user_id))
 
-    return {"variants": touched, "attention": attention, "sync_state": SYNC_SYNCED}
+    return {
+        "variants": touched,
+        "attention": attention,
+        "sync_state": SYNC_SYNCED,
+        "audit": _cost_audit(
+            source=source, economics=economics,
+            label_before=label_before, label_after=label_after,
+            cost_before=bound_cost_before, cost_after=bound_cost_after,
+            margin_state=bound_state, attention=attention, variants_written=touched),
+    }
+
+
+def _cost_audit(*, source, economics, label_before, label_after, cost_before,
+                cost_after, margin_state, attention, variants_written):
+    """The trail row a cost read earned, or ``None`` if it earned none.
+
+    Two things earn one: the number a buyer's card is charged moved, or something
+    about the margin now needs a human. Nothing else does, and the restraint is the
+    design rather than an optimisation. ``worker`` re-reads every imported product
+    every 900–3600 seconds; a row per read would put ninety-six rows per listing
+    per day into the same timeline a merchant opens to find out what happened to
+    their store, and a trail that long is a trail with nothing findable in it. A
+    supplier who has not changed their price has not done anything worth telling
+    the merchant about.
+
+    ``UNCHANGED`` ticks cannot reach this in the first place -- ``plan_cost_revision``
+    returns both cents as ``None`` when the observed cost matches the stored one --
+    but the comparison below is on the *label*, not on whether a write happened,
+    because "did the buyer's charge move" is the question the row answers. A cost
+    that moved a cent and rounded to the same price is not a price change.
+
+    ``price_label`` appears on both sides even when it did not move: an attention
+    row whose payload said nothing about the price would leave a reader unable to
+    tell whether the margin collapsed because the cost rose or because the price
+    fell.
+    """
+    moved = label_after is not None and label_after != label_before
+    if not moved and not attention:
+        return None
+    identity = {
+        "listing_id": int(source["listing_id"]),
+        "provider": str(source.get("provider") or "").strip().lower(),
+        "external_product_id": source.get("provider_product_id"),
+    }
+    return {
+        "action": audit.REPRICE_APPLIED if moved else audit.REPRICE_ATTENTION,
+        "before": {**identity,
+                   "price_label": label_before,
+                   "supplier_cost_cents": cost_before},
+        "after": {**identity, **(economics or {}),
+                  "price_label": label_after if moved else label_before,
+                  "supplier_cost_cents": cost_after,
+                  "margin_state": margin_state,
+                  "attention": list(attention),
+                  "variants_written": variants_written},
+    }
 
 
 def _readings(kind, provider, payload) -> dict:
@@ -616,13 +738,20 @@ def _readings(kind, provider, payload) -> dict:
         return {}
 
 
-def _apply_to_listing(binding, *, kind, readings, rule, shipping_cents, now) -> dict:
+def _apply_to_listing(binding, *, kind, readings, rule, shipping_cents, business_id,
+                      economics, now) -> dict:
     """Everything one listing's revision writes, in one transaction.
 
     A connection per listing, not per tick. One listing whose write fails must
     not roll back the others' — a supplier read covers whichever listings happen
     to be bound to the same product id, and they have nothing to do with each
     other beyond that coincidence.
+
+    The trail row goes in on this connection, before this commit. That is the whole
+    reason the audit is written here and not by the caller: the row says a buyer's
+    price moved, and the statement that moved it is in this transaction. Committed
+    separately it could survive a rollback and assert a change that never happened,
+    or be lost while the change stood.
     """
     listing_id = int(binding["listing_id"])
     conn = db.connect()
@@ -648,7 +777,13 @@ def _apply_to_listing(binding, *, kind, readings, rule, shipping_cents, now) -> 
         else:
             result = _apply_cost(cur, source=source, listing=listing, rows=rows,
                                  costs=readings, rule=rule,
-                                 shipping_cents=shipping_cents, now=now)
+                                 shipping_cents=shipping_cents,
+                                 economics=economics, now=now)
+        if result.get("audit"):
+            audit.record_reprice(conn, business_id=business_id, listing_id=listing_id,
+                                 action=result["audit"]["action"],
+                                 before=result["audit"]["before"],
+                                 after=result["audit"]["after"])
         if result["variants"]:
             cur.execute(
                 f"UPDATE {variants.SOURCE_TABLE} SET sync_state=?, last_synced_at=?, "
@@ -696,20 +831,40 @@ def apply_supplier_read(*, connection_id, business_id, store_id, kind, resource_
             provider_product_id=resource_id)
         rule = None
         shipping_cents = None
+        economics = None
         if kind == "product":
             # Resolved once for the whole read, on the same connection, exactly
             # as `importer` resolves it once for a whole batch: per listing would
             # be the same answer plus N reads, and would let a policy edited
             # mid-tick reprice half of one product's listings differently.
-            rule, _ = store_policy.resolve_rule(conn, business_id, store_id)
+            rule, pricing_source = store_policy.resolve_rule(conn, business_id, store_id)
             # Resolved beside the rule, never separately. The importer priced
             # against `pricing.basis(cost, allowance)`; a reprice that resolved
             # the rule but not the allowance would hold the merchant's margin
             # policy against the wrong cost on the first supplier price move.
-            shipping_cents, _ = store_policy.resolve_shipping_allowance(
+            shipping_cents, shipping_source = store_policy.resolve_shipping_allowance(
                 conn, business_id, store_id)
+            # Both sources were being discarded, and the trail is why they are not
+            # any more. §8 gives three tiers and a merchant asking why an overnight
+            # reprice landed where it did needs to know which one answered: "your
+            # own policy" and "PulseSoc's 45% default" are different answers to the
+            # same question, and the rule alone cannot tell them apart.
+            economics = {
+                "pricing_rule": rule,
+                "pricing_source": pricing_source,
+                "shipping_allowance_cents": shipping_cents,
+                "shipping_allowance_source": shipping_source,
+                "margin_basis": pricing.LANDED if shipping_cents is not None
+                else pricing.ITEM,
+            }
     finally:
         conn.close()
+
+    if economics is not None and bindings:
+        # Same reason the importer does this: the trail's table belongs to the
+        # store subsystem, whose DDL is reached through a route pack registered in
+        # an `except Exception` block. A worker process may never have touched it.
+        audit.ensure_schema()
 
     for binding in bindings:
         provider = str(binding.get("provider") or "").strip().lower()
@@ -718,7 +873,9 @@ def apply_supplier_read(*, connection_id, business_id, store_id, kind, resource_
             out["skipped"] += 1
             continue
         result = _apply_to_listing(binding, kind=kind, readings=readings, rule=rule,
-                                   shipping_cents=shipping_cents, now=now)
+                                   shipping_cents=shipping_cents,
+                                   business_id=business_id, economics=economics,
+                                   now=now)
         if result.get("skipped"):
             out["skipped"] += 1
             continue

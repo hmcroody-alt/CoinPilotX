@@ -34,6 +34,20 @@ allowlist means a new fact has to be *chosen* before it is disclosed.
 
 Nothing in here is buyer-facing. ``get_timeline`` has no anonymous path.
 
+The second family
+-----------------
+An import is not the only time this system decides a price. :mod:`revisions`
+reprices a live listing when a supplier moves their cost, on a worker cadence,
+with nobody awake — and that is the harder record to do without. A merchant who
+finds an unexpected price at import can at least remember importing; a merchant
+whose price changed at 3am has nothing to reason from at all.
+
+So there is a second vocabulary here, filed under its own subject type, with its
+own allowlist and a system actor. It shares this module rather than living in
+:mod:`revisions` for one reason: the disclosure decision above is a single
+decision about a single merchant-facing table, and splitting it across two files
+is how the second copy stops matching the first.
+
 On the shape of a failure
 -------------------------
 The two call sites treat errors differently on purpose, and the difference is not
@@ -148,6 +162,65 @@ _ALLOWED = (
     "detail",
 )
 
+#: A supplier moved their price and the listing followed. Filed apart from the
+#: import family because it is a different question with a different answer: an
+#: import row says why a price was *chosen*, a reprice row says why it *changed*,
+#: and a merchant looking for the second does not want to page through the first.
+REPRICE_SUBJECT = "supplier_reprice"
+
+#: Two verbs, not one per outcome code. ``applied`` means the number a buyer's card
+#: is charged actually moved; ``attention`` means it did not but something about the
+#: margin now needs a human. They are fixed strings rather than derived from a
+#: revision action because :func:`action_for`'s mechanical derivation is right for a
+#: closed set of importer outcomes and wrong here: ``revisions`` reports per-variant
+#: actions, and a listing's row summarises several of them.
+REPRICE_APPLIED = "supplier.reprice.applied"
+REPRICE_ATTENTION = "supplier.reprice.attention"
+
+#: Nobody tapped anything. The trail's ``actor`` column holds a user id
+#: everywhere else, and putting the store owner's id here would be a small lie
+#: with a specific cost: it would make an automatic overnight reprice
+#: indistinguishable from the merchant having done it themselves, which is the
+#: one distinction a reprice row exists to draw.
+SYSTEM_ACTOR = "system:supplier_sync"
+
+#: The reprice vocabulary. Separate from :data:`_ALLOWED` rather than a union with
+#: it, because a union stops being readable as a description: you could no longer
+#: tell from the list what an import row contains and what a reprice row does, and
+#: a key would silently become disclosable on both paths the moment it was needed
+#: on one.
+_ALLOWED_REPRICE = (
+    # --- what moved --------------------------------------------------------
+    # ``price_label`` is the number a stranger's card is charged, and it appears
+    # in both ``before`` and ``after``. That pair *is* the row: "your price went
+    # from $14.99 to $21.50" is the sentence the merchant needs, and either half
+    # alone is unreadable.
+    "price_label",
+    "supplier_cost_cents",
+    "listing_id",
+    "provider",
+    "external_product_id",
+
+    # --- why it moved ------------------------------------------------------
+    # The same five as the import path, and deliberately the same spellings, so
+    # "the rule that priced it at import" and "the rule that repriced it in
+    # September" are comparable rows rather than two vocabularies.
+    "pricing_rule",
+    "pricing_source",
+    "shipping_allowance_cents",
+    "shipping_allowance_source",
+    "margin_basis",
+
+    # --- what it means now -------------------------------------------------
+    # ``margin_state`` is the honest verdict on the new price: a rule-held
+    # reprice can still land on a bad margin, and recording only that the rule
+    # was applied would file a loss as a success. ``attention`` carries
+    # ``revisions``' own codes, unmodified.
+    "margin_state",
+    "attention",
+    "variants_written",
+)
+
 
 def action_for(outcome) -> str:
     """``PUBLISHED`` -> ``supplier.import.published``.
@@ -163,12 +236,17 @@ def action_for(outcome) -> str:
     return ACTION_PREFIX + token.lower()
 
 
-def _facts(*sources) -> dict:
-    """Merge the given dicts down to the allowlist, in order, last one wins.
+def _facts(allowed, *sources) -> dict:
+    """Merge the given dicts down to ``allowed``, in order, last one wins.
 
-    Iterates :data:`_ALLOWED` rather than the sources, which is the whole
-    security property: a key the importer starts emitting tomorrow does not
-    appear here until it is named above.
+    Iterates the allowlist rather than the sources, which is the whole security
+    property: a key the importer starts emitting tomorrow does not appear here
+    until it is named above.
+
+    The allowlist is a parameter and not a module lookup so the two vocabularies
+    share one filter. Copying the comprehension per event family would give the
+    "keep an explicit null" rule below two places to drift apart in, and that rule
+    is the one carrying §12 into the trail.
 
     A key present with the value ``None`` is kept, not dropped. That is the same
     rule §12 turns on and it matters just as much in the trail: a row with no
@@ -181,7 +259,7 @@ def _facts(*sources) -> dict:
     for source in sources:
         if isinstance(source, dict):
             merged.update(source)
-    return {key: merged[key] for key in _ALLOWED if key in merged}
+    return {key: merged[key] for key in allowed if key in merged}
 
 
 def record_import(conn, *, business_id, actor_user_id, outcome, facts) -> None:
@@ -198,7 +276,7 @@ def record_import(conn, *, business_id, actor_user_id, outcome, facts) -> None:
         subject_ref=facts.get("listing_id"),
         action=action_for(outcome),
         actor=actor_user_id,
-        after=_facts(facts),
+        after=_facts(_ALLOWED, facts),
     )
 
 
@@ -235,6 +313,39 @@ def record_import_safely(*, business_id, actor_user_id, outcome, facts) -> bool:
                 conn.close()
             except Exception:
                 pass
+
+
+def record_reprice(conn, *, business_id, listing_id, action, before, after) -> None:
+    """Write one reprice event on the caller's transaction. Not committed here.
+
+    Takes the connection for the same reason :func:`record_import` does, and with
+    more at stake: the write this accompanies is the ``UPDATE marketplace_listings
+    SET price_label`` that changes what a stranger's card is charged. A row on a
+    second connection could commit while that update rolled back, and the trail
+    would then claim a price moved that never did.
+
+    ``before``/``after`` both go through :func:`_facts`, so a reprice row is subject
+    to the same disclosure decision as an import row -- and the same "an explicit
+    null is a fact" rule, which here distinguishes "the supplier reported no cost"
+    from "this row predates the field".
+
+    ``actor`` is :data:`SYSTEM_ACTOR`, not a user. Nobody was present.
+
+    Deliberately *not* rate-limited or deduplicated here. The decision about which
+    supplier reads are worth a row belongs to the caller, which is the only place
+    that knows whether anything buyer-visible moved -- a trail with a row per
+    fifteen-minute tick is a trail with no findable rows at all.
+    """
+    store_service._audit(
+        conn,
+        business_id=business_id,
+        subject_type=REPRICE_SUBJECT,
+        subject_ref=listing_id,
+        action=action,
+        actor=SYSTEM_ACTOR,
+        before=_facts(_ALLOWED_REPRICE, before),
+        after=_facts(_ALLOWED_REPRICE, after),
+    )
 
 
 def ensure_schema() -> None:
