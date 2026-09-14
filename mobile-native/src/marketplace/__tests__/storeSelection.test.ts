@@ -48,6 +48,7 @@ function row(id: number, over: Partial<StoreListingRow> = {}): StoreListingRow {
     health: "in_stock",
     readiness: {
       publishable: true,
+      resubmittable: false,
       checkout_ready: true,
       blockers: [],
       warnings: [],
@@ -263,6 +264,7 @@ describe("partition — what will happen, before it happens", () => {
     const live = row(13, {
       readiness: {
         publishable: true,
+        resubmittable: false,
         checkout_ready: true,
         blockers: [],
         warnings: [],
@@ -289,6 +291,7 @@ describe("partition — what will happen, before it happens", () => {
       health: "unknown_stock",
       readiness: {
         publishable: false,
+        resubmittable: false,
         checkout_ready: false,
         blockers: ["MISSING_PRICE"],
         warnings: [],

@@ -78,6 +78,7 @@ import { StoreDashboardScreen } from "../StoreDashboardScreen";
 
 const READY = {
   publishable: true,
+  resubmittable: false,
   checkout_ready: true,
   blockers: [],
   warnings: [],
@@ -88,6 +89,7 @@ const READY = {
 
 const NOT_READY = {
   publishable: false,
+  resubmittable: false,
   checkout_ready: false,
   blockers: ["MISSING_PRICE"],
   warnings: [],

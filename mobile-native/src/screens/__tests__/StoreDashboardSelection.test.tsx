@@ -77,6 +77,7 @@ import { StoreDashboardScreen } from "../StoreDashboardScreen";
 
 const READY = {
   publishable: true,
+  resubmittable: false,
   checkout_ready: true,
   blockers: [],
   warnings: [],
@@ -95,6 +96,7 @@ const READY = {
  */
 const NOT_READY = {
   publishable: false,
+  resubmittable: false,
   checkout_ready: false,
   blockers: ["MISSING_PRICE"],
   warnings: [],
@@ -106,6 +108,7 @@ const NOT_READY = {
 /** Out of stock. `warnings` is what the tab filter reads. */
 const SOLD_OUT = {
   publishable: true,
+  resubmittable: false,
   checkout_ready: false,
   blockers: [],
   warnings: ["OUT_OF_STOCK"],

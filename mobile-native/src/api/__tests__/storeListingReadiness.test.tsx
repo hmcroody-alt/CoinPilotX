@@ -91,6 +91,7 @@ function verdict(over: Partial<ListingReadiness> = {}): ListingReadiness {
   const warnings = over.warnings ?? [];
   return {
     publishable: true,
+    resubmittable: false,
     checkout_ready: true,
     summary: blockers.length
       ? `${blockers.length} thing${blockers.length === 1 ? "" : "s"} left`
@@ -195,6 +196,38 @@ describe("normalizeMarketplaceListing", () => {
       fixes: []
     } as unknown as ListingReadiness;
     expect(normalizeMarketplaceListing(payload({ readiness: clean })).readiness?.notes).toEqual([]);
+  });
+
+  it("carries the resubmit verdict, which is the only route out of a rejection", () => {
+    // Not covered by the spread test above, because the normalizer rebuilds
+    // this field by hand. A rejected listing arrives `publishable: false` with
+    // a blocker naming its own rejection, so this boolean is the single thing
+    // standing between the seller and a permanently dead button.
+    const readiness = verdict({
+      publishable: false,
+      resubmittable: true,
+      blockers: ["RESTRICTED_PRODUCT"],
+      summary: "1 thing left"
+    });
+    expect(normalizeMarketplaceListing(payload({ readiness })).readiness?.resubmittable).toBe(true);
+  });
+
+  it("defaults the resubmit verdict to false rather than undefined on an older snapshot", () => {
+    // A cached listing written before the server sent the field. False is the
+    // safe direction -- the seller sees the button as they did yesterday rather
+    // than being offered a resubmission the backend would refuse -- and making
+    // it a real `false` rather than `undefined` keeps the type honest, so no
+    // reader has to coerce it and none can forget to.
+    const older = {
+      publishable: true,
+      checkout_ready: true,
+      blockers: [],
+      warnings: [],
+      summary: "Ready to publish",
+      fixes: []
+    } as unknown as ListingReadiness;
+    expect(normalizeMarketplaceListing(payload({ readiness: older })).readiness?.resubmittable)
+      .toBe(false);
   });
 });
 

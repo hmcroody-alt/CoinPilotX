@@ -62,7 +62,7 @@ def listing(**overrides):
 
 def test_the_fixture_is_actually_ready():
     assert r.evaluate(listing()) == {
-        "publishable": True, "checkout_ready": True,
+        "publishable": True, "resubmittable": False, "checkout_ready": True,
         "blockers": [], "warnings": [],
         "summary": "Ready to publish", "fixes": [], "notes": []}
 
@@ -217,7 +217,8 @@ def test_a_listing_with_no_stock_concept_reports_no_stock_state(product_type):
     store unavailable."""
     verdict = r.evaluate(listing(listing_type=product_type,
                                  product_type=product_type, quantity=None))
-    assert verdict == {"publishable": True, "checkout_ready": True,
+    assert verdict == {"publishable": True, "resubmittable": False,
+                       "checkout_ready": True,
                        "blockers": [], "warnings": [],
                        "summary": "Ready to publish", "fixes": [], "notes": []}
 
@@ -583,8 +584,8 @@ def test_a_verdict_carries_no_money_and_no_supplier_facts():
     margin, a token, an openId or a connection id, because none of those are in
     the object at all -- which is what makes it safe to render anywhere."""
     verdict = r.evaluate(listing(quantity=0, price_label=""))
-    assert set(verdict) == {"publishable", "checkout_ready", "blockers",
-                            "warnings", "summary", "fixes", "notes"}
+    assert set(verdict) == {"publishable", "resubmittable", "checkout_ready",
+                            "blockers", "warnings", "summary", "fixes", "notes"}
     assert all(set(entry) == {"code", "label", "section"} for entry in verdict["fixes"])
     assert all(set(entry) == {"code", "label", "section"} for entry in verdict["notes"])
     assert all(isinstance(code, str) for code in
@@ -603,3 +604,63 @@ def test_the_threshold_lives_on_the_server():
     assert r.LOW_STOCK_THRESHOLD == 5
     assert r.evaluate(listing(quantity=r.LOW_STOCK_THRESHOLD))["warnings"] == [r.LOW_STOCK]
     assert r.evaluate(listing(quantity=r.LOW_STOCK_THRESHOLD + 1))["warnings"] == []
+
+
+# --- may this go back for review, which is not may this go live ---------------
+def test_a_rejected_listing_is_not_publishable_but_can_go_back_for_review():
+    """The two questions, on the one row where they disagree.
+
+    A rejection makes `publishable` false by definition, and for a long time
+    that was the only answer this module had -- so every surface asking "can the
+    seller act on this" got "no" and the correction loop had no return leg. The
+    seller read the reviewer's reason, fixed the product, and found the button
+    disabled under a blocker whose only listed fix was the rejection itself.
+
+    Both booleans are asserted together because the whole value of the new one
+    is that it disagrees with the old one here, and a version of this that
+    quietly made `publishable` true would pass a test that only checked
+    `resubmittable`.
+    """
+    verdict = r.evaluate(listing(approval_status="rejected"))
+    assert verdict["publishable"] is False
+    assert verdict["resubmittable"] is True
+    assert verdict["blockers"] == [r.RESTRICTED_PRODUCT]
+
+
+def test_nothing_is_resubmittable_until_it_has_been_rejected():
+    """`resubmittable` answers a rejection. A healthy listing has nothing to
+    resubmit, and reporting true here would put a "send for review" button on
+    every row in the store."""
+    for approval in ("pending_review", "draft", "approved", "changes_requested"):
+        assert r.evaluate(listing(approval_status=approval))["resubmittable"] is False, approval
+
+
+def test_a_rejected_listing_still_missing_something_is_not_resubmittable_yet():
+    """Sending this back now spends a reviewer's turn on a listing that will be
+    rejected again for a reason the seller could already see. The rejection is
+    only "the last thing standing" when it is actually the last thing."""
+    verdict = r.evaluate(listing(approval_status="rejected", price_label=""))
+    assert verdict["resubmittable"] is False
+    assert r.MISSING_PRICE in verdict["blockers"]
+
+
+def test_a_prohibited_product_is_never_resubmittable():
+    """The refusal that must survive the resubmit path.
+
+    A rejection is a fact about a version of the listing and clears when the
+    seller fixes it. Policy is a fact about what the product *is* and does not
+    clear, so a prohibited item must not be able to launder itself by being
+    rejected and sent back -- otherwise the queue is a retry loop it wins on
+    whichever pass a reviewer is tired.
+    """
+    verdict = r.evaluate(listing(approval_status="rejected",
+                                 title="Counterfeit Rolex replica"))
+    assert verdict["resubmittable"] is False
+    assert verdict["publishable"] is False
+
+
+def test_a_suspended_listing_cannot_submit_its_way_out():
+    """Only the literal rejected verdict opens the return leg. Suspension is
+    the other state `_restricted` refuses, and a seller must not clear an admin
+    hold by tapping a button on their own row."""
+    assert r.evaluate(listing(approval_status="suspended"))["resubmittable"] is False

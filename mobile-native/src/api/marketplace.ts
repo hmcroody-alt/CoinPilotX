@@ -74,6 +74,19 @@ export type ListingFix = {
 
 export type ListingReadiness = {
   publishable: boolean;
+  /**
+   * Whether this listing may go back to the review queue, which is a different
+   * question from whether it may go live and is only ever true after a
+   * rejection. A rejected listing is `publishable: false` by definition — the
+   * rejection *is* the blocker — so a surface that gates the seller's button on
+   * `publishable` alone locks them out of the one action the rejection is
+   * asking for.
+   *
+   * False while anything else is still missing, and false for a product policy
+   * refuses outright, so this can be rendered as an enabled button without
+   * re-deriving either rule on the client.
+   */
+  resubmittable: boolean;
   checkout_ready: boolean;
   blockers: string[];
   warnings: string[];
@@ -1080,6 +1093,10 @@ function normalizeReadiness(raw: ListingReadiness | undefined): ListingReadiness
   if (warnings.length !== notes.length) return undefined;
   return {
     publishable: Boolean(raw.publishable),
+    // Defaults false on a snapshot cached before the server sent it, which is
+    // the safe direction: the seller sees the button disabled as they did
+    // before rather than being offered a resubmission the server would refuse.
+    resubmittable: Boolean(raw.resubmittable),
     checkout_ready: Boolean(raw.checkout_ready),
     blockers: Array.isArray(raw.blockers) ? raw.blockers.map(String) : [],
     warnings,

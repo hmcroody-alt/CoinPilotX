@@ -95993,7 +95993,25 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
     from services.business_os.marketplace import listing_readiness as _readiness
     _media = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
     verdict = _readiness.evaluate(listing, media=_media.get(int(listing_id), []))
-    if not verdict["publishable"]:
+    # Two ways through, because this route serves two journeys. `publishable`
+    # is the first submission; `resubmittable` is the answer to a rejection.
+    #
+    # Gating on `publishable` alone -- which is what this did -- made the two
+    # halves of this route contradict each other. The state allowlist above
+    # deliberately admits 'rejected', and then this gate refused every one of
+    # them with "1 thing left. Resolve policy review.", a blocker naming the
+    # rejection itself, so the only listed fix was the thing being attempted.
+    # No rejected product could be resubmitted, at all, by anyone: the seller
+    # read the reviewer's reason, replaced the images, tapped the button and got
+    # an error they could not act on, and the correction never reached the
+    # queue. `request_changes` was unaffected and worked, which is why this
+    # survived -- the recoverable path is the one a hand test would pick.
+    #
+    # The distinction lives in `listing_readiness` rather than here so that the
+    # seller's own Ready-to-sell panel can enable the button on the same answer
+    # this route accepts. A backend that says yes to a button the app keeps
+    # disabled is the same dead end wearing a different face.
+    if not (verdict["publishable"] or verdict["resubmittable"]):
         conn.close()
         return jsonify({"ok": False, "error": "LISTING_NOT_READY",
                         "message": "{}. {}.".format(
