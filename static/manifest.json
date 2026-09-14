@@ -33,25 +33,25 @@
   ],
   "screenshots": [
     {
-      "src": "/static/screenshots/MainMenu.png",
-      "sizes": "930x1198",
+      "src": "/static/screenshots/pulsesoc-security-20260914.png",
+      "sizes": "1320x2420",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "PulseSoc command center"
+      "label": "PulseSoc security reporting"
     },
     {
-      "src": "/static/screenshots/analysis.png",
-      "sizes": "930x1198",
+      "src": "/static/screenshots/pulsesoc-scam-shield-20260914.png",
+      "sizes": "1320x2420",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "PulseSoc AI market analysis"
+      "label": "Scam Shield suspicious link scanner"
     },
     {
-      "src": "/static/screenshots/portfolio.png",
-      "sizes": "930x1198",
+      "src": "/static/screenshots/pulsesoc-learn-20260914.png",
+      "sizes": "1320x2420",
       "type": "image/png",
       "form_factor": "narrow",
-      "label": "PulseSoc portfolio intelligence"
+      "label": "PulseSoc crypto scam training"
     }
   ]
 }
