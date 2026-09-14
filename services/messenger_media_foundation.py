@@ -1547,6 +1547,12 @@ PROCESSING_JOB_TYPES = {
 THUMBNAIL_MAX_EDGE = 480
 THUMBNAIL_MIME = "image/jpeg"
 
+# Strategy values that mean "this attachment's bytes are in object storage".
+# Three spellings for one fact, because the multipart finish path records the
+# provider name while the direct-upload path records how the URL will be built.
+# Anything outside this set is on local disk and is served by the download route.
+REMOTE_OBJECT_STRATEGIES = {"r2", "s3", "signed"}
+
 
 def process_attachment(cur: Any, attachment_id: int, job_type: str) -> dict[str, Any]:
     """Produce the derived assets an attachment's bubble needs, then mark it ready.
@@ -1731,18 +1737,49 @@ def _derive_photo_assets(cur: Any, row: Any, path: Path) -> dict[str, Any]:
 
 
 def _store_derived_thumbnail(row: Any, temp_path: str) -> str:
-    """Put a generated thumbnail beside its source, under the same storage authority."""
+    """Put a generated thumbnail beside its source, under the same storage authority.
+
+    "The same storage authority" is the whole job, and getting it wrong is silent.
+    The two finish paths record the identical fact -- *this object is in R2* -- in
+    two different vocabularies: the multipart path writes the provider name
+    (``r2``/``s3``), the direct-upload path writes ``signed``, and both fall back
+    to ``private_local_endpoint`` when the object really is on local disk. The
+    read path already knows this and presigns anything that is not the local
+    strategy, which is why sources resolve fine either way.
+
+    This function used to accept only ``{r2, s3}``. Every ``signed`` row -- the
+    common case, since that is what the direct upload writes on success -- took
+    the local branch, wrote the thumbnail to a container filesystem that does not
+    survive a deploy, and then returned the key as though it had been stored. The
+    row was marked ``ready`` with a ``thumbnail_key`` naming an object that had
+    never existed in R2 for even a moment. Nothing downstream can detect that: the
+    grant is valid, the presigned URL is well-formed, and the 404 only arrives in
+    the renderer. On 2026-09-14 that was 38 of the 39 attachments carrying a
+    thumbnail key, and the correlation with the strategy value was exact -- the
+    single ``r2`` row was the single row whose thumbnail was present.
+
+    So the remote set has to match what the read path will do with the key, and a
+    failed upload must not be reported as a stored one. Returning empty leaves the
+    attachment ready with no thumbnail, which every caller already handles by
+    showing the full asset; inventing a key it cannot serve is the one outcome
+    that has no recovery.
+    """
     storage_key = str(_row_get(row, "storage_key", "") or "")
     if not storage_key:
         _delete_temp(temp_path)
         return ""
     key = f"{storage_key.rsplit('.', 1)[0]}-thumb.jpg"
-    if str(_row_get(row, "signed_url_strategy", "") or "").lower() in {"r2", "s3"}:
+    if str(_row_get(row, "signed_url_strategy", "") or "").lower() in REMOTE_OBJECT_STRATEGIES:
         uploaded, error = _upload_private_object(temp_path, key, THUMBNAIL_MIME)
         if uploaded:
             _delete_temp(temp_path)
             return key
-        logging.warning("MESSENGER_MEDIA_THUMBNAIL_UPLOAD_FALLBACK key=%s error=%s", key, error)
+        # No local fallback here. The source for this row lives in R2, so the read
+        # path will presign this key against R2 and get a 404 no matter what is
+        # sitting on this container's disk.
+        logging.warning("MESSENGER_MEDIA_THUMBNAIL_UPLOAD_FAILED key=%s error=%s", key, error)
+        _delete_temp(temp_path)
+        return ""
     _store_local_private(temp_path, key)
     return key
 

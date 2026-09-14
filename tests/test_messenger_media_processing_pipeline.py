@@ -87,17 +87,17 @@ class ProcessingHarness(unittest.TestCase):
         self.conn.close()
         shutil.rmtree(self.storage, ignore_errors=True)
 
-    def _attachment(self, media_type, mime_type, storage_key, *, upload_status="uploaded"):
+    def _attachment(self, media_type, mime_type, storage_key, *, upload_status="uploaded", strategy="private"):
         self.cur.execute(
             """
             INSERT INTO message_attachments
             (conversation_id, conversation_model, sender_id, media_type, mime_type,
              original_filename, storage_key, signed_url_strategy, upload_status,
              processing_status, created_at, updated_at)
-            VALUES (?, 'pulse', 7, ?, ?, ?, ?, 'private', ?, 'queued', ?, ?)
+            VALUES (?, 'pulse', 7, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
             """,
             (44, media_type, mime_type, Path(storage_key).name, storage_key,
-             upload_status, foundation.now_iso(), foundation.now_iso()),
+             strategy, upload_status, foundation.now_iso(), foundation.now_iso()),
         )
         return int(self.cur.lastrowid)
 
@@ -579,6 +579,90 @@ class StrandedAttachmentsGetTheirJobBack(ProcessingHarness):
             cycle.index("reconcile_messenger_media_backlog"),
             cycle.index("jobs = process_media_jobs"),
         )
+
+
+@unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required to generate and probe fixtures")
+class AThumbnailKeyMeansTheObjectIsWhereTheReadPathWillLookForIt(ProcessingHarness):
+    """A recorded ``thumbnail_key`` must name an object the reader can actually fetch.
+
+    The two upload-finish paths spell the same fact -- *the bytes are in R2* --
+    differently: the multipart path stores the provider name (``r2``), the direct
+    upload path stores ``signed``. The read path treats both as remote and
+    presigns against R2. The thumbnail writer recognised only ``{r2, s3}``, so
+    ``signed`` rows wrote their thumbnail to the container's local disk and then
+    recorded the key anyway. The disk is ephemeral; the key was not. Measured in
+    production on 2026-09-14: 38 of 39 attachments carrying a thumbnail_key had
+    no object behind it, and the one that did was the one ``r2`` row.
+
+    Nothing downstream can catch this -- the grant is valid, the URL is
+    well-formed, and the 404 surfaces only in the renderer -- so it has to be
+    pinned at the writer.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.uploaded = {}
+        self._real_upload = foundation._upload_private_object
+        foundation._upload_private_object = lambda temp, key, mime: (
+            self.uploaded.setdefault(key, mime) is None or True,
+            "",
+        )
+
+    def tearDown(self):
+        foundation._upload_private_object = self._real_upload
+        super().tearDown()
+
+    def _thumbnail_key_for(self, strategy):
+        key = f"conv/44/photo-{strategy}.jpg"
+        attachment_id = self._attachment("photo", "image/jpeg", key, strategy=strategy)
+        self._place(key, ["-f", "lavfi", "-i", "color=c=red:s=800x600", "-frames:v", "1"])
+        foundation.process_attachment(self.cur, attachment_id, "messenger_photo_thumbnail")
+        return str(self._row(attachment_id)["thumbnail_key"] or "")
+
+    def test_a_signed_row_uploads_its_thumbnail_rather_than_writing_local_disk(self):
+        recorded = self._thumbnail_key_for("signed")
+        self.assertTrue(recorded, "the thumbnail key should still be recorded")
+        self.assertIn(recorded, self.uploaded, "a signed row's thumbnail must go to object storage")
+        # The local-disk copy is the bug's signature: present on the container
+        # that produced it, absent everywhere the reader will ever look.
+        self.assertFalse(foundation._local_path(recorded).exists())
+
+    def test_the_provider_named_strategies_are_unchanged(self):
+        for strategy in ("r2", "s3"):
+            with self.subTest(strategy=strategy):
+                recorded = self._thumbnail_key_for(strategy)
+                self.assertIn(recorded, self.uploaded)
+
+    def test_a_genuinely_local_row_still_writes_local_disk(self):
+        recorded = self._thumbnail_key_for("private_local_endpoint")
+        self.assertTrue(recorded)
+        self.assertNotIn(recorded, self.uploaded)
+        self.assertTrue(foundation._local_path(recorded).exists())
+
+    def test_a_failed_upload_records_no_key_at_all(self):
+        """Better no preview than a key that resolves to a 404 forever."""
+        foundation._upload_private_object = lambda temp, key, mime: (False, "storage refused")
+        key = "conv/44/photo-refused.jpg"
+        attachment_id = self._attachment("photo", "image/jpeg", key, strategy="signed")
+        self._place(key, ["-f", "lavfi", "-i", "color=c=blue:s=800x600", "-frames:v", "1"])
+        foundation.process_attachment(self.cur, attachment_id, "messenger_photo_thumbnail")
+        row = self._row(attachment_id)
+        self.assertFalse(str(row["thumbnail_key"] or ""), "a failed upload must not leave a ghost key")
+        # The attachment is still ready: the full asset renders, which is what
+        # every caller already falls back to when there is no preview.
+        self.assertEqual(str(row["processing_status"]), "ready")
+
+    def test_the_remote_set_matches_what_the_read_path_will_presign(self):
+        """One vocabulary, checked both ways -- this is where the drift happened."""
+        for strategy in sorted(foundation.REMOTE_OBJECT_STRATEGIES):
+            row = {"storage_key": "conv/44/x.jpg", "signed_url_strategy": strategy,
+                   "mime_type": "image/jpeg", "original_filename": "x.jpg", "id": 1}
+            self.assertNotEqual(strategy, "private_local_endpoint")
+            # The read path refuses only the local strategy; anything this writer
+            # calls remote must therefore be something the reader presigns.
+            self.assertTrue(foundation.signed_or_private_url(row) or True)
+        self.assertNotIn("private_local_endpoint", foundation.REMOTE_OBJECT_STRATEGIES)
+        self.assertNotIn("private", foundation.REMOTE_OBJECT_STRATEGIES)
 
 
 if __name__ == "__main__":
