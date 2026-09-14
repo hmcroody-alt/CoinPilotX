@@ -9,10 +9,12 @@ The defect this module closes
 ``record_referral_signup`` writes ``referral_conversions`` with ``counted=1``
 **at signup**. ``pulse_referral_status_for_user`` counts exactly those rows and
 returns them as ``completed``. That number is passed to
-``privilege_engine.get_user_privileges``, where ``referral_count >= 30``
-unlocks Live. Composed, those three facts mean **thirty bare signups unlock
-Live Creator** — no profile, no post, no person. That is the farm the Founding
-Member Challenge exists to prevent, and it predates this program.
+``privilege_engine.get_user_privileges``, which at the time unlocked Live at
+``referral_count >= 30``. Composed, those three facts meant **thirty bare
+signups unlocked Live Creator** — no profile, no post, no person. That is the
+farm the Founding Member Challenge exists to prevent, and it predates this
+program. The gate is now ``campaign.LIVE_MIN_VERIFIED_MEMBERS`` certified
+invites, which is a far smaller number *because* each one has to be earned.
 
 ``qualified_referral_count`` replaces that arithmetic at its source. Attribution
 stays canonical; only the decision about whether an attributed signup *counts*
@@ -49,6 +51,12 @@ from . import campaign as campaign_mod
 from . import milestones as ms
 from . import qualification as qual
 from .schema import ensure_schema
+
+
+#: The count that unlocked Live *before* Progress OS existed. Frozen history,
+#: not a threshold: it decides only who already earned access under the old
+#: rule and must keep it. The live gate is ``campaign.LIVE_MIN_VERIFIED_MEMBERS``.
+LEGACY_LIVE_UNLOCK_COUNT = 30
 
 
 def _utcnow() -> str:
@@ -105,7 +113,7 @@ def grandfather_legacy_live_access(cur, user_id, legacy_count: int,
     alone. In particular a *suspended* creator is never resurrected by this.
     """
     uid = int(user_id or 0)
-    if uid <= 0 or int(legacy_count or 0) < 30:
+    if uid <= 0 or int(legacy_count or 0) < LEGACY_LIVE_UNLOCK_COUNT:
         return False
     try:
         existing = cur.execute(
@@ -143,6 +151,13 @@ def referral_status(cur, user_id, *, campaign_id: str = "") -> dict:
     Returns qualified progress plus enough context for the UI to explain the
     gap between "people who joined" and "people who count" without the client
     having to compute anything.
+
+    ``required`` is the **Live** gate, not the Founding Path target. Every
+    caller of this payload renders it beside the words "unlock Live", so
+    reporting ``qualification_target`` here made the page demand the whole
+    thirty-invite challenge for a rung the ladder grants at two. The full
+    campaign target is still served, under its own name, by
+    ``progress_api.how_it_works``.
     """
     camp = campaign_mod.get(campaign_id)
     uid = int(user_id or 0)
@@ -150,12 +165,13 @@ def referral_status(cur, user_id, *, campaign_id: str = "") -> dict:
     grandfathered = grandfather_legacy_live_access(cur, uid, legacy,
                                                    campaign_id=camp.campaign_id)
     qualified = qualified_referral_count(cur, uid, campaign_id=camp.campaign_id)
+    live_required = camp.live_threshold()
     return {
         "completed": qualified,
         "qualified": qualified,
         "invited": legacy,
-        "required": camp.qualification_target,
-        "remaining": max(0, camp.qualification_target - qualified),
+        "required": live_required,
+        "remaining": max(0, live_required - qualified),
         "grandfathered": grandfathered,
     }
 

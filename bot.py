@@ -47199,8 +47199,8 @@ def pulse_referral_status_for_user(cur, user_id):
 
     Progress OS owns this number. Before it existed, ``completed`` counted rows
     that ``record_referral_signup`` writes with ``counted=1`` at signup time,
-    and ``privilege_engine`` unlocks Live at ``referral_count >= 30`` — so
-    thirty empty accounts unlocked Live Creator. ``progress.bridge`` replaces
+    and ``privilege_engine`` then unlocked Live at ``referral_count >= 30`` —
+    so thirty empty accounts unlocked Live Creator. ``progress.bridge`` replaces
     the count with referrals that actually qualified (profile + two separate
     posting days + good standing) and grandfathers anyone who had already
     earned access under the old rule into an explicit ``livestream_access``
@@ -47208,22 +47208,26 @@ def pulse_referral_status_for_user(cur, user_id):
 
     ``invited`` is kept alongside so the UI can show both numbers and explain
     the difference rather than looking like progress went backwards.
+
+    ``required`` is the Live gate, and it is the *only* threshold any caller of
+    this function may render or compare against.
     """
     user_id = int(user_id or 0)
     code = get_or_create_referral_code(user_id)
+    live_required = privilege_engine.live_creator_threshold()
     invited = 0
     try:
         from services.business_os.progress import bridge as progress_bridge
         standing = progress_bridge.referral_status(cur, user_id)
         completed = int(standing.get("completed") or 0)
         invited = int(standing.get("invited") or 0)
-        required = int(standing.get("required") or 30)
+        required = int(standing.get("required") or live_required)
     except Exception:
         # Fail closed on the count. Falling back to the signup count here would
         # reopen the farm exactly when the program is least healthy; existing
         # creators keep access through their livestream_access row below.
         completed = 0
-        required = 30
+        required = live_required
     try:
         cur.execute("SELECT * FROM livestream_access WHERE user_id=? LIMIT 1", (user_id,))
         live = dict(cur.fetchone() or {})
@@ -49356,7 +49360,7 @@ def pulse_invite_page():
     conn.commit(); conn.close()
     progress = min(100, int(status["completed"] / status["required"] * 100))
     main = f"""
-    <section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {status['completed']}/{status['required']} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p><strong>Your referral link</strong></p><input id='refLink' value='{html_escape(clean_html(status['referral_link']))}' readonly><div class='actions'><button class='primary' id='copyReferral'>Copy Link</button><button id='shareReferral'>Share Invite</button><a class='button' href='/pulse/live'>Live Status</a></div></section>
+    <section class='card'><h2>Unlock Live</h2><p>{html_escape(privilege_engine.live_unlock_status_line(status['completed'], status['required']))}</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p><strong>Your referral link</strong></p><input id='refLink' value='{html_escape(clean_html(status['referral_link']))}' readonly><div class='actions'><button class='primary' id='copyReferral'>Copy Link</button><button id='shareReferral'>Share Invite</button><a class='button' href='/pulse/live'>Live Status</a></div></section>
     <section class='card'><h2>Creator Level</h2><p>{html_escape(clean_html(profile['privileges']['current_level']))} · Trust score {int(profile['trust_score'])}/100 · {html_escape(clean_html(profile['trust_band']))}</p><a class='button primary' href='/pulse/creator-status'>View Creator Status</a></section>
     <section class='card'><h2>Fraud-Safe Rules</h2><p>Only real signups count. Duplicate/self-referral abuse, suspicious device patterns, and fake accounts can be flagged for review.</p></section>
     """
@@ -49449,14 +49453,14 @@ def pulse_live_page():
         </section>
         """
     else:
-        live_card = f"<section class='card'><h2>Unlock Live</h2><p>Invite 30 real members to unlock Live. {completed}/{required} completed.</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p>Going live is earned so creators build trust before broadcasting.</p><div class='actions'><a class='button primary' href='/pulse/invite'>Invite Members</a><a class='button' href='/pulse/creator-status'>Creator Status</a></div></section>"
+        live_card = f"<section class='card'><h2>Unlock Live</h2><p>{html_escape(privilege_engine.live_unlock_status_line(completed, required))}</p><div style='height:12px;border-radius:999px;background:rgba(255,255,255,.08);overflow:hidden'><div style='height:100%;width:{progress}%;background:linear-gradient(135deg,#36e58f,#6edff6)'></div></div><p>Going live is earned so creators build trust before broadcasting.</p><div class='actions'><a class='button primary' href='/pulse/invite'>Invite Members</a><a class='button' href='/pulse/creator-status'>Creator Status</a></div></section>"
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     cur.execute("SELECT s.*, COALESCE(u.display_name,u.username,'PulseSoc Creator') AS creator_name FROM pulse_live_sessions s LEFT JOIN users u ON u.user_id=s.user_id WHERE s.status='live' AND COALESCE(s.mux_live_status,'') IN ('active','live') ORDER BY s.started_at DESC, s.id DESC LIMIT 20")
     active_streams = [dict(row) for row in cur.fetchall()]
     conn.close()
     stream_cards = "".join(f"<article class='card' data-live-gateway-card='{int(s.get('id') or 0)}'><span class='pill' style='border-color:rgba(255,77,109,.45);color:#ffd6dc'>LIVE NOW</span><h2>{html_escape(clean_html(s.get('title') or 'PulseSoc Live'))}</h2><p>{html_escape(clean_html(s.get('creator_name') or ''))} · {html_escape(clean_html(s.get('category') or ''))}</p><p><span class='pill'>{int(s.get('viewer_count') or 0)} viewers</span> <span class='pill'>{html_escape(clean_html(s.get('stream_health') or s.get('status') or ''))}</span></p><a class='button primary' href='{pulse_live_watch_url(int(s.get('id') or 0))}' data-open-live-in-reels='{int(s.get('id') or 0)}'>Join Live in Reels</a></article>" for s in active_streams)
     stream_cards_empty = '<article class="card"><h2>No one is live right now.</h2><p>Start the next PulseSoc Live session or check back soon.</p></article>'
-    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {html_escape(clean_html(profile.get('trust_band') or ''))}</p></article><article class='card'><h2>Invite Progress</h2><p>{completed}/{required} real members</p></article><article class='card'><h2>Creator Rank</h2><p>{html_escape(clean_html(privileges.get('current_level') or 'New User'))}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or stream_cards_empty}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
+    main = f"{live_card}<section class='grid'><article class='card'><h2>Trust Level</h2><p>{safe_int(profile.get('trust_score'), 0)}/100 · {html_escape(clean_html(profile.get('trust_band') or ''))}</p></article><article class='card'><h2>Invite Progress</h2><p>{html_escape(privilege_engine.live_progress_label(completed, required))}</p></article><article class='card'><h2>Creator Rank</h2><p>{html_escape(clean_html(privileges.get('current_level') or 'New User'))}</p></article></section><section class='card'><h2>Live Discovery</h2><p class='muted'>Trending streams, category filters, creator profiles, and live viewer counts are connected here.</p></section><section class='grid'>{stream_cards or stream_cards_empty}</section><section class='card'><h2>Benefits of Going Live</h2><p>Host lessons, creator rooms, Scam Shield breakdowns, Arena training, and community Q&A with stronger safety controls.</p></section>"
     script = """
     const LIVE_ALLOWED_CATEGORIES = new Set(['Crypto Education','Scam Shield Lesson','Arena Training','Market Psychology']);
     const LIVE_SETUP_REQUIRED_PLATFORMS = new Set(['facebook','youtube','twitch','kick','tiktok','x_twitter','linkedin','custom_rtmp']);
@@ -49979,7 +49983,7 @@ def api_pulse_live_start():
         if referrals.get("livestream_status") == "suspended":
             denial = "Livestream access is suspended."
         elif not is_owner and not privileges.get("can_go_live"):
-            denial = "Invite 30 real members and build verified trust to unlock Live."
+            denial = privilege_engine.live_unlock_sentence(referrals.get("required"))
         elif not is_owner and safe_int(profile.get("trust_score"), 0) < 50:
             denial = "Build your trust score before going live."
         if denial:
@@ -54094,7 +54098,7 @@ def pulse_creator_status_page():
     badges = "".join(f"<span class='pill'>{html_escape(clean_html(badge))}</span> " for badge in privileges.get("profile_badges") or [])
     main = f"""
     <section class='card'><h2>{html_escape(clean_html(privileges['current_level']))}</h2><p>Trust score: {int(profile['trust_score'])}/100 · {html_escape(clean_html(profile['trust_band']))}</p><p>{badges or '<span class="pill">Growing Creator</span>'}</p></section>
-    <section class='card'><h2>Your Next Unlock</h2><p>Invite 30 real members for Live: {refs['completed']}/{refs['required']} completed.</p><a class='button primary' href='/pulse/invite'>Grow Creator Level</a></section>
+    <section class='card'><h2>Your Next Unlock</h2><p>{html_escape(privilege_engine.live_unlock_status_line(refs['completed'], refs['required']))}</p><a class='button primary' href='/pulse/invite'>Grow Creator Level</a></section>
     <section class='grid'><article class='card'><h2>Unlocked Privileges</h2><ul>{unlocked or '<li>Basic PulseSoc posting and community access.</li>'}</ul></article><article class='card'><h2>Next Steps</h2><ul>{locked or '<li>You are ready for advanced creator tools.</li>'}</ul></article></section>
     """
     return pulse_social_shell("Creator Status", "Grow your creator level, earn verified trust, unlock Live, and build safely.", main)

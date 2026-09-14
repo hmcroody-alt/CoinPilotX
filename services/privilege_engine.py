@@ -3,19 +3,58 @@
 from __future__ import annotations
 
 
+#: Mirror of ``campaign.LIVE_MIN_VERIFIED_MEMBERS``, used only when Progress OS
+#: cannot be imported at all — so it cannot be read from there. The two are
+#: pinned together by test, because an outage must not move the gate: this
+#: module previously fell back to the historical 30 and would have re-locked
+#: Live for every creator who qualified under the real threshold.
+LIVE_THRESHOLD_FALLBACK = 2
+
+
 def live_creator_threshold() -> int:
     """Certified invites required for Live, read from the Founding Path ladder.
 
     Derived rather than hardcoded so the gate and the rung a member sees can
-    never drift apart. Falls back to the historical value if Progress OS is
-    unavailable, because failing *closed* on an unlock people already hold
-    would silently revoke Live from working creators.
+    never drift apart.
     """
     try:
         from services.business_os.progress import campaign as campaign_mod
         return campaign_mod.get().live_threshold()
     except Exception:
-        return 30
+        return LIVE_THRESHOLD_FALLBACK
+
+
+def live_unlock_sentence(threshold=None) -> str:
+    """The one sentence every Live surface uses to state the requirement.
+
+    Centralised because the number used to be typed into the copy by hand on
+    four pages and a denial response, which is how the product came to promise
+    thirty invites for a gate the server opened at two.
+    """
+    count = int(live_creator_threshold() if threshold is None else threshold)
+    noun = "real member" if count == 1 else "real members"
+    return f"Invite {count} {noun} and build verified trust to unlock Live."
+
+
+def live_progress_label(completed, threshold=None) -> str:
+    """``1 of 2 verified members`` while locked, ``Live unlocked`` once met."""
+    count = int(live_creator_threshold() if threshold is None else threshold)
+    done = max(0, int(completed or 0))
+    if done >= count:
+        return "Live unlocked"
+    return f"{done} of {count} verified members"
+
+
+def live_unlock_status_line(completed, threshold=None) -> str:
+    """The whole line a Live surface shows: the ask, then where they stand.
+
+    Composed here rather than at each call site so an unlocked creator is never
+    told to go and invite people they have already invited.
+    """
+    count = int(live_creator_threshold() if threshold is None else threshold)
+    if max(0, int(completed or 0)) >= count:
+        return "Live unlocked."
+    return f"{live_unlock_sentence(count)} {live_progress_label(completed, count)}."
 
 
 PRIVILEGE_LEVELS = [
@@ -112,7 +151,8 @@ def get_user_privileges(user_id=None, trust_score=0, current_level="", referral_
 
     next_steps = []
     if referral_count < live_threshold:
-        next_steps.append(f"Invite {live_threshold - referral_count} more real members to unlock Live.")
+        short = live_threshold - referral_count
+        next_steps.append(f"Invite {short} more real member{'' if short == 1 else 's'} to unlock Live.")
     if trust_score < 50:
         next_steps.append("Complete your profile and keep posting helpful PulseSoc content.")
     if "identity" not in verification_types:
