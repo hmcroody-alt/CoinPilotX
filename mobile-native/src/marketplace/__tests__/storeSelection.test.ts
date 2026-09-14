@@ -55,6 +55,10 @@ function row(id: number, over: Partial<StoreListingRow> = {}): StoreListingRow {
       fixes: [],
       notes: []
     },
+    // No review decision to report. `null` rather than a synthesised verdict,
+    // because that is what the builder writes for a payload that carried none
+    // and these rows are all healthy and live.
+    review: null,
     bulkEligibility: { publish: null, hide: null },
     unitsSold7d: 0,
     category: "Home",

@@ -94,6 +94,61 @@ export function listingRemainingCopy(readiness: StoreListingRowData["readiness"]
 }
 
 /**
+ * "Rejected · The product images need to be replaced." — §9.
+ *
+ * The row's stock copy for a rejected or restricted listing is "Hidden from
+ * buyers", which names the effect and none of the cause. The seller is looking
+ * at the one screen they would go to after a rejection, and until this line
+ * existed there was nowhere in the product that told them what to fix — the
+ * decision was announced once by push and then lived only in the admin queue.
+ *
+ * Every word comes from the server. There is deliberately no `REASON_COPY`
+ * table here mapping `INVALID_MEDIA` to an imperative: that table already
+ * exists once, in `listing_review.SELLER_MESSAGES`, and a second copy in this
+ * file would go stale the first time a reason code is added — leaving a seller
+ * with a rejection this build can count and cannot name. Same argument as
+ * {@link listingRemainingCopy}, which is where it was learned.
+ *
+ * Returns `null` when there is nothing to act on *or* when no verdict arrived.
+ * Both correctly render no line. A row must not claim a listing is fine on the
+ * strength of a payload that never said so, and must not claim it is broken
+ * either — `needs_action` is the server's word, not an inference from `health`.
+ */
+export function listingReviewCopy(review: StoreListingRowData["review"]): string | null {
+  if (!review || !review.needs_action) return null;
+  // The normalizer refuses a verdict that needs action and carries no sentence,
+  // so this cannot render a bare state word. Checked again rather than assumed,
+  // because the fallback is silence and silence is the safe half.
+  return review.message ? `${reviewStateWord(review.state)} · ${review.message}` : null;
+}
+
+/**
+ * The state as a word a seller would use, not the column value.
+ *
+ * `changes_requested` is the one that matters: rendered raw it is a snake_cased
+ * internal constant on a merchant's screen, and title-casing it mechanically
+ * gives "Changes Requested", which reads like a section heading rather than
+ * something that happened to their product.
+ *
+ * An unrecognised state falls through to "Needs attention" rather than to the
+ * raw value. A state this build has not learned is still a real state — the
+ * sentence beside it came from the server and is what the seller acts on — so
+ * the prefix must not be the thing that breaks.
+ */
+function reviewStateWord(state: string): string {
+  switch (state) {
+    case "rejected":
+      return "Rejected";
+    case "changes_requested":
+      return "Changes needed";
+    case "restricted":
+      return "Restricted";
+    default:
+      return "Needs attention";
+  }
+}
+
+/**
  * What the price line says — §12.
  *
  * A blank price used to render as nothing at all (GAP 23). That is safe from the
@@ -194,6 +249,7 @@ export function StoreListingRow({
   const status = listingStatusCopy(row.health, row.quantity);
   const price = listingPriceCopy(priceText, row.readiness);
   const remaining = listingRemainingCopy(row.readiness);
+  const reviewCopy = listingReviewCopy(row.review);
   const titleLines = fontScale > 1.15 ? 3 : 2;
 
   const selecting = !!selection;
@@ -235,7 +291,19 @@ export function StoreListingRow({
         // the silence the blank price used to leave behind.
         // In selection mode the blocked reason joins them, because a seller who
         // cannot see the wash has no other way to learn this row will not move.
-        accessibilityLabel={[row.title, price?.text, remaining, status.label, soldText, blocked]
+        // `reviewCopy` sits directly after the price, ahead of the stock label,
+        // because "Rejected - replace the images" outranks "3 in stock" for a
+        // seller deciding what to do next, and a screen reader announces in
+        // this order rather than in visual order.
+        accessibilityLabel={[
+          row.title,
+          price?.text,
+          reviewCopy,
+          remaining,
+          status.label,
+          soldText,
+          blocked
+        ]
           .filter(Boolean)
           .join(", ")}
         accessibilityHint={selecting ? undefined : "Opens the listing"}
@@ -268,6 +336,11 @@ export function StoreListingRow({
             </Text>
           ) : null}
           {remaining ? <Text style={styles.remaining}>{remaining}</Text> : null}
+          {/* Above the status LED, not below it. The LED says "Hidden from
+              buyers"; this says why, and a cause printed under its own effect
+              reads as an afterthought. Not clamped: a truncated rejection
+              reason is a rejection the seller still has to guess at. */}
+          {reviewCopy ? <Text style={styles.reviewReason}>{reviewCopy}</Text> : null}
           {/* Why this row will not move, stated on the row itself rather than
               only in the confirm button's blocked count. "4 blocked" tells a
               seller how many; only this tells them which, and which is what
@@ -390,6 +463,27 @@ const styles = StyleSheet.create({
   priceRequired: { color: storeLight.status.warning },
   /** "2 things left · Add price + photo". Quieter than the price above it. */
   remaining: { fontSize: 12, color: storeLight.status.warning, marginTop: 1 },
+  /**
+   * "Rejected · The product images need to be replaced."
+   *
+   * `status.error`, not `status.warning`, and the distinction is the point. The
+   * line above it is a task list — things the seller has not finished yet.
+   * This is a decision someone made about a finished product, and it is the one
+   * line on the row that means the listing is not going to sell until they act.
+   * Sharing the warning colour with "2 things left" would file a rejection
+   * under housekeeping.
+   *
+   * Weight rather than size carries the emphasis: 12pt matches the line above
+   * so the two read as one block, and a larger rejection line would push the
+   * status LED off a small screen at accessibility text sizes.
+   */
+  reviewReason: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+    color: storeLight.status.error,
+    marginTop: 1
+  },
   /**
    * "No readiness check yet" / "1 thing left" — why the bulk action skips this
    * row. Its own colour, measured against the disabled wash rather than the

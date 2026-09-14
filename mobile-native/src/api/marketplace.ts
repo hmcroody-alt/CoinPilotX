@@ -14,6 +14,37 @@ const MARKETPLACE_CACHE_KEY = "pulsesoc.native.marketplace.search";
 const SELLER_STORE_CACHE_KEY = "pulsesoc.native.marketplace.seller_store";
 
 /**
+ * What the listing's own merchant is told about the last review decision.
+ *
+ * Mirrors `services/business_os/marketplace/listing_review.seller_verdict`. The
+ * field this interface does NOT declare is the point: there is no
+ * `moderation_reason`, because the reviewer's free-text note is internal (§43)
+ * and the server does not send it. Leaving it undeclared makes
+ * `review.moderation_reason` a type error rather than a choice — the same
+ * device used for `safety_score` on {@link MarketplaceListing}.
+ */
+export interface ListingReviewVerdict {
+  /** `pending_review`, `rejected`, `changes_requested`, `restricted`, … */
+  state: string;
+  /** A reviewer has ruled on this version. */
+  decided: boolean;
+  /** The seller must change something before this can sell. */
+  needs_action: boolean;
+  /** The structured category, e.g. `INVALID_MEDIA`. Empty when undecided. */
+  reason_code: string;
+  /**
+   * The sentence to show the seller — already resolved server-side, so this
+   * build cannot be asked to render a code it has no words for. Empty when
+   * there is no decision to report, which is NOT the same as a generic one:
+   * telling a seller whose product is merely queued that it "needs a change"
+   * sends them to edit something nobody has found fault with.
+   */
+  message: string;
+  review_version: number;
+  decided_at: string;
+}
+
+/**
  * The server's readiness verdict for one listing, rendered rather than derived.
  *
  * Mirrors `services/business_os/marketplace/listing_readiness.evaluate` exactly.
@@ -147,6 +178,17 @@ export type MarketplaceListing = {
    * assuming a clean bill of health.
    */
   readiness?: ListingReadiness;
+  /**
+   * Why the reviewer decided what they decided. Seller route only — a buyer
+   * payload never carries it, and `tests/marketplace/test_seller_review_verdict.py`
+   * asserts that along with the containment of everything it deliberately
+   * leaves out (the reviewer's note, the risk score, which admin decided).
+   *
+   * Absent means "not told", never "nothing wrong". Cached snapshots written
+   * before this field existed have none, and a rejected listing in one of those
+   * must keep reading as rejected rather than as fine.
+   */
+  review?: ListingReviewVerdict;
   /**
    * What each bulk action would do to this row. Seller route only, same as
    * `readiness`. Absent means "not sent" — a caller must treat that as not
@@ -1047,6 +1089,44 @@ function normalizeReadiness(raw: ListingReadiness | undefined): ListingReadiness
   };
 }
 
+/**
+ * The server's verdict on this listing's last review decision, rendered rather
+ * than derived — `services/business_os/marketplace/listing_review.seller_verdict`.
+ *
+ * Refused whole if the shape is wrong, for the same reason `normalizeReadiness`
+ * refuses a mismatched verdict: a half-read verdict renders as a listing with a
+ * decision and no words for it, which is the state this whole feature exists to
+ * remove.
+ *
+ * `decided: false` with `needs_action: false` is the correct reading of a
+ * missing or malformed verdict, and it is also what a listing waiting in the
+ * queue genuinely looks like — so callers must use *absence* (`undefined`) to
+ * mean "not told", never a synthesised empty verdict.
+ */
+function normalizeReviewVerdict(
+  raw: ListingReviewVerdict | undefined
+): ListingReviewVerdict | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  if (typeof raw.state !== "string") return undefined;
+  const needsAction = Boolean(raw.needs_action);
+  const message = String(raw.message || "");
+  // A listing the seller must act on, with no sentence saying why, is the
+  // defect wearing this feature's clothes: "Hidden from buyers" plus a red dot
+  // and nothing to do about it. Refusing the verdict makes the row fall back to
+  // its stock copy, which promises nothing, instead of raising an alarm it
+  // cannot explain.
+  if (needsAction && !message) return undefined;
+  return {
+    state: raw.state,
+    decided: Boolean(raw.decided),
+    needs_action: needsAction,
+    reason_code: String(raw.reason_code || ""),
+    message,
+    review_version: Number(raw.review_version || 0),
+    decided_at: String(raw.decided_at || "")
+  };
+}
+
 function normalizeFix(entry: ListingFix | undefined): ListingFix {
   return {
     code: String(entry?.code || ""),
@@ -1103,6 +1183,7 @@ export function normalizeMarketplaceListing(item: MarketplaceListing): Marketpla
     product_type: String(item.product_type || ""),
     saved: Boolean(item.saved || item.is_saved),
     readiness: normalizeReadiness(item.readiness),
+    review: normalizeReviewVerdict(item.review),
     bulk_eligibility: normalizeBulkEligibility(item.bulk_eligibility),
     media: normalizeMarketplaceMedia(item)
   };
