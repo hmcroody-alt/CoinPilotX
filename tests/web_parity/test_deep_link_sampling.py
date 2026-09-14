@@ -326,10 +326,16 @@ def test_a_proof_for_a_row_that_is_no_longer_hub_only_fails_loudly(reconcile,
     assert "no longer an unproven hub-only link" in str(excinfo.value)
 
 
-def test_the_private_office_entry_still_names_a_test_that_exists(reconcile):
-    """The live entry, checked without generating anything. `--check` skips doc
-    generation entirely, so the guards above do not run in the gate."""
-    assert "/pulse/private-office/:view" in reconcile.PROVEN_ELSEWHERE
+def test_every_proof_entry_still_names_a_test_that_exists(reconcile):
+    """The live entries, checked without generating anything. `--check` skips
+    doc generation entirely, so the guards above do not run in the gate.
+
+    This used to name `/pulse/private-office/:view` specifically. That row left
+    with Private Office Operations — the app no longer publishes a record-view
+    link, so the row is not hub-only any more and a proof for it would fail the
+    guard above. The table is still worth checking; only the example moved."""
+    assert reconcile.PROVEN_ELSEWHERE, (
+        "PROVEN_ELSEWHERE is empty, so this check has gone vacuous")
     for path, (test, why) in reconcile.PROVEN_ELSEWHERE.items():
         assert os.path.exists(os.path.join(REPO, test)), (
             "%s points at %s, which is gone" % (path, test))

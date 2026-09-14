@@ -2534,33 +2534,21 @@ def marketplace_listing_delete(user_id: int, arguments: dict[str, Any]) -> ToolR
 
 
 # ---------------------------------------------------------------------------
-# Private Office — the member's own private fact store
+# Private Office — the member's own private directory
 # ---------------------------------------------------------------------------
-
-#: The highest sensitivity UNDX may read out of the private store.
-#:
-#: The owner reading their own screen gets everything; the agent does not, and
-#: the difference is not timidity. Anything this executor returns can end up in
-#: a chat transcript, in a model's context window, and — if a hostile string
-#: elsewhere in that context gets its way — in a summary the member did not ask
-#: for. A ceiling is the one control that limits the blast radius of every such
-#: failure at once, and it costs nothing while the categories above it hold the
-#: things a person would least like read aloud.
-#:
-#: Raising this is a deliberate decision with its own review, not a default.
-UNDX_SENSITIVITY_CEILING = "CONFIDENTIAL"
-
-#: Bound on rows returned in one call, independent of the registry's field
-#: maximum. The registry bound stops a hostile argument; this one stops a
-#: well-formed argument from turning one question into a bulk export.
-UNDX_MAX_FACTS = 25
+#
+# The agent-side sensitivity ceiling and row bound that used to live here
+# belonged to the private fact read, and left with it. Each surviving read
+# carries its own ceiling out of its spec, which is the stricter arrangement:
+# a bound expressed once per capability cannot be silently widened for all of
+# them at once.
 
 
 def _private_office():
     from services import db
-    from services.private_office import access, facts, office, schema, tiers
+    from services.private_office import access, schema, tiers
 
-    return db, access, facts, office, schema, tiers
+    return db, access, schema, tiers
 
 
 def _office_locked_result(tool: str, capability: str, started: float) -> ToolResult:
@@ -2576,226 +2564,19 @@ def _office_locked_result(tool: str, capability: str, started: float) -> ToolRes
                  started=started)
 
 
-def private_facts_list(user_id: int, arguments: dict[str, Any]) -> ToolResult:
-    """Read the caller's own private facts, gated on the canonical tier truth.
-
-    Three properties are worth stating because each is enforced structurally
-    rather than by a check that could be reordered away:
-
-    **There is no owner argument.** The capability declares ``domain`` and
-    ``limit`` and nothing else, and ``list_facts`` takes ``owner_user_id`` as a
-    required keyword that goes into every ``WHERE`` clause. A model that
-    proposes ``{"owner_user_id": 999}`` has that key dropped by the field
-    validator before this function is entered, and even if it were not, there is
-    nowhere here for it to go. Cross-owner reads are not refused; they are
-    unrepresentable.
-
-    **A record belonging to somebody else is indistinguishable from no record.**
-    The reader filters rather than checks, so UNDX cannot report "that exists
-    but is not yours" — which is the disclosure this boundary exists to prevent.
-    Stage 8 asks that UNDX not reveal that another member's record exists, and
-    the reason it cannot is that it never sees one.
-
-    **The gate is the same one the screen uses.** ``access.decide`` is shared
-    with the HTTP surface, so the agent cannot open a capability the product
-    still calls unavailable, and — the direction that actually bites — cannot
-    refuse one the member is looking at.
-    """
-    started = time.perf_counter()
-    tool = "pulsesoc.private_facts.list"
-    capability = "private.facts.list"
-    db, access, facts, office, schema, tiers = _private_office()
-
-    owner = int(user_id or 0)
-    if owner <= 0:
-        return _fail(tool, capability, "authentication_required",
-                     "UNDX needs you signed in to read your Private Office.",
-                     started=started)
-
-    try:
-        resolved = tiers.resolve_tier(owner)
-    except Exception:  # noqa: BLE001 - a resolver fault is not a denial
-        resolved = {}
-    decision = access.decide(resolved, "private_facts")
-    verdict = decision["decision"]
-
-    if verdict == access.UNAVAILABLE:
-        # Retryable, and deliberately not phrased as a refusal. "We could not
-        # look" told as "you may not have this" is the one error that lands on
-        # the member who paid.
-        return _fail(tool, capability, "entitlement_unavailable",
-                     "UNDX could not confirm your Private Office access just now.",
-                     retryable=True, started=started)
-    if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
-        return _fail(tool, capability, "capability_not_available",
-                     "Private facts are not available yet.", started=started)
-    if verdict == access.NOT_ENTITLED:
-        return _fail(tool, capability, "not_entitled",
-                     "Your plan does not include the Private Office.",
-                     started=started)
-
-    domain = clean(arguments.get("domain") or "", 32).upper()
-    limit = max(1, min(int(arguments.get("limit") or 10), UNDX_MAX_FACTS))
-
-    connection = db.connect()
-    try:
-        cursor = connection.cursor()
-        schema.ensure_private_schema(cursor)
-
-        # The second lock (Stage 17). The tier said the member may have the
-        # room; this asks whether the person holding the device just proved
-        # they are the member. Same validator, same request bindings as the
-        # HTTP surface — the agent can never read what the screen would show
-        # locked. Fails closed, including when there is no request context.
-        from services.private_office import security as office_security
-        if not office_security.request_is_unlocked(cursor, owner).get("ok"):
-            return _office_locked_result(tool, capability, started)
-
-        rows = facts.list_facts(
-            cursor,
-            owner_user_id=owner,
-            domains=[domain] if domain else None,
-            sensitivity_ceiling=UNDX_SENSITIVITY_CEILING,
-            limit=limit + 1,
-        )
-    except Exception:  # noqa: BLE001
-        return _fail(tool, capability, "private_store_unavailable",
-                     "UNDX could not read your Private Office just now.",
-                     retryable=True, started=started)
-    finally:
-        connection.close()
-
-    # One row past the limit, for the same reason ``crypto_alerts_list`` does it:
-    # a full page and a complete set are otherwise indistinguishable, and a
-    # confident "that is everything you have recorded" said over a truncated
-    # page is a wrong answer delivered with full authority.
-    truncated = len(rows) > limit
-    # ``project_facts`` is the same allowlist the HTTP surface returns, so the
-    # locator of a source document — and any column added later — stays behind it.
-    records = office.project_facts(rows[:limit])
-    return ToolResult(
-        ok=True,
-        tool_name=tool,
-        capability_id=capability,
-        records=records,
-        data={
-            "count": len(records),
-            "truncated": truncated,
-            "domain": domain or "ALL",
-            # Named so a caller reading an unexpectedly short list can tell a
-            # ceiling from an empty store rather than guessing.
-            "sensitivity_ceiling": UNDX_SENSITIVITY_CEILING,
-        },
-        latency_ms=_timed(started),
-    )
-
-
-def _private_records_executor(capability_id: str) -> Callable[[int, dict[str, Any]], ToolResult]:
-    """One record-view executor, bound to its capability at registration time.
-
-    Six capabilities share this implementation, but the gateway hands an
-    executor only ``(user_id, arguments)`` — nothing at call time says which
-    capability was invoked — so each view binds its own closure rather than
-    sharing a name. The properties are ``private_facts_list``'s: no owner
-    argument exists, the gate is the same ``access.decide`` the screen uses,
-    and the second lock fails closed. The read itself goes through
-    ``undx_records_spec.execute_view`` → ``retrieval.retrieve_records``, whose
-    general-intent policy caps the agent at the GENERAL domain and an INTERNAL
-    ceiling — narrower than the member's own screen, and the result carries
-    ``sensitivity_ceiling`` so a short list is legible as a ceiling rather than
-    an empty office.
-    """
-
-    def _list_records(user_id: int, arguments: dict[str, Any]) -> ToolResult:
-        started = time.perf_counter()
-        from services.private_office import undx_records_spec as records_spec
-        tool = records_spec.tool_name(capability_id)
-        db, access, facts, office, schema, tiers = _private_office()
-
-        owner = int(user_id or 0)
-        if owner <= 0:
-            return _fail(tool, capability_id, "authentication_required",
-                         "UNDX needs you signed in to read your Private Office.",
-                         started=started)
-
-        try:
-            resolved = tiers.resolve_tier(owner)
-        except Exception:  # noqa: BLE001 - a resolver fault is not a denial
-            resolved = {}
-        decision = access.decide(resolved, "private_office.operations")
-        verdict = decision["decision"]
-
-        if verdict == access.UNAVAILABLE:
-            return _fail(tool, capability_id, "entitlement_unavailable",
-                         "UNDX could not confirm your Private Office access just now.",
-                         retryable=True, started=started)
-        if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
-            return _fail(tool, capability_id, "capability_not_available",
-                         "That part of the Private Office is not available yet.",
-                         started=started)
-        if verdict == access.NOT_ENTITLED:
-            return _fail(tool, capability_id, "not_entitled",
-                         "Your plan does not include the Private Office.",
-                         started=started)
-
-        connection = db.connect()
-        try:
-            cursor = connection.cursor()
-            schema.ensure_private_schema(cursor)
-
-            from services.private_office import security as office_security
-            if not office_security.request_is_unlocked(cursor, owner).get("ok"):
-                return _office_locked_result(tool, capability_id, started)
-
-            result = records_spec.execute_view(
-                cursor, capability_id=capability_id, owner_user_id=owner,
-                arguments=dict(arguments or {}))
-            # The retrieval audit row must survive the read.
-            connection.commit()
-        except Exception:  # noqa: BLE001
-            return _fail(tool, capability_id, "private_store_unavailable",
-                         "UNDX could not read your Private Office just now.",
-                         retryable=True, started=started)
-        finally:
-            connection.close()
-
-        if not result.get("ok"):
-            return _fail(tool, capability_id, "records_denied",
-                         "UNDX could not read that part of your Private Office.",
-                         started=started)
-
-        return ToolResult(
-            ok=True,
-            tool_name=tool,
-            capability_id=capability_id,
-            records=list(result.get("records") or []),
-            data={
-                "count": int(result.get("counts", {}).get("returned") or 0),
-                "truncated": bool(result.get("truncated")),
-                "view": result.get("view") or "",
-                # Named so a caller reading an unexpectedly short list can tell
-                # a ceiling from an empty office rather than guessing.
-                "sensitivity_ceiling": result.get("sensitivity_ceiling") or "",
-            },
-            latency_ms=_timed(started),
-        )
-
-    return _list_records
-
-
 def _private_feature_read_executor(capability_id: str) -> Callable[[int, dict[str, Any]], ToolResult]:
     """One feature-read executor, bound to its capability at registration time.
 
-    The shipped Private Office features — documents, people, briefings,
-    shield, concierge — each get reads and only reads. The shape is
-    ``_private_records_executor``'s, with one deliberate difference: the gate
-    runs on the capability's *own* feature id from the spec, so the documents
-    read refuses when document intelligence is dark rather than when some
-    sibling is, and each kill switch turns off exactly the reads it names.
+    The Private Office's readable features — Relationship Intelligence, and
+    whatever later joins it — get reads and only reads. No owner argument
+    exists, the gate is the same ``access.decide`` the member's own screen
+    runs, and the second lock fails closed.
 
-    A feature may declare more than one read — document intelligence declares
-    two, the file list and the cited facts — and they share a feature id, so
-    the gating above is unaffected: one switch, both reads.
+    The gate runs on the capability's *own* feature id from the spec rather
+    than on a shared Office-wide id, so a kill switch turns off exactly the
+    reads it names and a feature declaring several reads gates them together.
+    That indirection is why this executor survived the Office's narrowing
+    unchanged while the capabilities it served left: it never knew their names.
 
     A capability that returns ``ok: False`` becomes a failure here rather than
     an empty success, deliberately. A withheld read reported as zero records
@@ -2808,7 +2589,7 @@ def _private_feature_read_executor(capability_id: str) -> Callable[[int, dict[st
         from services.private_office import undx_feature_reads_spec as reads_spec
         tool = reads_spec.tool_name(capability_id)
         spec_entry = reads_spec.spec_for(capability_id)
-        db, access, facts, office, schema, tiers = _private_office()
+        db, access, schema, tiers = _private_office()
 
         owner = int(user_id or 0)
         if owner <= 0:
@@ -2884,99 +2665,11 @@ def _private_feature_read_executor(capability_id: str) -> Callable[[int, dict[st
     return _read_feature
 
 
-def private_capital_portfolio(user_id: int, arguments: dict[str, Any]) -> ToolResult:
-    """The Capital Graph portfolio read — the projection, priced at read time.
-
-    The shape is ``_private_feature_read_executor``'s: same authentication
-    refusal, same ``access.decide`` gate (on ``capital_graph``, the id the
-    member's own screen runs), same second-lock check that fails closed. The
-    read itself is ``undx_capital_spec.execute`` → ``portfolio_view``, which
-    runs its own owner gate and sweeps the outbox — no authorization happens
-    here, because a second gate is a second place for the two to disagree.
-
-    The honesty blocks cross unrenamed: ``totals`` may carry ``value: null``
-    with the unpriced symbols named, ``prices`` carries the feed's own
-    observation age, ``sync`` says how far behind the ledger the projection
-    may be. An answer built from this result must relay those refusals and
-    confessions, not paper over them.
-    """
-    started = time.perf_counter()
-    from services.private_office import undx_capital_spec as capital_spec
-    capability_id = capital_spec.CAPABILITY_ID
-    tool = capital_spec.tool_name(capability_id)
-    db, access, facts, office, schema, tiers = _private_office()
-
-    owner = int(user_id or 0)
-    if owner <= 0:
-        return _fail(tool, capability_id, "authentication_required",
-                     "UNDX needs you signed in to read your Private Office.",
-                     started=started)
-
-    try:
-        resolved = tiers.resolve_tier(owner)
-    except Exception:  # noqa: BLE001 - a resolver fault is not a denial
-        resolved = {}
-    decision = access.decide(resolved, capital_spec.FEATURE_ID)
-    verdict = decision["decision"]
-
-    if verdict == access.UNAVAILABLE:
-        return _fail(tool, capability_id, "entitlement_unavailable",
-                     "UNDX could not confirm your Private Office access just now.",
-                     retryable=True, started=started)
-    if verdict in (access.NOT_IMPLEMENTED, access.FEATURE_DISABLED):
-        return _fail(tool, capability_id, "capability_not_available",
-                     "That part of the Private Office is not available yet.",
-                     started=started)
-    if verdict == access.NOT_ENTITLED:
-        return _fail(tool, capability_id, "not_entitled",
-                     "Your plan does not include the Private Office.",
-                     started=started)
-
-    connection = db.connect()
-    try:
-        cursor = connection.cursor()
-        schema.ensure_private_schema(cursor)
-
-        from services.private_office import security as office_security
-        if not office_security.request_is_unlocked(cursor, owner).get("ok"):
-            return _office_locked_result(tool, capability_id, started)
-
-        result = capital_spec.execute(cursor, owner_user_id=owner)
-        # The projection's lazy outbox sweep and audit row must survive.
-        connection.commit()
-    except Exception:  # noqa: BLE001
-        return _fail(tool, capability_id, "private_store_unavailable",
-                     "UNDX could not read your Private Office just now.",
-                     retryable=True, started=started)
-    finally:
-        connection.close()
-
-    if not result.get("ok"):
-        return _fail(tool, capability_id, "capital_denied",
-                     "UNDX could not read your Capital Graph portfolio.",
-                     started=started)
-
-    return ToolResult(
-        ok=True,
-        tool_name=tool,
-        capability_id=capability_id,
-        records=list(result.get("records") or []),
-        data={
-            "count": int(result.get("counts", {}).get("returned") or 0),
-            "totals": result.get("totals") or {},
-            "prices": result.get("prices") or {},
-            "sync": result.get("sync") or {},
-        },
-        latency_ms=_timed(started),
-    )
-
-
 # ---------------------------------------------------------------------------
 # Resolution
 # ---------------------------------------------------------------------------
 
 EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
-    "private_facts_list": private_facts_list,
     "profile_block": profile_block,
     "profile_unblock": profile_unblock,
     "profile_bio_update": profile_bio_update,
@@ -3101,32 +2794,8 @@ EXECUTORS: dict[str, Callable[[int, dict[str, Any]], ToolResult]] = {
 }
 
 
-# The six Batch C record-view executors, bound from the spec module so the
-# names here and in the capability registry agree by construction.
-def _register_private_record_executors() -> None:
-    from services.private_office import undx_records_spec as _po_spec
-
-    for _entry in _po_spec.CAPABILITIES:
-        _cid = _entry["capability_id"]
-        EXECUTORS[_po_spec.executor_name(_cid)] = _private_records_executor(_cid)
-
-
-_register_private_record_executors()
-
-
-# The Capital Graph read, registered under its derived name so the registry
-# entry and this table cannot spell it differently.
-def _register_private_capital_executor() -> None:
-    from services.private_office import undx_capital_spec as _po_capital
-
-    EXECUTORS[_po_capital.executor_name(_po_capital.CAPABILITY_ID)] = (
-        private_capital_portfolio)
-
-
-_register_private_capital_executor()
-
-
-# The five feature reads, bound from their spec module for the same reason.
+# The feature reads, bound from their spec module so the names here and in
+# the capability registry agree by construction rather than by review.
 def _register_private_feature_read_executors() -> None:
     from services.private_office import undx_feature_reads_spec as _po_reads
 
@@ -3136,18 +2805,6 @@ def _register_private_feature_read_executors() -> None:
 
 
 _register_private_feature_read_executors()
-
-
-# The Capital Graph read, bound under its spec-derived name for the same
-# reason: the registry entry and this table cannot spell it differently.
-def _register_private_capital_executor() -> None:
-    from services.private_office import undx_capital_spec as _po_capital
-
-    EXECUTORS[_po_capital.executor_name(_po_capital.CAPABILITY_ID)] = (
-        private_capital_portfolio)
-
-
-_register_private_capital_executor()
 
 
 def resolve(name: str) -> Callable[[int, dict[str, Any]], ToolResult]:

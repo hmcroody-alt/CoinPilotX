@@ -214,19 +214,9 @@
       "briefingsHub": "ブリーフィング",
       "briefing": "ブリーフィング",
       "privateOffice": "プライベートオフィス",
-      "privateFacts": "プライベート情報",
       "privateOfficeSecurity": "オフィスのセキュリティ",
-      "privateOperations": "オペレーション",
-      "capitalGraph": "キャピタルグラフ",
-      "capitalEntity": "エンティティ",
-      "privateDocuments": "ドキュメントインテリジェンス",
       "privatePeople": "リレーションシップインテリジェンス",
-      "privateBriefings": "プライベートブリーフィング",
-      "privateShield": "プライベートシールド",
-      "privateConcierge": "ヒューマンコンシェルジュ",
-      "privateMeetings": "プライベートミーティング",
-      "privateConversations": "プライベート会話",
-      "privateConversationInfo": "会話の詳細"
+      "privateMeetings": "プライベートミーティング"
     },
     "navSubtitles": {
       "missionControl": "管制センター",

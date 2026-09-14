@@ -82081,12 +82081,17 @@ def pulse_creator_analytics_page():
 # ---------------------------------------------------------------------------
 # Private Office — the web surface
 #
-# `mobile-native/src/navigation/linking.ts` publishes eleven
-# `https://pulsesoc.com/pulse/private-office/...` universal links, and until now
-# every single one of them 404'd. The subsystem had 88 API endpoints and
-# thirteen native screens and no web page at all: a member who shared anything
+# `mobile-native/src/navigation/linking.ts` publishes the Office's
+# `https://pulsesoc.com/pulse/private-office/...` universal links, and until
+# this surface existed every one of them 404'd: a member who shared anything
 # from inside the Office handed the recipient a dead link, and a member who
 # opened pulsesoc.com simply did not have an Office.
+#
+# The Office has since been narrowed to Relationship Intelligence, Private
+# Meetings and the lock on the room. The links for the retired capabilities are
+# still served — they redirect to the Office home — for the same reason this
+# surface was built at all: a published link that answers nothing is worse than
+# one that answers honestly.
 #
 # These pages are deliberately thin. Every entitlement question — does this
 # member have the Office, which children open, why a child does not open,
@@ -82114,14 +82119,6 @@ def pulse_creator_analytics_page():
 # as a gap someone should close.
 # ---------------------------------------------------------------------------
 
-#: The six operations record views. Mirrors `RECORD_VIEWS` in
-#: `services/private_office/retrieval.py`; `/api/private-office/records/<view>`
-#: 400s on anything else, so the URL space is closed with an `any(...)`
-#: converter rather than a catch-all that would render an empty page for junk.
-PRIVATE_OFFICE_RECORD_VIEWS = (
-    "obligations", "events", "decisions", "requests", "risks", "opportunities",
-)
-
 #: feature id -> (label, web destination or None).
 #:
 #: A ``None`` destination is a capability with no web page. It still renders —
@@ -82129,16 +82126,17 @@ PRIVATE_OFFICE_RECORD_VIEWS = (
 #: link. That is the native `DESTINATIONS` rule: a missing destination is a
 #: client bug, and "the honest failure is a row that does not move rather than
 #: a tap into a screen that is not registered."
+#:
+#: This lists what the web knows how to draw; ``OFFICE_CHILD_IDS`` on the server
+#: decides what actually appears, and ``renderHub`` skips any row the overview
+#: did not send. The Office was narrowed to Relationship Intelligence and
+#: Private Meetings, so the rows for facts, documents, briefings, operations,
+#: the capital graph, shield and the concierge desk are gone from here as well
+#: — leaving them would have been harmless (they would never match) and also
+#: dishonest, since this tuple is where a reader looks to find out what the
+#: Office contains.
 PRIVATE_OFFICE_CHILDREN = (
-    ("private_facts", "Facts", "/pulse/private-office/facts"),
-    ("private_office.document.extraction", "Documents", "/pulse/private-office/documents"),
     ("relationship_intelligence", "People", "/pulse/private-office/people"),
-    ("private_briefings", "Briefings", "/pulse/private-office/briefings"),
-    ("private_office.operations", "Operations", "/pulse/private-office/obligations"),
-    ("capital_graph", "Capital Graph", "/pulse/private-office/capital-graph"),
-    ("private_shield", "Shield", "/pulse/private-office/shield"),
-    ("private_shield.breach_monitoring", "Breach Monitoring", None),
-    ("human_concierge", "Concierge", "/pulse/private-office/concierge"),
     ("private_meetings", "Meetings", None),
 )
 
@@ -82147,41 +82145,11 @@ PRIVATE_OFFICE_CHILDREN = (
 #: says so instead of drawing an empty list, because an unreadable store is not
 #: an empty store.
 PRIVATE_OFFICE_SECTIONS = {
-    "facts": {
-        "title": "Facts",
-        "blurb": "The private fact store. Every row is something you recorded or approved.",
-        "api": "/api/private-office/facts",
-        "collection": "facts",
-    },
-    "documents": {
-        "title": "Documents",
-        "blurb": "Documents held in the Office, and the facts extracted from them.",
-        "api": "/api/private-office/documents",
-        "collection": "documents",
-    },
     "people": {
         "title": "People",
         "blurb": "Relationship intelligence: who is connected to what you hold.",
         "api": "/api/private-office/relationships",
         "collection": "people",
-    },
-    "briefings": {
-        "title": "Briefings",
-        "blurb": "Prepared briefings drawn from your own records.",
-        "api": "/api/private-office/briefings",
-        "collection": "briefings",
-    },
-    "shield": {
-        "title": "Shield",
-        "blurb": "Exposure posture and findings.",
-        "api": "/api/private-office/shield/findings",
-        "collection": "findings",
-    },
-    "concierge": {
-        "title": "Concierge",
-        "blurb": "Requests handled by a person, not a model.",
-        "api": "/api/private-office/concierge",
-        "collection": "requests",
     },
 }
 
@@ -82620,11 +82588,9 @@ PULSE_WEB_SECTION_JS = r"""
         head = "<p>Your Private Office opens with " +
           esc(tierName(product.upgrade_tier)) + ".</p>";
       }
-      var domains = body.domains && body.domains.length
-        ? "<h2>Your records</h2>" + collectionHtml(body.domains) : "";
-
+      // No per-domain counts here any more. They counted the private fact
+      // store, which is no longer part of the Office.
       show(panel("Private Office", head + "<ul class='grid office-list'>" + rows + "</ul>") +
-        (domains ? "<article class='card'>" + domains + "</article>" : "") +
         "<article class='card'><h2>Security</h2><p>Your Office passcode and locked " +
         "sessions.</p><p><a class='button' href='/pulse/private-office/security'>" +
         "Office security</a></p></article>");
@@ -83078,6 +83044,26 @@ def pulse_private_office_security_page():
     )
 
 
+# --- retired Office pages ---------------------------------------------------
+#
+# The Office was narrowed to Relationship Intelligence, Private Meetings and
+# the lock on the room. Facts, documents, briefings, operations, the capital
+# graph, shield and the concierge desk are no longer part of it.
+#
+# Their URL space is kept and redirected rather than deleted. These paths were
+# published as universal links, they sit in shared links, in notification
+# payloads and in browser history, and a member who follows one is not doing
+# anything wrong. A 404 would tell them the site is broken; sending them to the
+# Office home tells them the room is still there and this part of it is not.
+# Keeping the rules also means the URL map does not shrink under the parity
+# snapshot, and `any(...)` still closes the space, so a typo is still a 404
+# rather than a confident empty page.
+#
+# The APIs behind these pages are untouched — an older native build still
+# calls them — and nothing anyone recorded has been deleted.
+RETIRED_OFFICE_HOME = "/pulse/private-office"
+
+
 @webhook_app.route(
     "/pulse/private-office/<any(facts,documents,people,briefings,shield,concierge):section>",
     methods=["GET"])
@@ -83085,7 +83071,10 @@ def pulse_private_office_section_page(section):
     blocked = private_office_web_guard()
     if blocked:
         return blocked
-    config = dict(PRIVATE_OFFICE_SECTIONS[section])
+    config = PRIVATE_OFFICE_SECTIONS.get(section)
+    if config is None:
+        return redirect(RETIRED_OFFICE_HOME)
+    config = dict(config)
     config["mode"] = "section"
     return private_office_web_shell(config["title"], config["blurb"], config)
 
@@ -83097,14 +83086,7 @@ def pulse_private_office_operations_page(view):
     blocked = private_office_web_guard()
     if blocked:
         return blocked
-    title = view.replace("_", " ").title()
-    return private_office_web_shell(
-        title, "Private Office operations: " + title.lower() + ".",
-        {"mode": "section", "title": title,
-         "blurb": "Operations records drawn from your own Office.",
-         "api": "/api/private-office/records/" + view,
-         "collection": "records"},
-    )
+    return redirect(RETIRED_OFFICE_HOME)
 
 
 @webhook_app.route("/pulse/private-office/capital-graph", methods=["GET"])
@@ -83112,12 +83094,7 @@ def pulse_private_office_capital_graph_page():
     blocked = private_office_web_guard()
     if blocked:
         return blocked
-    return private_office_web_shell(
-        "Capital Graph", "How what you hold connects.",
-        {"mode": "section", "title": "Capital Graph",
-         "blurb": "How what you hold connects. Gated separately from the fact store.",
-         "api": "/api/private-office/capital-graph", "collection": None},
-    )
+    return redirect(RETIRED_OFFICE_HOME)
 
 
 @webhook_app.route("/pulse/private-office/capital-graph/<node_id>", methods=["GET"])
@@ -83125,14 +83102,7 @@ def pulse_private_office_capital_entity_page(node_id):
     blocked = private_office_web_guard()
     if blocked:
         return blocked
-    return private_office_web_shell(
-        "Capital Graph entity", "One entity in your Capital Graph.",
-        {"mode": "section", "title": "Capital Graph entity",
-         "blurb": "One entity in your Capital Graph, and what it is connected to.",
-         "api": "/api/private-office/entities/" + quote(str(node_id), safe="") +
-                "/relationships",
-         "collection": "relationships"},
-    )
+    return redirect(RETIRED_OFFICE_HOME)
 
 
 # --- Orders on the web ------------------------------------------------------

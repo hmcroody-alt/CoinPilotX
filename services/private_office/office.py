@@ -74,19 +74,28 @@ from services.private_office.tiers import (
 OFFICE_FEATURE_ID = "private_office"
 
 #: Children in display order. This is the room's contents, and the order is a
-#: product decision rather than an alphabetisation: the capability that works
-#: comes first, and the unbuilt ones follow in the order they are planned.
+#: product decision rather than an alphabetisation.
+#:
+#: Private Office was deliberately narrowed to the capabilities it can actually
+#: stand behind. Everything that used to hang here — facts, the capital graph,
+#: operations, briefings, shield, breach monitoring, document extraction and the
+#: concierge desk — was removed from the product surface, not from the database:
+#: their tables, writers and history are untouched and their feature_matrix rows
+#: still exist, so nothing a member recorded has been destroyed and any of them
+#: can be re-listed by adding its id back here.
+#:
+#: This tuple is the *only* authority on what the office contains. The native
+#: screen renders whatever arrives over the wire and keeps no parallel list, so
+#: shortening this is what actually retires a capability; deleting a tile in the
+#: client would only hide it.
+#:
+#: Office Security is intentionally absent. It is not an entitled capability —
+#: it is the lock on this room, always present whenever the room can be opened,
+#: and routing it through the entitlement matrix would make the second lock
+#: something a tier could fail to include.
 OFFICE_CHILD_IDS: tuple[str, ...] = (
-    "private_facts",
-    "capital_graph",
-    "private_office.operations",
-    "private_briefings",
     "relationship_intelligence",
-    "private_shield",
-    "private_shield.breach_monitoring",
-    "private_office.document.extraction",
     "private_meetings",
-    "human_concierge",
 )
 
 # --- entry states ------------------------------------------------------------

@@ -320,11 +320,6 @@ BLOCKED_DEEP_LINKS = {
 #: reading like an open question forever. An entry here is not an assertion that
 #: the row is fine; it is a pointer to the thing that keeps checking.
 PROVEN_ELSEWHERE = {
-    "/pulse/private-office/:view": (
-        "tests/web_parity/test_private_office_views.py",
-        "`:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The "
-        "web serves all six via an `any(...)` enumeration that the test "
-        "compares member-for-member against the app's own list."),
     "/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?": (
         "tests/web_parity/test_dashboard_legacy_aliases.py",
         "Two parameters, so single-segment sampling declines it rather than "

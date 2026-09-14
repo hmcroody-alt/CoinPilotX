@@ -214,19 +214,9 @@
       "briefingsHub": "Briefings",
       "briefing": "Briefing",
       "privateOffice": "Escritório privado",
-      "privateFacts": "Dados privados",
       "privateOfficeSecurity": "Segurança do escritório",
-      "privateOperations": "Operações",
-      "capitalGraph": "Grafo de capital",
-      "capitalEntity": "Entidade",
-      "privateDocuments": "Inteligência documental",
       "privatePeople": "Inteligência de relacionamentos",
-      "privateBriefings": "Briefings privados",
-      "privateShield": "Escudo privado",
-      "privateConcierge": "Concierge humano",
-      "privateMeetings": "Reuniões Privadas",
-      "privateConversations": "Conversas privadas",
-      "privateConversationInfo": "Detalhes da conversa"
+      "privateMeetings": "Reuniões Privadas"
     },
     "navSubtitles": {
       "missionControl": "Central de controle",

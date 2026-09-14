@@ -128,7 +128,27 @@ describe("navigator header titles", () => {
     // three — an Office conversation is a canonical conversation, so the thread
     // itself opens in the existing `Chat` screen rather than in an Office-side
     // copy of it. A third entry appearing here is the regression to look for.
-    expect(TITLE_OPTIONS.length).toBe(150);
+    //
+    // 150 − 10: the first subtraction this ledger has taken. The Private Office
+    // was narrowed to Relationship Intelligence, Private Meetings and Office
+    // Security, and ten of the twelve entries added above went with the screens
+    // they titled: `PrivateFacts`, `PrivateOperations`, `CapitalGraph`,
+    // `CapitalEntity`, `PrivateDocuments`, `PrivateBriefings`, `PrivateShield`,
+    // `PrivateConcierge`, `PrivateConversations` and `PrivateConversationInfo`.
+    // The registrations are gone from the navigator and their `common:screens.*`
+    // keys are gone from all eleven catalogs, so this number moving back up is
+    // one of those screens being re-registered rather than a new feature: a new
+    // feature would arrive with a key that does not exist yet, and the
+    // resolve-every-key case below would fail first and say so more clearly.
+    //
+    // Four Office routes stay and are still counted: `PrivateOffice`,
+    // `PrivateOfficeSecurity`, `PrivatePeople` and `PrivateMeetings`. The last
+    // of those is titled like the rest but was never given a line of its own in
+    // the ledger above, so do not try to reconcile the running additions against
+    // the four — the arithmetic that matters is 150 − 10, and the ten are named.
+    // `PrivateMeetingRoom` is `headerShown: false` and has never been in this
+    // count at all.
+    expect(TITLE_OPTIONS.length).toBe(140);
   });
 
   it("has no hardcoded string literal titles", () => {

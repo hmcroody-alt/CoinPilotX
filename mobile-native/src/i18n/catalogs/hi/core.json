@@ -214,19 +214,9 @@
       "briefingsHub": "ब्रीफ़िंग",
       "briefing": "ब्रीफ़िंग",
       "privateOffice": "निजी कार्यालय",
-      "privateFacts": "निजी जानकारी",
       "privateOfficeSecurity": "कार्यालय सुरक्षा",
-      "privateOperations": "परिचालन",
-      "capitalGraph": "पूंजी ग्राफ़",
-      "capitalEntity": "इकाई",
-      "privateDocuments": "दस्तावेज़ इंटेलिजेंस",
       "privatePeople": "संबंध इंटेलिजेंस",
-      "privateBriefings": "निजी ब्रीफ़िंग",
-      "privateShield": "निजी शील्ड",
-      "privateConcierge": "मानव कंसीयज",
-      "privateMeetings": "निजी मीटिंग",
-      "privateConversations": "निजी बातचीत",
-      "privateConversationInfo": "बातचीत का विवरण"
+      "privateMeetings": "निजी मीटिंग"
     },
     "navSubtitles": {
       "missionControl": "मिशन कंट्रोल",

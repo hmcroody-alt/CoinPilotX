@@ -95,18 +95,14 @@ move, and the attention read — all behind the same entry gate: authentication,
 then the ``private_office.operations`` entitlement, then the Private Office
 second lock.
 
-The UNDX surface is declared in one place,
-:mod:`services.private_office.undx_records_spec`, which now carries
-``WIRING_COMPLETE = True``. The flag is not decoration. While it was False the
-suite asserted the six capabilities were *absent* from all three authorization
-surfaces; now that it is True the same suite asserts they are *present* in all
-three, so the flag cannot be flipped without the registration being real, and
-the registration cannot be removed without the flag failing. ``DEFERRAL_REASON``
-survives in that module as a historical string, not as a live status.
-
-There was never a temporary route and never a second executor table "just for
-now", which is why resolving the deferral was three edits in the files that own
-registration rather than a migration off a parallel surface.
+There is no UNDX surface. The record views had one, declared in a spec module
+that the capability registry, the policy table, the knowledge map and the
+executor table all derived from; when Operations left the Private Office
+product surface that spec module went with it, and with it the agent's licence
+to read these rows. The engine below is untouched and the rows are untouched —
+what was removed is the description of them, in the one place that registers
+it. A capability absent from that registry raises ``tool_not_registered`` and
+cannot execute, so this is a closed door rather than an unadvertised one.
 
 Every write and every read of these six goes through this module and
 ``retrieval``, which is enforced statically by

@@ -214,19 +214,9 @@
       "briefingsHub": "简报",
       "briefing": "简报",
       "privateOffice": "私人办公室",
-      "privateFacts": "私人信息",
       "privateOfficeSecurity": "办公室安全",
-      "privateOperations": "事务",
-      "capitalGraph": "资本图谱",
-      "capitalEntity": "实体",
-      "privateDocuments": "文档智能",
       "privatePeople": "关系智能",
-      "privateBriefings": "私人简报",
-      "privateShield": "私人护盾",
-      "privateConcierge": "真人礼宾",
-      "privateMeetings": "私人会议",
-      "privateConversations": "私密对话",
-      "privateConversationInfo": "对话详情"
+      "privateMeetings": "私人会议"
     },
     "navSubtitles": {
       "missionControl": "指挥中心",

@@ -214,19 +214,9 @@
       "briefingsHub": "الموجزات",
       "briefing": "موجز",
       "privateOffice": "المكتب الخاص",
-      "privateFacts": "المعلومات الخاصة",
       "privateOfficeSecurity": "أمان المكتب",
-      "privateOperations": "العمليات",
-      "capitalGraph": "مخطط رأس المال",
-      "capitalEntity": "الكيان",
-      "privateDocuments": "ذكاء المستندات",
       "privatePeople": "ذكاء العلاقات",
-      "privateBriefings": "الإحاطات الخاصة",
-      "privateShield": "الدرع الخاص",
-      "privateConcierge": "الكونسيرج البشري",
-      "privateMeetings": "الاجتماعات الخاصة",
-      "privateConversations": "المحادثات الخاصة",
-      "privateConversationInfo": "تفاصيل المحادثة"
+      "privateMeetings": "الاجتماعات الخاصة"
     },
     "navSubtitles": {
       "missionControl": "مركز القيادة",

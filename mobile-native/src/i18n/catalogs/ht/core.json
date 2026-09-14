@@ -214,19 +214,9 @@
       "briefingsHub": "Rezime",
       "briefing": "Rezime",
       "privateOffice": "Biwo prive",
-      "privateFacts": "Enfòmasyon prive",
       "privateOfficeSecurity": "Sekirite biwo a",
-      "privateOperations": "Operasyon",
-      "capitalGraph": "Graf kapital",
-      "capitalEntity": "Antite",
-      "privateDocuments": "Entèlijans dokiman",
       "privatePeople": "Entèlijans relasyon",
-      "privateBriefings": "Rapò prive",
-      "privateShield": "Pwoteksyon prive",
-      "privateConcierge": "Konsyèj imen",
-      "privateMeetings": "Reyinyon Prive",
-      "privateConversations": "Konvèsasyon prive",
-      "privateConversationInfo": "Detay konvèsasyon an"
+      "privateMeetings": "Reyinyon Prive"
     },
     "navSubtitles": {
       "missionControl": "Sant kontwòl",

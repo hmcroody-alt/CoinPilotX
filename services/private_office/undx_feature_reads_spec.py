@@ -1,39 +1,28 @@
 """The UNDX surface over the shipped Private Office features.
 
-Documents, people, briefings, shield and the concierge desk each already have
-a member-facing engine and an HTTP surface. This module gives the agent a
-*read* of each — and only a read — declared once, here, with the registry,
-the policy table, the knowledge map and the executor table all deriving from
-this vocabulary the same way the Batch C record views derive from
-``undx_records_spec``. The reasoning is unchanged: three registration surfaces
-that agree by construction cannot drift apart by review.
+Relationship Intelligence has a member-facing engine and an HTTP surface. This
+module gives the agent a *read* of it — and only a read — declared once, here,
+with the registry, the policy table, the knowledge map and the executor table
+all deriving from this vocabulary. The reasoning is unchanged from when this
+carried five features: three registration surfaces that agree by construction
+cannot drift apart by review.
 
-Document intelligence carries two reads rather than one. "What did I upload?"
-and "what did those uploads say, and where does each answer come from?" are
-different questions with different payloads, and one read serving both would
-have to either put fact values in a file list or leave the citations
-unreachable. They share a feature id and a kill switch, so the pairing costs
-nothing in gating: darkening document intelligence darkens both and no
-sibling. What it does cost is the old one-row-per-feature invariant, which was
-a property of the first five capabilities rather than a rule worth keeping.
+Documents, briefings, shield and the concierge desk were removed from the
+Private Office product surface, so their reads are gone from here. The engines
+and the HTTP routes behind them are untouched and nothing anyone recorded was
+deleted; what changed is that UNDX no longer offers to answer for them, because
+UNDX must not advertise a capability the Office does not have.
 
-What the specs commit to
+What the spec commits to
 ------------------------
-* **Read only, every one.** UNDX may look at the Office; it may not act on it.
-  Uploading a document, adding a person, generating a briefing, acknowledging
-  a finding and filing a concierge request all stay deliberate acts on the
-  member's own screen — every one of those writes has provenance and several
-  have consequences a model must not be able to trigger from a paraphrase.
-* **No fabricated humans, even here.** The concierge read carries the same
-  ``desk`` staffing block the HTTP surface carries. An agent asked "what is
-  my concierge doing" answers from a payload that says UNSTAFFED when nobody
-  is on the roster, so the model cannot imply a human who does not exist.
+* **Read only.** UNDX may look at the Office; it may not act on it. Adding a
+  person stays a deliberate act on the member's own screen — that write has
+  provenance, and a model must not be able to trigger it from a paraphrase.
 * **No field names an account.** Owner scope is structural: the executor
   passes the authenticated session id and the argument schema has nowhere to
   put anybody else.
-* **Each capability gates on its own feature id.** The documents read refuses
-  when document intelligence is dark, not when some sibling is; a kill switch
-  turns off exactly the reads it names.
+* **The capability gates on its own feature id.** A kill switch turns off
+  exactly the reads it names.
 """
 
 from __future__ import annotations
@@ -58,46 +47,6 @@ DEFAULT_LIMIT = 10
 #: over it.
 CAPABILITIES: tuple[dict, ...] = (
     {
-        "capability_id": "private.documents.list",
-        "feature_id": "private_office.document.extraction",
-        "description": "List the authenticated member's own private documents and their extraction state",
-        "intents": ("my documents", "what did i upload", "my private files",
-                    "status of my document", "what was extracted"),
-        "native_route": "/pulse/private-office/documents",
-        "backend_route": "GET /api/private-office/documents",
-        "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
-        "audit_action": _audit.ACTION_DOCUMENT_READ,
-        "object_type": "DOCUMENT_LIST",
-        "native_screen": "PrivateDocuments",
-        "service_module": "documents",
-    },
-    {
-        # The second read over document intelligence, and the reason the
-        # one-capability-per-feature shape above is no longer the rule: listing
-        # what was uploaded and asking what those uploads *said* are different
-        # questions, and collapsing them into one read would mean either the
-        # file list carries fact values nobody asked for, or the citations are
-        # unreachable. Both reads gate on the same feature id and the same kill
-        # switch, so turning document intelligence off still turns off exactly
-        # its own reads and no sibling's.
-        "capability_id": "private.documents.facts",
-        "feature_id": "private_office.document.extraction",
-        "description": (
-            "Show facts already accepted from the member's own documents, each "
-            "with the document and locator it came from"
-        ),
-        "intents": ("where did this come from", "what do my documents say",
-                    "what did i accept from my documents", "cite that",
-                    "which document says that", "source of that fact"),
-        "native_route": "/pulse/private-office/documents",
-        "backend_route": "GET /api/private-office/documents/facts",
-        "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
-        "audit_action": _audit.ACTION_DOCUMENT_READ,
-        "object_type": "DOCUMENT_FACTS",
-        "native_screen": "PrivateDocuments",
-        "service_module": "documents",
-    },
-    {
         "capability_id": "private.people.list",
         "feature_id": "relationship_intelligence",
         "description": "List the people recorded in the member's own private office directory",
@@ -111,55 +60,16 @@ CAPABILITIES: tuple[dict, ...] = (
         "object_type": "PERSON_DIRECTORY",
         "native_screen": "PrivatePeople",
         "service_module": "relationships",
-    },
-    {
-        "capability_id": "private.briefings.list",
-        "feature_id": "private_briefings",
-        "description": "List the member's own private briefings, newest first",
-        "intents": ("my briefings", "my latest briefing", "brief me",
-                    "what did my office prepare", "my morning briefing"),
-        "native_route": "/pulse/private-office/briefings",
-        "backend_route": "GET /api/private-office/briefings",
-        "flag_env": "PRIVATE_BRIEFINGS_ENABLED",
-        "audit_action": _audit.ACTION_BRIEFING_READ,
-        "object_type": "BRIEFING_LIST",
-        "native_screen": "PrivateBriefings",
-        "service_module": "briefings",
-    },
-    {
-        "capability_id": "private.shield.posture",
-        "feature_id": "private_shield",
-        # "recorded"/"open" language on purpose: the posture reports what the
-        # internal scan found and is explicit about what no external provider
-        # has checked. It does not reassure.
-        "description": "Report the member's own Private Shield posture: open findings and what has not been checked",
-        "intents": ("my shield", "am i exposed", "my open findings",
-                    "what has my shield found", "my security posture"),
-        "native_route": "/pulse/private-office/shield",
-        "backend_route": "GET /api/private-office/shield",
-        "flag_env": "PRIVATE_SHIELD_ENABLED",
-        "audit_action": _audit.ACTION_SHIELD_READ,
-        "object_type": "SHIELD_POSTURE",
-        "native_screen": "PrivateShield",
-        "service_module": "shield",
-    },
-    {
-        "capability_id": "private.concierge.desk",
-        "feature_id": "human_concierge",
-        "description": "Show the member's own concierge desk: staffing status and their requests",
-        "intents": ("my concierge", "my concierge requests", "is anyone on my request",
-                    "status of my concierge request", "what is my office handling"),
-        "native_route": "/pulse/private-office/concierge",
-        "backend_route": "GET /api/private-office/concierge",
-        "flag_env": "PRIVATE_CONCIERGE_ENABLED",
-        "audit_action": _audit.ACTION_CONCIERGE_READ,
-        "object_type": "REQUEST_LIST",
-        "native_screen": "PrivateConcierge",
-        "service_module": "concierge",
+        # The engine function this read actually lands in. Named here, not
+        # inferred, because the knowledge map publishes it as the module and
+        # operation a reader can go and check — and a map that names the
+        # dispatcher instead of the engine points at a function that does not
+        # exist in the module it blames.
+        "service_operation": "directory",
     },
 )
 
-#: The shape all five declare. Nothing here can name an account, a table or a
+#: The shape it declares. Nothing here can name an account, a table or a
 #: row in someone else's office.
 FIELDS: tuple[dict, ...] = (
     {"name": "limit", "type": "int", "required": False,
@@ -223,45 +133,9 @@ def execute_capability(
     limit = _bounded_limit(arguments)
     extras: dict[str, Any] = {}
 
-    if spec["capability_id"] == "private.documents.list":
-        from services.private_office import documents as _documents
-        records = [_documents.public_view(doc) for doc in
-                   _documents.list_documents(cur, owner_user_id=owner, limit=limit)]
-    elif spec["capability_id"] == "private.documents.facts":
-        from services.private_office import documents as _documents
-        outcome = _documents.list_document_facts(
-            cur, owner_user_id=owner, limit=limit, actor_user_id=owner)
-        if outcome.get("denied"):
-            # Passed through, not flattened into an empty list. An agent told
-            # "no facts" when a policy withheld them will tell the member they
-            # have nothing on file, which is a false statement about their own
-            # store made in PulseSoc's voice.
-            return {"ok": False, "denied": str(outcome["denied"]),
-                    "records": [], "counts": outcome["counts"],
-                    "extras": {"content_boundary": outcome["boundary"]}}
-        records = outcome["records"]
-        # The boundary rides with the values, always. See documents.CONTENT_BOUNDARY.
-        extras["content_boundary"] = outcome["boundary"]
-        extras["withheld"] = int(outcome["counts"].get("withheld") or 0)
-    elif spec["capability_id"] == "private.people.list":
+    if spec["capability_id"] == "private.people.list":
         from services.private_office import relationships as _relationships
         records = _relationships.directory(cur, owner_user_id=owner, limit=limit)
-    elif spec["capability_id"] == "private.briefings.list":
-        from services.private_office import briefings as _briefings
-        records = _briefings.list_briefings(cur, owner_user_id=owner, limit=limit)
-    elif spec["capability_id"] == "private.shield.posture":
-        from services.private_office import shield as _shield
-        records = _shield.list_findings(
-            cur, owner_user_id=owner,
-            statuses=list(_shield.OPEN_STATUSES), limit=limit)
-        # The posture block carries the external-coverage honesty: what no
-        # provider has checked is named, not implied to be clean.
-        extras["posture"] = _shield.posture(cur, owner_user_id=owner)
-    elif spec["capability_id"] == "private.concierge.desk":
-        from services.private_office import concierge as _concierge
-        records = _concierge.list_requests(cur, owner_user_id=owner, limit=limit)
-        # Staffing truth rides on every payload, agent-facing included.
-        extras["desk"] = _concierge.desk_status()
     else:  # pragma: no cover - CAPABILITIES and this dispatch move together
         return {"ok": False, "denied": "unknown_capability",
                 "records": [], "counts": {"returned": 0}, "extras": {}}

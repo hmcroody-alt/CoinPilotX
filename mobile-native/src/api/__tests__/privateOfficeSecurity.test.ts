@@ -29,12 +29,18 @@ import { PulseApiError } from "../pulseApi";
 import {
   changeOfficePasscode,
   getOfficeSecurityStatus,
-  getPrivateFacts,
   lockOffice,
   resetOfficePasscode,
   setupOfficePasscode,
   unlockOffice
 } from "../privateOffice";
+// The lock is exercised through a read that is actually in the office. This
+// used to be `getPrivateFacts`; Private Facts left the surface, and pinning the
+// second lock to a client nothing calls would have turned the strongest
+// assertions in this file into a test of dead code. `getPrivatePeople` shares
+// the same refusal translation and the same `officeRequestHeaders`, so the
+// coverage is unchanged and now sits on a live path.
+import { getPrivatePeople } from "../privateFeatures";
 import {
   OFFICE_DEVICE_HEADER,
   OFFICE_GRANT_HEADER,
@@ -64,39 +70,39 @@ beforeEach(() => {
   __resetOfficeLockForTests();
 });
 
-describe("getPrivateFacts and the second lock", () => {
+describe("an office read and the second lock", () => {
   it("maps a 423 to LOCKED before any entitlement word gets a say", async () => {
     // A body that ALSO claims NOT_ENTITLED must still land on LOCKED: the 423
     // carries the one instruction that matters — unlock, or set up.
     mockPulseApi.mockRejectedValueOnce(
       apiError(423, { state: "NOT_ENTITLED", minimum_tier: "gold", setup_required: false })
     );
-    expect(await getPrivateFacts("finance")).toEqual({ state: "LOCKED", setupRequired: false });
+    expect(await getPrivatePeople()).toEqual({ state: "LOCKED", setupRequired: false });
   });
 
   it("recognises the lock by state word alone, and carries setup_required", async () => {
     mockPulseApi.mockRejectedValueOnce(
       apiError(403, { state: "PRIVATE_OFFICE_LOCKED", setup_required: true })
     );
-    expect(await getPrivateFacts()).toEqual({ state: "LOCKED", setupRequired: true });
+    expect(await getPrivatePeople()).toEqual({ state: "LOCKED", setupRequired: true });
   });
 
   it("still names the other refusals when no lock is involved", async () => {
     mockPulseApi.mockRejectedValueOnce(
       apiError(403, { state: "NOT_ENTITLED", minimum_tier: "gold" })
     );
-    expect(await getPrivateFacts()).toEqual({ state: "NOT_ENTITLED", minimumTier: "gold" });
+    expect(await getPrivatePeople()).toEqual({ state: "NOT_ENTITLED", minimumTier: "gold" });
 
     mockPulseApi.mockRejectedValueOnce(apiError(503, {}));
-    expect(await getPrivateFacts()).toEqual({ state: "UNAVAILABLE" });
+    expect(await getPrivatePeople()).toEqual({ state: "UNAVAILABLE" });
 
     mockPulseApi.mockRejectedValueOnce(new TypeError("network down"));
-    expect(await getPrivateFacts()).toEqual({ state: "ERROR", message: "" });
+    expect(await getPrivatePeople()).toEqual({ state: "ERROR", message: "" });
   });
 
   it("sends the device header on every read, and the grant only once unlocked", async () => {
-    mockPulseApi.mockResolvedValue({ facts: [], domain: "finance" });
-    await getPrivateFacts("finance");
+    mockPulseApi.mockResolvedValue({ people: [] });
+    await getPrivatePeople();
     const locked = lastRequest().options.headers as Record<string, string>;
     expect(locked[OFFICE_DEVICE_HEADER]).toBeTruthy();
     expect(locked[OFFICE_GRANT_HEADER]).toBeUndefined();
@@ -107,7 +113,7 @@ describe("getPrivateFacts and the second lock", () => {
     });
     await unlockOffice("824913", USER);
 
-    await getPrivateFacts("finance");
+    await getPrivatePeople();
     const unlocked = lastRequest().options.headers as Record<string, string>;
     expect(unlocked[OFFICE_GRANT_HEADER]).toBe(TOKEN);
   });
@@ -319,7 +325,7 @@ describe("the owner's path through the door", () => {
           setup_required: setupRequired
         })
       );
-      expect(await getPrivateFacts()).toEqual({ state: "LOCKED", setupRequired });
+      expect(await getPrivatePeople()).toEqual({ state: "LOCKED", setupRequired });
     }
   });
 });

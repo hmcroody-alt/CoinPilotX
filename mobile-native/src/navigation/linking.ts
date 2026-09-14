@@ -32,6 +32,37 @@ function settingsDeepLink(path: string) {
   return { routes: [{ name: entry.route, params: entry.params }] };
 }
 
+/**
+ * The Private Office paths that no longer lead anywhere.
+ *
+ * Private Office was narrowed to Relationship Intelligence, Private Meetings
+ * and Office Security. The capabilities that left took their screens with them,
+ * but their links did not stop existing: they are in agent answers, in old
+ * notifications, in whatever a member saved. Left unclaimed, a
+ * `pulse/private-office/facts` link resolves to nothing and the tap does
+ * nothing at all — which reads as a broken app rather than as a retired
+ * feature.
+ *
+ * So any `pulse/private-office/...` path this build does not recognise opens
+ * the office itself. That is the honest destination: the room still exists, the
+ * thing they were linked to does not. It also covers paths from *future*
+ * builds, which is the same problem pointed the other way.
+ *
+ * The live paths are listed rather than inferred from `config.screens` because
+ * this must keep working for a segment whose screen was deleted — reading the
+ * config would make every unknown path resolve to "not in config", including
+ * the ones that are.
+ */
+const LIVE_OFFICE_SEGMENTS = new Set(["security", "people", "meetings"]);
+
+function retiredOfficeDeepLink(path: string) {
+  const match = /^\/?pulse\/private-office\/(.+?)\/?$/i.exec(path.split("?")[0]);
+  if (!match) return null;
+  const head = match[1].split("/")[0].toLowerCase();
+  if (LIVE_OFFICE_SEGMENTS.has(head)) return null;
+  return { routes: [{ name: "PrivateOffice" as const }] };
+}
+
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["pulsesoc://", "https://pulsesoc.com"],
   getStateFromPath(path, options) {
@@ -39,6 +70,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
     const normalizedPath = canonical.relative;
     const settingsRoute = settingsDeepLink(canonical.path) || settingsDeepLink(normalizedPath);
     if (settingsRoute) return settingsRoute;
+    const retiredOffice =
+      retiredOfficeDeepLink(canonical.path) || retiredOfficeDeepLink(normalizedPath);
+    if (retiredOffice) return retiredOffice;
     if (canonical.path === "/pulse/profile/edit") {
       return { routes: [{ name: "ProfileEdit" }] };
     }
@@ -345,31 +379,15 @@ export const linking: LinkingOptions<RootStackParamList> = {
         }
       },
       // Private Office. The paths match the routes the UNDX capability registry
-      // already publishes for `private.facts.list`, so a deep link and an agent
-      // answer name the same destination rather than two spellings of it.
+      // publishes, so a deep link and an agent answer name the same destination
+      // rather than two spellings of it. Every other `pulse/private-office/...`
+      // path is a retired capability and is sent to the office by
+      // `retiredOfficeDeepLink` above — keep `LIVE_OFFICE_SEGMENTS` in step with
+      // this list.
       PrivateOffice: "pulse/private-office",
-      PrivateFacts: "pulse/private-office/facts",
       PrivateOfficeSecurity: "pulse/private-office/security",
-      PrivateDocuments: "pulse/private-office/documents",
       PrivatePeople: "pulse/private-office/people",
-      PrivateBriefings: "pulse/private-office/briefings",
-      PrivateShield: "pulse/private-office/shield",
-      PrivateConcierge: "pulse/private-office/concierge",
-      // Declared after the literal paths above so the named feature screens
-      // keep their own routes; the pattern claims the six record views.
-      PrivateOperations: {
-        path: "pulse/private-office/:view",
-        parse: {
-          view: String
-        }
-      },
-      CapitalGraph: "pulse/private-office/capital-graph",
-      CapitalEntity: {
-        path: "pulse/private-office/capital-graph/:id",
-        parse: {
-          id: Number
-        }
-      },
+      PrivateMeetings: "pulse/private-office/meetings",
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {

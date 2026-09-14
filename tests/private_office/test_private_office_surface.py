@@ -294,15 +294,29 @@ def stage_entry_state_reads_implementation_first():
         check("the entry is shown once something real is inside",
               office.entry_visible("PRIVATE_OFFICE") is True)
 
-    provider = [
-        child for child in top["unavailable"]
-        if child["implementation"] == feature_matrix.IMPL_PROVIDER_REQUIRED
-    ]
-    check("provider-blocked children keep their own reason",
-          bool(provider) and all(child["reason"] == "PROVIDER_REQUIRED" for child in provider),
+    # PROVIDER_REQUIRED must not collapse into "not built" or into an upgrade
+    # prompt: the first is a promise we would break, the second takes money for
+    # something no plan can deliver.
+    #
+    # This used to read the provider-blocked rows out of ``top["unavailable"]``.
+    # No Office child is PROVIDER_REQUIRED today — the rows that are, are
+    # sub-features of capabilities that left the Office — so that filter came
+    # back empty and the property went vacuous. It is asked of the mapping
+    # directly instead, against whichever matrix rows actually carry the
+    # implementation word, so it stays a real check no matter what the Office
+    # happens to contain.
+    provider_rows = [fid for fid, spec in feature_matrix.FEATURES.items()
+                     if spec.implementation == feature_matrix.IMPL_PROVIDER_REQUIRED]
+    check("the matrix still declares a provider-blocked row",
+          bool(provider_rows), "this check has gone vacuous")
+    provider = [office._child_state(fid, "PRIVATE_OFFICE") for fid in provider_rows]
+    check("provider-blocked rows keep their own reason",
+          all(child["reason"] == "PROVIDER_REQUIRED" for child in provider),
           str([child["reason"] for child in provider]))
-    check("a provider-blocked child is not offered as an upgrade",
+    check("a provider-blocked row is not offered as an upgrade",
           all(child["reason"] != "UPGRADE_REQUIRED" for child in provider))
+    check("a provider-blocked row does not open",
+          all(child["opens"] is False for child in provider))
 
     check("children are reported in the declared display order",
           [child["feature_id"] for child in top["available"] + top["unavailable"]]

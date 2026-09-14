@@ -1,12 +1,18 @@
 """The Private Office web surface: its URLs, and the honesty of its client.
 
-`mobile-native/src/navigation/linking.ts` publishes eleven
+`mobile-native/src/navigation/linking.ts` publishes
 `https://pulsesoc.com/pulse/private-office/...` universal links. Every one of
 them 404'd until this surface existed, which meant sharing anything from inside
 the Office produced a dead link for the recipient *and* for the sender's own
 browser. These tests exist to keep that from silently coming back: a route
 renamed, or a converter narrowed, would restore the 404s without failing
 anything else in the suite.
+
+The Office has since been narrowed to Relationship Intelligence, Private
+Meetings and the lock on the room. That made the same failure available a
+second way — retire a capability, delete its page, and every link anyone
+already shared dies with it. So the retired paths are probed here too, and
+pinned to a redirect rather than left to a 404.
 
 ## Why the routing check runs in a subprocess
 
@@ -40,7 +46,7 @@ from tests.probe_report import parse_report
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-#: Every path `linking.ts` publishes for the Office, minus meetings.
+#: The Office paths this build serves as pages.
 #:
 #: Meetings are excluded deliberately rather than forgotten. `private_meetings`
 #: resolves to TEMPORARILY_DISABLED at every tier, so the server already refuses
@@ -48,10 +54,22 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 #: path, which `docs/realtime_audio_change_policy.md` forbids outright.
 DEEP_LINKS = (
     "/pulse/private-office",
-    "/pulse/private-office/facts",
     "/pulse/private-office/security",
-    "/pulse/private-office/documents",
     "/pulse/private-office/people",
+)
+
+#: Paths for capabilities the Office no longer has.
+#:
+#: These were published as universal links before the Office was narrowed to
+#: Relationship Intelligence, Private Meetings and the lock on the room, so they
+#: are still in shared links, notification payloads and browser history. They
+#: must not 404 and they must not render: a member who follows one did nothing
+#: wrong, and the honest answer is the Office home. Deleting the rules instead
+#: would have turned every one of them back into the dead link this whole
+#: surface was built to stop.
+RETIRED_LINKS = (
+    "/pulse/private-office/facts",
+    "/pulse/private-office/documents",
     "/pulse/private-office/briefings",
     "/pulse/private-office/shield",
     "/pulse/private-office/concierge",
@@ -99,6 +117,7 @@ for path in %(paths)r:
     response = client.get(path)
     body = response.get_data()
     pages[path] = {"status": response.status_code,
+                   "location": response.headers.get("Location", ""),
                    "shell": b"office-root" in body,
                    "client": b"GRANT_KEY" in body}
 report["pages"] = pages
@@ -117,7 +136,8 @@ def office_probe():
     # daemon thread whose traceback only reaches the log.
     env["COINPILOTX_DB_INIT_STARTUP_MODE"] = "sync"
     env["PYTHONPATH"] = REPO
-    code = _PROBE % {"repo": REPO, "paths": list(DEEP_LINKS) + [UNKNOWN_VIEW]}
+    code = _PROBE % {"repo": REPO,
+                     "paths": list(DEEP_LINKS) + list(RETIRED_LINKS) + [UNKNOWN_VIEW]}
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=600)
     return parse_report(proc.stdout, proc.stderr)
@@ -125,10 +145,27 @@ def office_probe():
 
 def test_every_office_deep_link_resolves(office_probe):
     """Werkzeug decides whether these URLs exist, not a string comparison."""
-    broken = {path: info["status"]
-              for path, info in office_probe["pages"].items()
-              if path != UNKNOWN_VIEW and info["status"] != 200}
+    broken = {path: office_probe["pages"][path]["status"]
+              for path in DEEP_LINKS
+              if office_probe["pages"][path]["status"] != 200}
     assert not broken, f"published app URLs that the site cannot serve: {broken}"
+
+
+def test_retired_office_links_land_on_the_office_rather_than_nowhere(office_probe):
+    """A removed capability is not a removed member.
+
+    The failure this pins is the easy one to ship: delete the page, delete the
+    rule, and every link anyone ever shared becomes a 404. The assertion is on
+    the redirect target and not merely on "not 500", because a redirect to the
+    login page or to the site root would pass a laxer check while still telling
+    the member their Office is gone.
+    """
+    for path in RETIRED_LINKS:
+        info = office_probe["pages"][path]
+        assert info["status"] == 302, f"{path} answered {info['status']}"
+        assert info["location"].endswith("/pulse/private-office"), (
+            f"{path} redirected to {info['location']!r}")
+        assert not info["shell"], f"{path} still rendered an Office page"
 
 
 def test_every_office_page_ships_the_client(office_probe):

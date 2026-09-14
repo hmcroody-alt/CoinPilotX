@@ -1,32 +1,35 @@
 /**
- * Private Office — the first real native surface.
+ * Private Office — the room, and the three things it is for.
  *
  * ## What this screen is allowed to claim
  *
- * Nothing on it is decided here. The entry state, the list of children, and the
- * reason each child is or is not reachable all arrive from
- * `/api/private-office/overview`, which is rendered by
+ * Nothing on it is decided here. The entry state and the list of children
+ * arrive from `/api/private-office/overview`, which is rendered by
  * `services/private_office/office.product_state` over the canonical feature
- * matrix. This screen reads `opens` to decide tappability and `reason` to
- * decide copy, and it computes neither.
+ * matrix. This screen reads `opens` to decide tappability, and computes it
+ * nowhere.
  *
  * That is deliberate to the point of being awkward: it would be shorter to keep
- * a local list of the seven capabilities and light them up by tier. It would
- * also be a second authority on what exists, and the first time a capability
- * ships or is killed the two would disagree — with the client winning, because
- * the client is what the member sees. So the list itself comes down the wire.
+ * a local list of the capabilities and light them up by tier. It would also be
+ * a second authority on what exists, and the first time a capability ships or
+ * is killed the two would disagree — with the client winning, because the
+ * client is what the member sees. So the list itself comes down the wire.
  * The only local table is `COPY_KEYS`, which maps a feature id to a translation
  * key, and an id missing from it still renders (as its raw id) rather than
  * silently vanishing from the list.
  *
- * ## Why "not built" and "needs a provider" are different rows
+ * That property is why the narrowing of this office to Relationship
+ * Intelligence and Private Meetings was done in `OFFICE_CHILD_IDS` on the
+ * server and not by deleting tiles here. Deleting a tile hides a capability;
+ * shortening that tuple retires it.
  *
- * The availability vocabulary collapses them; `reason` does not. A capability
- * nobody has built may one day be built by us. A capability that needs an
- * outside data provider cannot answer at all until that provider is connected —
- * and for `private_shield` in particular, drawing it as a merely-locked feature
- * invites the reading that we are already watching and would tell them. We are
- * not. So PROVIDER_REQUIRED gets its own words.
+ * ## Why there is no "coming later" section any more
+ *
+ * There used to be one, listing children the server had sent with a reason they
+ * could not be opened — not built, awaiting a provider, switched off. It was an
+ * honest section and it was still a catalogue of things the member could not
+ * have. A capability the server does not open is now simply not drawn. The
+ * office shows what it is, not what it might become.
  *
  * ## Why a degraded resolve is not "you don't have this"
  *
@@ -34,6 +37,13 @@
  * offers a retry. Rendering it as an empty or locked office would be a
  * confident answer to a question we failed to ask, told to the member most
  * likely to have paid for the thing.
+ *
+ * ## Office Security is not a capability
+ *
+ * It is drawn as a third card because that is what it is to the member, but it
+ * comes from neither the wire nor the entitlement matrix. It is the lock on
+ * this room: present whenever the room can be opened at all, and never
+ * something a tier could fail to include.
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -47,7 +57,6 @@ import {
   UNKNOWN_OVERVIEW,
   getPrivateOfficeOverview
 } from "../api/privateOffice";
-import { PrivateAttention, PrivateRecordView, getPrivateAttention } from "../api/privateRecords";
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
@@ -64,17 +73,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "PrivateOffice">;
  * available; that word always comes from the server row next to it.
  */
 const COPY_KEYS: Readonly<Record<string, string>> = {
-  private_facts: "privateFacts",
-  "private_office.operations": "operations",
-  capital_graph: "capitalGraph",
-  private_briefings: "privateBriefings",
   relationship_intelligence: "relationshipIntelligence",
-  private_shield: "privateShield",
-  "private_shield.breach_monitoring": "breachMonitoring",
-  "private_office.document.extraction": "documentIntelligence",
-  "private_office.conversations": "privateConversations",
-  private_meetings: "privateMeetings",
-  human_concierge: "humanConcierge"
+  private_meetings: "privateMeetings"
 };
 
 /**
@@ -86,30 +86,13 @@ const COPY_KEYS: Readonly<Record<string, string>> = {
  * tap into a screen that is not registered.
  */
 const DESTINATIONS: Readonly<Record<string, keyof RootStackParamList>> = {
-  private_facts: "PrivateFacts",
-  "private_office.operations": "PrivateOperations",
-  capital_graph: "CapitalGraph",
-  "private_office.document.extraction": "PrivateDocuments",
-  "private_office.conversations": "PrivateConversations",
   relationship_intelligence: "PrivatePeople",
-  private_briefings: "PrivateBriefings",
-  private_shield: "PrivateShield",
-  private_meetings: "PrivateMeetings",
-  human_concierge: "PrivateConcierge"
+  private_meetings: "PrivateMeetings"
 };
 
 const ICONS: Readonly<Record<string, keyof typeof Ionicons.glyphMap>> = {
-  private_facts: "document-text-outline",
-  "private_office.operations": "checkbox-outline",
-  capital_graph: "git-network-outline",
-  private_briefings: "newspaper-outline",
   relationship_intelligence: "people-outline",
-  private_shield: "shield-outline",
-  "private_shield.breach_monitoring": "eye-outline",
-  "private_office.document.extraction": "scan-outline",
-  "private_office.conversations": "chatbubbles-outline",
-  private_meetings: "videocam-outline",
-  human_concierge: "person-circle-outline"
+  private_meetings: "videocam-outline"
 };
 
 type LoadState = "LOADING" | "LOADED";
@@ -136,26 +119,29 @@ function PrivateOfficeBody({ navigation }: Props) {
   const [loadState, setLoadState] = useState<LoadState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
   const [overview, setOverview] = useState<PrivateOfficeOverview>(UNKNOWN_OVERVIEW);
-  const [attention, setAttention] = useState<PrivateAttention | null>(null);
 
   const load = useCallback(async () => {
-    const [next, attn] = await Promise.all([getPrivateOfficeOverview(), getPrivateAttention()]);
+    const next = await getPrivateOfficeOverview();
     // The grant died between the gate's check and this fetch; drop the local
     // token so the enclosing gate shows the door instead of a stale office.
-    if (attn.state === "LOCKED") lockOfficeLocally();
+    //
+    // The office's own endpoint is what is asked. This used to ride on the
+    // records `attention` read, which meant the lock state of the room was
+    // reported by one of the things inside it — and when that capability left
+    // the surface the relock would have left with it. `locked` is on the
+    // overview payload for exactly this reason.
+    if (next.locked) lockOfficeLocally();
     setOverview(next);
-    setAttention(attn);
     setLoadState("LOADED");
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [next, attn] = await Promise.all([getPrivateOfficeOverview(), getPrivateAttention()]);
+      const next = await getPrivateOfficeOverview();
       if (cancelled) return;
-      if (attn.state === "LOCKED") lockOfficeLocally();
+      if (next.locked) lockOfficeLocally();
       setOverview(next);
-      setAttention(attn);
       setLoadState("LOADED");
     })();
     return () => {
@@ -242,90 +228,30 @@ function PrivateOfficeBody({ navigation }: Props) {
         </View>
       ) : null}
 
-      {loadState === "LOADED" && office.state === "ENTRY_AVAILABLE" && attention ? (
-        <AttentionStrip
-          attention={attention}
-          onOpenView={(view) => navigation.navigate("PrivateOperations", { view })}
-        />
-      ) : null}
-
-      {loadState === "LOADED" && office.state === "ENTRY_AVAILABLE" ? (
-        <QuickActions
-          available={office.available}
-          onRecord={() => navigation.navigate("PrivateOperations")}
-          onAddFact={() => navigation.navigate("PrivateFacts", { create: true })}
-        />
-      ) : null}
-
-      {office.available.length ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.available")}</Text>
-          {office.available.map((child) => (
-            <Pressable
-              key={child.featureId}
-              style={styles.rowOpen}
-              onPress={() => open(child)}
-              disabled={!DESTINATIONS[child.featureId]}
-              accessibilityRole="button"
-              accessibilityLabel={label(child.featureId, "label")}
-            >
-              <Ionicons
-                name={ICONS[child.featureId] || "ellipse-outline"}
-                size={20}
-                color={colors.accent}
-              />
-              <View style={styles.rowBody}>
-                <Text style={styles.rowLabel}>{label(child.featureId, "label")}</Text>
-                <Text style={styles.rowHint}>{label(child.featureId, "hint")}</Text>
-              </View>
-              <Text style={styles.openMark}>{t("premium:privateOffice.open")}</Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-
-      {office.unavailable.length ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.notYet")}</Text>
-          {office.unavailable.map((child) => (
-            <View
-              key={child.featureId}
-              style={styles.rowClosed}
-              accessibilityLabel={`${label(child.featureId, "label")} — ${t(
-                `premium:privateOffice.reason.${child.reason}`
-              )}`}
-            >
-              <Ionicons
-                name={ICONS[child.featureId] || "ellipse-outline"}
-                size={20}
-                color={colors.disabled}
-              />
-              <View style={styles.rowBody}>
-                <Text style={styles.rowLabelMuted}>{label(child.featureId, "label")}</Text>
-                <Text style={styles.rowHint}>{label(child.featureId, "hint")}</Text>
-              </View>
-              <Text style={styles.stateMark}>{t(`premium:privateOffice.reason.${child.reason}`)}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
-
       {loadState === "LOADED" && office.state !== "ENTRY_UNKNOWN" ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.security")}</Text>
-          <Pressable
-            style={styles.rowOpen}
+        <View style={styles.cards}>
+          {office.available.map((child) => (
+            <OfficeCard
+              key={child.featureId}
+              icon={ICONS[child.featureId] || "ellipse-outline"}
+              label={label(child.featureId, "label")}
+              hint={label(child.featureId, "hint")}
+              openLabel={t("premium:privateOffice.open")}
+              // A row the server did not open, or one this build has no screen
+              // for, is inert rather than a tap into nothing. Both are the same
+              // failure to the member: a card that does not move.
+              disabled={!child.opens || !DESTINATIONS[child.featureId]}
+              onPress={() => open(child)}
+            />
+          ))}
+          <OfficeCard
+            icon="lock-closed-outline"
+            label={t("premium:privateOffice.security.row.label")}
+            hint={t("premium:privateOffice.security.row.hint")}
+            openLabel={t("premium:privateOffice.open")}
+            disabled={false}
             onPress={() => navigation.navigate("PrivateOfficeSecurity" as never)}
-            accessibilityRole="button"
-            accessibilityLabel={t("premium:privateOffice.security.row.label")}
-          >
-            <Ionicons name="lock-closed-outline" size={20} color={colors.accent} />
-            <View style={styles.rowBody}>
-              <Text style={styles.rowLabel}>{t("premium:privateOffice.security.row.label")}</Text>
-              <Text style={styles.rowHint}>{t("premium:privateOffice.security.row.hint")}</Text>
-            </View>
-            <Text style={styles.openMark}>{t("premium:privateOffice.open")}</Text>
-          </Pressable>
+          />
         </View>
       ) : null}
 
@@ -337,134 +263,47 @@ function PrivateOfficeBody({ navigation }: Props) {
 }
 
 /**
- * What needs the member's attention, from `/api/private-office/attention`.
+ * One capability, drawn the same way whatever it is.
  *
- * READY with nothing in it says so in words: a strip that silently vanishes
- * would be indistinguishable from "we could not check", and those are
- * different claims. UNAVAILABLE says "we could not check" — never zeros.
- * REFUSED renders nothing: the tile list below already explains entitlement,
- * and repeating the refusal here would say it twice in two vocabularies.
+ * Office Security uses this component too. The member does not experience the
+ * lock as a different *kind* of thing from the two capabilities, and giving it
+ * its own section header with one item in it was the old screen admitting the
+ * office had grown into a list of lists.
  */
-function AttentionStrip({
-  attention,
-  onOpenView
+function OfficeCard({
+  icon,
+  label,
+  hint,
+  openLabel,
+  disabled,
+  onPress
 }: {
-  attention: PrivateAttention;
-  onOpenView: (view: PrivateRecordView) => void;
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  hint: string;
+  openLabel: string;
+  disabled: boolean;
+  onPress: () => void;
 }) {
-  const { t } = useTranslation();
-
-  if (attention.state === "REFUSED" || attention.state === "LOCKED") return null;
-
-  if (attention.state === "UNAVAILABLE") {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t("premium:privateOffice.attention.title")}</Text>
-        <Text style={styles.attentionNote}>{t("premium:privateOffice.attention.unavailable")}</Text>
-      </View>
-    );
-  }
-
-  const counted = (Object.entries(attention.counts) as [PrivateRecordView, number][]).filter(
-    ([, count]) => count > 0
-  );
-
   return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{t("premium:privateOffice.attention.title")}</Text>
-      {counted.length === 0 && attention.dueSoon.length === 0 ? (
-        <Text style={styles.attentionNote}>{t("premium:privateOffice.attention.none")}</Text>
-      ) : null}
-      {counted.length ? (
-        <View style={styles.attentionChips}>
-          {counted.map(([view, count]) => (
-            <Pressable
-              key={view}
-              style={styles.attentionChip}
-              onPress={() => onOpenView(view)}
-              accessibilityRole="button"
-              accessibilityLabel={`${t(`premium:privateOffice.operations.views.${view}`)} ${count}`}
-            >
-              <Text style={styles.attentionCount}>{count}</Text>
-              <Text style={styles.attentionChipText}>
-                {t(`premium:privateOffice.operations.views.${view}`)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-      {attention.dueSoon.map((record) => (
-        <Pressable
-          key={record.id}
-          style={styles.dueRow}
-          onPress={() => onOpenView("obligations")}
-          accessibilityRole="button"
-          accessibilityLabel={record.title}
-        >
-          <Ionicons name="alarm-outline" size={16} color={colors.warning} />
-          <Text style={styles.dueTitle} numberOfLines={1}>
-            {record.title}
-          </Text>
-          {record.dueAt ? (
-            <Text style={styles.dueDate}>
-              {t("premium:privateOffice.operations.due", { date: record.dueAt })}
-            </Text>
-          ) : null}
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
-/**
- * Shortcuts into the two write paths. Each appears only when the server said
- * its capability opens — a quick action into a refusal would be a tile list
- * that disagrees with itself one section apart.
- */
-function QuickActions({
-  available,
-  onRecord,
-  onAddFact
-}: {
-  available: PrivateOfficeChild[];
-  onRecord: () => void;
-  onAddFact: () => void;
-}) {
-  const { t } = useTranslation();
-  const opens = (featureId: string) =>
-    available.some((child) => child.featureId === featureId && child.opens);
-  const canRecord = opens("private_office.operations");
-  const canAddFact = opens("private_facts");
-  if (!canRecord && !canAddFact) return null;
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{t("premium:privateOffice.quick.title")}</Text>
-      <View style={styles.quickRow}>
-        {canRecord ? (
-          <Pressable
-            style={styles.quickButton}
-            onPress={onRecord}
-            accessibilityRole="button"
-            accessibilityLabel={t("premium:privateOffice.quick.record")}
-          >
-            <Ionicons name="create-outline" size={18} color={colors.accentStrong} />
-            <Text style={styles.quickText}>{t("premium:privateOffice.quick.record")}</Text>
-          </Pressable>
-        ) : null}
-        {canAddFact ? (
-          <Pressable
-            style={styles.quickButton}
-            onPress={onAddFact}
-            accessibilityRole="button"
-            accessibilityLabel={t("premium:privateOffice.quick.addFact")}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={colors.accentStrong} />
-            <Text style={styles.quickText}>{t("premium:privateOffice.quick.addFact")}</Text>
-          </Pressable>
-        ) : null}
+    <Pressable
+      style={({ pressed }) => [styles.card, pressed && !disabled ? styles.cardPressed : null]}
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+    >
+      <View style={styles.cardBadge}>
+        <Ionicons name={icon} size={20} color={colors.accent} />
       </View>
-    </View>
+      <View style={styles.cardBody}>
+        <Text style={styles.cardLabel}>{label}</Text>
+        {hint ? <Text style={styles.cardHint}>{hint}</Text> : null}
+      </View>
+      <Text style={styles.openMark}>{openLabel}</Text>
+    </Pressable>
   );
 }
 
@@ -495,89 +334,38 @@ const styles = StyleSheet.create({
     borderWidth: 1
   },
   retryText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" },
-  section: { gap: 10 },
-  sectionTitle: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.4
-  },
-  rowOpen: {
+  /**
+   * The whole office, in three cards. `gap` rather than per-card margin so the
+   * rhythm is one number instead of one per edge.
+   */
+  cards: { gap: 12 },
+  card: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: 1,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 16
+  },
+  cardPressed: { backgroundColor: colors.surfaceRaised },
+  cardBadge: {
+    width: 42,
+    height: 42,
     borderRadius: 14,
-    padding: 14
-  },
-  rowClosed: {
-    flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    backgroundColor: "transparent",
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    opacity: 0.7
-  },
-  rowBody: { flex: 1, gap: 2 },
-  rowLabel: { color: colors.text, fontSize: 15, fontWeight: "700" },
-  rowLabelMuted: { color: colors.muted, fontSize: 15, fontWeight: "700" },
-  rowHint: { color: colors.muted, fontSize: 12, lineHeight: 17 },
-  openMark: { color: colors.accent, fontSize: 12, fontWeight: "800", letterSpacing: 0.8 },
-  stateMark: {
-    color: colors.disabled,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.8,
-    maxWidth: 110,
-    textAlign: "right"
-  },
-  footnote: { color: colors.muted, fontSize: 11, lineHeight: 16 },
-  attentionNote: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-  attentionChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  attentionChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1
-  },
-  attentionCount: { color: colors.accentStrong, fontSize: 13, fontWeight: "800" },
-  attentionChipText: { color: colors.text, fontSize: 12, fontWeight: "600" },
-  dueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  dueTitle: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
-  dueDate: { color: colors.warning, fontSize: 11, fontWeight: "700" },
-  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  quickButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
+    justifyContent: "center",
     backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
     borderWidth: 1
   },
-  quickText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" }
+  cardBody: { flex: 1, gap: 4 },
+  cardLabel: { color: colors.text, fontSize: 16, fontWeight: "700", letterSpacing: 0.2 },
+  cardHint: { color: colors.muted, fontSize: 12.5, lineHeight: 18 },
+  openMark: { color: colors.accent, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  footnote: { color: colors.muted, fontSize: 11, lineHeight: 16 }
 });
 
 export default PrivateOfficeScreen;
