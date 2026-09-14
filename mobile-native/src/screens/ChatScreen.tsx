@@ -2599,26 +2599,43 @@ function isVoiceLikeMessage(message: MessengerMessage) {
 }
 
 /**
- * The text of a bubble, which for a photo or video is nothing.
+ * The text of a bubble, which for an attachment the user never captioned is
+ * nothing.
  *
  * Messenger sends the picked file's name as the message body (`body:
  * input.name` in the attach flow) because there is no caption field — so the
  * bubble was printing `81084427942__310C6CDB-....MOV` under the media as if the
- * user had typed it. A document keeps its name, because for a document the name
- * *is* the content; the media itself is the content of a photo or a video, and
- * the filename is retained on the attachment row for the viewer and downloads.
+ * user had typed it. A document's name is its content, but the card already
+ * prints it as the card title, so a bubble body said it a second time.
+ *
+ * Only a body that reads as a filename is dropped, and the two kinds of
+ * attachment need different rules for that — see the helpers below. Flows that
+ * do carry a typed caption keep it, and the filename itself survives on the
+ * attachment row for the card, the viewer and downloads.
  */
 function displayMessageBody(message: MessengerMessage) {
   const body = message.body || "";
   if (!body) return "";
   const type = (message.message_type || "text").toLowerCase();
-  if (!["image", "gif", "video"].includes(type)) return body;
-  return looksLikeFilename(body) ? "" : body;
+  if (["image", "gif", "video"].includes(type)) return looksLikeFilename(body) ? "" : body;
+  if (["file", "document"].includes(type)) return looksLikeDocumentName(body) ? "" : body;
+  return body;
 }
 
 /** A bare filename: one token, no spaces, with an extension on the end. */
 function looksLikeFilename(value: string) {
   return /^[^\s/]+\.[A-Za-z0-9]{2,5}$/.test(value.trim());
+}
+
+/**
+ * A document name, which unlike camera media routinely has spaces in it —
+ * "Deployment gear list.pdf" is a filename and the single-token rule above
+ * would call it a caption. The extension on the end carries the signal: a
+ * sentence someone typed does not finish in `.pdf`.
+ */
+function looksLikeDocumentName(value: string) {
+  const trimmed = value.trim();
+  return !trimmed.includes("\n") && /\.[A-Za-z0-9]{2,5}$/.test(trimmed);
 }
 
 function mediaPreviewLabel(type: string, hasMedia: boolean) {

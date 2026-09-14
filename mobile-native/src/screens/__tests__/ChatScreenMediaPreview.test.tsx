@@ -40,12 +40,18 @@ jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: { user: { 
 
 // Rendered down to the text it receives. The filename assertions below are only
 // meaningful if a body that IS rendered would be findable.
+//
+// The testID is what separates the two places a document's name can appear: the
+// bubble body goes through here, the card title does not. Matching on text
+// alone cannot tell them apart, and that is the whole subject of the document
+// tests below.
+const BUBBLE_BODY_TEST_ID = "bubble-body";
 jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");
   return {
     ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
-      ReactActual.createElement(Text, { style: textStyle }, text)
+      ReactActual.createElement(Text, { style: textStyle, testID: "bubble-body" }, text)
   };
 });
 
@@ -416,18 +422,33 @@ describe("generated filenames stay out of the bubble", () => {
     expect(await screen.findByText("look at this. amazing")).toBeTruthy();
   });
 
-  it("still shows a document's filename, which is its content", async () => {
-    // Mutation: suppressing the body for every attachment type fails here.
+  it("shows a document's filename once, on the card rather than twice", async () => {
+    // Mutation: dropping "file" from the suppressed types prints the name as a
+    // bubble body as well, which is the reported defect.
     mockGrants.set(PHOTO_MEDIA_ID, { access_url: PHOTO_ACCESS_URL, thumbnail_access_url: "" });
     await renderConversation([
       photoMessage({ message_type: "file", body: "Deployment gear list.pdf", mime_type: "application/pdf" })
     ]);
 
-    // A document says its own name twice — once as the bubble body, once as the
-    // card title — and did so before this change too. The assertion is "at
-    // least one survives", not "exactly one", so it pins the suppression rule
-    // without quietly adopting the duplication as intended behaviour.
-    expect((await screen.findAllByText("Deployment gear list.pdf")).length).toBeGreaterThan(0);
+    // The name is the document's content, so it must survive — but the card
+    // already titles itself with it. A real document name has spaces in it,
+    // which is why the bare-token rule that suits camera media is not enough.
+    const shown = await screen.findAllByText("Deployment gear list.pdf");
+    expect(shown).toHaveLength(1);
+    expect(screen.queryByTestId(BUBBLE_BODY_TEST_ID)).toBeNull();
+  });
+
+  it("keeps a typed caption on a document in the bubble", async () => {
+    // Mutation: suppressing the body for every file message, rather than only
+    // for one that reads as a filename, fails here. The card title echoes the
+    // body either way, so the assertion is on WHERE the text renders.
+    mockGrants.set(PHOTO_MEDIA_ID, { access_url: PHOTO_ACCESS_URL, thumbnail_access_url: "" });
+    await renderConversation([
+      photoMessage({ message_type: "file", body: "Everything we packed for Friday", mime_type: "application/pdf" })
+    ]);
+
+    const body = await screen.findByTestId(BUBBLE_BODY_TEST_ID);
+    expect(body.props.children).toBe("Everything we packed for Friday");
   });
 });
 
