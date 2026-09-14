@@ -378,12 +378,29 @@ function readStatusSavedFlag(item: PulseStatus): boolean | undefined {
   return undefined;
 }
 
+/**
+ * Video must play from the transcoded stream, never from the uploaded original.
+ *
+ * `valid_url` is the backend's "this file is reachable" URL, which for a video
+ * is the raw `.mov` on the media CDN. Cloudflare answers those with a managed
+ * challenge (403 + an HTML page), so AVPlayer is handed a web page instead of a
+ * movie: it never loads, never fires a playback error the viewer checks, and
+ * the Status renders as a black rectangle with working chrome on top of it.
+ * Ordering `valid_url` first therefore broke every video Status while leaving
+ * photo Statuses fine, which is exactly how it presented.
+ *
+ * Reels already resolve `playback_url || hls_url || media_url` and never
+ * consult `valid_url`; this brings Statuses onto that same order. The kind
+ * check keeps photos on their current path — for an image the backend fills
+ * `playback_url` with a first-party `/stream` route, which is not what an
+ * `<Image>` should be pointed at.
+ */
 export function statusMediaUrl(status: PulseStatus) {
   const media = (status.media || [])[0] || {};
-  return mediaDisplayUrl({
-    ...media,
-    media_url: media.valid_url || media.playback_url || media.hls_url || media.media_url || media.url || ""
-  });
+  const preferred = mediaKind(media) === "video"
+    ? media.playback_url || media.hls_url || media.mux_hls_url || media.valid_url || media.media_url || media.url
+    : media.valid_url || media.media_url || media.url;
+  return mediaDisplayUrl({ ...media, media_url: preferred || "" });
 }
 
 export function statusPosterUrl(status: PulseStatus) {
