@@ -13,6 +13,7 @@ import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/P
 import { ContentCover, ContentCoverKind } from "../components/covers/ContentCover";
 import { hasMembershipMark } from "../entitlements/membershipMark";
 import { buildProfileContext, subjectName } from "../profile/profileContext";
+import { describeProfilePick, pickProfileImage, ProfileImageKind, profileImageLabel, saveProfileImage } from "../profile/profileMediaEdit";
 import { profileOsDestination, tileNoun, visibleProfileOsTiles } from "../profile/profileOsTiles";
 import { useBriefingsTile } from "../profile/useBriefingsTile";
 import { usePremiumTile } from "../profile/usePremiumTile";
@@ -64,6 +65,7 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [contentUnavailable, setContentUnavailable] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
   const [followBusy, setFollowBusy] = useState(false);
+  const [mediaBusy, setMediaBusy] = useState<"" | ProfileImageKind>("");
   const refreshingRef = useRef(false);
   // Every load now has concurrent parts (a cache read racing a network read, a
   // grid request racing the profile request), so a load that has been
@@ -349,6 +351,55 @@ export function ProfileScreen({ route, navigation }: Props) {
     }
   }
 
+  /**
+   * Change the profile photo or the cover from the profile itself.
+   *
+   * Optimistic only as far as the preview: the picked local file is shown while
+   * the upload runs, and if the upload fails the previous image is put back and
+   * the failure is stated. A profile that keeps showing the new photo after a
+   * failed save is claiming a change the server never accepted.
+   *
+   * Only the media fields are taken from the upload response. The response is
+   * built by merging onto the *cached* profile, which can be older than what is
+   * on screen, so adopting it wholesale would let an avatar change roll back the
+   * visible follower counts.
+   */
+  async function editProfileImage(kind: ProfileImageKind) {
+    if (!profileContext.isOwnProfile || mediaBusy) return;
+    setActionMessage("");
+    const pick = await pickProfileImage(kind).catch(() => ({ status: "cancelled" as const }));
+    if (pick.status !== "picked") {
+      const message = describeProfilePick(kind, pick);
+      if (message) setActionMessage(message);
+      return;
+    }
+    const restore = kind === "avatar"
+      ? { avatar_url: profile?.avatar_url, avatar_thumbnail_url: profile?.avatar_thumbnail_url }
+      : { cover_url: profile?.cover_url, banner_url: profile?.banner_url };
+    setMediaBusy(kind);
+    setProfile((current) => current ? {
+      ...current,
+      ...(kind === "avatar"
+        ? { avatar_url: pick.uri, avatar_thumbnail_url: pick.uri }
+        : { cover_url: pick.uri, banner_url: pick.uri })
+    } : current);
+    try {
+      const saved = await saveProfileImage(kind, pick);
+      setProfile((current) => current ? {
+        ...current,
+        ...(kind === "avatar"
+          ? { avatar_url: saved.avatar_url, avatar_thumbnail_url: saved.avatar_thumbnail_url }
+          : { cover_url: saved.cover_url, banner_url: saved.banner_url })
+      } : saved);
+      setActionMessage(`${profileImageLabel(kind)} updated.`);
+    } catch (mediaError) {
+      setProfile((current) => current ? { ...current, ...restore } : current);
+      setActionMessage(mediaError instanceof Error ? mediaError.message : `${profileImageLabel(kind)} could not be saved.`);
+    } finally {
+      setMediaBusy("");
+    }
+  }
+
   function handleStat(key: ProfileStatKey) {
     if (key === "posts") return setTab("posts");
     if (key === "media") return setTab("media");
@@ -531,6 +582,11 @@ export function ProfileScreen({ route, navigation }: Props) {
             moduleKeys={profileOsTiles}
             moduleState={moduleState}
             moduleOwnerName={profileContext.isOwnProfile ? "" : subjectName(profileContext)}
+            canEditMedia={profileContext.isOwnProfile}
+            onEditCover={() => editProfileImage("cover").catch(() => undefined)}
+            onEditAvatar={() => editProfileImage("avatar").catch(() => undefined)}
+            avatarBusy={mediaBusy === "avatar"}
+            coverBusy={mediaBusy === "cover"}
           />
           <View style={styles.section}>
             {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
@@ -684,23 +740,23 @@ const styles = createThemedStyles(() => ({
   skeletonActions: { flexDirection: "row", gap: 8, marginTop: 16 },
   skeletonAction: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
   actionMessage: {
-    backgroundColor: colors.signalSoft,
-    borderColor: colors.border,
-    borderRadius: 10,
+    backgroundColor: profileNeon.fillSoft,
+    borderColor: profileNeon.border,
+    borderRadius: profileNeon.radius.action,
     borderWidth: 1,
-    color: colors.accentStrong,
+    color: colors.text,
     fontSize: 13,
     marginBottom: 10,
     padding: 10
   },
   about: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: profileNeon.panel,
+    borderColor: profileNeon.hairline,
+    borderRadius: profileNeon.radius.card,
     borderWidth: 1,
     gap: 8,
     marginTop: 12,
-    padding: 14
+    padding: 16
   },
   aboutBody: {
     color: colors.text,
@@ -772,28 +828,39 @@ const styles = createThemedStyles(() => ({
     marginBottom: 10
   },
   retryButton: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
+    alignItems: "center",
+    backgroundColor: profileNeon.electric,
+    borderRadius: profileNeon.radius.action,
+    justifyContent: "center",
     marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 11
+    minHeight: profileNeon.tapTarget,
+    paddingHorizontal: 18,
+    shadowColor: profileNeon.glow,
+    shadowOffset: { height: 0, width: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 14
   },
   retryButtonText: {
-    color: colors.background,
+    color: "#04101f",
     fontWeight: "900"
   },
   tab: {
     alignItems: "center",
-    borderColor: colors.border,
-    borderRadius: 8,
+    backgroundColor: profileNeon.panel,
+    borderColor: profileNeon.hairline,
+    borderRadius: profileNeon.radius.action,
     borderWidth: 1,
     flex: 1,
-    minHeight: 40,
+    minHeight: profileNeon.tapTarget,
     justifyContent: "center"
   },
   tabActive: {
-    backgroundColor: "rgba(37, 208, 167, 0.14)",
-    borderColor: colors.accent
+    backgroundColor: profileNeon.fillMedium,
+    borderColor: profileNeon.borderStrong,
+    shadowColor: profileNeon.glow,
+    shadowOffset: { height: 0, width: 0 },
+    shadowOpacity: 1,
+    shadowRadius: 12
   },
   tabText: {
     color: colors.muted,
@@ -801,7 +868,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "900"
   },
   tabTextActive: {
-    color: colors.accent
+    color: profileNeon.cyan
   },
   tabs: {
     flexDirection: "row",
@@ -809,23 +876,27 @@ const styles = createThemedStyles(() => ({
     marginTop: 12
   },
   webButton: {
-    backgroundColor: "transparent",
-    borderColor: colors.border,
-    borderRadius: 8,
+    alignItems: "center",
+    backgroundColor: profileNeon.fillSoft,
+    borderColor: profileNeon.border,
+    borderRadius: profileNeon.radius.action,
     borderWidth: 1,
+    justifyContent: "center",
     marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 11
+    minHeight: profileNeon.tapTarget,
+    paddingHorizontal: 18
   },
   webButtonText: {
-    color: colors.accentStrong,
+    color: profileNeon.cyan,
     fontWeight: "900"
   },
   webLink: {
-    marginTop: 6
+    justifyContent: "center",
+    marginTop: 6,
+    minHeight: profileNeon.tapTarget
   },
   webLinkText: {
-    color: colors.accentStrong,
+    color: profileNeon.cyan,
     fontWeight: "900"
   }
 }));

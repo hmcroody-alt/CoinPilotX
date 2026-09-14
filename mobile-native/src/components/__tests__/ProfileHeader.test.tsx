@@ -17,9 +17,13 @@ jest.mock("@expo/vector-icons", () => ({
   Ionicons: ({ name }: { name: string }) => name
 }));
 
-jest.mock("expo-linear-gradient", () => ({
-  LinearGradient: ({ children }: { children?: React.ReactNode }) => children ?? null
-}));
+// Forwards props onto a plain View rather than collapsing to children: the
+// gradient ramps ARE the palette, so a mock that throws `colors` away makes
+// every colour assertion on this surface unfalsifiable.
+jest.mock("expo-linear-gradient", () => {
+  const { View } = require("react-native");
+  return { LinearGradient: View };
+});
 
 jest.mock("../../theme/logiNexusMotion", () => ({
   useLogiNexusReducedMotion: jest.fn().mockReturnValue(true),
@@ -27,6 +31,7 @@ jest.mock("../../theme/logiNexusMotion", () => ({
 }));
 
 import { PulseProfile } from "../../api/profile";
+import { profileNeon } from "../../theme/profileNeon";
 import { ProfileHeader } from "../ProfileHeader";
 
 function baseProfile(overrides: Partial<PulseProfile> = {}): PulseProfile {
@@ -42,6 +47,9 @@ function baseProfile(overrides: Partial<PulseProfile> = {}): PulseProfile {
     post_count: 92,
     media_count: 40,
     viewer_follows: false,
+    // The accent the backend substitutes when the user has no theme row. It is
+    // NOT a choice, and the header must not read it as one — see the palette
+    // test below and theme/profileNeon.ts.
     theme: { accent_color: "#32e6b3", motion_level: "reduced" },
     ...overrides
   };
@@ -158,5 +166,96 @@ describe("approved automated account cover", () => {
   it("does not change another account's cover rendering", () => {
     const { queryByTestId } = render(<ProfileHeader profile={baseProfile({ cover_url: cover })} />);
     expect(queryByTestId("automated-account-brand-cover")).toBeNull();
+  });
+});
+
+describe("profile media editing", () => {
+  it("offers both entry points to the owner and wires them to their handlers", () => {
+    const onEditAvatar = jest.fn();
+    const onEditCover = jest.fn();
+    const { getByTestId, getByText } = render(
+      <ProfileHeader profile={baseProfile()} owner canEditMedia onEditAvatar={onEditAvatar} onEditCover={onEditCover} />
+    );
+    fireEvent.press(getByTestId("profile-edit-avatar"));
+    fireEvent.press(getByTestId("profile-edit-cover"));
+    expect(onEditAvatar).toHaveBeenCalledTimes(1);
+    expect(onEditCover).toHaveBeenCalledTimes(1);
+    expect(getByText("Edit cover")).toBeTruthy();
+  });
+
+  it("shows neither control to a visitor", () => {
+    const { queryByTestId } = render(<ProfileHeader profile={baseProfile()} owner={false} />);
+    expect(queryByTestId("profile-edit-avatar")).toBeNull();
+    expect(queryByTestId("profile-edit-cover")).toBeNull();
+  });
+
+  // `owner` is false whenever the profile was reached by tapping a name in the
+  // feed, including your own — so the edit controls must not hang off it.
+  it("still offers the controls on your own profile reached as a route target", () => {
+    const { getByTestId } = render(
+      <ProfileHeader profile={baseProfile()} owner={false} canEditMedia onEditAvatar={jest.fn()} onEditCover={jest.fn()} />
+    );
+    expect(getByTestId("profile-edit-avatar")).toBeTruthy();
+    expect(getByTestId("profile-edit-cover")).toBeTruthy();
+  });
+
+  it("states the in-flight upload and refuses a second tap", () => {
+    const onEditCover = jest.fn();
+    const { getByTestId, getByText } = render(
+      <ProfileHeader profile={baseProfile()} owner canEditMedia onEditCover={onEditCover} coverBusy />
+    );
+    const control = getByTestId("profile-edit-cover");
+    expect(control.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
+    expect(getByText("Uploading…")).toBeTruthy();
+    fireEvent.press(control);
+    expect(onEditCover).not.toHaveBeenCalled();
+  });
+
+  it("gives both controls a reachable label and a 44pt target", () => {
+    const { getByLabelText, getByTestId } = render(
+      <ProfileHeader profile={baseProfile()} owner canEditMedia onEditAvatar={jest.fn()} onEditCover={jest.fn()} />
+    );
+    expect(getByLabelText("Change profile photo")).toBeTruthy();
+    expect(getByLabelText("Edit cover photo")).toBeTruthy();
+    expect(StyleSheet.flatten(getByTestId("profile-edit-cover").props.style)).toMatchObject({ minHeight: 44 });
+  });
+});
+
+describe("cover fallback", () => {
+  // §45: an account that has never set a cover gets a generated one, not a
+  // 320pt hole where a picture would be.
+  it("draws the generated field when the account has no cover", () => {
+    const { getByTestId, queryByTestId } = render(<ProfileHeader profile={baseProfile({ cover_url: "" })} owner />);
+    expect(queryByTestId("profile-cover-image")).toBeNull();
+    expect(getByTestId("profile-generated-cover")).toBeTruthy();
+    expect(StyleSheet.flatten(getByTestId("profile-v6-header").props.style)).not.toMatchObject({ height: 0 });
+  });
+
+  it("lays an uploaded cover over that field rather than replacing the hero", () => {
+    const { getByTestId } = render(<ProfileHeader profile={baseProfile({ cover_url: "https://cdn/c.jpg" })} owner />);
+    expect(getByTestId("profile-cover-image").props.resizeMode).toBe("cover");
+    expect(getByTestId("profile-generated-cover")).toBeTruthy();
+  });
+
+  it("shows initials rather than a blank disc when there is no avatar", () => {
+    const { getByText, queryByTestId } = render(
+      <ProfileHeader profile={baseProfile({ avatar_url: "", display_name: "Ada Pulse" })} owner />
+    );
+    expect(getByText("A")).toBeTruthy();
+    expect(queryByTestId("profile-cover-image")).toBeNull();
+  });
+});
+
+describe("identity palette", () => {
+  it("paints the neon ramp on a profile whose accent is only the server default", () => {
+    const { getByTestId } = render(<ProfileHeader profile={baseProfile()} owner />);
+    expect(getByTestId("profile-identity-ring").props.colors).toEqual([...profileNeon.identityRing]);
+  });
+
+  it("yields the ramp to an accent the owner actually chose", () => {
+    const { queryByTestId } = render(
+      <ProfileHeader profile={baseProfile({ theme: { accent_color: "#ff8a00", motion_level: "reduced" } })} owner />
+    );
+    expect(queryByTestId("profile-identity-ring")).toBeNull();
   });
 });

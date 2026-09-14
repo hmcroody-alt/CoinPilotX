@@ -337,7 +337,15 @@ export function AppNavigator() {
   }, [refreshBadges]);
 
   useEffect(() => {
-    getMyProfile().then(setProfile).catch(() => setProfile(null));
+    // The drawer and header identity are fetched once, so without the
+    // subscription below a member who changed their profile photo kept seeing
+    // the old one in the header for the rest of the process — the avatar had
+    // changed everywhere the server was asked, and nowhere it was not.
+    const reload = () => {
+      getMyProfile().then(setProfile).catch(() => undefined);
+    };
+    reload();
+    return registerSyncInvalidation("profile", reload);
   }, []);
 
   const canonicalTier = useCanonicalTier();

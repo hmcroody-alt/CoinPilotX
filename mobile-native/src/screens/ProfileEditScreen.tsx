@@ -1,5 +1,5 @@
-import * as ImagePicker from "expo-image-picker";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import {
@@ -9,11 +9,18 @@ import {
   removeProfileAvatar,
   removeProfileCover,
   updateProfile,
-  updateProfileTheme,
-  uploadProfileAvatar,
-  uploadProfileCover
+  updateProfileTheme
 } from "../api/profile";
+import {
+  announceProfileMediaChange,
+  describeProfilePick,
+  pickProfileImage,
+  ProfileImageKind,
+  profileImageLabel,
+  saveProfileImage
+} from "../profile/profileMediaEdit";
 import { colors } from "../theme/colors";
+import { profileNeon } from "../theme/profileNeon";
 import { createThemedStyles } from "../theme/themedStyles";
 import { RootStackParamList } from "../navigation/types";
 
@@ -111,31 +118,21 @@ export function ProfileEditScreen({ navigation }: Props) {
     }
   }
 
-  async function pickImage(kind: "avatar" | "cover") {
+  // Picking, cropping and uploading live in `profile/profileMediaEdit` so this
+  // form and the camera badge on the profile hero are the same flow — one crop
+  // ratio, one filename rule, one cache-invalidation broadcast.
+  async function pickImage(kind: ProfileImageKind) {
     setError("");
     setMessage("");
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      setError("Photo permission was not granted.");
+    const pick = await pickProfileImage(kind);
+    if (pick.status !== "picked") {
+      setError(describeProfilePick(kind, pick));
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: true,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.88,
-      aspect: kind === "avatar" ? [1, 1] : [16, 6]
-    });
-    if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    const mimeType = asset.mimeType || "image/jpeg";
-    const name = asset.fileName || `${kind}.${mimeType.includes("png") ? "png" : "jpg"}`;
     setUploading(kind);
     try {
-      const next = kind === "avatar"
-        ? await uploadProfileAvatar({ uri: asset.uri, name, mimeType })
-        : await uploadProfileCover({ uri: asset.uri, name, mimeType });
-      hydrate(next);
-      setMessage(kind === "avatar" ? "Profile picture updated." : "Cover photo updated.");
+      hydrate(await saveProfileImage(kind, pick));
+      setMessage(`${profileImageLabel(kind)} updated.`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Upload failed.");
     } finally {
@@ -143,14 +140,17 @@ export function ProfileEditScreen({ navigation }: Props) {
     }
   }
 
-  async function removeImage(kind: "avatar" | "cover") {
+  async function removeImage(kind: ProfileImageKind) {
     setUploading(kind);
     setError("");
     setMessage("");
     try {
       const next = kind === "avatar" ? await removeProfileAvatar() : await removeProfileCover();
       hydrate(next);
-      setMessage(kind === "avatar" ? "Profile picture removed." : "Cover photo removed.");
+      // Removal changes the same media every other surface caches, so it has to
+      // announce itself exactly as an upload does.
+      await announceProfileMediaChange(kind);
+      setMessage(`${profileImageLabel(kind)} removed.`);
     } catch (removeError) {
       setError(removeError instanceof Error ? removeError.message : "Remove failed.");
     } finally {
@@ -170,6 +170,8 @@ export function ProfileEditScreen({ navigation }: Props) {
     <ScrollView style={styles.root} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View style={styles.mediaCard}>
         <View style={styles.cover}>
+          <LinearGradient colors={profileNeon.primaryAction} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
+          <LinearGradient colors={profileNeon.horizon} style={styles.coverHorizon} pointerEvents="none" />
           {profile?.cover_url ? <Image source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
         </View>
         <View style={styles.avatarRow}>
@@ -332,12 +334,17 @@ const styles = createThemedStyles(() => ({
     paddingBottom: 32
   },
   cover: {
+    aspectRatio: 3 / 2,
     backgroundColor: colors.surfaceRaised,
-    height: 136
+    overflow: "hidden"
   },
+  coverHorizon: { bottom: 0, height: 96, left: 0, position: "absolute", right: 0 },
   coverImage: {
-    height: "100%",
-    width: "100%"
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
   },
   disabled: {
     opacity: 0.55

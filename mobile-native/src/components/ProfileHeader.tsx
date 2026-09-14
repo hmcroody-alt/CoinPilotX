@@ -2,11 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { hasMembershipMark } from "../entitlements/membershipMark";
 import { colors } from "../theme/colors";
-import { profileNeon } from "../theme/profileNeon";
+import { profileNeon, resolveProfileAccent, usesNeonRamp } from "../theme/profileNeon";
 import { premiumTheme } from "../theme/premiumTheme";
 import { presenceTheme } from "../theme/presenceTheme";
 import { progressTheme } from "../theme/progressTheme";
@@ -155,6 +155,22 @@ type ProfileHeaderProps = {
    * the grid ("Maria's Profile OS"). Empty on your own profile.
    */
   moduleOwnerName?: string;
+  /**
+   * Whether this viewer may change the identity media on this profile.
+   *
+   * Separate from `owner` on purpose. `owner` is "the Profile tab opened with no
+   * route target", which is false when you reach your own profile by tapping
+   * your own name in the feed — and on that screen the edit controls still
+   * belong to you. The screen passes the server-settled answer instead. The
+   * backend re-checks ownership on every upload regardless; this only decides
+   * what is drawn.
+   */
+  canEditMedia?: boolean;
+  onEditCover?: () => void;
+  onEditAvatar?: () => void;
+  /** An upload is in flight. The control stays put and reports itself busy. */
+  avatarBusy?: boolean;
+  coverBusy?: boolean;
 };
 
 function haptic() {
@@ -189,7 +205,12 @@ export function ProfileHeader({
   onModulePress,
   moduleKeys,
   moduleState,
-  moduleOwnerName
+  moduleOwnerName,
+  canEditMedia,
+  onEditCover,
+  onEditAvatar,
+  avatarBusy,
+  coverBusy
 }: ProfileHeaderProps) {
   const modules = moduleKeys ? moduleKeys.map((key) => MODULE_BY_KEY[key]).filter(Boolean) : MODULES;
   const modulesTitle = moduleOwnerName ? `${possessiveName(moduleOwnerName)} Profile OS` : "Profile OS";
@@ -209,8 +230,10 @@ export function ProfileHeader({
   const verified = Boolean(profile.verified_badge || profile.verification_status === "verified");
   // Blue is the default identity colour of the profile surface; a profile
   // owner's chosen accent still overrides it, so customised profiles are
-  // untouched. See theme/profileNeon.ts for why this is not a global change.
-  const accent = profile.theme?.accent_color || profileNeon.electric;
+  // untouched. See theme/profileNeon.ts for why this is not a global change,
+  // and why the server's default accent has to be resolved rather than trusted.
+  const accent = resolveProfileAccent(profile.theme?.accent_color);
+  const neonRamp = usesNeonRamp(accent);
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
   const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
@@ -280,7 +303,7 @@ export function ProfileHeader({
       {/* Immersive energy field */}
       <View style={[styles.hero, { height: PROFILE_HERO_HEIGHT }]} pointerEvents="none">
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fieldOpacity, transform: [{ translateY: bgTranslateY }, { scale: bgScale }] }]}>
-          {profile.cover_url && !galacticAccountCover ? <Image source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
+          {profile.cover_url && !galacticAccountCover ? <Image testID="profile-cover-image" source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
           <LinearGradient colors={[`${accent}33`, "#050910f2", colors.background]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
           <Animated.View style={[styles.nebula, { backgroundColor: `${accent}2e`, transform: [{ translateX: float1X }, { translateY: float1Y }] }]} />
           <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}22`, transform: [{ translateY: float2Y }] }]} />
@@ -288,7 +311,7 @@ export function ProfileHeader({
               own overflow:hidden — no SVG, no image payload, one static view.
               The border is the lit limb; the fill is barely there so the name
               above it never loses contrast. */}
-          <View style={[styles.horizon, { borderColor: profileNeon.borderStrong, backgroundColor: profileNeon.fillSoft }]} pointerEvents="none" />
+          <View testID="profile-generated-cover" style={[styles.horizon, { borderColor: profileNeon.borderStrong, backgroundColor: profileNeon.fillSoft }]} pointerEvents="none" />
           <LinearGradient
             colors={profileNeon.horizon}
             start={{ x: 0.5, y: 1 }}
@@ -318,14 +341,51 @@ export function ProfileHeader({
               is what makes the avatar read as engineered rather than merely
               glowing, and being static it survives reduced motion unchanged. */}
           <View style={[styles.ringOrbit, { borderColor: profileNeon.border, borderTopColor: profileNeon.cyan }]} pointerEvents="none" />
-          <Animated.View style={[styles.ringGlow, { shadowColor: accent, borderColor: accent, opacity: reducedMotion ? 0.9 : auraOpacity, transform: [{ scale: auraScale }] }]} />
+          {/* The lit ring. On the neon ramp it is a gradient donut — a gradient
+              cannot be a `borderColor`, so the ramp fills a circle and a core
+              the colour of the page is laid back over the middle. A themed
+              profile keeps the plain 2pt border, since one arbitrary accent
+              gives nothing to interpolate towards. */}
+          <Animated.View
+            style={[
+              styles.ringGlow,
+              neonRamp ? styles.ringGlowRamp : { borderColor: accent, borderWidth: 2 },
+              { shadowColor: neonRamp ? profileNeon.violet : accent, opacity: reducedMotion ? 0.9 : auraOpacity, transform: [{ scale: auraScale }] }
+            ]}
+            pointerEvents="none"
+          >
+            {neonRamp ? (
+              <>
+                <LinearGradient testID="profile-identity-ring" colors={profileNeon.identityRing} start={{ x: 0.15, y: 0 }} end={{ x: 0.85, y: 1 }} style={styles.ringRamp} />
+                <View style={styles.ringCore} />
+              </>
+            ) : null}
+          </Animated.View>
           <Animated.View style={{ transform: [{ scale: avatarScale }, { translateY: avatarLift }] }}>
-            {profile.avatar_url ? (
-              <Image source={{ uri: profile.avatar_url }} style={[styles.avatar, { borderColor: accent }]} />
+            {canEditMedia ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Change profile photo"
+                accessibilityState={{ busy: Boolean(avatarBusy), disabled: Boolean(avatarBusy) }}
+                testID="profile-edit-avatar"
+                disabled={Boolean(avatarBusy)}
+                style={({ pressed }) => [pressed && styles.pressed]}
+                onPress={onEditAvatar}
+              >
+                <AvatarFace profile={profile} accent={accent} />
+                {/* Top-right: the two lower corners are already spoken for by the
+                    verification seal and the presence dot, and neither may move
+                    to make room for a control only the owner ever sees. */}
+                <View style={[styles.avatarCamera, { backgroundColor: accent, borderColor: colors.background }]}>
+                  {avatarBusy ? (
+                    <ActivityIndicator size="small" color={colors.background} />
+                  ) : (
+                    <Ionicons name="camera" size={15} color={colors.background} />
+                  )}
+                </View>
+              </Pressable>
             ) : (
-              <View style={[styles.avatarFallback, { borderColor: accent }]}>
-                <Text style={styles.avatarText}>{(profile.display_name || "?").slice(0, 1).toUpperCase()}</Text>
-              </View>
+              <AvatarFace profile={profile} accent={accent} />
             )}
             {verified ? (
               <View style={[styles.verifiedSeal, { backgroundColor: accent, borderColor: colors.background }]}>
@@ -451,17 +511,64 @@ export function ProfileHeader({
           </View>
         </View>
         <View style={styles.moduleGrid} accessibilityLabel="Profile modules">
-          {modules.map((module) => (
+          {modules.map((module, index) => (
             <Module
               key={module.key}
               def={module}
-              accent={moduleState?.[module.key]?.tint || module.accent || accent}
+              // Precedence, highest first: a live state tint (a billing problem
+              // turns Business amber and must win), the tile's own brand colour,
+              // then the palette. On the neon ramp the palette is a rotation by
+              // grid position rather than one accent twelve times; a themed
+              // profile still gets its single chosen colour throughout.
+              accent={moduleState?.[module.key]?.tint || module.accent
+                || (neonRamp ? profileNeon.tileCycle[index % profileNeon.tileCycle.length] : accent)}
               state={moduleState?.[module.key]}
               onPress={() => { haptic(); onModulePress?.(module.key); }}
             />
           ))}
         </View>
       </View>
+
+      {/* Last child of the header on purpose. The hero above is
+          `pointerEvents="none"` so nothing inside it can be tapped, and `body`
+          is a full-width transparent view that would otherwise swallow a touch
+          landing in the hero's lower-right corner. Rendering the control here
+          puts it above both for hit-testing without moving it visually. */}
+      {canEditMedia ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Edit cover photo"
+          accessibilityState={{ busy: Boolean(coverBusy), disabled: Boolean(coverBusy) }}
+          testID="profile-edit-cover"
+          disabled={Boolean(coverBusy)}
+          style={({ pressed }) => [styles.coverEdit, pressed && styles.pressed]}
+          onPress={onEditCover}
+        >
+          {coverBusy ? (
+            <ActivityIndicator size="small" color={colors.text} />
+          ) : (
+            <Ionicons name="camera-outline" size={15} color={colors.text} />
+          )}
+          <Text style={styles.coverEditText}>{coverBusy ? "Uploading…" : "Edit cover"}</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The avatar itself — image, or the member's initial when there is none.
+ *
+ * Extracted so the owner's tappable version and a visitor's static version are
+ * literally the same face, rather than two copies that can drift apart.
+ */
+function AvatarFace({ profile, accent }: { profile: PulseProfile; accent: string }) {
+  if (profile.avatar_url) {
+    return <Image source={{ uri: profile.avatar_url }} style={[styles.avatar, { borderColor: accent }]} />;
+  }
+  return (
+    <View style={[styles.avatarFallback, { borderColor: accent }]}>
+      <Text style={styles.avatarText}>{(profile.display_name || "?").slice(0, 1).toUpperCase()}</Text>
     </View>
   );
 }
@@ -603,12 +710,35 @@ const styles = createThemedStyles(() => ({
   // One lit segment (borderTopColor) on an otherwise dim ring — the cheapest
   // way to imply rotation without animating anything.
   ringOrbit: { borderRadius: 69, borderWidth: 1, height: 138, position: "absolute", transform: [{ rotate: "-38deg" }], width: 138 },
-  ringGlow: { borderRadius: 66, borderWidth: 2, height: 132, position: "absolute", shadowOpacity: 0.9, shadowRadius: 22, width: 132 },
+  ringGlow: { borderRadius: 66, height: 132, position: "absolute", shadowOpacity: 0.9, shadowRadius: 22, width: 132 },
+  ringGlowRamp: { overflow: "hidden" },
+  ringRamp: { ...StyleSheet.absoluteFillObject, borderRadius: 66 },
+  ringCore: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.background, borderRadius: 64, bottom: 2, left: 2, right: 2, top: 2 },
   avatar: { backgroundColor: colors.surfaceRaised, borderRadius: 56, borderWidth: 3, height: 112, width: 112 },
   avatarFallback: { alignItems: "center", backgroundColor: colors.surfaceRaised, borderRadius: 56, borderWidth: 3, height: 112, justifyContent: "center", width: 112 },
   avatarText: { color: colors.text, fontSize: 40, fontWeight: "900" },
   verifiedSeal: { alignItems: "center", borderRadius: 14, borderWidth: 2, bottom: 6, height: 28, justifyContent: "center", position: "absolute", right: 2, width: 28 },
   presenceDot: { borderRadius: 9, borderWidth: 3, bottom: 8, height: 18, left: 6, position: "absolute", width: 18 },
+  avatarCamera: { alignItems: "center", borderRadius: 16, borderWidth: 2, height: 32, justifyContent: "center", position: "absolute", right: 0, top: 0, width: 32 },
+  // Sits in the hero's lower-right, clear of the avatar on the left. Glass and a
+  // neon edge rather than a filled button: it is an affordance on top of the
+  // member's own photograph, so it must be findable without competing with it.
+  coverEdit: {
+    alignItems: "center",
+    backgroundColor: profileNeon.panelRaised,
+    borderColor: profileNeon.border,
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: profileNeon.tapTarget,
+    paddingHorizontal: 14,
+    position: "absolute",
+    right: 18,
+    top: PROFILE_HERO_HEIGHT - 84
+  },
+  coverEditText: { color: colors.text, fontSize: 12, fontWeight: "900" },
 
   nameRow: { alignItems: "center", flexDirection: "row", gap: 6, marginTop: 14 },
   name: { color: colors.text, flexShrink: 1, fontSize: 28, fontWeight: "900", letterSpacing: 0.2 },

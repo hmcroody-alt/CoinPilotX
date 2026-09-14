@@ -2,21 +2,33 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState } from "react-native";
 import { PulseApiError, pulseApi } from "../api/pulseApi";
 
-export type NativeSyncSubsystem =
-  | "activity"
-  | "notifications"
-  | "orders"
-  | "marketplace"
-  | "seller_inventory"
-  | "messenger"
-  | "calls"
-  | "safety"
-  | "verification"
-  | "premium"
-  | "intelligence"
-  | "status"
-  | "reels"
-  | "ads";
+/**
+ * The subsystem names, as values.
+ *
+ * The union type below is derived from this array rather than declared beside
+ * it. `isNativeSyncSubsystem` is the runtime gate every invalidation passes
+ * through, so a name that exists in the type but not in the gate is dropped
+ * silently — the caller sees a resolved promise and no refresh.
+ */
+export const NATIVE_SYNC_SUBSYSTEMS = [
+  "activity",
+  "notifications",
+  "orders",
+  "marketplace",
+  "seller_inventory",
+  "messenger",
+  "calls",
+  "safety",
+  "verification",
+  "premium",
+  "intelligence",
+  "status",
+  "reels",
+  "ads",
+  "profile"
+] as const;
+
+export type NativeSyncSubsystem = (typeof NATIVE_SYNC_SUBSYSTEMS)[number];
 
 export type NativeSyncEvent = {
   event_id?: string | number;
@@ -309,20 +321,5 @@ function dedupeSubsystems(subsystems: NativeSyncSubsystem[]) {
 }
 
 function isNativeSyncSubsystem(value: unknown): value is NativeSyncSubsystem {
-  return [
-    "activity",
-    "notifications",
-    "orders",
-    "marketplace",
-    "seller_inventory",
-    "messenger",
-    "calls",
-    "safety",
-    "verification",
-    "premium",
-    "intelligence",
-    "status",
-    "reels",
-    "ads"
-  ].includes(String(value));
+  return (NATIVE_SYNC_SUBSYSTEMS as readonly string[]).includes(String(value));
 }
