@@ -209,7 +209,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from email.message import EmailMessage
 from pathlib import Path
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 from flask import Flask, request, render_template, send_from_directory, send_file, jsonify, Response, session, redirect, url_for, has_request_context, abort, g
 from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 from werkzeug.routing import RequestRedirect
@@ -100140,12 +100140,154 @@ def admin_marketplace_decision_message(cur, action, listing_id):
             + marketplace_listing_lifecycle.blocker_note(blocker) + ".")
 
 
+# §11-§15. The bulk bar. Everything it says about a selection it says from
+# `data-block`, which the server computed with the same `block_reason` the
+# endpoint will call -- so "23 eligible \u00b7 2 blocked" is a prediction the
+# server has already agreed to, not the browser guessing.
+#
+# It deliberately does not filter the blocked ids out of the request. Sending
+# only the eligible ones would make `requested_count` disagree with what the
+# reviewer ticked, and the two products they need told about would be the two
+# that silently never appeared in the results (§15).
+ADMIN_REVIEW_BULK_JS = r"""
+(function () {
+  var bar = document.getElementById('review-bulk');
+  if (!bar) { return; }
+  var ticks = Array.prototype.slice.call(document.querySelectorAll('.review-tick'));
+  var all = document.getElementById('review-all');
+  var selectedLabel = document.getElementById('review-selected');
+  var eligibleLabel = document.getElementById('review-eligible');
+  var reason = document.getElementById('review-reason');
+  var note = document.getElementById('review-note');
+  var outcome = document.getElementById('review-outcome');
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-review-action]'));
+  var REASON_REQUIRED = { reject: 1, request_changes: 1, restrict: 1 };
+  var busy = false;
+
+  function chosen() { return ticks.filter(function (t) { return t.checked; }); }
+
+  function refresh() {
+    var picked = chosen();
+    var blocked = picked.filter(function (t) { return (t.getAttribute('data-block') || '') !== ''; });
+    selectedLabel.textContent = picked.length + ' selected';
+    eligibleLabel.textContent = blocked.length
+      ? ((picked.length - blocked.length) + ' eligible \u00b7 ' + blocked.length + ' blocked')
+      : '';
+    bar.classList.toggle('is-open', picked.length > 0);
+    if (all) {
+      all.checked = ticks.length > 0 && picked.length === ticks.length;
+      all.indeterminate = picked.length > 0 && picked.length < ticks.length;
+    }
+  }
+
+  function key() {
+    // One key per attempt, minted before the request leaves. A retry of a
+    // request that already landed replays the first answer instead of
+    // deciding twenty-five listings twice (§17).
+    if (window.crypto && window.crypto.randomUUID) { return 'rvw_' + window.crypto.randomUUID(); }
+    return 'rvw_' + Date.now() + '_' + Math.random().toString(16).slice(2);
+  }
+
+  function line(entry) {
+    var name = entry.title ? (entry.title.length > 60 ? entry.title.slice(0, 57) + '\u2026' : entry.title) : ('Listing ' + entry.listing_id);
+    if (entry.outcome === 'succeeded') {
+      var state = entry.live ? 'live' : ('approved, not live \u2014 ' + (entry.note || entry.publication_state || 'see listing'));
+      return '\u2713 #' + entry.listing_id + ' ' + name + ' \u2014 ' + entry.new_review_state + ' \u00b7 ' + state;
+    }
+    if (entry.outcome === 'blocked') {
+      return '\u25cf #' + entry.listing_id + ' ' + name + ' \u2014 blocked: ' + (entry.note || entry.error_code || 'not eligible');
+    }
+    return '\u2717 #' + entry.listing_id + ' ' + name + ' \u2014 failed: ' + (entry.reason || entry.error_code || 'not saved');
+  }
+
+  function report(data) {
+    // The headline is read off the server's own counts, never recounted here.
+    // "23 approved" assembled in the browser is a number nobody can check.
+    var head = data.successful_count + ' of ' + data.requested_count + ' ' + data.action.replace('_', ' ') + 'd';
+    if (data.blocked_count) { head += ' \u00b7 ' + data.blocked_count + ' blocked'; }
+    if (data.failed_count) { head += ' \u00b7 ' + data.failed_count + ' failed'; }
+    if (data.replayed) { head += ' (already applied \u2014 showing the first answer)'; }
+    var detail = (data.results || []).filter(function (entry) {
+      return entry.outcome !== 'succeeded' || !entry.live;
+    }).map(line);
+    outcome.textContent = detail.length ? (head + '\n' + detail.join('\n')) : head;
+    outcome.setAttribute('data-batch-id', data.batch_id || '');
+  }
+
+  function send(action) {
+    if (busy) { return; }
+    var picked = chosen();
+    if (!picked.length) { return; }
+    var code = reason ? reason.value : '';
+    if (REASON_REQUIRED[action] && !code) {
+      outcome.textContent = 'Pick a reason code first \u2014 the seller is shown it (\u00a79).';
+      if (reason) { reason.focus(); }
+      return;
+    }
+    busy = true;
+    buttons.forEach(function (b) { b.disabled = true; });
+    outcome.textContent = 'Deciding ' + picked.length + ' listing(s)\u2026';
+    fetch('/api/admin/marketplace/review/batch', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: action,
+        listing_ids: picked.map(function (t) { return parseInt(t.value, 10); }),
+        idempotency_key: key(),
+        reason_code: code || null,
+        note: note ? note.value : ''
+      })
+    }).then(function (res) {
+      return res.json().catch(function () { return { ok: false, message: 'Server returned ' + res.status + '.' }; });
+    }).then(function (data) {
+      if (!data || !data.ok) {
+        outcome.textContent = (data && (data.message || data.error)) || 'That batch was refused.';
+        return;
+      }
+      report(data);
+      if (data.successful_count > 0) {
+        // Reload only once the reviewer has had the summary rendered, so a
+        // partial result is not replaced by a fresh queue before it is read.
+        window.setTimeout(function () { window.location.reload(); }, 2500);
+      }
+    }).catch(function (err) {
+      outcome.textContent = 'That batch could not be sent: ' + err + '. Nothing was decided.';
+    }).then(function () {
+      busy = false;
+      buttons.forEach(function (b) { b.disabled = false; });
+    });
+  }
+
+  ticks.forEach(function (t) { t.addEventListener('change', refresh); });
+  if (all) {
+    all.addEventListener('change', function () {
+      ticks.forEach(function (t) { t.checked = all.checked; });
+      refresh();
+    });
+  }
+  var clear = document.getElementById('review-clear');
+  if (clear) {
+    clear.addEventListener('click', function () {
+      ticks.forEach(function (t) { t.checked = false; });
+      refresh();
+    });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener('click', function () { send(b.getAttribute('data-review-action')); });
+  });
+  refresh();
+})();
+"""
+
+
 @webhook_app.route("/admin/marketplace-command", methods=["GET", "POST"])
 def admin_marketplace_command_page():
     admin, denied = require_admin_page("monetization.manage")
     if denied:
         return denied
     init_db()
+    from services.business_os.marketplace import listing_review as marketplace_review_authority
     message = ""
     if request.method == "POST":
         listing_id = int(request.form.get("listing_id") or 0)
@@ -100171,8 +100313,24 @@ def admin_marketplace_command_page():
             previous_approval = str(listing_row.get("approval_status") or "").lower()
             if not listing_row:
                 conn.close(); return api_error("Listing not found.", 404)
-            if action in {"approve", "reject", "request_changes"} and not marketplace_listing_lifecycle.awaiting_moderation(listing_row):
-                conn.close(); return api_error("Listing review state changed. Reload before deciding.", 409)
+            # §1. The review verdicts ask `listing_review`, which is also what the
+            # batch endpoint asks -- so "may this be approved" has one answer.
+            # This used to be an inline `awaiting_moderation` call, and the two
+            # gates it did not have are the two that matter: a moderator could
+            # approve their own listing, and a human could approve a product the
+            # goods policy prohibits. `suspend`, `archive` and `feature` keep
+            # their own guards below; they are not review verdicts.
+            if action in marketplace_review_authority.ACTIONS:
+                blocked = marketplace_review_authority.block_reason(
+                    listing_row, action, reviewer_id=admin.get("id"))
+                if blocked:
+                    conn.close()
+                    return api_error(
+                        marketplace_review_authority.BLOCK_NOTES.get(
+                            blocked, "That decision is not available."),
+                        403 if blocked in {
+                            marketplace_review_authority.SELF_REVIEW,
+                            marketplace_review_authority.PROHIBITED} else 409)
             if action == "feature" and (previous_status not in marketplace_listing_lifecycle.PUBLIC_STATUSES or previous_approval != "approved"):
                 conn.close(); return api_error("Only an approved published listing can be featured.", 409)
             cur.execute("""UPDATE marketplace_listings SET status=?, approval_status=?,
@@ -100228,13 +100386,35 @@ def admin_marketplace_command_page():
     # under names that say which is which. A reviewer needs the store (what the
     # buyer sees) *and* the account holder (who is accountable); the aliases keep
     # them from being mistaken for each other, here or by a later copy-paste.
+    # §26-§29/§42. Filter, search, sort and paging all happen in SQL. The
+    # previous query was a bare `ORDER BY ... LIMIT 100` over the whole table,
+    # which is a §38 violation the moment the backlog passes a hundred: listing
+    # 101 is in review, is counted in the badge above, and is reachable by no
+    # reviewer through any control on the page.
+    review_query = marketplace_review_authority.normalize_query(request.args)
+    slice_counts = {}
+    for slice_name in marketplace_review_authority.QUEUE_FILTERS:
+        slice_where, slice_args = marketplace_review_authority.queue_where(
+            {**review_query, "filter": slice_name}, "l")
+        try:
+            cur.execute(f"SELECT COUNT(*) AS total FROM marketplace_listings l WHERE {slice_where}",
+                        slice_args)
+            slice_counts[slice_name] = int(dict(cur.fetchone() or {}).get("total") or 0)
+        except Exception:
+            slice_counts[slice_name] = 0
+    queue_where_sql, queue_args = marketplace_review_authority.queue_where(review_query, "l")
+    # The same predicate that counted the badge, so "340 pending" and the table
+    # under it cannot tell different stories.
+    window = marketplace_review_authority.page_window(
+        review_query, slice_counts.get(review_query["filter"], 0))
     cur.execute(f"""SELECT l.*, COALESCE(u.display_name,u.username,'Unknown owner') AS seller_owner_name,
         {marketplace_seller_identity.store_name_select('ms')},
         COALESCE(ms.status,'missing') AS seller_status, COALESCE(ms.verification_status,'unverified') AS seller_verification_status
         FROM marketplace_listings l LEFT JOIN users u ON u.user_id=l.seller_user_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        ORDER BY CASE WHEN {marketplace_listing_lifecycle.awaiting_moderation_sql('l')} THEN 0
-            WHEN LOWER(COALESCE(l.status,''))='changes_requested' THEN 1 ELSE 2 END, l.id DESC LIMIT 100""")
+        WHERE {queue_where_sql}
+        ORDER BY {marketplace_review_authority.queue_order(review_query, 'l')}
+        LIMIT ? OFFSET ?""", queue_args + [window["page_size"], window["offset"]])
     listings = [dict(row) for row in cur.fetchall()]
     listing_ids = [int(l.get("id") or 0) for l in listings]
     media_by_listing = {}
@@ -100250,9 +100430,321 @@ def admin_marketplace_command_page():
     for l in listings:
         media_items = media_by_listing.get(int(l.get("id") or 0), [])
         media_html = "".join((f"<video src='{html_escape(clean_html(m.get('media_url') or ''))}' playsinline preload='metadata'></video>" if (m.get("media_type") or "") == "video" else f"<img src='{html_escape(clean_html(m.get('thumbnail_url') or m.get('media_url') or ''))}' alt='Product media' loading='lazy'>") for m in media_items[:4]) or "<span class='muted'>No media</span>"
-        rows += f"<tr><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
-    body = f"<style>.market-media-strip{{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}}.market-media-strip img,.market-media-strip video{{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}}td form{{display:grid;gap:6px;min-width:210px}}td textarea{{min-height:64px}}</style><h1>Marketplace Review</h1><p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p><p>{html_escape(clean_html(message))}</p><section class='grid'>{cards}</section><section class='card'><h2>Listing Review Queue</h2><table class='table'><tr><th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>{rows or '<tr><td colspan=7>No listings yet.</td></tr>'}</table></section><p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
+        # §13. The blocker is computed here, by the same function the endpoint
+        # will use, so the bulk bar can say "23 eligible · 2 blocked" *before*
+        # the reviewer commits. A count that only becomes true after execution
+        # is a count they cannot act on.
+        row_block = marketplace_review_authority.block_reason(
+            l, marketplace_review_authority.APPROVE, reviewer_id=admin.get("id")) or ""
+        block_note = marketplace_review_authority.BLOCK_NOTES.get(row_block, "")
+        tick = ("<input type='checkbox' class='review-tick' value='" + str(int(l.get('id') or 0))
+                + "' data-block=\"" + html_escape(clean_html(row_block)) + "\""
+                + " data-block-note=\"" + html_escape(clean_html(block_note)) + "\">"
+                + (f"<div class='review-blocked'>{html_escape(clean_html(block_note))}</div>"
+                   if block_note else ""))
+        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+    # §26/§28. Every control carries the rest of the query with it, so changing
+    # the sort does not silently drop the reviewer's search back to page one of
+    # everything -- which is the version of "the filters don't work" that looks
+    # like the filters working.
+    def queue_link(**changes):
+        params = {"filter": review_query["filter"], "sort": review_query["sort"],
+                  "q": review_query["search"], "page": window["page"],
+                  "page_size": review_query["page_size"]}
+        params.update(changes)
+        return "/admin/marketplace-command?" + urlencode(
+            {k: v for k, v in params.items() if v not in ("", None)})
+
+    slice_labels = {"pending": "Needs review", "changes_requested": "Changes requested",
+                    "rejected": "Rejected", "restricted": "Restricted",
+                    "approved": "Approved", "all": "All listings"}
+    chips = "".join(
+        "<a class='review-chip" + (" is-active" if name == review_query["filter"] else "")
+        + "' href='" + html_escape(queue_link(filter=name, page=1)) + "'>"
+        + html_escape(slice_labels.get(name, name))
+        + " <b>" + str(slice_counts.get(name, 0)) + "</b></a>"
+        for name in marketplace_review_authority.QUEUE_FILTERS)
+    sort_options = "".join(
+        "<option value='" + name + "'" + (" selected" if name == review_query["sort"] else "")
+        + ">" + label + "</option>"
+        for name, label in (("oldest", "Waiting longest"), ("newest", "Newest first"),
+                            ("risk", "Highest risk"), ("seller", "By seller")))
+    # The seller-facing sentence is the option label, so a reviewer picks a
+    # reason by reading what the seller will be told rather than by decoding a
+    # constant (§36/§20).
+    reason_options = "".join(
+        "<option value='" + code + "'>"
+        + html_escape(marketplace_review_authority.SELLER_MESSAGES[code]) + "</option>"
+        for code in marketplace_review_authority.REASON_CODES)
+    pager_prev = ("<a class='button' href='" + html_escape(queue_link(page=window["page"] - 1))
+                  + "'>Previous</a>") if window["has_prev"] else ""
+    pager_next = ("<a class='button' href='" + html_escape(queue_link(page=window["page"] + 1))
+                  + "'>Next</a>") if window["has_next"] else ""
+    pager = ("<div class='review-pager'>" + pager_prev
+             + "<span class='muted'>Page " + str(window["page"]) + " of " + str(window["pages"])
+             + " · " + str(window["total"]) + " listing(s)</span>" + pager_next + "</div>")
+    empty_row = ("<tr><td colspan=8>No listings match this filter. <a href='"
+                 + html_escape(queue_link(filter="all", q="", page=1))
+                 + "'>Show all listings</a>.</td></tr>")
+
+    body = (
+        "<style>.market-media-strip{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}"
+        ".market-media-strip img,.market-media-strip video{width:72px;height:72px;object-fit:cover;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:#020817}"
+        "td form{display:grid;gap:6px;min-width:210px}td textarea{min-height:64px}"
+        ".review-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:10px 0}"
+        ".review-chip{display:inline-block;padding:6px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.16);text-decoration:none;color:inherit}"
+        ".review-chip.is-active{background:#0f9d58;border-color:#0f9d58;color:#fff}"
+        ".review-chip b{margin-left:6px;opacity:.85}"
+        ".review-blocked{font-size:11px;color:#f2b544;max-width:120px;margin-top:4px}"
+        ".review-bulk{position:sticky;top:0;z-index:5;display:none;gap:10px;flex-wrap:wrap;align-items:center;padding:10px;border:1px solid #0f9d58;border-radius:12px;background:#04121c;margin:10px 0}"
+        ".review-bulk.is-open{display:flex}"
+        ".review-pager{display:flex;gap:12px;align-items:center;margin-top:12px}"
+        "#review-outcome{margin:10px 0;white-space:pre-line}</style>"
+        "<h1>Marketplace Review</h1>"
+        "<p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p>"
+        "<p>" + html_escape(clean_html(message)) + "</p>"
+        "<section class='grid'>" + cards + "</section>"
+        "<section class='card'><h2>Listing Review Queue</h2>"
+        "<div class='review-controls'>" + chips + "</div>"
+        "<form class='review-controls' method='get' action='/admin/marketplace-command'>"
+        "<input type='hidden' name='filter' value='" + html_escape(review_query["filter"]) + "'>"
+        "<input type='search' name='q' placeholder='Search title, category, listing id or seller id' value='"
+        + html_escape(review_query["search"]) + "'>"
+        "<select name='sort'>" + sort_options + "</select>"
+        "<button type='submit'>Apply</button>"
+        "<a class='button' href='" + html_escape(queue_link(q="", page=1)) + "'>Clear search</a>"
+        "</form>"
+        "<div class='review-bulk' id='review-bulk'>"
+        "<strong id='review-selected'>0 selected</strong>"
+        "<span class='muted' id='review-eligible'></span>"
+        "<select id='review-reason'><option value=''>Reason code</option>" + reason_options + "</select>"
+        "<input type='text' id='review-note' placeholder='Internal note (never shown to the seller)'>"
+        "<button type='button' data-review-action='approve'>Approve selected</button>"
+        "<button type='button' data-review-action='request_changes'>Request changes</button>"
+        "<button type='button' data-review-action='reject'>Reject selected</button>"
+        "<button type='button' data-review-action='restrict'>Restrict</button>"
+        "<button type='button' id='review-clear'>Clear</button>"
+        "</div>"
+        "<div id='review-outcome' class='muted'></div>"
+        "<table class='table'><tr><th><input type='checkbox' id='review-all' title='Select every listing on this page'></th>"
+        "<th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>"
+        + (rows or empty_row) + "</table>"
+        + pager +
+        "</section>"
+        "<p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"
+        "<script>" + ADMIN_REVIEW_BULK_JS + "</script>")
     return admin_page_html("Marketplace Command", body, admin)
+
+
+def _marketplace_review_apply(cur, action, row, reviewer_id, now, reason, batch_id=""):
+    """Record one review verdict. Every decision behind it belongs to `listing_review`.
+
+    Deliberately only the write, matching the split `listing_batch` established:
+    the eligibility rule is a pure function that can be proven against every
+    state a listing can reach, and this is the part that needs bot.py's event
+    and audit helpers. Nothing here decides whether the action was allowed --
+    `listing_review.block_reason` did that, once, for both callers.
+
+    Returns the §37 read-back rather than a success flag. Approving writes two
+    of the five conditions `marketplace_listing_lifecycle` requires for
+    discovery; the other three belong to the seller record and to stock. So the
+    honest answer to "did that work" is a fresh look at the row, not the fact
+    that the UPDATE returned.
+    """
+    from services.business_os.marketplace import listing_review as marketplace_review
+
+    listing_id = int(row.get("id") or 0)
+    status, approval = marketplace_review.TRANSITIONS[action]
+    reason_code = reason.get("reason_code") or ""
+    note = reason.get("note") or ""
+
+    # `status` is None for `restrict`, which parks the moderation axis and leaves
+    # the merchant's release where they put it. COALESCE keeps the existing value
+    # rather than writing NULL over it.
+    cur.execute("""UPDATE marketplace_listings SET
+            status=COALESCE(?, status), approval_status=?,
+            reviewed_by=?, reviewed_at=?,
+            approved_at=CASE WHEN ?='approved' THEN ? ELSE approved_at END,
+            published_at=CASE WHEN ?='published' THEN ? ELSE NULL END,
+            moderation_reason=?, moderation_category=?, updated_at=?
+        WHERE id=?""",
+        (status, approval, reviewer_id, now, approval, now, status or "", now,
+         note, reason_code, now, listing_id))
+
+    if action == marketplace_review.APPROVE:
+        cur.execute("UPDATE marketplace_product_media SET moderation_status='approved' "
+                    "WHERE product_id=? AND moderation_status NOT IN ('rejected','removed')",
+                    (listing_id,))
+
+    # §21. The seller is told through the notification path every other listing
+    # state change already uses, carrying the seller-safe sentence rather than
+    # the reviewer's note -- `seller_message` is a lookup on the structured code,
+    # so an internal note cannot reach a merchant by being pasted into it (§43).
+    pulse_emit_marketplace_inventory_event(
+        cur, row.get("seller_user_id"), "seller_listing_review_changed",
+        listing_id=listing_id, actor_user_id=reviewer_id or 0,
+        status=status or str(row.get("status") or ""), approval_status=approval,
+        title=row.get("title") or "Marketplace listing",
+        extra={"review_action": action, "reason_category": reason_code,
+               "seller_message": (marketplace_review.seller_message(reason_code)
+                                  if reason_code else ""),
+               "batch_id": batch_id})
+
+    # §37. Re-read through the same join discovery uses, because three of the
+    # five publication conditions live on rows this UPDATE never touched.
+    cur.execute(f"""SELECT l.*, COALESCE(ms.status,'missing') AS seller_status,
+               {marketplace_seller_identity.store_name_select('ms')}
+        FROM marketplace_listings l
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+        WHERE l.id=? LIMIT 1""", (listing_id,))
+    return marketplace_review.publication_readback(dict(cur.fetchone() or {}))
+
+
+def _marketplace_review_audit(cur, reviewer_id, action, listing_id, payload):
+    """File one review decision on the batch's OWN cursor, inside its transaction.
+
+    Not `log_admin_audit`, and the difference is not stylistic. That helper opens
+    a second connection, commits it, and swallows every exception -- which under
+    this route's open write transaction means SQLite refuses the insert, the
+    error is discarded, and the batch returns 200 having recorded no trail at
+    all. Twenty-five decisions, zero audit rows, nothing anywhere saying so.
+    §19 is not satisfied by a best-effort write.
+
+    Writing on `cur` also ties the trail to the decision: the audit row commits
+    when the listing moves and disappears when it does not, so the log cannot
+    describe an approval that was rolled back.
+    """
+    metadata_text = json.dumps(payload or {})[:4000]
+    ip_hash = client_ip_hash() if has_request_context() else ""
+    user_agent = request.headers.get("User-Agent", "")[:500] if has_request_context() else ""
+    now = datetime.now().isoformat()
+    admin = admin_current_user() if has_request_context() else None
+    cur.execute(
+        """
+        INSERT INTO admin_audit_logs
+        (admin_user_id, admin_email, action, target_type, target_id, metadata, ip_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (reviewer_id or 0, (admin or {}).get("email") or "", action,
+         "marketplace_listing", str(listing_id), metadata_text, ip_hash, now),
+    )
+    cur.execute(
+        """
+        INSERT INTO admin_activity_logs
+        (admin_user_id, department, action, route, target_type, target_id,
+         before_json, after_json, ip_hash, user_agent, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (reviewer_id or 0, "", action, request.path if has_request_context() else "",
+         "marketplace_listing", str(listing_id), "", metadata_text, ip_hash,
+         user_agent, now),
+    )
+
+
+@webhook_app.route("/api/admin/marketplace/review/batch", methods=["POST"])
+def api_admin_marketplace_review_batch():
+    """§16. One request, one batch, one verdict per listing.
+
+    The alternative -- the admin page firing twenty-five single-decision posts --
+    is what this exists instead of, and the reasons are not about speed.
+    Twenty-five requests have twenty-five outcomes and no batch: a reviewer whose
+    connection drops after the ninth has nothing to ask about, a retry re-decides
+    the nine that already landed, and "23 approved, 2 blocked" has to be assembled
+    in the browser out of whatever replies arrived -- which puts the client in
+    charge of a number only the server knows.
+
+    Authorization is the same gate the review page holds (§18), and the
+    self-review block inside `listing_review.block_reason` is the one this
+    endpoint adds: admin rights and a seller account are not exclusive, and
+    nothing else in the stack stopped a moderator approving their own product.
+    """
+    admin, denied = require_admin_api("monetization.manage")
+    if denied:
+        return denied
+    init_db()
+
+    from services.business_os.marketplace import listing_review as _review
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        normalized = _review.normalize_request(
+            payload.get("action"), payload.get("listing_ids"),
+            idempotency_key=payload.get("idempotency_key"),
+            reason_code=payload.get("reason_code"), note=payload.get("note"))
+    except _review.BatchError as err:
+        return jsonify({"ok": False, "error": err.code, "message": err.message}), err.status
+
+    _review.ensure_schema()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    reviewer_id = admin.get("id")
+    conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+
+    try:
+        claim = _review.claim(cur, reviewer_id, normalized)
+    except _review.BatchError as err:
+        conn.close()
+        return jsonify({"ok": False, "error": err.code, "message": err.message}), err.status
+    if claim["state"] == "replayed":
+        conn.close()
+        return jsonify({"ok": True, "replayed": True, **claim["response"]})
+    # Committed before any listing moves. §17: a claim still sitting uncommitted
+    # in this transaction protects nothing, and the window it leaves open is
+    # exactly the double-click.
+    conn.commit()
+
+    ids = normalized["listing_ids"]
+    placeholders = ",".join(["?"] * len(ids))
+    cur.execute(f"SELECT * FROM marketplace_listings WHERE id IN ({placeholders})", ids)
+    rows = [dict(r) for r in cur.fetchall()]
+    verdict = _review.evaluate_rows(rows, ids, normalized["action"], reviewer_id=reviewer_id)
+
+    by_id = {int(r.get("id") or 0): r for r in rows}
+    results = list(verdict["blocked"])
+    for listing_id in verdict["eligible"]:
+        row = by_id[listing_id]
+        try:
+            readback = _marketplace_review_apply(
+                cur, normalized["action"], row, reviewer_id, now, normalized,
+                batch_id=claim["batch_id"])
+        except Exception as apply_error:
+            # One row that could not be written must not lose the other
+            # twenty-four. `failed`, not `blocked` (§15): nothing about the
+            # product is wrong and there is nothing for anyone to go fix.
+            app.logger.exception("review %s failed for listing %s",
+                                 normalized["action"], listing_id)
+            results.append(_review.result_entry(
+                listing_id, _review.FAILED, error_code="APPLY_FAILED",
+                reason=str(apply_error) or "That decision could not be saved.",
+                title=row.get("title") or ""))
+            continue
+        _marketplace_review_audit(
+            cur, reviewer_id, f"marketplace_listing_{normalized['action']}", listing_id,
+            {"previous_status": str(row.get("status") or "").lower(),
+             "previous_approval_status": str(row.get("approval_status") or "").lower(),
+             "new_status": readback["publication_state"],
+             "new_approval_status": readback["review_state"],
+             "reason_category": normalized.get("reason_code") or "",
+             "reason": normalized.get("note") or "",
+             "batch_id": claim["batch_id"]})
+        results.append(_review.result_entry(
+            listing_id, _review.SUCCEEDED, title=row.get("title") or "",
+            old_review_state=str(row.get("approval_status") or "").lower(),
+            new_review_state=readback["review_state"],
+            publication_state=readback["publication_state"],
+            live=readback["live"], blockers=readback["blockers"] or None,
+            note=readback["note"] or None))
+
+    # Ordered back into the reviewer's selection order. `evaluate_rows` returns
+    # the blocked entries together, and a results list that reads in a different
+    # order than the rows they ticked is a list they have to search rather than
+    # read down.
+    position = {listing_id: index for index, listing_id in enumerate(ids)}
+    results.sort(key=lambda entry: position.get(entry["listing_id"], 0))
+
+    response = _review.summarize(claim["batch_id"], normalized["action"], results)
+    _review.finalize(cur, claim["batch_id"], response)
+    conn.commit(); conn.close()
+    return jsonify({"ok": True, **response})
 
 
 @webhook_app.route("/admin/spaces-command", methods=["GET", "POST"])
