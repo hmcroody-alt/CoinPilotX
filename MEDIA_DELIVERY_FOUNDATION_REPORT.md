@@ -67,7 +67,7 @@ from a clean worktree checked out at the exact commit.
 | Protected paths touched | **0 of 74** |
 | RTC changes | **0** (see below) |
 | Protection suite | 1 failure, foreign and pre-existing (see below) |
-| Pushed | **Nothing.** 21 commits local-only; `origin/main` still at `878ed1b5` |
+| Pushed | **Nothing.** Every mission commit verified *not* an ancestor of `origin/main` |
 
 Backend files can't share a pytest process in this repo, so each was run alone. The mutation
 harness was bracketed by `git diff | shasum` and per-file digests before and after: HEAD,
@@ -148,7 +148,9 @@ an env var without a deploy.
 - [x] **Security tests pass** — signed-URL tampering refused; a conversation member cannot sign another member's parts; a client cannot claim a part it never sent; blocked attachments refused to every reader.
 - [x] **Mutation tests pass** — 39/39, each killing a named test.
 - [x] **RTC changes = 0** — 0 of 74 protected paths; gate passes on all 10 commits; the two grep hits explained above.
-- [x] **No push** — nothing left this machine.
+- [x] **No push** — nothing left this machine. `origin/main` moved during the session because
+  another session pushed to it; each mission commit was then re-checked with
+  `git merge-base --is-ancestor` and none is reachable from it.
 
 ### Not done, and it is not code
 
