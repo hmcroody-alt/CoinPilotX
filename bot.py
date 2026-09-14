@@ -54221,7 +54221,7 @@ def pulse_creator_camera_page():
 #: is not universal, and where it is missing the browser falls back and the
 #: backdrop silently disappears. Inline *style* is not the XSS vector inline
 #: *script* is; the requirement was always scoped to script-src.
-from services.route_auth import auth_required, public_route
+from services.route_auth import admin_required, auth_required, public_route
 
 PULSE_WEB_APP_CSP = (
     "default-src 'self'; "
@@ -100369,6 +100369,7 @@ def _money(cents, currency=""):
 
 
 @webhook_app.route("/admin/marketplace-command/listing/<int:listing_id>", methods=["GET"])
+@admin_required
 def admin_marketplace_listing_review_page(listing_id):
     admin, denied = require_admin_page("monetization.manage")
     if denied:
@@ -101447,6 +101448,7 @@ def _marketplace_review_supplier_sync(plans, results):
 
 
 @webhook_app.route("/api/admin/marketplace/review/batch", methods=["POST"])
+@admin_required
 def api_admin_marketplace_review_batch():
     """§16. One request, one batch, one verdict per listing.
 
