@@ -54894,6 +54894,18 @@ MARKETPLACE_REVIEWER_ONLY_FIELDS = (
     "moderation_category",
     "review_version",
     "moderation_notes",
+    # `reviewed_at` is load-bearing: the seller route SELECTs it to build
+    # `seller_verdict`, so without this line the raw column ships beside the
+    # verdict's own `decided_at` -- two names for one fact, drifting the first
+    # time one of them is formatted.
+    "reviewed_at",
+    # `reviewed_by` is not selected by any route that reaches this serializer,
+    # so this entry guards nothing today and is here deliberately anyway. It is
+    # an admin's user id -- platform staff identity on a merchant's, or a
+    # buyer's, payload -- and the list is documented above as the durable place
+    # to say "not this one" precisely so that a later `SELECT *`, or one more
+    # column added to a seller query, does not have to remember.
+    "reviewed_by",
 )
 
 
@@ -55090,6 +55102,12 @@ def api_pulse_marketplace_seller_listings():
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
+               -- §9. Read for `seller_verdict` and stripped from the payload
+               -- again by `MARKETPLACE_REVIEWER_ONLY_FIELDS` before it
+               -- ships, so naming them here widens what the merchant is
+               -- told about their own listing without widening the row.
+               -- `moderation_reason` is deliberately not among them.
+               l.moderation_category, l.review_version, l.reviewed_at,
                COALESCE(ms.status,'missing') AS seller_status,
                {marketplace_seller_identity.store_name_select('ms')},
                COALESCE(u.username,'') AS seller_username
@@ -55137,6 +55155,7 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
     """
     from services.business_os.marketplace import listing_readiness as _readiness
     from services.business_os.marketplace import listing_batch as _batch
+    from services.business_os.marketplace import listing_review as _review
 
     payload = pulse_marketplace_listing_payload(row, media_rows)
     verdict = _readiness.evaluate(row, media=media_rows)
@@ -55157,6 +55176,20 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
         action: _batch.block_reason(row, action, verdict if action == "publish" else None)
         for action in _batch.PRECOMPUTED_ACTIONS
     }
+    # §9. Why the reviewer decided what they decided, on the listing itself.
+    #
+    # It was announced once through the notification path and then existed
+    # nowhere a merchant could go back to. The push is a moment; a rejected
+    # product is a thing the seller opens later, on another device, wanting to
+    # know what to fix. Attached here rather than in either route because the
+    # list view and the single-listing view answering differently is the bug
+    # `readiness` was moved here to stop.
+    #
+    # Built from `row`, not from `payload`: the serializer strips the moderation
+    # columns for the buyer (§43) and it is right to keep doing that. This adds
+    # back only the structured code and its canonical sentence — never the
+    # reviewer's note, which `seller_verdict` does not read.
+    payload["review"] = _review.seller_verdict(row)
     return payload
 
 
@@ -55167,6 +55200,12 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
                l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
                l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
                l.tags_json, l.refund_policy, l.estimated_delivery, l.seller_notes,
+               -- §9. Read for `seller_verdict` and stripped from the payload
+               -- again by `MARKETPLACE_REVIEWER_ONLY_FIELDS` before it
+               -- ships, so naming them here widens what the merchant is
+               -- told about their own listing without widening the row.
+               -- `moderation_reason` is deliberately not among them.
+               l.moderation_category, l.review_version, l.reviewed_at,
                COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
                -- Selected for `seller_label`, which answers "Live" from the
                -- publication rules and not from the merchant's own two columns.
@@ -100484,8 +100523,24 @@ def admin_marketplace_listing_review_page(listing_id):
         "<div class='detail-verdicts'>" + verdict_buttons + "</div>"
         "<p><select id='detail-reason-category'><option value=''>Reason category</option>"
         + reason_options + "</select></p>"
-        "<p><textarea id='detail-reason-note' placeholder='Note to the seller — they "
-        "read this. Required detail for reject, request changes and restrict.'></textarea></p>"
+        # §1/§20. This used to read "Note to the seller — they read this." They
+        # do not. `seller_message` is documented as never carrying the note, the
+        # notification path sends the category sentence instead, and the seller
+        # payload builds its verdict without reading this column at all. So a
+        # reviewer was being invited to write the specific, actionable half of a
+        # rejection into a field that reaches the audit trail and the next
+        # reviewer's dossier and stops there.
+        #
+        # Keeping it internal is the right call rather than an accident: this
+        # form sits on a screen displaying supplier cost and unit margin, which
+        # makes pasting a line of it into a "note to the seller" a natural
+        # reviewer action and a §43 leak. What the merchant is told is the
+        # category — which is why the menu above is labelled with the sentences
+        # they will read, and why this says so instead of claiming otherwise.
+        "<p><textarea id='detail-reason-note' placeholder='Internal note — kept on the "
+        "audit record and shown to the next reviewer, not to the seller. The seller is "
+        "told the reason category above. Required for reject, request changes and "
+        "restrict.'></textarea></p>"
         "<div id='detail-outcome'></div>"
         "<p class='muted'>This posts the same batch endpoint the queue posts, with one "
         "id — so a decision made here and a bulk decision are the same code, the same "

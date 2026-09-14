@@ -65,6 +65,7 @@ __all__ = [
     "block_reason", "claim", "ensure_schema", "evaluate_rows", "finalize",
     "normalize_request", "normalize_reason", "publication_readback",
     "queue_sql", "request_hash", "seller_message",
+    "seller_verdict", "SELLER_MUST_ACT", "SELLER_DECIDED",
     "MISSING_REVIEW_STATE", "UNKNOWN_REVIEW_STATE", "APPROVED_BUT_UNRELEASED",
     "KNOWN_REVIEW_STATES", "zombie_reason", "zombie_repair", "zombie_sql",
     "duplicate_decision_sql",
@@ -218,6 +219,79 @@ def block_reason(
 def seller_message(reason_code: str) -> str:
     """The sentence the seller reads. Never the reviewer's internal note (§43)."""
     return SELLER_MESSAGES.get(str(reason_code or "").upper(), SELLER_MESSAGES[OTHER])
+
+
+#: Review states the seller must do something about before the listing can sell.
+#:
+#: ``restricted`` is here deliberately. It parks the moderation axis rather than
+#: moving the merchant axis, so a restricted listing can sit in a store reading
+#: "live" on the seller's own release switch while no buyer can reach it. That is
+#: the one state where saying nothing looks exactly like nothing being wrong.
+SELLER_MUST_ACT = frozenset({
+    _lifecycle.REJECTED, _lifecycle.CHANGES_REQUESTED, "restricted",
+})
+
+#: States that mean a decision was made, whether or not the seller must act.
+SELLER_DECIDED = SELLER_MUST_ACT | {_lifecycle.APPROVED, _lifecycle.PUBLISHED}
+
+
+def seller_verdict(listing: Optional[Mapping[str, Any]]) -> dict:
+    """What the listing's own merchant is told about the last review decision.
+
+    §9 says a rejection is never silent, and until this existed it was silent in
+    the only place the seller actually looks. The decision was written to
+    ``moderation_category``, announced once through the notification path, and
+    then dropped: every seller-facing payload runs through the buyer serializer,
+    which strips the moderation columns by design (§43), and neither seller
+    ``SELECT`` named them in the first place. A merchant who missed the push
+    notification — or read it on a different device, or opened the app a week
+    later — saw the word ``rejected`` and nothing else. There was no surface
+    anywhere in the product that would tell them why, so "send rejected items
+    back to the seller for correction" ended at "back to the seller".
+
+    What crosses and what does not:
+
+    ``reason_code`` and ``message`` cross. The message is the canonical sentence
+    for the code, looked up here rather than stored, so a seller cannot be shown
+    a verdict this build has no words for.
+
+    ``moderation_reason`` — the reviewer's note — does **not** cross, and is not
+    read by this function at all. It is typed on a screen that displays supplier
+    cost and unit margin, which makes "paste the relevant line into the note" a
+    natural thing for a reviewer to do and a §43 leak when it happens. The note's
+    job is the audit trail and the next reviewer's dossier.
+
+    An undecided listing gets ``message: ""`` rather than the ``OTHER`` sentence.
+    ``seller_message`` falls back to "This listing needs a change before it can
+    go live", which is true of a rejection and a lie about a listing that is
+    merely waiting in the queue — and it is a lie the seller would act on by
+    editing a product nobody has found fault with yet.
+    """
+    row = dict(listing or {})
+    state = str(row.get("approval_status") or "").strip().lower()
+    code = str(row.get("moderation_category") or "").strip().upper()
+    decided = state in SELLER_DECIDED
+    return {
+        "state": state,
+        "decided": decided,
+        "needs_action": state in SELLER_MUST_ACT,
+        # A code is only meaningful alongside the decision it describes. After a
+        # material edit sends an approved listing back to the queue (§23) the
+        # column is blanked, but a *stale* code surviving some other path must
+        # not be rendered against the new pending state as though it were this
+        # version's verdict.
+        "reason_code": code if decided else "",
+        "message": seller_message(code) if (decided and code) else "",
+        "review_version": _safe_int(row.get("review_version")),
+        "decided_at": str(row.get("reviewed_at") or "") if decided else "",
+    }
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 # --- request validation -------------------------------------------------------
