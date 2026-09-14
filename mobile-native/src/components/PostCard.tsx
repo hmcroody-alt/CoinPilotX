@@ -7,6 +7,7 @@ import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, PulseMe
 import { getLiveState } from "../api/live";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
+import { AUTOPLAY_STARTS_UNMUTED } from "../core/media/mediaAutoplayPolicy";
 import { AttachedMusicPolicy, resolvePostAudioPolicy } from "../core/attachedMusicAudioPolicy";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
@@ -1012,7 +1013,25 @@ function FeedInlineVideo({
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const refreshAttempted = useRef(false);
-  const [muted, setMuted] = useState(true);
+  /**
+   * §7/§49: feed video starts with sound on.
+   *
+   * It started muted, which made the feed silent by construction -- and because
+   * `audibleAutoplay` gates the claimMediaPlayback call below, a muted feed also
+   * never entered ownership arbitration at all. Unmuting is therefore not just a
+   * default flip: it is what puts feed video under the same single-owner
+   * coordinator as Reels, Statuses and calls, so the card that scrolls out of
+   * view is paused by the one that scrolls in.
+   *
+   * The audio *session* is deliberately not touched here. Configuring an
+   * AVAudioSession from a feed card is the exact failure the realtime-audio
+   * policy forbids -- HomeScreen is mounted for the whole session, so a
+   * setAudioModeAsync from this path could take the microphone away from a call
+   * in progress. Sound plays under whatever session is already active, which on
+   * iOS means the hardware silent switch still wins. That is correct behaviour,
+   * not a gap.
+   */
+  const [muted, setMuted] = useState(!AUTOPLAY_STARTS_UNMUTED);
   const [buffering, setBuffering] = useState(false);
   const [failed, setFailed] = useState(false);
   const [refreshingUrl, setRefreshingUrl] = useState(false);

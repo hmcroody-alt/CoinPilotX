@@ -38,6 +38,9 @@ import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
+import { primaryMediaOf } from "../core/media/mediaDescriptors";
+import type { MediaDescriptor } from "../core/media/mediaIdentity";
+import { useAppForegrounded, useMediaPrefetch } from "../core/media/useMediaPrefetch";
 import { getPulseRadioState, PulseRadioState, subscribePulseRadio, togglePulseRadio } from "../core/pulseRadio";
 import { useBottomNavContentPadding, useBottomNavScrollVisibility } from "../navigation/BottomNavVisibility";
 import { GlobalNavigationBadges, GlobalNavigationIdentity, LogiNexusGlobalHeader } from "../navigation/GlobalNavigation";
@@ -279,6 +282,45 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         rotationOffset: discovery.rotationOffset
       }),
     [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
+  );
+
+  /**
+   * Zero-wait media for the feed.
+   *
+   * The planner works in row indices, so the descriptor list has to be indexed
+   * the same way the FlatList is -- ad and discovery rows included, as nulls.
+   * Building it from `posts` instead would shift every index by the number of
+   * sponsored rows above it and warm the wrong cards, with symptoms that only
+   * show up once ads are actually being served.
+   */
+  const feedMedia = useMemo<(MediaDescriptor | null)[]>(
+    () => feedRows.map((row) => (row.type === "post" ? primaryMediaOf(row.post) : null)),
+    [feedRows]
+  );
+  const feedActiveIndex = useMemo(() => {
+    if (activePostId == null) return 0;
+    const index = feedRows.findIndex((row) => row.type === "post" && row.post.id === activePostId);
+    return index < 0 ? 0 : index;
+  }, [feedRows, activePostId]);
+  const appForegrounded = useAppForegrounded();
+  // `active` is focus plus foreground, deliberately not "is anything playing":
+  // §23 -- preloading is not playing, and a feed whose video is muted or paused
+  // still wants the next card's image already decoded.
+  const feedPrefetch = useMediaPrefetch({
+    surface: "feed",
+    items: feedMedia,
+    activeIndex: feedActiveIndex,
+    active: isFocused && appForegrounded
+  });
+  const feedFlinging = feedPrefetch.velocity === "fast";
+  // Composed, not replaced: the bottom nav hides and reveals itself from this
+  // same stream, and dropping its handler here would pin it open.
+  const onFeedScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      bottomNavScroll.onScroll(event);
+      feedPrefetch.onScroll(event);
+    },
+    [bottomNavScroll, feedPrefetch]
   );
 
   const handleHideAd = useCallback((ad: SponsoredAd) => {
@@ -884,7 +926,10 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       <PostCard
         post={item}
         busy={guard.isItemBusy(item.id)}
-        active={activePostId === item.id}
+        // §24. Viewability fires all the way through a fling, so without this a
+        // hard flick would start and abandon a video per card it passed. No card
+        // is active mid-fling; the settle handler re-opens it.
+        active={activePostId === item.id && !feedFlinging}
         motionEnabled={ambientMotionEnabled}
         onOpen={handleOpenPost}
         onOpenLive={handleOpenPostLive}
@@ -908,6 +953,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     activePostId,
     ambientMotionEnabled,
     currentUserId,
+    feedFlinging,
     discovery.actions,
     discovery.joinedGroupSlugs,
     discovery.pendingFriendKeys,
@@ -1085,8 +1131,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         removeClippedSubviews
         onEndReached={loadMore}
         onEndReachedThreshold={0.35}
-        onScroll={bottomNavScroll.onScroll}
+        onScroll={onFeedScroll}
         onScrollBeginDrag={bottomNavScroll.onScrollBeginDrag}
+        onMomentumScrollEnd={feedPrefetch.onScrollSettled}
         scrollEventThrottle={bottomNavScroll.scrollEventThrottle}
       />
       <MasterNavigationDrawer visible={drawerOpen} onClose={closeDrawer} onOpenRoute={openHomeRoute} />

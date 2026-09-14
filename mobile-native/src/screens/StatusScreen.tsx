@@ -36,6 +36,8 @@ import { mutePostAuthor } from "../api/feed";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { blockPulseUser, reportPulseTarget } from "../api/support";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { primaryMediaList } from "../core/media/mediaDescriptors";
+import { useAppForegrounded, useMediaPrefetch, usePagerDirection, useRouteFocused } from "../core/media/useMediaPrefetch";
 import { StatusCreator } from "../components/StatusCreator";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "../components/NativeMediaViewer";
 import { StatusViewerCard } from "../components/StatusViewerCard";
@@ -124,6 +126,30 @@ export function StatusScreen({ route, navigation }: Props) {
   useEffect(() => registerSyncInvalidation("status", () => load("refresh")), []);
 
   const activeStatus = useMemo(() => (viewerIndex === null ? null : items[viewerIndex] || null), [items, viewerIndex]);
+
+  /**
+   * Statuses ride the same scheduler, cache and signed-URL lifecycle as Reels
+   * and the feed -- the `status` surface policy, not a second engine.
+   *
+   * One hook covers both halves of the screen deliberately. With the viewer
+   * closed the index parks at 0, so the list warms the Statuses the user is
+   * about to tap; opening the viewer moves the same window along the same
+   * items. Running a second prefetch for the closed state would fight the first
+   * for the same surface slot and cancel its own work on every open and close.
+   */
+  const statusMedia = useMemo(() => primaryMediaList(items), [items]);
+  const statusIndex = viewerIndex ?? 0;
+  const statusDirection = usePagerDirection(statusIndex);
+  const screenFocused = useRouteFocused();
+  const appForegrounded = useAppForegrounded();
+  const statusPlayable = screenFocused && appForegrounded;
+  useMediaPrefetch({
+    surface: "status",
+    items: statusMedia,
+    activeIndex: statusIndex,
+    active: statusPlayable,
+    direction: statusDirection
+  });
 
   function openStatus(status: PulseStatus) {
     const index = items.findIndex((item) => item.id === status.id);
@@ -281,7 +307,11 @@ export function StatusScreen({ route, navigation }: Props) {
         {activeStatus ? (
           <StatusViewerCard
             status={activeStatus}
-            active
+            // Was a literal `active`. §9/§10: a Status that kept its claim on
+            // the playback coordinator while the app was backgrounded went on
+            // advancing its own timer, so the user came back to a viewer that
+            // had silently walked several Statuses past the one they left on.
+            active={statusPlayable}
             muted={muted}
             busy={guard.isItemBusy(activeStatus.id)}
             reactionPending={guard.isBusy(actionKey("status_react", activeStatus.id))}

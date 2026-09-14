@@ -14,7 +14,14 @@ describe("Live Feed distribution architecture", () => {
     expect(liveSurface).toContain("publish: false");
     expect(liveSurface).toContain('disconnect("left_feed_item")');
     expect(home).toContain("itemVisiblePercentThreshold: 72");
-    expect(home).toContain("active={activePostId === item.id}");
+    // The active card is still the one and only card whose id matches
+    // `activePostId`. It is now additionally narrowed by the fast-scroll gate --
+    // a fling designates no active card at all -- so this matches the equality
+    // rather than the whole expression. Pinning the exact literal made an extra
+    // condition that only ever *reduces* the number of Live surfaces look like a
+    // regression.
+    expect(home).toMatch(/active=\{activePostId === item\.id\b/);
+    expect(home).toContain("!feedFlinging");
   });
 
   it("opens canonical Live and polls only the visible Live post for ended/replay state", () => {

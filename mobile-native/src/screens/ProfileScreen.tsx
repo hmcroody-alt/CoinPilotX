@@ -1,12 +1,14 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, RefreshControl, StyleSheet, Text, View, ViewToken } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { deletePost, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
 import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
+import { primaryMediaList } from "../core/media/mediaDescriptors";
+import { useAppForegrounded, useMediaPrefetch, useRouteFocused } from "../core/media/useMediaPrefetch";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
 import { ProfileHeader, ProfileModuleKey, ProfileStatKey } from "../components/ProfileHeader";
@@ -38,10 +40,6 @@ export function ProfileScreen({ route, navigation }: Props) {
   const dock = useBottomNavSurface();
   const listRef = useRef<FlatList<PulsePost>>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
-  const onScroll = useMemo(
-    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: dock.handlers.onScroll }),
-    [dock.handlers.onScroll, scrollY]
-  );
   const profileTarget = useMemo<NativeProfileTarget | null>(() => resolveProfileTarget(route?.params || null), [
     route?.params?.profileKey,
     route?.params?.userId,
@@ -79,6 +77,47 @@ export function ProfileScreen({ route, navigation }: Props) {
   const guard = useSocialActionGuard();
 
   const visiblePosts = useMemo(() => (tab === "media" ? posts.filter((post) => post.media?.length) : posts), [posts, tab]);
+
+  /**
+   * §27. Grid tiles are warmed, never played.
+   *
+   * The `grid` surface policy asks for thumbnails only and sets `warmVideo`
+   * false, so a profile full of video posts costs the same as a profile full of
+   * photos. The window is wide (12 ahead, 6 behind) because three tiles fit per
+   * row -- 12 items is four rows, roughly one more screen, not four.
+   */
+  const gridMedia = useMemo(() => primaryMediaList(visiblePosts), [visiblePosts]);
+  const [gridIndex, setGridIndex] = useState(0);
+  const gridViewabilityConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onGridViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const first = viewableItems.find((token) => token.isViewable && typeof token.index === "number");
+    if (first && typeof first.index === "number") setGridIndex(first.index);
+  }).current;
+  const profileFocused = useRouteFocused();
+  const appForegrounded = useAppForegrounded();
+  const gridPrefetch = useMediaPrefetch({
+    surface: "grid",
+    items: gridMedia,
+    activeIndex: gridIndex,
+    active: profileFocused && appForegrounded
+  });
+  // The dock's hide-on-scroll listener and the Animated.event driving the
+  // parallax both already ride this stream; the prefetcher joins them rather
+  // than replacing either.
+  const onGridScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      dock.handlers.onScroll?.(event);
+      gridPrefetch.onScroll(event);
+    },
+    [dock.handlers, gridPrefetch]
+  );
+  // Declared here rather than beside `scrollY` because it closes over
+  // `onGridScroll`, and a const read during render before its own declaration
+  // is a TDZ crash, not a stale value.
+  const onScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true, listener: onGridScroll }),
+    [onGridScroll, scrollY]
+  );
 
   // The single source of truth for "whose profile is this". Every Profile OS
   // tile reads its subject from here, so no destination has to work it out from
@@ -623,6 +662,9 @@ export function ProfileScreen({ route, navigation }: Props) {
       onEndReachedThreshold={0.55}
       onScroll={onScroll}
       onScrollBeginDrag={dock.handlers.onScrollBeginDrag}
+      onMomentumScrollEnd={gridPrefetch.onScrollSettled}
+      viewabilityConfig={gridViewabilityConfig}
+      onViewableItemsChanged={onGridViewableItemsChanged}
       scrollEventThrottle={dock.handlers.scrollEventThrottle}
       />
     </View>
