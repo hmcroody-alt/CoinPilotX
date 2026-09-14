@@ -216,6 +216,18 @@ MAX_IDEMPOTENCY_KEY_CHARS = 128
 MAX_LIST_LIMIT = 100
 DEFAULT_LIST_LIMIT = 30
 
+# --- Calendar window -------------------------------------------------------
+# A calendar asks for a window; it must never ask for a history. The month grid
+# is 42 cells and a year jump is twelve of those, so a year plus a month of
+# slack covers every legitimate request. Without a cap, "show me March 2045"
+# and "select every meeting I have ever been invited to" are the same query,
+# and the second one gets slower every year the product is alive.
+MAX_CALENDAR_SPAN_DAYS = 400
+# Belt to the span's braces: a window can be legal and still contain more
+# meetings than a grid can show. The cap is per request, not per day, so a
+# pathological month cannot outweigh the rest of the year.
+MAX_CALENDAR_ROWS = 500
+
 # --- Schedule bounds -------------------------------------------------------
 # A meeting may be scheduled arbitrarily far ahead; the product requirement is
 # explicitly "any future date", so the only ceiling here is a technical one.
@@ -2401,6 +2413,101 @@ def list_meetings(cur, *, user_id: int,
                      for m in upcoming[:capped]],
         "recent": [_project_meeting(cur, m, viewer_user_id=viewer)
                    for m in recent[:capped]],
+    }
+
+
+def _calendar_bounds(start: object, end: object) -> tuple[datetime, datetime]:
+    """Parse and sanity-check a requested window.
+
+    Both ends are required. A half-open request ("everything after March") is
+    refused rather than defaulted, because every sensible default here is a
+    guess about how much history the caller wanted, and the wrong guess is the
+    unbounded one.
+    """
+    first = _parse_iso(start)
+    last = _parse_iso(end)
+    if not first or not last:
+        raise PrivateMeetingRejected(
+            "A calendar window needs a start and an end.",
+            status=400, code="invalid_range")
+    if last <= first:
+        raise PrivateMeetingRejected(
+            "The calendar window ends before it starts.",
+            status=400, code="invalid_range")
+    if (last - first) > timedelta(days=MAX_CALENDAR_SPAN_DAYS):
+        raise PrivateMeetingRejected(
+            "That calendar window is too wide.",
+            status=400, code="range_too_wide")
+    return first, last
+
+
+def calendar_range(cur, *, user_id: int, start: object, end: object,
+                   timezone_name: object = "") -> dict:
+    """Meetings inside one bounded window, grouped by local day.
+
+    This is what the month grid reads, and it is deliberately a different
+    query from :func:`list_meetings`. That one answers "what is happening
+    around now" and is anchored to the present; a calendar is anchored to
+    whatever month the user scrolled to, which may be in 2045 and may contain
+    the only three meetings that matter. Filtering the recent-first list in
+    the client would show an empty March 2045 forever while the rows sat in
+    the table, and widening that list until far-future rows appeared would
+    mean loading a lifetime to render six weeks.
+
+    Days are keyed in ``timezone_name`` rather than UTC because "which day is
+    this meeting on" is a local question: 23:30 UTC on the 4th is the 5th in
+    Tokyo, and a grid that disagrees with the invitation is worse than no
+    grid. The zone the *host* chose still travels on each entry, so a viewer
+    in another country sees the cell in their own calendar and the time in the
+    organiser's words.
+    """
+    _require_enabled()
+    ensure_meetings_schema(cur)
+    viewer = int(user_id or 0)
+    first, last = _calendar_bounds(start, end)
+    zone_name = normalize_timezone(timezone_name)
+    zone = ZoneInfo(zone_name) if zone_name else timezone.utc
+    cur.execute(
+        f"""SELECT m.* FROM {MEETINGS_TABLE} m
+        JOIN {PARTICIPANTS_TABLE} p ON p.meeting_id = m.id
+        WHERE p.user_id=? AND p.state NOT IN (?, ?)
+          AND m.scheduled_start_at >= ? AND m.scheduled_start_at < ?
+        ORDER BY m.scheduled_start_at ASC LIMIT ?""",
+        (viewer, P_REMOVED, P_BLOCKED,
+         _to_utc_iso(first), _to_utc_iso(last), MAX_CALENDAR_ROWS + 1))
+    rows = [_row(item) for item in cur.fetchall()]
+    truncated = len(rows) > MAX_CALENDAR_ROWS
+    rows = rows[:MAX_CALENDAR_ROWS]
+    entries: list[dict] = []
+    days: dict[str, int] = {}
+    for meeting in rows:
+        moment = _parse_iso(meeting.get("scheduled_start_at"))
+        if not moment:
+            continue
+        day = moment.astimezone(zone).date().isoformat()
+        days[day] = days.get(day, 0) + 1
+        # A summary, not a projection. The grid draws a dot and a title; the
+        # participant list, the code and the call identity are all answers to
+        # questions a calendar cell never asks, and running the full
+        # projection for every meeting in a year would fan one request out
+        # into hundreds of participant queries.
+        entries.append({
+            "public_id": str(meeting.get("public_id") or ""),
+            "title": str(meeting.get("title") or ""),
+            "status": str(meeting.get("status") or ""),
+            "scheduled_start_at": str(meeting.get("scheduled_start_at") or ""),
+            "scheduled_timezone": str(meeting.get("scheduled_timezone") or ""),
+            "duration_minutes": int(meeting.get("duration_minutes") or 0),
+            "local_day": day,
+            "is_host": viewer == int(meeting.get("owner_user_id") or 0),
+        })
+    return {
+        "start": _to_utc_iso(first),
+        "end": _to_utc_iso(last),
+        "timezone": zone_name,
+        "days": days,
+        "meetings": entries,
+        "truncated": truncated,
     }
 
 

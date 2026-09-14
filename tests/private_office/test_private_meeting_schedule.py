@@ -594,6 +594,177 @@ def test_reschedule_is_audited_without_leaking_content(cur):
 
 
 # ---------------------------------------------------------------------------
+# The calendar window — a grid asks for six weeks, never for a lifetime
+# ---------------------------------------------------------------------------
+
+
+def _at(cur, when, *, title="Meeting", owner=HOST, minutes=30):
+    return meetings.create_meeting(
+        cur, owner_user_id=owner, title=title,
+        scheduled_start_at=when, duration_minutes=minutes)
+
+
+def test_a_month_window_returns_only_that_month(cur):
+    _at(cur, "2035-02-27T12:00:00+00:00", title="February")
+    _at(cur, "2035-03-14T12:00:00+00:00", title="March")
+    _at(cur, "2035-04-02T12:00:00+00:00", title="April")
+    window = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")
+    assert [m["title"] for m in window["meetings"]] == ["March"]
+    assert window["days"] == {"2035-03-14": 1}
+
+
+def test_a_far_future_month_is_reachable_without_loading_the_past(cur):
+    """The mutation: a calendar that filters the recent-first list client-side.
+
+    Twelve meetings this year would push a lone 2045 booking out of any
+    anchored-to-now window, and March 2045 would render empty forever while
+    the row sat in the table.
+    """
+    base = datetime.now(timezone.utc) + timedelta(days=1)
+    for day in range(12):
+        _at(cur, (base + timedelta(days=day)).isoformat(timespec="seconds"),
+              title=f"Soon {day}")
+    _at(cur, "2045-03-19T09:00:00+00:00", title="The one that matters")
+    window = meetings.calendar_range(
+        cur, user_id=HOST, start="2045-03-01T00:00:00+00:00",
+        end="2045-04-01T00:00:00+00:00")
+    assert [m["title"] for m in window["meetings"]] == ["The one that matters"]
+
+
+def test_an_unbounded_window_is_refused(cur):
+    """No half-open requests. Every default for the missing end is a guess,
+    and the wrong guess is 'all of it'."""
+    for start, end in [("", "2035-04-01T00:00:00+00:00"),
+                       ("2035-03-01T00:00:00+00:00", ""),
+                       ("", "")]:
+        _reject(lambda s=start, e=end: meetings.calendar_range(
+            cur, user_id=HOST, start=s, end=e), code="invalid_range", status=400)
+
+
+def test_a_window_wider_than_the_cap_is_refused(cur):
+    _reject(lambda: meetings.calendar_range(
+        cur, user_id=HOST, start="2030-01-01T00:00:00+00:00",
+        end="2045-01-01T00:00:00+00:00"), code="range_too_wide", status=400)
+
+
+def test_a_backwards_window_is_refused(cur):
+    _reject(lambda: meetings.calendar_range(
+        cur, user_id=HOST, start="2035-04-01T00:00:00+00:00",
+        end="2035-03-01T00:00:00+00:00"), code="invalid_range")
+
+
+def test_a_year_wide_window_is_allowed(cur):
+    """A year jump is a legitimate request; the cap is against histories."""
+    _at(cur, "2035-06-06T06:00:00+00:00", title="Mid-year")
+    window = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-01-01T00:00:00+00:00",
+        end="2035-12-31T00:00:00+00:00")
+    assert len(window["meetings"]) == 1
+
+
+def test_days_are_keyed_in_the_viewers_zone_not_utc(cur):
+    """23:30 UTC on the 4th is the 5th in Tokyo. A grid that disagrees with
+    the invitation is worse than no grid."""
+    _at(cur, "2035-03-04T23:30:00+00:00")
+    utc = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")
+    tokyo = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00", timezone_name="Asia/Tokyo")
+    assert utc["days"] == {"2035-03-04": 1}
+    assert tokyo["days"] == {"2035-03-05": 1}
+
+
+def test_the_hosts_chosen_zone_still_travels_with_each_entry(cur):
+    meetings.create_meeting(
+        cur, owner_user_id=HOST, scheduled_start_at="2035-03-04T09:00:00",
+        timezone_name="Asia/Tokyo", duration_minutes=30)
+    window = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00", timezone_name="America/New_York")
+    assert window["meetings"][0]["scheduled_timezone"] == "Asia/Tokyo"
+
+
+def test_an_unknown_viewer_zone_is_refused_not_coerced(cur):
+    _reject(lambda: meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00", timezone_name="Mars/Olympus"),
+        code="invalid_timezone")
+
+
+def test_two_meetings_on_one_day_count_once_each(cur):
+    _at(cur, "2035-03-14T09:00:00+00:00", title="Morning")
+    _at(cur, "2035-03-14T17:00:00+00:00", title="Evening")
+    window = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")
+    assert window["days"] == {"2035-03-14": 2}
+
+
+def test_the_window_is_half_open_at_the_end(cur):
+    """Adjacent months must not both claim the boundary instant, or a meeting
+    at midnight on the 1st appears twice as the user swipes."""
+    _at(cur, "2035-04-01T00:00:00+00:00", title="Boundary")
+    march = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")
+    april = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-04-01T00:00:00+00:00",
+        end="2035-05-01T00:00:00+00:00")
+    assert march["meetings"] == []
+    assert [m["title"] for m in april["meetings"]] == ["Boundary"]
+
+
+def test_a_stranger_sees_none_of_it(cur):
+    _at(cur, "2035-03-14T12:00:00+00:00", title="Private")
+    window = meetings.calendar_range(
+        cur, user_id=OTHER, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")
+    assert window["meetings"] == []
+    assert window["days"] == {}
+
+
+def test_a_removed_participant_stops_seeing_the_day(cur):
+    meeting = _at(cur, "2035-03-14T12:00:00+00:00", title="Board")
+    meetings.invite_users(cur, meeting_ref=meeting["public_id"],
+                          actor_user_id=HOST, user_ids=[OTHER])
+    assert meetings.calendar_range(
+        cur, user_id=OTHER, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")["days"] == {"2035-03-14": 1}
+    meetings.remove_participant(cur, meeting_ref=meeting["public_id"],
+                                actor_user_id=HOST, user_id=OTHER)
+    assert meetings.calendar_range(
+        cur, user_id=OTHER, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")["days"] == {}
+
+
+def test_an_entry_carries_no_meeting_code(cur):
+    """A grid cell draws a dot. The code is the thing that lets someone into
+    the room, and a month of them in one payload is a month of keys."""
+    _at(cur, "2035-03-14T12:00:00+00:00")
+    entry = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")["meetings"][0]
+    assert "meeting_code" not in entry
+    assert "call_public_id" not in entry
+    assert "participants" not in entry
+
+
+def test_the_row_cap_is_reported_not_silently_applied(cur, monkeypatch):
+    monkeypatch.setattr(meetings, "MAX_CALENDAR_ROWS", 2)
+    for hour in (9, 11, 13):
+        _at(cur, f"2035-03-14T{hour:02d}:00:00+00:00", title=f"At {hour}")
+    window = meetings.calendar_range(
+        cur, user_id=HOST, start="2035-03-01T00:00:00+00:00",
+        end="2035-04-01T00:00:00+00:00")
+    assert len(window["meetings"]) == 2
+    assert window["truncated"] is True
+
+
+# ---------------------------------------------------------------------------
 # Schema migration
 # ---------------------------------------------------------------------------
 

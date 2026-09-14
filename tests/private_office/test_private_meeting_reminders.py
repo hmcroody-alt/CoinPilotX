@@ -20,9 +20,12 @@ What these tests defend
 
 import json
 import os
+import re
 import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
+from html import unescape as html_unescape
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -507,6 +510,36 @@ def test_the_deep_link_names_the_room_not_the_meeting(cur, outbox):
     assert "/pulse/private-office" in body
     assert meeting["public_id"] not in body
     assert meeting.get("meeting_code", "") not in body or not meeting.get("meeting_code")
+
+
+def test_no_link_in_any_email_carries_a_credential(cur, outbox):
+    """The mutation: a "convenient" one-tap link.
+
+    Anything that made the link work without the recipient proving who they
+    are would have moved the meeting's access control into a forwarded email
+    and past the Office second lock. The link is an address, not a key —
+    whoever opens it still logs in and still gets gated.
+    """
+    meeting = _schedule(cur, guests=(GUEST,))
+    outbox.clear()
+    meetings.reschedule_meeting(cur, actor_user_id=HOST,
+                                meeting_ref=meeting["public_id"],
+                                scheduled_start_at=_future(days=60),
+                                timezone_name="UTC")
+    # An allowlist, not a blocklist. A blocklist of scary-sounding parameter
+    # names passes the day someone adds `?j=` -- this fails on anything the
+    # app-link builder did not put there on purpose.
+    permitted = {"pulse_app", "pulse_src"}
+    links = []
+    for message in outbox:
+        for field in ("text", "html"):
+            links += re.findall(r"https?://[^\s\"'<>]+",
+                                html_unescape(message[field]))
+    assert links, "the emails carry no links at all -- test proves nothing"
+    for link in links:
+        names = {pair.split("=")[0]
+                 for pair in urlparse(link).query.split("&") if pair}
+        assert names <= permitted, (link, names - permitted)
 
 
 def test_the_cancellation_email_carries_no_join_link(cur, outbox):

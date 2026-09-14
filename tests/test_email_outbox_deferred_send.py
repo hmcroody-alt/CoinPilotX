@@ -162,6 +162,72 @@ def test_the_manual_retry_still_rescues_a_due_row():
     assert _row(stuck)["status"] == "retry_ready"
 
 
+# --- 2b. an outage postpones, it does not lose -------------------------------
+
+
+def _outage():
+    """A provider that is down the way providers are actually down."""
+    def provider(to_email, subject, body, **kwargs):
+        raise ConnectionError("brevo unreachable")
+
+    return provider
+
+
+def test_a_provider_outage_leaves_the_row_for_the_next_pass():
+    """The mutation: a failed send that closes the row.
+
+    A reminder is not a newsletter. If the provider is down for the ninety
+    seconds around a 15-minute reminder, the row has to still be there
+    afterwards, because there is no upstream that will ever re-create it.
+    """
+    queue_id = _seed(send_after=_iso(datetime.utcnow() - timedelta(minutes=1)))
+    result = ns.process_queued_email_notifications(provider_send=_outage())
+    row = _row(queue_id)
+    assert result["retry"] == 1
+    assert row["status"] == "retry_ready"
+    assert row["next_retry_at"] != ""
+    assert row["processed_at"] == ""
+
+
+def test_the_postponed_row_sends_when_the_provider_returns():
+    queue_id = _seed(send_after=_iso(datetime.utcnow() - timedelta(minutes=1)))
+    ns.process_queued_email_notifications(provider_send=_outage())
+    # The backoff is the only thing holding it; step over it the way time does.
+    conn = user_context.connect()
+    conn.execute("UPDATE failed_email_queue SET next_retry_at='' WHERE id=?",
+                 (queue_id,))
+    conn.commit()
+    conn.close()
+    sent, provider = _collector()
+    ns.process_queued_email_notifications(provider_send=provider)
+    assert len(sent) == 1
+    assert _row(queue_id)["status"] == "sent"
+
+
+def test_an_outage_does_not_burn_the_whole_attempt_budget_at_once():
+    """One pass costs one attempt. A row that spent all five in a single
+    processor tick would dead-letter during any outage longer than a tick."""
+    queue_id = _seed(send_after=_iso(datetime.utcnow() - timedelta(minutes=1)))
+    ns.process_queued_email_notifications(provider_send=_outage())
+    assert int(_row(queue_id)["retry_count"]) == 1
+
+
+def test_a_persistent_outage_eventually_dead_letters_rather_than_spinning():
+    """Durable is not infinite. The row must reach a terminal state someone
+    can count, or a permanently bad address becomes permanent work."""
+    queue_id = _seed(send_after=_iso(datetime.utcnow() - timedelta(minutes=1)))
+    for _ in range(5):
+        conn = user_context.connect()
+        conn.execute("UPDATE failed_email_queue SET next_retry_at='' WHERE id=?",
+                     (queue_id,))
+        conn.commit()
+        conn.close()
+        ns.process_queued_email_notifications(provider_send=_outage())
+    row = _row(queue_id)
+    assert row["status"] == "dead_letter"
+    assert row["last_error"]
+
+
 # --- 3. the send-time veto ---------------------------------------------------
 
 

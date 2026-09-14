@@ -185,6 +185,36 @@ def api_private_meetings_list():
 
 
 @private_office_meetings_blueprint.route(
+    "/api/private-office/meetings/calendar", methods=["GET"])
+@auth_required
+def api_private_meetings_calendar():
+    """One bounded window of the calendar. No sweep runs here.
+
+    The sweep exists to stop the home screen advertising a meeting nobody is
+    in; a calendar cell for next March advertises nothing, and running a
+    write-taking sweep every time a user flicks between months would make
+    scrolling a year cost twelve sweeps of the same rows.
+    """
+    user, refusal = _entry()
+    if refusal:
+        return refusal
+
+    def work(cur):
+        return po_meetings.calendar_range(
+            cur,
+            user_id=user["user_id"],
+            start=request.args.get("start") or "",
+            end=request.args.get("end") or "",
+            timezone_name=request.args.get("timezone") or "")
+
+    window, err = _run(work, log_tag="PRIVATE_MEETINGS_CALENDAR_FAILED",
+                       fail_message="We could not load your calendar just now.")
+    if err:
+        return err
+    return po_http._no_store({"ok": True, "calendar": window})
+
+
+@private_office_meetings_blueprint.route(
     "/api/private-office/meetings/<meeting_ref>", methods=["GET"])
 def api_private_meetings_get(meeting_ref: str):
     user, refusal = _entry()
