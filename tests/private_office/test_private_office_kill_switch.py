@@ -1,12 +1,17 @@
-"""Stage 11 — ``PRIVATE_FACTS_ENABLED=false`` really turns Private Facts off.
+"""Stage 11 — ``PRIVATE_RELATIONSHIPS_ENABLED=false`` really turns the feature off.
 
-``private_facts`` is the only Private Office row that is both IMPLEMENTED and
-carries a ``flag_env``. That combination is what makes the kill switch load-
-bearing: every other unavailable capability is unavailable because no code
-exists, which no flag can undo and no client can misread. This one is live code
-behind a runtime switch, so "off" has to be a property that holds all the way
-out to the surfaces, not a value sitting in an env var that one code path
-happens to consult.
+``relationship_intelligence`` is live code behind a runtime switch, so "off"
+has to be a property that holds all the way out to the surfaces, not a value
+sitting in an env var that one code path happens to consult.
+
+This suite was written against ``private_facts``, which was then the Office's
+only IMPLEMENTED row carrying a ``flag_env``. That row still exists in the
+matrix and still honours its switch — the engine and the members' rows were
+never touched — but Private Facts is no longer part of the Private Office
+product surface, so ``office.product_state`` can no longer be asked about it.
+Half of what this file checks is exactly that surface, which is why it moved
+onto a capability the Office still holds rather than being softened to fit. The
+matrix-level checks are on generic code and read the same either way.
 
 The failure this file exists to prevent is a partial off. There are four places
 that independently decide whether a member reaches this capability — the matrix,
@@ -48,8 +53,8 @@ from services.private_office import feature_matrix as matrix  # noqa: E402
 from services.private_office import office  # noqa: E402
 from services.private_office import tiers  # noqa: E402
 
-FEATURE_ID = "private_facts"
-FLAG = "PRIVATE_FACTS_ENABLED"
+FEATURE_ID = "relationship_intelligence"
+FLAG = "PRIVATE_RELATIONSHIPS_ENABLED"
 
 ALL_TIERS = (
     tiers.TIER_FREE,
@@ -58,7 +63,7 @@ ALL_TIERS = (
     tiers.TIER_PRIVATE_OFFICE,
 )
 
-#: Tiers that would reach Private Facts if the switch were on. The switch is
+#: Tiers that would reach the feature if the switch were on. The switch is
 #: only interesting for these — for FREE and PREMIUM the row is already out of
 #: reach and a flag flip changes nothing observable.
 ENTITLED_TIERS = (tiers.TIER_PRIVATE, tiers.TIER_PRIVATE_OFFICE)
@@ -87,7 +92,7 @@ def _env(name, value):
 
 
 def flag(value):
-    """The Private Facts kill switch, for the duration."""
+    """The Relationship Intelligence kill switch, for the duration."""
     return _env(FLAG, value)
 
 
@@ -161,20 +166,26 @@ def test_the_office_lists_it_as_temporarily_off_rather_than_unbuilt():
         assert FEATURE_ID not in {r["feature_id"] for r in state["available"]}
 
 
-def test_switching_private_facts_off_leaves_the_capital_graph_alone():
-    """Two switches over one substrate must be two switches.
+def test_switching_one_capability_off_leaves_its_sibling_alone():
+    """Two switches over one office must be two switches.
 
-    ``capital_graph`` reads the same private store these facts are written to,
-    and it has its own flag on purpose: an operator disabling fact capture
-    during an incident must not silently lose the read surface as well, and vice
-    versa. This is the assertion that would fail if somebody later "simplified"
-    the two flags into one.
+    ``private_meetings`` reads the same private store and lives behind the same
+    second lock, and it has its own flag on purpose: an operator darkening the
+    relationship directory during an incident must not silently lose the
+    meetings surface as well, and vice versa. This is the assertion that would
+    fail if somebody later "simplified" the two flags into one.
+
+    Meetings is turned explicitly on here rather than left at its default,
+    because its default is off (Mission 54 fail-closed). Leaving it implicit
+    would make this test pass for the wrong reason on the day the default
+    changes — and would make an empty ``available`` set look like collateral
+    damage from the switch under test.
     """
-    with flag("false"):
+    with _env("PRIVATE_MEETINGS_ENABLED", "true"), flag("false"):
         state = office.product_state(tiers.TIER_PRIVATE_OFFICE)
         available = {row["feature_id"] for row in state["available"]}
-        assert "capital_graph" in available, (
-            "the Private Facts switch took the Capital Graph down with it")
+        assert "private_meetings" in available, (
+            "the Relationship Intelligence switch took Private Meetings down with it")
         assert FEATURE_ID not in available
         # And the office still opens, because something in it still works.
         assert state["state"] == office.ENTRY_AVAILABLE
