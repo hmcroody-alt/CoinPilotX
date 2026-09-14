@@ -1063,14 +1063,35 @@ def reconcile_stored_video_durations(limit: int = 25) -> dict:
     return {"candidates": len(candidates), "measured": measured, "blocked": blocked}
 
 
+def reconcile_messenger_media_backlog(limit: int = 50) -> dict:
+    """Give stranded messenger attachments their processing job back.
+
+    Runs before ``process_media_jobs`` so anything re-queued here is picked up in
+    the same cycle rather than the next one.
+    """
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    try:
+        result = messenger_media_foundation.reconcile_processing_backlog(cur, limit)
+        conn.commit()
+    except Exception as exc:
+        logging.warning("MESSENGER_MEDIA_RECONCILE_FAILED error=%s", str(exc)[:300])
+        result = {"error": str(exc)[:200]}
+    finally:
+        conn.close()
+    return result
+
+
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
+    messenger = reconcile_messenger_media_backlog(int(os.getenv("MEDIA_WORKER_MESSENGER_RECONCILE_BATCH", "50")))
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
     durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
-    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations}
+    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations}
 
 
 def main() -> None:

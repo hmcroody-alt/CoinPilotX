@@ -2055,6 +2055,28 @@
     `;
   }
 
+  /**
+   * The text of a bubble, which for an attachment nobody captioned is nothing.
+   *
+   * There is no caption field on the attach flow, so the picked file's name
+   * arrives as the message body: a photo bubble printed `IMG_5024.jpg` and a
+   * voice note printed `pulsesoc-voice-1784432743856.m4a` above its own player,
+   * as if someone had typed them. A voice note drops its body outright -- the
+   * player says everything the message means, and the recorder's filename is an
+   * implementation detail that is never shown. Other attachments drop only a
+   * body that reads as a filename, so a real caption survives.
+   */
+  function bubbleBodyText(item) {
+    const body = String(item?.body || "").trim();
+    if (!body) return "";
+    const type = String(item?.message_type || item?.type || "text").toLowerCase();
+    if (["voice", "audio", "voice_message", "voice_note", "audio_message"].includes(type)) return "";
+    if (["image", "photo", "gif", "video", "file", "document"].includes(type)) {
+      return /^[^\s/\\]+\.[A-Za-z0-9]{2,5}$/.test(body) ? "" : body;
+    }
+    return body;
+  }
+
   function messageHtml(item) {
     const mine = Number(item.sender_user_id || 0) === currentUserId || item.is_mine;
     const aiMessage = Boolean(item.is_ai || Number(item.sender_user_id || 0) === PULSE_AI_USER_ID);
@@ -2076,7 +2098,7 @@
         ${!mine ? `<strong>${escapeHtml(item.sender?.display_name || "PulseSoc member")}</strong>` : ""}
         ${reply}
         ${shield.risky || item?.pulse_shield?.flagged ? `<div class="pulse-shield-warning" data-shield-score="${Number(item?.pulse_shield?.score || shield.score || 0)}"><strong>Pulse Shield</strong><span>Suspicious link pattern detected. Review before opening.</span></div>` : ""}
-        ${item.body ? `<p>${linkifiedMessageHtml(item.body)}</p>` : ""}
+        ${bubbleBodyText(item) ? `<p>${linkifiedMessageHtml(bubbleBodyText(item))}</p>` : ""}
         ${attachments ? `<div class="attachments">${attachments}</div>` : ""}
         ${reactionSummary ? `<div class="reaction-summary">${reactionSummary}</div>` : ""}
         <small class="message-meta"><time>${escapeHtml(shortTime(item.created_at))}</time>${item.is_edited ? " / Edited" : ""}${mine ? ` <span class="delivery-state" data-state="${escapeAttr(messageDeliveryLabel(item).toLowerCase())}">${deliveryGlyph(messageDeliveryLabel(item))} ${escapeHtml(messageDeliveryLabel(item))}</span>` : ""}</small>
@@ -4307,7 +4329,13 @@
       sender_avatar: "",
       is_mine: true,
       message_type: messageTypeForSend(hasVoice, state.attachmentQueue.length ? [1] : []),
-      body: body.trim() || (hasVoice ? "Voice message" : "Attachment"),
+      // No stand-in label. What is sent to the server for an uncaptioned
+      // attachment is an empty body, so filling one in here made the optimistic
+      // bubble say "Voice message" or "Attachment" above its own player and then
+      // silently lose the line on the next load -- the same message, rendered
+      // two different ways either side of a refresh. The player and the
+      // attachment card already say what the message is.
+      body: body.trim(),
       reply_to_message_id: state.replyTo?.id || 0,
       delivery_status: "sending",
       delivery_state: "sending",
@@ -4380,8 +4408,8 @@
     const failed = state.messages.find((item) => Number(item.id) === Number(messageId) && item._failed);
     if (!failed || state.composerSending) return;
     const input = el("[data-message-input]");
-    if (input && !input.value.trim() && failed.body && !["Attachment", "Voice message"].includes(failed.body)) {
-      input.value = failed.body;
+    if (input && !input.value.trim() && bubbleBodyText(failed)) {
+      input.value = bubbleBodyText(failed);
       input.dispatchEvent(new Event("input", { bubbles: true }));
     }
     state.messages = state.messages.filter((item) => Number(item.id) !== Number(messageId));

@@ -25,7 +25,7 @@
 
 import React from "react";
 import { Dimensions, Image } from "react-native";
-import { act, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen } from "@testing-library/react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 jest.mock("expo-av", () => ({
@@ -217,14 +217,24 @@ function imageUris(): string[] {
     .filter(Boolean);
 }
 
-/** The geometry the media frame actually resolved to, as laid out. */
+/**
+ * The geometry the media frame actually resolved to, as laid out.
+ *
+ * Walks up rather than looking only at the immediate parent: the bitmap is
+ * rendered by a component inside the frame, not as a direct child of it, so
+ * "parent" is whatever wrapper currently sits between the two. Only the frame
+ * carries a numeric width AND height, which is what identifies it.
+ */
 function mediaSurfaceSize(): { width: number; height: number } | null {
   for (const node of screen.UNSAFE_queryAllByType(Image)) {
-    const parent = node.parent;
-    const style = parent?.props?.style;
-    const flat = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : style || {};
-    if (typeof flat.width === "number" && typeof flat.height === "number") {
-      return { width: flat.width, height: flat.height };
+    let ancestor = node.parent;
+    while (ancestor) {
+      const style = ancestor.props?.style;
+      const flat = Array.isArray(style) ? Object.assign({}, ...style.filter(Boolean)) : style || {};
+      if (typeof flat.width === "number" && typeof flat.height === "number") {
+        return { width: flat.width, height: flat.height };
+      }
+      ancestor = ancestor.parent;
     }
   }
   return null;
@@ -526,9 +536,29 @@ describe("photo messages render the preview rendition", () => {
     expect(imageUris()).not.toContain(PHOTO_ACCESS_URL);
   });
 
-  it("falls back to the original when the pipeline produced no preview", async () => {
+  it("falls back to the original once the preview is known not to be coming", async () => {
     // Deliberately unlike video: a photo is bounded by the photo size cap and
-    // the viewer is about to need those bytes anyway.
+    // the viewer is about to need those bytes anyway. `ready` with no thumbnail
+    // is the pipeline saying it finished and produced none.
+    mockGrants.set(PHOTO_MEDIA_ID, {
+      access_url: PHOTO_ACCESS_URL,
+      thumbnail_access_url: "",
+      attachment: { media_type: "photo", width: 3024, height: 4032, processing_status: "ready" }
+    });
+    await renderConversation([photoMessage()]);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(imageUris()).toContain(PHOTO_ACCESS_URL);
+  });
+
+  it("waits behind a skeleton rather than pulling the original while the preview is still being made", async () => {
+    // MUTATION: `thumbnailUrl || mediaUrl` — the unconditional fallback this
+    // replaced — fails here. A thread of ten photos whose renditions are still
+    // queued would otherwise download ten full-resolution originals to paint
+    // ten cards ~304pt wide, which is the blank-then-heavy behaviour that was
+    // reported.
     mockGrants.set(PHOTO_MEDIA_ID, {
       access_url: PHOTO_ACCESS_URL,
       thumbnail_access_url: "",
@@ -539,7 +569,7 @@ describe("photo messages render the preview rendition", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(imageUris()).toContain(PHOTO_ACCESS_URL);
+    expect(imageUris()).not.toContain(PHOTO_ACCESS_URL);
   });
 });
 
@@ -565,5 +595,164 @@ describe("media stays behind the access grant", () => {
     for (const uri of imageUris()) {
       expect(uri).not.toMatch(/\/api\/messages\/media\/\d+\/download$/);
     }
+  });
+});
+
+// =====================================================================
+// A frame that has no bitmap says which kind of "no bitmap" it is
+// =====================================================================
+
+describe("a frame without a bitmap is never a silent dark block", () => {
+  it("offers a retry on a video whose poster is never coming", async () => {
+    // MUTATION: replacing this with the bare icon placeholder it succeeded
+    // fails here. "Large blank container" was the reported symptom, and an
+    // unlabelled dark rectangle with no affordance is exactly that.
+    mockGrants.set(VIDEO_MEDIA_ID, {
+      access_url: MOVIE_ACCESS_URL,
+      thumbnail_access_url: "",
+      attachment: { media_type: "video", duration_ms: 30_000, processing_status: "failed" }
+    });
+    await renderConversation([videoMessage()]);
+
+    expect(await screen.findByText("Preview unavailable")).toBeTruthy();
+    expect(screen.getByText("Tap to retry")).toBeTruthy();
+  });
+
+  it("treats a finished job that produced no poster as unavailable, not as pending", async () => {
+    // MUTATION: gating the failure state on `isPosterFailed` alone fails here.
+    // `ready` with no thumbnail_key is the state every attachment stranded by
+    // the old dispatcher lands in once the backlog sweep gives up on it, and
+    // it is the single most common way a video ends up posterless.
+    mockGrants.set(VIDEO_MEDIA_ID, {
+      access_url: MOVIE_ACCESS_URL,
+      thumbnail_access_url: "",
+      attachment: { media_type: "video", duration_ms: 30_000, processing_status: "ready" }
+    });
+    await renderConversation([videoMessage()]);
+
+    expect(await screen.findByText("Preview unavailable")).toBeTruthy();
+    expect(screen.queryByText("Processing video…")).toBeNull();
+  });
+
+  it("offers a retry on a photo whose preview will not load", async () => {
+    // MUTATION: dropping the failure branch from MediaPreviewImage, so a photo
+    // that fails to decode leaves its correctly-shaped frame up empty forever,
+    // fails here.
+    mockGrants.set(PHOTO_MEDIA_ID, {
+      access_url: PHOTO_ACCESS_URL,
+      thumbnail_access_url: PHOTO_PREVIEW_URL,
+      attachment: { media_type: "photo", width: 3024, height: 4032, processing_status: "ready" }
+    });
+    await renderConversation([photoMessage()]);
+
+    const image = screen.UNSAFE_getAllByType(Image).find(
+      (node) => String((node.props as { source?: { uri?: string } }).source?.uri || "") === PHOTO_PREVIEW_URL
+    );
+    expect(image).toBeTruthy();
+    await act(async () => {
+      (image!.props as { onError?: () => void }).onError?.();
+    });
+
+    expect(screen.getByText("Preview unavailable")).toBeTruthy();
+    expect(screen.getByText("Tap to retry")).toBeTruthy();
+  });
+
+  it("re-grants the media when the failed preview is retried", async () => {
+    // MUTATION: a retry that only clears local state and never asks for a fresh
+    // signature fails here. An expired grant is the ordinary reason a URL we
+    // handed the loader stops working, and it is invisible from the renderer.
+    mockGrants.set(PHOTO_MEDIA_ID, {
+      access_url: PHOTO_ACCESS_URL,
+      thumbnail_access_url: PHOTO_PREVIEW_URL,
+      attachment: { media_type: "photo", width: 3024, height: 4032, processing_status: "ready" }
+    });
+    await renderConversation([photoMessage()]);
+
+    const image = screen.UNSAFE_getAllByType(Image).find(
+      (node) => String((node.props as { source?: { uri?: string } }).source?.uri || "") === PHOTO_PREVIEW_URL
+    );
+    await act(async () => {
+      (image!.props as { onError?: () => void }).onError?.();
+    });
+    const before = mockAccessRequests.length;
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText("Preview unavailable. Tap to retry"));
+      await Promise.resolve();
+    });
+
+    expect(mockAccessRequests.length).toBeGreaterThan(before);
+  });
+});
+
+// =====================================================================
+// Voice notes say nothing in text
+// =====================================================================
+
+describe("a voice note carries no body text", () => {
+  const VOICE_MEDIA_ID = 4403;
+  const VOICE_ACCESS_URL = "https://media.pulsesoc.test/grants/voice.m4a?token=voice";
+
+  function voiceMessage(overrides: Partial<MessengerMessage> = {}): MessengerMessage {
+    return {
+      id: 503,
+      message_id: 503,
+      conversation_id: CONVERSATION_ID,
+      sender_id: 9,
+      sender_display_name: "Fixture Sender",
+      is_mine: false,
+      message_type: "voice",
+      body: "",
+      mime_type: "audio/m4a",
+      duration_seconds: 12,
+      media_upload_id: VOICE_MEDIA_ID,
+      media_url: `/api/messages/media/${VOICE_MEDIA_ID}/download`,
+      created_at: "2026-09-13T10:03:00Z",
+      ...overrides
+    } as MessengerMessage;
+  }
+
+  beforeEach(() => {
+    invalidateMessengerMediaAccess(VOICE_MEDIA_ID);
+    mockGrants.set(VOICE_MEDIA_ID, {
+      access_url: VOICE_ACCESS_URL,
+      thumbnail_access_url: "",
+      attachment: { media_type: "voice", duration_ms: 12_000, processing_status: "ready" }
+    });
+  });
+
+  it("never prints the words 'Voice message' in the bubble", async () => {
+    // MUTATION: restoring a label above the player fails here. The play
+    // control, waveform, length and speed already say what the message is, and
+    // a line of text repeating it is the whole reported complaint.
+    await renderConversation([voiceMessage({ body: "Voice message" })]);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId(BUBBLE_BODY_TEST_ID)).toBeNull();
+    expect(screen.queryByText("Voice message")).toBeNull();
+  });
+
+  it("never prints the recorder's filename either", async () => {
+    // MUTATION: swapping the removed label for the filename — the other half of
+    // the brief — fails here. This is a real body from production.
+    await renderConversation([voiceMessage({ body: "pulsesoc-voice-1784432743856.m4a" })]);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId(BUBBLE_BODY_TEST_ID)).toBeNull();
+    expect(screen.queryByText("pulsesoc-voice-1784432743856.m4a")).toBeNull();
+  });
+
+  it("still plays: the controls survive the label's removal", async () => {
+    // MUTATION: removing the label by removing the card fails here. The two
+    // changes are independent and this file must not accept one for the other.
+    await renderConversation([voiceMessage()]);
+
+    expect(await screen.findByLabelText("Play voice message")).toBeTruthy();
+    expect(screen.getByText("0:12")).toBeTruthy();
+    expect(screen.getByText("1x")).toBeTruthy();
   });
 });

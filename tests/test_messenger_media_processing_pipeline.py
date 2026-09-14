@@ -295,13 +295,24 @@ class TheWorkerActuallyConsumesTheseJobs(unittest.TestCase):
 
     def test_the_enqueued_types_and_the_consumed_types_are_the_same_set(self):
         """The two lists drifting apart is the original bug, restated."""
+        self.assertEqual(
+            set(foundation.PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.values()),
+            foundation.PROCESSING_JOB_TYPES,
+        )
+
+    def test_both_the_attach_path_and_the_sweep_enqueue_from_that_one_table(self):
+        """A second copy of the map is how the two sets drift apart again.
+
+        The sweep re-queues stranded attachments; if it decided job types for
+        itself, a media type added to one table and not the other would strand
+        exactly the attachments the sweep exists to rescue.
+        """
         source = Path(foundation.__file__).read_text(encoding="utf-8")
-        enqueued = set()
-        table = source.split("def _enqueue_processing_jobs(")[1].split("}.get(media_type)")[0]
-        for line in table.splitlines():
-            if '"messenger_' in line:
-                enqueued.add(line.split('"messenger_')[1].split('"')[0])
-        self.assertEqual({f"messenger_{name}" for name in enqueued}, foundation.PROCESSING_JOB_TYPES)
+        enqueue = source.split("def _enqueue_processing_jobs(")[1].split("\ndef ")[0]
+        sweep = source.split("def reconcile_processing_backlog(")[1].split("\ndef ")[0]
+        for body in (enqueue, sweep):
+            self.assertIn("PROCESSING_JOB_TYPE_BY_MEDIA_TYPE", body)
+            self.assertNotIn('"messenger_photo_thumbnail"', body)
 
 
 @unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required to generate and probe fixtures")
@@ -386,6 +397,158 @@ class ThePreviewIsDeliveredSeparatelyFromTheOriginal(ProcessingHarness):
         target = source.split("def attachment_thumbnail_target(")[1].split("\ndef ")[0]
         self.assertIn("THUMBNAIL_MIME", target)
         self.assertNotIn('_row_get(row, "mime_type"', target)
+
+
+class StrandedAttachmentsGetTheirJobBack(ProcessingHarness):
+    """The historical-media half of the fix.
+
+    Fixing the dispatcher only helps uploads that happen after the deploy. Every
+    attachment enqueued while the dispatcher was retiring messenger jobs as
+    *done* is stranded in a state nothing re-enters: a terminal job row and an
+    attachment still at ``queued``. A production read of this exact SQL found 62
+    of them. Re-uploading is not an option the user has, so the sweep has to be
+    what recovers them.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # ensure_schema() does not own pulse_jobs -- the media engine does.
+        self.cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pulse_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_type TEXT, target_type TEXT, target_id INTEGER,
+                status TEXT, attempts INTEGER, max_attempts INTEGER,
+                created_at TEXT, updated_at TEXT)
+            """
+        )
+        self.conn.commit()
+
+    def _job(self, attachment_id, job_type, status):
+        self.cur.execute(
+            """
+            INSERT INTO pulse_jobs (job_type, target_type, target_id, status, attempts, max_attempts, created_at, updated_at)
+            VALUES (?, 'message_attachment', ?, ?, 1, 3, ?, ?)
+            """,
+            (job_type, attachment_id, status, foundation.now_iso(), foundation.now_iso()),
+        )
+
+    def _jobs(self, attachment_id, status=None):
+        sql = "SELECT * FROM pulse_jobs WHERE target_type='message_attachment' AND target_id=?"
+        args = [attachment_id]
+        if status:
+            sql += " AND status=?"
+            args.append(status)
+        self.cur.execute(sql, args)
+        return self.cur.fetchall()
+
+    def test_an_attachment_whose_job_was_silently_retired_is_queued_again(self):
+        attachment_id = self._attachment("photo", "image/jpeg", "messenger/44/old.jpg")
+        self._job(attachment_id, "messenger_photo_thumbnail", "done")
+
+        result = foundation.reconcile_processing_backlog(self.cur)
+
+        self.assertEqual(result["requeued"], 1)
+        pending = self._jobs(attachment_id, "pending")
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["job_type"], "messenger_photo_thumbnail")
+        # Recovery must not require the sender to send the media again.
+        self.assertEqual(self._row(attachment_id)["storage_key"], "messenger/44/old.jpg")
+
+    def test_each_media_type_is_requeued_with_its_own_job_type(self):
+        wanted = {
+            self._attachment("photo", "image/jpeg", "messenger/44/a.jpg"): "messenger_photo_thumbnail",
+            self._attachment("video", "video/mp4", "messenger/44/b.mp4"): "messenger_video_metadata_thumbnail",
+            self._attachment("voice", "audio/m4a", "messenger/44/c.m4a"): "messenger_voice_waveform",
+        }
+        foundation.reconcile_processing_backlog(self.cur)
+        for attachment_id, job_type in wanted.items():
+            pending = self._jobs(attachment_id, "pending")
+            self.assertEqual([row["job_type"] for row in pending], [job_type])
+
+    def test_an_attachment_with_live_work_is_not_given_a_second_job(self):
+        """MUTATION: drop the NOT EXISTS clause and the sweep multiplies the queue.
+
+        The sweep runs every worker cycle. Without the liveness check it would
+        add a job per cycle per attachment, and the duplicates would race each
+        other writing the same thumbnail key.
+        """
+        pending_id = self._attachment("photo", "image/jpeg", "messenger/44/pending.jpg")
+        self._job(pending_id, "messenger_photo_thumbnail", "pending")
+        running_id = self._attachment("video", "video/mp4", "messenger/44/running.mp4")
+        self._job(running_id, "messenger_video_metadata_thumbnail", "processing")
+
+        result = foundation.reconcile_processing_backlog(self.cur)
+
+        self.assertEqual(result["candidates"], 0)
+        self.assertEqual(len(self._jobs(pending_id)), 1)
+        self.assertEqual(len(self._jobs(running_id)), 1)
+
+    def test_an_attachment_that_has_had_its_rounds_is_marked_failed_not_requeued(self):
+        """MUTATION: remove MAX_PROCESSING_ROUNDS and this row is re-queued forever.
+
+        An attachment whose bytes are genuinely gone can never succeed. Marking
+        it failed is also what lets the bubble stop promising a preview and show
+        the retry affordance instead.
+        """
+        attachment_id = self._attachment("photo", "image/jpeg", "messenger/44/gone.jpg")
+        for _ in range(foundation.MAX_PROCESSING_ROUNDS):
+            self._job(attachment_id, "messenger_photo_thumbnail", "done")
+
+        result = foundation.reconcile_processing_backlog(self.cur)
+
+        self.assertEqual((result["requeued"], result["exhausted"]), (0, 1))
+        self.assertEqual(len(self._jobs(attachment_id, "pending")), 0)
+        row = self._row(attachment_id)
+        self.assertEqual(row["processing_status"], "failed")
+        self.assertEqual(row["error_code"], "processing_unrecoverable")
+
+    def test_the_sweep_converges_instead_of_running_forever(self):
+        attachment_id = self._attachment("voice", "audio/m4a", "messenger/44/loop.m4a")
+        self._job(attachment_id, "messenger_voice_waveform", "done")
+        for _ in range(foundation.MAX_PROCESSING_ROUNDS + 3):
+            foundation.reconcile_processing_backlog(self.cur)
+            self.cur.execute(
+                "UPDATE pulse_jobs SET status='done' WHERE target_id=? AND status='pending'", (attachment_id,)
+            )
+        self.assertEqual(self._row(attachment_id)["processing_status"], "failed")
+        self.assertLessEqual(len(self._jobs(attachment_id)), foundation.MAX_PROCESSING_ROUNDS)
+
+    def test_attachments_that_are_not_stranded_are_left_alone(self):
+        ready_id = self._attachment("photo", "image/jpeg", "messenger/44/ready.jpg")
+        self.cur.execute("UPDATE message_attachments SET processing_status='ready' WHERE id=?", (ready_id,))
+        deleted_id = self._attachment("video", "video/mp4", "messenger/44/deleted.mp4")
+        self.cur.execute(
+            "UPDATE message_attachments SET deleted_at=? WHERE id=?", (foundation.now_iso(), deleted_id)
+        )
+        blocked_id = self._attachment("photo", "image/jpeg", "messenger/44/blocked.jpg", upload_status="blocked")
+        document_id = self._attachment("document", "application/pdf", "messenger/44/doc.pdf")
+        pending_upload_id = self._attachment("photo", "image/jpeg", "messenger/44/half.jpg", upload_status="pending")
+
+        result = foundation.reconcile_processing_backlog(self.cur)
+
+        self.assertEqual(result, {"candidates": 0, "requeued": 0, "exhausted": 0})
+        for attachment_id in (ready_id, deleted_id, blocked_id, document_id, pending_upload_id):
+            self.assertEqual(self._jobs(attachment_id), [])
+
+    def test_a_sweep_takes_a_bounded_bite(self):
+        for index in range(7):
+            self._attachment("photo", "image/jpeg", f"messenger/44/bulk{index}.jpg")
+        first = foundation.reconcile_processing_backlog(self.cur, limit=3)
+        self.assertEqual(first["requeued"], 3)
+        self.cur.execute("UPDATE pulse_jobs SET status='done' WHERE status='pending'")
+        second = foundation.reconcile_processing_backlog(self.cur, limit=3)
+        self.assertEqual(second["requeued"], 3)
+
+    def test_the_worker_runs_the_sweep_before_it_drains_the_queue(self):
+        """Ordering is the difference between healing in one cycle and two."""
+        source = (Path(foundation.__file__).resolve().parents[1] / "media_worker.py").read_text(encoding="utf-8")
+        cycle = source.split("def run_cycle(")[1].split("\ndef ")[0]
+        self.assertIn("reconcile_messenger_media_backlog", cycle)
+        self.assertLess(
+            cycle.index("reconcile_messenger_media_backlog"),
+            cycle.index("jobs = process_media_jobs"),
+        )
 
 
 if __name__ == "__main__":

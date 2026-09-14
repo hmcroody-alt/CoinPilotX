@@ -2285,6 +2285,7 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     sourceUrl: mediaUrl
   };
   if (type === "image" || type === "gif") {
+    const photoPreviewUrl = thumbnailUrl || (isPreviewTerminal(mediaAccess.meta.processingStatus) ? mediaUrl : "");
     return (
       <>
         <Pressable
@@ -2295,12 +2296,21 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
           accessibilityHint={t("messaging:chat.a11yOpensViewer")}
           onPress={() => setViewerOpen(true)}
         >
-          {/* A photo may fall back to the original because its size is bounded by
-              the photo limit and the viewer is about to need those bytes anyway.
-              Video deliberately does not: there is no bound worth falling back
-              through, so a missing poster stays missing. */}
+          {/* The derived rendition first, always. A photo may fall back to the
+              original because its size is bounded by the photo limit and the
+              viewer is about to need those bytes anyway — but only once the
+              rendition is known not to be coming, otherwise every bubble in a
+              thread pulls a full-resolution image down to paint a card a few
+              hundred points wide. Video deliberately does not fall back at all:
+              there is no bound worth falling back through. */}
           <MediaSurface meta={mediaAccess.meta} message={message}>
-            <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.mediaFill} resizeMode="cover" onError={retryMedia} />
+            {photoPreviewUrl ? (
+              <MediaPreviewImage uri={photoPreviewUrl} onRetry={retryMedia} />
+            ) : (
+              <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
+                <ActivityIndicator color={colors.muted} size="small" />
+              </View>
+            )}
           </MediaSurface>
         </Pressable>
         <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
@@ -2345,6 +2355,77 @@ function clamp(value: number, min: number, max: number) {
 }
 
 /**
+ * The bitmap inside a media frame, with the two states a frame is allowed to be
+ * in while it has no bitmap.
+ *
+ * Handing `<Image>` a URL and drawing nothing else is what made a photo read as
+ * a blank card: the frame is sized from the grant's dimensions and painted
+ * immediately, so between layout and the first byte there is a correctly-shaped
+ * rectangle of surface colour with nothing in it, and a photo that fails to
+ * decode leaves that rectangle up forever. Neither state says anything, so both
+ * look like the same bug.
+ *
+ * So a load in flight gets a skeleton, and a load that ended badly gets a
+ * legible failure with a retry on it. `onError` re-grants once through the
+ * access layer before this gives up, because an expired signature is the
+ * ordinary cause and it is invisible from here.
+ */
+function MediaPreviewImage({ uri, onRetry, onLoad }: { uri: string; onRetry?: () => void; onLoad?: () => void }) {
+  const { t } = useTranslation();
+  const [phase, setPhase] = useState<"loading" | "ready" | "failed">("loading");
+  // Keyed on the URL: a re-grant hands over a new signature for the same
+  // picture, and leaving the previous attempt's `failed` up would make the
+  // retry look like it did nothing.
+  useEffect(() => { setPhase(uri ? "loading" : "failed"); }, [uri]);
+  const retry = useCallback(() => {
+    setPhase("loading");
+    onRetry?.();
+  }, [onRetry]);
+  if (phase === "failed") {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${t("messaging:chat.videoPosterFailed")}. ${t("messaging:chat.tapToRetry")}`}
+        style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaFailed]}
+        onPress={retry}
+      >
+        <Ionicons name="alert-circle-outline" size={22} color={colors.danger} />
+        <Text style={styles.mediaFailedTitle}>{t("messaging:chat.videoPosterFailed")}</Text>
+        <Text style={styles.mediaFailedHint}>{t("messaging:chat.tapToRetry")}</Text>
+      </Pressable>
+    );
+  }
+  return (
+    <>
+      <Image
+        source={{ uri }}
+        style={styles.mediaFill}
+        resizeMode="cover"
+        onLoad={() => { setPhase("ready"); onLoad?.(); }}
+        onError={() => setPhase("failed")}
+      />
+      {phase === "loading" ? (
+        <View pointerEvents="none" style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
+          <ActivityIndicator color={colors.muted} size="small" />
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * Whether a preview that is absent is absent for good.
+ *
+ * A photo falls back to its original only here. While the derived rendition is
+ * still coming the frame shows a skeleton instead, so the ordinary path never
+ * pulls a full-resolution image down to paint a card a few hundred points wide.
+ */
+function isPreviewTerminal(status: string) {
+  const value = String(status || "").toLowerCase();
+  return !isPosterPending(value);
+}
+
+/**
  * A video message, as a poster with a play control over it.
  *
  * What this replaced drew the words "Video attachment" and "Open viewer" over a
@@ -2369,7 +2450,6 @@ function VideoMessageCard({ message, access, viewerItem }: {
   const durationMs = access.meta.durationMs || Number(message.duration_seconds || 0) * 1000;
   const duration = formatMediaDuration(durationMs);
   const processing = !poster && isPosterPending(access.meta.processingStatus);
-  const posterFailed = !poster && isPosterFailed(access.meta.processingStatus);
   return (
     <Pressable
       accessibilityRole="button"
@@ -2381,15 +2461,26 @@ function VideoMessageCard({ message, access, viewerItem }: {
     >
       <MediaSurface meta={access.meta} message={message}>
         {poster ? (
-          <Image source={{ uri: poster }} style={styles.mediaFill} resizeMode="cover" onError={access.retry} />
-        ) : (
-          <View style={[styles.mediaFill, styles.mediaPlaceholder]}>
-            <Ionicons
-              name={posterFailed ? "alert-circle-outline" : "videocam-outline"}
-              size={26}
-              color={posterFailed ? colors.danger : colors.muted}
-            />
+          <MediaPreviewImage uri={poster} onRetry={access.retry} />
+        ) : processing ? (
+          // Still being cut. A skeleton, not a dark block: the frame has to read
+          // as "coming" rather than as the finished article.
+          <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
+            <ActivityIndicator color={colors.muted} size="small" />
           </View>
+        ) : (
+          // No poster and nothing left to wait for. Says so, and offers the one
+          // re-grant that fixes the ordinary cause.
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${t("messaging:chat.videoPosterFailed")}. ${t("messaging:chat.tapToRetry")}`}
+            style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaFailed]}
+            onPress={access.retry}
+          >
+            <Ionicons name="alert-circle-outline" size={22} color={colors.danger} />
+            <Text style={styles.mediaFailedTitle}>{t("messaging:chat.videoPosterFailed")}</Text>
+            <Text style={styles.mediaFailedHint}>{t("messaging:chat.tapToRetry")}</Text>
+          </Pressable>
         )}
         {/* The play affordance stays up in every state: the asset is playable
             even when its poster is not ready, so hiding it would make a
@@ -2407,11 +2498,6 @@ function VideoMessageCard({ message, access, viewerItem }: {
             <Text style={styles.videoStatusText}>{t("messaging:chat.videoProcessing")}</Text>
           </View>
         ) : null}
-        {posterFailed ? (
-          <View pointerEvents="none" style={styles.videoStatusBadge}>
-            <Text style={styles.videoStatusText}>{t("messaging:chat.videoPosterFailed")}</Text>
-          </View>
-        ) : null}
       </MediaSurface>
       <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
     </Pressable>
@@ -2421,10 +2507,6 @@ function VideoMessageCard({ message, access, viewerItem }: {
 /** Statuses that mean a poster is still coming. `queued` included: the job row exists. */
 function isPosterPending(status: string) {
   return ["queued", "processing"].includes(String(status || "").toLowerCase());
-}
-
-function isPosterFailed(status: string) {
-  return ["failed", "rejected_too_long"].includes(String(status || "").toLowerCase());
 }
 
 /**
@@ -2617,6 +2699,13 @@ function displayMessageBody(message: MessengerMessage) {
   const body = message.body || "";
   if (!body) return "";
   const type = (message.message_type || "text").toLowerCase();
+  // A voice note has no body, whatever the row says. The card already carries
+  // everything it means — play, waveform, length, speed — so a line of text
+  // above it is either the word "Voice message", which repeats the card, or the
+  // recorder's generated filename, which is an implementation detail and is
+  // deliberately never shown. There is no caption field on this flow, so
+  // nothing a person typed can be lost here.
+  if (isVoiceType(type)) return "";
   if (["image", "gif", "video"].includes(type)) return looksLikeFilename(body) ? "" : body;
   if (["file", "document"].includes(type)) return looksLikeDocumentName(body) ? "" : body;
   return body;
@@ -2957,6 +3046,12 @@ const styles = StyleSheet.create({
   },
   mediaFill: { height: "100%", width: "100%" },
   mediaPlaceholder: { alignItems: "center", justifyContent: "center" },
+  // Absolute so it sits over the `<Image>` it is covering rather than pushing it
+  // out of the frame.
+  mediaSkeleton: { backgroundColor: "rgba(255,255,255,0.04)", bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
+  mediaFailed: { backgroundColor: "rgba(255,255,255,0.04)", bottom: 0, gap: 3, left: 0, padding: 12, position: "absolute", right: 0, top: 0 },
+  mediaFailedTitle: { color: colors.text, fontSize: 12, fontWeight: "800", textAlign: "center" },
+  mediaFailedHint: { color: colors.muted, fontSize: 11, fontWeight: "700", textAlign: "center" },
   videoPlayBadge: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.92)",
