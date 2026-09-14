@@ -201,6 +201,11 @@ ACTION_MEETING_MESSAGE = "PRIVATE_MEETING_MESSAGE"
 ACTION_MEETING_READ = "PRIVATE_MEETING_READ"
 ACTION_MEETING_CODE_ROTATED = "PRIVATE_MEETING_CODE_ROTATED"
 ACTION_MEETING_ARTIFACT_SAVE = "PRIVATE_MEETING_ARTIFACT_SAVE"
+#: A reschedule is its own verb, not a generic update. "When was this meeting
+#: moved, and by whom" has to be answerable from the log alone: the row that
+#: held the old time is overwritten in place, so without this verb the previous
+#: schedule leaves no trace anywhere in the system.
+ACTION_MEETING_RESCHEDULE = "PRIVATE_MEETING_RESCHEDULE"
 
 # Private Conversations vocabulary. The classification layer writes no message
 # rows, so there is deliberately no PRIVATE_CONVERSATION_MESSAGE action here —
@@ -283,6 +288,7 @@ ACTIONS: tuple[str, ...] = (
     ACTION_MEETING_READ,
     ACTION_MEETING_CODE_ROTATED,
     ACTION_MEETING_ARTIFACT_SAVE,
+    ACTION_MEETING_RESCHEDULE,
     ACTION_CONVERSATION_CLASSIFY,
     ACTION_CONVERSATION_SENSITIVITY_CHANGE,
     ACTION_CONVERSATION_LINK,

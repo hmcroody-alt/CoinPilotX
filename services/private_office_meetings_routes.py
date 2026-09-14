@@ -29,6 +29,11 @@ from flask import Blueprint, request
 from services import private_office_routes as po_http
 from services import pulsesoc_communications_engine as call_engine
 from services.private_office import meetings as po_meetings
+# Declarative only — it adds no check. `_entry()` below is what actually
+# refuses. The stamp exists so the route-auth gate can tell a route that
+# forgot its gate from one that never needed it; the older routes in this
+# file predate the gate's baseline and are grandfathered, new ones are not.
+from services.route_auth import auth_required
 
 MEETINGS_FEATURE_ID = "private_meetings"
 
@@ -104,7 +109,23 @@ def _run(work, *, log_tag: str, fail_message: str):
     "/api/private-office/meetings", methods=["POST"])
 def api_private_meetings_create():
     """``{"instant": true}`` starts a meeting now; otherwise
-    ``scheduled_start_at`` (ISO) + optional ``duration_minutes`` schedules one."""
+    ``scheduled_start_at`` + ``duration_minutes`` schedules one.
+
+    ``scheduled_start_at`` is either an absolute instant (with an offset, e.g.
+    ``2032-03-14T09:00:00-04:00``) or a naive wall-clock time to be read in
+    ``timezone`` (an IANA name). The model resolves both to canonical UTC and
+    rejects what it cannot resolve — a time that does not exist on the chosen
+    date, a past instant, a duration of zero.
+
+    ``idempotency_key`` is optional and opaque: repeating a request with the
+    same key returns the meeting the first one created instead of a second
+    meeting, which is what a double-tapped Schedule button looks like.
+
+    Note that ``duration_minutes`` is forwarded raw rather than coerced here.
+    ``int("soon")`` would raise inside the route and surface as a 503
+    "unavailable" — an infrastructure answer to a malformed-input question.
+    The model's validator turns it into a 400 with a code.
+    """
     user, refusal = _entry()
     if refusal:
         return refusal
@@ -116,7 +137,10 @@ def api_private_meetings_create():
             owner_user_id=user["user_id"],
             title=str(body.get("title") or ""),
             scheduled_start_at=str(body.get("scheduled_start_at") or ""),
-            duration_minutes=int(body.get("duration_minutes") or 0),
+            timezone_name=str(body.get("timezone") or ""),
+            agenda=str(body.get("agenda") or ""),
+            duration_minutes=body.get("duration_minutes"),
+            idempotency_key=str(body.get("idempotency_key") or ""),
             waiting_room_enabled=bool(body.get("waiting_room_enabled", True)),
             instant=bool(body.get("instant")),
         )
@@ -207,6 +231,47 @@ def api_private_meetings_start(meeting_ref: str):
             cur, actor_user_id=user["user_id"], meeting_ref=meeting_ref),
         log_tag="PRIVATE_MEETINGS_START_FAILED",
         fail_message="We could not start the meeting just now.")
+
+
+@private_office_meetings_blueprint.route(
+    "/api/private-office/meetings/<meeting_ref>/reschedule", methods=["POST"])
+@auth_required
+def api_private_meetings_reschedule(meeting_ref: str):
+    """Move or re-title a scheduled meeting. Host only.
+
+    Send only the fields that changed. An omitted field is left alone; a field
+    sent as ``""`` clears it. That distinction matters because the client edits
+    one thing at a time — treating "absent" as "blank" would erase the agenda
+    every time someone fixed a typo in the title — so the route reads
+    ``body.get(name)`` with a ``None`` default rather than coercing to a string
+    the way the create route can afford to.
+
+    Moving the meeting in time bumps ``schedule_version``, which invalidates
+    every reminder queued against the old one. Changing only the title does
+    not.
+    """
+    user, refusal = _entry()
+    if refusal:
+        return refusal
+    body = _body()
+
+    def work(cur):
+        return po_meetings.reschedule_meeting(
+            cur,
+            actor_user_id=user["user_id"],
+            meeting_ref=meeting_ref,
+            scheduled_start_at=body.get("scheduled_start_at"),
+            timezone_name=body.get("timezone"),
+            duration_minutes=body.get("duration_minutes"),
+            title=body.get("title"),
+            agenda=body.get("agenda"),
+        )
+
+    meeting, err = _run(work, log_tag="PRIVATE_MEETINGS_RESCHEDULE_FAILED",
+                        fail_message="We could not update the meeting just now.")
+    if err:
+        return err
+    return po_http._no_store({"ok": True, "meeting": meeting}, 200)
 
 
 @private_office_meetings_blueprint.route(

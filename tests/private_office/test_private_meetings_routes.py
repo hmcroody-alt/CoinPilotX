@@ -206,6 +206,18 @@ def _service(work):
 _STATE = {}  # ids threaded between stages
 
 
+def _future_iso(days: int = 30, hour: int = 15) -> str:
+    """An instant always in the future — the API refuses a past schedule.
+
+    A literal date would pass until it arrives and then fail for a reason
+    unrelated to the route under test.
+    """
+    from datetime import timedelta
+    moment = (meetings_mod._now_dt() + timedelta(days=days)).replace(
+        hour=hour, minute=0, second=0, microsecond=0)
+    return moment.isoformat(timespec="seconds")
+
+
 # ---------------------------------------------------------------------------
 # Gate order + the fail-closed default
 # ---------------------------------------------------------------------------
@@ -310,7 +322,7 @@ def stage_create():
 
     resp = client.post("/api/private-office/meetings",
                        json={"title": "Planning sync",
-                             "scheduled_start_at": "2026-09-08T15:00:00+00:00",
+                             "scheduled_start_at": _future_iso(),
                              "duration_minutes": 45})
     scheduled = (resp.get_json() or {}).get("meeting") or {}
     _STATE["scheduled_id"] = scheduled.get("public_id") or ""
