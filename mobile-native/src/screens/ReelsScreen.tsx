@@ -1,6 +1,6 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useIsFocused } from "@react-navigation/native";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -60,6 +60,8 @@ import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
+import { primaryMediaList } from "../core/media/mediaDescriptors";
+import { useMediaPrefetch, usePagerDirection } from "../core/media/useMediaPrefetch";
 import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
@@ -215,6 +217,23 @@ export function ReelsScreen({ route, navigation }: Props) {
    * asserts against it.
    */
   const playbackAllowed = isFocused && appActive && !overlayOpen;
+  /**
+   * Warm the reel after this one before the user swipes to it.
+   *
+   * The gate is `isFocused && appActive`, not `playbackAllowed`: an open comment
+   * sheet stops playback but is exactly when the next reel should be getting
+   * ready, since the user is about to close it and keep going. Prefetching is
+   * not playing (§23), so the two conditions are allowed to differ.
+   */
+  const reelMedia = useMemo(() => primaryMediaList(reels), [reels]);
+  const swipeDirection = usePagerDirection(activeIndex);
+  useMediaPrefetch({
+    surface: "reels",
+    items: reelMedia,
+    activeIndex,
+    active: isFocused && appActive,
+    direction: swipeDirection
+  });
   // Reels is the only surface allowed to hide the dock immersively. Passing
   // `!overlayOpen` as the focus signal is what keeps the dock on screen while
   // comments, sharing or a reel menu is up: the hook treats a child surface
