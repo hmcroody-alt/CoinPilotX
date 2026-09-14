@@ -2780,10 +2780,19 @@ def add_pwa_headers(response):
         try:
             html = response.get_data(as_text=True)
             if "</head>" in html.lower() and "/static/brand/pulsesoc-favicon-32-20260913.png" not in html:
+                # Every href here is date-stamped on purpose, /favicon.ico
+                # included. Chrome's favicon store is keyed by icon URL and has
+                # its own multi-day freshness window that ignores
+                # Cache-Control, so a page that keeps naming a URL the browser
+                # already holds keeps rendering the bitmap it already holds --
+                # which is why /admin/* went on showing pre-rebrand art while
+                # every byte on the wire was correct. The unstamped
+                # /favicon.ico route stays, for user agents that request it
+                # implicitly and for bookmarks, but nothing declares it.
                 favicon_tags = """
 <link rel="icon" type="image/png" sizes="32x32" href="/static/brand/pulsesoc-favicon-32-20260913.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/static/brand/pulsesoc-favicon-16-20260913.png">
-<link rel="shortcut icon" href="/favicon.ico">
+<link rel="shortcut icon" type="image/png" href="/static/brand/pulsesoc-favicon-32-20260913.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#020817">
