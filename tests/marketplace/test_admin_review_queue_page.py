@@ -315,6 +315,43 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
         html = self.load()
         self.assertIn(rv.BLOCK_NOTES[rv.SELF_REVIEW], html)
 
+    # -- §30: decide one, land on the next -------------------------------------
+
+    def test_every_row_carries_its_own_decide_and_next_controls(self):
+        first = self.insert_listing(title="Lamp one")
+        second = self.insert_listing(title="Lamp two")
+        html = self.load()
+        for listing_id in (first, second):
+            for verb in (rv.APPROVE, rv.REQUEST_CHANGES, rv.REJECT):
+                self.assertIn(f"data-quick='{verb}' data-listing='{listing_id}'", html,
+                              f"{verb} on {listing_id}")
+
+    def test_approve_and_next_goes_through_the_same_endpoint_as_the_bulk_bar(self):
+        """§21 one authority. A second single-decision route is how the two
+        drift: one grows a guard, the other keeps the old behaviour, and which
+        one ran depends on which button the reviewer happened to click."""
+        self.insert_listing()
+        html = self.load()
+        self.assertEqual(html.count("'/api/admin/marketplace/review/batch'"), 2)
+        self.assertIn("listing_ids: [listingId]", html)
+
+    def test_the_approve_button_is_dead_on_a_row_that_cannot_be_approved(self):
+        """§31. A control that looks live and answers 403 is worse than one that
+        is visibly unavailable — the reviewer learns nothing either way, but the
+        first costs them a decision they thought they made."""
+        own = self.insert_listing(seller_user_id=REVIEWER)
+        html = self.load()
+        self.assertIn(f"data-quick='approve' data-listing='{own}' disabled", html)
+
+    def test_a_prohibited_product_stays_rejectable_from_the_row(self):
+        """§34 cuts one way only. If the block covered every action, the
+        listings a reviewer most needs to clear would be the ones they cannot."""
+        banned = self.insert_listing(title="Case of whisky", category="Weapons")
+        html = self.load()
+        self.assertIn(f"data-quick='approve' data-listing='{banned}' disabled", html)
+        self.assertIn(f"data-quick='reject' data-listing='{banned}'>", html)
+        self.assertNotIn(f"data-quick='reject' data-listing='{banned}' disabled", html)
+
     def test_a_selection_cannot_exceed_what_one_batch_will_accept(self):
         """Select-all ticks the page. If a page can hold more rows than
         ``MAX_BATCH``, select-all builds a request the server refuses whole —

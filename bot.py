@@ -100259,6 +100259,79 @@ ADMIN_REVIEW_BULK_JS = r"""
     });
   }
 
+  // §30. Decide this one, then put the reviewer on the next row they can act
+  // on. Not a reload: reloading after every decision costs a round trip and a
+  // scroll position per listing, which is the difference between clearing a
+  // backlog and giving up on one.
+  function advanceFrom(button) {
+    var order = Array.prototype.slice.call(document.querySelectorAll('.review-next'));
+    var verb = button.getAttribute('data-quick');
+    var start = order.indexOf(button);
+    for (var i = start + 1; i < order.length; i += 1) {
+      if (order[i].getAttribute('data-quick') === verb && !order[i].disabled) {
+        order[i].focus();
+        if (order[i].scrollIntoView) { order[i].scrollIntoView({ block: 'center' }); }
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function decideOne(button) {
+    if (busy) { return; }
+    var listingId = parseInt(button.getAttribute('data-listing'), 10);
+    var verb = button.getAttribute('data-quick');
+    var code = reason ? reason.value : '';
+    if (REASON_REQUIRED[verb] && !code) {
+      outcome.textContent = 'Pick a reason code first \u2014 the seller is shown it (\u00a79).';
+      if (reason) { reason.focus(); }
+      return;
+    }
+    var row = button.closest('tr');
+    busy = true;
+    outcome.textContent = 'Deciding listing ' + listingId + '\u2026';
+    fetch('/api/admin/marketplace/review/batch', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: verb,
+        listing_ids: [listingId],
+        idempotency_key: key(),
+        reason_code: code || null,
+        note: note ? note.value : ''
+      })
+    }).then(function (res) {
+      return res.json().catch(function () { return { ok: false, message: 'Server returned ' + res.status + '.' }; });
+    }).then(function (data) {
+      if (!data || !data.ok) {
+        outcome.textContent = (data && (data.message || data.error)) || 'That decision was refused.';
+        return;
+      }
+      report(data);
+      // Only a row that actually moved is struck through. A blocked listing
+      // stays exactly as it is, because the reviewer still has to deal with it.
+      if (data.successful_count === 1 && row) {
+        row.classList.add('is-decided');
+        var rowTick = row.querySelector('.review-tick');
+        if (rowTick) { rowTick.checked = false; rowTick.disabled = true; }
+        Array.prototype.forEach.call(row.querySelectorAll('.review-next'), function (b) {
+          b.disabled = true;
+        });
+        refresh();
+      }
+      if (!advanceFrom(button)) {
+        outcome.textContent += '\nLast one on this page.';
+      }
+    }).catch(function (err) {
+      outcome.textContent = 'That decision could not be sent: ' + err + '. Nothing was decided.';
+    }).then(function () { busy = false; });
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.review-next'), function (b) {
+    b.addEventListener('click', function () { decideOne(b); });
+  });
+
   ticks.forEach(function (t) { t.addEventListener('change', refresh); });
   if (all) {
     all.addEventListener('change', function () {
@@ -100437,12 +100510,34 @@ def admin_marketplace_command_page():
         row_block = marketplace_review_authority.block_reason(
             l, marketplace_review_authority.APPROVE, reviewer_id=admin.get("id")) or ""
         block_note = marketplace_review_authority.BLOCK_NOTES.get(row_block, "")
+        # A negative verdict is gated differently to an approval, and the
+        # difference is §34: a prohibited product cannot be approved by anyone
+        # but must stay rejectable, or the only listings a reviewer cannot clear
+        # are the ones that most need clearing.
+        neg_block = marketplace_review_authority.block_reason(
+            l, marketplace_review_authority.REJECT, reviewer_id=admin.get("id")) or ""
         tick = ("<input type='checkbox' class='review-tick' value='" + str(int(l.get('id') or 0))
                 + "' data-block=\"" + html_escape(clean_html(row_block)) + "\""
+                + " data-block-negative=\"" + html_escape(clean_html(neg_block)) + "\""
                 + " data-block-note=\"" + html_escape(clean_html(block_note)) + "\">"
                 + (f"<div class='review-blocked'>{html_escape(clean_html(block_note))}</div>"
                    if block_note else ""))
-        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td><form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
+        # §30. One decision, then the next row, without losing the page. These
+        # post the *same* batch endpoint with a single id -- not a second
+        # single-decision path -- so an Approve & Next and a bulk approve of one
+        # listing are the same code, the same idempotency ledger and the same
+        # audit row. A separate one-at-a-time route is how the two drift.
+        quick = "<div class='review-quick'>" + "".join(
+            ("<button type='button' class='review-next' data-quick='" + verb
+             + "' data-listing='" + str(int(l.get('id') or 0)) + "'"
+             + (" disabled" if (row_block if verb == marketplace_review_authority.APPROVE
+                                else neg_block) else "")
+             + ">" + label + "</button>")
+            for verb, label in ((marketplace_review_authority.APPROVE, "Approve &amp; Next"),
+                                (marketplace_review_authority.REQUEST_CHANGES, "Changes &amp; Next"),
+                                (marketplace_review_authority.REJECT, "Reject &amp; Next"))
+        ) + "</div>"
+        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option><option>Prohibited item</option><option>Incomplete description</option><option>Misleading listing</option><option>Invalid price</option><option>Unsupported category</option><option>Media problem</option><option>Counterfeit concern</option><option>Policy violation</option><option>Insufficient seller information</option><option>Other</option></select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea><button name='action' value='approve'>Approve + Publish</button><button name='action' value='request_changes'>Request Changes</button><button name='action' value='reject'>Reject</button><button name='action' value='suspend'>Suspend</button><button name='action' value='archive'>Archive</button><button name='action' value='feature'>Feature</button></form></td></tr>"
     # §26/§28. Every control carries the rest of the query with it, so changing
     # the sort does not silently drop the reviewer's search back to page one of
     # everything -- which is the version of "the filters don't work" that looks
@@ -100498,6 +100593,9 @@ def admin_marketplace_command_page():
         ".review-blocked{font-size:11px;color:#f2b544;max-width:120px;margin-top:4px}"
         ".review-bulk{position:sticky;top:0;z-index:5;display:none;gap:10px;flex-wrap:wrap;align-items:center;padding:10px;border:1px solid #0f9d58;border-radius:12px;background:#04121c;margin:10px 0}"
         ".review-bulk.is-open{display:flex}"
+        ".review-quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}"
+        ".review-quick button{padding:5px 9px;font-size:12px}"
+        "tr.is-decided{opacity:.45}tr.is-decided .review-quick{display:none}"
         ".review-pager{display:flex;gap:12px;align-items:center;margin-top:12px}"
         "#review-outcome{margin:10px 0;white-space:pre-line}</style>"
         "<h1>Marketplace Review</h1>"
