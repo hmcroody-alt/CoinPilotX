@@ -142,7 +142,36 @@ def ensure_schema(conn=None) -> None:
             "ON business_os_store_collection_products (product_id)"
         )
 
-        # Append-only audit of every store mutation.
+        ensure_audit_table(conn)
+
+        if owned:
+            conn.commit()
+    finally:
+        if owned:
+            conn.close()
+
+
+def ensure_audit_table(conn=None) -> None:
+    """Create the append-only audit trail alone. Idempotent; owns its connection
+    unless one is passed in.
+
+    Split out of :func:`ensure_schema` so a caller that only needs to *write* a
+    trail row does not have to run the DDL for the other nineteen tables. That is
+    not a performance concern, it is a blast-radius one: ``CREATE TABLE IF NOT
+    EXISTS`` is a no-op against a table that already exists in an older shape, so
+    the ``CREATE INDEX`` that follows it can raise ``no such column`` on any
+    database whose history differs from this file. Inside ``ensure_schema`` --
+    called once at boot, from a route pack registered in an ``except Exception``
+    block -- that failure is survivable. On a request path it would be a 500 per
+    import, caused by drift in a table the importer never touches.
+
+    One definition, two callers. ``ensure_schema`` still runs this, so a fresh
+    database gets the same result it always did.
+    """
+    owned = conn is None
+    if owned:
+        conn = db.connect()
+    try:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS business_os_store_audit (
@@ -167,7 +196,6 @@ def ensure_schema(conn=None) -> None:
             "CREATE INDEX IF NOT EXISTS idx_store_audit_action "
             "ON business_os_store_audit (action)"
         )
-
         if owned:
             conn.commit()
     finally:

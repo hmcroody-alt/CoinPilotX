@@ -54,6 +54,21 @@ Ten items where the seventh product was deleted at the provider is nine
 successes and one ``PROVIDER_UNAVAILABLE`` — not a failed batch, and not nine
 successes with a silent gap. Each item gets its own outcome and its own database
 transaction, so one failure cannot roll back its neighbours.
+
+Every item leaves a record of why
+---------------------------------
+Auto-publishing means the server chose a price and showed it to a buyer, and the
+listing it produces stores the answer without the reasoning. So each item also
+writes one :mod:`audit` row naming the inputs that decided it — which rule, which
+of §8's tiers supplied it, what freight the margin was measured against, whether
+auto-publish was on and what the gate concluded.
+
+The successes are audited *inside* the item's transaction, before its commit, so
+a published listing carrying an automatic price cannot exist without its
+explanation. The refusals are audited after their rollback, on a fresh
+connection, best-effort — because that code runs inside an ``except`` block and
+letting it raise would trade the partial-success guarantee above for a tidier
+trail. :mod:`audit`'s docstring argues that asymmetry out in full.
 """
 
 from __future__ import annotations
@@ -63,9 +78,9 @@ import time
 
 from services import db, marketplace_variants as variants
 from services import marketplace_supplier_schema as supplier_schema
-from services.business_os.suppliers import (connections, drafts, gateway,
-                                            import_cart, normalize, policy,
-                                            pricing, store_policy)
+from services.business_os.suppliers import (audit, connections, drafts,
+                                            gateway, import_cart, normalize,
+                                            policy, pricing, store_policy)
 from services.business_os.suppliers.errors import SupplierError
 
 #: Per-item outcomes. A bulk import returns one of these per requested item.
@@ -586,6 +601,10 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
     policy.require_enabled()
     import_cart.ensure_schema()
     gateway.ensure_schema()
+    # The trail this path writes to belongs to another subsystem, whose table is
+    # created by a route pack that is allowed to fail quietly at boot. Established
+    # here so an import cannot reach the audit insert with nowhere to put it.
+    audit.ensure_schema()
 
     if item_ids is not None:
         if not isinstance(item_ids, (list, tuple)):
@@ -625,6 +644,24 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
         # this store cannot own a listing and no amount of retrying changes it.
         raise SupplierError("merchant_identity_unresolved", http_status=409) from None
 
+    # The batch-level half of every audit row: the economic settings that were in
+    # force for this run, resolved once above and therefore identical for every
+    # item in it. Built here rather than per item so the trail cannot record two
+    # different explanations for one batch, and so `margin_basis` is computed in
+    # exactly one place -- it is reported in the response too, and a second copy
+    # of `LANDED if shipping_cents is not None else ITEM` is a second thing to
+    # keep in step.
+    margin_basis = pricing.LANDED if shipping_cents is not None else pricing.ITEM
+    economics = {
+        "pricing_rule": rule,
+        "pricing_source": pricing_source,
+        "shipping_allowance_cents": shipping_cents,
+        "shipping_allowance_source": shipping_source,
+        "margin_basis": margin_basis,
+        "auto_publish": store["auto_publish"],
+        "marketplace_autolist": store["marketplace_autolist"],
+    }
+
     results, imported_item_ids = [], []
     for row in rows:
         item_id = row["item_id"]
@@ -635,10 +672,15 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
         except (ValueError, TypeError):
             selection = []
 
+        # On every audit row, whichever way the item goes. A refused import has no
+        # listing id, and this is what still identifies the product it was about.
+        identity = {"provider": provider, "external_product_id": external_product_id}
+
         # A fresh connection per item. One item's rollback must not discard the
         # listing its predecessor already created — that is what "honest partial
         # success" costs, and sharing a transaction would silently undo it.
         conn = db.connect()
+        recorded = False
         try:
             outcome, payload = _import_one(
                 conn, seller_user_id=seller_user_id,
@@ -649,7 +691,16 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
                 auto_publish=store["auto_publish"],
                 marketplace_autolist=store["marketplace_autolist"],
                 context=context, adapter=adapter)
+            # Inside the item's transaction, before the commit that makes the
+            # listing real, so a product cannot go live in the store carrying an
+            # automatic price with no record of what chose it. Not wrapped in a
+            # swallow -- see `audit`'s module docstring for why the two paths
+            # differ, and why a failure here is not a failure that happens alone.
+            audit.record_import(conn, business_id=business_id,
+                                actor_user_id=actor_user_id, outcome=outcome,
+                                facts={**economics, **identity, **payload})
             conn.commit()
+            recorded = True
         except _ItemFailure as failure:
             conn.rollback()
             outcome, payload = failure.outcome, ({"detail": failure.detail}
@@ -662,6 +713,17 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
             outcome, payload = INVALID_PRODUCT, {"detail": "variant_rejected"}
         finally:
             conn.close()
+
+        if not recorded:
+            # The rolled-back branches. A refused import is the half of the trail
+            # a merchant is most likely to come looking for -- "I tried to import
+            # this twice and nothing happened" -- so it is recorded rather than
+            # left as an absence. On its own connection because the item's was
+            # rolled back, and best-effort because this is running after a
+            # failure and must not promote one dead item into a dead batch.
+            audit.record_import_safely(
+                business_id=business_id, actor_user_id=actor_user_id,
+                outcome=outcome, facts={**economics, **identity, **payload})
 
         if outcome in CLEARS_CART:
             imported_item_ids.append(item_id)
@@ -711,7 +773,7 @@ The store's per-unit shipping allowance is resolved here too, and unlike the
         # declared a shipping cost, not that shipping is free.
         "shipping_allowance_cents": shipping_cents,
         "shipping_allowance_source": shipping_source,
-        "margin_basis": pricing.LANDED if shipping_cents is not None else pricing.ITEM,
+        "margin_basis": margin_basis,
         "auto_publish": store["auto_publish"],
         "marketplace_autolist": store["marketplace_autolist"],
     }
