@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL, PULSESOC_QA_STATUS_FIXTURES } from "./config";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "./feed";
+import { isMediaUnavailable } from "../media/mediaContract";
 import { pulseApi, PulseApiError } from "./pulseApi";
 
 const STATUS_CACHE_PREFIX = "pulsesoc.native.status.";
@@ -413,6 +414,11 @@ export function statusMediaUrl(status: PulseStatus) {
     ? media.playback_url || media.hls_url || media.mux_hls_url || media.valid_url || media.media_url || media.url
     : media.valid_url || media.media_url || media.url;
   return mediaDisplayUrl({ ...media, media_url: preferred || "" });
+}
+
+/** True when the backend has marked this Status's media as gone for good. */
+export function statusMediaUnavailable(status: PulseStatus) {
+  return isMediaUnavailable((status.media || [])[0]);
 }
 
 export function statusPosterUrl(status: PulseStatus) {

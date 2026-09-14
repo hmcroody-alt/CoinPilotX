@@ -1,4 +1,4 @@
-import { hasRenderableImage, hasRenderableMediaUrl, renderableMedia } from "../mediaContract";
+import { hasRenderableImage, hasRenderableMediaUrl, isMediaUnavailable, renderableMedia } from "../mediaContract";
 
 // The feed serializer emits a fully-shaped media object for every attached row.
 // A row whose upload never produced a URL therefore arrives looking like media
@@ -111,5 +111,46 @@ describe("renderableMedia", () => {
     const list = [{ id: 1, media_url: "" }, { id: 2, media_url: "https://cdn.example/2.png" }];
     renderableMedia(list);
     expect(list).toHaveLength(2);
+  });
+});
+
+describe("isMediaUnavailable", () => {
+  // The shape of production rows 28/29: local-disk video whose bytes went away
+  // with a deploy. media_url still points at the old path, so every URL-only
+  // gate says "renderable" and the player draws black.
+  const lostVideo = {
+    id: 28,
+    media_type: "video",
+    media_url: "/static/uploads/pulse_media/2026/05/24/ScreenRecording.mp4",
+    playback_url: "/static/uploads/pulse_media/2026/05/24/ScreenRecording.mp4"
+  };
+
+  it("does not fire for healthy media", () => {
+    expect(isMediaUnavailable({ ...lostVideo, is_available: true, processing_status: "ready" })).toBe(false);
+    expect(isMediaUnavailable({ ...lostVideo })).toBe(false);
+  });
+
+  it("fires on the server's explicit unavailable flag", () => {
+    expect(isMediaUnavailable({ ...lostVideo, is_available: false })).toBe(true);
+  });
+
+  it("fires on a terminal processing state", () => {
+    expect(isMediaUnavailable({ ...lostVideo, processing_status: "failed" })).toBe(true);
+    expect(isMediaUnavailable({ ...lostVideo, processing_status: "expired" })).toBe(true);
+  });
+
+  it("stays quiet for media still working its way through the pipeline", () => {
+    expect(isMediaUnavailable({ ...lostVideo, processing_status: "mux_processing" })).toBe(false);
+  });
+
+  it("catches what the url gate cannot", () => {
+    const lost = { ...lostVideo, is_available: false };
+    expect(hasRenderableMediaUrl(lost)).toBe(true);
+    expect(isMediaUnavailable(lost)).toBe(true);
+  });
+
+  it("is false for an absent record, which is not the same as a lost one", () => {
+    expect(isMediaUnavailable(null)).toBe(false);
+    expect(isMediaUnavailable(undefined)).toBe(false);
   });
 });
