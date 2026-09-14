@@ -48,13 +48,26 @@ CASES = {
                  "concurrent_duplicates_create_one_durable_receipt",
                  "same_event_identity_different_raw_body_is_conflict",
                  "delayed_and_out_of_order_events_only_schedule_readback"],
-    "worker": ["worker_dark_without_provider_approval", "bounded_worker_seeds_only_owned_selected_resources",
+    "worker": ["worker_dark_until_the_deployment_enables_the_network",
+               "bounded_worker_seeds_only_owned_selected_resources",
                "retry_after_not_shortened_by_worker", "successful_selected_read_persists_snapshot_and_sync_time"],
 }
+# Every stale name at once. A getattr raising on the first one takes the whole
+# module down at import, so one rename upstream silently drops all of the
+# PostgreSQL acceptance cases instead of reporting the case it renamed.
+missing = []
 for area, cases in CASES.items():
     module = importlib.import_module("tests.business_os.test_cj_" + area)
     for name in cases:
-        globals()["test_pg_" + area + "__" + name] = getattr(module, "test_" + name)
+        case = getattr(module, "test_" + name, None)
+        if case is None:
+            missing.append(area + "." + name)
+        else:
+            globals()["test_pg_" + area + "__" + name] = case
+if missing:
+    raise AssertionError(
+        str(len(missing)) + " CASES name(s) in tests/staging/test_cj_postgres.py no "
+        "longer exist upstream; rename or drop them: " + ", ".join(missing))
 
 
 @pytest.fixture(autouse=True)
