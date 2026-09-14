@@ -91,7 +91,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   border-radius: 16px;
   background: rgba(255,255,255,.04);
 }
-.brand img { width: 44px; height: 44px; border-radius: 12px; box-shadow: 0 0 24px rgba(91,220,255,.2); }
+.brand img { width: 44px; height: 44px; border-radius: 12px; object-fit: contain; box-shadow: 0 0 24px rgba(91,220,255,.2); }
 .brand strong { display: block; font-size: 19px; }
 .brand small, .muted { color: var(--muted); }
 .ad-rail nav { display: grid; gap: 8px; }

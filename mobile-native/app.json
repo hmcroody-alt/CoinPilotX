@@ -31,6 +31,10 @@
     },
     "android": {
       "package": "com.pulsesoc.nativeapp",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000730"
+      },
       "intentFilters": [
         {
           "action": "VIEW",

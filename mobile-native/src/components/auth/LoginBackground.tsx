@@ -3,9 +3,8 @@ import { LinearGradient } from "expo-linear-gradient";
 
 /**
  * Full-screen deep-blue backdrop for the auth screens (Login + Signup), matched
- * to the canonical PulseSoc brand mark's own background so the transparent logo
- * blends in with no visible image boundary. Colors are sampled directly from
- * assets/brand/pulsesoc-logo-master.png: a soft #021058 glow fading into the
+ * to the brand navy the logo artwork is rendered against so the transparent mark
+ * blends in with no visible image boundary: a soft #021058 glow fading into the
  * #010730 navy field and a deeper #000520 base.
  *
  * This intentionally paints over the shared root `PulseBackground` — the first

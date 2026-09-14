@@ -29,10 +29,10 @@ const STATIC_ASSETS = [
   // has: /static/* is served `public, max-age=31536000, immutable`.
   NOTIFICATIONS_JS,
   "/static/sounds/notification-soft.wav",
-  "/static/brand/pulsesoc-logo-20260813.png",
-  "/static/brand/pulsesoc-icon-192-20260813.png",
-  "/static/brand/pulsesoc-icon-512-20260813.png",
-  "/static/brand/pulsesoc-apple-touch-icon-20260813.png"
+  "/static/brand/pulsesoc-mark-20260913.png",
+  "/static/brand/pulsesoc-icon-192-20260913.png",
+  "/static/brand/pulsesoc-icon-512-20260913.png",
+  "/static/brand/pulsesoc-apple-touch-icon-20260913.png"
 ];
 
 function isNeverCachePath(pathname) {
@@ -255,11 +255,11 @@ function buildPushNotification(payload) {
   // tightening `icon` here would be an untested behaviour change smuggled in
   // under a merge, and it would reject the absolute https:// icons a payload is
   // currently free to send.
-  const defaultBadge = "/static/brand/pulsesoc-icon-192-20260813.png";
+  const defaultBadge = "/static/brand/pulsesoc-icon-192-20260913.png";
   const badgeAsset = typeof payload.badge === "string" && payload.badge.trim().startsWith("/") ? payload.badge : defaultBadge;
   const options = {
     body: displayBody,
-    icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260813.png",
+    icon: payload.icon || "/static/brand/pulsesoc-icon-192-20260913.png",
     badge: badgeAsset,
     vibrate: payload.vibrate || payload.vibration || data.vibrate || data.vibration || [200, 100, 200],
     data: {

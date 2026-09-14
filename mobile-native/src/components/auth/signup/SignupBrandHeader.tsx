@@ -1,22 +1,18 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useRef } from "react";
-import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, Easing, Pressable, StyleSheet, Text, View } from "react-native";
 import { useTranslation } from "../../../i18n";
 import { colors } from "../../../theme/colors";
 import { logiNexus } from "../../../theme/logiNexus";
 import { useLogiNexusReducedMotion } from "../../../theme/logiNexusMotion";
 import { createThemedStyles } from "../../../theme/themedStyles";
-
-// Same official brand asset the login screen uses (transparent, no image
-// boundary). Documented path: src/assets/brand/pulsesoc-mark.png.
-const PULSESOC_LOGO = require("../../../assets/brand/pulsesoc-mark.png");
-const LOGO_ASPECT = 1;
+import { BrandLogo, brandLogoHeight } from "../../brand/BrandLogo";
 
 // Deliberately smaller than the login mark (login uses 188) so the form is the
 // primary focus while the brand still anchors the screen in PulseSoc auth.
 const LOGO_WIDTH = 128;
-const LOGO_HEIGHT = LOGO_WIDTH / LOGO_ASPECT;
-// Canonical mark is a centered square symbol; glow/rings emanate from center.
+const LOGO_HEIGHT = brandLogoHeight("mark", LOGO_WIDTH);
+// The mark is centered in its own frame; glow/rings emanate from center.
 const SYMBOL_OFFSET_Y = 0;
 const RING_SIZE = 104;
 const GLOW_SIZE = 68;
@@ -92,7 +88,7 @@ export function SignupBrandHeader({ onBack }: { onBack?: () => void }) {
           })}
           <Animated.View style={[styles.glow, { opacity: reducedMotion ? 0.24 : glowOpacity }]} />
         </View>
-        <Image source={PULSESOC_LOGO} style={styles.logo} resizeMode="contain" fadeDuration={0} accessible={false} />
+        <BrandLogo variant="mark" width={LOGO_WIDTH} />
       </View>
 
       <Text style={styles.eyebrow} maxFontSizeMultiplier={1.8}>
@@ -147,10 +143,6 @@ const styles = createThemedStyles(() => ({
     shadowRadius: 28,
     transform: [{ translateY: SYMBOL_OFFSET_Y }],
     width: GLOW_SIZE
-  },
-  logo: {
-    height: LOGO_HEIGHT,
-    width: LOGO_WIDTH
   },
   eyebrow: {
     color: colors.accentStrong,

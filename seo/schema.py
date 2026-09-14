@@ -2,8 +2,8 @@ import json
 import os
 
 SITE_URL = os.getenv("PUBLIC_SITE_URL", "https://pulsesoc.com").rstrip("/")
-LOGO_URL = f"{SITE_URL}/static/brand/pulsesoc-logo-20260606.png"
-SHARE_IMAGE_URL = LOGO_URL
+LOGO_URL = f"{SITE_URL}/static/brand/pulsesoc-logo-20260913.png"
+SHARE_IMAGE_URL = f"{SITE_URL}/static/brand/pulsesoc-og-20260913.png"
 SUPPORT_EMAIL = "support@pulsesoc.com"
 
 
