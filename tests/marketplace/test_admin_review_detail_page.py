@@ -180,7 +180,11 @@ class AdminReviewDetailPageTestCase(unittest.TestCase):
         return response.get_data(as_text=True)
 
     def button(self, html, action):
-        match = re.search(r"<button type='button' data-detail-action='"
+        # Matched without pinning attribute order: the verdict buttons carry a
+        # weight class now, and a test that breaks when an unrelated attribute
+        # is added in front of the one it cares about is a test that punishes
+        # every future edit to this markup.
+        match = re.search(r"<button[^>]*data-detail-action='"
                           + re.escape(action) + r"'([^>]*)>", html)
         self.assertIsNotNone(match, f"no {action!r} button on the detail page")
         return match.group(1)

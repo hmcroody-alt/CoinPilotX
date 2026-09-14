@@ -100398,7 +100398,9 @@ def admin_marketplace_listing_review_page(listing_id):
     # §31. Same rule as the queue: a button the endpoint would refuse is not
     # offered, and it says which refusal rather than merely going grey.
     verdict_buttons = "".join(
-        ("<button type='button' data-detail-action='" + action + "'"
+        ("<button type='button' class='"
+         + REVIEW_VERB_WEIGHT.get(action, "review-verb-neutral")
+         + "' data-detail-action='" + action + "'"
          + ((" disabled title=\"" + esc(
              marketplace_review_authority.BLOCK_NOTES.get(
                  dossier["verdicts"][action], "That decision is not available."))
@@ -100410,8 +100412,15 @@ def admin_marketplace_listing_review_page(listing_id):
             (marketplace_review_authority.REJECT, "Reject"),
             (marketplace_review_authority.RESTRICT, "Restrict")))
 
+    # §36/§20. The third surface that writes `moderation_category`, and the
+    # third that used to label it differently -- this one rendered the constant
+    # Title-cased ("Misleading Description"), the queue rendered prose of its
+    # own, the bulk bar rendered the seller's sentence. One column, one menu:
+    # the label is what the seller will be told, so the reviewer picks a reason
+    # by reading the consequence rather than by decoding a constant.
     reason_options = "".join(
-        "<option value='" + esc(code) + "'>" + esc(code.replace("_", " ").title())
+        "<option value='" + esc(code) + "'>"
+        + esc(marketplace_review_authority.SELLER_MESSAGES[code])
         + "</option>" for code in marketplace_review_authority.REASON_CODES)
 
     safety = dossier["safety"]
@@ -100435,7 +100444,31 @@ def admin_marketplace_listing_review_page(listing_id):
         ".review-note.blocked{border-color:rgba(240,173,78,.55);"
         "background:rgba(240,173,78,.10)}"
         ".detail-internal{border-color:rgba(240,173,78,.35)}"
+        ".review-verb-go{background:#0f9d58;background-image:none;color:#fff;"
+        "border-color:#0f9d58;font-weight:700}"
+        ".review-verb-stop{background:#b3261e;background-image:none;color:#fff;"
+        "border-color:#b3261e;font-weight:700}"
+        ".review-verb-neutral{background:rgba(255,255,255,.04);background-image:none;"
+        "color:#e6edf3;border-color:rgba(255,255,255,.28);font-weight:700}"
+        ".review-verb-go[disabled],.review-verb-stop[disabled],"
+        ".review-verb-neutral[disabled]{opacity:.4}"
         "#detail-outcome{margin:10px 0;white-space:pre-line}"
+        # §32. `.detail-grid` already collapses to one column on its own, so the
+        # only things that need saying here are the two that do not: a two
+        # column definition list squeezes the value into a sliver once the label
+        # column is a long word, and the verdict buttons and the note box have
+        # to be big enough to hit with a thumb. This is the screen a reviewer
+        # actually decides on, so the decision controls are the ones that get
+        # the width.
+        "@media (max-width:820px){"
+        ".detail-kv{grid-template-columns:1fr;gap:0 0}"
+        ".detail-kv dt{margin-top:8px;font-size:11px;text-transform:uppercase;"
+        "letter-spacing:.05em}"
+        ".detail-verdicts{display:grid;grid-template-columns:1fr 1fr;gap:8px}"
+        ".detail-verdicts button{width:100%;padding:11px 8px}"
+        "#detail-reason-category,#detail-reason-note{width:100%;box-sizing:border-box}"
+        "#detail-reason-note{min-height:96px}"
+        "}"
         "</style>"
         "<div id='detail-root' data-listing='" + str(int(listing_id)) + "'>"
         "<p><a href='/admin/marketplace-command'>&larr; Review queue</a></p>"
@@ -100519,6 +100552,30 @@ def admin_marketplace_listing_review_page(listing_id):
 # only the eligible ones would make `requested_count` disagree with what the
 # reviewer ticked, and the two products they need told about would be the two
 # that silently never appeared in the results (§15).
+#: §31. What each verdict button *weighs*, as a class the stylesheet can read.
+#:
+#: Every button on the review form used to render identically -- the admin shell
+#: paints every ``<button>`` with one gradient -- so a stack of six full-width
+#: controls read "Approve + Publish", "Reject", "Suspend", "Archive" in the same
+#: colour, the same size, one above the other. On a desktop that is merely
+#: undifferentiated. On a phone, where the stacked card puts them under a thumb
+#: at 38px apiece, it is a mis-tap that publishes or destroys a listing, and the
+#: reviewer's only clue is the confirmation afterwards.
+#:
+#: Green is the go-ahead, red is the one that takes something away, outline is
+#: neither. Anything not named here falls to the outline treatment rather than
+#: inheriting the primary one, so a verdict added later has to *ask* to look
+#: like an approval.
+REVIEW_VERB_WEIGHT = {
+    "approve": "review-verb-go",
+    "feature": "review-verb-go",
+    "request_changes": "review-verb-neutral",
+    "reject": "review-verb-stop",
+    "restrict": "review-verb-stop",
+    "suspend": "review-verb-stop",
+    "archive": "review-verb-stop",
+}
+
 ADMIN_REVIEW_BULK_JS = r"""
 (function () {
   var bar = document.getElementById('review-bulk');
@@ -100960,7 +101017,9 @@ def admin_marketplace_command_page():
         inspect_link = ("<a class='button' href='/admin/marketplace-command/listing/"
                         + str(int(l.get('id') or 0)) + "'>Inspect</a>")
         quick = "<div class='review-quick'>" + inspect_link + "".join(
-            ("<button type='button' class='review-next' data-quick='" + verb
+            ("<button type='button' class='review-next "
+             + REVIEW_VERB_WEIGHT.get(verb, "review-verb-neutral")
+             + "' data-quick='" + verb
              + "' data-listing='" + str(int(l.get('id') or 0)) + "'"
              + (" disabled" if (row_block if verb == marketplace_review_authority.APPROVE
                                 else neg_block) else "")
@@ -100981,7 +101040,8 @@ def admin_marketplace_command_page():
             "suspend": "", "archive": "", "feature": "",
         }
         form_buttons = "".join(
-            "<button name='action' value='" + verb + "'"
+            "<button class='" + REVIEW_VERB_WEIGHT.get(verb, "review-verb-neutral")
+            + "' name='action' value='" + verb + "'"
             + ((" disabled title=\""
                 + html_escape(clean_html(marketplace_review_authority.BLOCK_NOTES.get(
                     verdict_blocks[verb], "That decision is not available.")))
@@ -100991,7 +101051,12 @@ def admin_marketplace_command_page():
                 ("approve", "Approve + Publish"), ("request_changes", "Request Changes"),
                 ("reject", "Reject"), ("suspend", "Suspend"),
                 ("archive", "Archive"), ("feature", "Feature")))
-        rows += f"<tr><td>{tick}</td><td>{l.get('id')}</td><td><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td>{int(l.get('safety_score') or 0)}</td><td>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option>{reason_options}</select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
+        # §32. Every cell names itself. On a phone the header row is gone -- a
+        # stacked card cannot keep a column header eight rows above the value it
+        # labels -- so `data-label` is what the value is read against. Without
+        # it the card is eight unlabelled fragments, and "approved" and
+        # "physical" are indistinguishable from each other.
+        rows += f"<tr><td data-label='Select'>{tick}</td><td data-label='ID'>{l.get('id')}</td><td data-label='Product'><strong>{html_escape(clean_html(l.get('title') or ''))}</strong><p>{html_escape(clean_html(l.get('description') or ''))}</p><div class='market-media-strip'>{media_html}</div></td><td data-label='Seller'>{html_escape(clean_html(marketplace_seller_identity.display_store_name(l)))}<br><small>Owner: {html_escape(clean_html(l.get('seller_owner_name') or ''))} · #{int(l.get('seller_user_id') or 0)}</small><br><small>{html_escape(clean_html(l.get('seller_status') or ''))} · {html_escape(clean_html(l.get('seller_verification_status') or ''))}</small></td><td data-label='Commerce'>{html_escape(clean_html(l.get('category') or ''))}<br>{html_escape(clean_html(l.get('price_label') or ''))} {html_escape(clean_html(l.get('currency') or ''))}<br>Qty {int(l.get('quantity') or 0)}</td><td data-label='State'>{html_escape(clean_html(l.get('status') or ''))}<br><small>{html_escape(clean_html(l.get('approval_status') or ''))}</small></td><td data-label='Risk'>{int(l.get('safety_score') or 0)}</td><td data-label='Actions' class='review-cell-actions'>{quick}<form method='post'><input type='hidden' name='listing_id' value='{l.get('id')}'><select name='reason_category'><option value=''>Reason category</option>{reason_options}</select><textarea name='reason' placeholder='Required for reject, changes, suspend, archive'></textarea>{form_buttons}</form></td></tr>"
     # §26/§28. Every control carries the rest of the query with it, so changing
     # the sort does not silently drop the reviewer's search back to page one of
     # everything -- which is the version of "the filters don't work" that looks
@@ -101042,6 +101107,18 @@ def admin_marketplace_command_page():
         ".review-bulk.is-open{display:flex}"
         ".review-quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}"
         ".review-quick button{padding:5px 9px;font-size:12px}"
+        # A class beats the shell's bare `button` selector on specificity, so
+        # none of this needs `!important` -- which matters, because an
+        # `!important` here would be the thing a later theme change cannot
+        # override and nobody would find.
+        ".review-verb-go{background:#0f9d58;background-image:none;color:#fff;"
+        "border-color:#0f9d58;font-weight:700}"
+        ".review-verb-stop{background:#b3261e;background-image:none;color:#fff;"
+        "border-color:#b3261e;font-weight:700}"
+        ".review-verb-neutral{background:rgba(255,255,255,.04);background-image:none;"
+        "color:#e6edf3;border-color:rgba(255,255,255,.28);font-weight:700}"
+        ".review-verb-go[disabled],.review-verb-stop[disabled],"
+        ".review-verb-neutral[disabled]{opacity:.4}"
         "tr.is-decided{opacity:.45}tr.is-decided .review-quick{display:none}"
         ".review-pager{display:flex;gap:12px;align-items:center;margin-top:12px}"
         "#review-outcome{margin:10px 0;white-space:pre-line}"
@@ -101051,7 +101128,53 @@ def admin_marketplace_command_page():
         ".review-note{margin:10px 0;padding:9px 12px;border-radius:8px;"
         "border:1px solid rgba(54,229,143,.45);background:rgba(54,229,143,.08)}"
         ".review-note.blocked{border-color:rgba(240,173,78,.55);"
-        "background:rgba(240,173,78,.10)}</style>"
+        "background:rgba(240,173,78,.10)}"
+        # §32. The queue on a phone. The shell already turns every admin table
+        # into a horizontally scrolling block below 960px, and for an eight
+        # column table that is not a mobile layout -- it is the desktop layout
+        # behind a letterbox. The tick is in column one and the verdict buttons
+        # are in column eight, so deciding one listing means scrolling right,
+        # reading nothing, and scrolling back. Reachable, and unusable.
+        #
+        # So below 820px each row becomes a card: the header row is taken out
+        # of the flow and each cell carries its own label instead. Nothing is
+        # hidden -- the risk score, the blocker note and the seller's standing
+        # are all still on screen, because a reviewer deciding on a phone needs
+        # the same facts as one deciding at a desk, and a "mobile queue" that
+        # drops them is a queue that produces worse decisions rather than fewer.
+        "@media (max-width:820px){"
+        ".review-table{display:block;overflow-x:visible}"
+        ".review-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}"
+        ".review-table tbody,.review-table tr,.review-table td{display:block;width:auto}"
+        ".review-table tr{border:1px solid rgba(255,255,255,.14);border-radius:12px;"
+        "padding:12px;margin:0 0 12px;background:rgba(255,255,255,.02)}"
+        # The label goes *above* the value, not beside it. A two column grid on
+        # the cell reads better in a mockup and is wrong here: `display:grid`
+        # makes every child of the cell its own grid item, so the product cell's
+        # title, description and media strip each claim a row and the
+        # description ends up rendering inside the 84px label column. A block
+        # label is correct whatever the cell contains.
+        ".review-table td{border:0;padding:6px 0;display:block;text-align:left}"
+        ".review-table td:before{content:attr(data-label);display:block;font-size:11px;"
+        "line-height:1.6;text-transform:uppercase;letter-spacing:.05em;opacity:.55;"
+        "margin-bottom:2px}"
+        # The actions cell is the one that must not be squeezed into a 1fr
+        # column -- three quick verdicts, a reason menu, a note box and six
+        # buttons need the full width of the card.
+        ".review-table td.review-cell-actions{margin-top:6px;padding-top:10px;"
+        "border-top:1px solid rgba(255,255,255,.10)}"
+        ".review-table td.review-cell-actions button,"
+        ".review-table td.review-cell-actions .button{min-height:38px}"
+        ".review-table td.review-cell-actions textarea,"
+        ".review-table td.review-cell-actions select{width:100%;box-sizing:border-box}"
+        ".review-table td form{min-width:0}"
+        ".review-table .review-blocked{max-width:none}"
+        ".review-table td[colspan]{display:block}"
+        ".review-table td[colspan]:before{content:none}"
+        # A sticky bulk bar on a 667px-tall screen eats the rows it acts on.
+        ".review-bulk{position:static}"
+        ".review-controls{gap:8px}"
+        "}</style>"
         "<h1>Marketplace Review</h1>"
         "<p class='muted'>Canonical seller submission, listing moderation, publication, suspension, and audit controls.</p>"
         + (("<p class='review-note " + message_tone + "'>"
@@ -101079,9 +101202,10 @@ def admin_marketplace_command_page():
         "<button type='button' id='review-clear'>Clear</button>"
         "</div>"
         "<div id='review-outcome' class='muted'></div>"
-        "<table class='table'><tr><th><input type='checkbox' id='review-all' title='Select every listing on this page'></th>"
+        "<table class='table review-table'><thead>"
+        "<tr><th><input type='checkbox' id='review-all' title='Select every listing on this page'></th>"
         "<th>ID</th><th>Product + Media</th><th>Seller</th><th>Commerce</th><th>State</th><th>Risk</th><th>Actions</th></tr>"
-        + (rows or empty_row) + "</table>"
+        "</thead><tbody>" + (rows or empty_row) + "</tbody></table>"
         + pager +
         "</section>"
         "<p><a class='button' href='/admin/merchant-applications'>Merchant Applications</a></p>"

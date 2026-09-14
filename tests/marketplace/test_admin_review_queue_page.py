@@ -377,13 +377,13 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
             listing_id = int(re.search(r"name='listing_id' value='(\d+)'", chunk).group(1))
             forms[listing_id] = chunk.split("</form>")[0]
 
-        blocked = re.search(r"<button name='action' value='approve'([^>]*)>",
+        blocked = re.search(r"<button[^>]*name='action' value='approve'([^>]*)>",
                             forms[own]).group(1)
         self.assertIn("disabled", blocked)
         # And it says which refusal, so a disabled control is not just dead UI.
         self.assertIn("cannot decide their own listing", blocked)
 
-        live = re.search(r"<button name='action' value='approve'([^>]*)>",
+        live = re.search(r"<button[^>]*name='action' value='approve'([^>]*)>",
                          forms[other]).group(1)
         self.assertNotIn("disabled", live)
 
@@ -579,6 +579,124 @@ class AdminReviewQueuePageTestCase(unittest.TestCase):
         response = self.client.post(PAGE, data={"listing_id": listing_id, "action": "approve"})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(str(self.stored(listing_id)["approval_status"]).lower(), "approved")
+
+    # -- §32 the same queue on a phone ------------------------------------------
+
+    def test_every_cell_can_name_itself_without_the_header_row(self):
+        """§32. On a phone the header row is gone, so a cell that does not carry
+        its own label is an unlabelled fragment.
+
+        The shell turns every admin table into a horizontally scrolling block
+        below 960px. For eight columns that is not a mobile layout, it is the
+        desktop layout behind a letterbox — the tick is in column one and the
+        verdict buttons are in column eight. The stacked-card treatment is what
+        fixes it, and ``data-label`` is the half of it that lives in the markup,
+        so it is the half a test can hold.
+        """
+        self.insert_listing()
+        html = self.load()
+        row = re.search(r"<tbody>(.*?)</tbody>", html, re.S)
+        self.assertIsNotNone(row, "the queue table has no tbody to stack")
+        cells = re.findall(r"<td\b([^>]*)>", row.group(1))
+        self.assertEqual(len(cells), 8, "the row shape changed; re-check the labels")
+        for attrs in cells:
+            self.assertIn("data-label=", attrs, attrs)
+
+    def test_the_header_is_in_a_thead_so_it_can_be_taken_out_of_the_flow(self):
+        """A bare ``<tr>`` of ``<th>`` is folded into ``tbody`` by the browser,
+        which makes it unhideable separately — the stacked view would show the
+        column headings as a ninth card. This is the structural half of §32 and
+        it is invisible in every desktop screenshot."""
+        html = self.load()
+        head = re.search(r"<thead>(.*?)</thead>", html, re.S)
+        self.assertIsNotNone(head, "the queue header is not in a thead")
+        self.assertIn("id='review-all'", head.group(1))
+        self.assertIn("<th>Actions</th>", head.group(1))
+
+    def test_the_labels_say_the_same_thing_as_the_column_headings(self):
+        """Otherwise the phone and the desktop are two different vocabularies
+        for the same eight facts, and a reviewer who learns one has to relearn
+        the other."""
+        self.insert_listing()
+        html = self.load()
+        labels = re.findall(r"<td[^>]*data-label='([^']+)'", html)
+        self.assertEqual(labels, ["Select", "ID", "Product", "Seller", "Commerce",
+                                  "State", "Risk", "Actions"])
+
+    def test_the_narrow_layout_hides_no_fact_the_wide_one_shows(self):
+        """§32's real risk is not that the phone layout is ugly. It is that a
+        "simplified" mobile queue quietly drops the risk score or the blocker
+        note, and a reviewer on a phone then makes a worse decision than the
+        same reviewer at a desk while believing they saw the same product."""
+        blocked = self.insert_listing(seller_user_id=REVIEWER)
+        html = self.load()
+        narrow = re.search(r"@media \(max-width:820px\)\{(.*?)\}</style>", html, re.S)
+        self.assertIsNotNone(narrow, "the queue has no narrow-screen rules")
+        self.assertNotIn("display:none", narrow.group(1),
+                         "the narrow layout hides something the wide one shows")
+        self.assertIn("review-blocked", html)
+        self.assertIn(f"value='{blocked}' data-block=\"{rv.SELF_REVIEW}\"", html)
+
+    def test_the_bulk_bar_stops_being_sticky_where_it_would_cover_the_rows(self):
+        """A sticky bar is a convenience on a 1080px screen and a subtraction on
+        a 667px one — it holds the controls in place on top of the listings
+        they act on."""
+        html = self.load()
+        narrow = re.search(r"@media \(max-width:820px\)\{(.*?)\}</style>", html, re.S)
+        self.assertIn(".review-bulk{position:static}", narrow.group(1))
+
+    def test_reject_does_not_look_like_approve(self):
+        """§31/§32. The admin shell paints every ``<button>`` with one gradient,
+        so the six verdicts on a row rendered identically. Stacked under a thumb
+        at 38px each, "Approve + Publish" and "Archive" were the same green
+        rectangle in the same place — and the reviewer's first clue that they
+        hit the wrong one is the confirmation afterwards.
+        """
+        self.insert_listing()
+        html = self.load()
+        form = html.split("<form method='post'>")[1].split("</form>")[0]
+        by_verb = {verb: weight for weight, verb in
+                   re.findall(r"<button class='(review-verb-[a-z]+)'"
+                              r" name='action' value='(\w+)'", form)}
+        self.assertEqual(by_verb["approve"], "review-verb-go")
+        self.assertEqual(by_verb["reject"], "review-verb-stop")
+        self.assertEqual(by_verb["archive"], "review-verb-stop")
+        self.assertNotEqual(by_verb["approve"], by_verb["reject"])
+
+    def test_a_verdict_nobody_weighed_does_not_default_to_looking_approved(self):
+        """The rule is not "colour the buttons", it is which way the default
+        falls. A verdict added later and forgotten here must read as the
+        cautious one, not inherit the go-ahead."""
+        self.assertEqual(
+            bot.REVIEW_VERB_WEIGHT.get("some_future_verdict", "review-verb-neutral"),
+            "review-verb-neutral")
+        for verb in ("reject", "restrict", "suspend", "archive"):
+            self.assertEqual(bot.REVIEW_VERB_WEIGHT[verb], "review-verb-stop", verb)
+        for verb in ("approve", "feature"):
+            self.assertEqual(bot.REVIEW_VERB_WEIGHT[verb], "review-verb-go", verb)
+
+    def test_every_weight_the_markup_uses_is_a_class_the_page_defines(self):
+        """A class name that appears in the markup and in no stylesheet is the
+        quietest kind of dead styling — the button renders, looks like every
+        other button, and the test that only checked the attribute passes."""
+        self.insert_listing()
+        html = self.load()
+        used = set(re.findall(r"class='(review-verb-[a-z]+)'", html))
+        self.assertTrue(used)
+        for name in used:
+            self.assertIn("." + name + "{", html, name)
+
+    def test_the_verdict_buttons_are_the_business_palette_and_not_a_gradient(self):
+        """Black, white and green, with red reserved for what takes something
+        away. The shell paints every button with a cyan-to-green gradient, which
+        is neither — so the weights are what put this surface back inside the
+        lock, and they do it without reaching into the shared stylesheet that
+        fifty other admin pages read."""
+        html = self.load()
+        for rule in (".review-verb-go{", ".review-verb-stop{", ".review-verb-neutral{"):
+            body = html.split(rule, 1)[1].split("}", 1)[0]
+            self.assertIn("background-image:none", body, rule)
+            self.assertNotIn("gradient", body, rule)
 
     def test_a_selection_cannot_exceed_what_one_batch_will_accept(self):
         """Select-all ticks the page. If a page can hold more rows than

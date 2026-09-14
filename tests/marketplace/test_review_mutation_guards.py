@@ -491,7 +491,7 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
             html = response.get_data(as_text=True)
             for action in rv.ACTIONS:
                 markup = re.search(
-                    r"<button type='button' data-detail-action='"
+                    r"<button[^>]*data-detail-action='"
                     + re.escape(action) + r"'([^>]*)>", html)
                 self.assertIsNotNone(markup, f"no {action} button")
                 self.assertIn("disabled", markup.group(1),
