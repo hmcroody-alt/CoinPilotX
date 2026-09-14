@@ -1123,14 +1123,23 @@ def _initial_processing_status(media_type: str, waveform: list[float] | None) ->
     return "not_required"
 
 
+PROCESSING_JOB_TYPE_BY_MEDIA_TYPE = {
+    "photo": "messenger_photo_thumbnail",
+    "video": "messenger_video_metadata_thumbnail",
+    "voice": "messenger_voice_waveform",
+}
+
+# How many job rows one attachment may ever accumulate before its derived assets
+# are declared unreachable. The sweep below re-queues stranded work, and without
+# a ceiling an attachment whose bytes are genuinely gone would be re-queued on
+# every cycle for the life of the product.
+MAX_PROCESSING_ROUNDS = max(1, int(os.getenv("MESSENGER_MEDIA_MAX_PROCESSING_ROUNDS", "4")))
+
+
 def _enqueue_processing_jobs(cur: Any, attachment_id: int, conversation_id: int, media_type: str, status: str) -> None:
     if not attachment_id or status != "queued":
         return
-    job_type = {
-        "photo": "messenger_photo_thumbnail",
-        "video": "messenger_video_metadata_thumbnail",
-        "voice": "messenger_voice_waveform",
-    }.get(media_type)
+    job_type = PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.get(media_type)
     if not job_type:
         return
     try:
@@ -1144,6 +1153,95 @@ def _enqueue_processing_jobs(cur: Any, attachment_id: int, conversation_id: int,
         )
     except Exception as exc:
         logging.warning("MESSENGER_MEDIA_PROCESSING_QUEUE_SKIPPED attachment_id=%s conversation_id=%s error=%s", attachment_id, conversation_id, exc)
+
+
+def reconcile_processing_backlog(cur: Any, limit: int = 50) -> dict[str, Any]:
+    """Re-queue attachments whose processing job died without producing anything.
+
+    ``_enqueue_processing_jobs`` fires exactly once, at attach time, and nothing
+    has ever reconciled it. For the whole period the media engine did not
+    recognise the three messenger job types, its dispatcher retired each one as
+    *done* on first sight: the job row reads ``done``/``attempts=1`` with no
+    error, while the attachment it was supposed to serve still sits at
+    ``queued`` with no ``thumbnail_key``, no duration and no waveform. Those rows
+    are terminal in both directions -- the job will never run again and the
+    attachment will never re-enqueue -- so every photo, video and voice note sent
+    before the dispatcher was fixed is permanently without a preview.
+
+    The same shape happens for ordinary reasons too: a worker killed mid-job, a
+    deploy between claim and completion, a transient byte-store outage that
+    exhausted ``max_attempts``.
+
+    So this looks at the attachment rather than the job. An attachment that is
+    uploaded, undeleted, unblocked, still in a non-terminal processing state and
+    has no live job gets one, which is the same insert the attach path does --
+    the worker, ``process_attachment`` and ``_write_processing_result`` are
+    untouched, and a re-run of an already-ready attachment is a no-op because
+    nothing outside this state selects. Re-uploading is never required.
+
+    Bounded twice over: ``limit`` per sweep, and ``MAX_PROCESSING_ROUNDS`` job
+    rows per attachment for all time, after which the attachment is marked
+    ``failed`` so the renderer can stop promising a preview that is not coming.
+    """
+    job_types = sorted(PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.values())
+    media_types = sorted(PROCESSING_JOB_TYPE_BY_MEDIA_TYPE)
+    cur.execute(
+        f"""
+        SELECT a.id, a.media_type
+        FROM message_attachments a
+        WHERE a.media_type IN ({",".join(["?"] * len(media_types))})
+          AND LOWER(COALESCE(a.processing_status,'')) IN ('queued','processing')
+          AND LOWER(COALESCE(a.upload_status,'')) IN ('uploaded','attached')
+          AND a.deleted_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM pulse_jobs j
+            WHERE j.target_type='message_attachment'
+              AND j.target_id=a.id
+              AND j.job_type IN ({",".join(["?"] * len(job_types))})
+              AND LOWER(COALESCE(j.status,'')) IN ('pending','processing')
+          )
+        ORDER BY a.id DESC
+        LIMIT ?
+        """,
+        [*media_types, *job_types, max(1, int(limit or 50))],
+    )
+    candidates = [(int(_row_get(row, "id", 0) or 0), str(_row_get(row, "media_type", "") or "").lower()) for row in cur.fetchall()]
+    requeued = 0
+    exhausted = 0
+    for attachment_id, media_type in candidates:
+        job_type = PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.get(media_type)
+        if not attachment_id or not job_type:
+            continue
+        cur.execute(
+            "SELECT COUNT(*) FROM pulse_jobs WHERE target_type='message_attachment' AND target_id=? AND job_type=?",
+            (attachment_id, job_type),
+        )
+        rounds = int((cur.fetchone() or [0])[0] or 0)
+        if rounds >= MAX_PROCESSING_ROUNDS:
+            cur.execute(
+                "UPDATE message_attachments SET processing_status='failed', error_code=?, error_message=?, updated_at=? WHERE id=?",
+                (
+                    "processing_unrecoverable",
+                    "Preview could not be generated for this attachment.",
+                    now_iso(),
+                    attachment_id,
+                ),
+            )
+            exhausted += 1
+            logging.warning(
+                "MESSENGER_MEDIA_PROCESSING_EXHAUSTED attachment_id=%s media_type=%s rounds=%s",
+                attachment_id, media_type, rounds,
+            )
+            continue
+        # Reuses the attach-time insert so there is one definition of what a
+        # messenger processing job is.
+        _enqueue_processing_jobs(cur, attachment_id, 0, media_type, "queued")
+        requeued += 1
+        logging.info(
+            "MESSENGER_MEDIA_PROCESSING_REQUEUED attachment_id=%s media_type=%s job_type=%s round=%s",
+            attachment_id, media_type, job_type, rounds + 1,
+        )
+    return {"candidates": len(candidates), "requeued": requeued, "exhausted": exhausted}
 
 
 def _fetch_attachment(cur: Any, attachment_id: int) -> Any:
