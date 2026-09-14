@@ -19,12 +19,30 @@ Ordering matters: run this only after the fix is deployed. Against the old code
 the worker regenerates the same ghost and the repair is a no-op that costs a
 round of processing.
 
+Clearing the key is only half the repair, and the missing half is not obvious.
+``reconcile_processing_backlog`` gives an attachment ``MAX_PROCESSING_ROUNDS``
+(4) job rows for all time, then marks it ``failed`` rather than re-queuing it
+again. Every attachment stranded by the old dispatcher had already accumulated
+exactly 4 -- all of them reading ``done``, none of them having produced anything
+-- so a row handed back as ``queued`` was marked ``processing_unrecoverable`` on
+the very next sweep instead of being reprocessed. Observed the hard way: of 38
+rows cleared in the first run, 35 went straight to ``failed``.
+
+Raising the ceiling would loosen a real safety bound for every attachment, and
+deleting the stale job rows would destroy the audit trail. Neither is needed.
+The sweep skips any attachment that already has a *live* job -- that is its
+"someone else is on it" check -- so enqueuing the job directly hands the work to
+the ordinary worker path and the ceiling never comes into play. That is what
+``--requeue`` does, and it is why the two phases belong in one script.
+
 Safety: read-only unless ``--apply`` is passed. It never touches a row whose
 source object is missing (processing would defer forever on absent bytes), never
 touches a deleted row, and only ever clears a key it has just proven is dead.
 
-    python3 scripts/repair_ghost_thumbnail_keys.py            # report only
-    python3 scripts/repair_ghost_thumbnail_keys.py --apply    # write
+    python3 scripts/repair_ghost_thumbnail_keys.py              # report only
+    python3 scripts/repair_ghost_thumbnail_keys.py --apply      # clear ghost keys
+    python3 scripts/repair_ghost_thumbnail_keys.py --requeue    # report phase two
+    python3 scripts/repair_ghost_thumbnail_keys.py --requeue --apply
 
 Run it under a service that has both the database URL and the R2 credentials, or
 export them yourself.
@@ -73,10 +91,101 @@ def _object_client():
     return client, bucket
 
 
+JOB_TYPE_BY_MEDIA_TYPE = {
+    "photo": "messenger_photo_thumbnail",
+    "video": "messenger_video_metadata_thumbnail",
+    "voice": "messenger_voice_waveform",
+}
+
+
+def _requeue_exhausted(cur, conn, client, bucket, args) -> int:
+    """Give back the attachments the sweep retired because their budget was already spent.
+
+    These read ``failed``/``processing_unrecoverable`` with no thumbnail. The
+    budget they exhausted was spent entirely by a dispatcher that retired each
+    job without running it, so the ceiling is measuring a failure that never
+    actually happened.
+
+    Enqueuing a live job is the whole trick: the sweep's ``NOT EXISTS`` guard
+    skips any attachment with a pending or processing job, so the row is handed
+    to the normal worker path and never re-tested against the ceiling. No job
+    history is deleted and no global bound is relaxed.
+    """
+    cur.execute(
+        """
+        SELECT id, media_type, COALESCE(storage_key, '')
+        FROM message_attachments
+        WHERE deleted_at IS NULL
+          AND LOWER(COALESCE(processing_status, '')) = 'failed'
+          AND COALESCE(thumbnail_key, '') = ''
+          AND LOWER(COALESCE(upload_status, '')) IN ('uploaded', 'attached')
+          AND LOWER(COALESCE(media_type, '')) IN %s
+          AND NOT EXISTS (
+            SELECT 1 FROM pulse_jobs j
+            WHERE j.target_type = 'message_attachment' AND j.target_id = message_attachments.id
+              AND LOWER(COALESCE(j.status, '')) IN ('pending', 'processing')
+          )
+        ORDER BY id DESC
+        """,
+        (REPAIRABLE_MEDIA_TYPES,),
+    )
+    rows = cur.fetchall()
+
+    eligible: list[tuple[int, str]] = []
+    skipped = 0
+    for attachment_id, media_type, storage_key in rows:
+        job_type = JOB_TYPE_BY_MEDIA_TYPE.get(str(media_type or "").lower())
+        if not job_type or not storage_key:
+            skipped += 1
+            continue
+        try:
+            client.head_object(Bucket=bucket, Key=storage_key)
+        except Exception:
+            # Bytes genuinely gone. This is the case the ceiling exists for.
+            skipped += 1
+            continue
+        eligible.append((int(attachment_id), job_type))
+
+    if args.limit and len(eligible) > args.limit:
+        eligible = eligible[: args.limit]
+
+    print(f"retired attachments with a recoverable source: {len(eligible)} (skipped {skipped})")
+    if not eligible:
+        return 0
+    if not args.apply:
+        print(f"DRY RUN. {len(eligible)} row(s) would be re-queued. Pass --apply to write.")
+        return 0
+
+    for attachment_id, job_type in eligible:
+        cur.execute(
+            """
+            INSERT INTO pulse_jobs (job_type, target_type, target_id, status, attempts, max_attempts, created_at, updated_at)
+            VALUES (%s, 'message_attachment', %s, 'pending', 0, 3, NOW()::text, NOW()::text)
+            """,
+            (job_type, attachment_id),
+        )
+        cur.execute(
+            """
+            UPDATE message_attachments
+            SET processing_status = 'queued', error_code = '', error_message = '', updated_at = NOW()::text
+            WHERE id = %s
+            """,
+            (attachment_id,),
+        )
+    conn.commit()
+    print(f"Re-queued {len(eligible)} attachment(s) with a live job each.")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--apply", action="store_true", help="write the repair (default: report only)")
     parser.add_argument("--limit", type=int, default=0, help="cap the number of rows repaired")
+    parser.add_argument(
+        "--requeue",
+        action="store_true",
+        help="phase two: hand attachments the sweep has already given up on back to the worker",
+    )
     args = parser.parse_args()
 
     import psycopg2
@@ -84,6 +193,9 @@ def main() -> int:
     client, bucket = _object_client()
     conn = psycopg2.connect(_database_url())
     cur = conn.cursor()
+
+    if args.requeue:
+        return _requeue_exhausted(cur, conn, client, bucket, args)
     cur.execute(
         """
         SELECT id, media_type, processing_status, upload_status,
