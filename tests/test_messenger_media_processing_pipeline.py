@@ -540,6 +540,36 @@ class StrandedAttachmentsGetTheirJobBack(ProcessingHarness):
         second = foundation.reconcile_processing_backlog(self.cur, limit=3)
         self.assertEqual(second["requeued"], 3)
 
+    def test_retiring_a_job_that_changed_nothing_is_reported(self):
+        """The shape the original defect had in the database, made audible.
+
+        A job row reading done/attempts=1 with no error beside an attachment
+        still at queued is a healthy completion as far as every query anyone
+        runs is concerned. That is how it survived months, and how attachment 87
+        reproduced it after the dispatcher was fixed.
+        """
+        source = (Path(foundation.__file__).resolve().parents[1] / "media_worker.py").read_text(encoding="utf-8")
+        handler = source.split("def _process_messenger_attachment_job(")[1].split("\ndef ")[0]
+        detector = source.split("def _warn_if_still_unprocessed(")[1].split("\ndef ")[0]
+
+        # MUTATION: move the call below _complete_job and it reads the row after
+        # the job is already retired, which is not the question being asked.
+        self.assertLess(
+            handler.index("_warn_if_still_unprocessed"),
+            handler.rindex("_complete_job(cur, job_id, \"done\")"),
+        )
+        # Only the completion path. A deferral has not claimed to finish anything.
+        deferred = handler.split('if status == "deferred"')[1].split("return")[0]
+        self.assertNotIn("_warn_if_still_unprocessed", deferred)
+        # Warning, not info: this is the line someone greps for.
+        self.assertIn("logging.warning", detector)
+        self.assertIn("MESSENGER_MEDIA_PROCESS_RETIRED_UNPROCESSED", detector)
+        # A finished attachment must not produce it, or it is noise within a day.
+        self.assertIn("if processing_status not in {\"queued\", \"processing\"}:", detector)
+        self.assertIn("return", detector.split("not in {\"queued\", \"processing\"}:")[1][:40])
+        # Never let the detector take down the job it is observing.
+        self.assertIn("except Exception:", detector)
+
     def test_the_worker_runs_the_sweep_before_it_drains_the_queue(self):
         """Ordering is the difference between healing in one cycle and two."""
         source = (Path(foundation.__file__).resolve().parents[1] / "media_worker.py").read_text(encoding="utf-8")

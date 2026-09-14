@@ -608,8 +608,47 @@ def _process_messenger_attachment_job(cur, job, job_type: str, target_id: int) -
         logging.info("MESSENGER_MEDIA_PROCESS_DEFERRED job_id=%s attachment_id=%s reason=%s", job_id, target_id, result.get("reason"))
         _reschedule(cur, job, seconds=120)
         return
+    _warn_if_still_unprocessed(cur, job_id, target_id, status, result.get("reason"))
     logging.info("MESSENGER_MEDIA_PROCESS_DONE job_id=%s attachment_id=%s status=%s", job_id, target_id, status)
     _complete_job(cur, job_id, "done")
+
+
+def _warn_if_still_unprocessed(cur, job_id: int, attachment_id: int, status: str, reason) -> None:
+    """Say so when a job retires while its attachment is still waiting.
+
+    This pair -- a job row reading ``done``/``attempts=1`` with no error, beside
+    an attachment still at ``queued`` with no ``thumbnail_key`` -- is what the
+    original defect looked like in the database, and it is indistinguishable
+    from a healthy completion unless something checks. It went unnoticed for
+    months and cost every messenger photo, video and voice note its preview.
+
+    Attachment 87 is the same shape again after the dispatcher was fixed: two
+    jobs, both retired in under three seconds, the row untouched. Nothing in the
+    code that survived elimination explains it, and by the time it was noticed
+    the platform's log window had rolled. So this is not a fix for that
+    attachment -- ``reconcile_processing_backlog`` already bounds it -- it is
+    the line that will name the cause the next time it happens.
+
+    One indexed read per completed job, and only on the completion path.
+    """
+    try:
+        cur.execute(
+            "SELECT processing_status, thumbnail_key FROM message_attachments WHERE id=? LIMIT 1",
+            (attachment_id,),
+        )
+        row = cur.fetchone()
+    except Exception:
+        return
+    if not row:
+        return
+    processing_status = str((row["processing_status"] if hasattr(row, "keys") else row[0]) or "").lower()
+    if processing_status not in {"queued", "processing"}:
+        return
+    logging.warning(
+        "MESSENGER_MEDIA_PROCESS_RETIRED_UNPROCESSED job_id=%s attachment_id=%s "
+        "result_status=%s reason=%s processing_status=%s",
+        job_id, attachment_id, status, reason, processing_status,
+    )
 
 
 def _process_media_job(cur, job) -> None:
