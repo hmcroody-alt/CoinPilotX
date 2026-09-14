@@ -61,11 +61,13 @@ def _request(path: str, *, method: str = "GET", payload: dict | None = None, tim
         return {"ok": False, "status": "api_failed", "message": str(exc)[:500]}
 
 
-def _playback_id_from_live_stream(data: dict) -> str:
-    for item in data.get("playback_ids") or []:
-        if item.get("policy") == "public" or item.get("id"):
-            return item.get("id") or ""
-    return ""
+def _preferred_playback_id(data: dict) -> str:
+    """Prefer the public ID; a signed-only asset still resolves to its signed one."""
+    items = [item for item in data.get("playback_ids") or [] if item.get("id")]
+    for item in items:
+        if item.get("policy") == "public":
+            return item["id"]
+    return items[0]["id"] if items else ""
 
 
 def playback_url(playback_id: str) -> str:
@@ -133,7 +135,7 @@ def create_mux_live_stream(*, title: str = "PulseSoc Live", record: bool = True,
     if not response.get("ok"):
         return response
     data = response.get("data") or {}
-    playback_id = _playback_id_from_live_stream(data)
+    playback_id = _preferred_playback_id(data)
     return {
         "ok": True,
         "provider": "mux",
@@ -157,7 +159,7 @@ def get_mux_live_stream(live_stream_id: str) -> dict:
     if not response.get("ok"):
         return response
     data = response.get("data") or {}
-    playback_id = _playback_id_from_live_stream(data)
+    playback_id = _preferred_playback_id(data)
     return {
         "ok": True,
         "provider": "mux",
@@ -189,11 +191,7 @@ def create_mux_asset_from_live_recording(*, recording_asset_id: str = "", source
         if not response.get("ok"):
             return response
         data = response.get("data") or {}
-        playback_id = ""
-        for item in data.get("playback_ids") or []:
-            if item.get("policy") == "public" or item.get("id"):
-                playback_id = item.get("id") or ""
-                break
+        playback_id = _preferred_playback_id(data)
         return {
             "ok": True,
             "mux_recording_asset_id": data.get("id") or recording_asset_id,

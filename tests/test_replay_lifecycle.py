@@ -52,6 +52,43 @@ def test_private_asset_uses_signed_policy_and_recovery_marker(monkeypatch):
     assert calls[0]["payload"]["passthrough"] == "pulse_replay:1:sid"
 
 
+def test_public_playback_id_wins_over_a_signed_sibling(monkeypatch):
+    """Signing keys are unset in production, so picking the signed sibling of a
+    public ID silently yields an empty replay URL."""
+    monkeypatch.delenv("MUX_SIGNING_KEY_ID", raising=False)
+    monkeypatch.delenv("MUX_SIGNING_PRIVATE_KEY", raising=False)
+    asset = {"id": "asset", "status": "ready", "playback_ids": [{"id": "sig", "policy": "signed"}, {"id": "pub", "policy": "public"}]}
+    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": asset})
+
+    result = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")
+
+    assert result["mux_recording_playback_id"] == "pub"
+    assert result["playback_url"] == "https://stream.mux.com/pub.m3u8"
+
+
+def test_signed_only_asset_still_resolves_its_signed_id(monkeypatch):
+    """A private replay asset has no public ID; preferring public must not drop it."""
+    asset = {"id": "asset", "status": "ready", "playback_ids": [{"id": "sig", "policy": "signed"}]}
+    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": asset})
+    monkeypatch.setattr(mux_live_service, "signed_playback_url", lambda playback_id: f"https://stream.mux.com/{playback_id}.m3u8?token=t")
+
+    result = mux_live_service.create_mux_asset_from_live_recording(recording_asset_id="asset")
+
+    assert result["mux_recording_playback_id"] == "sig"
+    assert result["playback_url"] == "https://stream.mux.com/sig.m3u8?token=t"
+
+
+def test_live_stream_playback_id_prefers_the_public_policy(monkeypatch):
+    """Live playback URLs are never signed, so a signed ID here plays back as a 403."""
+    stream = {"id": "stream", "status": "active", "playback_ids": [{"id": "sig", "policy": "signed"}, {"id": "pub", "policy": "public"}]}
+    monkeypatch.setattr(mux_live_service, "_request", lambda *a, **kw: {"ok": True, "data": stream})
+
+    result = mux_live_service.get_mux_live_stream("stream")
+
+    assert result["mux_playback_id"] == "pub"
+    assert result["playback_url"] == "https://stream.mux.com/pub.m3u8"
+
+
 def test_signed_playback_token_is_valid_and_stable(monkeypatch):
     import base64
     from urllib.parse import urlparse, parse_qs
