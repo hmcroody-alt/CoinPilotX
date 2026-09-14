@@ -269,6 +269,11 @@ function storePolicy(over: Partial<StoreImportPolicy> = {}): StoreImportPolicy {
     pricingSource: "PLATFORM_DEFAULT",
     autoPublish: true,
     marketplaceAutolist: false,
+    // `null`, not `0`, and the default matters: the platform has no freight figure
+    // to default to, and a fixture that said `0` would make every test here agree
+    // that shipping is free — which is the one wrong answer §12 exists to avoid.
+    shippingAllowanceCents: null,
+    shippingAllowanceSource: "PLATFORM_DEFAULT",
     configured: false,
     ...over
   };
@@ -1828,7 +1833,7 @@ describe("ImportPolicyScreen", () => {
   });
 
   it("writes only the field that changed", async () => {
-    // The PATCH claim, at the screen. Three settings share one row, so a writer
+    // The PATCH claim, at the screen. Four settings share one row, so a writer
     // that sent the whole policy would overwrite a margin the merchant changed on
     // the import cart thirty seconds ago with this screen's stale copy of it.
     const { view } = await renderPolicy();
@@ -1894,6 +1899,263 @@ describe("ImportPolicyScreen", () => {
     await waitFor(() => expect(view.getByTestId("import-policy-auto-publish")).toBeTruthy());
 
     expect(view.getByText(/Marketplace listing is a separate decision/)).toBeTruthy();
+  });
+
+  /**
+   * §12 at the surface: the merchant can finally state what freight costs them.
+   *
+   * The backend has priced against landed cost for a while, and until this control
+   * existed the only way to supply the number was a hand-rolled PATCH — which
+   * means in practice nobody supplied it, and every margin PulseSoc showed was
+   * measured against the item cost alone. That is the §31 failure exactly: a
+   * feature that is real everywhere except where a merchant could reach it.
+   */
+  describe("declaring what the supplier charges to ship", () => {
+    async function withAllowance(cents: number | null) {
+      const { view } = await renderPolicy(
+        storePolicy({
+          shippingAllowanceCents: cents,
+          shippingAllowanceSource: cents === null ? "PLATFORM_DEFAULT" : "STORE"
+        })
+      );
+      await waitFor(() =>
+        expect(view.getByTestId("import-policy-shipping-allowance")).toBeTruthy()
+      );
+      return view;
+    }
+
+    const field = (view: any) => view.getByTestId("import-policy-shipping-allowance");
+    const saveButton = (view: any) => view.getByTestId("import-policy-shipping-allowance-save");
+
+    it("shows an undeclared allowance as blank, never as zero", async () => {
+      // The whole §12 defect in one assertion. A field rendering `null` as "0.00"
+      // is the screen telling the merchant their supplier ships free, in the
+      // supplier's own voice, on no evidence at all.
+      const view = await withAllowance(null);
+      expect(field(view).props.value).toBe("");
+    });
+
+    it("does not describe an undeclared allowance as free shipping", async () => {
+      const view = await withAllowance(null);
+      expect(view.getByText(/Nobody has told us/)).toBeTruthy();
+      // No copy anywhere on the card may reduce "we don't know" to "it's free".
+      expect(view.queryByText(/free/i)).toBeNull();
+      expect(view.queryByText(/no shipping cost/i)).toBeNull();
+    });
+
+    it("shows a declared amount in the units the merchant typed it in", async () => {
+      const view = await withAllowance(1250);
+      expect(field(view).props.value).toBe("12.50");
+    });
+
+    it("states the stored figure in prose, not only inside the text box", async () => {
+      // The text box is a draft — it holds whatever is being typed, including
+      // after a save fails. That is only safe because the setting itself is
+      // written out somewhere the draft cannot overwrite.
+      const view = await withAllowance(1250);
+      expect(view.getByText(/Your store is set to \$12\.50 a unit/)).toBeTruthy();
+    });
+
+    it("tells a merchant who declared zero what they declared", async () => {
+      // `0` and `null` render as two different cards on purpose. Sharing copy
+      // between them would make a real answer look like a missing one, and the
+      // merchant would keep being nagged for a number they already gave.
+      const view = await withAllowance(0);
+      expect(field(view).props.value).toBe("0.00");
+      expect(view.getByText(/already inside what your supplier charges/)).toBeTruthy();
+    });
+
+    it("saves what the merchant typed, in cents, and nothing else", async () => {
+      const view = await withAllowance(null);
+      mockUpdateStorePolicy.mockResolvedValue(storePolicy({ shippingAllowanceCents: 450 }));
+
+      fireEvent.changeText(field(view), "4.50");
+      await act(async () => {
+        fireEvent.press(saveButton(view));
+      });
+
+      expect(mockUpdateStorePolicy).toHaveBeenCalledTimes(1);
+      const [, changes] = mockUpdateStorePolicy.mock.calls[0];
+      expect(Object.keys(changes)).toEqual(["shippingAllowanceCents"]);
+      expect(changes.shippingAllowanceCents).toBe(450);
+    });
+
+    it("saves a typed zero as zero", async () => {
+      // A merchant whose supplier bakes freight into the item price has a real
+      // answer, and it is `0`. The path that drops it is the same falsy check that
+      // drops it in the client, so it is pinned at both ends.
+      const view = await withAllowance(null);
+      mockUpdateStorePolicy.mockResolvedValue(storePolicy({ shippingAllowanceCents: 0 }));
+
+      fireEvent.changeText(field(view), "0");
+      await act(async () => {
+        fireEvent.press(saveButton(view));
+      });
+
+      const [, changes] = mockUpdateStorePolicy.mock.calls[0];
+      expect(changes.shippingAllowanceCents).toBe(0);
+    });
+
+    it("warns before saving zero, not after", async () => {
+      const view = await withAllowance(null);
+      fireEvent.changeText(field(view), "0");
+      await waitFor(() =>
+        expect(view.getByText(/tells us shipping is already in the item price/)).toBeTruthy()
+      );
+      expect(mockUpdateStorePolicy).not.toHaveBeenCalled();
+    });
+
+    it("will not write a half-typed number", async () => {
+      // "1" is a waypoint to "12.50". A field that wrote on every keystroke would
+      // price the merchant's entire store against one cent of freight for as long
+      // as it took them to type the second character.
+      const view = await withAllowance(null);
+      fireEvent.changeText(field(view), "1");
+      fireEvent.changeText(field(view), "12");
+      fireEvent.changeText(field(view), "12.50");
+      await settle();
+      expect(mockUpdateStorePolicy).not.toHaveBeenCalled();
+    });
+
+    it("offers no Save until the typed amount is usable and different", async () => {
+      const view = await withAllowance(900);
+      // Unchanged: the field agrees with the store, so there is nothing to save.
+      expect(saveButton(view).props.accessibilityState.disabled).toBe(true);
+
+      fireEvent.changeText(field(view), "abc");
+      await waitFor(() =>
+        expect(view.getByText(/Enter an amount like 4.50/)).toBeTruthy()
+      );
+      expect(saveButton(view).props.accessibilityState.disabled).toBe(true);
+
+      fireEvent.changeText(field(view), "12.50");
+      await waitFor(() =>
+        expect(saveButton(view).props.accessibilityState.disabled).toBe(false)
+      );
+    });
+
+    it("ignores a press on a Save that is off", async () => {
+      const view = await withAllowance(900);
+      await act(async () => {
+        fireEvent.press(saveButton(view));
+      });
+      expect(mockUpdateStorePolicy).not.toHaveBeenCalled();
+    });
+
+    it("ignores a press begun while Save was on and finished after it went off", async () => {
+      // The one press `disabled` does not stop, and the reason the handler carries
+      // the same rule as the affordance rather than only checking for a null parse.
+      //
+      // A Pressable that is disabled at rest blocks every path in — so a test that
+      // just presses a greyed-out button proves nothing about the handler. What
+      // gets through is a press whose *grant* happened while the button was live:
+      // the touch is already owned by the time the value changes underneath it, and
+      // the release still runs. Reproduced here by driving the responder directly,
+      // because `fireEvent.press` is grant-and-release in one call and cannot
+      // express a state change in the middle.
+      //
+      // The value it lands on has to parse cleanly, or this proves nothing: the
+      // handler's other check (`parsed === null`) would catch an empty field on its
+      // own, and the test would stay green with the `!canSave` guard deleted. So
+      // the merchant corrects the figure back to the one already stored — a
+      // perfectly valid number that must not be written, because writing it is a
+      // PATCH that changes nothing and re-times a rate limit for no reason.
+      const view = await withAllowance(900);
+      fireEvent.changeText(field(view), "12.50");
+      await waitFor(() =>
+        expect(saveButton(view).props.accessibilityState.disabled).toBe(false)
+      );
+
+      const touch = { nativeEvent: {}, currentTarget: 1, target: 1, persist: () => undefined };
+      saveButton(view).props.onStartShouldSetResponder?.();
+      saveButton(view).props.onResponderGrant?.(touch);
+      // Changes back under the finger, between touch-down and touch-up.
+      fireEvent.changeText(field(view), "9.00");
+      await act(async () => {
+        saveButton(view).props.onResponderRelease?.(touch);
+      });
+
+      expect(mockUpdateStorePolicy).not.toHaveBeenCalled();
+    });
+
+    it("lets a merchant take a declaration back without claiming shipping is free", async () => {
+      // The way back to "unknown" for someone who declared a figure they can no
+      // longer stand behind. It must not be spelled `0`, which is the opposite
+      // claim, so it sends the sentinel the server compares against.
+      const view = await withAllowance(900);
+      mockUpdateStorePolicy.mockResolvedValue(storePolicy({ shippingAllowanceCents: null }));
+
+      await act(async () => {
+        fireEvent.press(view.getByTestId("import-policy-shipping-allowance-clear"));
+      });
+
+      const [, changes] = mockUpdateStorePolicy.mock.calls[0];
+      expect(changes.shippingAllowanceCents).toBe("UNKNOWN");
+      await waitFor(() => expect(field(view).props.value).toBe(""));
+    });
+
+    it("offers no way to clear an allowance nobody declared", async () => {
+      const view = await withAllowance(null);
+      expect(view.queryByTestId("import-policy-shipping-allowance-clear")).toBeNull();
+    });
+
+    it("takes the server's figure rather than the merchant's", async () => {
+      // The server normalises and may answer with something other than what was
+      // sent. A screen that kept its own optimistic copy would show a number the
+      // store is not priced against.
+      const view = await withAllowance(null);
+      mockUpdateStorePolicy.mockResolvedValue(storePolicy({ shippingAllowanceCents: 1000 }));
+
+      fireEvent.changeText(field(view), "9.99");
+      await act(async () => {
+        fireEvent.press(saveButton(view));
+      });
+
+      await waitFor(() => expect(field(view).props.value).toBe("10.00"));
+    });
+
+    it("keeps the draft when the write fails, and does not claim it saved", async () => {
+      // Both halves matter. Discarding the entry would let a 503 silently eat a
+      // number the merchant believes they set; keeping it without correcting the
+      // prose would leave the box reading $9.00 beside a store priced at nothing.
+      const view = await withAllowance(null);
+      mockUpdateStorePolicy.mockRejectedValue(
+        new PulseApiError("down", 503, "provider_unavailable")
+      );
+
+      fireEvent.changeText(field(view), "9.00");
+      await act(async () => {
+        fireEvent.press(saveButton(view));
+      });
+
+      await waitFor(() =>
+        expect(view.getByText("That didn't save. Your settings are unchanged.")).toBeTruthy()
+      );
+      expect(field(view).props.value).toBe("9.00");
+      // The setting itself did not move, and the card still says so.
+      expect(view.getByText(/Nobody has told us/)).toBeTruthy();
+      // And Save is still live, so retrying is one tap rather than a retype.
+      expect(saveButton(view).props.accessibilityState.disabled).toBe(false);
+    });
+
+    it("re-seeds the box only when the server has confirmed a figure", async () => {
+      // The rollback case above and this one differ by one thing — whether the
+      // write landed — and the screen must not tell them apart by watching a value
+      // move. An optimistic write and its rollback land in the same React commit,
+      // so a value-watching effect sees nothing happen at all.
+      const view = await withAllowance(null);
+      mockUpdateStorePolicy.mockResolvedValue(storePolicy({ shippingAllowanceCents: 900 }));
+
+      fireEvent.changeText(field(view), "9");
+      await act(async () => {
+        fireEvent.press(saveButton(view));
+      });
+
+      // Normalised to the stored figure's own formatting, from the server's answer.
+      await waitFor(() => expect(field(view).props.value).toBe("9.00"));
+      expect(view.getByText(/Your store is set to \$9\.00 a unit/)).toBeTruthy();
+      expect(saveButton(view).props.accessibilityState.disabled).toBe(true);
+    });
   });
 });
 

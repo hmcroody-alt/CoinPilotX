@@ -943,6 +943,30 @@ export type StoreImportPolicy = {
    */
   marketplaceAutolist: boolean;
   /**
+   * What this store's supplier charges to ship one unit, in cents — or `null`.
+   *
+   * `null` is not zero, and that distinction is the whole point of the field.
+   * Zero means the merchant declared that freight is already inside the item
+   * price. `null` means nobody has said, and the margins shown everywhere else
+   * are then measured against the item cost alone — which on a cheap, heavy
+   * product is a margin that does not exist.
+   *
+   * There is no platform default here, unlike `pricingRule`. A default margin is
+   * a choice PulseSoc may make; a default freight cost would be PulseSoc
+   * asserting what a supplier charges, which it cannot know. Nor can it be
+   * estimated at import time: a real CJ quote needs a destination, and at import
+   * time there is no buyer.
+   */
+  shippingAllowanceCents: number | null;
+  /**
+   * `STORE` when the merchant declared it, `PLATFORM_DEFAULT` when nobody has.
+   *
+   * Reads oddly beside a `null` allowance — the platform has no number it could
+   * have defaulted to — but it is the same vocabulary as `pricingSource`, and the
+   * alternative is a second one for the same concept.
+   */
+  shippingAllowanceSource: PricingSource;
+  /**
    * Whether this store has ever saved a policy.
    *
    * `false` does not mean "no policy" — the values above are the platform's and
@@ -953,15 +977,66 @@ export type StoreImportPolicy = {
   configured: boolean;
 };
 
+/**
+ * Send as `shippingAllowanceCents` to un-declare an allowance.
+ *
+ * `undefined` already means "leave this field alone" for every field on this
+ * PATCH, and the cleared value *is* absent. So clearing needs a third value, and
+ * it has to be one that survives JSON. The server compares against the identical
+ * constant (`store_policy.CLEAR_ALLOWANCE`).
+ */
+export const CLEAR_SHIPPING_ALLOWANCE = "UNKNOWN" as const;
+
+function normalizeShippingAllowance(raw: unknown): number | null {
+  // Deliberately strict, and deliberately not `Number(raw) || null`: `0` is a
+  // real declaration — "freight is in the item price" — and must survive, while a
+  // string or a fraction of a cent must not be rendered as a figure the merchant
+  // never set.
+  if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) return null;
+  return raw;
+}
+
 function normalizeStorePolicy(raw: unknown): StoreImportPolicy {
   const value = (raw || {}) as Record<string, unknown>;
+  const allowance = normalizeShippingAllowance(value.shipping_allowance_cents);
   return {
     pricingRule: normalizePricingRule(value.pricing_rule),
     pricingSource: normalizePricingSource(value.pricing_source),
     autoPublish: value.auto_publish === undefined ? true : value.auto_publish === true,
     marketplaceAutolist: value.marketplace_autolist === true,
+    shippingAllowanceCents: allowance,
+    // Floored by the number rather than taken on its own: a source of `STORE`
+    // beside a `null` allowance would light up "you set this" on a field showing
+    // nothing, and a figure this client had just rejected is the likeliest way to
+    // arrive there.
+    shippingAllowanceSource:
+      allowance === null
+        ? "PLATFORM_DEFAULT"
+        : normalizePricingSource(value.shipping_allowance_source),
     configured: value.configured === true
   };
+}
+
+/**
+ * Parse a merchant's typed dollar amount into whole cents.
+ *
+ * Returns `null` for anything unusable, and the caller must read that as "do not
+ * send" rather than as zero: a blank field is not a declaration of free shipping.
+ * So `""` is `null` and so is `"abc"`, while `"0"` is `0`.
+ *
+ * Rounded, not truncated. `Number.parseFloat("9.29") * 100` is `928.9999…`, and
+ * truncating would quietly shave a cent off a good half of what merchants type.
+ */
+export function shippingAllowanceFromInput(input: string): number | null {
+  const trimmed = (input || "").trim().replace(/^\$/, "");
+  if (!trimmed || trimmed === "." || !/^\d*\.?\d*$/.test(trimmed)) return null;
+  const dollars = Number.parseFloat(trimmed);
+  if (!Number.isFinite(dollars) || dollars < 0) return null;
+  const cents = Math.round(dollars * 100);
+  // The server's own ceiling (`pricing.MAX_PRICE_CENTS`). Refusing here means the
+  // merchant is told by the field rather than by a 400 the screen has to explain.
+  if (cents > 1_000_000_000) return null;
+  return cents;
 }
 
 export async function getStoreImportPolicy(scope: DropshippingScope): Promise<StoreImportPolicy> {
@@ -973,9 +1048,14 @@ export async function getStoreImportPolicy(scope: DropshippingScope): Promise<St
  * Change one or more policy fields. Anything omitted is left alone.
  *
  * PATCH semantics all the way down, and the reason is a real bug rather than a
- * preference: three independent controls share one row, and a writer that sent a
+ * preference: four independent controls share one row, and a writer that sent a
  * whole policy object would overwrite whichever field the merchant changed on the
  * other screen with the stale copy this one is holding.
+ *
+ * `shippingAllowanceCents` takes whole cents, or `CLEAR_SHIPPING_ALLOWANCE` to
+ * un-declare. It must not be sent as `0` to mean "we don't know" — the server
+ * reads `0` as a merchant stating that freight is already in the item price, and
+ * prices every import of theirs accordingly.
  */
 export async function updateStoreImportPolicy(
   scope: DropshippingScope,
@@ -983,6 +1063,7 @@ export async function updateStoreImportPolicy(
     pricingRule?: PricingRule;
     autoPublish?: boolean;
     marketplaceAutolist?: boolean;
+    shippingAllowanceCents?: number | typeof CLEAR_SHIPPING_ALLOWANCE;
   }
 ): Promise<StoreImportPolicy> {
   const response = await pulseApi<Record<string, unknown>>(`${BASE}/store-policy`, {
@@ -990,7 +1071,8 @@ export async function updateStoreImportPolicy(
     body: scopeBody(scope, {
       pricing_rule: changes.pricingRule,
       auto_publish: changes.autoPublish,
-      marketplace_autolist: changes.marketplaceAutolist
+      marketplace_autolist: changes.marketplaceAutolist,
+      shipping_allowance_cents: changes.shippingAllowanceCents
     })
   });
   return normalizeStorePolicy(response.policy);

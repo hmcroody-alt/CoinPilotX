@@ -56,6 +56,7 @@ jest.mock("../pulseApi", () => ({
 }));
 
 import {
+  CLEAR_SHIPPING_ALLOWANCE,
   DROPSHIPPING_DATA_GAPS,
   IMPORT_OUTCOMES,
   PUBLISH_PROBLEMS,
@@ -74,6 +75,7 @@ import {
   listConnectionShops,
   getImportCart,
   getImportedProduct,
+  getStoreImportPolicy,
   getSupplierProduct,
   importNeedsReview,
   importSelected,
@@ -82,8 +84,10 @@ import {
   previewPricing,
   retryAfterSeconds,
   searchSupplierProducts,
+  shippingAllowanceFromInput,
   stateForError,
-  updateImportedProduct
+  updateImportedProduct,
+  updateStoreImportPolicy
 } from "../dropshipping";
 import { PulseApiError } from "../pulseApi";
 
@@ -1124,6 +1128,166 @@ describe("the vocabularies are closed and complete", () => {
       // A sentence, not a fragment: these render as the body of a card.
       expect(gap.needs.length).toBeGreaterThan(40);
       expect(gap.needs.trim()).toMatch(/[.!]$/);
+    });
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * 7. A freight allowance of nothing is not a freight allowance of zero
+ * ------------------------------------------------------------------ */
+
+/**
+ * §12's client half, and the invariant is the one from section 1 wearing a
+ * different hat.
+ *
+ * `null` and `0` are two different declarations here and they cannot be allowed to
+ * collapse into each other in either direction:
+ *
+ * - `null` → `0` prices a $2 item that costs $9 to ship as though the $9 did not
+ *   exist. Every margin on the store reads healthy and every sale loses money.
+ * - `0` → `null` throws away a real answer the merchant gave, and the store starts
+ *   asking them again for a number they already supplied.
+ *
+ * The server has the identical distinction (`store_policy.CLEAR_ALLOWANCE` versus
+ * a zero), so the two ends of the wire are pinned against the same rule.
+ */
+describe("the shipping allowance keeps unknown and zero apart", () => {
+  describe("reading a policy", () => {
+    async function policyFrom(raw: Record<string, unknown>) {
+      mockPulseApi.mockResolvedValue({ policy: raw });
+      return getStoreImportPolicy(SCOPE);
+    }
+
+    it("reads a missing allowance as unknown, not as free shipping", async () => {
+      const policy = await policyFrom({ pricing_rule: { type: "TARGET_MARGIN", value: 45 } });
+      expect(policy.shippingAllowanceCents).toBeNull();
+      // Not `toBeFalsy`: `0` is falsy and is the exact wrong answer here, so an
+      // assertion that accepted it would pass on the bug.
+      expect(policy.shippingAllowanceCents).not.toBe(0);
+      expect(policy.shippingAllowanceSource).toBe("PLATFORM_DEFAULT");
+    });
+
+    it("keeps a declared zero, because it is a merchant's real answer", async () => {
+      const policy = await policyFrom({
+        shipping_allowance_cents: 0,
+        shipping_allowance_source: "STORE"
+      });
+      expect(policy.shippingAllowanceCents).toBe(0);
+      expect(policy.shippingAllowanceSource).toBe("STORE");
+    });
+
+    it("keeps a declared amount", async () => {
+      const policy = await policyFrom({
+        shipping_allowance_cents: 900,
+        shipping_allowance_source: "STORE"
+      });
+      expect(policy.shippingAllowanceCents).toBe(900);
+    });
+
+    it.each([
+      ["900", "a string"],
+      [900.5, "a fraction of a cent"],
+      [-1, "a negative"],
+      [true, "a boolean"],
+      [null, "a null"],
+      [[900], "an array"]
+    ] as [unknown, string][])(
+      "refuses %p (%s) rather than rendering it as an amount",
+      async (raw) => {
+        const policy = await policyFrom({ shipping_allowance_cents: raw });
+        expect(policy.shippingAllowanceCents).toBeNull();
+      }
+    );
+
+    it("will not say the merchant set a figure it just threw away", async () => {
+      // The realistic way to get `STORE` beside a `null` number: the server sends
+      // a value this client rejects. Trusting the source on its own would light up
+      // "you set this" on a field showing nothing, and the merchant would go
+      // looking for the amount they supposedly saved.
+      const policy = await policyFrom({
+        shipping_allowance_cents: "900",
+        shipping_allowance_source: "STORE"
+      });
+      expect(policy.shippingAllowanceCents).toBeNull();
+      expect(policy.shippingAllowanceSource).toBe("PLATFORM_DEFAULT");
+    });
+  });
+
+  describe("what the merchant types", () => {
+    it("reads a plain amount in dollars and stores it in cents", () => {
+      expect(shippingAllowanceFromInput("9")).toBe(900);
+      expect(shippingAllowanceFromInput("4.50")).toBe(450);
+      expect(shippingAllowanceFromInput(" $12.99 ")).toBe(1299);
+    });
+
+    it("rounds rather than truncating", () => {
+      // `Number.parseFloat("9.29") * 100` is 928.9999999999999. Truncating would
+      // quietly shave a cent off a good half of everything merchants type, and the
+      // merchant would see 9.28 in the field they typed 9.29 into.
+      expect(shippingAllowanceFromInput("9.29")).toBe(929);
+      expect(shippingAllowanceFromInput("0.07")).toBe(7);
+    });
+
+    it("reads zero as zero, because a merchant may mean it", () => {
+      expect(shippingAllowanceFromInput("0")).toBe(0);
+      expect(shippingAllowanceFromInput("0.00")).toBe(0);
+    });
+
+    it.each(["", "   ", ".", "abc", "-4", "4.5.6", "1e3", "Infinity"])(
+      "returns null for %p, which the caller must read as do-not-send",
+      (input) => {
+        expect(shippingAllowanceFromInput(input)).toBeNull();
+      }
+    );
+
+    it("refuses an amount above the server's own ceiling", () => {
+      // `pricing.MAX_PRICE_CENTS`. Caught here so the merchant is told by the
+      // field rather than by a 400 the screen then has to translate.
+      expect(shippingAllowanceFromInput("10000000")).toBe(1_000_000_000);
+      expect(shippingAllowanceFromInput("10000000.01")).toBeNull();
+    });
+  });
+
+  describe("writing a policy", () => {
+    beforeEach(() => {
+      mockPulseApi.mockResolvedValue({ policy: {} });
+    });
+
+    it("sends only the allowance when only the allowance changed", async () => {
+      await updateStoreImportPolicy(SCOPE, { shippingAllowanceCents: 900 });
+      expect(bodyOf().shipping_allowance_cents).toBe(900);
+      // The other three fields absent, not null: four settings share one row, and
+      // a null would be indistinguishable from a merchant clearing their rule.
+      expect(bodyOf()).not.toHaveProperty("pricing_rule");
+      expect(bodyOf()).not.toHaveProperty("auto_publish");
+      expect(bodyOf()).not.toHaveProperty("marketplace_autolist");
+    });
+
+    it("sends a declared zero as zero rather than dropping it", async () => {
+      // `if (changes.shippingAllowanceCents)` is the one-word mistake that loses
+      // this, and it loses it silently: the PATCH succeeds, the merchant is told
+      // it saved, and the field still says nobody has declared anything.
+      await updateStoreImportPolicy(SCOPE, { shippingAllowanceCents: 0 });
+      expect(bodyOf().shipping_allowance_cents).toBe(0);
+    });
+
+    it("clears with a sentinel, since the cleared value is absence itself", async () => {
+      await updateStoreImportPolicy(SCOPE, {
+        shippingAllowanceCents: CLEAR_SHIPPING_ALLOWANCE
+      });
+      expect(bodyOf().shipping_allowance_cents).toBe("UNKNOWN");
+    });
+
+    it("agrees with the server about the sentinel's spelling", () => {
+      // The constant travels as a bare string over the wire and is compared for
+      // equality against `store_policy.CLEAR_ALLOWANCE` at the other end. A rename
+      // on either side turns every Clear into a 400, so the literal is pinned.
+      expect(CLEAR_SHIPPING_ALLOWANCE).toBe("UNKNOWN");
+    });
+
+    it("leaves the allowance alone when it is not part of the change", async () => {
+      await updateStoreImportPolicy(SCOPE, { autoPublish: false });
+      expect(bodyOf()).not.toHaveProperty("shipping_allowance_cents");
     });
   });
 });
