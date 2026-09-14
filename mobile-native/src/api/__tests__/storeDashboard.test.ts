@@ -199,6 +199,7 @@ describe("listingHealth", () => {
     // the server is the side bound by test to what checkout actually does.
     const verdict = (warnings: string[]) => ({
       publishable: true,
+      resubmittable: false,
       checkout_ready: false,
       blockers: [] as string[],
       warnings,
