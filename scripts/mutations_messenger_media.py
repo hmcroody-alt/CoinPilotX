@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 NATIVE = ROOT / "mobile-native"
 
 CHAT = "mobile-native/src/screens/ChatScreen.tsx"
+WORKER = "media_worker.py"
 ACCESS = "mobile-native/src/media/messengerMediaAccess.ts"
 FOUNDATION = "services/messenger_media_foundation.py"
 WEB = "static/js/pulse_messages_v2.js"
@@ -110,6 +111,18 @@ MUTATIONS = [
         ("    _require_attachment_access(cur, row, user_id, require_sender=False)\n"
          "    thumbnail_key = str(_row_get(row, \"thumbnail_key\", \"\") or \"\")",
          "    thumbnail_key = str(_row_get(row, \"thumbnail_key\", \"\") or \"\")"),
+        PYTEST,
+    ),
+    (
+        "a job retiring without processing anything goes back to being silent",
+        WORKER,
+        ("    _warn_if_still_unprocessed(cur, job_id, target_id, status, result.get(\"reason\"))\n", ""),
+        PYTEST,
+    ),
+    (
+        "the detector cries wolf on healthy completions",
+        WORKER,
+        ("    if processing_status not in {\"queued\", \"processing\"}:\n        return\n", ""),
         PYTEST,
     ),
     (
