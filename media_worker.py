@@ -969,75 +969,13 @@ def reconcile_live_replay_backlog(limit: int = 25) -> dict:
     return {"queued": queued, "stale_recovered": recovered, "terminal_posts_repaired": terminal_repaired}
 
 
-DURATION_RECONCILE_MAX_AGE_DAYS = max(1, int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_MAX_AGE_DAYS", "7")))
-
-
-def reconcile_stored_video_durations(limit: int = 25) -> dict:
-    """Measure stored videos Mux never told us about, and enforce the ceiling.
-
-    The webhook is the fast path, not the guaranteed one: it needs
-    MUX_WEBHOOK_SECRET set and the endpoint registered in the Mux dashboard, and
-    a single lost delivery would otherwise leave a video permanently unmeasured --
-    which is indistinguishable, to every reader, from a video that is within the
-    limit. So the asset is polled as well, and both paths reach the same
-    enforcement function rather than each deciding for themselves.
-
-    Bounded by age because an asset Mux has since deleted can never be measured;
-    without the window those rows would be re-fetched every cycle forever.
-    """
-    if not media_service.mux_diagnostics().get("configured"):
-        return {"skipped": "mux_not_configured"}
-    conn = bot.db()
-    conn.row_factory = bot.sqlite3.Row
-    cur = conn.cursor()
-    cutoff = (datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=DURATION_RECONCILE_MAX_AGE_DAYS)).isoformat(timespec="seconds")
-    cur.execute(
-        """
-        SELECT id, mux_asset_id
-        FROM chat_media_uploads
-        WHERE media_type='video'
-          AND COALESCE(mux_asset_id,'')<>''
-          AND COALESCE(duration_seconds,0)<=0
-          AND COALESCE(moderation_status,'')<>'blocked'
-          AND deleted_at IS NULL
-          AND COALESCE(created_at,'')>=?
-        ORDER BY created_at ASC, id ASC LIMIT ?
-        """,
-        (cutoff, max(1, int(limit or 25))),
-    )
-    candidates = [(int(row["id"]), str(row["mux_asset_id"] or "")) for row in cur.fetchall()]
-    measured = 0
-    blocked: list[int] = []
-    for media_id, asset_id in candidates:
-        try:
-            asset = media_service.get_mux_asset(asset_id)
-        except Exception as exc:
-            logging.warning("MEDIA_DURATION_RECONCILE_FETCH_FAILED media_id=%s error=%s", media_id, str(exc)[:200])
-            continue
-        if not asset.get("ok") or str(asset.get("mux_status") or "").lower() not in {"ready", "asset_ready", "available"}:
-            continue
-        try:
-            duration = float((asset.get("asset") or {}).get("duration") or 0)
-        except (TypeError, ValueError):
-            duration = 0.0
-        if duration <= 0:
-            continue
-        outcome = media_service.enforce_measured_video_duration(cur, media_id=media_id, duration_seconds=duration)
-        measured += 1
-        blocked.extend(outcome.get("blocked") or [])
-    conn.commit()
-    conn.close()
-    return {"candidates": len(candidates), "measured": measured, "blocked": blocked}
-
-
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
-    durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
-    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations}
+    return {"replay": replay, "uploads": uploads, "jobs": jobs, "playback": playback, "covers": covers}
 
 
 def main() -> None:
