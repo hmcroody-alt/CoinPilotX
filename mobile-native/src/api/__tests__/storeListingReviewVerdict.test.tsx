@@ -28,6 +28,8 @@
  */
 
 import { render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
+import { storeLight } from "../../theme/storeLight";
 import {
   normalizeMarketplaceListing,
   normalizeMarketplaceListings,
@@ -76,6 +78,21 @@ function verdict(over: Partial<ListingReviewVerdict> = {}): ListingReviewVerdict
     decided_at: "2026-09-10T12:00:00",
     ...over
   };
+}
+
+/**
+ * Every rendered string, in tree order.
+ *
+ * Visual order is the claim being tested, and `getByText` cannot express it —
+ * it answers "is this on screen", which was already true of the line this one
+ * has to sit above.
+ */
+function renderedText(node: unknown, out: string[] = []): string[] {
+  if (typeof node === "string") out.push(node);
+  else if (Array.isArray(node)) node.forEach((child) => renderedText(child, out));
+  else if (node && typeof node === "object")
+    renderedText((node as { children?: unknown }).children, out);
+  return out;
 }
 
 /** What the server sends about a listing still sitting in the queue. */
@@ -337,6 +354,29 @@ describe("the rendered row", () => {
     // listing that needed the most explaining.
     const { getByLabelText } = renderRow();
     expect(getByLabelText(new RegExp(INVALID_MEDIA))).toBeTruthy();
+  });
+
+  it("does not file a rejection under housekeeping", () => {
+    // `status.warning` is the colour of "2 things left · Add price" — a task
+    // list, things the seller has not finished yet. This line is a decision
+    // someone made about a finished product, and it is the only thing on the
+    // row that means the listing will not sell until they act. Sharing a colour
+    // with the task list is how that distinction disappears.
+    const { getByText } = renderRow();
+    const style = StyleSheet.flatten(getByText(`Rejected · ${INVALID_MEDIA}`).props.style);
+    expect(style.color).toBe(storeLight.status.error);
+    expect(style.color).not.toBe(storeLight.status.warning);
+  });
+
+  it("prints the cause above the effect, not under it", () => {
+    // The status LED says "Hidden from buyers". A cause rendered below its own
+    // effect reads as a footnote to it, and on a small screen at large text
+    // sizes it is the half that scrolls away.
+    const order = renderedText(renderRow().toJSON());
+    expect(order.indexOf(`Rejected · ${INVALID_MEDIA}`)).toBeGreaterThan(-1);
+    expect(order.indexOf(`Rejected · ${INVALID_MEDIA}`)).toBeLessThan(
+      order.indexOf("Hidden from buyers")
+    );
   });
 
   it("announces the reason ahead of the stock label", () => {
