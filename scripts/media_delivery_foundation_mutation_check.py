@@ -130,8 +130,10 @@ MUTATIONS = [
         """        {thumbnailUrl || mediaUrl ? (
           <Image source={{ uri: thumbnailUrl || mediaUrl }} style={styles.videoPoster} resizeMode="cover" onError={retryMedia} />
         ) : null}""",
-        "posters a video from the derived thumbnail only, never from the movie",
-        "src/screens/__tests__/ChatScreenAttachmentWiring.test.ts",
+        # Retargeted from the text-scraping wiring test to a render: that one matched
+        # the expression, this one asks what URL the image loader was actually handed.
+        "draws no poster at all when the pipeline has not produced one",
+        "src/screens/__tests__/ChatScreenAttachmentRender.test.tsx",
         "jest",
     ),
     (
@@ -503,6 +505,71 @@ MUTATIONS = [
         "test_an_accepted_video_carries_its_measured_length",
         "tests/test_sync_upload_duration_measurement.py",
         "pytest",
+    ),
+    (
+        # §4, the reported defect restored exactly: the card draws, the tap lands on
+        # the Pressable, and nothing opens. It survived review once already because
+        # the handler *looks* wired -- `onPress` is present, it is just undefined for
+        # every non-video attachment. Only a press can tell the difference.
+        "document tap does nothing again",
+        CHAT_SCREEN,
+        "      onPress={open}",
+        "      onPress={undefined}",
+        "calls the shared open action with the granted URL and the foundation media id",
+        "src/screens/__tests__/ChatScreenAttachmentRender.test.tsx",
+        "jest",
+    ),
+    (
+        # §4/§53. Asking for the transport attachment id instead of the foundation
+        # media id. A 404 for the person, indistinguishable from a working open in
+        # any test that only checks the press happened.
+        "document opened by transport id",
+        CHAT_SCREEN,
+        "      mediaId: message.media_upload_id || message.attachment_id || null,",
+        "      mediaId: message.attachment_id || null,",
+        "calls the shared open action with the granted URL and the foundation media id",
+        "src/screens/__tests__/ChatScreenAttachmentRender.test.tsx",
+        "jest",
+    ),
+    (
+        # §4. A failure nobody is told about is the original defect wearing a
+        # download: the tap happens, the file does not open, the card says nothing,
+        # and the person taps again.
+        "failed document open is silent",
+        CHAT_SCREEN,
+        '    if (result.status !== "opened") setFailure(result.message);',
+        "    /* failure swallowed */",
+        "says why on the card when the file will not open",
+        "src/screens/__tests__/ChatScreenAttachmentRender.test.tsx",
+        "jest",
+    ),
+    (
+        # §11. Without the in-flight guard every impatient tap starts another
+        # download of the same bytes -- and a document slow enough to invite a second
+        # tap is exactly the one it costs the most on.
+        "every tap starts another download",
+        CHAT_SCREEN,
+        "    if (opening) return;",
+        "    /* no in-flight guard */",
+        "does not start a second download while the first is still running",
+        "src/screens/__tests__/ChatScreenAttachmentRender.test.tsx",
+        "jest",
+    ),
+    (
+        # §11, the cause rather than the consequence, and the reason one text-based
+        # assertion survives in ChatScreenAttachmentWiring: a second grant call for
+        # the same identity is deduplicated by the module cache, so it issues no extra
+        # request, renders identically, and is invisible to every behavioural test. It
+        # is also what resolved both URL slots to the same `/download` path.
+        "second grant per bubble",
+        CHAT_SCREEN,
+        '  const mediaAccess = useMessengerMediaAccessUrl(mediaIdentity, String(message.media_url || ""));',
+        '  const mediaAccess = useMessengerMediaAccessUrl(mediaIdentity, String(message.media_url || ""));\n'
+        '  const posterAccess = useMessengerMediaAccessUrl(mediaIdentity, String(message.media_url || ""));\n'
+        "  void posterAccess;",
+        "calls the grant hook exactly once, carrying both URLs",
+        "src/screens/__tests__/ChatScreenAttachmentWiring.test.ts",
+        "jest",
     ),
 ]
 
