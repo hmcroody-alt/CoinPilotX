@@ -71,6 +71,7 @@ __all__ = [
     "QUEUE_FILTERS", "QUEUE_SORTS", "PAGE_SIZE",
     "INTERNAL_SECTION", "GAP_NOTES", "SUPPLIER_STALE_DAYS", "inspection",
     "variant_economics", "media_summary", "seller_standing", "safety_signals",
+    "SUPPLIER_SYNC_KINDS", "SYNC_SKIP_NOTES", "supplier_sync_plan",
     "normalize_query", "queue_where", "queue_order", "page_window",
 ]
 
@@ -913,6 +914,84 @@ def inspection(listing: Optional[Mapping[str, Any]], *,
             listing, status=_lifecycle.PUBLISHED, approval_status=_lifecycle.APPROVED)),
         "gaps": gaps,
         "gap_notes": [{"code": code, "note": GAP_NOTES.get(code, code)} for code in gaps],
+    }
+
+
+# --- §24: refreshing the supplier once the listing is allowed to sell ----------
+
+
+#: The two facts that go stale between import and approval.
+#:
+#: ``product`` is title, images and supplier price; ``inventory`` is stock. Both
+#: are read from the supplier at import time and then sit unread for as long as
+#: the listing waits in the queue -- which is precisely the interval this review
+#: pipeline exists to create. A product imported on Monday, reviewed on Friday
+#: and approved is published against Monday's stock count.
+SUPPLIER_SYNC_KINDS = ("product", "inventory")
+
+#: Why a refresh was not scheduled. Every value here is a *fact about the
+#: listing*, not an error: a hand-made product has no supplier, and saying
+#: "sync failed" about it would send someone looking for a broken integration.
+SYNC_SKIP_NOTES = {
+    "NOT_AN_APPROVAL": "Only an approval refreshes supplier data.",
+    "MERCHANT_AUTHORED": "This product was created in PulseSoc. There is no supplier to refresh.",
+    "UNBOUND_SUPPLIER": ("This product records a supplier but no connection to reach it "
+                         "through, so its stock and cost cannot be refreshed."),
+    "NO_PROVIDER_PRODUCT": ("This product has no supplier product id, so there is nothing "
+                            "to ask the supplier about."),
+}
+
+
+def supplier_sync_plan(source: Optional[Mapping[str, Any]], *, action: str) -> dict:
+    """What to re-read from the supplier now that this listing may be sold.
+
+    Pure. It schedules nothing and touches no database -- it decides, and the
+    caller enqueues. That split is not tidiness: ``suppliers.worker.schedule``
+    opens its own connection and commits it, so calling it from inside the
+    review batch's open write transaction is the ``log_admin_audit`` failure
+    again -- the insert is refused, the exception is swallowed, and the batch
+    returns 200 having scheduled nothing. Deciding here and enqueuing after the
+    commit is the only ordering in which both halves are true.
+
+    Only ``approve`` schedules. A rejection does not make anyone buy the
+    product, so spending supplier quota on it would be paying to refresh a page
+    nobody can reach.
+
+    A skip is returned with a reason, never as an empty result. "No jobs" and
+    "no supplier" are the same shape and opposite meanings, and the reviewer has
+    to be able to tell which one they are looking at.
+    """
+    if action != APPROVE:
+        return {"scheduled": False, "skip_reason": "NOT_AN_APPROVAL",
+                "note": SYNC_SKIP_NOTES["NOT_AN_APPROVAL"], "jobs": []}
+    if not source:
+        return {"scheduled": False, "skip_reason": "MERCHANT_AUTHORED",
+                "note": SYNC_SKIP_NOTES["MERCHANT_AUTHORED"], "jobs": []}
+
+    connection_id = str(source.get("supplier_connection_id") or "").strip()
+    business_id = str(source.get("business_id") or "").strip()
+    store_id = str(source.get("store_id") or "").strip()
+    product_id = str(source.get("provider_product_id") or "").strip()
+
+    # All three parts of the scope, not just the connection id. `worker.schedule`
+    # stores the tuple and every later read is matched against it, so a job
+    # written with a blank business or store is a row no claim will ever match --
+    # queued, never run, and invisible as a failure.
+    if not (connection_id and business_id and store_id):
+        return {"scheduled": False, "skip_reason": "UNBOUND_SUPPLIER",
+                "note": SYNC_SKIP_NOTES["UNBOUND_SUPPLIER"], "jobs": []}
+    if not product_id:
+        return {"scheduled": False, "skip_reason": "NO_PROVIDER_PRODUCT",
+                "note": SYNC_SKIP_NOTES["NO_PROVIDER_PRODUCT"], "jobs": []}
+
+    return {
+        "scheduled": True,
+        "skip_reason": "",
+        "note": "Queued a supplier refresh of stock and cost.",
+        "provider": str(source.get("provider") or ""),
+        "jobs": [{"connection_id": connection_id, "business_id": business_id,
+                  "store_id": store_id, "kind": kind, "resource_id": product_id}
+                 for kind in SUPPLIER_SYNC_KINDS],
     }
 
 

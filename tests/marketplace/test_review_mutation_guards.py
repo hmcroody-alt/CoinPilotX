@@ -562,6 +562,140 @@ class ReviewMutationGuardTestCase(unittest.TestCase):
             "§43 supplier economics hoisted out of the internal section",
             Restore(rv, "inspection", flatten_the_economics), detector)
 
+    # -- §24 supplier refresh helpers -------------------------------------------
+
+    def bind_supplier(self, listing_id, seller_user_id=SELLER, **overrides):
+        from services import marketplace_supplier_schema as supplier_schema
+
+        row = {
+            "listing_id": listing_id, "seller_user_id": seller_user_id,
+            "provider": "cj", "provider_product_id": f"CJ-PROD-{listing_id}",
+            "fulfillment_mode": "DROPSHIP", "supplier_connection_id": "conn_7",
+            "business_id": "biz_2", "store_id": "store_5",
+            "created_at": NOW, "updated_at": NOW,
+        }
+        row.update(overrides)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cur = conn.cursor()
+            supplier_schema.ensure_supplier_schema(cur, force=True)
+            cur.execute(
+                f"INSERT INTO {supplier_schema.SOURCE_TABLE} ({', '.join(row)}) "
+                f"VALUES ({', '.join('?' for _ in row)})", tuple(row.values()))
+            conn.commit()
+        finally:
+            conn.close()
+
+    def sync_jobs(self):
+        from services.business_os.suppliers import worker as supplier_worker
+
+        supplier_worker.ensure_schema()
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM business_os_supplier_sync_jobs")]
+        conn.execute("DELETE FROM business_os_supplier_sync_jobs")
+        conn.commit()
+        conn.close()
+        return rows
+
+    # -- 14. §24 refreshing on a verdict that sells nothing ---------------------
+
+    def test_refreshing_the_supplier_on_a_rejection_is_caught(self):
+        real_plan = rv.supplier_sync_plan
+
+        def refresh_everything(source, *, action):
+            """"Why gate it on the action at all -- keeping supplier data fresh
+            is always good." It is, until a bulk reject of forty imported
+            products spends eighty metered supplier reads on pages no buyer can
+            reach, and the quota controller then throttles the approvals that
+            needed it. Nothing errors; the queue just gets slower on the days it
+            is busiest."""
+            return real_plan(source, action=rv.APPROVE)
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.bind_supplier(listing_id)
+            self.sync_jobs()
+            self.review(rv.REJECT, [listing_id],
+                        reason_code=rv.REASON_CODES[0], note="No.")
+            self.assertEqual(self.sync_jobs(), [],
+                             "a rejected listing queued a supplier refresh")
+
+        self.assert_mutation_is_caught(
+            "§24 supplier refresh scheduled for every verdict",
+            Restore(rv, "supplier_sync_plan", refresh_everything), detector)
+
+    # -- 15. §24 a job written outside its connection scope ---------------------
+
+    def test_queuing_a_refresh_with_half_a_connection_scope_is_caught(self):
+        real_plan = rv.supplier_sync_plan
+
+        def scope_by_connection_alone(source, *, action):
+            """"The connection id is unique, so business and store are
+            redundant." They are not redundant, they are how every later read is
+            matched. A job missing them is claimed, resolves against a scope no
+            binding matches, and goes back on the queue -- a row that is
+            permanently scheduled and permanently useless, with no error
+            anywhere. This is the failure that looks exactly like success in
+            every dashboard that counts queued jobs."""
+            plan = real_plan(source, action=action)
+            if not plan["scheduled"] and plan["skip_reason"] == "UNBOUND_SUPPLIER":
+                connection_id = str((source or {}).get("supplier_connection_id") or "")
+                product_id = str((source or {}).get("provider_product_id") or "")
+                if connection_id and product_id:
+                    return dict(plan, scheduled=True, skip_reason="", jobs=[
+                        {"connection_id": connection_id, "business_id": "",
+                         "store_id": "", "kind": kind, "resource_id": product_id}
+                        for kind in rv.SUPPLIER_SYNC_KINDS])
+            return plan
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.bind_supplier(listing_id, store_id="")
+            self.sync_jobs()
+            _, results = self.outcomes(self.review(rv.APPROVE, [listing_id]))
+            self.assertEqual(results[listing_id]["supplier_sync"], "skipped",
+                             "a listing with no reachable connection was queued anyway")
+            self.assertEqual(self.sync_jobs(), [])
+
+        self.assert_mutation_is_caught(
+            "§24 refresh queued without the full connection scope",
+            Restore(rv, "supplier_sync_plan", scope_by_connection_alone), detector)
+
+    # -- 16. §24 a refresh reported as queued when it was not -------------------
+
+    def test_reporting_a_refresh_that_never_reached_the_queue_is_caught(self):
+        real_helper = bot._marketplace_review_supplier_sync
+
+        def report_without_queuing(plans, results):
+            """The optimistic version: mark the entries and enqueue, but let the
+            enqueue fail quietly because "the worker will pick it up on its next
+            cadence sweep anyway". It will not -- there is no row for it to
+            sweep. The reviewer is told stock was refreshed, the listing goes
+            live on the count it was imported with, and the first sign of
+            trouble is an oversold order."""
+            for listing_id in plans:
+                for entry in results:
+                    if int(entry.get("listing_id") or 0) == listing_id:
+                        entry["supplier_sync"] = "queued"
+                        entry["supplier_sync_note"] = "Queued a supplier refresh."
+
+        def detector():
+            listing_id = self.insert_listing()
+            self.bind_supplier(listing_id)
+            self.sync_jobs()
+            _, results = self.outcomes(self.review(rv.APPROVE, [listing_id]))
+            self.assertEqual(results[listing_id]["supplier_sync"], "queued")
+            self.assertTrue(self.sync_jobs(),
+                            "the response claims a refresh was queued and the "
+                            "job table is empty")
+
+        self.assert_mutation_is_caught(
+            "§24 refresh reported as queued with no job row",
+            Restore(bot, "_marketplace_review_supplier_sync", report_without_queuing),
+            detector)
+
 
 if __name__ == "__main__":
     unittest.main()

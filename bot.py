@@ -101141,6 +101141,70 @@ def _marketplace_review_audit(cur, reviewer_id, action, listing_id, payload):
     )
 
 
+def _marketplace_review_supplier_sync(plans, results):
+    """§24. Enqueue the supplier refreshes an approval earned. After the commit.
+
+    Called with the review transaction already committed, deliberately.
+    ``suppliers.worker.schedule`` opens its own connection and commits it; run
+    from inside the batch's open write transaction it is the ``log_admin_audit``
+    failure verbatim -- SQLite refuses the insert, the exception is discarded,
+    and the endpoint answers 200 having queued nothing at all.
+
+    A scheduling failure does not undo an approval and must not pretend to. The
+    listing is already approved and that is correct; what is wrong is that its
+    stock is still the number we imported. So the entry says ``failed`` and
+    names the error rather than staying on ``pending``, because the one outcome
+    nobody can act on is a refresh that is silently never going to happen.
+
+    Mutates the result entries in place, before ``summarize`` reads them, so the
+    response describes what was actually queued rather than what was intended.
+    """
+    if not plans:
+        return
+    by_id = {int(entry.get("listing_id") or 0): entry for entry in results}
+    try:
+        from services.business_os.suppliers import worker as _supplier_worker
+    except Exception:
+        # The CJ package is an optional route pack here like every other. A
+        # review queue that cannot be used because the supplier integration
+        # failed to import would be a worse outcome than a stale stock count.
+        app.logger.exception("supplier sync unavailable for review batch")
+        for listing_id in plans:
+            entry = by_id.get(listing_id)
+            if entry is not None:
+                entry["supplier_sync"] = "failed"
+                entry["supplier_sync_note"] = (
+                    "Approved, but the supplier integration is unavailable, so stock "
+                    "and cost were not refreshed.")
+        return
+
+    for listing_id, plan in plans.items():
+        entry = by_id.get(listing_id)
+        queued = 0
+        error = ""
+        for job in plan.get("jobs") or ():
+            try:
+                _supplier_worker.schedule(
+                    connection_id=job["connection_id"], business_id=job["business_id"],
+                    store_id=job["store_id"], kind=job["kind"],
+                    resource_id=job["resource_id"], dirty=True)
+                queued += 1
+            except Exception as sync_error:
+                app.logger.exception("supplier sync schedule failed for listing %s (%s)",
+                                     listing_id, job.get("kind"))
+                error = error or str(sync_error)
+        if entry is None:
+            continue
+        if queued == len(plan.get("jobs") or ()):
+            entry["supplier_sync"] = "queued"
+            entry["supplier_sync_note"] = plan.get("note") or ""
+        else:
+            entry["supplier_sync"] = "failed"
+            entry["supplier_sync_note"] = (
+                "Approved, but the supplier refresh could not be queued"
+                + (": " + error if error else "."))
+
+
 @webhook_app.route("/api/admin/marketplace/review/batch", methods=["POST"])
 def api_admin_marketplace_review_batch():
     """§16. One request, one batch, one verdict per listing.
@@ -101200,6 +101264,7 @@ def api_admin_marketplace_review_batch():
 
     by_id = {int(r.get("id") or 0): r for r in rows}
     results = list(verdict["blocked"])
+    sync_plans = {}
     for listing_id in verdict["eligible"]:
         row = by_id[listing_id]
         try:
@@ -101225,19 +101290,44 @@ def api_admin_marketplace_review_batch():
              "new_approval_status": readback["review_state"],
              "reason_category": normalized.get("reason_code") or "",
              "reason": normalized.get("note") or "",
-             "batch_id": claim["batch_id"]})
+             "batch_id": claim["batch_id"],
+             "supplier_refresh": ""})
+        # §24. Read on this cursor, inside the transaction that just moved the
+        # listing, so the plan is built from the supplier binding as it stands
+        # after the decision rather than from a second look taken later.
+        try:
+            from services import marketplace_variants as _variants
+            source = _variants.source_for(cur, listing_id)
+        except Exception:
+            app.logger.exception("supplier source unreadable for listing %s", listing_id)
+            source = None
+        plan = _review.supplier_sync_plan(source, action=normalized["action"])
+        if plan["scheduled"]:
+            sync_plans[listing_id] = plan
         results.append(_review.result_entry(
             listing_id, _review.SUCCEEDED, title=row.get("title") or "",
             old_review_state=str(row.get("approval_status") or "").lower(),
             new_review_state=readback["review_state"],
             publication_state=readback["publication_state"],
             live=readback["live"], blockers=readback["blockers"] or None,
-            note=readback["note"] or None))
+            note=readback["note"] or None,
+            # "pending" only survives to the client if the post-commit enqueue
+            # never ran, which is itself the thing worth seeing.
+            supplier_sync=("pending" if plan["scheduled"] else "skipped"),
+            supplier_sync_note=(plan["note"] if not plan["scheduled"] else None)))
 
     # Ordered back into the reviewer's selection order. `evaluate_rows` returns
     # the blocked entries together, and a results list that reads in a different
     # order than the rows they ticked is a list they have to search rather than
     # read down.
+    # §24. The verdicts are made durable here, before anything is enqueued,
+    # because the enqueue runs on its own connections and cannot be allowed to
+    # sit behind this transaction's locks -- and because a supplier refresh
+    # scheduled for a decision that then rolled back would be a job pointing at
+    # a listing nobody approved.
+    conn.commit()
+    _marketplace_review_supplier_sync(sync_plans, results)
+
     position = {listing_id: index for index, listing_id in enumerate(ids)}
     results.sort(key=lambda entry: position.get(entry["listing_id"], 0))
 
