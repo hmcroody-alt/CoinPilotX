@@ -268,9 +268,27 @@ th, td { text-align: left; padding: 10px; border-bottom: 1px solid rgba(255, 255
 .mini-chart { height: 8px; border-radius: 999px; background: rgba(255, 255, 255, .08); overflow: hidden; }
 .mini-chart span { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--cyan)); }
 textarea { width: 100%; min-height: 90px; border-radius: 10px; border: 1px solid var(--line); background: #081323; color: var(--text); padding: 10px; box-sizing: border-box; }
+/* `width: 100%` stays. It is not decoration: the filter rows, the capability
+   cards and the review queue's action column across ~140 admin pages are laid
+   out on the assumption that a control fills its column, and the queue's
+   narrow-screen rules stack on top of it. Narrowing it is a layout migration,
+   not a palette fix. */
 input, button, select { width: 100%; min-height: 44px; border-radius: 10px; border: 1px solid var(--line); background: #081323; color: var(--text); padding: 10px; box-sizing: border-box; }
-button { background: linear-gradient(135deg, #00e5ff, #36e58f); color: #031016; font-weight: 800; cursor: pointer; }
+/* The default button is deliberately the quiet one. This is a bare element
+   selector on the one stylesheet every admin page loads, so whatever it paints
+   it paints on approve, delete, export and save alike -- it used to paint a
+   cyan-to-green gradient, which made "Freeze" and "Resume AI" the same button
+   in the same place 38 times over on /admin/spaces-command. A button now has to
+   ask for weight, the same way a verdict does in bot.py's REVIEW_VERB_WEIGHT,
+   so the one that nobody thought about reads as cautious rather than as a
+   go-ahead. */
+button { background: rgba(255, 255, 255, .04); border-color: rgba(255, 255, 255, .28); color: var(--text); font-weight: 700; cursor: pointer; }
+button:hover { background: rgba(255, 255, 255, .09); border-color: rgba(255, 255, 255, .42); }
 .button { min-height: 44px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, .04); color: var(--cyan); }
+/* Asking for the weight. Element-qualified so it outranks `.button` whichever
+   order they land in, and stays under `.button.command-center-link`. */
+button.primary, a.primary { background: #0f9d58; border-color: #0f9d58; color: #fff; font-weight: 700; }
+button.primary:hover, a.primary:hover { background: #0c8449; border-color: #0c8449; }
 .button.command-center-link { color: #06101b; border-color: transparent; background: linear-gradient(135deg, var(--accent), var(--cyan)); font-weight: 950; box-shadow: 0 0 22px rgba(54, 229, 143, .22); }
 
 /* ------------------------------------------------------------------ */
