@@ -10,6 +10,7 @@ media queue jobs, and reports worker heartbeats for observability.
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import signal
@@ -350,10 +351,67 @@ def _playback_key_for(row: dict) -> str:
     return f"{stem}-playback.mp4"
 
 
+@functools.lru_cache(maxsize=1)
+def _decodable_audio_codecs() -> frozenset[str]:
+    """Audio codec names this box can actually decode.
+
+    Recognising a codec is not the same as decoding it: ffmpeg names Apple's
+    ``apple_apac`` spatial track but ships no decoder for it, so a stream list alone
+    cannot tell you what is safe to map.
+    """
+    ffmpeg_path = shutil.which("ffmpeg")
+    if not ffmpeg_path:
+        return frozenset()
+    try:
+        result = subprocess.run([ffmpeg_path, "-hide_banner", "-decoders"], capture_output=True, text=True, timeout=20)
+    except Exception:
+        return frozenset()
+    names = set()
+    body = result.stdout.split("------", 1)[-1]
+    for line in body.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and len(parts[0]) == 6 and parts[0][0] == "A":
+            names.add(parts[1])
+    return frozenset(names)
+
+
+def _audio_map_specifier(source: Path) -> str | None:
+    """The first audio track worth mapping, or None to produce a video-only MP4.
+
+    iPhone spatial-audio .mov files carry an undecodable ``apple_apac`` track beside
+    the AAC one, and ffmpeg's `?` suffix only tolerates *zero* matches -- it does not
+    skip a stream it cannot decode. Track order is not stable either: the same phone
+    writes video-first and audio-first layouts, which is why the same failure showed up
+    as both "input stream #0:1" and "#0:2". So pick by decodability, not by position.
+    """
+    ffprobe_path = shutil.which("ffprobe")
+    decodable = _decodable_audio_codecs()
+    if not ffprobe_path or not decodable:
+        # Best effort: Apple writes the AAC compatibility track first in both layouts.
+        return "0:a:0?"
+    try:
+        result = subprocess.run(
+            [ffprobe_path, "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "csv=p=0", str(source)],
+            capture_output=True,
+            text=True,
+            timeout=int(os.getenv("MEDIA_WORKER_PROBE_TIMEOUT_SECONDS", "30")),
+        )
+    except Exception:
+        return "0:a:0?"
+    codecs = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    for position, codec in enumerate(codecs):
+        if codec in decodable:
+            return f"0:a:{position}?"
+    if codecs:
+        logging.warning("MEDIA_WORKER_NO_DECODABLE_AUDIO source=%s codecs=%s producing video-only", source.name, ",".join(codecs))
+    return None
+
+
 def _transcode_video_to_mp4(source: Path, target: Path) -> None:
     ffmpeg_path = shutil.which("ffmpeg")
     if not ffmpeg_path:
         raise RuntimeError("ffmpeg is not installed")
+    audio_map = _audio_map_specifier(source)
     command = [
         ffmpeg_path,
         "-y",
@@ -361,11 +419,7 @@ def _transcode_video_to_mp4(source: Path, target: Path) -> None:
         str(source),
         "-map",
         "0:v:0",
-        "-map",
-        # Only the first audio track. iPhone spatial-audio .mov files carry a second
-        # apple_apac track that ffmpeg has no decoder for, and "0:a?" would map it too:
-        # the `?` only tolerates *zero* matches, it does not skip undecodable ones.
-        "0:a:0?",
+        *(("-map", audio_map) if audio_map else ()),
         "-c:v",
         "libx264",
         "-preset",
