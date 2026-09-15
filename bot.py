@@ -40773,7 +40773,9 @@ def pulse_status_items_for_lane(viewer_user_id=0, lane="for_you", limit=40):
     lanes = music_service.discovery_lanes(rows)
     selected_rows = lanes.get(lane) if lane in lanes else lanes.get("for_you", rows)
     selected_rows = sorted(selected_rows or [], key=pulse_status_sort_key, reverse=True)
-    items = [pulse_status_payload(row, viewer_user_id) for row in selected_rows[: int(limit or 40)]]
+    selected_rows = selected_rows[: int(limit or 40)]
+    media_by_id = pulse_status_media_map(selected_rows, cur=cur)
+    items = [pulse_status_payload(row, viewer_user_id, media_by_id=media_by_id, cur=cur) for row in selected_rows]
     conn.close()
     return items
 
@@ -40785,7 +40787,9 @@ def pulse_status_grouped_items_for_lane(viewer_user_id=0, lane="for_you", limit=
     rows = pulse_status_active_rows(cur, viewer_user_id, 100)
     lanes = music_service.discovery_lanes(rows)
     selected_rows = lanes.get(lane) if lane in lanes else lanes.get("for_you", rows)
-    items = [pulse_status_payload(row, viewer_user_id) for row in pulse_status_group_creator_rows(selected_rows, limit)]
+    grouped_rows = pulse_status_group_creator_rows(selected_rows, limit)
+    media_by_id = pulse_status_media_map(grouped_rows, cur=cur)
+    items = [pulse_status_payload(row, viewer_user_id, media_by_id=media_by_id, cur=cur) for row in grouped_rows]
     conn.close()
     return items
 
@@ -42630,16 +42634,93 @@ def pulse_search_page():
     return pulse_social_shell("PulseSoc Search", "Search public PulseSoc signals, creators, media, listings, sounds, and groups.", main_html)
 
 
-def pulse_status_payload(row, viewer_user_id=0):
+def pulse_status_media_ids(row):
+    """The media ids one Status row references, in the author's own order.
+
+    Shared by the payload builder and the batch prefetch below so the two can
+    never disagree about which ids a Status wants — if the prefetch parsed the
+    list differently from the payload, the payload would silently drop a photo.
+    """
+    try:
+        raw = json.loads(dict(row or {}).get("media_ids_json") or "[]")
+    except Exception:
+        return []
+    if not isinstance(raw, list):
+        return []
+    media_ids = []
+    for value in raw[:8]:
+        media_id = safe_int(value, 0)
+        if media_id > 0 and media_id not in media_ids:
+            media_ids.append(media_id)
+    return media_ids
+
+
+def pulse_status_media_rows(cur, media_ids):
+    resolved = {}
+    # Chunked because the id list grows with the lane size. A few hundred bound
+    # parameters in one IN list is fine right up until someone raises the lane
+    # limit, and that is not a failure anyone would connect back to this line.
+    for start in range(0, len(media_ids), 200):
+        chunk = media_ids[start : start + 200]
+        placeholders = ",".join(["?"] * len(chunk))
+        cur.execute(
+            f"SELECT * FROM chat_media_uploads WHERE id IN ({placeholders}) AND moderation_status!='blocked'",
+            chunk,
+        )
+        for media_row in cur.fetchall():
+            media = dict(media_row)
+            resolved[safe_int(media.get("id"), 0)] = media_service.resolve_media(media)
+    return resolved
+
+
+def pulse_status_media_map(rows, cur=None):
+    """Resolve the media for a whole batch of Status rows in one query.
+
+    `pulse_status_payload` used to open its *own* connection and run its own
+    SELECT for every Status it built. A single rail request builds two lanes —
+    up to 40 items and up to 12 grouped cards — so one user pulling the Status
+    tray could check out dozens of connections from a pool of 8 with 8 overflow
+    and a 3 second timeout. The symptom of that is not "media is missing", it is
+    unrelated requests elsewhere in the app timing out while they wait for a
+    connection, which is about as far from the cause as a symptom gets.
+
+    Pass `cur` when the caller already holds one: every caller here does, so the
+    common path now adds zero connections and one query.
+    """
+    wanted = []
+    for row in rows or []:
+        for media_id in pulse_status_media_ids(row):
+            if media_id not in wanted:
+                wanted.append(media_id)
+    if not wanted:
+        return {}
+    try:
+        if cur is not None:
+            return pulse_status_media_rows(cur, wanted)
+        conn = db()
+        try:
+            conn.row_factory = sqlite3.Row
+            return pulse_status_media_rows(conn.cursor(), wanted)
+        finally:
+            # The inline version this replaces closed only on its success path,
+            # so a media query that raised leaked its connection permanently —
+            # the pool drained under exactly the failure that also hid the media.
+            conn.close()
+    except Exception:
+        # Still degrade to a Status without media rather than failing the rail,
+        # but say so. The old bare `except` left no trace at all, which is why a
+        # hydration failure here was indistinguishable from a Status that simply
+        # has no media.
+        logging.getLogger(__name__).exception("PULSE_STATUS_MEDIA_HYDRATION_FAILED ids=%s", wanted[:8])
+        return {}
+
+
+def pulse_status_payload(row, viewer_user_id=0, media_by_id=None, cur=None):
     item = dict(row or {})
     owner_user_id = int(item.get("user_id") or 0)
     viewer_user_id = int(viewer_user_id or 0)
     is_owner = owner_user_id > 0 and owner_user_id == viewer_user_id
-    media_ids = []
-    try:
-        media_ids = json.loads(item.get("media_ids_json") or "[]")
-    except Exception:
-        media_ids = []
+    media_ids = pulse_status_media_ids(item)
     media_items = []
     ai_context = {}
     try:
@@ -42670,16 +42751,12 @@ def pulse_status_payload(row, viewer_user_id=0):
                     music_payload = refreshed_music
                 break
     if media_ids:
-        try:
-            conn = db()
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            placeholders = ",".join(["?"] * len(media_ids[:8]))
-            cur.execute(f"SELECT * FROM chat_media_uploads WHERE id IN ({placeholders}) AND moderation_status!='blocked'", media_ids[:8])
-            media_items = [media_service.resolve_media(dict(media_row)) for media_row in cur.fetchall()]
-            conn.close()
-        except Exception:
-            media_items = []
+        if media_by_id is None:
+            media_by_id = pulse_status_media_map([item], cur=cur)
+        # Indexed by id rather than taken in row order, so a Status's photos now
+        # arrive in the order the author posted them instead of whatever order
+        # the database happened to return them in.
+        media_items = [media_by_id[media_id] for media_id in media_ids if media_id in media_by_id]
     if music_payload and (music_payload.get("audio_url") or music_payload.get("preview_url")):
         status_audio_url = media_service.normalize_url(music_payload.get("audio_url") or music_payload.get("preview_url") or "")
         if status_audio_url:
@@ -44536,7 +44613,10 @@ def api_pulse_status_create():
                     return pulse_status_error("That music track is not approved for PulseSoc use.", 400, trace_id, "music_not_approved")
         conn.commit()
         cur.execute("SELECT * FROM pulse_status WHERE id=? LIMIT 1", (status_id,))
-        status = pulse_status_payload(cur.fetchone(), user["user_id"])
+        # Both of this handler's writes are already committed above, so lending
+        # the payload this cursor cannot cost the create anything even if the
+        # media lookup aborts the transaction.
+        status = pulse_status_payload(cur.fetchone(), user["user_id"], cur=cur)
         conn.close()
         pulse_emit_event("pulse_status_created", {"status_id": status_id, "trace_id": trace_id, "invalidates": ["status", "activity"]}, user["user_id"], status_id)
         first_media = (status.get("media") or [{}])[0] if isinstance(status, dict) else {}
@@ -44657,7 +44737,7 @@ def api_pulse_status_manage(status_id):
         )
         conn.commit()
         updated_row = pulse_status_row_for_viewer(cur, status_id, viewer_id)
-        updated = pulse_status_payload(updated_row, viewer_id) if updated_row else {}
+        updated = pulse_status_payload(updated_row, viewer_id, cur=cur) if updated_row else {}
     except Exception as exc:
         conn.rollback()
         logging.exception("PULSE_STATUS_UPDATE_FAILED trace_id=%s user_id=%s status_id=%s error=%s", trace_id, viewer_id, status_id, exc)
