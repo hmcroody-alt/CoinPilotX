@@ -96,7 +96,7 @@ extension AppDelegate: PKPushRegistryDelegate {
     guard type == .voIP else { return }
     // Hands the token to JS, which registers it against this device id so the backend can
     // suppress the ordinary alert push for this device only.
-    RNVoipPushNotificationManager.didUpdate(pushCredentials, forType: type.rawValue as String)
+    RNVoipPushNotificationManager.didUpdatePushCredentials(pushCredentials, forType: type.rawValue as String)
   }
 
   public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
@@ -150,7 +150,7 @@ extension AppDelegate: PKPushRegistryDelegate {
           completion()
         }
       )
-      RNVoipPushNotificationManager.didReceiveIncomingPush(with: payload, forType: type.rawValue as String)
+      RNVoipPushNotificationManager.didReceiveIncomingPush(withPayload: payload, forType: type.rawValue as String)
       return
     }
 
@@ -176,7 +176,7 @@ extension AppDelegate: PKPushRegistryDelegate {
     )
 
     // Only now, with CallKit already ringing, does JS hear about it.
-    RNVoipPushNotificationManager.didReceiveIncomingPush(with: payload, forType: type.rawValue as String)
+    RNVoipPushNotificationManager.didReceiveIncomingPush(withPayload: payload, forType: type.rawValue as String)
   }
 
   /// Maps the server's cancel reason onto a CXCallEndedReason.

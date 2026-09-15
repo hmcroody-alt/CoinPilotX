@@ -1,4 +1,4 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../native/secureStore";
 import { Platform } from "react-native";
 
 const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
@@ -18,6 +18,11 @@ const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
  * registration under a different id would not fail — it would ring correctly through
  * CallKit and *also* deliver the alert banner, which is the duplicate-ring outcome the
  * whole suppression path exists to prevent.
+ *
+ * Reads through `native/secureStore` rather than naming `expo-secure-store` directly: the
+ * Phase 46 ownership guard requires exactly one module in `src/` to import it, and the key
+ * read here is the same one `api/push` already writes under, so there is no new keychain
+ * service and no new security policy — only a second reader of an existing item.
  */
 export async function getPushInstallationId() {
   const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
