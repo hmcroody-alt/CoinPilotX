@@ -459,6 +459,29 @@ async function dropEntries(entries: MediaCacheEntry[], reason: "age" | "quota" |
   await writeIndex(next);
 }
 
+/**
+ * Delete one entry that a consumer has proven is unusable.
+ *
+ * `lookupCachedMedia` already drops an entry whose file is missing or the wrong
+ * size, but a file can pass both checks and still be unplayable — a download
+ * that finished with the right byte count and the wrong bytes, or a container
+ * truncated at a boundary the size check cannot see. Only the player that tried
+ * to open it knows that, and without this it would have no way to say so: the
+ * entry would be re-served on every attempt and the media would be permanently
+ * broken for that account until an unrelated eviction happened to reach it.
+ *
+ * Reported as `corrupt` rather than `quota` so the eviction telemetry does not
+ * read as budget pressure.
+ */
+export async function dropCachedMedia(key: string): Promise<boolean> {
+  if (!key) return false;
+  const index = await readIndex();
+  const entry = index[key];
+  if (!entry) return false;
+  await dropEntries([entry], "corrupt");
+  return true;
+}
+
 export async function mediaCacheStats(): Promise<MediaCacheStats> {
   const index = await readIndex();
   return { scope, entries: Object.keys(index).length, bytes: totalBytes(index), maxBytes };

@@ -1,6 +1,16 @@
 import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { listPulseRadioTracks, PulseRadioTrack, recordPulseRadioPlay } from "../api/radio";
 import { claimMediaPlayback, releaseMediaPlayback, subscribeMediaPlayback } from "./mediaPlaybackCoordinator";
+import { connectivityState, subscribeConnectivity } from "./connectivity";
+import {
+  cacheRadioQueue,
+  discardCachedRadioTrack,
+  loadCachedRadioQueue,
+  nextTrackToWarm,
+  resolveRadioSource,
+  warmRadioTrack
+} from "./radio/radioOffline";
+import { radioRecoveryPlan, shouldResumeRadio, type RadioFailureReason } from "./radio/radioRecovery";
 import { clearNowPlaying, onRemoteCommand, pushNowPlayingInfo, pushNowPlayingProgress, RemoteCommandEvent } from "../native/nowPlayingBridge";
 import {
   buildSequentialOrder,
@@ -56,10 +66,31 @@ let intentGeneration = 0;
 let resumeScheduled = false;
 let lastInterruptionOwner: string | null = null;
 let tracksLoaded = false;
+/** True when the current source is a file on disk rather than a stream. */
+let playingFromCache = false;
+/** Recovery attempts spent on the track currently being played. */
+let recoveryAttempts = 0;
+/** Set when playback stopped for the network and is owed a resume. */
+let awaitingNetwork = false;
+/** Where a resumed track should pick up. Consumed by the next `startPlayback`. */
+let pendingResumeMillis = 0;
 
 subscribeMediaPlayback((owner) => {
   if (owner?.id && owner.id !== "pulse-radio") lastInterruptionOwner = owner.kind;
   if (!owner && state.userWantsPlayback && state.interruptedBy) scheduleRadioResume();
+});
+
+// §84. The radio survives a temporary loss rather than reporting one. When the
+// authority says the network is back and the listener never pressed pause, the
+// track resumes from where it stopped — not from zero, which is what made a
+// three-second tunnel cost the whole song.
+subscribeConnectivity((snapshot) => {
+  if (!shouldResumeRadio({ userWantsPlayback: state.userWantsPlayback, connectivity: snapshot.state, awaitingNetwork })) {
+    return;
+  }
+  awaitingNetwork = false;
+  recoveryAttempts = 0;
+  playPulseRadio().catch(() => undefined);
 });
 
 onRemoteCommand(handleRemoteCommand);
@@ -96,11 +127,22 @@ export async function playPulseRadio() {
     update({ status: "paused", message: "Pulse Radio is paused for active audio.", interruptedBy: lastInterruptionOwner || "active_audio" });
     return;
   }
-  await startPlayback(generation);
+  // A resume owed from a network drop picks the track up where it stopped. Any
+  // other play starts at zero, because `pendingResumeMillis` is consumed here
+  // and belongs to exactly one attempt.
+  const resumeAt = pendingResumeMillis;
+  pendingResumeMillis = 0;
+  await startPlayback(generation, resumeAt);
 }
 
 export async function pausePulseRadio(releaseOwnership = true) {
   intentGeneration += 1;
+  // An explicit pause settles the question the recovery loop was asking.
+  if (releaseOwnership) {
+    awaitingNetwork = false;
+    pendingResumeMillis = 0;
+  }
+  recoveryAttempts = 0;
   const interruptedBy = releaseOwnership ? null : lastInterruptionOwner || "active_audio";
   const activeSound = sound;
   sound = null;
@@ -117,6 +159,7 @@ export async function pausePulseRadio(releaseOwnership = true) {
 
 export async function playNextTrack() {
   const generation = ++intentGeneration;
+  resetRecoveryForNewTrack();
   const next = nextOrderPosition(order.length, orderPosition, state.repeatMode);
   if (next === null) {
     await stopAtEndOfQueue();
@@ -134,6 +177,7 @@ export async function playNextTrack() {
 
 export async function playPreviousTrack() {
   const generation = ++intentGeneration;
+  resetRecoveryForNewTrack();
   if (state.positionMillis > RESTART_INSTEAD_OF_PREVIOUS_MS && sound) {
     await sound.setPositionAsync(0).catch(() => undefined);
     update({ positionMillis: 0 });
@@ -162,6 +206,7 @@ export async function playPreviousTrack() {
 export async function playQueueTrackAt(queueIndexToPlay: number) {
   if (queueIndexToPlay < 0 || queueIndexToPlay >= state.queue.length) return;
   const generation = ++intentGeneration;
+  resetRecoveryForNewTrack();
   const foundPosition = order.indexOf(queueIndexToPlay);
   orderPosition = foundPosition >= 0 ? foundPosition : queueIndexToPlay;
   update({ userWantsPlayback: true, interruptedBy: null });
@@ -277,28 +322,26 @@ async function stopAtEndOfQueue() {
   await releaseMediaPlayback("pulse-radio").catch(() => undefined);
 }
 
-async function startPlayback(generation: number) {
+async function startPlayback(generation: number, resumeAtMillis = 0) {
   update({ status: "connecting", message: "Connecting…" });
   try {
-    if (!tracksLoaded) {
-      const fetched = await listPulseRadioTracks();
-      tracksLoaded = true;
-      if (generation !== intentGeneration) return;
-      order = buildSequentialOrder(fetched.length);
-      orderPosition = Math.min(orderPosition, Math.max(0, fetched.length - 1));
-      update({ queue: fetched });
-    }
+    if (!tracksLoaded && !(await fillQueue(generation))) return;
     if (!state.queue.length) throw new Error("Pulse Radio has no playable tracks right now.");
     if (!order.length) order = buildSequentialOrder(state.queue.length);
     const queueIndex = order[orderPosition] ?? 0;
     const track = state.queue[queueIndex];
     if (!track) throw new Error("Pulse Radio has no playable tracks right now.");
+    // Disk first, always. A track already on the device starts instantly, costs
+    // no data, and cannot be cut off halfway by a tunnel.
+    const source = await resolveRadioSource(track);
+    if (generation !== intentGeneration) return;
+    if (!source) throw new Error("Pulse Radio has no playable tracks right now.");
     await configureAudio();
     if (generation !== intentGeneration) return;
     if (sound) await sound.unloadAsync().catch(() => undefined);
     const created = await Audio.Sound.createAsync(
-      { uri: track.audioUrl },
-      { shouldPlay: true, progressUpdateIntervalMillis: 1000 },
+      { uri: source.uri },
+      { shouldPlay: true, positionMillis: resumeAtMillis, progressUpdateIntervalMillis: 1000 },
       (playback) => handlePlaybackStatus(playback, generation)
     );
     if (generation !== intentGeneration) {
@@ -306,32 +349,99 @@ async function startPlayback(generation: number) {
       return;
     }
     sound = created.sound;
-    update({ status: "playing", track, queueIndex, message: `${track.title} · ${track.artist}`, positionMillis: 0, durationMillis: 0 });
+    playingFromCache = source.offline;
+    awaitingNetwork = false;
+    update({
+      status: "playing",
+      track,
+      queueIndex,
+      message: `${track.title} · ${track.artist}`,
+      positionMillis: resumeAtMillis,
+      durationMillis: 0
+    });
     pushNowPlayingInfo({
       title: track.title,
       artist: track.artist,
       artworkUrl: track.coverArtUrl || null,
       durationSeconds: 0,
-      positionSeconds: 0,
+      positionSeconds: resumeAtMillis / 1000,
       isPlaying: true
     });
     recordPulseRadioPlay(track.id).catch(() => undefined);
-  } catch (error) {
+    // One track ahead, never the whole queue: the only track whose availability
+    // changes the next few minutes of listening is the one after this one.
+    warmRadioTrack(nextTrackToWarm(state.queue, order, orderPosition)).catch(() => undefined);
+  } catch {
     if (generation !== intentGeneration) return;
-    const detail = error instanceof Error ? error.message : "";
-    const offline = /reach|network|connection|offline|internet/i.test(detail);
+    // Was: a regex over the error's message text. The platform is free to reword
+    // "The network connection was lost" at any OS release, and when it did, an
+    // offline radio started calling itself broken. The connectivity authority
+    // already knows the answer and is the only thing that should be asked.
+    const offline = connectivityState() === "offline";
+    awaitingNetwork = offline;
     update({
       status: offline ? "offline" : "error",
-      message: offline ? "Connect to the internet to play Pulse Radio." : "Pulse Radio is unavailable. Tap to retry."
+      message: offline
+        ? "Offline — Pulse Radio resumes when you reconnect."
+        : "Pulse Radio is unavailable. Tap to retry."
     });
+    // Ownership is released either way. Holding the audio session while silent
+    // and waiting would block every other sound on the device for the length of
+    // the outage.
     await releaseMediaPlayback("pulse-radio").catch(() => undefined);
   }
+}
+
+/**
+ * Fill the queue, cache first.
+ *
+ * Returns false when this load has been superseded and the caller must stop.
+ *
+ * The cached queue is painted before the request goes out, so opening Radio in
+ * a tunnel offers last session's tracks instead of "Pulse Radio has no playable
+ * tracks right now." — which was never true; it was the app describing its own
+ * failed request as a property of the music library.
+ */
+async function fillQueue(generation: number): Promise<boolean> {
+  const cached = await loadCachedRadioQueue().catch(() => null);
+  if (generation !== intentGeneration) return false;
+  if (cached?.tracks.length) applyQueue(cached.tracks);
+
+  try {
+    const fetched = await listPulseRadioTracks();
+    if (generation !== intentGeneration) return false;
+    if (fetched.length) {
+      applyQueue(fetched);
+      cacheRadioQueue(fetched).catch(() => undefined);
+    }
+  } catch (error) {
+    if (generation !== intentGeneration) return false;
+    // A failed refresh over a queue we already have is not a failure. It only
+    // becomes one when there is nothing to play.
+    if (!state.queue.length) throw error;
+  }
+
+  // Set only once a queue actually exists. The previous code set this beside the
+  // request, so a first load that was superseded mid-flight left the flag true
+  // and the queue empty — and every later play took the `tracksLoaded` shortcut
+  // and reported "no playable tracks" forever, until the app was restarted.
+  tracksLoaded = state.queue.length > 0;
+  return true;
+}
+
+function applyQueue(tracks: PulseRadioTrack[]) {
+  order = buildSequentialOrder(tracks.length);
+  orderPosition = Math.min(orderPosition, Math.max(0, tracks.length - 1));
+  update({ queue: tracks });
 }
 
 function handlePlaybackStatus(playback: AVPlaybackStatus, generation: number) {
   if (generation !== intentGeneration) return;
   if (!playback.isLoaded) {
-    if (playback.error) update({ status: "error", message: "This track could not be played." });
+    // Was: straight to `error` with "This track could not be played." A tunnel
+    // and a corrupt file produced the same dead end, and both threw the
+    // listener's place in the song away.
+    if (playback.error) recoverFromFailure("load_failed", generation);
     return;
   }
   const positionMillis = playback.positionMillis ?? state.positionMillis;
@@ -340,6 +450,13 @@ function handlePlaybackStatus(playback: AVPlaybackStatus, generation: number) {
     update({ positionMillis, durationMillis });
   }
   if (playback.isBuffering && !playback.isPlaying) {
+    // Buffering with no network is not buffering, it is waiting. "Buffering…"
+    // over a dead radio is the app claiming progress it is not making, and it
+    // hides the one fact that would let the listener act.
+    if (!playingFromCache && connectivityState() === "offline") {
+      recoverFromFailure("stall", generation);
+      return;
+    }
     update({ status: "buffering", message: "Buffering…" });
   } else if (playback.isPlaying && state.status === "buffering") {
     const queueIndex = order[orderPosition] ?? state.queueIndex;
@@ -372,6 +489,59 @@ function handlePlaybackStatus(playback: AVPlaybackStatus, generation: number) {
     const nextGeneration = ++intentGeneration;
     startPlayback(nextGeneration).catch(() => undefined);
   }
+}
+
+/**
+ * Turn a playback failure into the right next move.
+ *
+ * The classification lives in `radio/radioRecovery` and is pure; this is only
+ * the part that has to touch the player. Every branch carries `positionMillis`
+ * forward — a resume that restarts the song is the failure this replaced.
+ */
+function recoverFromFailure(reason: RadioFailureReason, generation: number) {
+  if (generation !== intentGeneration) return;
+  const plan = radioRecoveryPlan({
+    reason,
+    connectivity: connectivityState(),
+    attempt: recoveryAttempts,
+    positionMillis: state.positionMillis,
+    fromCache: playingFromCache
+  });
+  pendingResumeMillis = plan.resumeAtMillis;
+
+  // A local file that fails is damaged, not delayed. Forget it so the next
+  // attempt re-fetches instead of replaying the same broken bytes.
+  if (plan.discardCachedCopy) discardCachedRadioTrack(state.track).catch(() => undefined);
+
+  if (plan.action === "await_network") {
+    awaitingNetwork = true;
+    update({ status: plan.status, message: "Offline — Pulse Radio resumes when you reconnect." });
+    return;
+  }
+
+  if (plan.action === "give_up") {
+    awaitingNetwork = false;
+    pendingResumeMillis = 0;
+    update({ status: plan.status, message: "This track could not be played. Tap to retry." });
+    releaseMediaPlayback("pulse-radio").catch(() => undefined);
+    return;
+  }
+
+  recoveryAttempts += 1;
+  update({ status: plan.status, message: "Reconnecting…" });
+  const retryGeneration = ++intentGeneration;
+  setTimeout(() => {
+    if (retryGeneration !== intentGeneration) return;
+    pendingResumeMillis = 0;
+    startPlayback(retryGeneration, plan.resumeAtMillis).catch(() => undefined);
+  }, plan.delayMs);
+}
+
+/** A track the listener chose is a fresh start, with its own retry budget. */
+function resetRecoveryForNewTrack() {
+  recoveryAttempts = 0;
+  pendingResumeMillis = 0;
+  awaitingNetwork = false;
 }
 
 async function configureAudio() {
