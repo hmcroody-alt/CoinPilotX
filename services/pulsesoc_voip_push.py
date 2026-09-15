@@ -492,6 +492,30 @@ def _is_environment_mismatch(attempt: dict[str, Any]) -> bool:
     return int(attempt.get("http_status") or 0) == 400 and "BadDeviceToken" in str(attempt.get("body") or "")
 
 
+def _apns_reason(body: str) -> str:
+    """The APNs ``reason`` string, which is the only field that names the fault.
+
+    HTTP status collapses opposite diagnoses onto one number. ``BadDeviceToken``
+    and ``DeviceTokenNotForTopic`` are both 400: the first means the token may be
+    perfectly live at the *other* host and is worth replaying, the second means an
+    alert token reached the VoIP topic and no host will ever accept it. Both end
+    as ``apns_status=invalid_device`` and both revoke the token, so an event that
+    records only the status leaves a revoked device permanently undiagnosable —
+    you cannot tell afterwards whether to fix the host, the topic, or the client.
+
+    Kept deliberately total: a body that is not JSON, or not an object, yields ""
+    rather than raising. This runs on the failure path of a call that is already
+    ringing, and a logging helper must not be the thing that breaks it.
+    """
+    try:
+        parsed = json.loads(body or "")
+    except Exception:
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    return str(parsed.get("reason") or "")[:64]
+
+
 def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -> dict[str, Any]:
     """Deliver one VoIP push, correcting the APNs host if it was guessed wrong.
 
@@ -528,11 +552,17 @@ def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -
     env = normalize_environment(environment) or default_environment()
     attempt = _post_voip(token, payload, env)
     corrected = False
+    # "the replay never ran" and "the replay ran and the other host refused too"
+    # are different faults that produce an identical rejection. Carried into the
+    # event so the distinction survives past the request.
+    replay_outcome = "not_attempted"
 
     if _is_environment_mismatch(attempt):
         replay_env = other_environment(env)
         replay = _post_voip(token, payload, replay_env)
+        replay_outcome = "rejected"
         if 200 <= int(replay.get("http_status") or 0) < 300:
+            replay_outcome = "accepted"
             _event(
                 "voip_push_environment_corrected",
                 token_suffix=_token_suffix(token),
@@ -577,6 +607,8 @@ def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -
         token_suffix=_token_suffix(token),
         http_status=http_status,
         apns_status=status,
+        apns_reason=_apns_reason(body),
+        replay=replay_outcome,
     )
     return {"ok": False, "status": status, "http_status": http_status, "message": body[:200], "apns_id": apns_id}
 

@@ -638,6 +638,77 @@ class ApnsEnvironmentCorrectionTest(VoipBase):
         self.assertIn("device-claim", result.get("claimed_device_ids", []))
 
 
+class RejectionDiagnosabilityTest(unittest.TestCase):
+    """A rejection that revokes a token has to say *why*, or it cannot be fixed.
+
+    Every branch above ends in the same `apns_status=invalid_device` and the same
+    revocation. On a real device this presented as a phone that registered, rang
+    once, got revoked, and reverted to alert pushes — with nothing in the log to
+    say whether the fault was the host, the topic, or the client. The event is the
+    only artifact that survives the request, so it has to carry the discriminator.
+    """
+
+    def _reject(self, script, environment="production"):
+        fake, seen = _scripted_httpx(script)
+        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
+                mock.patch.dict(sys.modules, {"httpx": fake}), \
+                self.assertLogs(level="INFO") as captured:
+            result = voip.send_voip_push("devicetoken123", {"event": "incoming_call"}, environment)
+        rejected = [line for line in captured.output if "voip_push_rejected" in line]
+        self.assertEqual(len(rejected), 1, captured.output)
+        return result, rejected[0], seen
+
+    def test_the_rejection_event_names_the_apns_reason(self):
+        """MUTATION: log only http_status and the derived apns_status.
+
+        BadDeviceToken and DeviceTokenNotForTopic are both 400 and both revoke, but
+        one is fixed by correcting the host and the other by fixing registration.
+        Without the reason the two are indistinguishable after the fact, which is
+        exactly the wall the first physical device test hit.
+        """
+        _result, line, _seen = self._reject([(400, '{"reason":"DeviceTokenNotForTopic"}')])
+
+        self.assertIn("apns_reason=DeviceTokenNotForTopic", line)
+
+    def test_a_replay_that_also_failed_is_distinguishable_from_no_replay(self):
+        """MUTATION: drop the replay field, or hard-code it.
+
+        "the correction never ran" and "the correction ran and both hosts refused"
+        produce byte-identical rejections. The first is a bug in the mismatch check;
+        the second means the token is genuinely dead. Reading one as the other sends
+        you to rewrite working code.
+        """
+        _both, both_line, seen = self._reject([(400, BAD_TOKEN), (400, BAD_TOKEN)])
+        self.assertEqual(len(seen), 2)
+        self.assertIn("replay=rejected", both_line)
+
+        _once, once_line, seen = self._reject([(400, '{"reason":"DeviceTokenNotForTopic"}')])
+        self.assertEqual(len(seen), 1)
+        self.assertIn("replay=not_attempted", once_line)
+
+    def test_the_reason_parser_survives_a_body_that_is_not_json(self):
+        """MUTATION: parse the body with a bare `json.loads` and no guard.
+
+        APNs answers 5xx and edge-proxy errors with HTML or an empty body. This
+        helper runs on the failure path of a call that is already ringing; raising
+        here would turn a recoverable rejection into a 500 for the caller.
+        """
+        self.assertEqual(voip._apns_reason(""), "")
+        self.assertEqual(voip._apns_reason("<html>502 Bad Gateway</html>"), "")
+        self.assertEqual(voip._apns_reason("[1, 2, 3]"), "")
+        self.assertEqual(voip._apns_reason('{"reason":"BadDeviceToken"}'), "BadDeviceToken")
+
+    def test_the_rejection_event_still_carries_no_token(self):
+        """MUTATION: log the token alongside the new reason field.
+
+        Adding fields to an event is where a credential leaks in. The token is a
+        ring credential; whoever holds it can make the handset ring full-screen.
+        """
+        _result, line, _seen = self._reject([(400, '{"reason":"DeviceTokenNotForTopic"}')])
+
+        self.assertNotIn("devicetoken123", line)
+
+
 # ---------------------------------------------------------------------------
 # 16-17. Only genuine call events may send a VoIP push (Apple compliance)
 # ---------------------------------------------------------------------------
