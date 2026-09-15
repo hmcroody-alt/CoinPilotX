@@ -55,9 +55,22 @@
  *
  * ## Eviction
  *
- * LRU by last access, with an age ceiling on top. Age matters independently of
- * size because a cache that never fills its quota still holds a year-old private
- * thumbnail forever, and "we were under quota" is not an answer to that.
+ * An age ceiling first, then retention tier, then LRU within the tier. Age
+ * matters independently of size because a cache that never fills its quota still
+ * holds a year-old private thumbnail forever, and "we were under quota" is not
+ * an answer to that.
+ *
+ * The tier exists because recency alone gets the important case backwards. A
+ * speculative warm is written at the instant it is guessed at, making it the
+ * newest entry in the cache, while a file the user deliberately saved an hour
+ * ago is among the oldest — so plain LRU discards what was asked for in order to
+ * protect what was merely predicted. See {@link MediaRetention}.
+ *
+ * ## Budget
+ *
+ * `maxBytes` is a hard ceiling; the effective budget is that ceiling narrowed by
+ * how much room the device actually has. One fixed number is wrong at both ends
+ * of the hardware range at once. See {@link mediaBudgetForDisk}.
  *
  * Integrity is verified on every read: the file must exist and its size must
  * match what was recorded at write. A truncated file — the app was killed
@@ -83,6 +96,18 @@ import {
 } from "../core/media/mediaIdentity";
 import { trackMediaEvent } from "./mediaTelemetry";
 
+/**
+ * Why these bytes are on disk, which decides who gives them up first.
+ *
+ * `explicit` means a person asked for this specific file — saved it, shared it,
+ * opened it. `predictive` means we guessed they might want it: the radio track
+ * after the one playing, a warmed poster. The distinction is not about value,
+ * it is about who notices. Re-fetching a guess costs nothing anybody asked for;
+ * re-fetching a file the user deliberately pulled down costs them the thing
+ * they pulled it down for, which on a bad connection is the whole point.
+ */
+export type MediaRetention = "explicit" | "predictive";
+
 export type MediaCacheEntry = {
   key: string;
   fileUri: string;
@@ -90,13 +115,21 @@ export type MediaCacheEntry = {
   mimeType?: string;
   createdAt: number;
   lastAccessAt: number;
+  /**
+   * Absent on entries written before retention existed. Read as `predictive`
+   * everywhere — see `retentionOf`.
+   */
+  retention?: MediaRetention;
 };
 
 export type MediaCacheStats = {
   scope: string;
   entries: number;
   bytes: number;
+  /** The hard ceiling. */
   maxBytes: number;
+  /** What the ceiling actually works out to on this device right now. */
+  budgetBytes: number;
 };
 
 /**
@@ -128,6 +161,52 @@ let maxAgeMs = 14 * 24 * 60 * 60 * 1000;
  * user sees the whole phone misbehave.
  */
 let minFreeDiskBytes = 128 * 1024 * 1024;
+
+/**
+ * Smallest budget the cache will ever operate under.
+ *
+ * Without a floor, a nearly-full disk computes a budget near zero, which evicts
+ * the entire cache on the next write and frees nothing the user cares about —
+ * the disk is full of photos and other apps, not of us. A cache that small is
+ * also actively harmful: every read misses, so a device already short on space
+ * starts re-downloading everything it looks at.
+ */
+export const MEDIA_BUDGET_FLOOR_BYTES = 32 * 1024 * 1024;
+
+/** Share of free disk the cache is willing to claim. We are a guest here. */
+const FREE_DISK_SHARE = 0.1;
+
+/**
+ * What the ceiling works out to on a device with `freeDiskBytes` available.
+ *
+ * A fixed byte cap is wrong in both directions at once: it is a rounding error
+ * on a 1TB phone and an eviction storm on a phone with 300MB left. The ceiling
+ * stays the hard cap — this only ever tightens it, never raises it — so a
+ * caller that has deliberately configured a small budget keeps the budget it
+ * configured.
+ *
+ * Exported pure so the policy can be asserted directly. An unreadable disk
+ * yields the ceiling rather than zero: a failed stat is not evidence of a full
+ * disk, and treating it as one would disable offline playback on that device.
+ */
+export function mediaBudgetForDisk(freeDiskBytes: number, ceilingBytes: number): number {
+  const ceiling = Math.max(0, Number(ceilingBytes) || 0);
+  if (!Number.isFinite(freeDiskBytes)) return ceiling;
+  const share = Math.floor(Math.max(0, freeDiskBytes) * FREE_DISK_SHARE);
+  return Math.min(ceiling, Math.max(share, Math.min(MEDIA_BUDGET_FLOOR_BYTES, ceiling)));
+}
+
+/** The live budget, reading the device. Falls back to the ceiling if it cannot. */
+async function currentBudget(): Promise<number> {
+  if (maxBytes <= 0) return 0;
+  const free = await getFreeDiskStorageAsync().catch(() => Number.POSITIVE_INFINITY);
+  return mediaBudgetForDisk(free, maxBytes);
+}
+
+/** Entries from before retention existed are the cheap tier; see the type. */
+function retentionOf(entry: MediaCacheEntry): MediaRetention {
+  return entry.retention === "explicit" ? "explicit" : "predictive";
+}
 
 let scope = ANON_SCOPE;
 let indexCache: Record<string, MediaCacheEntry> | null = null;
@@ -341,7 +420,8 @@ export async function ensureRoomFor(bytes: number): Promise<void> {
   if (maxBytes > 0 && wanted > 0) {
     const index = await readIndex();
     const used = totalBytes(index);
-    if (used + wanted > maxBytes) await evictMediaCache(used + wanted - maxBytes);
+    const budget = await currentBudget();
+    if (used + wanted > budget) await evictMediaCache(used + wanted - budget);
   }
 
   if (wanted > 0) {
@@ -370,6 +450,8 @@ export async function commitCachedMedia(input: {
   fileUri: string;
   mimeType?: string;
   destinationUri?: string;
+  /** Defaults to `predictive` — see {@link MediaRetention}. */
+  retention?: MediaRetention;
 }): Promise<MediaCacheEntry | null> {
   if (!input.key || !input.fileUri) return null;
   await ensureRootDirectory();
@@ -398,7 +480,8 @@ export async function commitCachedMedia(input: {
     bytes,
     mimeType: input.mimeType,
     createdAt: now,
-    lastAccessAt: now
+    lastAccessAt: now,
+    retention: input.retention === "explicit" ? "explicit" : "predictive"
   };
 
   const index = await readIndex();
@@ -412,8 +495,22 @@ function totalBytes(index: Record<string, MediaCacheEntry>): number {
 }
 
 /**
- * Evict aged-out entries, then LRU until the cache is under quota with at least
- * `headroom` bytes to spare.
+ * Evict aged-out entries, then by priority, until the cache is under budget
+ * with at least `headroom` bytes to spare.
+ *
+ * ORDER, AND WHY IT IS NOT JUST RECENCY
+ *
+ * Recency alone inverts in the case that matters. A speculative warm is written
+ * at the moment it is guessed at, so it is always the newest thing here, while
+ * a file the user deliberately saved an hour ago is among the oldest. Sorting
+ * on `lastAccessAt` therefore discards what the user asked for in order to
+ * protect what nobody has asked for yet — and it does that hardest exactly when
+ * storage is tight, which is when they are least able to fetch it again.
+ *
+ * So the speculative tier is drained first, in LRU order, and explicit
+ * downloads are touched only once there is nothing left to guess with. Within a
+ * tier it is still plain LRU; priority orders the tiers, it does not replace
+ * recency inside one.
  */
 export async function evictMediaCache(headroom = 0): Promise<number> {
   const index = await readIndex();
@@ -428,8 +525,11 @@ export async function evictMediaCache(headroom = 0): Promise<number> {
     else survivors.push(entry);
   }
 
-  const budget = Math.max(0, maxBytes - Math.max(0, headroom));
-  survivors.sort((a, b) => a.lastAccessAt - b.lastAccessAt);
+  const budget = Math.max(0, (await currentBudget()) - Math.max(0, headroom));
+  survivors.sort((a, b) => {
+    const priority = tierRank(a) - tierRank(b);
+    return priority !== 0 ? priority : a.lastAccessAt - b.lastAccessAt;
+  });
   let used = totalBytes(Object.fromEntries(survivors.map((entry) => [entry.key, entry])));
   while (maxBytes > 0 && used > budget && survivors.length) {
     const victim = survivors.shift() as MediaCacheEntry;
@@ -440,6 +540,11 @@ export async function evictMediaCache(headroom = 0): Promise<number> {
   if (!doomed.length) return 0;
   await dropEntries(doomed, "quota");
   return doomed.length;
+}
+
+/** Lower rank is given up first. */
+function tierRank(entry: MediaCacheEntry): number {
+  return retentionOf(entry) === "explicit" ? 1 : 0;
 }
 
 async function dropEntries(entries: MediaCacheEntry[], reason: "age" | "quota" | "corrupt") {
@@ -484,7 +589,13 @@ export async function dropCachedMedia(key: string): Promise<boolean> {
 
 export async function mediaCacheStats(): Promise<MediaCacheStats> {
   const index = await readIndex();
-  return { scope, entries: Object.keys(index).length, bytes: totalBytes(index), maxBytes };
+  return {
+    scope,
+    entries: Object.keys(index).length,
+    bytes: totalBytes(index),
+    maxBytes,
+    budgetBytes: await currentBudget()
+  };
 }
 
 /**

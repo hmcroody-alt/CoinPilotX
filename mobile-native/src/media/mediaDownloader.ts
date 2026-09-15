@@ -58,7 +58,8 @@ import {
   lookupCachedMedia,
   MediaCacheFullError,
   mediaCacheKey,
-  type MediaCacheEntry
+  type MediaCacheEntry,
+  type MediaRetention
 } from "./mediaCache";
 import { mediaFailureReason, trackMediaEvent, type MediaFailureReason } from "./mediaTelemetry";
 
@@ -92,6 +93,13 @@ export type MediaDownloadRequest = {
   /** From the canonical record's `size_bytes`, used to reserve disk up front. */
   expectedBytes?: number;
   headers?: Record<string, string>;
+  /**
+   * Why these bytes are wanted, which decides who gives them up under storage
+   * pressure. Defaults to `predictive`: a caller that does not say is guessing,
+   * and the cost of guessing wrong that way is a re-download rather than losing
+   * a file the user deliberately pulled down.
+   */
+  retention?: MediaRetention;
   onProgress?: (progress: MediaDownloadProgress) => void;
 };
 
@@ -270,7 +278,8 @@ async function performDownload(
         key,
         fileUri: result.uri || partial,
         destinationUri: destination,
-        mimeType: request.mimeType
+        mimeType: request.mimeType,
+        retention: request.retention
       });
 
       if (!entry) {

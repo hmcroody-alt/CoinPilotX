@@ -152,7 +152,12 @@ export async function warmRadioTrack(track: PulseRadioTrack | null | undefined):
       mediaId: track.id,
       rendition: "full",
       kind: "audio",
-      surface: "pulse_radio"
+      surface: "pulse_radio",
+      // A guess about the next track, not a request. This is the tier that
+      // should be given up first when the disk gets tight — and without saying
+      // so it would be the tier that survived, because it is the newest thing
+      // in the cache the moment it is written.
+      retention: "predictive"
     });
     return true;
   } catch {

@@ -105,7 +105,9 @@ export async function saveMediaToGallery(target: MediaActionTarget): Promise<Med
       mimeType: target.mimeType,
       kind,
       surface: target.surface,
-      expectedBytes: target.expectedBytes
+      expectedBytes: target.expectedBytes,
+      // The user asked for this specific file by tapping Save, Share or Open.
+      retention: "explicit"
     });
     fileUri = entry.fileUri;
   } catch (error) {
@@ -192,7 +194,9 @@ export async function shareMedia(
           mimeType: target.mimeType,
           kind,
           surface: target.surface,
-          expectedBytes: target.expectedBytes
+          expectedBytes: target.expectedBytes,
+          // The user asked for this specific file by tapping Save, Share or Open.
+          retention: "explicit"
         });
         await Sharing.shareAsync(entry.fileUri, {
           mimeType: entry.mimeType || target.mimeType,
@@ -256,7 +260,9 @@ export async function openDocument(target: MediaActionTarget): Promise<MediaOpen
       mimeType: target.mimeType,
       kind: "file",
       surface: target.surface,
-      expectedBytes: target.expectedBytes
+      expectedBytes: target.expectedBytes,
+      // The user asked for this specific file by tapping Save, Share or Open.
+      retention: "explicit"
     });
     fileUri = entry.fileUri;
     mimeType = entry.mimeType || target.mimeType;
