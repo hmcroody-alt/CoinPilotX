@@ -35,6 +35,7 @@ MATRIX = "services/private_office/feature_matrix.py"
 STATUS = "services/private_office/status.py"
 OFFICE = "services/private_office/office.py"
 TELEMETRY = "services/private_office/telemetry.py"
+MODEL = "services/private_office/model.py"
 PO_ROUTES = "services/private_office_routes.py"
 
 OWNER_SUITE = "tests/private_office/test_owner_office_membership.py"
@@ -262,6 +263,61 @@ MUTATIONS = [
           '            out[_k] = _v\n'
           '    return out')],
         [(OBSERV_SUITE, OBSERV_TEST)],
+    ),
+
+    # -----------------------------------------------------------------------
+    # Phase 2. The vocabulary round-trip, ported from
+    # `claude/nostalgic-neumann-d9391f` because main had no equivalent. These
+    # three mutations are the reason it was worth porting rather than trusting:
+    # a check whose subject is "every constant equals itself" is exactly the
+    # shape that passes forever without touching anything.
+    # -----------------------------------------------------------------------
+    Mutation(
+        "a_vocabulary_member_cannot_match_itself",
+        "One constant is spelled in lower case. `_canonical` upper-cases the "
+        "input before comparing, so the member can never equal itself and "
+        "`normalize_relation('DESCRIBES')` returns None for a relation the "
+        "module itself declares legal. Every caller treats None as "
+        "'unrecognised, skip it' — correct for a typo from outside, silent "
+        "data loss for one of our own constants. Nothing raises, nothing logs, "
+        "the column simply arrives empty for every row that uses it. This is "
+        "the bug the branch reported shipping to production.",
+        [(MODEL,
+          'RELATION_DESCRIBES = "DESCRIBES"',
+          'RELATION_DESCRIBES = "describes"')],
+        [(SURFACE_SUITE, SURFACE_TEST)],
+    ),
+    Mutation(
+        "a_new_vocabulary_arrives_with_no_normalizer",
+        "A closed vocabulary is added to model.py and no normalizer is written "
+        "for it — the ordinary way a vocabulary gets added under time "
+        "pressure. Round-tripping the nine that already have normalizers still "
+        "passes, so only the auto-discovery half notices. Without that half "
+        "this stage would protect exactly the vocabularies that existed the "
+        "day it was written, which for a module that has gained 295 lines of "
+        "them since the merge-base is close to protecting nothing.",
+        [(MODEL,
+          'RELATION_TYPES: tuple[str, ...] = (',
+          'ESCROW_STATES: tuple[str, ...] = ("PENDING", "RELEASED")\n\n'
+          'RELATION_TYPES: tuple[str, ...] = (')],
+        [(SURFACE_SUITE, SURFACE_TEST)],
+    ),
+    Mutation(
+        "a_vocabulary_gains_a_duplicate_member",
+        "One member is repeated in its tuple. The normalizer still matches it, "
+        "so the round-trip check alone stays green — the duplicate only shows "
+        "up where the tuple is *iterated* rather than searched, which is how "
+        "the domain summary and the rank tables are built. A repeated member "
+        "double-counts there, quietly, in a number the member reads as fact.",
+        [(MODEL,
+          '    RELATION_GOVERNED_BY,\n'
+          '    RELATION_DESCRIBES,\n'
+          ')',
+          '    RELATION_GOVERNED_BY,\n'
+          '    RELATION_DESCRIBES,\n'
+          '    RELATION_OWNS,\n'
+          ')')],
+        [(SURFACE_SUITE, SURFACE_TEST)],
     ),
 ]
 

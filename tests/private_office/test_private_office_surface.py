@@ -396,6 +396,80 @@ def stage_no_sql_in_the_surface_layer():
           "_facts.count_facts_by_domain" in source)
 
 
+def stage_every_vocabulary_normalizes_to_itself():
+    """Each closed vocabulary round-trips through its own normalizer.
+
+    Sounds tautological and is not. ``model._canonical`` upper-cases before
+    comparing, so a vocabulary member spelled in lower case can never match
+    itself: the normalizer returns ``None`` for its own constant. Every caller
+    in this package treats ``None`` as "unrecognised, carry on without it" —
+    which is the right thing to do with a typo from outside and the wrong thing
+    to do with one of our own constants, because the value is then dropped
+    silently, for every row, at every call site that touches that axis. Nothing
+    raises and nothing logs; the column just comes back empty.
+
+    The pairing below is written out by hand because only a human knows which
+    normalizer belongs to which vocabulary — but the *coverage* is not trusted
+    to a human. The last check discovers every closed vocabulary the module
+    exports and fails if one is missing from the list, so this protects the
+    vocabularies that exist rather than the ones that existed the day it was
+    written. `model.py` gains vocabularies faster than anyone re-reads this file.
+
+    What is deliberately NOT asserted here is that the provenance and
+    verification vocabularies are disjoint. They are not: ``VERIFIED``,
+    ``CONFLICTING`` and ``LEGACY_UNKNOWN`` appear in both, and `model.py` says
+    why at the point of definition — the two axes were one column once, and
+    those three labels are the rows written before the split. Removing them from
+    ``PROVENANCE_TYPES`` would not clean anything up; it would make every
+    pre-split row fail to normalize, which is this check's own failure mode
+    applied to real data. The overlap is only ambiguous for code that takes a
+    bare string and asks which axis it belongs to, and no code here does that:
+    every reader calls an axis-specific normalizer against an axis-specific
+    tuple.
+    """
+    print("\n[vocabulary round-trip]")
+    pairs = (
+        ("DOMAINS", model.DOMAINS, model.normalize_domain),
+        ("EVIDENCE_TYPES", model.EVIDENCE_TYPES, model.normalize_evidence_type),
+        ("LIFECYCLE_STATES", model.LIFECYCLE_STATES, model.normalize_lifecycle),
+        ("NODE_TYPES", model.NODE_TYPES, model.normalize_node_type),
+        ("PROVENANCE_TYPES", model.PROVENANCE_TYPES, model.normalize_provenance),
+        ("RELATION_TYPES", model.RELATION_TYPES, model.normalize_relation),
+        ("SENSITIVITIES", model.SENSITIVITIES, model.normalize_sensitivity),
+        ("VALUE_TYPES", model.VALUE_TYPES, model.normalize_value_type),
+        ("VERIFICATION_STATES", model.VERIFICATION_STATES,
+         model.normalize_verification_state),
+    )
+    for name, values, normalizer in pairs:
+        broken = [v for v in values if normalizer(v) != v]
+        check(f"{name} round-trips through its normalizer",
+              not broken, f"unmatchable: {broken}")
+        # A duplicate is not harmless here even though the normalizer would
+        # still match: the tuples are also iterated to build rank tables and
+        # summaries, so a repeated member silently double-counts.
+        check(f"{name} has no duplicate members",
+              len(set(values)) == len(values), str(values))
+
+    # Coverage. Every plural uppercase tuple-of-strings the module exports is a
+    # closed vocabulary, and every closed vocabulary needs a normalizer that can
+    # recognise its own members. Anything found here and absent above is either
+    # a vocabulary with no normalizer at all or one this check forgot; both are
+    # worth failing on, and neither is discoverable by reading the list above.
+    covered = {name for name, _values, _fn in pairs}
+    discovered = {
+        name for name in dir(model)
+        if name.isupper() and isinstance(getattr(model, name), tuple)
+        and getattr(model, name)
+        and all(isinstance(item, str) for item in getattr(model, name))
+    }
+    check("every closed vocabulary in model.py is covered above",
+          discovered <= covered, f"uncovered: {sorted(discovered - covered)}")
+    # The other direction, or the check above passes when `pairs` is padded with
+    # names `model` no longer exports and the discovery set shrinks to nothing.
+    check("every vocabulary named above still exists in model.py",
+          covered <= discovered, f"stale: {sorted(covered - discovered)}")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     _FAILURES.clear()
@@ -408,6 +482,7 @@ def main() -> int:
     stage_verification_never_rounds_up()
     stage_entry_state_reads_implementation_first()
     stage_no_sql_in_the_surface_layer()
+    stage_every_vocabulary_normalizes_to_itself()
     print("\n" + "=" * 60)
     if _FAILURES:
         print(f"FAIL — {len(_FAILURES)} check(s) failed:")
