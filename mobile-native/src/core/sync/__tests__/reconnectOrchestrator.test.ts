@@ -329,8 +329,14 @@ describe("what a reconnect must not touch", () => {
     // a half-written message and the video mid-play belong to the surface. The
     // orchestrator cannot disturb them because it never invokes anything but
     // `run` -- which is a property of this file, so it is asserted here.
-    const invocations = source.match(/\btask\.[A-Za-z]+\(/g) || [];
-    expect([...new Set(invocations)]).toEqual(["task.run("]);
+    //
+    // The optional-call form is matched deliberately. `task.reset?.()` is how
+    // someone would actually add a reset hook -- newly optional so existing
+    // callers keep compiling -- and a pattern that only saw `task.reset()`
+    // survived exactly that mutation when it was run against this file.
+    const invocations = source.match(/\btask\.[A-Za-z]+\s*\??\.?\(/g) || [];
+    const normalized = invocations.map((call) => call.replace(/\s*\??\.?\($/, "("));
+    expect([...new Set(normalized)]).toEqual(["task.run("]);
   });
 
   it("offers a task no reset, reload or remount affordance", () => {
