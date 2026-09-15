@@ -2447,7 +2447,14 @@ function MessageMediaGrid({ message, tiles }: { message: MessengerMessage; tiles
           size={tileSize}
           position={position + 1}
           total={tiles.length}
-          onOpen={() => gallery?.open(gallerySeedFromMessage(tile))}
+          // The tile hands its *granted* identity up rather than the grid
+          // reaching for `tile` directly: `tile.url` is the protected API path
+          // off the attachment payload, and the gallery shows a seeded URL until
+          // its own resolve lands (`grant?.url || item.url` in the host). Seeding
+          // the raw path would both lose the instant open and hand the platform
+          // image loader a protected path — the thing that made image loads run
+          // session refresh on the server.
+          onOpen={(granted) => gallery?.open(gallerySeedFromMessage(granted))}
         />
       ))}
     </View>
@@ -2481,7 +2488,7 @@ function MediaGridTile({
   size: number;
   position: number;
   total: number;
-  onOpen: () => void;
+  onOpen: (granted: ConversationMediaItem) => void;
 }) {
   const { t } = useTranslation();
   const access = useMessengerMediaAccessUrl(
@@ -2499,7 +2506,9 @@ function MediaGridTile({
       accessibilityRole="imagebutton"
       accessibilityLabel={label}
       accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-      onPress={onOpen}
+      // The key is deliberately left alone: it is what makes this tile and the
+      // same photo in the server-paged collection one entry rather than two.
+      onPress={() => onOpen({ ...tile, url, thumbnailUrl: thumbnail })}
       style={[styles.mediaTile, { height: size, width: size }]}
     >
       {previewUrl ? (

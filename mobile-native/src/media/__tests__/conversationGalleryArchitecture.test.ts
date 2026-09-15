@@ -99,7 +99,24 @@ describe("a multi-media message's tiles", () => {
    * attachment's identity — three tiles, all opening photo one.
    */
   it("seeds each tile's open from that tile, not from the message", () => {
-    expect(chatScreen).toMatch(/gallerySeedFromMessage\(tile\)/);
+    expect(chatScreen).toMatch(/onOpen\(\{ \.\.\.tile,/);
+  });
+
+  /**
+   * And it seeds with the tile's *granted* URL.
+   *
+   * The host renders `grant?.url || item.url`, so the seeded URL is what the
+   * viewer shows until its own resolve lands. Seeding `tile.url` — the protected
+   * API path straight off the attachment payload — still opens the viewer and
+   * still ends up showing the photo a moment later, so it looks fine; it just
+   * hands the platform image loader a protected path in the meantime, which is
+   * what made image loads run session refresh on the server and sign people out.
+   */
+  it("seeds the tile's granted url, never the raw protected path", () => {
+    expect(chatScreen).toMatch(/onOpen\(\{ \.\.\.tile, url, thumbnailUrl: thumbnail \}\)/);
+    // The grid has no grant of its own, so it must not be the one building the
+    // seed — that is the shape that would reintroduce the raw path.
+    expect(chatScreen).not.toMatch(/gallerySeedFromMessage\(tile\)/);
   });
 
   /**
