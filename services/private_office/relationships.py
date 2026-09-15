@@ -349,6 +349,22 @@ def _set_field(
     observation time, so a screen that saves an untouched form would march
     every field's "as of" date forward and quietly destroy the answer to "when
     did I last actually check this number".
+
+    A value *different* from the current one supersedes it. Recording alone is
+    not enough, because ``record_fact`` links a predecessor only when the
+    caller names one: without the supersede below, editing a contact's email
+    leaves both addresses ACTIVE on the same person forever. The directory read
+    hides that — it takes the newest row per type, so the screen looks correct —
+    but the store is left holding two live claims about one field, the person's
+    own timeline renders the stale one as current, and ``detect_conflicts`` sees
+    a genuine contradiction where there is only an edit.
+
+    ``supersede_facts`` says the same thing in its own docstring, about
+    projections: the previous value "is not a second opinion to weigh against
+    the new one; it is the previous state of the same ledger". A member
+    correcting their own contact's phone number is exactly that shape. Nothing
+    is deleted — the old row stays, with its provenance and its place on the
+    timeline, marked as what it is.
     """
     held = str((current.get(fact_type) or {}).get("value") or "")
     if value == held:
@@ -362,12 +378,22 @@ def _set_field(
                 purpose="user_request")
             return True
         return False
-    facts_mod.record_fact(
+    written = facts_mod.record_fact(
         cur, owner_user_id=owner_user_id, subject_type=facts_mod.SUBJECT_NODE,
         subject_id=str(node_id), fact_type=fact_type, value=value,
         value_type=model.VALUE_STRING,
         provenance_type=model.PROVENANCE_USER_ASSERTED,
         domain=domain, sensitivity=sensitivity,
+        actor_user_id=actor_user_id, purpose="user_request",
+    )
+    # Scoped to this one person and this one field, keeping the row just
+    # written. It cannot reach another subject, another fact type or another
+    # owner, so the blast radius of an edit to Dana's phone number is Dana's
+    # phone number.
+    facts_mod.supersede_facts(
+        cur, owner_user_id=owner_user_id, subject_type=facts_mod.SUBJECT_NODE,
+        subject_id=str(node_id), fact_type=fact_type,
+        keep_fact_id=int((written or {}).get("fact_id") or 0),
         actor_user_id=actor_user_id, purpose="user_request",
     )
     return True

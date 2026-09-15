@@ -433,6 +433,81 @@ def stage_edit():
 
 
 # ---------------------------------------------------------------------------
+# An edit is a new state, not a second opinion
+# ---------------------------------------------------------------------------
+
+def stage_edit_supersedes():
+    """Changing a field must leave exactly one live claim about that field.
+
+    ``record_fact`` links a predecessor only when the caller names one, so a
+    writer that records without superseding leaves both the old and the new
+    value ACTIVE on the same person. The directory read hides it — it takes the
+    newest row per fact type, so the screen looks right — which is what makes
+    this worth pinning: the visible surface cannot tell you whether it is
+    fixed. These assertions read the store.
+
+    Three separate things are checked because three separate things can break:
+    the count of live claims, the link between them, and the survival of the
+    old row. A fix that deleted the predecessor would satisfy the first two and
+    would be wrong — the member's timeline is built out of superseded facts,
+    and "never delete a member's data" is not negotiable here.
+    """
+    print("\n[contacts: an edit supersedes]")
+    client = _app().test_client()
+    _as(OWNER)
+    node = _STATE["dana"]
+
+    def email_rows():
+        return _query_all(
+            f"SELECT id, typed_value, lifecycle_state, superseded_by_id "
+            f"FROM {schema.FACTS_TABLE} WHERE owner_user_id=? AND fact_type=? "
+            f"AND subject_id=? ORDER BY id", (OWNER, rel.FACT_EMAIL, str(node)))
+
+    before = email_rows()
+    previous = [r for r in before if str(r["lifecycle_state"]).upper() == "ACTIVE"]
+    check("the person starts with exactly one live email",
+          len(previous) == 1, str(before))
+
+    resp = client.patch(f"/api/private-office/relationships/{node}",
+                        json={"email": "dana.moved@example.com"})
+    check("the edit is accepted",
+          (resp.get_json() or {}).get("person", {}).get("email")
+          == "dana.moved@example.com", str(resp.get_json()))
+
+    after = email_rows()
+    live = [r for r in after if str(r["lifecycle_state"]).upper() == "ACTIVE"]
+    check("and still exactly one live email afterwards — not two",
+          len(live) == 1, str([r["typed_value"] for r in live]))
+    check("which is the new one",
+          live and live[0]["typed_value"] == "dana.moved@example.com",
+          str(live))
+
+    old_id = int(previous[0]["id"]) if previous else 0
+    old_row = next((r for r in after if int(r["id"]) == old_id), None)
+    check("the old address is still in the store, not deleted",
+          old_row is not None, f"id {old_id} vanished")
+    check("marked SUPERSEDED rather than left ACTIVE",
+          old_row and str(old_row["lifecycle_state"]).upper() == "SUPERSEDED",
+          str(old_row))
+    check("and pointing at the row that replaced it",
+          old_row and live and int(old_row["superseded_by_id"]) == int(live[0]["id"]),
+          str(old_row))
+
+    # Scope. The supersede names one subject and one fact type; a phone number
+    # recorded on the same person must not be collateral damage.
+    phone = _query_all(
+        f"SELECT lifecycle_state FROM {schema.FACTS_TABLE} "
+        f"WHERE owner_user_id=? AND fact_type=? AND subject_id=? "
+        f"AND lifecycle_state='ACTIVE'", (OWNER, rel.FACT_PHONE, str(node)))
+    check("a sibling field on the same person is untouched",
+          len(phone) == 1, str(phone))
+
+    # Put it back so later stages see the address they expect.
+    client.patch(f"/api/private-office/relationships/{node}",
+                 json={"email": "dana@example.com"})
+
+
+# ---------------------------------------------------------------------------
 # §17-19, §50: meetings create contacts, and doing it twice changes nothing
 # ---------------------------------------------------------------------------
 
@@ -701,6 +776,7 @@ STAGES = (
     stage_identity_resolution,
     stage_account_linking,
     stage_edit,
+    stage_edit_supersedes,
     stage_meeting_invitees,
     stage_search_and_order,
     stage_removal,
