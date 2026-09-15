@@ -11,17 +11,31 @@
  *
  * That is deliberate to the point of being awkward: it would be shorter to keep
  * a local list of the capabilities and light them up by tier. It would also be
- * a second authority on what exists, and the first time a capability ships or
- * is killed the two would disagree — with the client winning, because the
- * client is what the member sees. So the list itself comes down the wire.
- * The only local table is `COPY_KEYS`, which maps a feature id to a translation
- * key, and an id missing from it still renders (as its raw id) rather than
- * silently vanishing from the list.
+ * a second authority on *entitlement*, and the first time a tier changed the
+ * two would disagree — with the client winning, because the client is what the
+ * member sees. So availability always comes down the wire.
  *
- * That property is why the narrowing of this office to Relationship
- * Intelligence and Private Meetings was done in `OFFICE_CHILD_IDS` on the
- * server and not by deleting tiles here. Deleting a tile hides a capability;
- * shortening that tuple retires it.
+ * That is why the narrowing of this office to Relationship Intelligence and
+ * Private Meetings was done in `OFFICE_CHILD_IDS` on the server and not by
+ * deleting tiles here. Deleting a tile hides a capability; shortening that
+ * tuple retires it.
+ *
+ * ## The one thing this screen does decide
+ *
+ * It decides which capabilities this *binary* can draw, by filtering the
+ * server's list through `DESTINATIONS`. That is not a second opinion about
+ * entitlement; it is the only question the server cannot answer, because the
+ * server does not know which build is asking.
+ *
+ * This screen used to render an unknown id as its raw string, on the reasoning
+ * that vanishing from the list was the worse failure. Running the narrowed
+ * build against an un-narrowed production server settled it: the office came
+ * back with all ten of its old children and the screen drew `private_facts`,
+ * `capital_graph`, `private_briefings` and four more as cards titled with
+ * machine ids, each over an `Open` that went nowhere. The client ships on its
+ * own train — ahead of the backend during rollout, and ahead of it again after
+ * any rollback — so it has to be able to stand in front of a server that still
+ * believes in features this build removed.
  *
  * ## Why there is no "coming later" section any more
  *
@@ -80,10 +94,9 @@ const COPY_KEYS: Readonly<Record<string, string>> = {
 /**
  * Feature id → the screen that actually exists for it.
  *
- * Only built capabilities appear. A row whose id is absent here is
- * never tappable even if the server said it opens — a missing destination is a
- * client bug, and the honest failure is a row that does not move rather than a
- * tap into a screen that is not registered.
+ * Only built capabilities appear, which makes this table the client's own
+ * answer to "what does this build contain". A server row whose id is absent
+ * here is not drawn at all — see `cards` below.
  */
 const DESTINATIONS: Readonly<Record<string, keyof RootStackParamList>> = {
   relationship_intelligence: "PrivatePeople",
@@ -168,6 +181,35 @@ function PrivateOfficeBody({ navigation }: Props) {
   );
 
   const office = overview.office;
+
+  /**
+   * The rows this build can actually draw.
+   *
+   * The office is server-authoritative, and that is right: entitlement and
+   * feature flags are the server's to decide, and the client must not hold a
+   * second opinion about who may see what. But "which capabilities exist in
+   * this build" is a different question from "which may this member see", and
+   * the client is the only authority on the first one. `DESTINATIONS` is the
+   * list of Private Office screens this binary was compiled with.
+   *
+   * Filtering here, rather than trusting the server's list wholesale, is what
+   * keeps a narrowed client honest in front of a server that has not been
+   * narrowed yet. A mobile build ships on its own train: it can reach
+   * production days before the backend does, and it has to survive a backend
+   * rollback afterwards. Without this filter that window renders every retired
+   * capability as a card — labelled with its raw feature id, because the
+   * strings were deleted in the same change — above an `Open` that goes
+   * nowhere. Drawn-but-inert is not a gentler failure than a broken link; it is
+   * precisely the ghost feature this narrowing was meant to remove.
+   *
+   * This is not hypothetical. It is what the simulator showed against
+   * production on the first run: ten rows, seven of them retired.
+   *
+   * The test is the destination table and not `COPY_KEYS` on purpose — having
+   * a name for something is not evidence of having built it.
+   */
+  const cards = office.available.filter((child) => DESTINATIONS[child.featureId]);
+
   const label = (featureId: string, part: "label" | "hint") => {
     const stem = COPY_KEYS[featureId];
     if (!stem) return part === "label" ? featureId : "";
@@ -230,17 +272,17 @@ function PrivateOfficeBody({ navigation }: Props) {
 
       {loadState === "LOADED" && office.state !== "ENTRY_UNKNOWN" ? (
         <View style={styles.cards}>
-          {office.available.map((child) => (
+          {cards.map((child) => (
             <OfficeCard
               key={child.featureId}
               icon={ICONS[child.featureId] || "ellipse-outline"}
               label={label(child.featureId, "label")}
               hint={label(child.featureId, "hint")}
               openLabel={t("premium:privateOffice.open")}
-              // A row the server did not open, or one this build has no screen
-              // for, is inert rather than a tap into nothing. Both are the same
-              // failure to the member: a card that does not move.
-              disabled={!child.opens || !DESTINATIONS[child.featureId]}
+              // Every row here has a destination — `cards` dropped the ones
+              // that did not. What is left to decide is the server's word:
+              // a capability it declined to open is shown, but inert.
+              disabled={!child.opens}
               onPress={() => open(child)}
             />
           ))}

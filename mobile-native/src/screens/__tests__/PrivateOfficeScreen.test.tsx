@@ -247,22 +247,73 @@ describe("PrivateOfficeScreen", () => {
     expect(queryByText(MEETINGS)).toBeNull();
   });
 
-  it("renders a capability it has never heard of rather than dropping it", async () => {
+  /**
+   * These two replace a pair that pinned the opposite rule — that an unknown
+   * capability should be *drawn* and merely made inert. That was written before
+   * anyone ran the narrowed build against a server, and it was wrong.
+   *
+   * On the simulator, against production, the office came back with its full
+   * pre-narrowing list and the screen dutifully drew all of it: `private_facts`,
+   * `capital_graph`, `private_office.operations`, `private_briefings`,
+   * `private_shield`, `private_office.document.extraction` — each labelled with
+   * its raw feature id, because `label()` falls back to the id and the strings
+   * had been deleted — each with an `Open` that did nothing. Seven ghost rows,
+   * and a suite of 6,941 tests entirely green, because every fixture in it fed
+   * the screen a list the screen already agreed with.
+   *
+   * The client ships on its own train. It will be in front of an un-narrowed
+   * server during rollout and again after any rollback. So the rule is: draw
+   * what this build has a screen for, and nothing else.
+   */
+  it("drops a capability this build has no screen for instead of drawing it inert", async () => {
     mockGetOverview.mockResolvedValue(
-      overview({ available: [child({ feature_id: "some_future_thing" })] })
+      overview({ available: [child(), child({ feature_id: "some_future_thing" })] })
     );
-    const { getByText } = await renderScreen();
-    await waitFor(() => getByText("some_future_thing"));
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText(PEOPLE));
+    expect(queryByText("some_future_thing")).toBeNull();
   });
 
-  it("does not navigate for a capability it has no screen for", async () => {
+  it("shows only the built three when the server still reports the old office", async () => {
+    // The exact payload production returned on 2026-09-14, before the backend
+    // narrowing deployed. Every id here is real.
     mockGetOverview.mockResolvedValue(
-      overview({ available: [child({ feature_id: "some_future_thing" })] })
+      overview({
+        available: [
+          child({ feature_id: "private_facts" }),
+          child({ feature_id: "capital_graph" }),
+          child({ feature_id: "private_office.operations" }),
+          child({ feature_id: "private_briefings" }),
+          child({ feature_id: "relationship_intelligence" }),
+          child({ feature_id: "private_shield" }),
+          child({ feature_id: "private_shield.breach_monitoring" }),
+          child({ feature_id: "private_office.document.extraction" }),
+          child({ feature_id: "private_meetings" }),
+          child({ feature_id: "human_concierge" })
+        ]
+      })
     );
-    const { getByText, navigation } = await renderScreen();
-    await waitFor(() => getByText("some_future_thing"));
-    fireEvent.press(getByText("some_future_thing"));
-    expect(navigation.navigate).not.toHaveBeenCalled();
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText(PEOPLE));
+
+    getByText(MEETINGS);
+    getByText(SECURITY);
+
+    // Not by their labels — those strings are gone — but by the raw ids the
+    // screen would fall back to. That is what a member would actually have read.
+    for (const id of [
+      "private_facts",
+      "capital_graph",
+      "private_office.operations",
+      "private_briefings",
+      "private_shield",
+      "private_shield.breach_monitoring",
+      "private_office.document.extraction",
+      "human_concierge"
+    ]) {
+      expect(queryByText(id)).toBeNull();
+    }
+    for (const key of RETIRED) expect(queryByText(key)).toBeNull();
   });
 
   it("opens the people directory when the server says the card opens", async () => {
