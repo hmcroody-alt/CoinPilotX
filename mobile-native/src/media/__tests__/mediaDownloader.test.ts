@@ -52,7 +52,7 @@ jest.mock("expo-file-system/legacy", () => ({
   })
 }));
 
-import { __resetMediaCacheMemory, configureMediaCache, lookupCachedMedia } from "../mediaCache";
+import { __resetMediaCacheMemory, configureMediaCache, lookupCachedMedia, mediaCacheKey } from "../mediaCache";
 import { MediaDownloadError, __mediaDownloaderState, downloadMedia, downloadMessageFor } from "../mediaDownloader";
 
 beforeEach(async () => {
@@ -73,7 +73,10 @@ describe("happy path", () => {
     expect(entry.bytes).toBe(4096);
     expect(entry.fileUri).toMatch(/\.jpg$/);
     expect(entry.fileUri).not.toMatch(/\.part$/);
-    expect(await lookupCachedMedia("id:7")).not.toBeNull();
+    // Derived, not spelled out: the key belongs to the identity authority, and a
+    // literal here would silently stop testing the cache the downloader writes to
+    // the moment that derivation changes.
+    expect(await lookupCachedMedia(mediaCacheKey(IMAGE))).not.toBeNull();
   });
 
   it("serves the second request from cache without a second transfer", async () => {

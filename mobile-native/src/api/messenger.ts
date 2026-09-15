@@ -13,6 +13,7 @@ import {
 // messengerOrdering imports only TYPES from this module, so the cycle is erased
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
+import { drainOutbox, enqueueMutation, registerOutboxHandler } from "../core/mutations/outbox";
 import { PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
@@ -712,48 +713,105 @@ export async function sendConversationMessage(conversationId: number, payload: S
   return { ...result, data: serverMessage };
 }
 
+/**
+ * Messenger's view of the shared mutation outbox.
+ *
+ * The queue used to live here, and that was the problem: its retry policy, its
+ * capacity rule and its drain were messenger's alone, so every other surface
+ * that needed to survive being offline would have grown its own. What is left
+ * here is the part that is genuinely about messages — the stream is the
+ * conversation, the idempotency key is the `client_message_id` the server
+ * already dedupes on, and the response has to be stamped before the reconciler
+ * sees it. Everything else now belongs to the outbox.
+ */
+const MESSENGER_OUTBOX_TYPE = "messenger.send";
+
+type MessengerOutboxPayload = { conversationId: number; payload: SendMessagePayload };
+
+/** Where a drained send parks its server row, so the drain can hand it back. */
+const drainedMessages = new Map<string, MessengerMessage>();
+
+registerOutboxHandler(MESSENGER_OUTBOX_TYPE, async (operation) => {
+  const { conversationId, payload } = operation.payload as MessengerOutboxPayload;
+  const result = await sendConversationMessage(conversationId, payload);
+  // The client id is stamped back on rather than trusted from the response.
+  // A drained message ALWAYS has a bubble already on screen -- that is what
+  // being queued means -- so a server row that came back without the client
+  // id would give the reconciler no way to see the two as one message, and
+  // every message the queue sent would appear twice.
+  if (result.data) {
+    drainedMessages.set(operation.id, {
+      ...result.data,
+      client_message_id: result.data.client_message_id || payload.client_message_id
+    });
+  }
+});
+
+export const messengerOutboxStream = (conversationId: number) => `conversation:${conversationId}`;
+
 export async function enqueueMessengerMessage(conversationId: number, payload: SendMessagePayload) {
-  const queue = await readOutboundQueue();
+  await migrateLegacyOutboundQueue();
   // The clock-only fallback that used to live here could collide when several
   // messages were queued in the same millisecond -- an offline burst is exactly
   // that shape -- and two colliding ids now mean the server treats the second
   // message as a repeat of the first and drops it.
   const clientId = payload.client_message_id || mintClientMessageId("queued");
-  if (!queue.some((item) => item.payload.client_message_id === clientId)) {
-    queue.push({ conversationId, payload: { ...payload, client_message_id: clientId } });
-    await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(queue.slice(-100)));
-  }
+  await enqueueMutation({
+    type: MESSENGER_OUTBOX_TYPE,
+    idempotencyKey: clientId,
+    stream: messengerOutboxStream(conversationId),
+    payload: { conversationId, payload: { ...payload, client_message_id: clientId } }
+  });
 }
 
 export async function drainMessengerQueue(conversationId: number) {
-  const queue = await readOutboundQueue();
-  const remaining: typeof queue = [];
+  await migrateLegacyOutboundQueue();
+  const result = await drainOutbox({ stream: messengerOutboxStream(conversationId) });
   const sent: MessengerMessage[] = [];
-  for (const item of queue) {
-    if (item.conversationId !== conversationId) { remaining.push(item); continue; }
-    try {
-      const result = await sendConversationMessage(item.conversationId, item.payload);
-      // The client id is stamped back on rather than trusted from the response.
-      // A drained message ALWAYS has a bubble already on screen -- that is what
-      // being queued means -- so a server row that came back without the client
-      // id would give the reconciler no way to see the two as one message, and
-      // every message the queue sent would appear twice.
-      if (result.data) {
-        sent.push({
-          ...result.data,
-          client_message_id: result.data.client_message_id || item.payload.client_message_id
-        });
-      }
-    } catch {
-      remaining.push(item);
-    }
+  for (const operation of result.delivered) {
+    const message = drainedMessages.get(operation.id);
+    if (message) sent.push(message);
+    drainedMessages.delete(operation.id);
   }
-  await AsyncStorage.setItem(OUTBOUND_QUEUE_KEY, JSON.stringify(remaining));
   return sent;
 }
 
-async function readOutboundQueue(): Promise<Array<{ conversationId: number; payload: SendMessagePayload }>> {
-  try { return JSON.parse((await AsyncStorage.getItem(OUTBOUND_QUEUE_KEY)) || "[]"); } catch { return []; }
+/**
+ * Carry messages queued by an older build into the outbox.
+ *
+ * An unsent message is something the user has already written and believes they
+ * have sent. Shipping a new queue and leaving the old one behind would lose
+ * exactly those — silently, and only for the users who were offline across the
+ * upgrade, which is the population least likely to report it. The legacy key is
+ * removed only after the operations are durably in the outbox, so a crash in
+ * between repeats the migration rather than dropping it.
+ */
+async function migrateLegacyOutboundQueue(): Promise<void> {
+  let legacy: Array<{ conversationId: number; payload: SendMessagePayload }>;
+  try {
+    const raw = await AsyncStorage.getItem(OUTBOUND_QUEUE_KEY);
+    if (!raw) return;
+    legacy = JSON.parse(raw);
+    if (!Array.isArray(legacy) || !legacy.length) {
+      await AsyncStorage.removeItem(OUTBOUND_QUEUE_KEY).catch(() => undefined);
+      return;
+    }
+  } catch {
+    await AsyncStorage.removeItem(OUTBOUND_QUEUE_KEY).catch(() => undefined);
+    return;
+  }
+
+  for (const item of legacy) {
+    const clientId = item?.payload?.client_message_id;
+    if (!clientId || !item.conversationId) continue;
+    await enqueueMutation({
+      type: MESSENGER_OUTBOX_TYPE,
+      idempotencyKey: clientId,
+      stream: messengerOutboxStream(item.conversationId),
+      payload: item
+    }).catch(() => undefined);
+  }
+  await AsyncStorage.removeItem(OUTBOUND_QUEUE_KEY).catch(() => undefined);
 }
 
 export async function reactToMessage(messageId: number, reactionType = "pulse") {

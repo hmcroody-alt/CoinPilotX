@@ -29,18 +29,29 @@
  * `anon` exists because media is legitimately cached before sign-in — public
  * feed previews on the launch screen. It is purged alongside the rest.
  *
- * ## Why the key strips the query string
+ * ## Why the key comes from the shared identity authority
  *
  * PulseSoc serves private media through signed URLs whose signature and expiry
  * rotate on every issue. Keying on the full URL would therefore produce a fresh
  * miss every few minutes for a file that never changed — an unbounded download
- * loop that looks like a cache. Keying on the *path* (or, better, on the
- * canonical media id when the caller has one) makes re-signing free.
+ * loop that looks like a cache.
  *
- * The cost is real and worth stating: two genuinely different files served from
- * one path with different query parameters would collide. PulseSoc does not do
- * that — R2 object keys are content-addressed per media id — and the size check
- * on read catches the case if it ever starts.
+ * Identity derivation is NOT done here. It belongs to `core/media/mediaIdentity`,
+ * which the in-memory prefetch cache already uses, and having two modules derive
+ * their own key for the same asset is how the memory tier and the disk tier come
+ * to disagree about whether something is cached. It also cost us the Mux playback
+ * id: that is the most stable identity a video has, the identity authority
+ * prefers it, and this module could not see it at all — so the same video cached
+ * under two different CDN hosts was two files.
+ *
+ * ## Why the rendition is part of the key
+ *
+ * A poster and the video it previews share a media id. Keying on the id alone
+ * therefore made them the same cache entry, and whichever downloaded first
+ * answered for both: fetch a reel's poster, and the cache would then report the
+ * *video* as present and hand a decoder a JPEG. That is the specific reason a
+ * rendition is required rather than optional — an entry that cannot say which
+ * rendition it holds cannot answer "is this playable offline?" honestly.
  *
  * ## Eviction
  *
@@ -65,6 +76,11 @@ import {
   moveAsync
 } from "expo-file-system/legacy";
 
+import {
+  mediaCacheKey as identityCacheKey,
+  mediaIdentityOf,
+  type MediaRendition
+} from "../core/media/mediaIdentity";
 import { trackMediaEvent } from "./mediaTelemetry";
 
 export type MediaCacheEntry = {
@@ -172,23 +188,33 @@ function digest(input: string): string {
 /**
  * Normalize a media reference to a cache key.
  *
- * Canonical media id wins whenever the caller has one: it is the identity the
- * backend already guarantees, and it survives the CDN host changing underneath
- * us. The URL path is the fallback for media that has no record yet.
+ * Identity comes from the shared authority so the disk tier and the memory tier
+ * agree; the rendition is appended so two renditions of one asset are two
+ * entries. Defaults to `full` because that is what every existing caller —
+ * save-to-gallery, share, open-document — is actually asking for.
+ *
+ * Returns "" when there is nothing durable to key on. Callers must treat that as
+ * "not cacheable" rather than inventing a key: a synthesised one would be unique
+ * per call and would consume the budget while never being hit.
  */
-export function mediaCacheKey(input: { mediaId?: number | string | null; url?: string | null }): string {
-  const mediaId = Number(input.mediaId || 0);
-  if (mediaId > 0) return `id:${mediaId}`;
-  const url = String(input.url || "").trim();
-  if (!url) return "";
-  return `u:${digest(normalizeUrlForKey(url))}`;
-}
+export function mediaCacheKey(input: {
+  mediaId?: number | string | null;
+  url?: string | null;
+  rendition?: MediaRendition;
+}): string {
+  // `0`, "" and "0" all mean "no id" here, but a bare 0 is a finite number and
+  // the identity authority would accept it as row zero. Normalising first keeps
+  // that judgement in the one place that knows this caller's conventions.
+  const rawId = input.mediaId;
+  const numericId = Number(rawId ?? 0);
+  const usableId = Number.isFinite(numericId) && numericId > 0 ? numericId : null;
 
-function normalizeUrlForKey(url: string): string {
-  // Drop fragment, then query — see the module note on signed URLs.
-  const withoutFragment = url.split("#")[0];
-  const withoutQuery = withoutFragment.split("?")[0];
-  return withoutQuery.toLowerCase();
+  const identity = mediaIdentityOf({
+    id: usableId,
+    media_url: input.url ?? null
+  });
+  if (!identity) return "";
+  return identityCacheKey(identity, input.rendition || "full");
 }
 
 async function readIndex(): Promise<Record<string, MediaCacheEntry>> {
@@ -265,6 +291,40 @@ export async function lookupCachedMedia(key: string): Promise<MediaCacheEntry | 
   await writeIndex({ ...index, [key]: touched });
   trackMediaEvent({ name: "MEDIA_CACHE_HIT", key, bytes: touched.bytes });
   return touched;
+}
+
+/**
+ * Ask whether a key is present and intact, without counting as a use.
+ *
+ * `lookupCachedMedia` is the read path: it bumps the LRU and emits hit/miss
+ * telemetry, both correct when something is about to consume the bytes. Asking
+ * "what do I hold for this media?" is a different question — a playback-state
+ * report probes several renditions per asset and would otherwise fabricate a
+ * miss for every rendition that was never supposed to exist, and keep entries
+ * alive purely by inspecting them.
+ *
+ * Integrity is still verified, and a bad entry is still dropped. A peek that
+ * skipped verification would be the one thing worse than no peek: it would
+ * report a vanished file as cached.
+ */
+export async function peekCachedMedia(key: string): Promise<MediaCacheEntry | null> {
+  if (!key) return null;
+  const index = await readIndex();
+  const entry = index[key];
+  if (!entry) return null;
+
+  if (maxAgeMs > 0 && Date.now() - entry.createdAt > maxAgeMs) {
+    await dropEntries([entry], "age");
+    return null;
+  }
+
+  const info = await getInfoAsync(entry.fileUri).catch(() => ({ exists: false }) as { exists: boolean });
+  const size = Number((info as { size?: number }).size || 0);
+  if (!info.exists || (entry.bytes > 0 && size !== entry.bytes)) {
+    await dropEntries([entry], "corrupt");
+    return null;
+  }
+  return entry;
 }
 
 /**
@@ -397,6 +457,29 @@ async function dropEntries(entries: MediaCacheEntry[], reason: "age" | "quota" |
     });
   }
   await writeIndex(next);
+}
+
+/**
+ * Delete one entry that a consumer has proven is unusable.
+ *
+ * `lookupCachedMedia` already drops an entry whose file is missing or the wrong
+ * size, but a file can pass both checks and still be unplayable — a download
+ * that finished with the right byte count and the wrong bytes, or a container
+ * truncated at a boundary the size check cannot see. Only the player that tried
+ * to open it knows that, and without this it would have no way to say so: the
+ * entry would be re-served on every attempt and the media would be permanently
+ * broken for that account until an unrelated eviction happened to reach it.
+ *
+ * Reported as `corrupt` rather than `quota` so the eviction telemetry does not
+ * read as budget pressure.
+ */
+export async function dropCachedMedia(key: string): Promise<boolean> {
+  if (!key) return false;
+  const index = await readIndex();
+  const entry = index[key];
+  if (!entry) return false;
+  await dropEntries([entry], "corrupt");
+  return true;
 }
 
 export async function mediaCacheStats(): Promise<MediaCacheStats> {

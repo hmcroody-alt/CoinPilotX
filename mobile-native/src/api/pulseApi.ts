@@ -11,6 +11,7 @@ import {
 import { shouldRejectTemporaryQaUser } from "../session/qaTemporaryAccount";
 import { Platform } from "react-native";
 import { startSpan } from "../core/perfTrace";
+import { evidenceFromErrorCode, reportReachability } from "../core/connectivity";
 
 
 /**
@@ -105,6 +106,9 @@ export function registerSessionInvalidationHandler(handler: ((event: SessionInva
 export async function pulseApi<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = String(options.method || "GET").toUpperCase();
   const span = startSpan("api.request", { route: perfRouteLabel(path), method });
+  // Measured here rather than around `fetch` so it reflects what the caller
+  // waited for, which is what "the network feels slow" actually means.
+  const startedAt = Date.now();
   try {
     const coalescingKey = readCoalescingKey(path, options, method);
     let request = coalescingKey ? inFlightReads.get(coalescingKey) as Promise<T> | undefined : undefined;
@@ -120,9 +124,20 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
     }
     const result = await request;
     span.end({ ok: true });
+    // Every request in the app funnels through here, so this single call is what
+    // keeps the connectivity authority fed without any caller knowing it exists.
+    reportReachability("round_trip", Date.now() - startedAt);
     return result;
   } catch (error) {
-    span.end({ ok: false, status: error instanceof PulseApiError ? error.status : 0 });
+    const status = error instanceof PulseApiError ? error.status : 0;
+    span.end({ ok: false, status });
+    // An HTTP error is a completed round trip and therefore proof the network
+    // works; only the two transport labels mean otherwise. `evidenceFromErrorCode`
+    // owns that distinction so it is not re-derived here. See core/connectivity.
+    reportReachability(
+      evidenceFromErrorCode(error instanceof PulseApiError ? error.code : undefined, status),
+      Date.now() - startedAt
+    );
     throw error;
   }
 }

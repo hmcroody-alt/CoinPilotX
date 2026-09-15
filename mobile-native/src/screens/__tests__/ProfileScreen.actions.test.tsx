@@ -8,13 +8,18 @@ const mockListFeed = jest.fn();
 const mockAuthState = { user: { user_id: 7 } };
 const mockGetMyProfile = jest.fn(async () => ({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 }));
 const mockGetPublicProfile = jest.fn(async (..._args: unknown[]) => ({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", public_player_id: "Pilot-8008", post_count: 5 }));
-const mockLoadCachedProfile = jest.fn();
+const mockLoadCachedProfileEntry = jest.fn();
+
+/** The `{ value, storedAt, ageMs }` envelope `loadCachedProfileEntry` resolves to. */
+function cachedEntry(value: Record<string, unknown>, ageMs = 60_000) {
+  return { value, storedAt: Date.now() - ageMs, ageMs };
+}
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
-  loadCachedProfile: (...args: unknown[]) => mockLoadCachedProfile(...args),
+  loadCachedProfileEntry: (...args: unknown[]) => mockLoadCachedProfileEntry(...args),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
 }));
@@ -59,7 +64,7 @@ describe("Profile posts grid", () => {
     jest.clearAllMocks();
     mockAuthState.user = { user_id: 7 };
     mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", public_player_id: "roodycherie", post_count: 4 });
-    mockLoadCachedProfile.mockResolvedValue(null);
+    mockLoadCachedProfileEntry.mockResolvedValue(null);
     mockListFeed.mockResolvedValue({ posts, next_offset: 4, has_more: false });
   });
 
@@ -110,14 +115,16 @@ describe("Profile posts grid", () => {
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
     await waitFor(() => expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy());
-    expect(screen.queryByText("Showing saved profile")).toBeNull();
+    // Matched loosely: the banner now carries an age suffix, and an exact-string
+    // query would pass for the wrong reason if the banner came back.
+    expect(screen.queryByText(/Showing saved profile/)).toBeNull();
     expect(screen.queryByText(/No posts yet/)).toBeNull();
     // The cache IS read now — once, concurrently, to shorten the blank-shell
     // window — but it must not win against a canonical profile that arrived.
     // "Showing saved profile" being absent above is what proves it did not win;
     // this pins the remaining half, that the read happens exactly once and the
     // error path does not go back to disk a second time.
-    expect(mockLoadCachedProfile).toHaveBeenCalledTimes(1);
+    expect(mockLoadCachedProfileEntry).toHaveBeenCalledTimes(1);
   });
 
   it("retries canonical profile content in place and replaces the unavailable state", async () => {
@@ -134,11 +141,15 @@ describe("Profile posts grid", () => {
 
   it("does not describe an incomplete saved-profile fallback as having no posts", async () => {
     mockGetMyProfile.mockRejectedValueOnce(new Error("network unavailable"));
-    mockLoadCachedProfile.mockResolvedValueOnce({ user_id: 7, display_name: "Saved Roody", post_count: 4 });
+    mockLoadCachedProfileEntry.mockResolvedValueOnce(
+      cachedEntry({ user_id: 7, display_name: "Saved Roody", post_count: 4 }, 12 * 60_000)
+    );
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
-    await waitFor(() => expect(screen.getByText("Showing saved profile")).toBeTruthy());
+    // The banner states WHEN, not just THAT. "Saved" without an age leaves the
+    // reader unable to tell an hour-old profile from a month-old one.
+    await waitFor(() => expect(screen.getByText("Showing saved profile · 12m ago")).toBeTruthy());
     expect(screen.getByText(/Profile content temporarily unavailable/)).toBeTruthy();
     expect(screen.queryByText(/No posts yet/)).toBeNull();
   });

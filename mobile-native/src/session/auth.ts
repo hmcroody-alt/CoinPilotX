@@ -16,6 +16,7 @@ import {
 } from "./sessionStore";
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { setMediaCacheScope } from "../media/mediaCache";
+import { setOutboxScope } from "../core/mutations/outbox";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
 import { resetCanonicalTier } from "../entitlements/useCanonicalTier";
@@ -68,10 +69,16 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
  * sites that produce states. Missing one of those would silently write the next
  * user's downloads into the previous user's cache directory, and the failure
  * would be invisible until someone went looking for it (Stage 35).
+ *
+ * The mutation outbox is scoped here for the same reason and a sharper one: a
+ * queue carried across an account switch would not merely expose stale data, it
+ * would send the previous user's unsent words from the new user's account.
  */
 export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
   const userId = Number((user as { user_id?: number; id?: number } | null)?.user_id ?? (user as { id?: number } | null)?.id ?? 0);
-  setMediaCacheScope(phase === "AUTHENTICATED" && userId > 0 ? userId : null);
+  const scopeId = phase === "AUTHENTICATED" && userId > 0 ? userId : null;
+  setMediaCacheScope(scopeId);
+  setOutboxScope(scopeId);
   return { phase, status: statusForPhase(phase), user };
 }
 

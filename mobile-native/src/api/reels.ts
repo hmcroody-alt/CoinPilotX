@@ -3,6 +3,7 @@ import { PULSE_API_BASE_URL, PULSESOC_QA_REELS_FIXTURES } from "./config";
 import { mediaDisplayUrl, PulseAuthor, PulseComment, PulseMedia, normalizeComments } from "./feed";
 import { pulseApi } from "./pulseApi";
 import { isLikelyExpiringMediaUrl, mediaRecordForCache } from "../media/mediaContract";
+import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 
 const REELS_CACHE_KEY = "pulsesoc.native.reels.feed";
 const REELS_CACHE_META_KEY = "pulsesoc.native.reels.feed.meta";
@@ -180,33 +181,41 @@ export async function listReels(params: { lane?: string; category?: string; limi
 }
 
 export async function loadCachedReels(lane = "for_you") {
-  try {
-    const cached = await AsyncStorage.getItem(reelsCacheKey(lane)) || (lane === "for_you" ? await AsyncStorage.getItem(REELS_CACHE_KEY) : null);
-    if (!cached) return [];
-    return normalizeReels(JSON.parse(cached) as PulseReel[]);
-  } catch {
-    await AsyncStorage.removeItem(REELS_CACHE_KEY).catch(() => undefined);
-    return [];
-  }
+  return (await loadCachedReelsSnapshot(lane)).reels;
 }
 
+/**
+ * Reels used to keep its cache age in a second key written alongside the data.
+ * Two keys for one fact is two ways to be wrong: a write that lands and a meta
+ * write that fails leaves a feed permanently claiming 1970, and a clear of one
+ * without the other leaves an age describing content that is gone. The envelope
+ * in `src/core/cache` carries `storedAt` inside the same write as the value, so
+ * the two cannot disagree.
+ *
+ * The sidecar is still *read* — only as a fallback, and only when the value came
+ * back with an unknown age, which is exactly the case of an install that cached
+ * reels under the old format and has not refreshed since. Once anything writes
+ * through `cacheReels` the sidecar is deleted and never consulted again.
+ */
 export async function loadCachedReelsSnapshot(lane = "for_you") {
-  const reels = await loadCachedReels(lane);
+  const entry =
+    (await readJsonCacheEntry<PulseReel[]>(reelsCacheKey(lane), normalizeReels)) ||
+    (lane === "for_you" ? await readJsonCacheEntry<PulseReel[]>(REELS_CACHE_KEY, normalizeReels) : null);
+  if (!entry) return { reels: [] as PulseReel[], cachedAt: 0 };
+  if (entry.storedAt !== null) return { reels: entry.value, cachedAt: entry.storedAt };
   let cachedAt = 0;
   try {
-    const raw = await AsyncStorage.getItem(`${REELS_CACHE_META_KEY}.${lane}`);
-    cachedAt = Number(raw || 0);
+    cachedAt = Number((await AsyncStorage.getItem(`${REELS_CACHE_META_KEY}.${lane}`)) || 0);
   } catch {
     cachedAt = 0;
   }
-  return { reels, cachedAt };
+  return { reels: entry.value, cachedAt: Number.isFinite(cachedAt) ? cachedAt : 0 };
 }
 
 export async function cacheReels(reels: PulseReel[], lane = "for_you") {
-  await Promise.all([
-    AsyncStorage.setItem(reelsCacheKey(lane), JSON.stringify(reels.slice(0, 50).map(reelForCache))),
-    AsyncStorage.setItem(`${REELS_CACHE_META_KEY}.${lane}`, String(Date.now()))
-  ]);
+  await writeJsonCache(reelsCacheKey(lane), reels.slice(0, 50).map(reelForCache));
+  // Last write wins only if there is no second writer left to disagree with.
+  await AsyncStorage.removeItem(`${REELS_CACHE_META_KEY}.${lane}`).catch(() => undefined);
 }
 
 export async function loadCachedReelDetail(reelId: number) {
