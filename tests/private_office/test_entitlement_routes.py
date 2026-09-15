@@ -43,6 +43,7 @@ from flask import Flask  # noqa: E402
 
 from services import db  # noqa: E402
 from services.business_os.entitlements import service as svc  # noqa: E402
+from services import private_office_relationships_routes as rel_routes  # noqa: E402
 from services import private_office_routes as routes  # noqa: E402
 from services.private_office import tiers  # noqa: E402
 
@@ -248,25 +249,67 @@ def test_the_entitlement_endpoints_stay_read_only():
             assert rule.methods <= {"GET", "HEAD", "OPTIONS"}, str(rule.methods)
 
 
-def test_the_fact_write_takes_no_owner_parameter():
+def test_the_office_write_takes_no_owner_parameter():
     """Owner isolation on the write path is a property of the endpoint's shape.
 
     The owner comes from the session. There is no URL argument to point the
     write at somebody else, and the handler never reads an owner from the body
     — asserted on the source so that adding one is a test failure rather than a
-    review miss."""
-    app = _app()
+    review miss.
+
+    This was written against the Private Facts write. That endpoint retired
+    with its feature, and the property did not: it belongs to every Office
+    write, not to that one. It is repointed at the Relationship Intelligence
+    person write, which is now the Office's only body-carrying write and
+    therefore the only place the mistake could still be made.
+    """
+    app = Flask(__name__)
+    routes.register(app)
+    rel_routes.register(app)
     rules = [r for r in app.url_map.iter_rules()
-             if str(r.rule) == "/api/private-office/facts"]
-    assert rules, "facts route not registered"
+             if str(r.rule) == "/api/private-office/relationships"
+             and "POST" in r.methods]
+    assert rules, "relationships write route not registered"
     assert rules[0].arguments == set()
 
     import inspect
-    source = inspect.getsource(routes.api_private_office_create_fact)
+    source = inspect.getsource(rel_routes.api_private_office_relationships_add)
     assert 'body.get("owner_user_id")' not in source
+    assert 'body.get("actor' not in source, \
+        "a client that names its own actor can forge the audit trail"
     assert 'body.get("provenance' not in source, \
         "a client that names its own provenance can label its typing VERIFIED"
     assert 'owner_user_id=user["user_id"]' in source
+    assert 'actor_user_id=user["user_id"]' in source
+
+
+def test_every_office_write_route_is_owner_scoped_by_shape():
+    """The same property, stated over the surface instead of over one handler.
+
+    Naming a single endpoint is what let the previous version of this test
+    retire along with its subject. Derived from the URL map, a write added
+    tomorrow is covered the day it is added — and a write that takes an owner
+    from the URL fails here rather than in an incident.
+    """
+    app = Flask(__name__)
+    routes.register(app)
+    rel_routes.register(app)
+
+    writes = [r for r in app.url_map.iter_rules()
+              if str(r.rule).startswith("/api/private-office/")
+              and r.methods & {"POST", "PUT", "PATCH", "DELETE"}]
+    assert writes, "no Office writes found — this check has gone vacuous"
+
+    for rule in writes:
+        # ``node_id`` and friends address a row the owner already owns; the
+        # handlers scope every such lookup by owner_user_id. What must never
+        # appear is an argument naming *whose* office to write to.
+        offenders = {a for a in rule.arguments
+                     if "user" in a.lower() or "owner" in a.lower()}
+        assert not offenders, (
+            f"{rule.rule} takes {sorted(offenders)} from the URL — an Office "
+            f"write must read its owner from the session, never from the path"
+        )
 
 
 if __name__ == "__main__":

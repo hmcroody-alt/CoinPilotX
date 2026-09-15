@@ -1405,54 +1405,26 @@ _load_route_pack("pulse_market_pulse", "services.market_pulse_routes")
 # stays with the existing admin entitlement paths. A write in this pack would
 # be a second granting authority.
 _load_route_pack("private_office", "services.private_office_routes")
-# The structured record store: server-owned versioned templates, the typed
-# field projection, masked reads and the step-up reveal. Separate from the pack
-# above because it is a separate matrix row with its own kill switch — a
-# template problem must not be able to take the fact store down with it.
-_load_route_pack(
-    "private_office_structured_records",
-    "services.private_office_structured_records_routes",
-)
-# Document Intelligence: the Private Office vault. Uploads, deterministic
-# text extraction into PROPOSED claims, member review into the canonical
-# fact writer, and owner-only content streaming. Gates are imported from the
-# pack above — one implementation of the refusal translation.
-_load_route_pack("private_office_documents", "services.private_office_documents_routes")
 # Relationship Intelligence: the Private Office's people. Directory, profiles,
 # cited timelines and deterministic briefing preparation, composed from the
 # private graph, fact store and record primitives — no store of its own.
 _load_route_pack("private_office_relationships", "services.private_office_relationships_routes")
-# Private Briefings: the Office's own on-demand engine. Deterministic
-# composition of open records, pending claims, people and facts into a
-# persisted, cited briefing; Ask Why resolution; actions through the
-# canonical record writer. Member-triggered — nothing scheduled or pushed.
-_load_route_pack("private_office_briefings", "services.private_office_briefings_routes")
-# Private Shield: internal exposure monitoring. Deterministic checks over the
-# member's own Office data with a member-controlled findings lifecycle; every
-# payload states truthfully that external breach monitoring has no provider.
-_load_route_pack("private_office_shield", "services.private_office_shield_routes")
-# Human Concierge: a real request desk on the REQUEST primitive. Member
-# submission/thread/cancel plus a roster-gated operator console; staffing
-# truth (PRIVATE_CONCIERGE_OPERATOR_IDS) rides on every payload and no code
-# path can generate an operator reply.
-_load_route_pack("private_office_concierge", "services.private_office_concierge_routes")
 # Private Meetings: Zoom-class multi-guest meetings where PulseSoc is the
 # authority (lifecycle, waiting room, lock, roles, invites, chat, recording
 # metadata) and Agora is transport only, reached through the canonical
 # communications engine's room-scope calls. Fail-closed behind
 # PRIVATE_MEETINGS_ENABLED (default OFF) plus the Office second lock.
 _load_route_pack("private_office_meetings", "services.private_office_meetings_routes")
-# Private Conversations: the Office view of messaging. This pack owns
-# CLASSIFICATION and CROSS-DOMAIN LINKS only — pulse_communications_v2 remains
-# the sole message ledger and messenger_media_foundation the sole attachment
-# authority, and every message operation here is a gated delegation to them.
-# There is no second ledger, no second membership predicate and no second RTC
-# path. Fail-closed behind PRIVATE_CONVERSATIONS_ENABLED (default OFF) plus the
-# Office second lock.
-_load_route_pack(
-    "private_office_conversations",
-    "services.private_office_conversations_routes",
-)
+# Private Office is Relationship Intelligence, Private Meetings and Office
+# Security. Six packs that used to load here were withdrawn with the features
+# they served: structured records, document intelligence, private briefings,
+# private shield, human concierge and private conversations. Their feature ids
+# live on in feature_matrix.RETIRED_FEATURE_IDS so that a stale client naming
+# one still gets a deterministic 410 from the surviving pack, rather than a 404
+# that would imply the member never had the feature at all.
+#
+# Unregistering the packs removes the surface, not the data. The tables behind
+# them are untouched and still hold the members' own rows.
 
 
 def cancel_scheduled_account_deletion(cur, user_id):
@@ -82219,16 +82191,11 @@ PRIVATE_OFFICE_RECORD_VIEWS = (
 #: link. That is the native `DESTINATIONS` rule: a missing destination is a
 #: client bug, and "the honest failure is a row that does not move rather than
 #: a tap into a screen that is not registered."
+#: Mirrors services.private_office.office.OFFICE_CHILD_IDS. Kept in the same
+#: order and pinned to it by tests — the web hub and the native Office must not
+#: be able to disagree about what the room contains.
 PRIVATE_OFFICE_CHILDREN = (
-    ("private_facts", "Facts", "/pulse/private-office/facts"),
-    ("private_office.document.extraction", "Documents", "/pulse/private-office/documents"),
     ("relationship_intelligence", "People", "/pulse/private-office/people"),
-    ("private_briefings", "Briefings", "/pulse/private-office/briefings"),
-    ("private_office.operations", "Operations", "/pulse/private-office/obligations"),
-    ("capital_graph", "Capital Graph", "/pulse/private-office/capital-graph"),
-    ("private_shield", "Shield", "/pulse/private-office/shield"),
-    ("private_shield.breach_monitoring", "Breach Monitoring", None),
-    ("human_concierge", "Concierge", "/pulse/private-office/concierge"),
     ("private_meetings", "Meetings", None),
 )
 
@@ -82237,41 +82204,11 @@ PRIVATE_OFFICE_CHILDREN = (
 #: says so instead of drawing an empty list, because an unreadable store is not
 #: an empty store.
 PRIVATE_OFFICE_SECTIONS = {
-    "facts": {
-        "title": "Facts",
-        "blurb": "The private fact store. Every row is something you recorded or approved.",
-        "api": "/api/private-office/facts",
-        "collection": "facts",
-    },
-    "documents": {
-        "title": "Documents",
-        "blurb": "Documents held in the Office, and the facts extracted from them.",
-        "api": "/api/private-office/documents",
-        "collection": "documents",
-    },
     "people": {
         "title": "People",
         "blurb": "Relationship intelligence: who is connected to what you hold.",
         "api": "/api/private-office/relationships",
         "collection": "people",
-    },
-    "briefings": {
-        "title": "Briefings",
-        "blurb": "Prepared briefings drawn from your own records.",
-        "api": "/api/private-office/briefings",
-        "collection": "briefings",
-    },
-    "shield": {
-        "title": "Shield",
-        "blurb": "Exposure posture and findings.",
-        "api": "/api/private-office/shield/findings",
-        "collection": "findings",
-    },
-    "concierge": {
-        "title": "Concierge",
-        "blurb": "Requests handled by a person, not a model.",
-        "api": "/api/private-office/concierge",
-        "collection": "requests",
     },
 }
 
@@ -83168,8 +83105,13 @@ def pulse_private_office_security_page():
     )
 
 
+# The converter is `<any(people)>` rather than `<section>` deliberately: an
+# unlisted section must 404 at routing, before the handler indexes
+# PRIVATE_OFFICE_SECTIONS. A free string parameter here would turn a retired
+# section name into a KeyError 500, which reads as a broken page rather than a
+# page that is gone.
 @webhook_app.route(
-    "/pulse/private-office/<any(facts,documents,people,briefings,shield,concierge):section>",
+    "/pulse/private-office/<any(people):section>",
     methods=["GET"])
 def pulse_private_office_section_page(section):
     blocked = private_office_web_guard()
@@ -83180,49 +83122,11 @@ def pulse_private_office_section_page(section):
     return private_office_web_shell(config["title"], config["blurb"], config)
 
 
-@webhook_app.route(
-    "/pulse/private-office/<any(obligations,events,decisions,requests,risks,opportunities):view>",
-    methods=["GET"])
-def pulse_private_office_operations_page(view):
-    blocked = private_office_web_guard()
-    if blocked:
-        return blocked
-    title = view.replace("_", " ").title()
-    return private_office_web_shell(
-        title, "Private Office operations: " + title.lower() + ".",
-        {"mode": "section", "title": title,
-         "blurb": "Operations records drawn from your own Office.",
-         "api": "/api/private-office/records/" + view,
-         "collection": "records"},
-    )
-
-
-@webhook_app.route("/pulse/private-office/capital-graph", methods=["GET"])
-def pulse_private_office_capital_graph_page():
-    blocked = private_office_web_guard()
-    if blocked:
-        return blocked
-    return private_office_web_shell(
-        "Capital Graph", "How what you hold connects.",
-        {"mode": "section", "title": "Capital Graph",
-         "blurb": "How what you hold connects. Gated separately from the fact store.",
-         "api": "/api/private-office/capital-graph", "collection": None},
-    )
-
-
-@webhook_app.route("/pulse/private-office/capital-graph/<node_id>", methods=["GET"])
-def pulse_private_office_capital_entity_page(node_id):
-    blocked = private_office_web_guard()
-    if blocked:
-        return blocked
-    return private_office_web_shell(
-        "Capital Graph entity", "One entity in your Capital Graph.",
-        {"mode": "section", "title": "Capital Graph entity",
-         "blurb": "One entity in your Capital Graph, and what it is connected to.",
-         "api": "/api/private-office/entities/" + quote(str(node_id), safe="") +
-                "/relationships",
-         "collection": "relationships"},
-    )
+# Withdrawn with their features: the facts, documents, briefings, shield and
+# concierge sections above, the six operations views
+# (/pulse/private-office/<obligations|events|...>) and the two Capital Graph
+# pages. The APIs they rendered are gone too, so leaving the pages would have
+# produced a shell that loads and then reports its own data source as missing.
 
 
 # --- Orders on the web ------------------------------------------------------
@@ -109233,18 +109137,17 @@ def send_channel_email(to_email, subject, html_body, text_body="", user_id=0, em
     return bool(result.get("ok"))
 
 
-def branded_email_html(title, body_html):
-    return f"""
-    <div style="margin:0;padding:28px;background:#070b14;color:#f2fbff;font-family:Inter,Arial,sans-serif">
-      <div style="max-width:620px;margin:0 auto;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:#0d1627;padding:28px">
-        <h1 style="margin:0 0 14px;color:#ffffff">{title}</h1>
-        <div style="color:#c4d2e7;line-height:1.65;font-size:15px">{body_html}</div>
-        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">PulseSoc™ • Built by CoinPlotXAI Inc. Support: support@pulsesoc.com</p>
-        <p style="color:#9fb5c0;font-size:13px">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
-        <p style="color:#ffd9a0;font-size:13px">Educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>
-      </div>
-    </div>
-    """
+# The platform email chrome now lives in services/email_service.py, which has
+# no dependency on this module. It moved so that
+# services/private_office/meeting_emails.py could stop reaching back into the
+# monolith for it: that package's layering rule forbids importing `bot` at any
+# depth, and the lazy `import bot` it had been using degraded silently to an
+# unbranded message rather than failing anywhere visible.
+#
+# Re-exported under the original name so the sixteen call sites below, and any
+# external `bot.branded_email_html`, are untouched. The rendered HTML is
+# byte-identical.
+branded_email_html = email_service_service.branded_email_html
 
 
 def welcome_email_payload(user):

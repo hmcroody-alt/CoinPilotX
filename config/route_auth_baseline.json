@@ -1609,6 +1609,17 @@
         "/admin/marketplace-command"
       ]
     },
+    "admin_marketplace_listing_review_page": {
+      "auth": "admin",
+      "declared": true,
+      "evidence": "declared:admin",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/admin/marketplace-command/listing/<int:listing_id>"
+      ]
+    },
     "admin_media_diagnostics_page": {
       "auth": "admin",
       "declared": false,
@@ -3466,6 +3477,17 @@
       ],
       "rules": [
         "/api/admin/growth-engine/backfill"
+      ]
+    },
+    "api_admin_marketplace_review_batch": {
+      "auth": "admin",
+      "declared": true,
+      "evidence": "declared:admin",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/admin/marketplace/review/batch"
       ]
     },
     "api_admin_notifications_process_delivery": {
@@ -8476,6 +8498,17 @@
         "/api/messages/media/<int:attachment_id>/retry"
       ]
     },
+    "api_messages_media_thumbnail": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/api/messages/media/<int:attachment_id>/thumbnail"
+      ]
+    },
     "api_messages_media_upload": {
       "auth": "user",
       "declared": false,
@@ -8485,6 +8518,50 @@
       ],
       "rules": [
         "/api/messages/media/upload"
+      ]
+    },
+    "api_messages_media_upload_abort": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/messages/media/upload/abort"
+      ]
+    },
+    "api_messages_media_upload_finish": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/messages/media/upload/finish"
+      ]
+    },
+    "api_messages_media_upload_parts": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/messages/media/upload/parts"
+      ]
+    },
+    "api_messages_media_upload_state": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/messages/media/upload/state"
       ]
     },
     "api_messages_read": {
@@ -14997,6 +15074,17 @@
         "/api/business-os/dropshipping/connections/<connection_id>/imported/<listing_id>"
       ]
     },
+    "business_os_dropshipping.get_store_policy": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/api/business-os/dropshipping/store-policy"
+      ]
+    },
     "business_os_dropshipping.import_selected": {
       "auth": "user",
       "declared": false,
@@ -15072,6 +15160,17 @@
       ],
       "rules": [
         "/api/business-os/dropshipping/connections/<connection_id>/search"
+      ]
+    },
+    "business_os_dropshipping.set_store_policy": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "PATCH"
+      ],
+      "rules": [
+        "/api/business-os/dropshipping/store-policy"
       ]
     },
     "business_os_dropshipping.supplier_product": {
@@ -16318,116 +16417,6 @@
         "/api/private-office/security/unlock"
       ]
     },
-    "private_office.api_private_office_attention": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operations_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/attention"
-      ]
-    },
-    "private_office.api_private_office_capital_cash_flow": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph/cash-flow"
-      ]
-    },
-    "private_office.api_private_office_capital_exposure": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph/exposure"
-      ]
-    },
-    "private_office.api_private_office_capital_graph": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph"
-      ]
-    },
-    "private_office.api_private_office_capital_integrity": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph/integrity"
-      ]
-    },
-    "private_office.api_private_office_capital_obligations": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph/obligations"
-      ]
-    },
-    "private_office.api_private_office_capital_overview": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph/overview"
-      ]
-    },
-    "private_office.api_private_office_capital_portfolio": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/capital-graph/portfolio"
-      ]
-    },
-    "private_office.api_private_office_create_fact": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/facts"
-      ]
-    },
-    "private_office.api_private_office_create_record": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operations_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/records/<view>"
-      ]
-    },
     "private_office.api_private_office_entitlement": {
       "auth": "user",
       "declared": false,
@@ -16437,50 +16426,6 @@
       ],
       "rules": [
         "/api/private-office/entitlement"
-      ]
-    },
-    "private_office.api_private_office_entity": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/entities/<node_id>"
-      ]
-    },
-    "private_office.api_private_office_entity_relationships": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/entities/<node_id>/relationships"
-      ]
-    },
-    "private_office.api_private_office_facts": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "identity+refusal:_current_user",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/facts"
-      ]
-    },
-    "private_office.api_private_office_operations_overview": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operations_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/operations/overview"
       ]
     },
     "private_office.api_private_office_overview": {
@@ -16494,28 +16439,6 @@
         "/api/private-office/overview"
       ]
     },
-    "private_office.api_private_office_record_status": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operations_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/records/<view>/<int:record_id>/status"
-      ]
-    },
-    "private_office.api_private_office_records": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operations_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/records/<view>"
-      ]
-    },
     "private_office.api_private_office_status": {
       "auth": "admin",
       "declared": false,
@@ -16525,358 +16448,6 @@
       ],
       "rules": [
         "/api/admin/private-office/status"
-      ]
-    },
-    "private_office_briefings.api_private_office_briefings_create_action": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/briefings/<int:briefing_id>/actions"
-      ]
-    },
-    "private_office_briefings.api_private_office_briefings_detail": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/briefings/<int:briefing_id>"
-      ]
-    },
-    "private_office_briefings.api_private_office_briefings_generate": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/briefings"
-      ]
-    },
-    "private_office_briefings.api_private_office_briefings_list": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/briefings"
-      ]
-    },
-    "private_office_briefings.api_private_office_briefings_why": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/briefings/why"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_cancel": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/concierge/requests/<int:request_id>/cancel"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_desk": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operator_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/concierge/desk"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_desk_detail": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operator_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/concierge/desk/<int:owner_id>/<int:request_id>"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_desk_update": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_operator_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/concierge/desk/<int:owner_id>/<int:request_id>"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_detail": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/concierge/requests/<int:request_id>"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_home": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/concierge"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_member_message": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/concierge/requests/<int:request_id>/messages"
-      ]
-    },
-    "private_office_concierge.api_private_office_concierge_submit": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/concierge/requests"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_detail": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_link": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/links"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_mark_read": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:_guarded_delegate>gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/read"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_messages": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:_guarded_delegate>gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/messages"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_send": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:_guarded_delegate>gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/messages"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_sensitivity": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/sensitivity"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_typing": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:_guarded_delegate>gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/typing"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversation_unlink": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "DELETE"
-      ],
-      "rules": [
-        "/api/private-office/conversations/<ref>/links"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversations_capabilities": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/conversations/capabilities"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversations_create": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/conversations"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversations_for_target": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/conversations/links/<link_type>/<path:target_id>"
-      ]
-    },
-    "private_office_conversations.api_private_office_conversations_list": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/conversations"
-      ]
-    },
-    "private_office_documents.api_private_office_claim_review": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/claims/<int:claim_id>/review"
-      ]
-    },
-    "private_office_documents.api_private_office_document_content": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/documents/<int:document_id>/content"
-      ]
-    },
-    "private_office_documents.api_private_office_document_delete": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "DELETE"
-      ],
-      "rules": [
-        "/api/private-office/documents/<int:document_id>"
-      ]
-    },
-    "private_office_documents.api_private_office_document_detail": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/documents/<int:document_id>"
-      ]
-    },
-    "private_office_documents.api_private_office_document_facts": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/documents/facts"
-      ]
-    },
-    "private_office_documents.api_private_office_documents_list": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/documents"
-      ]
-    },
-    "private_office_documents.api_private_office_documents_upload": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/documents"
       ]
     },
     "private_office_meetings.api_private_meetings_admit": {
@@ -16910,6 +16481,17 @@
       ],
       "rules": [
         "/api/private-office/meetings/<meeting_ref>/artifacts"
+      ]
+    },
+    "private_office_meetings.api_private_meetings_calendar": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/api/private-office/meetings/calendar"
       ]
     },
     "private_office_meetings.api_private_meetings_cancel": {
@@ -17121,6 +16703,17 @@
         "/api/private-office/meetings/<meeting_ref>/remove"
       ]
     },
+    "private_office_meetings.api_private_meetings_reschedule": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "POST"
+      ],
+      "rules": [
+        "/api/private-office/meetings/<meeting_ref>/reschedule"
+      ]
+    },
     "private_office_meetings.api_private_meetings_role": {
       "auth": "user",
       "declared": false,
@@ -17218,171 +16811,6 @@
       ],
       "rules": [
         "/api/private-office/relationships/<int:node_id>/facts"
-      ]
-    },
-    "private_office_shield.api_private_office_shield_findings": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/shield/findings"
-      ]
-    },
-    "private_office_shield.api_private_office_shield_posture": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/shield"
-      ]
-    },
-    "private_office_shield.api_private_office_shield_scan": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/shield/scan"
-      ]
-    },
-    "private_office_shield.api_private_office_shield_update_finding": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/shield/findings/<int:finding_id>"
-      ]
-    },
-    "private_office_structured_records.api_private_office_record_domains": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/record-domains"
-      ]
-    },
-    "private_office_structured_records.api_private_office_record_templates": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/record-templates"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_archive": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "DELETE"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/<record_id>"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_create": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/structured-records"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_expiring": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/expiring"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_get": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/<record_id>"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_history": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/<record_id>/history"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_list": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/structured-records"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_patch": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "PATCH"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/<record_id>"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_reveal": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "POST"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/<record_id>/reveal"
-      ]
-    },
-    "private_office_structured_records.api_private_office_records_search": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "gates:_entry",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/api/private-office/structured-records/search"
       ]
     },
     "pro_page": {
@@ -18418,6 +17846,17 @@
       ],
       "rules": [
         "/api/pulse/communications/v2/conversations/<path:conversation_ref>/control-center/pins"
+      ]
+    },
+    "pulse_communications_v2.conversation_media_history": {
+      "auth": "user",
+      "declared": true,
+      "evidence": "declared:user",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/api/pulse/communications/v2/conversations/<path:conversation_ref>/media"
       ]
     },
     "pulse_communications_v2.conversations": {
@@ -20539,39 +19978,6 @@
         "/pulse/presence"
       ]
     },
-    "pulse_private_office_capital_entity_page": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:private_office_web_guard>identity+refusal:require_account",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/pulse/private-office/capital-graph/<node_id>"
-      ]
-    },
-    "pulse_private_office_capital_graph_page": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:private_office_web_guard>identity+refusal:require_account",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/pulse/private-office/capital-graph"
-      ]
-    },
-    "pulse_private_office_operations_page": {
-      "auth": "user",
-      "declared": false,
-      "evidence": "via:private_office_web_guard>identity+refusal:require_account",
-      "methods": [
-        "GET"
-      ],
-      "rules": [
-        "/pulse/private-office/<any(obligations,events,decisions,requests,risks,opportunities):view>"
-      ]
-    },
     "pulse_private_office_page": {
       "auth": "user",
       "declared": false,
@@ -20591,7 +19997,7 @@
         "GET"
       ],
       "rules": [
-        "/pulse/private-office/<any(facts,documents,people,briefings,shield,concierge):section>"
+        "/pulse/private-office/<any(people):section>"
       ]
     },
     "pulse_private_office_security_page": {
@@ -20977,6 +20383,18 @@
       ],
       "rules": [
         "/pulse/watchlists"
+      ]
+    },
+    "pulse_web_app_shell": {
+      "auth": "public",
+      "declared": true,
+      "evidence": "declared:public (Static shell only -- an empty <div id=\"root\"> plus one hashed script and one hashed stylesheet. It carries no member data, so there is nothing here for a gate to protect. Gating it would be actively wrong: the server would redirect to the legacy login before the client could boot and route to its own login screen, losing the destination URL. Every /api/ call the shell goes on to make is authenticated independently -- that is where the member data actually crosses the wire, and that is where the gates are.)",
+      "methods": [
+        "GET"
+      ],
+      "rules": [
+        "/pulse/app",
+        "/pulse/app/<path:spa_path>"
       ]
     },
     "pwa_icons": {
@@ -21695,17 +21113,19 @@
   },
   "totals": {
     "by_auth": {
-      "admin": 496,
+      "admin": 498,
+      "public": 2,
       "unknown": 171,
-      "user": 1493
+      "user": 1437
     },
     "by_evidence": {
-      "gates": 859,
-      "identity+refusal": 871,
+      "declared": 14,
+      "gates": 811,
+      "identity+refusal": 860,
       "identity-without-refusal": 11,
       "no-known-gate": 160,
-      "via": 259
+      "via": 252
     },
-    "rules": 2160
+    "rules": 2108
   }
 }

@@ -23,48 +23,34 @@ first real Private Office capability.
     disagree — a screen that knows it can open the room but not yet what is in
     it renders a heading over nothing.
 
-``GET /api/private-office/facts``
-    One domain's facts for the signed-in member, projected for display.
+``GET|POST /api/private-office/security/*``
+    The second lock: setup, unlock, lock, change, reset, biometric preference,
+    and the status read that says whether *this* request is unlocked. These
+    gate on ``private_office`` — the room — and deliberately not on anything
+    inside it, so that retiring or kill-switching a capability can never leave
+    a member unable to reset the passcode guarding their own Office.
 
-``POST /api/private-office/facts``
-    The member records one fact about themselves.
+Private Office is Relationship Intelligence, Private Meetings and Office
+Security. The first two have their own packs
+(``private_office_relationships_routes``, ``private_office_meetings_routes``);
+the third is here, alongside the entitlement and overview reads that describe
+the room itself.
 
-``GET /api/private-office/capital-graph``
-``GET /api/private-office/entities/<node_id>``
-``GET /api/private-office/entities/<node_id>/relationships``
-    The Capital Graph: what the member's private graph holds, and how well each
-    part of it is known. All three delegate to ``private_office.capital_graph``,
-    which reads only through ``retrieval.retrieve``. None of them takes an owner
-    parameter and none of them computes a total — see that module for why a net
-    worth is a feature this surface declines to have rather than one it has not
-    got round to.
-
-``GET /api/private-office/capital-graph/portfolio``
-``GET /api/private-office/capital-graph/overview``
-``GET /api/private-office/capital-graph/obligations``
-``GET /api/private-office/capital-graph/exposure``
-    The capital *projections*, which do carry arithmetic — but only over the
-    subsets that their source projections mark as known, and always beside the
-    counts of what was left out. ``overview`` reports an estimated net position
-    with ``complete`` and an ``excluded`` block; it is not the net worth the
-    paragraph above declines to compute, and the distinction is enforced by
-    tests rather than by comment.
-
-``GET /api/private-office/records/<view>``
-``POST /api/private-office/records/<view>``
-``POST /api/private-office/records/<view>/<id>/status``
-``GET /api/private-office/attention``
-    Operations: the six record primitives (obligations, events, decisions,
-    requests, risks, opportunities) and the "what needs me" summary the Office
-    Home renders. All owner-scoped by shape; writes go through the canonical
-    ``records`` writers only.
+Eight capabilities were withdrawn from the product and their handlers removed
+from this module: Private Facts, Capital Graph (with its entity reads and
+capital projections), Operations (the six record primitives and Attention),
+the structured record store, Private Briefings, Private Shield with its breach
+monitoring, Document Intelligence, Private Conversations and Human Concierge.
+Their ids remain in ``feature_matrix.RETIRED_FEATURE_IDS``, which is what lets
+``_gate`` answer a stale client 410 Gone rather than 404 — the member may well
+have used these, and "no such feature" would be a false thing to tell them.
+Nothing was dropped from the database; the rows those endpoints read are still
+the members' own.
 
 There is deliberately no POST that grants a tier. Granting is an entitlement
 operation and belongs to the existing admin entitlement paths; adding one here
 would create a second granting authority, which is precisely the drift the
-ownership contract forbids. The fact POST is a different kind of write: it
-adds a row the member owns to the member's own store, through the canonical
-writer, and it can never change what the member is entitled to.
+ownership contract forbids.
 
 Every member-facing route below is gated on the *server's* answer, not on a
 client's claim. The gate asks ``feature_matrix.is_entitled`` rather than
@@ -75,7 +61,6 @@ that hid the button would still be talking to an endpoint that says no.
 
 from __future__ import annotations
 
-import datetime as _dt
 import logging
 
 from flask import Blueprint, jsonify, request
@@ -83,38 +68,20 @@ from flask import Blueprint, jsonify, request
 from services import auth_service
 from services import db
 from services.private_office import access as po_access
-from services.private_office import audit as po_audit
-from services.private_office import capital_graph as po_capital
-from services.private_office import capital_overview as po_capital_overview
-from services.private_office import cash_flow as po_cash_flow
-from services.private_office import facts as po_facts
 from services.private_office import feature_matrix as po_matrix
-from services.private_office import integrity as po_integrity
-from services.private_office import model as po_model
-from services.private_office import obligation_projection as po_obligations
 from services.private_office import office as po_office
-from services.private_office import operations as po_operations
-from services.private_office import portfolio_projection as po_portfolio
-from services.private_office import records as po_records
-from services.private_office import retrieval as po_retrieval
 from services.private_office import schema as po_schema
 from services.private_office import security as po_security
 from services.private_office import status as po_status
 from services.private_office import tiers as po_tiers
 
-#: The capability every member-facing route in this pack depends on. Named once
-#: so the gate and the product state can never drift onto different feature ids.
-FACTS_FEATURE_ID = "private_facts"
-
-#: The Capital Graph rows are gated separately from the fact store. They are
-#: different matrix rows at different tiers, and a member may hold one without
-#: the other; gating both on ``private_facts`` would make the fact kill switch
-#: silently take the graph down with it.
-CAPITAL_FEATURE_ID = po_capital.FEATURE_ID
-
-#: How many facts one list call may return. The reader bounds this too; the
-#: route states its own ceiling so the contract is readable from the endpoint.
-MAX_PAGE = 100
+#: The room. Named once so the gate and the product state can never drift onto
+#: different feature ids.
+#:
+#: The security routes gate on this rather than on any capability inside the
+#: Office, so that retiring or kill-switching the room's contents can never
+#: strand a member outside their own passcode.
+OFFICE_FEATURE_ID = po_office.OFFICE_FEATURE_ID
 
 LOGGER = logging.getLogger(__name__)
 
@@ -237,15 +204,46 @@ def _gate(resolved: dict, feature_id: str):
             404,
         )
 
+    if verdict == po_access.RETIRED:
+        # 410 Gone, not 404 and not 403. 404 would say "no such thing", which
+        # is false to a member who used it; 403 would offer an upgrade for
+        # something no tier can restore. 410 is the one status that means
+        # exactly what happened: it was here, it is not coming back.
+        return _no_store(
+            {
+                "ok": False,
+                "state": po_access.RETIRED,
+                "feature_id": feature_id,
+                "message": "This part of the Private Office has been retired.",
+            },
+            410,
+        )
+
+    if verdict == po_access.NOT_ENTITLED:
+        return _no_store(
+            {
+                "ok": False,
+                "state": po_access.NOT_ENTITLED,
+                "feature_id": feature_id,
+                "minimum_tier": decision["minimum_tier"],
+                "message": "Your plan does not include this.",
+            },
+            403,
+        )
+
+    # Any verdict this function has not been taught. Previously this was the
+    # 403 branch's fallthrough, which rendered an unknown refusal as an upgrade
+    # prompt carrying an empty minimum_tier — asking for money without naming a
+    # price. A word we do not recognise is not an entitlement problem, so it is
+    # refused generically and loudly instead of being guessed at.
     return _no_store(
         {
             "ok": False,
-            "state": po_access.NOT_ENTITLED,
+            "state": "unavailable",
             "feature_id": feature_id,
-            "minimum_tier": decision["minimum_tier"],
-            "message": "Your plan does not include this.",
+            "message": "We could not confirm your access just now.",
         },
-        403,
+        503,
     )
 
 
@@ -345,15 +343,19 @@ def api_private_office_overview():
         resolved.get("effective_tier"), resolver_ok=trustworthy
     )
 
-    # The domain summary is only computed when the member can actually read
-    # facts. Returning counts to somebody the gate would refuse would make the
-    # overview a way to read the store without going through the store. The
-    # same holds for the second lock: counts are Office data, so a locked
-    # request gets the product state and the lock state — enough to render the
-    # landing screen and the unlock prompt — and nothing counted.
-    domains: list = []
+    # The lock state is reported whenever the member is entitled to the room
+    # itself. This gated on ``"private_facts"`` until Private Facts was
+    # retired, and the failure would have been quiet in the dangerous
+    # direction: ``is_entitled`` answers a tier-and-implementation question and
+    # knows nothing about retirement, so it still says True for a withdrawn
+    # feature. Had it said False the second lock would simply have stopped
+    # running here, and the landing screen would have lost the unlock prompt
+    # with no error anywhere to show for it.
+    #
+    # Gate on the room, for the same reason ``_security_entry`` does: the lock
+    # belongs to the Office, not to anything that was once inside it.
     entitled = trustworthy and po_matrix.is_entitled(
-        FACTS_FEATURE_ID, resolved.get("effective_tier")
+        OFFICE_FEATURE_ID, resolved.get("effective_tier")
     )
     lock_refusal = _office_lock_gate(user) if entitled else None
     if entitled and lock_refusal is not None:
@@ -369,1105 +371,43 @@ def api_private_office_overview():
                 "verified_at": resolved.get("verified_at", ""),
             }
         )
-    if entitled:
-        try:
-            domains = _with_cursor(
-                lambda cur: po_office.domain_summary(cur, owner_user_id=user["user_id"])
-            )
-        except Exception:  # noqa: BLE001
-            LOGGER.exception("PRIVATE_OFFICE_OVERVIEW_SUMMARY_FAILED")
-            # An unreadable store is not an empty store. Say nothing about the
-            # counts rather than render seven confident zeros over real data.
-            return _no_store(
-                {
-                    "ok": False,
-                    "state": "unavailable",
-                    "private_office": product,
-                    "message": "We could not load your information just now.",
-                },
-                503,
-            )
 
     return _no_store(
         {
             "ok": trustworthy,
             "private_office": product,
-            "domains": domains,
+            # Always empty now. This counted private facts by domain, and the
+            # facts surface is retired — there is nothing left for the Office
+            # landing screen to count. The key is kept rather than dropped
+            # because a shipped client reads it positionally; an absent key
+            # would be a crash where an empty list is a true statement.
+            "domains": [],
             "verified_at": resolved.get("verified_at", ""),
         }
     )
 
 
-@private_office_blueprint.route("/api/private-office/facts", methods=["GET"])
-def api_private_office_facts():
-    """One domain's facts, for the signed-in member only."""
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, FACTS_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    raw_domain = (request.args.get("domain") or "").strip()
-    domain = po_model.normalize_domain(raw_domain) if raw_domain else None
-    if raw_domain and not domain:
-        # An unrecognised domain is a client error, answered as one. Silently
-        # dropping the filter would return the member's whole store to a
-        # request that asked for one heading.
-        return _no_store(
-            {"ok": False, "message": "Unknown domain.", "domains": list(po_model.DOMAINS)},
-            400,
-        )
-
-    try:
-        limit = int(request.args.get("limit") or MAX_PAGE)
-    except (TypeError, ValueError):
-        limit = MAX_PAGE
-    limit = max(1, min(limit, MAX_PAGE))
-
-    try:
-        offset = int(request.args.get("offset") or 0)
-    except (TypeError, ValueError):
-        offset = 0
-    offset = max(0, offset)
-
-    def work(cur):
-        rows = po_facts.list_facts(
-            cur,
-            owner_user_id=user["user_id"],
-            domains=[domain] if domain else None,
-            limit=limit,
-            offset=offset,
-        )
-        po_audit.record(
-            cur,
-            actor_user_id=user["user_id"],
-            owner_user_id=user["user_id"],
-            action=po_audit.ACTION_FACT_READ,
-            object_type="DOMAIN",
-            object_id=domain or "ALL",
-            purpose="user_request",
-            result_count=len(rows),
-        )
-        return rows
-
-    try:
-        rows = _with_cursor(work)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_FACTS_READ_FAILED")
-        return _no_store(
-            {"ok": False, "state": "unavailable", "message": "We could not load your information just now."},
-            503,
-        )
-
-    return _no_store(
-        {
-            "ok": True,
-            "domain": domain or "",
-            "facts": po_office.project_facts(rows),
-            "count": len(rows),
-            "limit": limit,
-            "offset": offset,
-        }
-    )
 
 
-@private_office_blueprint.route("/api/private-office/facts", methods=["POST"])
-def api_private_office_create_fact():
-    """The member records one fact about themselves, through the canonical writer.
-
-    The owner is taken from the session and is never read from the body. There
-    is no ``owner_user_id`` parameter to send, so no request can write into
-    another member's store — the isolation is a property of the shape of this
-    endpoint rather than of a check that could be forgotten.
-
-    Provenance is fixed at ``USER_ASSERTED`` here and cannot be supplied by the
-    client. A client that could name its own provenance could label its own
-    typing ``VERIFIED``, which would make the whole verification vocabulary
-    worthless on the first request that tried.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, FACTS_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    body = request.get_json(silent=True) or {}
-    if not isinstance(body, dict):
-        return _no_store({"ok": False, "message": "Invalid request body."}, 400)
-
-    domain = po_model.normalize_domain(body.get("domain"))
-    if not domain:
-        return _no_store(
-            {"ok": False, "message": "Unknown domain.", "domains": list(po_model.DOMAINS)},
-            400,
-        )
-
-    value_type = po_model.normalize_value_type(body.get("value_type"))
-    if not value_type:
-        return _no_store(
-            {
-                "ok": False,
-                "message": "Unknown value type.",
-                "value_types": list(po_model.VALUE_TYPES),
-            },
-            400,
-        )
-
-    sensitivity = po_model.normalize_sensitivity(body.get("sensitivity"))
-
-    def work(cur):
-        return po_facts.record_fact(
-            cur,
-            owner_user_id=user["user_id"],
-            subject_type=po_facts.SUBJECT_NODE,
-            subject_id=str(body.get("subject_id") or user["user_id"]),
-            fact_type=body.get("fact_type"),
-            value=body.get("value"),
-            value_type=value_type,
-            provenance_type=po_model.PROVENANCE_USER_ASSERTED,
-            domain=domain,
-            sensitivity=sensitivity,
-            actor_user_id=user["user_id"],
-            purpose="user_request",
-        )
-
-    try:
-        written = _with_cursor(work)
-    except po_facts.PrivateFactRejected as exc:
-        # The writer's rejections are validation, not failure. Its reason is
-        # returned verbatim because it is written for a person and because a
-        # generic "invalid input" would leave the member unable to fix it.
-        return _no_store({"ok": False, "message": str(exc)}, 400)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_FACT_WRITE_FAILED")
-        return _no_store(
-            {"ok": False, "state": "unavailable", "message": "We could not save that just now."},
-            503,
-        )
-
-    return _no_store(
-        {
-            "ok": True,
-            "status": written.get("status"),
-            "fact_id": written.get("fact_id"),
-            "domain": written.get("domain"),
-            "sensitivity": written.get("sensitivity"),
-        },
-        201,
-    )
-
-
-# --- the Capital Graph ------------------------------------------------------
+# --- withdrawn surfaces ------------------------------------------------------
 #
-# Three reads, one shape. Each resolves the caller's own tier, gates on
-# ``capital_graph``, picks a view, and hands the whole job to
-# ``private_office.capital_graph`` — which reads only through
-# ``retrieval.retrieve``. Nothing below touches ``po_graph`` or issues a query,
-# and that is the point: the shortest path from a handler to a node row is
-# ``graph.get_node``, and a handler that reaches for it has walked around the
-# owner, authorization, sensitivity, domain and purpose gates without noticing,
-# because the row comes back and looks correct.
+# Facts, Capital Graph (including the entity and entity-relationship reads),
+# the record views, Attention and the Operations overview were served from
+# here until Private Office was reduced to Relationship Intelligence, Private
+# Meetings and Office Security. Their handlers are gone, so a stale client
+# calling one of those paths gets a 404 from the router — the refusal is made
+# before any handler runs, which is why it reaches anonymous callers too.
 #
-# There is no audit call here either. ``retrieval.retrieve`` records the read
-# itself, so a second record from the route would double-count every traversal
-# and make the audit trail disagree with the store about how often the member's
-# graph was looked at.
-
-
-def _requested_view():
-    """The view named by the query string, or a 400 that lists the real ones.
-
-    An unknown view is answered rather than defaulted, for the same reason an
-    unknown domain is on the facts route: a client that asked for something this
-    server has never heard of has a bug, and quietly serving it a different view
-    hides the bug behind data that looks plausible.
-    """
-    raw = (request.args.get("view") or "").strip()
-    if not raw:
-        return po_capital.DEFAULT_VIEW, None
-    view = po_capital.normalize_view(raw)
-    if not view:
-        return None, _no_store(
-            {"ok": False, "message": "Unknown view.", "views": list(po_capital.VIEWS)},
-            400,
-        )
-    return view, None
-
-
-def _capital_failure():
-    """An unreadable graph is not an empty graph.
-
-    Reported as 503 rather than as an empty payload, because ``nodes: []`` with
-    ``ok: true`` renders as "you have nothing recorded" over a store that may be
-    full — and a member who believes their records are gone will act on it.
-    """
-    return _no_store(
-        {
-            "ok": False,
-            "state": "unavailable",
-            "message": "We could not load your information just now.",
-        },
-        503,
-    )
-
-
-@private_office_blueprint.route("/api/private-office/capital-graph", methods=["GET"])
-def api_private_office_capital_graph():
-    """The member's own Capital Graph overview for one view."""
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    view, bad_view = _requested_view()
-    if bad_view:
-        return bad_view
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_capital.summary(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-                view=view,
-                purpose="user_request",
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_GRAPH_READ_FAILED")
-        return _capital_failure()
-
-    # A retrieval refusal is 403, not 200-with-nothing. The member asked a
-    # question the policy would not answer, and saying so is more useful than an
-    # empty graph they would read as "nothing recorded".
-    if payload["denied"]:
-        return _no_store(
-            {"ok": False, "state": "denied", "reason": payload["denied"],
-             "view": view},
-            403,
-        )
-
-    return _no_store({"ok": True, "capital_graph": payload,
-                      "views": list(po_capital.VIEWS)})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/capital-graph/portfolio", methods=["GET"])
-def api_private_office_capital_portfolio():
-    """The Portfolio node of the Capital Graph: projected holdings, priced live.
-
-    A read of the *projection*, not of the Portfolio tables — the evidence ids
-    in each asset row point at the private facts the number came from, and the
-    ``sync`` block says how far behind the ledger the projection may be. The
-    lazy sweep inside ``portfolio_view`` settles any pending outbox rows first,
-    so this endpoint is also the correctness backstop for a missed post-commit
-    kick. Prices are fetched at read time and never stored; ``prices`` carries
-    the provider's own observation time so the client can label freshness
-    instead of claiming "Live".
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_portfolio.portfolio_view(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_PORTFOLIO_READ_FAILED")
-        return _capital_failure()
-
-    if not payload.get("ok"):
-        return _no_store(
-            {"ok": False, "state": "denied",
-             "reason": payload.get("denied") or {}},
-            403,
-        )
-
-    return _no_store({"ok": True, "portfolio": payload})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/capital-graph/overview", methods=["GET"])
-def api_private_office_capital_overview():
-    """The Capital Command Center: assets, liabilities, net position, coverage.
-
-    A composition of the two projections that already carry their own
-    completeness flags, not a new ledger and not a second traversal. The
-    payload's ``net_position.complete`` is the field that matters: it is False
-    whenever anything was excluded — an unpriced holding, an obligation with no
-    amount, a liability in another currency, or no liability records at all —
-    and a client that renders ``estimated`` without it is claiming a net worth
-    the server did not assert.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_capital_overview.overview(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_OVERVIEW_READ_FAILED")
-        return _capital_failure()
-
-    if not payload.get("ok"):
-        return _no_store(
-            {"ok": False, "state": "denied",
-             "reason": payload.get("denied") or {}},
-            403,
-        )
-
-    return _no_store({"ok": True, "overview": payload})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/capital-graph/obligations", methods=["GET"])
-def api_private_office_capital_obligations():
-    """The member's projected liabilities, summed only where they are known.
-
-    A read of the *projection*, not of the record store: ``records`` remains
-    the authority for an obligation's amount, due date and OPEN/RESOLVED
-    state, and nothing here can change any of them. Rows whose amount the
-    record store does not state arrive with ``amount: null`` and are counted
-    in ``totals.unquantified`` — never rendered as zero.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_obligations.liabilities_view(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_OBLIGATIONS_READ_FAILED")
-        return _capital_failure()
-
-    if not payload.get("ok"):
-        return _no_store(
-            {"ok": False, "state": "denied",
-             "reason": payload.get("denied") or {}},
-            403,
-        )
-
-    return _no_store({"ok": True, "obligations": payload})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/capital-graph/exposure", methods=["GET"])
-def api_private_office_capital_exposure():
-    """Concentration over the subset whose value is actually known.
-
-    A projection of the same overview read rather than a second computation,
-    so the exposure screen and the command center can never disagree about
-    which holding is the largest. Shares are of the *priced* total and the
-    excluded counts travel with them.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_capital_overview.overview(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_EXPOSURE_READ_FAILED")
-        return _capital_failure()
-
-    if not payload.get("ok"):
-        return _no_store(
-            {"ok": False, "state": "denied",
-             "reason": payload.get("denied") or {}},
-            403,
-        )
-
-    return _no_store({
-        "ok": True,
-        "exposure": {
-            "concentrations": payload["concentrations"],
-            "assets": payload["assets"],
-            "liabilities": payload["liabilities"],
-            "coverage": payload["coverage"],
-            "prices": payload["prices"],
-            "generated_at": payload["generated_at"],
-        },
-    })
-
-
-@private_office_blueprint.route(
-    "/api/private-office/capital-graph/cash-flow", methods=["GET"])
-def api_private_office_capital_cash_flow():
-    """When the member's recorded obligations fall due, bucketed.
-
-    Named ``cash-flow`` because that is the screen it serves, but the payload
-    is explicit that it is outflows only: PulseSoc has no income ledger, so
-    nothing here has been netted against earnings, and ``basis.inflows`` says
-    so in the response rather than leaving the client to assume it.
-
-    No recurrence is inferred and no rate is invented. An obligation with no
-    due date, or no amount, is counted in ``excluded`` and drops
-    ``totals.complete``; it never becomes a zero on a timeline.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_cash_flow.schedule(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_CASH_FLOW_READ_FAILED")
-        return _capital_failure()
-
-    if not payload.get("ok"):
-        return _no_store(
-            {"ok": False, "state": "denied",
-             "reason": payload.get("denied") or {}},
-            403,
-        )
-
-    return _no_store({"ok": True, "cash_flow": payload})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/capital-graph/integrity", methods=["GET"])
-def api_private_office_capital_integrity():
-    """Structural faults in the member's own capital rows. Read-only.
-
-    GET, and only GET, because this endpoint fixes nothing: ``basis.repair``
-    says so in the payload, and no writer is reachable from the module behind
-    it. A repair belongs to a route somebody decided to call, not to the one
-    that reports the problem.
-
-    ``healthy`` is False whenever a check could not run, not only when a fault
-    was found — a diagnostic that reports success over a check it skipped is
-    worse than one that does not run at all.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_integrity.diagnose(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_INTEGRITY_READ_FAILED")
-        return _capital_failure()
-
-    if not payload.get("ok"):
-        return _no_store(
-            {"ok": False, "state": "denied",
-             "reason": payload.get("denied") or {}},
-            403,
-        )
-
-    return _no_store({"ok": True, "integrity": payload})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/entities/<node_id>", methods=["GET"])
-def api_private_office_entity(node_id):
-    """One entity, its immediate neighbourhood, and what is asserted about it.
-
-    ``node_id`` is a path parameter and the owner is the session. A node that is
-    absent, belongs to another member, or is outside this view's domain all
-    return the same 404 — the route must not un-collapse those, or the
-    difference between the answers becomes a way to test whether an id exists.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    view, bad_view = _requested_view()
-    if bad_view:
-        return bad_view
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_capital.entity(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-                node_id=node_id,
-                view=view,
-                purpose="user_request",
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_ENTITY_READ_FAILED")
-        return _capital_failure()
-
-    if payload["denied"]:
-        return _no_store(
-            {"ok": False, "state": "not_found", "view": view,
-             "message": "No such entity."},
-            404,
-        )
-
-    return _no_store({"ok": True, "entity": payload["entity"],
-                      "capital_graph": payload})
-
-
-@private_office_blueprint.route(
-    "/api/private-office/entities/<node_id>/relationships", methods=["GET"])
-def api_private_office_entity_relationships(node_id):
-    """The edges touching one entity, with the far end named.
-
-    A projection of the entity read rather than a second traversal, so this
-    endpoint and the one above can never show different edges.
-    """
-    user = _current_user()
-    if not user:
-        return _no_store({"ok": False, "message": "Login required."}, 401)
-
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, CAPITAL_FEATURE_ID)
-    if refusal:
-        return refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return locked
-
-    view, bad_view = _requested_view()
-    if bad_view:
-        return bad_view
-
-    try:
-        payload = _with_cursor(
-            lambda cur: po_capital.relationships(
-                cur,
-                owner_user_id=user["user_id"],
-                actor_user_id=user["user_id"],
-                node_id=node_id,
-                view=view,
-                purpose="user_request",
-            )
-        )
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_CAPITAL_RELATIONSHIPS_READ_FAILED")
-        return _capital_failure()
-
-    if payload["denied"]:
-        return _no_store(
-            {"ok": False, "state": "not_found", "view": view,
-             "message": "No such entity."},
-            404,
-        )
-
-    return _no_store(
-        {
-            "ok": True,
-            "entity": payload["entity"],
-            "relationships": payload["relationships"],
-            "view": payload["view"],
-            "complete": payload["complete"],
-        }
-    )
-
-
-# --- Operations: the six record primitives -----------------------------------
+# 404 rather than the 410 Gone that ``_gate`` renders for a RETIRED verdict,
+# and the difference is worth being precise about: 410 is reachable only where
+# a live route gates on a retired feature id, and no route here does. Keeping a
+# handler registered purely to say 410 would mean keeping the handler, which is
+# the thing that could be un-gated by mistake. The retirement is still stated
+# authoritatively — in feature_matrix.RETIRED_FEATURE_IDS, which is what the
+# UNDX surface and the status census read.
 #
-# Four routes over the Batch C record store, all owner-scoped by shape: the
-# owner is the session and there is no parameter to name anyone else. Reads go
-# through ``records.list_records`` — the owner-scoped reader in the one module
-# permitted to name these tables — rather than ``retrieval.retrieve_records``,
-# because the retrieval intents are deliberately narrow context windows for
-# agents, and a member looking at their own screen is not a context window: an
-# intent ceiling that hid the member's own financial obligations from their own
-# Operations list would be enforcing a rule written for a different caller.
-# Writes go through ``records.create_record`` / ``records.update_record``,
-# which audit themselves; the list route audits here, as the facts route does.
-
-OPERATIONS_FEATURE_ID = "private_office.operations"
-
-#: One page of records. The store bounds harder (records.MAX_LIMIT); the route
-#: states its own ceiling so the contract is readable from the endpoint.
-MAX_RECORDS_PAGE = 100
-
-#: Body fields a member may supply when creating a record. Allowlist, not
-#: passthrough: ``source_type`` is fixed at USER below and ``provenance_type``
-#: is absent entirely, for the same reason the fact POST pins USER_ASSERTED —
-#: a client that could name its own provenance could label its own typing
-#: verified. ``relevance_score`` is also absent: that column is only ever what
-#: a named source supplied, and the member's own enthusiasm is not a score.
-_RECORD_BODY_FIELDS: tuple[str, ...] = (
-    "title", "summary", "description", "domain", "sensitivity", "status",
-    "obligation_type", "due_at", "amount", "currency",
-    "event_type", "occurred_at",
-    "question", "assumptions", "deadline_at", "outcome",
-    "category", "priority", "confidentiality",
-    "risk_type", "severity", "coverage_state", "review_required",
-    "opportunity_type",
-    "task_type", "project_ref",
-    "project_type",
-)
-
-
-def _record_view(view: str):
-    """(record_type, refusal). An unknown view is a 404 that names the real
-    ones — a client asking for a view this server has never heard of has a bug,
-    and quietly serving a different collection would hide it."""
-    wanted = str(view or "").strip().lower()
-    record_type = po_retrieval.RECORD_VIEWS.get(wanted)
-    if not record_type:
-        return None, _no_store(
-            {"ok": False, "message": "Unknown view.",
-             "views": sorted(po_retrieval.RECORD_VIEWS)},
-            404,
-        )
-    return record_type, None
-
-
-def _attention_limit() -> int:
-    """Requested queue size, clamped. A missing or unparseable ``limit`` falls
-    back to the default rather than to "everything" — the failure mode of
-    reading a bad parameter as unbounded is a typo turning a page into a dump of
-    the member's whole ledger."""
-    try:
-        wanted = int(request.args.get("limit") or po_operations.MAX_ATTENTION_ITEMS)
-    except (TypeError, ValueError):
-        wanted = po_operations.MAX_ATTENTION_ITEMS
-    return max(1, min(wanted, po_operations.MAX_ATTENTION_ITEMS))
-
-
-def _operations_entry():
-    """Auth + tier gate + second lock shared by every operations route."""
-    user = _current_user()
-    if not user:
-        return None, _no_store({"ok": False, "message": "Login required."}, 401)
-    resolved = _resolve_for(user)
-    refusal = _gate(resolved, OPERATIONS_FEATURE_ID)
-    if refusal:
-        return None, refusal
-    locked = _office_lock_gate(user)
-    if locked:
-        return None, locked
-    return user, None
-
-
-@private_office_blueprint.route(
-    "/api/private-office/records/<view>", methods=["GET"])
-def api_private_office_records(view):
-    """One view's records for the signed-in member, newest first."""
-    user, refusal = _operations_entry()
-    if refusal:
-        return refusal
-    record_type, bad_view = _record_view(view)
-    if bad_view:
-        return bad_view
-
-    statuses = (request.args.get("status") or "").strip() or None
-
-    try:
-        limit = int(request.args.get("limit") or MAX_RECORDS_PAGE)
-    except (TypeError, ValueError):
-        limit = MAX_RECORDS_PAGE
-    limit = max(1, min(limit, MAX_RECORDS_PAGE))
-
-    try:
-        before_id = int(request.args.get("before_id") or 0)
-    except (TypeError, ValueError):
-        before_id = 0
-
-    def work(cur):
-        rows = po_records.list_records(
-            cur,
-            record_type=record_type,
-            owner_user_id=user["user_id"],
-            statuses=statuses,
-            limit=limit,
-            before_id=max(0, before_id),
-        )
-        open_count = po_records.count_open(
-            cur, record_type=record_type, owner_user_id=user["user_id"]
-        )
-        po_audit.record(
-            cur,
-            actor_user_id=user["user_id"],
-            owner_user_id=user["user_id"],
-            action=po_audit.ACTION_RECORD_READ,
-            object_type="RECORD_VIEW",
-            object_id=str(view).strip().lower(),
-            purpose="user_request",
-            result_count=len(rows),
-        )
-        return rows, open_count
-
-    try:
-        rows, open_count = _with_cursor(work)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_RECORDS_READ_FAILED")
-        return _no_store(
-            {"ok": False, "state": "unavailable",
-             "message": "We could not load your information just now."},
-            503,
-        )
-
-    return _no_store(
-        {
-            "ok": True,
-            "view": str(view).strip().lower(),
-            "records": rows,
-            "count": len(rows),
-            "open_count": open_count,
-            "limit": limit,
-            "statuses": list(po_records.SPECS[record_type]["statuses"]),
-        }
-    )
-
-
-@private_office_blueprint.route(
-    "/api/private-office/records/<view>", methods=["POST"])
-def api_private_office_create_record(view):
-    """The member records one obligation, event, decision, request, risk or
-    opportunity of their own. Owner from the session; source pinned to USER."""
-    user, refusal = _operations_entry()
-    if refusal:
-        return refusal
-    record_type, bad_view = _record_view(view)
-    if bad_view:
-        return bad_view
-
-    body = request.get_json(silent=True) or {}
-    if not isinstance(body, dict):
-        return _no_store({"ok": False, "message": "Invalid request body."}, 400)
-
-    fields = {
-        name: body[name]
-        for name in _RECORD_BODY_FIELDS
-        if name in body and body[name] is not None
-    }
-    fields["source_type"] = po_records.SOURCE_USER
-
-    def work(cur):
-        return po_records.create_record(
-            cur,
-            record_type=record_type,
-            owner_user_id=user["user_id"],
-            actor_user_id=user["user_id"],
-            purpose="user_request",
-            **fields,
-        )
-
-    try:
-        written = _with_cursor(work)
-    except po_records.PrivateRecordRejected as exc:
-        # The writer's rejections are validation, not failure, and its reason
-        # is written for a person; a generic "invalid input" would leave the
-        # member unable to fix it.
-        return _no_store({"ok": False, "message": str(exc)}, 400)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_RECORD_WRITE_FAILED")
-        return _no_store(
-            {"ok": False, "state": "unavailable",
-             "message": "We could not save that just now."},
-            503,
-        )
-
-    return _no_store(
-        {
-            "ok": True,
-            "status": written.get("status"),
-            "record_id": written.get("record_id"),
-            "record": written.get("record"),
-            "view": str(view).strip().lower(),
-        },
-        201,
-    )
-
-
-@private_office_blueprint.route(
-    "/api/private-office/records/<view>/<int:record_id>/status",
-    methods=["POST"])
-def api_private_office_record_status(view, record_id):
-    """Move one record's status (and, for a decision, its outcome).
-
-    Deliberately as narrow as ``records.update_record`` beneath it: the
-    substance of a record is not reachable from this endpoint, so the decision
-    log's history cannot be rewritten from a phone.
-    """
-    user, refusal = _operations_entry()
-    if refusal:
-        return refusal
-    record_type, bad_view = _record_view(view)
-    if bad_view:
-        return bad_view
-
-    body = request.get_json(silent=True) or {}
-    if not isinstance(body, dict) or not str(body.get("status") or "").strip():
-        return _no_store(
-            {"ok": False, "message": "A status is required.",
-             "statuses": list(po_records.SPECS[record_type]["statuses"])},
-            400,
-        )
-
-    fields: dict = {"status": body["status"]}
-    if str(body.get("outcome") or "").strip():
-        fields["outcome"] = body["outcome"]
-    # Reopening is a separate act of intent, not a status that happens to be
-    # earlier in the vocabulary. Passed through as a strict boolean so that a
-    # form echoing back a stale value — a string, a 0, an absent key — reads as
-    # "no", and only a client that meant it can undo a closure.
-    if body.get("reopen") is True:
-        fields["reopen"] = True
-
-    def work(cur):
-        return po_records.update_record(
-            cur,
-            record_type=record_type,
-            owner_user_id=user["user_id"],
-            record_id=int(record_id),
-            actor_user_id=user["user_id"],
-            purpose="user_request",
-            **fields,
-        )
-
-    try:
-        outcome = _with_cursor(work)
-    except po_records.PrivateRecordRejected as exc:
-        return _no_store({"ok": False, "message": str(exc)}, 400)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_RECORD_UPDATE_FAILED")
-        return _no_store(
-            {"ok": False, "state": "unavailable",
-             "message": "We could not save that just now."},
-            503,
-        )
-
-    if outcome.get("status") == "absent":
-        # Same answer for "not yours" and "never existed" — the store already
-        # collapsed the two, and this route must not reinflate the difference.
-        return _no_store({"ok": False, "message": "Not found."}, 404)
-
-    return _no_store(
-        {
-            "ok": True,
-            "status": outcome.get("status"),
-            "record": outcome.get("record"),
-            "view": str(view).strip().lower(),
-        }
-    )
-
-
-@private_office_blueprint.route("/api/private-office/attention", methods=["GET"])
-def api_private_office_attention():
-    """What needs the member's eyes: open counts per view, and the obligations
-    due soonest. One call, so the Office Home cannot render counts and a
-    due-soon list that disagree about the same store."""
-    user, refusal = _operations_entry()
-    if refusal:
-        return refusal
-
-    horizon = (
-        _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(days=14)
-    ).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    limit = _attention_limit()
-
-    def work(cur):
-        counts = {
-            view: po_records.count_open(
-                cur, record_type=record_type, owner_user_id=user["user_id"]
-            )
-            for view, record_type in po_retrieval.RECORD_VIEWS.items()
-        }
-        due_soon = po_records.list_records(
-            cur,
-            record_type=po_records.TYPE_OBLIGATION,
-            owner_user_id=user["user_id"],
-            statuses=("OPEN",),
-            due_before=horizon,
-            limit=5,
-        )
-        # Added beside the original two fields, not in place of them. The Office
-        # Home renders `counts` and `due_soon`; removing either to make room for
-        # the ranked queue would be this slice breaking a screen it was not
-        # asked to touch.
-        queue = po_operations.attention(
-            cur, owner_user_id=user["user_id"], limit=limit)
-        po_audit.record(
-            cur,
-            actor_user_id=user["user_id"],
-            owner_user_id=user["user_id"],
-            action=po_audit.ACTION_RECORD_READ,
-            object_type="RECORD_VIEW",
-            object_id="attention",
-            purpose="user_request",
-            result_count=len(due_soon),
-        )
-        return counts, due_soon, queue
-
-    try:
-        counts, due_soon, queue = _with_cursor(work)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_ATTENTION_FAILED")
-        # An unreadable store is not a quiet one. Refusing beats rendering
-        # confident zeros over real obligations.
-        return _no_store(
-            {"ok": False, "state": "unavailable",
-             "message": "We could not load your information just now."},
-            503,
-        )
-
-    return _no_store(
-        {
-            "ok": True,
-            "counts": counts,
-            "due_soon": due_soon,
-            "due_horizon": horizon,
-            "attention": queue,
-            "unsupported_reasons": queue.get("unsupported_reasons", {}),
-        }
-    )
-
-
-@private_office_blueprint.route(
-    "/api/private-office/operations/overview", methods=["GET"])
-def api_private_office_operations_overview():
-    """The executive summary across all six primitives in one call.
-
-    Under the same ``_operations_entry`` gate as every other route in this
-    family — auth, then the ``private_office.operations`` entitlement, then the
-    second lock — which is why a locked Office cannot leak a count from here.
-    The 423 is produced before any cursor is opened, so no read runs and the
-    response carries no evidence that any record exists.
-    """
-    user, refusal = _operations_entry()
-    if refusal:
-        return refusal
-
-    def work(cur):
-        summary = po_operations.overview(cur, owner_user_id=user["user_id"])
-        po_audit.record(
-            cur,
-            actor_user_id=user["user_id"],
-            owner_user_id=user["user_id"],
-            action=po_audit.ACTION_RECORD_READ,
-            object_type="RECORD_VIEW",
-            object_id="operations_overview",
-            purpose="user_request",
-            result_count=int(summary.get("needs_attention") or 0),
-        )
-        return summary
-
-    try:
-        summary = _with_cursor(work)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PRIVATE_OFFICE_OVERVIEW_FAILED")
-        # `state: unavailable`, never an empty summary. A dashboard of zeros is
-        # indistinguishable from a member with nothing outstanding, and that is
-        # the one confusion this endpoint must never cause.
-        return _no_store(
-            {"ok": False, "state": "unavailable",
-             "message": "We could not load your information just now."},
-            503,
-        )
-
-    return _no_store({"ok": True, "state": "ready", "overview": summary})
+# No table was dropped. The rows those endpoints used to read are still the
+# members' own; what was removed is the surface that read them.
 
 
 # --- second-lock management routes ------------------------------------------
@@ -1482,8 +422,17 @@ def api_private_office_operations_overview():
 # security module, and is never logged, echoed, or placed in a URL or token.
 
 
-def _security_entry(min_feature: str = FACTS_FEATURE_ID):
-    """Auth + tier gate shared by every security route. Returns (user, refusal)."""
+def _security_entry(min_feature: str = OFFICE_FEATURE_ID):
+    """Auth + tier gate shared by every security route. Returns (user, refusal).
+
+    Gates on the room, not on anything in it. The default used to be
+    ``"private_facts"``, which was indistinguishable from this one for as long
+    as Private Facts was permanent — and became a lockout the moment it was
+    not. Retiring facts would have made every route below refuse, so a member
+    could neither unlock their Office nor reset the passcode protecting it,
+    with no way back in short of a support ticket. A capability's kill switch
+    must never be able to take the door with it.
+    """
     user = _current_user()
     if not user:
         return None, _no_store({"ok": False, "message": "Login required."}, 401)

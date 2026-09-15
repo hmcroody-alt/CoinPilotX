@@ -328,6 +328,28 @@ _FEATURES = (
         flag_default_on=False,
     ),
     FeatureSpec(
+        feature_id="private_office",
+        minimum_tier=TIER_PRIVATE,
+        server_enforced=True,
+        # The room itself, not a capability inside it. This row exists so that
+        # Office Security — passcode setup, unlock, change, reset, biometric
+        # preference — has something to gate on that is not one of the room's
+        # contents.
+        #
+        # It used to gate on `private_facts`, which was fine while that feature
+        # was permanent and became a lockout the moment it was not: retiring
+        # facts turned every security route into a refusal, so a member could
+        # neither unlock the Office nor reset the passcode protecting it. The
+        # door must outlive the furniture.
+        #
+        # Deliberately no `flag_env`. Every other row here can be killed at
+        # runtime; this one cannot, because the failure mode of a disabled door
+        # is a member permanently locked out of a room they are still paying
+        # for, with no path back in. Kill the children instead — that is what
+        # their switches are for.
+        implementation=IMPL_IMPLEMENTED,
+    ),
+    FeatureSpec(
         feature_id="relationship_intelligence",
         minimum_tier=TIER_PRIVATE,
         server_enforced=True,
@@ -372,6 +394,50 @@ for _spec in _FEATURES:
         raise ValueError(f"duplicate feature_id in matrix: {_spec.feature_id}")
     FEATURES[_spec.feature_id] = _spec
 del _spec
+
+
+#: Feature ids withdrawn from the product. The rows above stay — a retired id
+#: must still *resolve*, because an id that falls out of the matrix is not
+#: retired, it is unranked, and an unranked id has no canonical minimum tier to
+#: refuse against. Retirement is therefore an overlay on the matrix rather than
+#: a deletion from it.
+#:
+#: This is the single list. Every surface that can name a capability — the HTTP
+#: routes, the UNDX capability executor, the Office overview — resolves through
+#: ``access.decide``, which consults this set before anything else, so a stale
+#: client or a hand-written curl gets one deterministic refusal instead of a
+#: feature the product no longer has.
+#:
+#: Retiring a feature is not deleting a member's data. The tables behind these
+#: ids are untouched and the rows in them are still the member's; what is gone
+#: is the surface that read them.
+RETIRED_FEATURE_IDS: frozenset = frozenset({
+    "private_facts",
+    "capital_graph",
+    "private_office.operations",
+    "private_office.records",
+    "private_briefings",
+    "private_shield",
+    "private_shield.breach_monitoring",
+    "private_office.document.extraction",
+    "private_office.conversations",
+    "human_concierge",
+})
+
+# A retired id that is not in the matrix would silently never be refused by the
+# tier path, so the two lists are pinned to each other at import time.
+_unranked_retired = RETIRED_FEATURE_IDS - set(FEATURES)
+if _unranked_retired:
+    raise ValueError(
+        "retired feature ids missing from the matrix: "
+        + ", ".join(sorted(_unranked_retired))
+    )
+del _unranked_retired
+
+
+def is_retired(feature_id: str) -> bool:
+    """Whether ``feature_id`` has been withdrawn from the product."""
+    return str(feature_id or "").strip() in RETIRED_FEATURE_IDS
 
 
 def get(feature_id: str) -> Optional[FeatureSpec]:
@@ -443,16 +509,25 @@ def is_entitled(feature_id: str, effective_tier: str) -> bool:
 
 def implemented_feature_ids() -> tuple:
     """Feature ids that are genuinely live. This is what a client may render as
-    tappable. Everything else is, at best, a disclosed placeholder."""
+    tappable. Everything else is, at best, a disclosed placeholder.
+
+    Retired ids are excluded even though their rows still say IMPLEMENTED: the
+    code behind them may well still run, and that is exactly why this filter is
+    here rather than relying on the implementation column. "Still implemented"
+    and "still part of the product" stopped being the same statement.
+    """
     return tuple(sorted(
         fid for fid, spec in FEATURES.items()
-        if spec.implementation == IMPL_IMPLEMENTED and _flag_enabled(spec)
+        if spec.implementation == IMPL_IMPLEMENTED
+        and _flag_enabled(spec)
+        and fid not in RETIRED_FEATURE_IDS
     ))
 
 
 __all__ = [
     "FeatureSpec", "FEATURES", "get", "availability", "availability_map",
     "is_entitled", "implemented_feature_ids",
+    "RETIRED_FEATURE_IDS", "is_retired",
     "AVAIL_ENTITLED", "AVAIL_NOT_ENTITLED", "AVAIL_FEATURE_DISABLED",
     "AVAIL_NOT_IMPLEMENTED",
     "IMPL_IMPLEMENTED", "IMPL_SHADOW", "IMPL_PROVIDER_REQUIRED",

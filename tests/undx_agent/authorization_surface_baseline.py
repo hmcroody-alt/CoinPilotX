@@ -109,21 +109,17 @@ AUTHORIZATION_SURFACE: tuple[tuple[Any, ...], ...] = (
     ('premium.entitlements', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('premium.status', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('presence.privacy.status', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    # Private Office. Eight owner-scoped reads and no writes: the facts read,
-    # the six Batch C record views, and the Capital Graph portfolio projection.
-    # Owner scope is structural (no field names an account), the second lock
-    # applies inside the executor, and the record views read through
-    # retrieval's general intent at an INTERNAL ceiling. The capital read
-    # declares zero fields — nothing can widen it — and relays totals.value as
-    # null whenever any holding lacks a live quote.
-    ('private.capital.portfolio', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.decisions.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.events.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.facts.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.obligations.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.opportunities.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.requests.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
-    ('private.risks.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
+    # Private Office. One owner-scoped read and no writes: the Relationship
+    # Intelligence directory. Owner scope is structural (no field names an
+    # account) and the second lock applies inside the executor.
+    #
+    # Eight rows stood here — the facts read, the six Batch C record views and
+    # the Capital Graph portfolio projection — and are gone because their
+    # features were retired and the capabilities are no longer registered. This
+    # is a narrowing edit, which is the direction this file does not gate; it is
+    # made anyway, because a boundary marker that still names capabilities
+    # nobody can reach makes the next reviewer audit doors that do not exist.
+    ('private.people.list', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('profile.activity.summary', 'read_only', 'never', 'self_account_only', 'self_account_only', False, True, False, '', (), 'UNDX_AGENT_READS_ENABLED'),
     ('profile.bio.update', 'consequential_write', 'always', 'self_account_only', 'self_account_only', True, True, True, 'profile_bio_value', ('bio',), 'UNDX_AGENT_WRITES_ENABLED'),
     ('profile.block', 'reversible_write', 'contextual', 'other_user_target', 'directed_at_other_user', True, True, False, 'profile_block_value', ('blocked',), 'UNDX_AGENT_WRITES_ENABLED'),

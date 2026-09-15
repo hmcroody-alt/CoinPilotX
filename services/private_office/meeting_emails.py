@@ -18,10 +18,18 @@ later, and may be looking at it on a device whose clock is wrong. A bare
 
 Branding is borrowed, not forked
 --------------------------------
-``branded_email_html`` lives in ``bot`` and is resolved lazily, because a
-service importing the monolith at module scope would be a cycle. If it cannot
-be resolved the body still sends, unstyled — the meeting detail matters and
-the chrome does not.
+``branded_email_html`` is imported from ``services.email_service`` at module
+scope, like any other dependency.
+
+It used to live in ``bot`` and be resolved by a lazy ``import bot`` inside a
+``try``. That was a layering violation this package forbids at any depth, and
+the reason the rule is absolute rather than a style preference is visible in
+what the fallback did: the ``except`` returned a bare ``<h1>`` and the mail
+still went out. A recipient got an unstyled message that still claimed to be
+from PulseSoc, nothing raised, nothing logged above a warning, and the only
+way to notice was to receive one. The helper moved rather than being
+duplicated — two copies of an email chrome diverge, and nobody finds out from
+the outside either.
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ import logging
 from datetime import datetime, timedelta
 
 from services import app_links
+from services.email_service import branded_email_html
 from services.private_office import meetings as pm
 
 LOGGER = logging.getLogger("private_office.meeting_emails")
@@ -55,13 +64,14 @@ def _esc(value: object) -> str:
 
 
 def _brand(title: str, body_html: str) -> str:
-    try:
-        import bot
+    """No try/except any more, and that is the point of the move.
 
-        return bot.branded_email_html(title, body_html)
-    except Exception:  # noqa: BLE001
-        LOGGER.warning("PM_EMAIL_BRANDING_UNAVAILABLE")
-        return f"<h1>{_esc(title)}</h1>{body_html}"
+    The chrome is now a pure local function, so the only way this can raise is
+    a genuine bug in it — and a bug that sends every recipient an unstyled
+    message should stop the send and be seen, not be swallowed into a warning
+    that reaches one log line and no human.
+    """
+    return branded_email_html(title, body_html)
 
 
 def office_link() -> str:

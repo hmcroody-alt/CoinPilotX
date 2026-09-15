@@ -422,3 +422,40 @@ def send_admin_invitation_email(admin_user, invite_url):
         f"<p><a href='{invite_url}'>Accept admin invitation</a></p>",
         f"Accept admin invitation: {invite_url}",
     )
+
+
+def branded_email_html(title, body_html):
+    """The one platform email chrome. Pure: title and body in, HTML out.
+
+    Lived in ``bot`` until ``services/private_office/meeting_emails.py`` needed
+    it. That module is part of a package whose layering rule is that nothing in
+    it may import the monolith at any depth — the package has to be importable
+    and testable without booting 118k lines and binding a database — so it had
+    been reaching for ``bot.branded_email_html`` through a lazy import inside a
+    ``try``, which is the shape the rule exists to forbid: it does not fail at
+    import, it fails silently at send time, and what the recipient gets is an
+    unbranded ``<h1>`` that still looks like a PulseSoc email.
+
+    Moved here rather than duplicated, because two copies of an email chrome
+    diverge and nobody finds out from the outside. ``bot`` re-exports this name,
+    so its sixteen call sites and any ``bot.branded_email_html`` reference are
+    unchanged.
+
+    The strings below are deliberately NOT swapped for ``product_name()`` and
+    ``company_name()``. They are hardcoded in the original and making them
+    env-overridable here would be a behaviour change smuggled in under a
+    refactor — a live deployment with ``PRODUCT_NAME`` set would start sending
+    differently branded mail with no commit saying so. That divergence is worth
+    resolving; it is not worth resolving silently.
+    """
+    return f"""
+    <div style="margin:0;padding:28px;background:#070b14;color:#f2fbff;font-family:Inter,Arial,sans-serif">
+      <div style="max-width:620px;margin:0 auto;border:1px solid rgba(110,223,246,.22);border-radius:12px;background:#0d1627;padding:28px">
+        <h1 style="margin:0 0 14px;color:#ffffff">{title}</h1>
+        <div style="color:#c4d2e7;line-height:1.65;font-size:15px">{body_html}</div>
+        <p style="margin-top:24px;color:#9fb5c0;font-size:13px">PulseSoc™ • Built by CoinPlotXAI Inc. Support: support@pulsesoc.com</p>
+        <p style="color:#9fb5c0;font-size:13px">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords.</p>
+        <p style="color:#ffd9a0;font-size:13px">Educational AI intelligence only. Not financial, betting, investment, or legal advice.</p>
+      </div>
+    </div>
+    """

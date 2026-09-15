@@ -1,18 +1,30 @@
-"""Stage 11 — ``PRIVATE_FACTS_ENABLED=false`` really turns Private Facts off.
+"""Stage 11 — ``PRIVATE_RELATIONSHIPS_ENABLED=false`` really turns the feature off.
 
-``private_facts`` is the only Private Office row that is both IMPLEMENTED and
-carries a ``flag_env``. That combination is what makes the kill switch load-
-bearing: every other unavailable capability is unavailable because no code
-exists, which no flag can undo and no client can misread. This one is live code
-behind a runtime switch, so "off" has to be a property that holds all the way
-out to the surfaces, not a value sitting in an env var that one code path
-happens to consult.
+This suite was written against ``private_facts``, which was then the only
+Private Office row that was both IMPLEMENTED and carried a ``flag_env``. Private
+Facts has since been retired, and what to do with this file is the interesting
+part: the subject was retired, the *mechanism* was not. The kill switch is
+generic matrix machinery that three surviving rows still depend on, so deleting
+this suite would have removed the only coverage of live code because the example
+it happened to use went away.
+
+It is repointed at ``relationship_intelligence`` instead — retained, still
+IMPLEMENTED, still flagged, still gated at PRIVATE, which is what makes this a
+repoint rather than a rewrite. A retired row was deliberately not used as the
+vehicle: retirement is resolved before the flag is ever consulted, so every
+assertion below would have passed no matter what the switch did.
+
+What makes a kill switch load-bearing is that the feature is live code behind a
+runtime switch. Everything else unavailable is unavailable because no code
+exists, which no flag can undo and no client can misread. So "off" has to be a
+property that holds all the way out to the surfaces, not a value sitting in an
+env var that one code path happens to consult.
 
 The failure this file exists to prevent is a partial off. There are four places
 that independently decide whether a member reaches this capability — the matrix,
 the shared access decision, the product state the native screen renders, and the
 HTTP gate — and the switch is only honest if all four flip together. A switch
-that flipped three of them would present as: the office lists Private Facts as
+that flipped three of them would present as: the office lists the feature as
 available, the member taps it, and the route 404s. That reads as a broken app
 rather than a disabled feature, and it happens on the day of an incident, which
 is the one day the switch is being used.
@@ -33,8 +45,8 @@ Three properties, then:
 
 Run either way::
 
-    python -m pytest tests/private_office/test_private_facts_kill_switch.py
-    python tests/private_office/test_private_facts_kill_switch.py
+    python -m pytest tests/private_office/test_office_kill_switch.py
+    python tests/private_office/test_office_kill_switch.py
 """
 
 import contextlib
@@ -48,8 +60,14 @@ from services.private_office import feature_matrix as matrix  # noqa: E402
 from services.private_office import office  # noqa: E402
 from services.private_office import tiers  # noqa: E402
 
-FEATURE_ID = "private_facts"
-FLAG = "PRIVATE_FACTS_ENABLED"
+FEATURE_ID = "relationship_intelligence"
+FLAG = "PRIVATE_RELATIONSHIPS_ENABLED"
+
+#: The other switch, used to prove the two are independent. Both are retained
+#: Private Office modules, so this pairing does not go stale the way the
+#: original ``private_facts`` / ``capital_graph`` pairing did.
+OTHER_FEATURE_ID = "private_meetings"
+OTHER_FLAG = "PRIVATE_MEETINGS_ENABLED"
 
 ALL_TIERS = (
     tiers.TIER_FREE,
@@ -58,10 +76,31 @@ ALL_TIERS = (
     tiers.TIER_PRIVATE_OFFICE,
 )
 
-#: Tiers that would reach Private Facts if the switch were on. The switch is
-#: only interesting for these — for FREE and PREMIUM the row is already out of
-#: reach and a flag flip changes nothing observable.
+#: Tiers that would reach the feature if the switch were on. The switch is only
+#: interesting for these — for FREE and PREMIUM the row is already out of reach
+#: and a flag flip changes nothing observable.
 ENTITLED_TIERS = (tiers.TIER_PRIVATE, tiers.TIER_PRIVATE_OFFICE)
+
+
+def test_the_subject_of_this_suite_is_still_a_live_flagged_feature():
+    """The guard that keeps the repoint honest.
+
+    Every assertion in this file is about a switch. If ``FEATURE_ID`` were ever
+    retired, un-flagged or unbuilt, the switch would stop being the thing under
+    test and most of the file would pass for the wrong reason — which is exactly
+    how this suite arrived here. Asserting the premise means the next retirement
+    fails loudly at one line instead of quietly at all of them.
+    """
+    for fid in (FEATURE_ID, OTHER_FEATURE_ID):
+        spec = matrix.FEATURES.get(fid)
+        assert spec is not None, f"{fid} is no longer in the matrix"
+        assert not matrix.is_retired(fid), (
+            f"{fid} was retired; retirement short-circuits the flag, so this "
+            f"suite would now pass vacuously. Repoint it at a live flagged row."
+        )
+        assert spec.implementation == matrix.IMPL_IMPLEMENTED, fid
+        assert spec.flag_env, f"{fid} no longer carries a kill switch"
+    assert matrix.FEATURES[FEATURE_ID].flag_env == FLAG
 
 
 @contextlib.contextmanager
@@ -87,7 +126,7 @@ def _env(name, value):
 
 
 def flag(value):
-    """The Private Facts kill switch, for the duration."""
+    """The Relationship Intelligence kill switch, for the duration."""
     return _env(FLAG, value)
 
 
@@ -161,23 +200,38 @@ def test_the_office_lists_it_as_temporarily_off_rather_than_unbuilt():
         assert FEATURE_ID not in {r["feature_id"] for r in state["available"]}
 
 
-def test_switching_private_facts_off_leaves_the_capital_graph_alone():
-    """Two switches over one substrate must be two switches.
+def test_switching_one_module_off_leaves_the_other_alone():
+    """Two switches over one office must be two switches.
 
-    ``capital_graph`` reads the same private store these facts are written to,
-    and it has its own flag on purpose: an operator disabling fact capture
-    during an incident must not silently lose the read surface as well, and vice
-    versa. This is the assertion that would fail if somebody later "simplified"
-    the two flags into one.
+    Relationship Intelligence and Private Meetings sit in the same room, read
+    overlapping people data, and have separate flags on purpose: an operator
+    darkening the directory during an incident must not silently lose the
+    meeting surface as well, and vice versa. This is the assertion that would
+    fail if somebody later "simplified" the two flags into one.
     """
-    with flag("false"):
-        state = office.product_state(tiers.TIER_PRIVATE_OFFICE)
-        available = {row["feature_id"] for row in state["available"]}
-        assert "capital_graph" in available, (
-            "the Private Facts switch took the Capital Graph down with it")
-        assert FEATURE_ID not in available
-        # And the office still opens, because something in it still works.
-        assert state["state"] == office.ENTRY_AVAILABLE
+    # The other switch is set explicitly rather than left to its default,
+    # because the two rows do not share a default: Private Meetings declares
+    # ``flag_default_on=False`` (a fail-closed rollout) while Relationship
+    # Intelligence defaults on. Reading the neighbour's default would make this
+    # test a statement about rollout state rather than about independence, and
+    # it would flip meaning the day Meetings finishes rolling out.
+    with _env(OTHER_FLAG, "true"):
+        with flag("false"):
+            state = office.product_state(tiers.TIER_PRIVATE_OFFICE)
+            available = {row["feature_id"] for row in state["available"]}
+            assert OTHER_FEATURE_ID in available, (
+                f"the {FLAG} switch took {OTHER_FEATURE_ID} down with it")
+            assert FEATURE_ID not in available
+            # And the office still opens, because something in it still works.
+            assert state["state"] == office.ENTRY_AVAILABLE
+
+        # Symmetric: the neighbour's switch must not reach back either.
+        with _env(OTHER_FLAG, "false"), flag(None):
+            state = office.product_state(tiers.TIER_PRIVATE_OFFICE)
+            available = {row["feature_id"] for row in state["available"]}
+            assert FEATURE_ID in available, (
+                f"the {OTHER_FLAG} switch took {FEATURE_ID} down with it")
+            assert OTHER_FEATURE_ID not in available
 
 
 def test_the_entry_does_not_open_when_every_built_feature_is_switched_off():
@@ -266,13 +320,13 @@ def test_every_private_office_flag_is_documented_in_env_example():
 def test_env_example_states_the_polarity_it_actually_has():
     """Absent-means-enabled is surprising, so the docs must say so out loud.
 
-    The polarity is asymmetric: an unset variable leaves the feature ON, while
-    any unrecognised value — ``0``, ``false``, a typo — turns it OFF. An
-    operator who assumes the usual "unset means disabled" would ship a private
-    feature live believing it was dark. The prose in ``.env.example`` is the
-    only place that warning exists, so it is pinned here; if someone later
-    inverts the code, this fails alongside the behavioural tests above and the
-    docs cannot quietly become wrong.
+    The polarity is asymmetric: for a default-on row an unset variable leaves
+    the feature ON, while any unrecognised value — ``0``, ``false``, a typo —
+    turns it OFF. An operator who assumes the usual "unset means disabled"
+    would ship a private feature live believing it was dark. The prose in
+    ``.env.example`` is the only place that warning exists, so it is pinned
+    here; if someone later inverts the code, this fails alongside the
+    behavioural tests above and the docs cannot quietly become wrong.
     """
     with open(os.path.join(REPO_ROOT, ".env.example"), "r", encoding="utf-8") as handle:
         env_example = handle.read().lower()
@@ -287,10 +341,59 @@ def test_env_example_states_the_polarity_it_actually_has():
         with flag(raw):
             return matrix.availability(FEATURE_ID, tiers.TIER_PRIVATE_OFFICE)["availability"]
 
+    assert matrix.FEATURES[FEATURE_ID].flag_default_on, \
+        f"{FEATURE_ID} is no longer default-on; this test now proves the wrong half"
     assert state(None) == matrix.AVAIL_ENTITLED, "unset must leave the feature on"
     assert state("") == matrix.AVAIL_ENTITLED, "empty must leave the feature on"
     assert state("ture") == matrix.AVAIL_FEATURE_DISABLED, (
         "an unrecognised value must fail closed, as the .env.example note warns"
+    )
+
+
+def test_every_fail_closed_flag_says_so_where_an_operator_will_look():
+    """The polarity block above is not the whole truth, and that is the risk.
+
+    ``flag_default_on=False`` rows invert the headline rule: unset means OFF.
+    An operator who read only the POLARITY block would deploy Private Meetings
+    with the variable blank, believe it was live, and find every route
+    answering 404 — the mirror image of the failure the block warns about, and
+    the more expensive one, because "forgot to enable" looks exactly like
+    "feature is broken".
+
+    So each fail-closed switch must carry its own correction next to its own
+    line, not merely inherit a global note that contradicts it. Derived from
+    the matrix so a future fail-closed rollout has to document itself.
+    """
+    with open(os.path.join(REPO_ROOT, ".env.example"), "r", encoding="utf-8") as handle:
+        lines = handle.read().splitlines()
+
+    fail_closed = sorted(spec.flag_env for spec in matrix.FEATURES.values()
+                         if spec.flag_env and not spec.flag_default_on)
+    assert fail_closed, (
+        "no fail-closed Private Office flags remain — this check is vacuous. "
+        "Either drop it or repoint it at whatever replaced them."
+    )
+
+    undocumented = []
+    for name in fail_closed:
+        idx = next((i for i, line in enumerate(lines)
+                    if line.startswith(name + "=")), None)
+        assert idx is not None, f"{name} has no assignment line in .env.example"
+        # The comment block immediately above the assignment is what an
+        # operator reads when they search for the variable name.
+        block = []
+        i = idx - 1
+        while i >= 0 and lines[i].startswith("#"):
+            block.append(lines[i].lower())
+            i -= 1
+        prose = " ".join(block)
+        if "unset means off" not in prose and "default off" not in prose:
+            undocumented.append(name)
+
+    assert not undocumented, (
+        "these switches are DEFAULT OFF but their .env.example notes do not "
+        "say so, leaving the global 'Absent means ENABLED' block as the only "
+        "thing an operator reads: " + ", ".join(undocumented)
     )
 
 

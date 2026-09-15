@@ -40,7 +40,6 @@ import {
   FeatureRefusalPanel,
   FeatureRefusalState
 } from "../privateOffice/FeatureStatePanels";
-import { LinkedConversations } from "../privateOffice/LinkedConversations";
 import { PrivateOfficeLockGate } from "../privateOffice/PrivateOfficeLockGate";
 import { lockOfficeLocally } from "../privateOffice/officeLock";
 import {
@@ -143,7 +142,6 @@ function PrivateMeetingsBody({ navigation }: Props) {
   // time: each open row is a live read, and three buckets' worth of
   // simultaneous reverse lookups is a lot of requests for an affordance the
   // member asked about one meeting at a time.
-  const [expanded, setExpanded] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -180,18 +178,6 @@ function PrivateMeetingsBody({ navigation }: Props) {
   const openRoom = useCallback(
     (ref: string, title: string) => {
       navigation.navigate("PrivateMeetingRoom", { ref, title });
-    },
-    [navigation]
-  );
-
-  /**
-   * A linked conversation opens in `Chat`, the canonical thread screen — the
-   * same destination the documents and facts panels use. The Office does not
-   * get a reader of its own.
-   */
-  const openConversation = useCallback(
-    (conversationId: number) => {
-      navigation.navigate("Chat", { conversationId });
     },
     [navigation]
   );
@@ -535,9 +521,6 @@ function PrivateMeetingsBody({ navigation }: Props) {
               title={t("premium:privateOffice.meetings.buckets.live")}
               meetings={buckets.live}
               busy={busy}
-              expanded={expanded}
-              onToggle={(id) => setExpanded(expanded === id ? "" : id)}
-              onOpenConversation={openConversation}
               renderActions={(meeting) => (
                 <Pressable
                   style={styles.smallButton}
@@ -563,9 +546,6 @@ function PrivateMeetingsBody({ navigation }: Props) {
               title={t("premium:privateOffice.meetings.buckets.upcoming")}
               meetings={buckets.upcoming}
               busy={busy}
-              expanded={expanded}
-              onToggle={(id) => setExpanded(expanded === id ? "" : id)}
-              onOpenConversation={openConversation}
               renderActions={(meeting) =>
                 meeting.me && MODERATOR_ROLES.has(meeting.me.role) ? (
                   <View style={styles.rowActions}>
@@ -617,9 +597,6 @@ function PrivateMeetingsBody({ navigation }: Props) {
               title={t("premium:privateOffice.meetings.buckets.recent")}
               meetings={buckets.recent}
               busy={busy}
-              expanded={expanded}
-              onToggle={(id) => setExpanded(expanded === id ? "" : id)}
-              onOpenConversation={openConversation}
               renderActions={() => null}
             />
           ) : null}
@@ -714,48 +691,35 @@ function refusalMessage(error: unknown, t: (key: string) => string): string {
 }
 
 /**
- * A bucket of rows, each of which can disclose its own detail.
+ * A bucket of meeting rows.
  *
- * The disclosure exists because this screen had nowhere to host a per-meeting
- * panel: the rows are flat, and the only other detail surface is the room
- * itself, which a member cannot open just to find out where a meeting was
- * discussed. Expanding in place rather than pushing a screen keeps that from
- * becoming a second meeting-detail surface to keep in sync with the room.
+ * Each row used to expand in place to disclose "discussed in N conversations",
+ * hosted by the shared `LinkedConversations` panel. Private Conversations was
+ * withdrawn and its routes are gone, so the panel could only have rendered a
+ * permanent refusal — and a disclosure that always opens onto an error is worse
+ * than no disclosure, because it invites the tap first. The row is flat again,
+ * and the room remains the single meeting-detail surface, which is what the
+ * disclosure was originally careful not to duplicate.
  */
 function MeetingBucket({
   title,
   meetings,
-  renderActions,
-  expanded,
-  onToggle,
-  onOpenConversation
+  renderActions
 }: {
   title: string;
   meetings: PrivateMeeting[];
   busy: string;
   renderActions: (meeting: PrivateMeeting) => ReactNode;
-  expanded: string;
-  onToggle: (publicId: string) => void;
-  onOpenConversation: (conversationId: number) => void;
 }) {
   const { t } = useTranslation();
   return (
     <View style={styles.card}>
       <Text style={styles.cardTitle}>{title}</Text>
       {meetings.map((meeting) => {
-        const isOpen = expanded === meeting.public_id;
         return (
           <View key={meeting.public_id} style={styles.meetingBlock}>
             <View style={styles.meetingRow}>
-              <Pressable
-                style={styles.meetingInfo}
-                onPress={() => onToggle(meeting.public_id)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: isOpen }}
-                accessibilityLabel={t("premium:privateOffice.meetings.details", {
-                  title: meeting.title || t("premium:privateOffice.meetings.untitled")
-                })}
-              >
+              <View style={styles.meetingInfo}>
                 <Text style={styles.meetingTitle} numberOfLines={1}>
                   {meeting.title || t("premium:privateOffice.meetings.untitled")}
                 </Text>
@@ -764,18 +728,9 @@ function MeetingBucket({
                     ? t("premium:privateOffice.meetings.liveNow")
                     : rowWhenLabel(meeting)}
                 </Text>
-              </Pressable>
+              </View>
               {renderActions(meeting)}
             </View>
-            {isOpen ? (
-              <View style={styles.meetingDetail}>
-                <LinkedConversations
-                  linkType="MEETING"
-                  targetId={meeting.public_id}
-                  onOpenConversation={onOpenConversation}
-                />
-              </View>
-            ) : null}
           </View>
         );
       })}
@@ -866,12 +821,6 @@ const styles = StyleSheet.create({
   dayRow: { gap: 2 },
   meetingBlock: { gap: 2 },
   meetingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  meetingDetail: {
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
-    marginTop: 6,
-    paddingTop: 4
-  },
   meetingInfo: { flex: 1, gap: 2 },
   meetingTitle: { color: colors.text, fontSize: 14, fontWeight: "600" },
   meetingHint: { color: colors.muted, fontSize: 12 },

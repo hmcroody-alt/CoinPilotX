@@ -724,11 +724,24 @@ def stage_telemetry_carries_no_member_data():
     try:
         future = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat(
             timespec="seconds")
-        stale = (datetime.now(timezone.utc) - timedelta(hours=30)).isoformat(
-            timespec="seconds")
+        # The zombie used to be created 30 hours in the *past*. ``create_meeting``
+        # refuses that now — correctly; nobody schedules a meeting for yesterday
+        # — so the meeting is scheduled normally and the sweep is handed a later
+        # clock instead. Moving the clock rather than back-dating the row keeps
+        # the sweep's own threshold arithmetic under test; writing the row
+        # directly would have proved only that a hand-made row can be swept.
+        swept_at = datetime.now(timezone.utc) + timedelta(hours=27)
+        # ``duration_minutes`` is required by ``create_meeting`` and was not
+        # being passed, so this stage raised PrivateMeetingRejected here and
+        # every assertion below it — including the leak inspection this whole
+        # stage exists for — had not run in some time. The suite reported the
+        # crash, so it was never green; it was simply red for a reason that read
+        # like a meetings bug rather than like "the telemetry leak check is
+        # switched off".
         created = meetings.create_meeting(
             cur, owner_user_id=USER_A, title=f"Estate review at {SECRETS[0]}",
-            scheduled_start_at=future, waiting_room_enabled=True)
+            scheduled_start_at=future, duration_minutes=60,
+            waiting_room_enabled=True)
         check("a meeting was created through the canonical writer",
               created.get("status") == "SCHEDULED", str(created.get("status")))
         held = meetings.join_meeting(
@@ -741,8 +754,9 @@ def stage_telemetry_carries_no_member_data():
             reason=f"moved to {SECRETS[0]}")
         zombie = meetings.create_meeting(
             cur, owner_user_id=USER_A, title=f"Call {SECRETS[2]}",
-            scheduled_start_at=stale, waiting_room_enabled=False)
-        swept = meetings.sweep_meetings(cur)
+            scheduled_start_at=future, duration_minutes=30,
+            waiting_room_enabled=False)
+        swept = meetings.sweep_meetings(cur, now=swept_at)
         check("the stale meeting was swept, so the sweep metric fired",
               swept >= 1 and bool(zombie.get("public_id")), str(swept))
     finally:

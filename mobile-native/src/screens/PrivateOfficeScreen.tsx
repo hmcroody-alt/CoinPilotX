@@ -1,5 +1,5 @@
 /**
- * Private Office — the first real native surface.
+ * Private Office — Relationship Intelligence, Private Meetings, Office Security.
  *
  * ## What this screen is allowed to claim
  *
@@ -11,22 +11,31 @@
  * decide copy, and it computes neither.
  *
  * That is deliberate to the point of being awkward: it would be shorter to keep
- * a local list of the seven capabilities and light them up by tier. It would
- * also be a second authority on what exists, and the first time a capability
- * ships or is killed the two would disagree — with the client winning, because
- * the client is what the member sees. So the list itself comes down the wire.
- * The only local table is `COPY_KEYS`, which maps a feature id to a translation
+ * a local list of the capabilities and light them up by tier. It would also be
+ * a second authority on what exists, and the first time a capability ships or
+ * is killed the two would disagree — with the client winning, because the
+ * client is what the member sees. So the list itself comes down the wire. The
+ * only local table is `COPY_KEYS`, which maps a feature id to a translation
  * key, and an id missing from it still renders (as its raw id) rather than
  * silently vanishing from the list.
+ *
+ * The Office was reduced from eleven capabilities to two children plus the
+ * security row, and this design is what made that a server-side edit instead of
+ * a client release: the withdrawn ids simply stopped arriving. The local tables
+ * below were pruned to match, but pruning them changed nothing a member can
+ * see — which is the point of the arrangement, and the reason to keep resisting
+ * the shorter local-list version of this screen.
  *
  * ## Why "not built" and "needs a provider" are different rows
  *
  * The availability vocabulary collapses them; `reason` does not. A capability
  * nobody has built may one day be built by us. A capability that needs an
- * outside data provider cannot answer at all until that provider is connected —
- * and for `private_shield` in particular, drawing it as a merely-locked feature
- * invites the reading that we are already watching and would tell them. We are
- * not. So PROVIDER_REQUIRED gets its own words.
+ * outside data provider cannot answer at all until that provider is connected,
+ * and drawing it as a merely-locked feature invites the reading that we are
+ * already doing the work and would tell them. So PROVIDER_REQUIRED gets its own
+ * words. No child currently in the Office is in that state — breach monitoring,
+ * the row that was, retired along with Private Shield — but the vocabulary is
+ * the server's and this screen renders whichever word it is sent.
  *
  * ## Why a degraded resolve is not "you don't have this"
  *
@@ -47,7 +56,6 @@ import {
   UNKNOWN_OVERVIEW,
   getPrivateOfficeOverview
 } from "../api/privateOffice";
-import { PrivateAttention, PrivateRecordView, getPrivateAttention } from "../api/privateRecords";
 import { useTranslation } from "../i18n";
 import { BOTTOM_NAV_CONTENT_CLEARANCE } from "../navigation/BottomNavVisibility";
 import { RootStackParamList } from "../navigation/types";
@@ -64,17 +72,8 @@ type Props = NativeStackScreenProps<RootStackParamList, "PrivateOffice">;
  * available; that word always comes from the server row next to it.
  */
 const COPY_KEYS: Readonly<Record<string, string>> = {
-  private_facts: "privateFacts",
-  "private_office.operations": "operations",
-  capital_graph: "capitalGraph",
-  private_briefings: "privateBriefings",
   relationship_intelligence: "relationshipIntelligence",
-  private_shield: "privateShield",
-  "private_shield.breach_monitoring": "breachMonitoring",
-  "private_office.document.extraction": "documentIntelligence",
-  "private_office.conversations": "privateConversations",
-  private_meetings: "privateMeetings",
-  human_concierge: "humanConcierge"
+  private_meetings: "privateMeetings"
 };
 
 /**
@@ -84,32 +83,22 @@ const COPY_KEYS: Readonly<Record<string, string>> = {
  * never tappable even if the server said it opens — a missing destination is a
  * client bug, and the honest failure is a row that does not move rather than a
  * tap into a screen that is not registered.
+ *
+ * That last rule is why these three tables were shrunk rather than left alone
+ * when nine features were withdrawn. They are keyed by feature id and the
+ * server no longer sends those ids, so every stale entry was already
+ * unreachable — but an unreachable entry in `DESTINATIONS` is a live route name
+ * held open, and it would have gone on typechecking against a deleted screen
+ * until the day something put the old id back on the wire.
  */
 const DESTINATIONS: Readonly<Record<string, keyof RootStackParamList>> = {
-  private_facts: "PrivateFacts",
-  "private_office.operations": "PrivateOperations",
-  capital_graph: "CapitalGraph",
-  "private_office.document.extraction": "PrivateDocuments",
-  "private_office.conversations": "PrivateConversations",
   relationship_intelligence: "PrivatePeople",
-  private_briefings: "PrivateBriefings",
-  private_shield: "PrivateShield",
-  private_meetings: "PrivateMeetings",
-  human_concierge: "PrivateConcierge"
+  private_meetings: "PrivateMeetings"
 };
 
 const ICONS: Readonly<Record<string, keyof typeof Ionicons.glyphMap>> = {
-  private_facts: "document-text-outline",
-  "private_office.operations": "checkbox-outline",
-  capital_graph: "git-network-outline",
-  private_briefings: "newspaper-outline",
   relationship_intelligence: "people-outline",
-  private_shield: "shield-outline",
-  "private_shield.breach_monitoring": "eye-outline",
-  "private_office.document.extraction": "scan-outline",
-  "private_office.conversations": "chatbubbles-outline",
-  private_meetings: "videocam-outline",
-  human_concierge: "person-circle-outline"
+  private_meetings: "videocam-outline"
 };
 
 type LoadState = "LOADING" | "LOADED";
@@ -136,32 +125,39 @@ function PrivateOfficeBody({ navigation }: Props) {
   const [loadState, setLoadState] = useState<LoadState>("LOADING");
   const [refreshing, setRefreshing] = useState(false);
   const [overview, setOverview] = useState<PrivateOfficeOverview>(UNKNOWN_OVERVIEW);
-  const [attention, setAttention] = useState<PrivateAttention | null>(null);
 
-  const load = useCallback(async () => {
-    const [next, attn] = await Promise.all([getPrivateOfficeOverview(), getPrivateAttention()]);
-    // The grant died between the gate's check and this fetch; drop the local
-    // token so the enclosing gate shows the door instead of a stale office.
-    if (attn.state === "LOCKED") lockOfficeLocally();
+  // The relock used to be driven by a second read — `/api/private-office/
+  // attention`, which belonged to the withdrawn operations feature and reported
+  // LOCKED as a refusal shape. That route is gone, and the behaviour it carried
+  // is not optional: if the grant dies between the gate's check and this fetch,
+  // the local token has to be dropped so the enclosing gate draws the door
+  // instead of leaving a stale office on screen.
+  //
+  // So it moves onto the overview read, which is where it should always have
+  // been. `locked` is the answer from the endpoint the second lock actually
+  // guards, reported by the server rather than inferred here from empty
+  // domains — and one read cannot disagree with itself the way two could.
+  const applyOverview = useCallback((next: PrivateOfficeOverview) => {
+    if (next.locked) lockOfficeLocally();
     setOverview(next);
-    setAttention(attn);
     setLoadState("LOADED");
   }, []);
+
+  const load = useCallback(async () => {
+    applyOverview(await getPrivateOfficeOverview());
+  }, [applyOverview]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [next, attn] = await Promise.all([getPrivateOfficeOverview(), getPrivateAttention()]);
+      const next = await getPrivateOfficeOverview();
       if (cancelled) return;
-      if (attn.state === "LOCKED") lockOfficeLocally();
-      setOverview(next);
-      setAttention(attn);
-      setLoadState("LOADED");
+      applyOverview(next);
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [applyOverview]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -242,20 +238,12 @@ function PrivateOfficeBody({ navigation }: Props) {
         </View>
       ) : null}
 
-      {loadState === "LOADED" && office.state === "ENTRY_AVAILABLE" && attention ? (
-        <AttentionStrip
-          attention={attention}
-          onOpenView={(view) => navigation.navigate("PrivateOperations", { view })}
-        />
-      ) : null}
-
-      {loadState === "LOADED" && office.state === "ENTRY_AVAILABLE" ? (
-        <QuickActions
-          available={office.available}
-          onRecord={() => navigation.navigate("PrivateOperations")}
-          onAddFact={() => navigation.navigate("PrivateFacts", { create: true })}
-        />
-      ) : null}
+      {/* The attention strip and the quick actions used to sit here. Both were
+          shortcuts into the two withdrawn write paths — record an obligation,
+          add a fact — so neither has anywhere left to go. They are removed
+          rather than rendered empty: an "attention" strip that can only ever
+          say "nothing needs your attention" is not a neutral leftover, it is a
+          standing reassurance nobody computed. */}
 
       {office.available.length ? (
         <View style={styles.section}>
@@ -336,138 +324,6 @@ function PrivateOfficeBody({ navigation }: Props) {
   );
 }
 
-/**
- * What needs the member's attention, from `/api/private-office/attention`.
- *
- * READY with nothing in it says so in words: a strip that silently vanishes
- * would be indistinguishable from "we could not check", and those are
- * different claims. UNAVAILABLE says "we could not check" — never zeros.
- * REFUSED renders nothing: the tile list below already explains entitlement,
- * and repeating the refusal here would say it twice in two vocabularies.
- */
-function AttentionStrip({
-  attention,
-  onOpenView
-}: {
-  attention: PrivateAttention;
-  onOpenView: (view: PrivateRecordView) => void;
-}) {
-  const { t } = useTranslation();
-
-  if (attention.state === "REFUSED" || attention.state === "LOCKED") return null;
-
-  if (attention.state === "UNAVAILABLE") {
-    return (
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>{t("premium:privateOffice.attention.title")}</Text>
-        <Text style={styles.attentionNote}>{t("premium:privateOffice.attention.unavailable")}</Text>
-      </View>
-    );
-  }
-
-  const counted = (Object.entries(attention.counts) as [PrivateRecordView, number][]).filter(
-    ([, count]) => count > 0
-  );
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{t("premium:privateOffice.attention.title")}</Text>
-      {counted.length === 0 && attention.dueSoon.length === 0 ? (
-        <Text style={styles.attentionNote}>{t("premium:privateOffice.attention.none")}</Text>
-      ) : null}
-      {counted.length ? (
-        <View style={styles.attentionChips}>
-          {counted.map(([view, count]) => (
-            <Pressable
-              key={view}
-              style={styles.attentionChip}
-              onPress={() => onOpenView(view)}
-              accessibilityRole="button"
-              accessibilityLabel={`${t(`premium:privateOffice.operations.views.${view}`)} ${count}`}
-            >
-              <Text style={styles.attentionCount}>{count}</Text>
-              <Text style={styles.attentionChipText}>
-                {t(`premium:privateOffice.operations.views.${view}`)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      ) : null}
-      {attention.dueSoon.map((record) => (
-        <Pressable
-          key={record.id}
-          style={styles.dueRow}
-          onPress={() => onOpenView("obligations")}
-          accessibilityRole="button"
-          accessibilityLabel={record.title}
-        >
-          <Ionicons name="alarm-outline" size={16} color={colors.warning} />
-          <Text style={styles.dueTitle} numberOfLines={1}>
-            {record.title}
-          </Text>
-          {record.dueAt ? (
-            <Text style={styles.dueDate}>
-              {t("premium:privateOffice.operations.due", { date: record.dueAt })}
-            </Text>
-          ) : null}
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
-/**
- * Shortcuts into the two write paths. Each appears only when the server said
- * its capability opens — a quick action into a refusal would be a tile list
- * that disagrees with itself one section apart.
- */
-function QuickActions({
-  available,
-  onRecord,
-  onAddFact
-}: {
-  available: PrivateOfficeChild[];
-  onRecord: () => void;
-  onAddFact: () => void;
-}) {
-  const { t } = useTranslation();
-  const opens = (featureId: string) =>
-    available.some((child) => child.featureId === featureId && child.opens);
-  const canRecord = opens("private_office.operations");
-  const canAddFact = opens("private_facts");
-  if (!canRecord && !canAddFact) return null;
-
-  return (
-    <View style={styles.section}>
-      <Text style={styles.sectionTitle}>{t("premium:privateOffice.quick.title")}</Text>
-      <View style={styles.quickRow}>
-        {canRecord ? (
-          <Pressable
-            style={styles.quickButton}
-            onPress={onRecord}
-            accessibilityRole="button"
-            accessibilityLabel={t("premium:privateOffice.quick.record")}
-          >
-            <Ionicons name="create-outline" size={18} color={colors.accentStrong} />
-            <Text style={styles.quickText}>{t("premium:privateOffice.quick.record")}</Text>
-          </Pressable>
-        ) : null}
-        {canAddFact ? (
-          <Pressable
-            style={styles.quickButton}
-            onPress={onAddFact}
-            accessibilityRole="button"
-            accessibilityLabel={t("premium:privateOffice.quick.addFact")}
-          >
-            <Ionicons name="add-circle-outline" size={18} color={colors.accentStrong} />
-            <Text style={styles.quickText}>{t("premium:privateOffice.quick.addFact")}</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.background },
   content: { padding: 18, gap: 16 },
@@ -537,47 +393,6 @@ const styles = StyleSheet.create({
     textAlign: "right"
   },
   footnote: { color: colors.muted, fontSize: 11, lineHeight: 16 },
-  attentionNote: { color: colors.muted, fontSize: 12, lineHeight: 18 },
-  attentionChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  attentionChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 999,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1
-  },
-  attentionCount: { color: colors.accentStrong, fontSize: 13, fontWeight: "800" },
-  attentionChipText: { color: colors.text, fontSize: 12, fontWeight: "600" },
-  dueRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10
-  },
-  dueTitle: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },
-  dueDate: { color: colors.warning, fontSize: 11, fontWeight: "700" },
-  quickRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  quickButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderWidth: 1
-  },
-  quickText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" }
 });
 
 export default PrivateOfficeScreen;

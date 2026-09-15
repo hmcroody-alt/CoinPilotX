@@ -35,20 +35,10 @@ import { CryptoAlertHistoryScreen } from "../screens/CryptoAlertHistoryScreen";
 import { CryptoPortfolioScreen } from "../screens/CryptoPortfolioScreen";
 import { MarketPulseScreen } from "../screens/MarketPulseScreen";
 import { PrivateOfficeScreen } from "../screens/PrivateOfficeScreen";
-import { PrivateFactsScreen } from "../screens/PrivateFactsScreen";
-import { PrivateOperationsScreen } from "../screens/PrivateOperationsScreen";
-import { CapitalGraphScreen } from "../screens/CapitalGraphScreen";
-import { CapitalEntityScreen } from "../screens/CapitalEntityScreen";
 import { PrivateOfficeSecurityScreen } from "../screens/PrivateOfficeSecurityScreen";
-import { PrivateDocumentsScreen } from "../screens/PrivateDocumentsScreen";
 import { PrivatePeopleScreen } from "../screens/PrivatePeopleScreen";
-import { PrivateBriefingsScreen } from "../screens/PrivateBriefingsScreen";
-import { PrivateShieldScreen } from "../screens/PrivateShieldScreen";
-import { PrivateConciergeScreen } from "../screens/PrivateConciergeScreen";
 import { PrivateMeetingsScreen } from "../screens/PrivateMeetingsScreen";
 import { PrivateMeetingRoomScreen } from "../screens/PrivateMeetingRoomScreen";
-import { PrivateConversationsScreen } from "../screens/PrivateConversationsScreen";
-import { PrivateConversationInfoScreen } from "../screens/PrivateConversationInfoScreen";
 import { PortfolioScreen } from "../screens/PortfolioScreen";
 import { WatchlistsScreen } from "../screens/WatchlistsScreen";
 import { ActivityRoute } from "../screens/ActivityRoute";
@@ -649,27 +639,27 @@ export function AppNavigator() {
       <Stack.Screen name="Watchlists" component={WatchlistsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.watchlists") })} />
       <Stack.Screen name="Portfolio" component={PortfolioScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.portfolio") })} />
       <Stack.Screen name="MarketPulse" component={MarketPulseScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.marketPulse") })} />
-      {/* Private Office and Private Facts are ordinary pushed screens with
-          ordinary back behaviour. They are registered unconditionally: the
-          navigator does not know the member's tier and must not learn it, so
-          entry is controlled by whether anything links here, and the screens
-          themselves render the server's answer — including "you do not have
-          this" — rather than being absent from the graph. */}
+      {/* Private Office and the three surfaces it contains — Relationship
+          Intelligence, Private Meetings, Office Security — are ordinary pushed
+          screens with ordinary back behaviour. They are registered
+          unconditionally: the navigator does not know the member's tier and
+          must not learn it, so entry is controlled by whether anything links
+          here, and the screens themselves render the server's answer —
+          including "you do not have this" — rather than being absent from the
+          graph.
+
+          That reasoning is about *entitlement*, not about existence, and the
+          difference is why the ten withdrawn screens are deregistered rather
+          than left in place to render a refusal. A screen that says "you do not
+          have this" is telling the truth to a member who could buy it. A screen
+          for a feature that no longer exists has nothing true to say, and
+          keeping it registered would keep it reachable from any stale deep
+          link, saved state or push payload still naming it. */}
       <Stack.Screen name="PrivateOffice" component={PrivateOfficeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOffice") })} />
-      <Stack.Screen name="PrivateFacts" component={PrivateFactsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateFacts") })} />
-      <Stack.Screen name="PrivateOperations" component={PrivateOperationsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOperations") })} />
-      <Stack.Screen name="CapitalGraph" component={CapitalGraphScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.capitalGraph") })} />
-      <Stack.Screen name="CapitalEntity" component={CapitalEntityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.capitalEntity") })} />
       <Stack.Screen name="PrivateOfficeSecurity" component={PrivateOfficeSecurityScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateOfficeSecurity") })} />
-      <Stack.Screen name="PrivateDocuments" component={PrivateDocumentsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateDocuments") })} />
       <Stack.Screen name="PrivatePeople" component={PrivatePeopleScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privatePeople") })} />
-      <Stack.Screen name="PrivateBriefings" component={PrivateBriefingsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateBriefings") })} />
-      <Stack.Screen name="PrivateShield" component={PrivateShieldScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateShield") })} />
-      <Stack.Screen name="PrivateConcierge" component={PrivateConciergeScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConcierge") })} />
       <Stack.Screen name="PrivateMeetings" component={PrivateMeetingsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateMeetings") })} />
       <Stack.Screen name="PrivateMeetingRoom" component={PrivateMeetingRoomScreen} options={{ headerShown: false }} />
-      <Stack.Screen name="PrivateConversations" component={PrivateConversationsScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConversations") })} />
-      <Stack.Screen name="PrivateConversationInfo" component={PrivateConversationInfoScreen} options={({ route }) => ({ title: route.params?.title || t("common:screens.privateConversationInfo") })} />
       {/* This is the first-frame title only: AssetDetailScreen calls
           `setOptions` on mount and replaces it with the asset's name, which is a
           proper noun and so is deliberately not routed through the catalog. The

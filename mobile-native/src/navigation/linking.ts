@@ -345,31 +345,21 @@ export const linking: LinkingOptions<RootStackParamList> = {
         }
       },
       // Private Office. The paths match the routes the UNDX capability registry
-      // already publishes for `private.facts.list`, so a deep link and an agent
-      // answer name the same destination rather than two spellings of it.
+      // publishes, so a deep link and an agent answer name the same destination
+      // rather than two spellings of it.
+      //
+      // Only the three surfaces the Office still contains are claimed. Nine
+      // paths were withdrawn with their features, and one of them mattered more
+      // than the rest: `PrivateOperations` was a `:view` wildcard under
+      // `pulse/private-office/`, so it swallowed every unmatched child path.
+      // Leaving it would have meant every retired link — facts, shield,
+      // concierge, a path that never existed — still resolving to a screen,
+      // which is the one outcome worse than not resolving at all. With it gone,
+      // an old link falls through to the app's unmatched-link handling and the
+      // member lands somewhere real instead of on a permanently empty view.
       PrivateOffice: "pulse/private-office",
-      PrivateFacts: "pulse/private-office/facts",
       PrivateOfficeSecurity: "pulse/private-office/security",
-      PrivateDocuments: "pulse/private-office/documents",
       PrivatePeople: "pulse/private-office/people",
-      PrivateBriefings: "pulse/private-office/briefings",
-      PrivateShield: "pulse/private-office/shield",
-      PrivateConcierge: "pulse/private-office/concierge",
-      // Declared after the literal paths above so the named feature screens
-      // keep their own routes; the pattern claims the six record views.
-      PrivateOperations: {
-        path: "pulse/private-office/:view",
-        parse: {
-          view: String
-        }
-      },
-      CapitalGraph: "pulse/private-office/capital-graph",
-      CapitalEntity: {
-        path: "pulse/private-office/capital-graph/:id",
-        parse: {
-          id: Number
-        }
-      },
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {
