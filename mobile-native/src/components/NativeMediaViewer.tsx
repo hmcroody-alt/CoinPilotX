@@ -6,6 +6,7 @@ import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
 import { saveMediaToGallery, shareMedia, type MediaActionTarget } from "../media/mediaActions";
+import { namespacedMediaId } from "../media/mediaCache";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
@@ -14,6 +15,16 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 export type NativeMediaViewerItem = {
   id?: number;
+  /**
+   * What the underlying file is cached under, namespaced by the id space it came
+   * from — see `namespacedMediaId`.
+   *
+   * Deliberately not derived from `id`. Producers set `id` to whichever row they
+   * built the item from, and Messenger sets a *message* id there, so keying the
+   * media cache on it would file a chat attachment under a feed media row's
+   * number and hand one of them the other's bytes.
+   */
+  cacheIdentity?: string | null;
   media?: PulseMedia;
   kind?: "image" | "video" | "file";
   url: string;
@@ -241,7 +252,7 @@ export function NativeMediaViewer({
   function actionTargetFor(current: NativeMediaViewerItem): MediaActionTarget {
     return {
       url: current.url,
-      mediaId: current.id || current.media?.id,
+      mediaId: current.cacheIdentity || null,
       kind: (current.kind === "file" ? "file" : current.kind) as MediaActionTarget["kind"],
       mimeType: current.media?.mime_type,
       expectedBytes: Number(current.media?.file_size || 0) || undefined,
@@ -467,6 +478,7 @@ export function mediaViewerItemFromPulseMedia(media: PulseMedia, context: Partia
   }) as NativeMediaViewerItem["kind"];
   return {
     id: Number(media.id || 0),
+    cacheIdentity: namespacedMediaId("pulse_media", media.id),
     media,
     kind,
     url: playbackUrl || thumbnailUrl,

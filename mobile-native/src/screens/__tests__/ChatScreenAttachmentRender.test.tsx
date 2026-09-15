@@ -275,8 +275,9 @@ describe("a document attachment opens when it is tapped", () => {
       // refresh on the server.
       url: DOCUMENT_ACCESS_URL,
       // media_upload_id, never the transport attachment id sitting beside it in
-      // the same row.
-      mediaId: DOCUMENT_MEDIA_ID,
+      // the same row — and namespaced, because those two ids come from different
+      // tables and as bare integers they would share one cache entry.
+      mediaId: `media_upload:${DOCUMENT_MEDIA_ID}`,
       // Load-bearing on iOS: without the MIME type the viewer is handed an
       // opaque blob and offers nothing that can read a PDF.
       mimeType: "application/pdf",

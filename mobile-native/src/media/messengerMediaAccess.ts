@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { pulseApi } from "../api/pulseApi";
+import { namespacedMediaId } from "./mediaCache";
 
 /**
  * Messenger media access URLs.
@@ -117,6 +118,27 @@ export type MessengerMediaIdentity = {
    */
   attachmentIdIsFoundationMedia?: boolean;
 };
+
+/**
+ * The identity a messenger attachment is cached under.
+ *
+ * Same preference as `resolveCanonicalMessengerMediaId` — foundation id first,
+ * transport id only as a fallback — but the answer is namespaced rather than a
+ * bare integer, because these two ids come from different tables and their
+ * sequences overlap. `media_upload_id = 7` and `attachment_id = 7` are two
+ * different files; collapsed to `7` they become one cache entry, and one of the
+ * two messages opens the other's attachment. See `namespacedMediaId`.
+ *
+ * This does NOT separate the two tables that both feed `media_upload_id` (a
+ * Comm-v2 upload and a foundation `message_attachments` row). The payload
+ * carries no discriminator for that, so it cannot be fixed on this side.
+ */
+export function messengerMediaCacheIdentity(identity?: MessengerMediaIdentity | null): string | null {
+  return (
+    namespacedMediaId("media_upload", identity?.mediaUploadId) ??
+    namespacedMediaId("attachment", identity?.attachmentId)
+  );
+}
 
 export type CanonicalMessengerMediaId = {
   id: number;

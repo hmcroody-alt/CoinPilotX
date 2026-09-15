@@ -71,6 +71,7 @@ import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMe
 import {
   MessengerMediaAccessState,
   MessengerMediaMeta,
+  messengerMediaCacheIdentity,
   useMessengerMediaAccessUrl
 } from "../media/messengerMediaAccess";
 import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
@@ -2277,6 +2278,10 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   if (!mediaUrl) return null;
   const viewerItem: NativeMediaViewerItem = {
     id: Number(message.id || message.message_id || 0),
+    // `id` above is the MESSAGE row, which is not a media id in any table. The
+    // cache has to be told the attachment's own identity or it keys this file
+    // under a message number and collides with whatever media row shares it.
+    cacheIdentity: messengerMediaCacheIdentity(mediaIdentity),
     kind: type === "video" ? "video" : type === "image" || type === "gif" ? "image" : "file",
     url: mediaUrl,
     thumbnailUrl,
@@ -2588,7 +2593,7 @@ function DocumentAttachmentCard({ message, url }: { message: MessengerMessage; u
     setFailure("");
     const result = await openDocument({
       url,
-      mediaId: message.media_upload_id || message.attachment_id || null,
+      mediaId: messengerMediaCacheIdentity({ mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id }),
       mimeType: message.mime_type || undefined,
       expectedBytes: Number(message.file_size || 0) || undefined,
       surface: "messenger",

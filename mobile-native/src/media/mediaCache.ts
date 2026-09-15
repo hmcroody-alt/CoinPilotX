@@ -170,6 +170,49 @@ function digest(input: string): string {
 }
 
 /**
+ * Tag a row id with the id space it came from.
+ *
+ * A row id is only unique within its own table, and the app routinely holds two
+ * of them at once: a Comm-v2 message carries a `chat_media_uploads` id in
+ * `media_upload_id` and a `comm_v2_attachments` id in `attachment_id`, drawn
+ * from independent autoincrements, so the same number names two unrelated
+ * files. Keyed as bare integers they collapse onto one entry and one file on
+ * disk — whichever downloads first is what the other one opens.
+ *
+ * Nothing downstream can catch that. The entry is internally consistent and its
+ * recorded size matches the file, so the integrity check on read passes; the
+ * user simply gets the wrong document. Separating the id spaces at the point the
+ * key is built is the only place it is cheap.
+ *
+ * Returns null when there is no usable id, which callers pass straight through
+ * so the key falls back to the URL. That is honest; a fabricated id is not.
+ */
+export function namespacedMediaId(namespace: string, id: unknown): string | null {
+  const safeNamespace = namespace.replace(/[^A-Za-z0-9_]/g, "").toLowerCase();
+  const numeric = Number(id);
+  if (!safeNamespace || !Number.isFinite(numeric) || numeric <= 0) return null;
+  return `${safeNamespace}:${Math.trunc(numeric)}`;
+}
+
+const NAMESPACED_MEDIA_ID = /^[A-Za-z0-9_]+:[0-9]+$/;
+
+/**
+ * A bare number keys as itself, so every entry written before namespacing
+ * existed still resolves. A namespaced identity is carried through whole and
+ * must never meet `Number()`, which turns `attachment:7` into NaN and silently
+ * drops the caller back to URL keying — the failure mode being fixed here,
+ * wearing a different hat.
+ */
+function normalizeMediaIdentity(value: number | string | null | undefined): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (NAMESPACED_MEDIA_ID.test(trimmed)) return trimmed.toLowerCase();
+  }
+  const numeric = Number(value || 0);
+  return numeric > 0 ? String(numeric) : "";
+}
+
+/**
  * Normalize a media reference to a cache key.
  *
  * Canonical media id wins whenever the caller has one: it is the identity the
@@ -177,8 +220,8 @@ function digest(input: string): string {
  * us. The URL path is the fallback for media that has no record yet.
  */
 export function mediaCacheKey(input: { mediaId?: number | string | null; url?: string | null }): string {
-  const mediaId = Number(input.mediaId || 0);
-  if (mediaId > 0) return `id:${mediaId}`;
+  const mediaId = normalizeMediaIdentity(input.mediaId);
+  if (mediaId) return `id:${mediaId}`;
   const url = String(input.url || "").trim();
   if (!url) return "";
   return `u:${digest(normalizeUrlForKey(url))}`;
