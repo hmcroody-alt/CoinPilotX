@@ -3507,3 +3507,129 @@ The three levels above still apply. This addendum adds one narrower option:
 delete `_is_environment_mismatch`'s body to `return False` and the sender returns
 to its previous behaviour exactly, with no schema change to undo —
 `token_environment` already existed and already accepted both values.
+
+## Addendum — the VoIP token was discarded on every relaunch (2026-09-15)
+
+Covers this commit. One protected path changes:
+`mobile-native/src/calls/callKitBridge.ts`, guarded by
+`audio_and_video_call_adapter`. The change is to **call-delivery registration
+ordering only**. The diff contains no `AVAudioSession`, no `Audio.setAudioModeAsync`,
+no audio-mode, audio-track, publication or livestream line — verified by grepping
+the diff for each of those tokens, which returns nothing.
+
+### Why the change is required
+
+The physical device did not ring through CallKit. An incoming call arrived as an
+ordinary alert banner ("PulseSoc Music is Pulsing You"); tapping it opened the app,
+and only then did CallKit appear. That reads as an architecture defect — a
+notification → app → CallKit chain — and it is not one. `AppDelegate.swift` already
+reports to CallKit from `didReceiveIncomingPushWith` *before* it hands the push to
+JS, with no network call in between. The native path was never the problem. **The
+device had no active VoIP token, so no VoIP push was ever sent**, and the banner was
+the documented compatibility fallback behaving exactly as specified.
+
+The reason it had no token is a listener race in this file. `initNativeCallKit`
+called `provider.registerVoipToken()` *before* subscribing `onVoipToken`. In
+`RNVoipPushNotificationManager.m`, `sendEventWithNameWrapper` emits directly only
+when `_hasListeners`; otherwise it appends to `_delayedEvents`. `voipRegistration`
+early-returns when `_isVoipRegistered` and re-emits `_lastVoipToken` **synchronously**
+through that same wrapper. AppDelegate creates the `PKPushRegistry` at launch, so by
+the time JS runs the pod is always already registered and always takes that branch —
+straight into the backlog, because nothing was listening yet.
+
+That produced a registration which worked **exactly once per install**, which is why
+it survived testing. On a first launch PushKit holds no token yet, so the real
+`didUpdate` lands later, after JS has subscribed, and the device registers normally.
+On every subsequent launch iOS hands over the cached token before React Native is up,
+and both that emission and this replay were discarded. The server's row therefore
+froze at whatever token it first saw. Once that token was revoked — and the previous
+addendum documents an APNs host mismatch that revokes live tokens — the handset could
+never replace it, alert-push suppression (conditioned on an *active* token) stopped
+applying, and every incoming call permanently downgraded to a banner.
+
+### Which feature required it
+
+iOS incoming-call delivery. This is the root cause of the banner-first behaviour the
+acceptance matrix was meant to disprove; without it the matrix cannot pass on any
+device that has been relaunched since install.
+
+### Which protected files changed
+
+| File | Manifest guard | Change |
+|---|---|---|
+| `mobile-native/src/calls/callKitBridge.ts` | `audio_and_video_call_adapter` | `provider.registerVoipToken()` moved from before the `subscriptions.push(...)` block to after it. One statement relocated; +1/-1 plus the comment explaining the pod semantics. |
+
+Supporting non-protected files: `callKitNativeProvider.ts` gains a
+`didLoadWithEvents` listener inside `onVoipToken` that reads
+`RNVoipPushRemoteNotificationsRegisteredEvent` out of the replayed backlog (and
+removes it on teardown), and `__tests__/callKitBridge.test.ts` gains the regression
+test. Neither is a protected path.
+
+### Expected behavior change
+
+An iOS device now re-registers its VoIP token on **every** launch rather than once
+per install, by two independent routes: the synchronous replay from
+`registerVoipToken` now has a listener attached to receive it, and any emission the
+pod buffered before JS existed is drained from `didLoadWithEvents`. Either alone is
+sufficient; both are present because the pod chooses between them based on timing
+this code cannot observe.
+
+Consequence for delivery: a device whose token was revoked recovers on its next
+launch instead of being stranded. `registerVoipPushToken` is idempotent server-side
+and the payload is unchanged, so a device whose token has not changed re-sends the
+same value and the row is rewritten identically.
+
+No audio path. No change to what CallKit is told, when it is told, or which audio
+session is configured. `markCallKitConnected` / `endCallKitCall` / the answer and
+decline routing are untouched.
+
+### Regression risk
+
+The §21 audio-ownership risk (CallKit's asynchronous `didActivateAudioSession`
+landing after Agora has configured the session) is unchanged and still open. Nothing
+here touches it — this commit does not alter the CallKit lifecycle at all, only when
+JS asks the pod for a token.
+
+The new risk is a **duplicate token registration** on launches where the pod delivers
+the token by both routes: a `register` event and a `didLoadWithEvents` backlog entry
+carrying the same value. That is two identical idempotent POSTs, not two tokens; it
+cannot produce a second row, because the backend keys on device/installation id. The
+opposite failure — dropping the token — is the one that ends in a silent phone, so
+the redundancy is the correct side to err on.
+
+Worth naming explicitly: the reordering means `registerVoipToken()` now runs after
+three `addEventListener` calls rather than before them. It is still inside
+`initNativeCallKit`, still behind the same `isNativeCallKitEnabled()` gate, still
+guarded by `initialized`, and still after `await provider.setup()` — so nothing can
+now reach the pod earlier than it did before.
+
+### Tests run
+
+- `npm run test:realtime-audio-critical` — **11 suites, 191 tests passed**.
+- `npm run test:realtime-audio` — **21 suites, 377 tests passed**.
+- `npm run test:realtime-audio-architecture` — **1 suite, 22 tests passed**.
+- `python -m unittest tests.protection.test_realtime_audio_architecture` — **19 tests, OK**.
+- `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` — **13 passed**.
+- `npm run verify` (typecheck + i18n + full jest) — **438 suites, 7620 tests passed**.
+- **Mutation check**: reverting the statement to its original position — calling
+  `provider.registerVoipToken()` before the subscriptions — fails **exactly one**
+  test, `still receives a token that registerVoipToken replays synchronously`, and
+  nothing else. The pre-existing token test passes under either ordering because it
+  hand-fires the handler afterwards; the new test is the one that can fail, because
+  its fake provider emits from *inside* `registerVoipToken` the way the real pod does.
+
+### Physical validation required
+
+The 12-case matrix above is still owed and still has not passed. This commit is what
+makes it runnable: the prerequisite to verify first, on the device, is that a
+**relaunch** produces a fresh `voip_token_registered` and an `active` row in
+`voip_push_tokens` — under the previous code a relaunch produced neither, which is
+the direct observable of this bug.
+
+### Rollback procedure
+
+The levels above still apply. This addendum adds the narrowest one yet: move the
+single `provider.registerVoipToken()` statement back above the `subscriptions.push`
+block and delete the `didLoadWithEvents` listener in `callKitNativeProvider.ts`. That
+restores the previous behaviour exactly, with no schema change and no server-side
+state to undo — the backend already accepted repeat registrations.
