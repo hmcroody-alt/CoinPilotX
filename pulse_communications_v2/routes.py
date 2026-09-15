@@ -1405,6 +1405,44 @@ def api_call_capabilities():
     return _timed_json("api_call_capabilities", lambda: call_engine.call_capabilities(user["user_id"]))
 
 
+@comm_v2_blueprint.post("/api/calls/voip-token")
+@auth_required
+def api_register_voip_token():
+    """Store this device's PushKit VoIP token so incoming calls can ring it.
+
+    Signed-in only, and the token is always filed against the *session's* user —
+    never a user id from the body. A VoIP token is a ring credential: whoever
+    holds a row for it can make that handset ring full-screen through CallKit,
+    so letting a request name its own owner would be a way to make someone
+    else's phone ring on demand.
+    """
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json(
+        "api_call_voip_token_register",
+        lambda: call_engine.register_voip_token(user["user_id"], request.get_json(silent=True) or {}),
+    )
+
+
+@comm_v2_blueprint.post("/api/calls/voip-token/revoke")
+@auth_required
+def api_revoke_voip_token():
+    """Stop VoIP pushes to this device — logout, permission loss, or uninstall.
+
+    Revocation is scoped to the session's user for the same reason registration
+    is: an unscoped revoke by raw token would let any signed-in account silence
+    any handset whose token it could guess or replay.
+    """
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json(
+        "api_call_voip_token_revoke",
+        lambda: call_engine.revoke_voip_token(user["user_id"], request.get_json(silent=True) or {}),
+    )
+
+
 @comm_v2_blueprint.post("/api/calls/<path:call_id>/decline")
 def api_decline_call(call_id):
     user, denied = _require_user()

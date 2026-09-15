@@ -2570,11 +2570,55 @@ def _disable_invalid_push_token(cur: Any, user_id: int, device: dict[str, Any], 
         logging.exception("PULSESOC_NOTIFICATION_INVALID_PUSH_TOKEN_DISABLE_FAILED user_id=%s", user_id)
 
 
+def _voip_claimed_device_ids(notification: dict[str, Any]) -> set[str]:
+    """Device ids already rung over PushKit for this notification's call.
+
+    Imported inside the function rather than at module scope: this module is
+    imported by the communications engine, which owns the VoIP sender, and a
+    module-level import would make that a cycle. A failure here returns the empty
+    set, which suppresses nothing — the safe direction, since the cost of getting
+    it wrong is a duplicate banner rather than a call that never rings.
+    """
+    try:
+        from services import pulsesoc_voip_push
+
+        return pulsesoc_voip_push.claimed_device_ids(notification)
+    except Exception:
+        logging.debug("PULSESOC_NOTIFICATION_VOIP_CLAIM_LOOKUP_FAILED", exc_info=True)
+        return set()
+
+
 def _dispatch_push(cur: Any, notification: dict[str, Any], prefs: dict[str, Any]) -> dict[str, Any]:
     user_id = int(notification.get("recipient_user_id") or notification.get("user_id") or 0)
     devices = _active_device_tokens(cur, user_id)
+
+    # VOIP PUSH IS PRIMARY FOR iOS; THIS ALERT PUSH IS THE FALLBACK.
+    #
+    # When a call already rang a device through PushKit/CallKit, that device is
+    # listed here and must not also receive the normal incoming-call banner —
+    # otherwise one handset shows a full-screen system call UI and a banner for
+    # the same call, and stopping one does not stop the other.
+    #
+    # Filtering here, before provider routing, rather than inside the expo/fcm/
+    # apns loops, is deliberate: the app registers for alerts through Expo, so an
+    # apns-only filter would miss every current build. One filter on `device_id`
+    # covers all three providers and matches the key `routed_device_ids` already
+    # dedupes on below.
+    #
+    # The list only ever contains devices APNs *accepted*. Anything else —
+    # Android, web, an iOS build with no VoIP token, a VoIP send that failed —
+    # is absent and therefore still gets the alert push.
+    claimed = _voip_claimed_device_ids(notification)
+    if claimed:
+        devices = [d for d in devices if str(d.get("device_id") or "") not in claimed]
+
     legacy_count = _legacy_push_subscription_count(cur, user_id)
     if not devices and not legacy_count:
+        if claimed:
+            # Distinct from "no device" on purpose. Every device this user has was
+            # already rung over VoIP; reporting that as a missing registration
+            # would send someone hunting a push-registration bug that is not there.
+            return {"ok": True, "status": "delivered_via_voip", "provider": "apns_voip", "message": "Delivered as a VoIP call push.", "voip_claimed_devices": len(claimed)}
         return {"ok": False, "status": "skipped_no_device", "provider": "push_router", "message": "No active push device or subscription."}
     payload = _push_payload(notification, prefs)
     preview_body = _notification_public_preview(notification, prefs)
