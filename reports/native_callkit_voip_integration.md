@@ -135,6 +135,36 @@ along with the twelve-case physical acceptance matrix that must pass on a real
 iPhone before this ships. A simulator cannot receive a PushKit push, cannot run
 CallKit's audio-session activation, and cannot carry the entitlements involved.
 
+### The Swift names in AppDelegate.swift are not the ObjC selectors
+
+Both pods are Objective-C. Swift's importer applies *omit needless words*: a
+trailing noun that restates the parameter's own type is deleted. So
+
+| ObjC | Swift |
+|---|---|
+| `didUpdatePushCredentials:forType:` (arg is `PKPushCredentials *`) | `didUpdate(_:forType:)` |
+| `didReceiveIncomingPushWithPayload:forType:` (arg is `PKPushPayload *`) | `didReceiveIncomingPush(with:forType:)` |
+| `endCallWithUUID:reason:` (arg is `NSString *`) | `endCall(withUUID:reason:)` — **not** omitted |
+
+Reading the header is not enough; the parameter types decide the name. Anyone
+"correcting" these to match the selectors will break the build, which is a
+mistake already made and reverted once on this branch (`b97341a0`).
+
+These names are wrong *only* at native compile time, so a fully green
+`npm run verify` says nothing about them. Check them without a full build:
+
+```sh
+PODS=mobile-native/ios/Pods/Headers/Public
+xcrun -sdk iphoneos swiftc -target arm64-apple-ios15.1 -typecheck \
+  -import-objc-header mobile-native/ios/PulseSoc/PulseSoc-Bridging-Header.h \
+  -I "$PODS" -I "$PODS/React-Core" probe.swift
+```
+
+`-typecheck`, not `-parse` — `-parse` is syntax-only and accepts any name at
+all. Pair it with a deliberately bogus selector as a negative control; without
+one you cannot tell a clean result from a harness that is not checking. All
+eight pod call sites were verified this way against the installed headers.
+
 ## Rollback
 
 `EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED=0`. The app stops registering a VoIP token;
