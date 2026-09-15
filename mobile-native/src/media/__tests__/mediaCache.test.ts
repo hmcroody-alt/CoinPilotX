@@ -65,7 +65,37 @@ beforeEach(async () => {
 
 describe("cache keys", () => {
   it("prefers the canonical media id over the URL", () => {
-    expect(mediaCacheKey({ mediaId: 42, url: "https://cdn.pulsesoc.com/a.jpg" })).toBe("id:42");
+    expect(mediaCacheKey({ mediaId: 42, url: "https://cdn.pulsesoc.com/a.jpg" })).toBe("media:42#full");
+  });
+
+  it("prefers the Mux playback id over everything, because it outlives the host", () => {
+    // The disk tier could not see this identity at all before it shared the
+    // identity authority with the memory tier, so one video delivered from two
+    // CDN hosts was cached twice and neither copy could be found from the other.
+    expect(
+      mediaCacheKey({ url: "https://stream.mux.com/ABC123/high.mp4?token=t" })
+    ).toBe("url:https://stream.mux.com/ABC123/high.mp4#full");
+  });
+
+  it("does not let a poster answer for the video it previews", () => {
+    // The defect this pins: both share one media id, so an id-only key made them
+    // one entry. Cache the poster and the cache would then report the *video* as
+    // present and hand a decoder a JPEG -- a reel that claims to be playable
+    // offline with nothing but a still frame on disk.
+    const poster = mediaCacheKey({ mediaId: 7, rendition: "poster" });
+    const full = mediaCacheKey({ mediaId: 7, rendition: "full" });
+    expect(poster).not.toBe(full);
+  });
+
+  it("treats a zero id as no id rather than as row zero", () => {
+    // `0` is a finite number, so an unguarded identity lookup accepts it and every
+    // id-less media on the device collapses onto one key.
+    expect(mediaCacheKey({ mediaId: 0, url: "https://cdn.pulsesoc.com/a.jpg" })).toBe(
+      mediaCacheKey({ url: "https://cdn.pulsesoc.com/a.jpg" })
+    );
+    expect(mediaCacheKey({ mediaId: 0, url: "https://cdn.pulsesoc.com/a.jpg" })).not.toBe(
+      mediaCacheKey({ mediaId: 0, url: "https://cdn.pulsesoc.com/b.jpg" })
+    );
   });
 
   it("ignores rotating signed-URL query strings so re-signing is a hit, not a miss", () => {

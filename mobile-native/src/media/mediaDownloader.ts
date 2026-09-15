@@ -50,6 +50,7 @@ import {
   type DownloadProgressData
 } from "expo-file-system/legacy";
 
+import type { MediaRendition } from "../core/media/mediaIdentity";
 import {
   cacheFileUriFor,
   commitCachedMedia,
@@ -76,6 +77,14 @@ export type MediaDownloadRequest = {
   url: string;
   /** Canonical media id when the caller has one — produces a stabler cache key. */
   mediaId?: number | string | null;
+  /**
+   * Which rendition of the media this URL is. Defaults to `full`.
+   *
+   * Required to be distinct from the default whenever the caller is fetching a
+   * poster or thumbnail, because a rendition that misreports itself as `full`
+   * makes the cache claim the whole video is on disk.
+   */
+  rendition?: MediaRendition;
   mimeType?: string;
   kind?: MediaDownloadKind;
   /** Product surface, for per-surface failure rates. Never a URL. */
@@ -126,7 +135,7 @@ export async function downloadMedia(request: MediaDownloadRequest): Promise<Medi
   const url = String(request.url || "").trim();
   if (!url) throw new MediaDownloadError("not_found", "No media URL to download.");
 
-  const key = mediaCacheKey({ mediaId: request.mediaId, url });
+  const key = mediaCacheKey({ mediaId: request.mediaId, url, rendition: request.rendition });
   if (!key) throw new MediaDownloadError("not_found", "Media has no cacheable identity.");
 
   const cached = await lookupCachedMedia(key);
