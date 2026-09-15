@@ -1,0 +1,16 @@
++ claude/bold-hodgkin-9021f1         ee26862c (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/bold-hodgkin-9021f1) Merge remote-tracking branch 'origin/main' into claude/bold-hodgkin-9021f1
++ claude/bold-jemison-81cdef         ba213cb8 (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/bold-jemison-81cdef) Stop the placeholder scan from reading a docstring as a statement
++ claude/businessos-perf-flake       40547058 (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/flamboyant-einstein-4510cf) [origin/claude/businessos-perf-flake] Make the seller tile's tests wait for the screen instead of for nothing
++ claude/charming-poincare-180ccb    97acecb1 (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/charming-poincare-180ccb) Admin ops shell: hold the black/white/green lock on all 139 pages
++ claude/cool-pasteur-66d0e0         767f4fbb (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/cool-pasteur-66d0e0) Messenger: make a job that retires without processing anything say so
++ claude/dreamy-proskuriakova-b042a9 2cbc6a63 (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/dreamy-proskuriakova-b042a9) Measure a tiled photo by its image, not by its first tile
+  claude/fervent-bose-488f38         daa21d62 cj staging: one stale re-export was hiding all 30 Postgres cases
+  claude/flamboyant-einstein-4510cf  a856843f [origin/claude/flamboyant-einstein-4510cf] Messenger: assert the multi-photo grid against a rendered conversation
+  claude/loving-banach-1ed134        31d9685a [origin/claude/loving-banach-1ed134] Pick the public playback ID instead of whichever one Mux listed first
+  claude/nostalgic-neumann-d9391f    997903cf feat(private-office): governed UNDX answer context — disputed facts carry no value
++ claude/pedantic-solomon-aa99d1     08f26e7b (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/pedantic-solomon-aa99d1) [origin/main: behind 39] Key cached media by its id space, not by a bare row id
++ claude/private-office-simplify     0f639597 (/Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/fervent-bose-488f38) Private Office: make the same-name test assert a collision that is actually one
++ claude/pushkit-callkit-voip        121604e2 (/private/tmp/voip-callkit) Retry a BadDeviceToken against the other APNs host before calling it dead
+  claude/vigilant-solomon-1981e1     21630fa0 Say a document's name once, on its card
+* main                               5f24c970 [origin/main: ahead 2, behind 14] Private Office: prove every closed vocabulary can match itself
+  preserve/bold-hodgkin-media-work   77e34b54 Retire a media row's promise once the bucket no longer holds the bytes

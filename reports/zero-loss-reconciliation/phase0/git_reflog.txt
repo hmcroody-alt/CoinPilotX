@@ -1,0 +1,400 @@
+5f24c970 HEAD@{2026-09-15 10:54:05 -0700}: commit: Private Office: prove every closed vocabulary can match itself
+f1b74e89 HEAD@{2026-09-15 10:37:58 -0700}: commit: Private Office contains three things
+7b3bf5ec HEAD@{2026-09-15 06:56:38 -0700}: commit (merge): Merge branch 'codex/continue-development-on-coinpilotxai' (absorption)
+6d0d0bea HEAD@{2026-09-15 02:37:54 -0700}: commit (merge): Merge branch 'claude/charming-poincare-180ccb'
+b07c0fdb HEAD@{2026-09-15 02:31:36 -0700}: commit (merge): Merge branch 'claude/loving-banach-1ed134'
+d549bd32 HEAD@{2026-09-15 02:30:40 -0700}: commit (merge): Merge branch 'claude/pedantic-solomon-aa99d1'
+21a10d5b HEAD@{2026-09-15 02:27:35 -0700}: merge claude/flamboyant-einstein-4510cf: Merge made by the 'ort' strategy.
+405912ef HEAD@{2026-09-15 02:27:35 -0700}: merge claude/bold-hodgkin-9021f1: Merge made by the 'ort' strategy.
+3de566a4 HEAD@{2026-09-15 02:27:35 -0700}: merge claude/dreamy-proskuriakova-b042a9: Merge made by the 'ort' strategy.
+ba213cb8 HEAD@{2026-09-15 02:27:23 -0700}: reset: moving to HEAD
+ba213cb8 HEAD@{2026-09-14 18:59:51 -0700}: merge ba213cb8: Fast-forward
+df68246a HEAD@{2026-09-14 18:09:42 -0700}: commit: Return the music catalog's connection when its query fails
+60601aa8 HEAD@{2026-09-14 18:04:56 -0700}: commit: Hydrate a Status lane on one connection instead of one per Status
+312f94ea HEAD@{2026-09-14 17:44:11 -0700}: commit (amend): Stop one unloadable Status from blacking out the rest of the tray
+3eb77000 HEAD@{2026-09-14 17:42:40 -0700}: rebase (finish): returning to refs/heads/main
+3eb77000 HEAD@{2026-09-14 17:42:40 -0700}: rebase (pick): Stop one unloadable Status from blacking out the rest of the tray
+bd713bf7 HEAD@{2026-09-14 17:42:40 -0700}: rebase (start): checkout origin/main
+c4f7d1d0 HEAD@{2026-09-14 17:42:25 -0700}: commit: Stop one unloadable Status from blacking out the rest of the tray
+ee669bc5 HEAD@{2026-09-14 16:50:21 -0700}: commit: Resolve video Statuses from the Mux playback id, like every other surface
+8b05834d HEAD@{2026-09-14 16:40:49 -0700}: commit: Let a thumbnail that ffmpeg could not produce say why
+d45fdc63 HEAD@{2026-09-14 16:26:24 -0700}: commit: Add phase two to the ghost-thumbnail repair: hand back the exhausted rows
+d45a2664 HEAD@{2026-09-14 16:06:46 -0700}: commit: Add the repair for thumbnail keys that point at nothing
+2755c9db HEAD@{2026-09-14 16:04:29 -0700}: commit: Store messenger thumbnails where the read path will look for them
+a1f27bba HEAD@{2026-09-14 15:57:18 -0700}: rebase (finish): returning to refs/heads/main
+a1f27bba HEAD@{2026-09-14 15:57:18 -0700}: rebase (pick): Play Statuses from the transcode, and recover chat previews that 404
+b64bd934 HEAD@{2026-09-14 15:57:18 -0700}: rebase (start): checkout origin/main
+93435eed HEAD@{2026-09-14 15:57:05 -0700}: commit: Play Statuses from the transcode, and recover chat previews that 404
+96e3ddb2 HEAD@{2026-09-14 15:27:23 -0700}: merge mobile/media-prefetch-20260914: Merge made by the 'ort' strategy.
+91067b3a HEAD@{2026-09-14 15:18:05 -0700}: reset: moving to 91067b3a88d468b9bc94b2f1383e3382c359885c
+36ad03d2 HEAD@{2026-09-14 15:13:58 -0700}: commit: mobile: let the prefetcher see the URL spellings the app actually renders
+0ab13efe HEAD@{2026-09-14 15:01:20 -0700}: commit: mobile: shared zero-wait media prefetch + sight-based autoplay
+26823199 HEAD@{2026-09-14 14:30:03 -0700}: commit: §9: a rejected listing can actually go back for review
+2355c5eb HEAD@{2026-09-14 12:59:26 -0700}: commit: iOS app icon: the gold mark, with the type dropped
+400a768c HEAD@{2026-09-14 12:38:16 -0700}: commit: §9 mobile: test the two visual claims the commit message made
+685f4767 HEAD@{2026-09-14 12:36:31 -0700}: commit: §9 mobile: show the seller why their listing was rejected
+bf691241 HEAD@{2026-09-14 12:27:24 -0700}: commit: §9: the rejected seller can find out why, on the listing, later
+9bf87c6d HEAD@{2026-09-14 12:19:45 -0700}: commit: §45: prove the §31 verdict weights can go red
+5d0fd328 HEAD@{2026-09-14 12:18:37 -0700}: commit: §32/§31: the review queue is decidable on a phone, and a verdict looks like what it does
+875f3204 HEAD@{2026-09-14 12:06:13 -0700}: commit: §36: one reason vocabulary on the review queue page
+58c3d73a HEAD@{2026-09-14 11:57:45 -0700}: commit: §23 marketplace review: a material edit comes back to the queue as a new revision
+e1bbb6e3 HEAD@{2026-09-14 11:53:25 -0700}: commit: §24 marketplace review: an approval refreshes the supplier before the product sells
+a47b262a HEAD@{2026-09-14 11:44:57 -0700}: commit: marketplace review: delegate variant margin to the one module that owns it
+5acd7d91 HEAD@{2026-09-14 11:39:49 -0700}: commit: §45: three mutations against the new §7 dossier
+77bae2cf HEAD@{2026-09-14 11:39:42 -0700}: commit: Put the real mark in the admin sidebar's last placeholder logo slot
+e7502ab7 HEAD@{2026-09-14 11:38:30 -0700}: commit: §7 review detail view: one screen with everything, and no verdict of its own
+cca1eff8 HEAD@{2026-09-14 09:04:10 -0700}: commit: Drop sixteen legacy assets nothing has referenced since the rename
+d529a0d0 HEAD@{2026-09-14 08:56:19 -0700}: commit: Point /about, /security, /scam-shield and /predictions at a real OG card
+431381d1 HEAD@{2026-09-14 08:54:38 -0700}: commit: Give the /learn pages an og:image that exists
+c63df7e7 HEAD@{2026-09-14 08:53:38 -0700}: commit: Stop the audit scripts pinning a brand stamp the rebrand retired
+79a36c98 HEAD@{2026-09-14 08:42:51 -0700}: commit: Answer a refused review decision with the queue, not a JSON blob
+e7af3eb2 HEAD@{2026-09-14 08:36:01 -0700}: commit: Repaint the legacy /icons/ PWA set that the stamped-filename sweep missed
+c744d4a6 HEAD@{2026-09-13 23:08:31 -0700}: commit: Let a reviewer decide one listing and land on the next
+6119630f HEAD@{2026-09-13 23:05:26 -0700}: commit: Put the already-stranded listings back in front of a reviewer
+cee3768b HEAD@{2026-09-13 23:02:00 -0700}: commit: Prove the review queue renders and that its guards can fail
+2334c243 HEAD@{2026-09-13 23:00:49 -0700}: commit: Give marketplace review one authority both callers ask
+21630fa0 HEAD@{2026-09-13 22:53:55 -0700}: reset: moving to HEAD
+21630fa0 HEAD@{2026-09-13 22:43:34 -0700}: merge origin/main: Fast-forward
+22f92cf9 HEAD@{2026-09-13 22:26:03 -0700}: commit: Declare the brand commit's app.json edit to the audio gate
+02edf493 HEAD@{2026-09-13 22:06:56 -0700}: commit: Give every PulseSoc surface the same logo, from one source of truth
+68afead5 HEAD@{2026-09-13 22:05:37 -0700}: commit: Pause Reels the moment the screen blurs, not when it unmounts
+f0e8bfaa HEAD@{2026-09-13 22:03:42 -0700}: commit: Render Messenger photos and videos as media, not file cards
+4baf32f4 HEAD@{2026-09-13 20:45:39 -0700}: 
+6c0081bb HEAD@{2026-09-13 20:37:44 -0700}: commit: Let the profile's own palette actually reach the screen
+9e854cc5 HEAD@{2026-09-13 20:11:11 -0700}: commit: Close the path where the live page defaults back to thirty invites
+0fe2e399 HEAD@{2026-09-13 20:03:53 -0700}: commit: dropship: surface what a supplier read concluded, instead of dropping it
+f1780954 HEAD@{2026-09-13 19:57:58 -0700}: commit: Ask for the two members Live actually needs, not the thirty it advertised
+86c09888 HEAD@{2026-09-13 19:04:30 -0700}: commit: Make a price that changed overnight able to say why
+c89b36be HEAD@{2026-09-13 18:48:52 -0700}: commit: Make an auto-published listing able to say why it costs what it costs
+99b73fac HEAD@{2026-09-13 18:29:45 -0700}: commit: Let the merchant say what freight costs them
+2a54b3de HEAD@{2026-09-13 18:12:41 -0700}: commit: Count the freight: price against landed cost, not item cost
+fdc2e0e9 HEAD@{2026-09-13 18:08:45 -0700}: commit: State the no-push proof as a reachability check, not a SHA
+2067dd44 HEAD@{2026-09-13 18:08:18 -0700}: commit: Report the media delivery foundation against its own checklist
+7a838621 HEAD@{2026-09-13 17:57:41 -0700}: commit: Press the real card: mount ChatScreen instead of reading it
+7cacdcd9 HEAD@{2026-09-13 16:41:35 -0700}: commit: Measure a stored video's length on the upload path that never asked
+c01616db HEAD@{2026-09-13 16:23:48 -0700}: commit: Take down the Reel that republishes a blocked video, not just the upload
+246d49c1 HEAD@{2026-09-13 16:12:39 -0700}: commit: Stop reading a never-confirmed listing as a stale one
+7cc447aa HEAD@{2026-09-13 16:00:26 -0700}: commit: Document the duration variables an operator has to know about
+bc43a909 HEAD@{2026-09-13 16:00:17 -0700}: reset: moving to HEAD~1
+631409c7 HEAD@{2026-09-13 15:59:48 -0700}: commit: Document the duration variables an operator has to know about
+bc43a909 HEAD@{2026-09-13 15:37:32 -0700}: commit: Make the ordering mutation actually violate the ordering
+8d633f07 HEAD@{2026-09-13 15:31:11 -0700}: commit: Enforce the duration Mux and ffprobe measured, not the one the client claimed
+3a5785e2 HEAD@{2026-09-13 15:27:12 -0700}: commit: Give Mux a media file instead of a playlist, and let replays recover
+ada71182 HEAD@{2026-09-13 15:21:29 -0700}: 
+3b3bc8e9 HEAD@{2026-09-13 15:12:44 -0700}: commit: Give supplier_worker a Procfile entry, and correct what that does not mean
+92a2155f HEAD@{2026-09-13 15:02:56 -0700}: commit: Declare the store-policy routes' auth intent
+1476600b HEAD@{2026-09-13 14:57:17 -0700}: commit: Ask the supplier before charging, on all three checkout lanes
+a9af014d HEAD@{2026-09-13 14:47:50 -0700}: commit: Carry a 90-minute Messenger video in parts instead of one POST
+824feb12 HEAD@{2026-09-13 14:41:01 -0700}: commit: Decide at the last moment whether a supplier can still fill an order
+8ee27426 HEAD@{2026-09-13 13:15:18 -0700}: commit: Measure the thread's paint cost instead of asserting it got faster
+f33ed3e6 HEAD@{2026-09-13 13:14:47 -0700}: commit: Prove the worker actually reaches the listings its reads describe
+73db3d46 HEAD@{2026-09-13 13:06:59 -0700}: commit: Make stored media a delivery foundation, not four surfaces guessing
+56e30725 HEAD@{2026-09-13 13:04:27 -0700}: commit: Teach the stock-credit invariant about supplier reconciliation
+adcb8a7f HEAD@{2026-09-13 13:02:35 -0700}: commit: Apply supplier product/inventory reads to live listings (§23/§24)
+eebb56a3 HEAD@{2026-09-13 12:00:24 -0700}: commit: Decide what a live listing does when its supplier moves the cost or sells out
+2a6daef2 HEAD@{2026-09-13 11:49:52 -0700}: commit: Make "Import to Store" publish to the store instead of stopping at a draft
+2ffca83d HEAD@{2026-09-13 09:53:40 -0700}: commit: Fix Store Edit so it opens the tapped product's editor, not the Listings hub
+09acaeeb HEAD@{2026-09-13 08:44:49 -0700}: commit: Keep one declaration for the audio-guard repair, not two
+2369ea5e HEAD@{2026-09-13 08:42:53 -0700}: commit: Declare the audio-gate repair the lock requires a declaration for
+d7f0fe0f HEAD@{2026-09-13 08:41:49 -0700}: commit: Declare the audio-guard repair the guard itself now demands
+9c0f098d HEAD@{2026-09-13 08:40:39 -0700}: commit (amend): Write script_json's U+2028/U+2029 needles as escapes, not raw characters
+05bb07c4 HEAD@{2026-09-13 08:40:09 -0700}: commit: Write script_json's U+2028/U+2029 needles as escapes, not raw characters
+26b56a32 HEAD@{2026-09-13 08:35:38 -0700}: merge codex/undx-multi-model-fabric: Merge made by the 'ort' strategy.
+18fcac3a HEAD@{2026-09-13 08:27:56 -0700}: commit (merge): Merge repo-wide admin page HTML escaping
+495cddc2 HEAD@{2026-09-13 08:26:45 -0700}: merge claude/gallant-napier-920f31: Merge made by the 'ort' strategy.
+80b6b9ca HEAD@{2026-09-13 08:26:41 -0700}: merge claude/stupefied-sammet-5c6fd3: Merge made by the 'ort' strategy.
+e9677433 HEAD@{2026-09-13 08:18:37 -0700}: commit: web: honour reduce-motion from the in-app setting, not just the OS
+81153937 HEAD@{2026-09-13 08:08:22 -0700}: commit: web: serve the SPA shell from /pulse/app so it gets a CSP
+b0c1cc9a HEAD@{2026-09-13 07:36:50 -0700}: commit: Consolidate onto one service worker, keeping the fork's hardening
+3382cdc3 HEAD@{2026-09-13 06:54:21 -0700}: commit: Promote the app on every marketing page, and gate the promotion
+425a07be HEAD@{2026-09-13 05:57:23 -0700}: commit: Record the two Phase 1 specs the app disproved
+ad5c486e HEAD@{2026-09-13 05:56:44 -0700}: commit: Give the web shell the native app's geometry, and gate the two copies
+81328b21 HEAD@{2026-09-13 05:44:06 -0700}: commit: Port the native backdrop to the web client, and gate it against drift
+ce2a1574 HEAD@{2026-09-13 05:40:09 -0700}: commit: Pin what the legacy status strip tells a seller in production
+121a5c58 HEAD@{2026-09-13 05:26:19 -0700}: commit: Port the native palettes to CSS, and gate the two copies against drift
+5a79047a HEAD@{2026-09-13 05:16:25 -0700}: commit: Pin the status strip against calling a just-published store paused
+452e1d27 HEAD@{2026-09-13 05:16:16 -0700}: commit: Stop the bulk faces spending the warning colour on hints
+b32d7335 HEAD@{2026-09-13 05:15:57 -0700}: commit: Fix bulk batch route reading the wrong payload key per action
+f1cbb1fb HEAD@{2026-09-13 05:07:47 -0700}: commit: Scaffold the web client, and gate the bundle it has to commit
+6e704d6e HEAD@{2026-09-13 04:53:00 -0700}: commit: Record the R2 CORS result in the phase plan as an owed human action
+056fc31a HEAD@{2026-09-13 04:52:10 -0700}: commit: Confirm R2 bucket CORS is unconfigured, and lock the probe that says so
+4a64915f HEAD@{2026-09-13 04:40:36 -0700}: commit: Gate the client/server route contract at build time and at deploy time
+ae33a9bb HEAD@{2026-09-13 04:13:18 -0700}: commit: Copy gate: treat a JSX comment as a comment; record the visibility decision
+4bc508ad HEAD@{2026-09-13 04:09:26 -0700}: commit: Store: the seller-facing half of bulk Set Category
+9d46bf68 HEAD@{2026-09-13 04:09:01 -0700}: commit: Refuse a forwarded chain shorter than the trusted hop count, and let someone read it
+5920d542 HEAD@{2026-09-13 03:54:23 -0700}: commit: Resolve the client address in one place, and make the shadow rollout readable
+fb87644e HEAD@{2026-09-13 03:34:52 -0700}: commit: Store: bulk Set Category, the second half of the §33 bulk sheet
+df47dd5c HEAD@{2026-09-13 02:56:43 -0700}: commit: Fix the QA simulator sign-in, which stored a cookie and called it a session
+860cfb88 HEAD@{2026-09-13 02:56:26 -0700}: commit: Test the reprice at the screen, where the wiring lives
+c531bce8 HEAD@{2026-09-13 02:56:17 -0700}: commit: Add bulk repricing to the Store, with the review before the commit
+91e96d41 HEAD@{2026-09-13 02:54:46 -0700}: commit: Cover the bulk reprice route, which had no backend tests at all
+b0ed8d3b HEAD@{2026-09-13 02:54:33 -0700}: commit: Report returns_to_review from a bulk reprice
+a4d34d68 HEAD@{2026-09-13 02:16:10 -0700}: commit: Let the seller see what a reprice would do before it does it
+1a402613 HEAD@{2026-09-13 02:05:29 -0700}: commit: Wire the bulk reprice route to the one pricing authority
+059ab1da HEAD@{2026-09-13 02:05:22 -0700}: reset: moving to 059ab1da
+220b0ea0 HEAD@{2026-09-13 02:05:15 -0700}: commit: Wire the bulk reprice route to the one pricing authority
+059ab1da HEAD@{2026-09-13 02:05:00 -0700}: reset: moving to 059ab1da
+da897c70 HEAD@{2026-09-13 02:04:39 -0700}: commit: Wire the bulk reprice route to the one pricing authority
+059ab1da HEAD@{2026-09-13 01:43:57 -0700}: commit: Add bulk reprice to the listing batch decision layer
+32d3c5d0 HEAD@{2026-09-13 01:26:33 -0700}: commit: Stop the Store calling a just-published listing "Hidden from buyers"
+eac994f4 HEAD@{2026-09-13 01:26:21 -0700}: commit: Fix dead header controls on the buyer product page
+fadc8ccd HEAD@{2026-09-13 00:50:11 -0700}: commit: Derive five per-purpose signing keys from one root secret
+2434991d HEAD@{2026-09-13 00:24:51 -0700}: commit: Unify six CSRF verifiers onto one contract, widening only
+829934b4 HEAD@{2026-09-12 23:57:11 -0700}: commit: Phase 0: refuse to boot on an undeclared route, and correct the admin-identity claim
+8dd9cea3 HEAD@{2026-09-12 23:51:08 -0700}: commit: Phase 0: make an ungated route a loud change instead of a silent one
+dd026651 HEAD@{2026-09-12 23:12:53 -0700}: commit: Phase 0: verify the bearer even when a cookie is present
+070f586e HEAD@{2026-09-12 22:38:02 -0700}: commit: Phase 0: tombstone dead session rows instead of deleting them
+60e9bf50 HEAD@{2026-09-12 22:35:25 -0700}: commit: Extend the black/white/green lock to the three business palettes the sweep missed
+949ad467 HEAD@{2026-09-12 22:19:35 -0700}: commit: Document the eight-point grid as built, not as proposed
+57f6e3ae HEAD@{2026-09-12 22:16:00 -0700}: commit: Lock every business surface to black, white and green
+d9828427 HEAD@{2026-09-12 22:12:30 -0700}: commit: Escape /admin/analytics: an anonymous POST reached an admin's session
+e6c992a0 HEAD@{2026-09-12 22:02:22 -0700}: commit: Claim the paths the app already knows how to open
+72679e94 HEAD@{2026-09-12 21:52:05 -0700}: commit: Phase 0: index DDL that survives the generic-plan switch
+7038c5f6 HEAD@{2026-09-12 21:43:53 -0700}: commit: Phase 0: route-hit telemetry keyed by client, so deletions have evidence
+441233d5 HEAD@{2026-09-12 21:21:38 -0700}: commit: Web design system: one 8px unit, and make the token layer actually win
+e46c9b6d HEAD@{2026-09-12 21:15:14 -0700}: commit: Web rebuild: the inventory, the gap analysis, and the plan to close it
+39bcc00b HEAD@{2026-09-12 19:55:04 -0700}: commit: Store single publish: one serializer, one gate, and a note when it can't be bought
+ffd356c5 HEAD@{2026-09-12 19:31:08 -0700}: commit: Store bulk publish: one preview, one key, the server's answer read back
+6be01e45 HEAD@{2026-09-12 19:09:19 -0700}: commit: Store bulk preview: the server decides, the phone reads
+601af9d8 HEAD@{2026-09-12 18:50:42 -0700}: commit: Store bulk publish: mount the batch, and give it one gate to pass
+27092978 HEAD@{2026-09-12 18:09:55 -0700}: merge 27092978: Fast-forward
+65dfbdee HEAD@{2026-09-12 17:58:13 -0700}: merge claude/gallant-margulis-3f3b6c: Merge made by the 'ort' strategy.
+5193ece2 HEAD@{2026-09-12 17:58:13 -0700}: merge claude/adoring-gates-fdbf0a: Merge made by the 'ort' strategy.
+0030e1f5 HEAD@{2026-09-12 17:58:08 -0700}: merge origin/main: Merge made by the 'ort' strategy.
+164a12e2 HEAD@{2026-09-12 17:57:10 -0700}: commit: Store bulk actions: one batch, one verdict each
+b45a579f HEAD@{2026-09-12 14:09:52 -0700}: commit: Map: selection mode built, token gaps closed, name the i18n gap
+5eb3be01 HEAD@{2026-09-12 14:09:04 -0700}: commit: Store selection mode: pick rows for a bulk action without leaving the list
+65bda9b1 HEAD@{2026-09-12 13:46:52 -0700}: commit: Selection state for bulk editing, as functions over ids rather than screen state
+f3363c82 HEAD@{2026-09-12 13:38:21 -0700}: commit: GAP 24: stop turning "uncounted" into "zero" at three sites
+922145b2 HEAD@{2026-09-12 13:38:04 -0700}: commit: Render the server's readiness verdict instead of recomputing it
+9a63f5fa HEAD@{2026-09-12 13:13:03 -0700}: commit: Bind the readiness verdict to the checkout decider that outranks it
+074d8a3a HEAD@{2026-09-12 13:02:19 -0700}: commit: Answer "can this be sold?" on the server, where the NULL still exists
+ddef7c03 HEAD@{2026-09-12 12:44:24 -0700}: commit: Make the honest checklist ask the publish verb instead of predicting it
+3f0fa3e3 HEAD@{2026-09-12 12:36:15 -0700}: commit: Map the Store workspace, and find four answers to one question
+322cbc97 HEAD@{2026-09-12 10:46:46 -0700}: commit: Close the recovery seam's six surviving mutations
+b6182304 HEAD@{2026-09-12 10:41:29 -0700}: reset: moving to HEAD
+b6182304 HEAD@{2026-09-12 10:40:53 -0700}: 
+8ceb46bd HEAD@{2026-09-12 10:25:51 -0700}: commit: Stop telling a merchant a supplier order was placed when nothing was sent
+b42cc22f HEAD@{2026-09-12 09:42:40 -0700}: commit: Stop promising a merchant that a queue nothing drains is about to be sent
+7d1491ac HEAD@{2026-09-12 09:19:39 -0700}: commit: Stop showing a merchant the identifier we raised instead of what to do
+93fdc59b HEAD@{2026-09-12 08:32:36 -0700}: commit: Let a merchant place the supplier order a paid sale already owes
+8efb5c5c HEAD@{2026-09-12 06:37:16 -0700}: commit: Show a merchant which paid orders still owe a supplier purchase
+7e1043c7 HEAD@{2026-09-12 04:40:45 -0700}: commit: Let a merchant answer the refusal that blocked every multi-variant import
+e7888abd HEAD@{2026-09-12 01:29:48 -0700}: commit: Stop describing every non-in-person order as a parcel
+ed882940 HEAD@{2026-09-12 01:07:07 -0700}: commit: Serve the lane an order was placed on, instead of a field nothing sends
+2168cd9d HEAD@{2026-09-12 00:40:21 -0700}: rebase (finish): returning to refs/heads/main
+2168cd9d HEAD@{2026-09-12 00:40:21 -0700}: rebase (pick): marketplace: read the delivery lane from the field that holds it
+5664c0a0 HEAD@{2026-09-12 00:40:21 -0700}: rebase (start): checkout origin/main
+037e9888 HEAD@{2026-09-12 00:38:58 -0700}: commit: marketplace: read the delivery lane from the field that holds it
+018f484b HEAD@{2026-09-11 23:57:01 -0700}: commit: marketplace: charge, hold and record the quantity the buyer chose
+0676af09 HEAD@{2026-09-11 23:21:01 -0700}: rebase (finish): returning to refs/heads/main
+0676af09 HEAD@{2026-09-11 23:21:01 -0700}: rebase (pick): marketplace: make an approval's success mean something
+85a62451 HEAD@{2026-09-11 23:21:01 -0700}: rebase (start): checkout origin/main
+d5496eec HEAD@{2026-09-11 23:20:48 -0700}: commit: marketplace: make an approval's success mean something
+b34b6c3f HEAD@{2026-09-11 22:41:29 -0700}: commit: Stop checkout inventing a price, and replace the prose that hid it
+5a44fe82 HEAD@{2026-09-11 21:31:36 -0700}: commit: Give the merchant a way to choose the shop orders are sent to
+3851f32a HEAD@{2026-09-11 21:05:33 -0700}: commit: Make both merchant surfaces answer the cover question the same way
+627ccb62 HEAD@{2026-09-11 20:49:51 -0700}: commit: Say which kind of failure the vault had, and where it happened
+95a8eed7 HEAD@{2026-09-11 20:32:08 -0700}: commit: Repair listing 14: bind what it sells, restock the shelf in units
+4308cc7b HEAD@{2026-09-11 18:21:23 -0700}: commit: Sell the variant the listing names, and stock it in units
+80b4890d HEAD@{2026-09-11 17:46:18 -0700}: commit: Give the shop binding an operator that can reach it
+b9538c8c HEAD@{2026-09-11 17:39:46 -0700}: commit: Give the shop-binding refusal something that can satisfy it
+33c7a962 HEAD@{2026-09-11 17:02:04 -0700}: commit: Ask the moderation axis whether moderation has decided
+0ae50ff9 HEAD@{2026-09-11 16:41:42 -0700}: commit (amend): Record the publish+approve sequence that put listing 14 live
+cad6291f HEAD@{2026-09-11 16:37:24 -0700}: commit: Record the publish+approve sequence that put listing 14 live
+832ca72f HEAD@{2026-09-11 00:19:33 -0700}: commit: Record where the real CJ listing actually stands
+19d049d5 HEAD@{2026-09-11 00:19:07 -0700}: commit: Assert the whole crossing once, positively
+1d99162b HEAD@{2026-09-11 00:15:53 -0700}: commit: Publish the cover image, not just validate that one exists
+22d7fd3e HEAD@{2026-09-10 22:52:39 -0700}: commit: Replace a comment describing a deleted constant with the two rules it sat above
+090ad8ac HEAD@{2026-09-10 22:51:24 -0700}: commit: Record the reviewer-signal seam and what it says about where tests look
+9e5eec71 HEAD@{2026-09-10 22:50:41 -0700}: commit: Stop showing buyers a reviewer's risk score labelled as safety
+e39a09f6 HEAD@{2026-09-10 22:30:06 -0700}: commit: Record the cross-language price seam and close gap 1 in the map
+d5e68151 HEAD@{2026-09-10 22:29:29 -0700}: commit: Stop offering to sell a listing the seller has not priced
+4858385f HEAD@{2026-09-10 22:23:05 -0700}: commit: Stop Buy Now understating the charge by 1000x on a four-figure price
+61b4e93f HEAD@{2026-09-10 22:16:19 -0700}: commit: Map the import-to-checkout chain from measurements, not from the UI
+2fa84fdc HEAD@{2026-09-10 22:12:06 -0700}: commit: Stop the buy-now contract reporting a missing inventory release that exists
+202c6b26 HEAD@{2026-09-10 22:09:57 -0700}: commit: Carry the merchant's price across into the buyer's checkout
+2b9a36a2 HEAD@{2026-09-10 21:56:17 -0700}: commit: Persist the cover image when a supplier product becomes a draft
+1b75a871 HEAD@{2026-09-10 21:17:49 -0700}: commit: Stop blaming CJ when it is our own credential vault that is missing
+d85bf3f2 HEAD@{2026-09-10 20:44:59 -0700}: commit: Stop the native marketplace inventing a price the seller never set
+08b62bec HEAD@{2026-09-10 20:36:35 -0700}: commit (merge): Merge 'claude/romantic-northcutt-cab8be': stop the web inventing a price the seller never set
+6781e5cb HEAD@{2026-09-10 20:18:15 -0700}: commit: env: document the two CJ variables the contract test found undeclared
+fe13f271 HEAD@{2026-09-10 20:13:52 -0700}: commit: web: move the Action Center's styles into a stylesheet, on palette tokens
+521636fc HEAD@{2026-09-10 20:04:02 -0700}: commit (amend): Revert the tender-maxwell merge: main already answered this, differently
+27d513d8 HEAD@{2026-09-10 20:03:49 -0700}: revert: Revert "Merge 'claude/tender-maxwell-f54ab4': retire the price fallback's last trace"
+91254987 HEAD@{2026-09-10 20:03:04 -0700}: merge claude/web-native-parity-census: Merge made by the 'ort' strategy.
+c78b3eed HEAD@{2026-09-10 20:02:40 -0700}: reset: moving to HEAD
+c78b3eed HEAD@{2026-09-10 20:01:34 -0700}: merge claude/ecstatic-sanderson-f621e3: Merge made by the 'ort' strategy.
+6a9b74a3 HEAD@{2026-09-10 20:01:31 -0700}: commit (merge): Merge 'claude/tender-maxwell-f54ab4': retire the price fallback's last trace
+9f3419c4 HEAD@{2026-09-10 20:00:22 -0700}: merge claude/adoring-shirley-647df4: Merge made by the 'ort' strategy.
+9c891286 HEAD@{2026-09-10 19:45:42 -0700}: commit: mobile: stop answering every sign-in rejection with "wrong password"
+e385dd12 HEAD@{2026-09-10 19:06:50 -0700}: merge origin/main: Merge made by the 'ort' strategy.
+0835e636 HEAD@{2026-09-10 19:05:01 -0700}: commit: ios: give the device build a backend guard, and stop it crying wolf
+8ddc7dc2 HEAD@{2026-09-10 18:46:39 -0700}: commit: i18n: defuse the unused marketplace priceFallback key
+6dd7362d HEAD@{2026-09-10 18:36:34 -0700}: commit: Marketplace web: say the listing is unpriced instead of inventing a gate
+51649118 HEAD@{2026-09-10 17:45:23 -0700}: commit: Count imported products instead of restating the page size
+c0f42018 HEAD@{2026-09-10 17:33:52 -0700}: commit: Stop inventing a price in the serializer every read passes through
+5a24319a HEAD@{2026-09-10 17:22:43 -0700}: commit: Say which backend a simulator build targets, and prove it
+df03e8b4 HEAD@{2026-09-09 15:12:21 -0700}: commit: Stop pricing a seller's product for them when they have not
+a4b81af5 HEAD@{2026-09-09 14:58:10 -0700}: commit: Give back the egress account slot when CJ refuses the key
+0496ce28 HEAD@{2026-09-09 14:35:28 -0700}: commit: Stop reporting our own clock as a verdict from CJ
+baee7c84 HEAD@{2026-09-09 13:58:06 -0700}: commit: Fix the empty inventory overlay: the same normalizer seam, a third time
+b1f85289 HEAD@{2026-09-09 13:45:36 -0700}: commit: Fix the catalogue's false empty: the pipeline had two normalizers stacked
+59f5f58a HEAD@{2026-09-09 13:26:57 -0700}: commit: Caption an empty catalogue with the term that was actually searched
+f6114bc4 HEAD@{2026-09-09 13:26:37 -0700}: commit: Translate neutral search filter names into CJ's before they reach CJ
+80c21114 HEAD@{2026-09-09 13:05:12 -0700}: commit: Pace CJ calls with an unknown point budget instead of refusing them
+65663f23 HEAD@{2026-09-09 12:32:56 -0700}: commit: native auth: let a live cookie recover the bearer it outlived
+6fcdf632 HEAD@{2026-09-09 11:10:04 -0700}: commit: CJ: make a CSRF refusal say which half of the gate refused
+7209dca4 HEAD@{2026-09-09 10:49:49 -0700}: commit: CJ docs: mark the superseded shop rule, and delete an identifier that never existed
+952fe6f8 HEAD@{2026-09-09 10:36:23 -0700}: commit: CJ: surface the thirty-day inactivity clock, including that our estimate can be late
+be6bf22a HEAD@{2026-09-09 10:29:59 -0700}: commit: CJ: prove the six required safety controls are load-bearing, not decorative
+9b309b67 HEAD@{2026-09-09 10:25:22 -0700}: commit: CJ: a points block with a zero ceiling is no reading, not an empty budget
+e7fff8f8 HEAD@{2026-09-09 10:19:42 -0700}: commit: Retract an unverified claim about why staging's budget read zero
+4095f595 HEAD@{2026-09-09 10:18:16 -0700}: commit: Measure Railway's egress reality instead of assuming it
+0e9ecaa0 HEAD@{2026-09-09 10:13:14 -0700}: commit: Pace CJ egress below its ceiling, and stop inventing a zero budget
+ff4325eb HEAD@{2026-09-09 10:05:42 -0700}: commit: Make the CJ shop optional to connect, mandatory to fulfil
+9475ce41 HEAD@{2026-09-09 09:45:06 -0700}: commit: suppliers: replace the CJ approval gate with the facts CJ actually confirmed
+20796d88 HEAD@{2026-09-09 09:30:13 -0700}: commit: suppliers: name the endpoint and CJ's code, not just the raise site
+ee561c63 HEAD@{2026-09-09 09:06:35 -0700}: commit: suppliers: stop rejecting CJ's real token with a bound we invented
+120870f1 HEAD@{2026-09-09 06:34:39 -0700}: commit: suppliers: persist the diagnostic raise site, not just return it
+9e99a720 HEAD@{2026-09-09 06:18:39 -0700}: commit: suppliers: let an opt-in diagnostic name which validator refused a CJ response
+49a487a2 HEAD@{2026-09-08 23:51:12 -0700}: commit: mobile: stop replaying a supplier 401 as if the session had expired
+47bf2cf4 HEAD@{2026-09-08 23:37:16 -0700}: commit: mobile: let a rejected supplier credential outrank the status it arrives on
+4bf79be3 HEAD@{2026-09-08 22:27:27 -0700}: commit: mobile: make the backend a build states, not one it falls back to
+4203fb5a HEAD@{2026-09-08 19:15:21 -0700}: commit: cj: split provider authorization into the three questions it actually is
+1d7e8b2e HEAD@{2026-09-08 19:08:38 -0700}: commit: ios(sim): keep code signing on so keychain entitlements get embedded
+5a08d3b1 HEAD@{2026-09-08 18:11:30 -0700}: commit: chore: clear the shared checkout's loose files, and drop a dead LiveKit test
+cde44157 HEAD@{2026-09-08 18:11:13 -0700}: merge origin/main: Fast-forward
+538ca12e HEAD@{2026-09-07 21:32:09 -0700}: commit: fix(suppliers): let a store owner's native write through, and name why one is refused
+8cbcfc62 HEAD@{2026-09-07 20:49:57 -0700}: commit: docs(cj): record the onboarding correction against CJ's published contract
+f8ac5a78 HEAD@{2026-09-07 20:44:33 -0700}: commit: fix(dropshipping): ask for a CJ API key in CJ's own words
+9da67481 HEAD@{2026-09-07 18:30:45 -0700}: commit: fix(suppliers): query each merchant identity in its own column's type
+79750210 HEAD@{2026-09-07 18:13:08 -0700}: commit: fix(dropshipping): let the client read the reason the server actually gave
+1559bce8 HEAD@{2026-09-07 17:20:30 -0700}: commit: fix(dropshipping): let an approved seller's own store open the supplier gateway
+5f95d7b7 HEAD@{2026-09-07 16:04:01 -0700}: commit: feat(dropshipping): merchant import journey in the native app
+1077a161 HEAD@{2026-09-07 14:46:37 -0700}: commit: feat(dropshipping): provider-neutral supplier import pipeline
+ec9a9a21 HEAD@{2026-09-07 12:54:12 -0700}: commit: build(ios): check in the device and simulator build/install scripts
+3d541657 HEAD@{2026-09-07 12:54:02 -0700}: commit: fix(native): restore the Sep-4 BusinessOS landing lineage over the stale merge
+2b839218 HEAD@{2026-09-07 12:21:21 -0700}: commit: docs(env): document the six CJ staging variables the merge left undeclared
+a715f911 HEAD@{2026-09-07 12:12:26 -0700}: commit: test(live): track the replay-processing copy after it became server-driven
+3b8ccd73 HEAD@{2026-09-07 12:10:28 -0700}: merge codex/cj-staging-acceptance: Merge made by the 'ort' strategy.
+a503dcd4 HEAD@{2026-09-07 12:10:18 -0700}: merge claude/heuristic-elgamal-90af66: Merge made by the 'ort' strategy.
+ea17f430 HEAD@{2026-09-07 12:10:18 -0700}: merge claude/fervent-chatelet-59f225: Merge made by the 'ort' strategy.
+e0e1f840 HEAD@{2026-09-07 12:10:18 -0700}: merge claude/elegant-meitner-6ef296: Merge made by the 'ort' strategy.
+61dd9c27 HEAD@{2026-09-07 12:10:13 -0700}: merge fix/jest-i18n-test-setup: Merge made by the 'ort' strategy.
+8144c8d4 HEAD@{2026-09-07 12:10:13 -0700}: merge claude/relaxed-jepsen-326109: Merge made by the 'ort' strategy.
+aab1a623 HEAD@{2026-09-07 12:10:13 -0700}: merge claude/jovial-elgamal-64fb6d: Merge made by the 'ort' strategy.
+184d6458 HEAD@{2026-09-07 12:10:13 -0700}: merge claude/recursing-lumiere-cf0475: Merge made by the 'ort' strategy.
+9e08cf20 HEAD@{2026-09-07 12:09:47 -0700}: commit: feat(commerce): move the supplier gateway onto the live product ledger
+b32cc2be HEAD@{2026-09-07 10:53:24 -0700}: commit: feat(commerce): addressable variants and supplier provenance on marketplace_listings
+edb3295e HEAD@{2026-09-07 10:35:12 -0700}: merge feat/cj-supplier-gateway: Merge made by the 'ort' strategy.
+60bc9d58 HEAD@{2026-09-07 10:09:44 -0700}: commit: docs(commerce): name the abandoned business_os migration as the blocking fork
+0db35ce0 HEAD@{2026-09-07 10:08:21 -0700}: commit: docs(commerce): map the existing commerce architecture before touching it
+9b02f28f HEAD@{2026-09-07 09:43:28 -0700}: commit: style(cj): trim the trailing blank line that tripped git diff --check
+15c645bf HEAD@{2026-09-07 09:43:13 -0700}: commit: docs(env): document the Sentinel mesh switches and the Mux signing key pair
+af5b9b7f HEAD@{2026-09-07 09:38:09 -0700}: commit: test(sentinel): don't count nested worktrees as production callers
+bfb42b27 HEAD@{2026-09-07 09:34:57 -0700}: merge feat/sentinel-server-defense-mesh: Merge made by the 'ort' strategy.
+0b8a5ffc HEAD@{2026-09-07 09:34:57 -0700}: merge feat/cj-contract-gates: Merge made by the 'ort' strategy.
+26de03a1 HEAD@{2026-09-07 09:34:53 -0700}: merge claude/blissful-jennings-240b30: Merge made by the 'ort' strategy.
+a90e78a0 HEAD@{2026-09-07 08:39:12 -0700}: commit: Repair live replay readiness, recovery, consent and refresh
+6cab70a4 HEAD@{2026-09-07 08:01:13 -0700}: 
+de927099 HEAD@{2026-09-07 07:43:48 -0700}: 
+df61860c HEAD@{2026-09-07 07:15:52 -0700}: merge df61860c: Fast-forward
+d8aaf911 HEAD@{2026-09-06 12:17:49 -0700}: commit: feat(capital-graph): name the denominator under the ranking, and stop the build restating the server's windows
+c70b867b HEAD@{2026-09-06 11:23:37 -0700}: commit: feat(capital-graph): schedule the recorded outflows, and say what they are not
+5375ee60 HEAD@{2026-09-06 08:17:35 -0700}: reset: moving to HEAD
+c683e35f HEAD@{2026-09-06 07:51:26 -0700}: commit: test(private-office): prove the evidence axis and guard its two tables
+3e5cdfd3 HEAD@{2026-09-06 07:49:44 -0700}: cherry-pick: fix(i18n): spell the Korean zero so the overview refusal keeps its disclaimer
+5813cf63 HEAD@{2026-09-06 07:46:05 -0700}: commit: feat(capital): give the Private Office an Obligations tab that cannot say zero
+0993bb14 HEAD@{2026-09-06 07:37:09 -0700}: commit: docs(document-intelligence): record gap #6 closed, and correct its diagnosis
+d4634e35 HEAD@{2026-09-06 05:09:15 -0700}: commit: fix(private-office): a 200 we could not read is a refusal, not an empty vault
+ed1e4f1d HEAD@{2026-09-06 05:08:26 -0700}: commit: feat(private-office): model dependencies between Operations records
+f480176e HEAD@{2026-09-06 05:00:41 -0700}: commit: feat(capital): give the Private Office an Overview tab that cannot say net worth
+f27d4488 HEAD@{2026-09-06 04:59:36 -0700}: commit: feat(private-office): cite the documents a fact came from, as a UNDX read
+d2f80fdd HEAD@{2026-09-06 02:11:36 -0700}: commit: fix(private-office): subject accepted document facts to the document node
+b5d8b4fb HEAD@{2026-09-06 02:08:08 -0700}: commit: feat(capital): reach obligations, cash flow and integrity from the client
+29ca8eb4 HEAD@{2026-09-06 01:07:11 -0700}: commit: docs(document-intelligence): re-verify the Stage 1 foundation map
+9519f368 HEAD@{2026-09-06 01:06:45 -0700}: commit: feat(capital): reach the command center from the native client
+1703281e HEAD@{2026-09-06 01:06:33 -0700}: reset: moving to HEAD~1
+055d2eec HEAD@{2026-09-06 01:06:08 -0700}: commit: feat(capital): reach the command center from the native client
+1703281e HEAD@{2026-09-06 01:04:29 -0700}: commit: docs(private-office): strike the gaps that 937cd118 already closed
+3d42a72c HEAD@{2026-09-06 00:51:21 -0700}: commit: feat(private-office): report Operations in the health payload
+55d98f35 HEAD@{2026-09-06 00:49:21 -0700}: commit: docs(capital): revalidate the foundation map against HEAD
+6ebc1cf2 HEAD@{2026-09-05 22:06:22 -0700}: reset: moving to HEAD
+10712525 HEAD@{2026-09-06 04:20:26 +0000}: commit: Messenger media: let the allowlist carry documents, and downloads download
+2bd51cb0 HEAD@{2026-09-06 04:05:31 +0000}: commit: Private Office: classify conversations without a second ledger
+eb5aeca4 HEAD@{2026-09-06 04:00:31 +0000}: commit: Private Office: make a settled conflict stay settled
+937cd118 HEAD@{2026-09-06 03:56:13 +0000}: commit: feat(private-office): add operations lifecycle and executive overview
+6aa5670e HEAD@{2026-09-06 03:37:38 +0000}: 
+da5d530f HEAD@{2026-09-06 03:26:46 +0000}: commit: Private Facts ledger core: separate provenance from verification
+94e0ae0c HEAD@{2026-09-06 03:20:28 +0000}: commit: test(capital): give the overview bounds a member large enough to hit them
+0a201ecb HEAD@{2026-09-06 03:15:15 +0000}: commit: fix(capital): read the typed_value column, not a nonexistent value key
+a409f4ba HEAD@{2026-09-06 02:55:05 +0000}: commit: feat(capital): overview, obligations and exposure read routes
+ff6ff423 HEAD@{2026-09-06 02:54:20 +0000}: commit: feat(capital): honest capital overview read model
+c0eb553d HEAD@{2026-09-05 19:31:22 -0700}: commit: feat(capital): project open obligations as LIABILITY nodes with stable lineage identity
+bbf8a602 HEAD@{2026-09-05 19:19:35 -0700}: commit: fix(capital): register the UNDX capital read on all five surfaces; model the authoritative lock status in the screen suite
+7c547899 HEAD@{2026-09-05 19:19:35 -0700}: commit: docs(capital): forensic foundation map before the super-system build
+d21014c8 HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (finish): returning to refs/heads/main
+d21014c8 HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): test(meetings): session-store matrix + digit-free preset copy via interpolation
+ddf2fb4e HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): feat(meetings): deterministic meeting intelligence with provenance — no fabrication path
+0cc3e413 HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): feat(meetings): in-meeting chat, reactions, raise hand, truthful capability sheet
+9987e80f HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): feat(meetings): native meeting screens — home, room, waiting room, participants panel
+3b2a2334 HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): feat(meetings): native meetings module — projection session over the canonical call engine
+d76266e8 HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): fix(calls): room-scope read access for call_status — revoked participants get terminal 410
+6f23afd6 HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (pick): feat(private-office): meetings observability — closed telemetry, measured registry row, health section
+dd10879f HEAD@{2026-09-05 18:22:08 -0700}: pull --rebase origin main (start): checkout dd10879ff0b364b150755ec4e28dacdf0b24a8b4
+dfe32268 HEAD@{2026-09-05 18:10:58 -0700}: commit: test(meetings): session-store matrix + digit-free preset copy via interpolation
+572953c6 HEAD@{2026-09-05 18:03:59 -0700}: commit: feat(meetings): deterministic meeting intelligence with provenance — no fabrication path
+e05bfbea HEAD@{2026-09-05 17:53:36 -0700}: commit: feat(meetings): in-meeting chat, reactions, raise hand, truthful capability sheet
+4f0d0e12 HEAD@{2026-09-05 17:47:23 -0700}: commit: feat(meetings): native meeting screens — home, room, waiting room, participants panel
+6936c23a HEAD@{2026-09-05 17:24:56 -0700}: commit: feat(meetings): native meetings module — projection session over the canonical call engine
+cbd14bd6 HEAD@{2026-09-05 17:20:16 -0700}: commit: fix(calls): room-scope read access for call_status — revoked participants get terminal 410
+d6914d85 HEAD@{2026-09-05 16:58:29 -0700}: commit: feat(private-office): meetings observability — closed telemetry, measured registry row, health section
+cc392fac HEAD@{2026-09-05 16:27:34 -0700}: commit: feat(private-office): meetings HTTP surface + fail-closed feature rows
+32fdfc55 HEAD@{2026-09-05 16:15:34 -0700}: commit: feat(private-office): private meetings model — lifecycle, waiting room, lock, both-system blocking
+05d8a8f9 HEAD@{2026-09-05 15:49:28 -0700}: commit: docs(private-office): private meetings foundation map — extend calls engine, 0 new owners
+a9f7417c HEAD@{2026-09-05 14:27:36 -0700}: commit: fix(native): reconcile consolidated feature contracts
+11d2ceaa HEAD@{2026-09-05 14:15:10 -0700}: merge work/localization-i18n-wave: Merge made by the 'ort' strategy.
+03b3efe5 HEAD@{2026-09-05 14:15:10 -0700}: merge release/premium-hard-lock-20260904: Merge made by the 'ort' strategy.
+1c0a8b48 HEAD@{2026-09-05 14:15:10 -0700}: merge release/messenger-idempotency-p0: Merge made by the 'ort' strategy.
+9a9f5cee HEAD@{2026-09-05 14:15:09 -0700}: merge preserve/private-office-wip-20260902: Merge made by the 'ort' strategy.
+bbd03334 HEAD@{2026-09-05 14:15:09 -0700}: merge preserve/cpx-baseline-premium-context-20260905: Merge made by the 'ort' strategy.
+be5c8507 HEAD@{2026-09-05 14:15:09 -0700}: merge integration/all-work-20260904: Merge made by the 'ort' strategy.
+0b0b5148 HEAD@{2026-09-05 14:15:09 -0700}: merge fix/status-rail-placeholder-translation: Merge made by the 'ort' strategy.
+abcdacdb HEAD@{2026-09-05 14:15:09 -0700}: merge fix/briefings-notification-type-mapping: Merge made by the 'ort' strategy.
+0290fea6 HEAD@{2026-09-05 14:15:09 -0700}: merge codex/video-call-audio-controls-20260726: Merge made by the 'ort' strategy.
+a7f5ecc1 HEAD@{2026-09-05 14:15:09 -0700}: merge codex/undx-v3-preservation-20260719: Merge made by the 'ort' strategy.
+46ec13f4 HEAD@{2026-09-05 14:15:08 -0700}: merge codex/profile-posts-production: Merge made by the 'ort' strategy.
+5a25e6f2 HEAD@{2026-09-05 14:15:01 -0700}: commit (merge): merge: preserve codex/live-shared-audio-engine
+71489d4f HEAD@{2026-09-05 14:14:50 -0700}: commit (merge): merge: preserve codex/governed-realtime-audio
+45993724 HEAD@{2026-09-05 14:14:44 -0700}: merge codex/agora-rtc-migration.lock.moved.5: Merge made by the 'ort' strategy.
+8d3a0a9d HEAD@{2026-09-05 14:14:33 -0700}: commit: chore: exclude obsolete LiveKit patch from consolidated tree
+9583cd90 HEAD@{2026-09-05 14:14:26 -0700}: commit (merge): merge: preserve claude/trusting-neumann-381eb0
+c1623b2f HEAD@{2026-09-05 14:14:10 -0700}: merge claude/recursing-ramanujan-611f2c: Merge made by the 'ort' strategy.
+58d9ebc1 HEAD@{2026-09-05 14:14:10 -0700}: merge claude/quizzical-yonath-215c94: Merge made by the 'ort' strategy.
+7d8c9ffd HEAD@{2026-09-05 14:14:09 -0700}: merge claude/nostalgic-neumann-d9391f: Merge made by the 'ort' strategy.
+735f0579 HEAD@{2026-09-05 14:14:09 -0700}: merge claude/ecstatic-sinoussi-10e95b: Merge made by the 'ort' strategy.
+a86c2fd0 HEAD@{2026-09-05 14:13:47 -0700}: commit (merge): merge: retain Premium Watchlists entry history
+768bbdfc HEAD@{2026-09-05 14:13:29 -0700}: commit (merge): merge: retain BusinessOS capability launch gating
+cc459b24 HEAD@{2026-09-05 14:12:13 -0700}: reset: moving to cc459b24caeed4b10988f5cdcefe4a8bb8425ae4
+0e4ad82f HEAD@{2026-09-05 14:11:41 -0700}: commit: chore: keep private Office uploads out of source control
+ea412cb5 HEAD@{2026-09-05 14:11:09 -0700}: commit (merge): merge: preserve shared checkout work from 2026-09-04
+2b13357a HEAD@{2026-09-05 14:05:14 -0700}: commit: feat(mobile): five Private Office feature screens, wired end to end
+1571a800 HEAD@{2026-09-05 14:04:32 -0700}: reset: moving to HEAD
+1571a800 HEAD@{2026-09-05 14:03:23 -0700}: reset: moving to HEAD
+1571a800 HEAD@{2026-09-05 13:29:29 -0700}: commit: feat(private-office): UNDX typed reads for the five shipped features — one spec, four surfaces, read-only by construction
+6ba854ac HEAD@{2026-09-05 13:06:07 -0700}: commit: feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+65e48eb8 HEAD@{2026-09-05 12:52:12 -0700}: commit: feat(private-office): Private Shield — internal exposure monitoring with honest external edges
+363c869b HEAD@{2026-09-05 12:42:38 -0700}: commit: feat(private-office): Private Briefings — the Office's own on-demand engine, every line cited
+ee0aec0e HEAD@{2026-09-05 12:26:27 -0700}: commit: feat(private-office): Relationship Intelligence — people as graph nodes, cited profiles, briefing preparation
+d2de7655 HEAD@{2026-09-05 12:06:57 -0700}: commit: feat(private-office): Document Intelligence — vault, deterministic extraction, claim review
+f03e5698 HEAD@{2026-09-05 11:54:54 -0700}: commit: feat(private-office): shared evidence-ref contract, job record, capability audit vocabulary
+7e5408c2 HEAD@{2026-09-05 11:32:21 -0700}: commit: fix(mobile): stop the Office relocking itself for a cookie-authenticated member
+c2eebe40 HEAD@{2026-09-05 11:16:48 -0700}: commit: fix(mobile): let the passcode-reset sheet escape the keyboard
+d0e5fc66 HEAD@{2026-09-05 11:14:50 -0700}: commit: fix(private-office): bind cookie-auth grants to a stable session id, not raw cookie bytes
+b43c6581 HEAD@{2026-09-05 10:50:14 -0700}: commit: fix(private-office): bind unlock grants to the session family, not the rotating bearer
+4824983c HEAD@{2026-09-05 08:40:50 -0700}: commit: feat(private-office): build the Office operating environment — operations, capital graph, honest UX
+ca6e1522 HEAD@{2026-09-05 07:02:12 -0700}: pull --ff-only: Fast-forward
+8c5e280c HEAD@{2026-09-04 23:55:09 -0700}: commit: fix(mobile): tell a lapsed member to renew, not that the server is down
+20276001 HEAD@{2026-09-04 23:15:37 -0700}: commit: perf(mobile): memoize the Home feed row and window the list
+0f95501d HEAD@{2026-09-04 23:15:25 -0700}: commit: perf(backend): stop the feed's hot queries from scanning, and lift the request ceiling

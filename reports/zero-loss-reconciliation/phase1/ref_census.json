@@ -1,0 +1,817 @@
+{
+  "upstream": "origin/main",
+  "upstream_sha": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+  "refs": [
+    {
+      "ref": "refs/heads/claude/bold-hodgkin-9021f1",
+      "sha": "ee26862c37a1ad76f2fa39c56a4e869f704cc04f",
+      "merge_base": "ee26862c37a1ad76f2fa39c56a4e869f704cc04f",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/bold-jemison-81cdef",
+      "sha": "ba213cb8260ce40b84659ed54a03b483b4a804d5",
+      "merge_base": "ba213cb8260ce40b84659ed54a03b483b4a804d5",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/businessos-perf-flake",
+      "sha": "405470581bd74ec4443b8a489969bd16ed9da553",
+      "merge_base": "405470581bd74ec4443b8a489969bd16ed9da553",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/charming-poincare-180ccb",
+      "sha": "97acecb1151081bbacb3528c68be18049837ee11",
+      "merge_base": "97acecb1151081bbacb3528c68be18049837ee11",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/cool-pasteur-66d0e0",
+      "sha": "767f4fbb3837b4681377413c8ef844d953bdddd7",
+      "merge_base": "767f4fbb3837b4681377413c8ef844d953bdddd7",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/dreamy-proskuriakova-b042a9",
+      "sha": "2cbc6a637713871bb46e3a8ad0762dd43637bb57",
+      "merge_base": "2cbc6a637713871bb46e3a8ad0762dd43637bb57",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/fervent-bose-488f38",
+      "sha": "daa21d6212328e1987fcdf442874f49c7df4044a",
+      "merge_base": "0ab13efee533601fb2687e99755776b22cd27ca6",
+      "unique_commits": [],
+      "equivalent_upstream": 1,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/flamboyant-einstein-4510cf",
+      "sha": "a856843f76cd3f83eff34e206adf18d44f76733b",
+      "merge_base": "a856843f76cd3f83eff34e206adf18d44f76733b",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/loving-banach-1ed134",
+      "sha": "31d9685aaaa40ac8778e58815ce6b7ce68512ee6",
+      "merge_base": "31d9685aaaa40ac8778e58815ce6b7ce68512ee6",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/nostalgic-neumann-d9391f",
+      "sha": "997903cf3f6e42fad4acc799769b340f174493e6",
+      "merge_base": "6b7717543f7a7e685b5b0a88a93da45cbb5b43b8",
+      "unique_commits": [
+        {
+          "sha": "9b1085098c9d5331d449ef55cb49f76a894ad762",
+          "subject": "feat(private-office): private facts truth layer \u2014 supersession, evidence, conflicts, review, read model, HTTP"
+        },
+        {
+          "sha": "0473b530f885e6b4fcfb45f0eff444e2430946cb",
+          "subject": "feat(private-office): structural integrity sweep over the fact store"
+        },
+        {
+          "sha": "04164edd0145981b7dfb8554b800d9a7b382a9a9",
+          "subject": "feat(private-office): idempotent migration and conservative legacy backfill"
+        },
+        {
+          "sha": "997903cf3f6e42fad4acc799769b340f174493e6",
+          "subject": "feat(private-office): governed UNDX answer context \u2014 disputed facts carry no value"
+        }
+      ],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/pedantic-solomon-aa99d1",
+      "sha": "08f26e7bbaa91708acfff335a3feac6265f48bdc",
+      "merge_base": "08f26e7bbaa91708acfff335a3feac6265f48bdc",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/private-office-simplify",
+      "sha": "0f63959782133298285e0ab3e6c2ae6be7de918f",
+      "merge_base": "91067b3a88d468b9bc94b2f1383e3382c359885c",
+      "unique_commits": [
+        {
+          "sha": "0cb237029b60eee2c20a5ac878a8cde9bad164fe",
+          "subject": "Private Office: three capabilities, and no description of the rest"
+        },
+        {
+          "sha": "291be45746a00feb20ac31867b417f7f2e1a2218",
+          "subject": "Retarget the Office kill-switch suite onto a capability the Office still holds"
+        },
+        {
+          "sha": "dee12971e33bcde3243924df00f1a149a331b193",
+          "subject": "Private Office: draw only the capabilities this build has a screen for"
+        },
+        {
+          "sha": "b5f06a4f18ff8db2ad5df5719f317940c76026cd",
+          "subject": "Private Office: make Relationship Intelligence a contact system keyed on identity"
+        },
+        {
+          "sha": "0f63959782133298285e0ab3e6c2ae6be7de918f",
+          "subject": "Private Office: make the same-name test assert a collision that is actually one"
+        }
+      ],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/pushkit-callkit-voip",
+      "sha": "121604e28529355e60af149fa0740eaae81b3c7e",
+      "merge_base": "121604e28529355e60af149fa0740eaae81b3c7e",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/claude/vigilant-solomon-1981e1",
+      "sha": "21630fa008d28f19535542b0801b45f5c92265f4",
+      "merge_base": "21630fa008d28f19535542b0801b45f5c92265f4",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/main",
+      "sha": "5f24c970edba1a58e6fd4af6ea6285c1aef2a85c",
+      "merge_base": "7b3bf5ecde476545d9ff77f57e5191bb1a575c63",
+      "unique_commits": [
+        {
+          "sha": "f1b74e89e2606b84ddc9f5dbcf72d284162caacb",
+          "subject": "Private Office contains three things"
+        },
+        {
+          "sha": "5f24c970edba1a58e6fd4af6ea6285c1aef2a85c",
+          "subject": "Private Office: prove every closed vocabulary can match itself"
+        }
+      ],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/heads/preserve/bold-hodgkin-media-work",
+      "sha": "77e34b54c8bfd0aaf8077574ce749ee6ea61c1fb",
+      "merge_base": "d45a2664e6135674c8fc324c31f89ee89e101baf",
+      "unique_commits": [],
+      "equivalent_upstream": 6,
+      "error": null,
+      "kind": "local"
+    },
+    {
+      "ref": "refs/remotes/origin/backup/translation-current",
+      "sha": "bd845a737f91e9a8e313bc6f55fd8a5ef81866f2",
+      "merge_base": "bd845a737f91e9a8e313bc6f55fd8a5ef81866f2",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/backup/undx-fixes-3456cd73",
+      "sha": "3456cd73707e09c2b5de9ce5b10ea258d78d63b2",
+      "merge_base": "3456cd73707e09c2b5de9ce5b10ea258d78d63b2",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/adoring-shirley-647df4",
+      "sha": "401de8ffb23741a78bb8b07eb06570eb98af7be4",
+      "merge_base": "401de8ffb23741a78bb8b07eb06570eb98af7be4",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/businessos-perf-flake",
+      "sha": "405470581bd74ec4443b8a489969bd16ed9da553",
+      "merge_base": "405470581bd74ec4443b8a489969bd16ed9da553",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/dreamy-easley-33b2a3",
+      "sha": "36ea307d2b8377f788ed69134bf06082171f5ae1",
+      "merge_base": "36ea307d2b8377f788ed69134bf06082171f5ae1",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/dreamy-williamson-82bffc",
+      "sha": "0c12ee763fcf48cf5eb9be9737e9ee5a9ff08754",
+      "merge_base": "0c12ee763fcf48cf5eb9be9737e9ee5a9ff08754",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/ecstatic-sanderson-f621e3",
+      "sha": "1169e44421abd88e63d908cddc0b4ebe845055a7",
+      "merge_base": "1169e44421abd88e63d908cddc0b4ebe845055a7",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/elegant-meitner-6ef296",
+      "sha": "23f830c154e32a93905c8b9812447953294733a7",
+      "merge_base": "23f830c154e32a93905c8b9812447953294733a7",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/eloquent-golick-1ce78c",
+      "sha": "8a2b814cb70fe96aed10812cf8082e8dec039dc1",
+      "merge_base": "8a2b814cb70fe96aed10812cf8082e8dec039dc1",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/fervent-chatelet-59f225",
+      "sha": "091d646431c603b48859004e30eae926c7874fbd",
+      "merge_base": "091d646431c603b48859004e30eae926c7874fbd",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/flamboyant-einstein-4510cf",
+      "sha": "a856843f76cd3f83eff34e206adf18d44f76733b",
+      "merge_base": "a856843f76cd3f83eff34e206adf18d44f76733b",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/friendly-kare-2eeaeb",
+      "sha": "b6182304c56fcd15c415680fc98ff582c34598aa",
+      "merge_base": "b6182304c56fcd15c415680fc98ff582c34598aa",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/happy-lalande-31ed6b",
+      "sha": "e084b188f16fde33ff85e46563d12a8640c43277",
+      "merge_base": "e084b188f16fde33ff85e46563d12a8640c43277",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/intelligent-spence-e65a89",
+      "sha": "cde44157f7bc499e446d48263db3bb3270f5053d",
+      "merge_base": "cde44157f7bc499e446d48263db3bb3270f5053d",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/loving-banach-1ed134",
+      "sha": "31d9685aaaa40ac8778e58815ce6b7ce68512ee6",
+      "merge_base": "31d9685aaaa40ac8778e58815ce6b7ce68512ee6",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/naughty-jepsen-4586d4",
+      "sha": "fe5d4d156d6a0862bd11e4a1b99d41a1880a2c91",
+      "merge_base": "fe5d4d156d6a0862bd11e4a1b99d41a1880a2c91",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/nostalgic-neumann-d9391f",
+      "sha": "997903cf3f6e42fad4acc799769b340f174493e6",
+      "merge_base": "6b7717543f7a7e685b5b0a88a93da45cbb5b43b8",
+      "unique_commits": [
+        {
+          "sha": "9b1085098c9d5331d449ef55cb49f76a894ad762",
+          "subject": "feat(private-office): private facts truth layer \u2014 supersession, evidence, conflicts, review, read model, HTTP"
+        },
+        {
+          "sha": "0473b530f885e6b4fcfb45f0eff444e2430946cb",
+          "subject": "feat(private-office): structural integrity sweep over the fact store"
+        },
+        {
+          "sha": "04164edd0145981b7dfb8554b800d9a7b382a9a9",
+          "subject": "feat(private-office): idempotent migration and conservative legacy backfill"
+        },
+        {
+          "sha": "997903cf3f6e42fad4acc799769b340f174493e6",
+          "subject": "feat(private-office): governed UNDX answer context \u2014 disputed facts carry no value"
+        }
+      ],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/peaceful-tharp-038571",
+      "sha": "a45c43316134461991b7ff30bedd9a1e2637c34d",
+      "merge_base": "a45c43316134461991b7ff30bedd9a1e2637c34d",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/premium-subscription-details",
+      "sha": "1ae798868127a2f246e6eca7035188cb559521b4",
+      "merge_base": "1ae798868127a2f246e6eca7035188cb559521b4",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/premium-watchlist-row",
+      "sha": "4cd34455aac1e6d70e0386f118c35c129475372d",
+      "merge_base": "4cd34455aac1e6d70e0386f118c35c129475372d",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/pushkit-callkit-voip",
+      "sha": "121604e28529355e60af149fa0740eaae81b3c7e",
+      "merge_base": "121604e28529355e60af149fa0740eaae81b3c7e",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/qa-groups-rooms",
+      "sha": "5d12e3521e65cba7e5fb9f340b03e6f8c4dc5d12",
+      "merge_base": "5d12e3521e65cba7e5fb9f340b03e6f8c4dc5d12",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/recursing-antonelli-a52df6",
+      "sha": "311a091a8c3abc68e44b1ff4b2952e954196cda7",
+      "merge_base": "311a091a8c3abc68e44b1ff4b2952e954196cda7",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/recursing-lumiere-cf0475",
+      "sha": "97519394b26aa49c6f2119264cb3991f7e8ea4a2",
+      "merge_base": "97519394b26aa49c6f2119264cb3991f7e8ea4a2",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/relaxed-jepsen-326109",
+      "sha": "2c587b6b643950833eb0a8c60eecd478b4a2f491",
+      "merge_base": "2c587b6b643950833eb0a8c60eecd478b4a2f491",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/suspicious-kepler-f0579c",
+      "sha": "4a874e38c00bc475d47bd5ba758e5cf85309ab27",
+      "merge_base": "7cacdcd9b444c719c857de7fcdb56526b82a9b13",
+      "unique_commits": [],
+      "equivalent_upstream": 1,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/trusting-neumann-381eb0",
+      "sha": "06e641b1d1b3b6e8b676287e4a4261a1f3b70f06",
+      "merge_base": "06e641b1d1b3b6e8b676287e4a4261a1f3b70f06",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/claude/web-native-parity-census",
+      "sha": "7dfd5acf8dc62375b30729a6fafb0665a326bd57",
+      "merge_base": "7dfd5acf8dc62375b30729a6fafb0665a326bd57",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/agora-rtc-migration",
+      "sha": "11b8d99490b8593ddbe1e6cf09aa72f0342e3b63",
+      "merge_base": "11b8d99490b8593ddbe1e6cf09aa72f0342e3b63",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/agora-rtc-migration.lock.moved.5",
+      "sha": "b34f47b2b5ac1e247355b5ec0ae2772855d6f415",
+      "merge_base": "b34f47b2b5ac1e247355b5ec0ae2772855d6f415",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/app-review-final-readiness",
+      "sha": "1ec72577caad41b744a1c1ce1e10d51b4c8b3ea8",
+      "merge_base": "1ec72577caad41b744a1c1ce1e10d51b4c8b3ea8",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/apple-iap-root-ca-g3",
+      "sha": "72b3a6a02eb15bc02d1a5eb8b6eaae4419694e8b",
+      "merge_base": "72b3a6a02eb15bc02d1a5eb8b6eaae4419694e8b",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/automated-account-branding-production",
+      "sha": "6a3f724ffe482ce2477f21e84bd15a7f3367598b",
+      "merge_base": "6a3f724ffe482ce2477f21e84bd15a7f3367598b",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/automated-account-branding-verification",
+      "sha": "d5157e163bfa862de6f02b2fd83c8d080858d4e9",
+      "merge_base": "d5157e163bfa862de6f02b2fd83c8d080858d4e9",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/continue-development-on-coinpilotxai",
+      "sha": "4d653bd707e3f0a7cce0f4931d6a7f3d2552819a",
+      "merge_base": "4d653bd707e3f0a7cce0f4931d6a7f3d2552819a",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/crypto-reuse-lock",
+      "sha": "99fd3f31877c17c025d8cd95c63ef19295c6486a",
+      "merge_base": "99fd3f31877c17c025d8cd95c63ef19295c6486a",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/emergency-live-audio-recovery",
+      "sha": "6f667c243de6f3c6dd0d947c0dd618f771b85512",
+      "merge_base": "6f667c243de6f3c6dd0d947c0dd618f771b85512",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/founding-path",
+      "sha": "73b34f35d895c25f7cd29880536d107226bde1f8",
+      "merge_base": "73b34f35d895c25f7cd29880536d107226bde1f8",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/governed-realtime-audio",
+      "sha": "ef2d09e393fec973835310515a1fe827cb2569a2",
+      "merge_base": "ef2d09e393fec973835310515a1fe827cb2569a2",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/live-shared-audio-engine",
+      "sha": "5f7830abfd66b364c45621a20d264cb1b707497d",
+      "merge_base": "5f7830abfd66b364c45621a20d264cb1b707497d",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/livestream-audio-route-v2",
+      "sha": "b76e8721568d6b65108b0638a10592c9e3296b33",
+      "merge_base": "b76e8721568d6b65108b0638a10592c9e3296b33",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/persistent-crypto-delivery-lock",
+      "sha": "2ce1929c55a08982733d3cba4869dae0826d3e0e",
+      "merge_base": "2ce1929c55a08982733d3cba4869dae0826d3e0e",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/premium-crypto-intelligence",
+      "sha": "09f4a416981fc9f59db2373b14960152ee4bd075",
+      "merge_base": "09f4a416981fc9f59db2373b14960152ee4bd075",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/profile-posts-production",
+      "sha": "d84f51a8c2da6c1ca75b0302e1db96d22c4958e3",
+      "merge_base": "d84f51a8c2da6c1ca75b0302e1db96d22c4958e3",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/sentinel-production-activation",
+      "sha": "1ca3ab72ae938abdc91eed6047b34a30b64e6217",
+      "merge_base": "1ca3ab72ae938abdc91eed6047b34a30b64e6217",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/store-dashboard-live",
+      "sha": "c5e523d625166414573e618c1c043092794e7163",
+      "merge_base": "c5e523d625166414573e618c1c043092794e7163",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/undx-local-memory-ingest",
+      "sha": "7f75af193d70e63fc0ea9e0d961b31d920db8a43",
+      "merge_base": "7f75af193d70e63fc0ea9e0d961b31d920db8a43",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/undx-multi-model-fabric",
+      "sha": "4c43597b184cbae7b744592e575c451a6d9f0142",
+      "merge_base": "4c43597b184cbae7b744592e575c451a6d9f0142",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/undx-save-memory",
+      "sha": "92b2693fc0894f22b2e7cba1748b1a474bf2f259",
+      "merge_base": "92b2693fc0894f22b2e7cba1748b1a474bf2f259",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/undx-translation-release",
+      "sha": "bd845a737f91e9a8e313bc6f55fd8a5ef81866f2",
+      "merge_base": "bd845a737f91e9a8e313bc6f55fd8a5ef81866f2",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/undx-v3-preservation-20260719",
+      "sha": "cd8206e4ce177d4cbde9dc479cddb5b848414f58",
+      "merge_base": "cd8206e4ce177d4cbde9dc479cddb5b848414f58",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/unified-realtime-audio-foundation",
+      "sha": "cb3b1d97b2dee025a8a59046fc5f871e4371d9a4",
+      "merge_base": "cb3b1d97b2dee025a8a59046fc5f871e4371d9a4",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/video-call-audio-controls-20260726",
+      "sha": "56f4d0a7d76e72dc00794b7dda47ef9d94bbd6d9",
+      "merge_base": "56f4d0a7d76e72dc00794b7dda47ef9d94bbd6d9",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/codex/work-on-it",
+      "sha": "7cc67fae3c1d5945c49efe7c1230c2ec61d0b86b",
+      "merge_base": "7cc67fae3c1d5945c49efe7c1230c2ec61d0b86b",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/feat/business-profile-live",
+      "sha": "c99faf32ebaf6b6e0c3dd9e33b00c16acb1c848e",
+      "merge_base": "c99faf32ebaf6b6e0c3dd9e33b00c16acb1c848e",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/feat/sentinel-server-defense-mesh",
+      "sha": "907d92c753568ef113314d8f6a7bdf8df6513171",
+      "merge_base": "907d92c753568ef113314d8f6a7bdf8df6513171",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/feature/spatial-console",
+      "sha": "5a6a4f8da6457be6df557c8a3a713742eaf46085",
+      "merge_base": "5a6a4f8da6457be6df557c8a3a713742eaf46085",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/briefings-evaluate-without-push-subscription",
+      "sha": "3a85554ab6d3339979c024dc03971ac6e3b0a02e",
+      "merge_base": "3a85554ab6d3339979c024dc03971ac6e3b0a02e",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/briefings-notification-type-mapping",
+      "sha": "975bb3a27abe1d64a9e65f5d8083a939b91b44a2",
+      "merge_base": "975bb3a27abe1d64a9e65f5d8083a939b91b44a2",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/presence-schema-deadlock",
+      "sha": "2b25ef4d97d26dbfb18e8d8f83b0b687adcaec60",
+      "merge_base": "2b25ef4d97d26dbfb18e8d8f83b0b687adcaec60",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/fix/status-rail-placeholder-translation",
+      "sha": "eacb6ab261b2ff7fbbcb07505d63aef4a46d4a3e",
+      "merge_base": "eacb6ab261b2ff7fbbcb07505d63aef4a46d4a3e",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/integration/release-backend-deploy",
+      "sha": "1426189193d03a15725ab92dcf8cdf1dff62b51b",
+      "merge_base": "1426189193d03a15725ab92dcf8cdf1dff62b51b",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/preserve/private-office-wip-20260902",
+      "sha": "a679dcedfba823d79190fa68d4d5ba1801cfff25",
+      "merge_base": "a679dcedfba823d79190fa68d4d5ba1801cfff25",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/release/full-sweep-20260826",
+      "sha": "16d4a98aa22c0c60e9a67b3090cf9a046528df94",
+      "merge_base": "16d4a98aa22c0c60e9a67b3090cf9a046528df94",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/release/undx-nexus-core-v4",
+      "sha": "5260a9203ca63a3efaaaf43baa3d7412dc153a19",
+      "merge_base": "5260a9203ca63a3efaaaf43baa3d7412dc153a19",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/release/undx-sovereign-mind-v3",
+      "sha": "6cce672808982505f754c2b71586dfe824eb0304",
+      "merge_base": "6cce672808982505f754c2b71586dfe824eb0304",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    },
+    {
+      "ref": "refs/remotes/origin/work/localization-i18n-wave",
+      "sha": "a1fd0bbf71c2d77e0a9d0b022ba2e2c118dfe65d",
+      "merge_base": "a1fd0bbf71c2d77e0a9d0b022ba2e2c118dfe65d",
+      "unique_commits": [],
+      "equivalent_upstream": 0,
+      "error": null,
+      "kind": "remote"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+zero-loss census against origin/main (d007e2ba63af)
+refs examined: 83
+refs fully contained upstream by patch-id: 79
+refs carrying candidate unshipped commits: 4
+
+claude/private-office-simplify  (+5 unique, 0 already upstream)
+    0cb237029b60 Private Office: three capabilities, and no description of the rest
+    291be45746a0 Retarget the Office kill-switch suite onto a capability the Office still holds
+    dee12971e33b Private Office: draw only the capabilities this build has a screen for
+    b5f06a4f18ff Private Office: make Relationship Intelligence a contact system keyed on identity
+    0f6395978213 Private Office: make the same-name test assert a collision that is actually one
+
+claude/nostalgic-neumann-d9391f  (+4 unique, 0 already upstream)
+    9b1085098c9d feat(private-office): private facts truth layer — supersession, evidence, conflicts, review, read model, HTTP
+    0473b530f885 feat(private-office): structural integrity sweep over the fact store
+    04164edd0145 feat(private-office): idempotent migration and conservative legacy backfill
+    997903cf3f6e feat(private-office): governed UNDX answer context — disputed facts carry no value
+
+origin/claude/nostalgic-neumann-d9391f  (+4 unique, 0 already upstream)
+    9b1085098c9d feat(private-office): private facts truth layer — supersession, evidence, conflicts, review, read model, HTTP
+    0473b530f885 feat(private-office): structural integrity sweep over the fact store
+    04164edd0145 feat(private-office): idempotent migration and conservative legacy backfill
+    997903cf3f6e feat(private-office): governed UNDX answer context — disputed facts carry no value
+
+main  (+2 unique, 0 already upstream)
+    f1b74e89e260 Private Office contains three things
+    5f24c970edba Private Office: prove every closed vocabulary can match itself
+
