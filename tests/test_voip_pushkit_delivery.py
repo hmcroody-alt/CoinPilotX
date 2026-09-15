@@ -703,5 +703,96 @@ class AppleComplianceTest(unittest.TestCase):
             conn.close()
 
 
+class SchemaGuardTest(unittest.TestCase):
+    """The token table's DDL must not run on every call.
+
+    `ring_devices` reads `voip_push_tokens` for every outgoing call, so an
+    unguarded `ensure_schema` puts `CREATE INDEX IF NOT EXISTS` — which takes a
+    ShareLock on the table even when the index already exists — inside the same
+    transaction as the call's own writes. Two workers interleaving (write, DDL)
+    against (DDL, write) is the lock cycle documented in `services/schema_guard`.
+    """
+
+    def setUp(self):
+        _use_module_database()
+        voip.ensure_schema_committed.reset()
+        voip._forget_schema()
+
+    def tearDown(self):
+        # Never leave this process convinced the table exists: the other classes
+        # here build their own cursors and rely on `ensure_schema` still running.
+        voip.ensure_schema_committed.reset()
+        voip._forget_schema()
+
+    def test_the_ddl_runs_once_per_process_not_once_per_call(self):
+        conn, cur = _open()
+        try:
+            counting = mock.MagicMock(wraps=cur)
+            voip.ensure_schema_committed(counting, conn)
+            first = counting.execute.call_count
+            self.assertGreater(first, 0, "first call must actually create the table")
+
+            for _ in range(5):
+                voip.ensure_schema_committed(counting, conn)
+            self.assertEqual(
+                counting.execute.call_count,
+                first,
+                "the guard let DDL through on a later call",
+            )
+        finally:
+            conn.close()
+
+    def test_a_guarded_process_skips_the_unguarded_entry_point_too(self):
+        """`ring_devices` reaches the table through plain `ensure_schema`."""
+        conn, cur = _open()
+        try:
+            voip.ensure_schema_committed(cur, conn)
+            counting = mock.MagicMock(wraps=cur)
+            voip.ensure_schema(counting)
+            self.assertEqual(
+                counting.execute.call_count, 0, "per-call DDL survived the guard"
+            )
+        finally:
+            conn.close()
+
+    def test_ddl_that_could_not_commit_is_not_cached(self):
+        """Uncommitted DDL dies at connection close.
+
+        Caching the guard around it is how a worker convinces itself the table
+        exists and then never finds it.
+        """
+        conn, cur = _open()
+        try:
+            failing = mock.MagicMock(wraps=conn)
+            failing.commit.side_effect = RuntimeError("commit refused")
+
+            self.assertFalse(voip.ensure_schema_committed(cur, failing))
+            self.assertFalse(voip._SCHEMA_READY, "a failed commit marked the schema ready")
+
+            counting = mock.MagicMock(wraps=cur)
+            voip.ensure_schema(counting)
+            self.assertGreater(
+                counting.execute.call_count, 0, "DDL was skipped after a failed commit"
+            )
+        finally:
+            conn.close()
+
+    def test_the_guard_is_forgettable_between_tests(self):
+        """A module-level flag that outlives a test database is a cross-suite failure."""
+        conn, cur = _open()
+        try:
+            voip.ensure_schema_committed(cur, conn)
+            self.assertTrue(voip._SCHEMA_READY)
+
+            from services import schema_guard
+
+            schema_guard.reset_all()
+            self.assertFalse(
+                voip._SCHEMA_READY, "reset_all did not reach this module's cache"
+            )
+        finally:
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()

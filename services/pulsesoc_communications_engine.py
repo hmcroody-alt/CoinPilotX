@@ -332,6 +332,11 @@ def _base64url(data: bytes) -> str:
 def _open_db():
     conn, cur = comm_service._open_db()
     _ensure_call_schema(cur, conn)
+    # `ring_devices` reads `voip_push_tokens` on every outgoing call, so its DDL
+    # gets the same once-per-worker treatment as the call tables above. Each
+    # module owns its own guard and its own commit; the second commit costs one
+    # round trip on first use per worker and nothing afterwards.
+    pulsesoc_voip_push.ensure_schema_committed(cur, conn)
     return conn, cur
 
 

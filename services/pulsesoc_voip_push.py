@@ -43,6 +43,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from services import schema_guard
+
 # Deterministic namespace for call UUIDs. CallKit identifies a call by UUID, but
 # the canonical PulseSoc call identity is `communication_calls.public_id`
 # ("call_<token>"), which is not a UUID. Deriving the UUID from the public id with
@@ -159,6 +161,23 @@ def is_configured() -> bool:
     )
 
 
+_SCHEMA_READY = False
+
+
+def _forget_schema() -> None:
+    """Forget that the table was created.
+
+    Production never calls this. Tests do: each builds a fresh database while this
+    module-level flag would otherwise persist for the whole session, and the
+    second test to run would skip creation and then find no table.
+    """
+    global _SCHEMA_READY
+    _SCHEMA_READY = False
+
+
+schema_guard.register_resetter(_forget_schema)
+
+
 def ensure_schema(cur: Any) -> None:
     """Create the VoIP token table.
 
@@ -166,13 +185,47 @@ def ensure_schema(cur: Any) -> None:
     connection into a function that opens a second one is how this codebase has
     deadlocked on Postgres before (the DDL never commits, then the second
     connection blocks on the uncommitted catalog lock).
+
+    Skipped once ``ensure_schema_committed`` has durably created the table in this
+    process. Until then it runs unguarded, because a caller that did not arrive
+    through ``_open_db`` still needs its table to exist.
     """
+    if _SCHEMA_READY:
+        return
     cur.execute(VOIP_TOKENS_TABLE)
     for statement in VOIP_TOKEN_INDEXES:
         try:
             cur.execute(statement)
         except Exception:  # pragma: no cover - index creation is best effort
             logging.debug("PULSESOC_VOIP_INDEX_SKIPPED statement=%s", statement[:80])
+
+
+@schema_guard.run_once_per_process
+def ensure_schema_committed(cur: Any, conn: Any) -> bool:
+    """Create the VoIP token table once per worker, not once per call.
+
+    ``ring_devices`` reads this table on *every* outgoing call, so the unguarded
+    ``ensure_schema`` above put a ``CREATE INDEX IF NOT EXISTS`` — which takes a
+    ShareLock on ``voip_push_tokens`` even when the index already exists — inside
+    the same transaction as the call's own writes. That is the shape described in
+    ``services/schema_guard``: two workers interleaving (write, DDL) against
+    (DDL, write) is a lock cycle, and the losing thread strands its connection.
+
+    The flag is set only after a durable commit. Caching it on DDL that a later
+    ``rollback`` discards is how a worker convinces itself that a table exists
+    which it then never finds.
+    """
+    global _SCHEMA_READY
+    ensure_schema(cur)
+    try:
+        conn.commit()
+    except Exception:
+        # Leave the guard uncached and let the next caller retry. The caller
+        # itself carries on exactly as unguarded code would have.
+        logging.warning("PULSESOC_VOIP_SCHEMA_COMMIT_FAILED", exc_info=True)
+        return False
+    _SCHEMA_READY = True
+    return True
 
 
 def _event(name: str, **fields: Any) -> None:
