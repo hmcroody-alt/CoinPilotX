@@ -28,6 +28,7 @@ from flask import Blueprint, request
 
 from services import private_office_routes as po_http
 from services import pulsesoc_communications_engine as call_engine
+from services.private_office import meeting_contacts as po_meeting_contacts
 from services.private_office import meetings as po_meetings
 
 MEETINGS_FEATURE_ID = "private_meetings"
@@ -357,9 +358,17 @@ def api_private_meetings_invite(meeting_ref: str):
         if isinstance(raw_ids, list) else []
 
     def work(cur):
-        return po_meetings.invite_users(
+        result = po_meetings.invite_users(
             cur, actor_user_id=user["user_id"], meeting_ref=meeting_ref,
             user_ids=user_ids, message=str(body.get("message") or ""))
+        # §19: whoever the member just invited is somebody they know, so they
+        # belong in the directory without being typed a second time. Strictly
+        # after the invite, and it cannot fail one — see meeting_contacts.
+        result["directory"] = po_meeting_contacts.record_invitees(
+            cur, owner_user_id=user["user_id"],
+            user_ids=result.get("invited") or [],
+            actor_user_id=user["user_id"])
+        return result
 
     result, err = _run(work, log_tag="PRIVATE_MEETINGS_INVITE_FAILED",
                        fail_message="We could not send those invites just now.")
