@@ -74,20 +74,38 @@ from services.private_office.tiers import (
 OFFICE_FEATURE_ID = "private_office"
 
 #: Children in display order. This is the room's contents, and the order is a
-#: product decision rather than an alphabetisation: the capability that works
-#: comes first, and the unbuilt ones follow in the order they are planned.
+#: product decision rather than an alphabetisation.
+#:
+#: Deliberately reduced to two. Private Office is Relationship Intelligence,
+#: Private Meetings and Office Security — and Office Security is not a child
+#: here on purpose: it is the door, not a thing in the room. It has its own
+#: entry point (PrivateOfficeSecurityScreen, /api/private-office/security/*)
+#: which must stay reachable even when *no* child opens, because a member who
+#: cannot enter still has to be able to reset their passcode.
+#:
+#: Eight ids were removed from this tuple as a product decision, not a code
+#: cleanup: private_facts, capital_graph, private_office.operations,
+#: private_briefings, private_shield, private_shield.breach_monitoring,
+#: private_office.document.extraction, human_concierge. Their rows in
+#: feature_matrix survive so the ids still resolve — an id that vanishes from
+#: the matrix is not "retired", it is unranked, and access.decide would then
+#: have no canonical tier to refuse against. Retired-but-resolvable is the
+#: shape that keeps a stale client honest: it asks, and it is told no.
 OFFICE_CHILD_IDS: tuple[str, ...] = (
-    "private_facts",
-    "capital_graph",
-    "private_office.operations",
-    "private_briefings",
     "relationship_intelligence",
-    "private_shield",
-    "private_shield.breach_monitoring",
-    "private_office.document.extraction",
     "private_meetings",
-    "human_concierge",
 )
+
+# Re-listing a retired id here would put a row back on the screen that every
+# other surface refuses, so the member would tap a tile and be told no by the
+# endpoint behind it. Caught at import rather than in review.
+_retired_children = set(OFFICE_CHILD_IDS) & _fm.RETIRED_FEATURE_IDS
+if _retired_children:
+    raise ValueError(
+        "retired feature ids listed as Office children: "
+        + ", ".join(sorted(_retired_children))
+    )
+del _retired_children
 
 # --- entry states ------------------------------------------------------------
 

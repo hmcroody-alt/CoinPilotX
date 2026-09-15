@@ -319,12 +319,16 @@ BLOCKED_DEEP_LINKS = {
 #: it and lands in `unproven` — correct, but it would leave a resolved row
 #: reading like an open question forever. An entry here is not an assertion that
 #: the row is fine; it is a pointer to the thing that keeps checking.
+#
+# `/pulse/private-office/:view` was the first entry here and is gone. Its
+# vocabulary was `RECORD_VIEWS` in `mobile-native/src/api/privateRecords.ts`,
+# the six Private Operations record views; Private Operations was withdrawn, the
+# client file is deleted, the app publishes no such link, and the web serves no
+# `<any(...):view>` rule. The row it annotated no longer exists, so the entry
+# could not stay: `write_deep_link_doc` fails outright on a pointer whose row is
+# not an unproven hub-only link, and it would have been right to. The test it
+# named went with it.
 PROVEN_ELSEWHERE = {
-    "/pulse/private-office/:view": (
-        "tests/web_parity/test_private_office_views.py",
-        "`:view` takes the six-entry RECORD_VIEWS vocabulary, not a path. The "
-        "web serves all six via an `any(...)` enumeration that the test "
-        "compares member-for-member against the app's own list."),
     "/dashboard/:legacyGroup/:legacyModule/:legacySubmodule?": (
         "tests/web_parity/test_dashboard_legacy_aliases.py",
         "Two parameters, so single-segment sampling declines it rather than "

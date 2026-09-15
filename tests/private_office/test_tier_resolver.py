@@ -299,6 +299,15 @@ def test_unbuilt_features_are_never_entitled_at_any_tier():
     cannot go stale the next time something ships. The row named here stays as
     a canary — if it is quietly flipped to IMPLEMENTED without a provider
     behind it, this fails by name rather than by count.
+
+    ``private_shield.breach_monitoring`` is now *retired* as well as unbuilt,
+    which changes what the named canary can still prove. ``availability`` and
+    ``is_entitled`` answer a tier-and-implementation question and are not
+    retirement-aware, so they are still really being exercised here. The
+    ``decide`` half is not: retirement is resolved first, so a retired row would
+    report RETIRED no matter how the implementation half behaved. That is why
+    the surface assertion below is split by retirement rather than relaxed —
+    relaxing it would have let every retired row pass it for free.
     """
     for feature_id in ("private_shield.breach_monitoring",):
         got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
@@ -311,6 +320,9 @@ def test_unbuilt_features_are_never_entitled_at_any_tier():
     unbuilt = [spec.feature_id for spec in fm.FEATURES.values()
                if spec.implementation != fm.IMPL_IMPLEMENTED]
     assert unbuilt, "no unbuilt rows left — this check has gone vacuous"
+    live_unbuilt = [f for f in unbuilt if not fm.is_retired(f)]
+    assert live_unbuilt, \
+        "every unbuilt row is retired — the NOT_IMPLEMENTED surface is untested"
     for feature_id in unbuilt:
         got = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
         assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
@@ -325,29 +337,110 @@ def test_unbuilt_features_are_never_entitled_at_any_tier():
              "effective_tier": tiers.TIER_PRIVATE_OFFICE},
             feature_id,
         )
-        assert decision["decision"] == po_access.NOT_IMPLEMENTED, feature_id
+        expected = (po_access.RETIRED if fm.is_retired(feature_id)
+                    else po_access.NOT_IMPLEMENTED)
+        assert decision["decision"] == expected, feature_id
+        # The priced-surface half holds across both verdicts, and it is the half
+        # a member can actually see. Neither "not built yet" nor "gone" may be
+        # rendered with a price next to it.
         assert decision["minimum_tier"] == "", feature_id
 
 
-def test_the_capital_graph_is_built_and_gated_at_private():
-    """The other half of the flip above, so the change is pinned both ways.
+#: The kill switch each retired row is expected to still carry. Hardcoded
+#: rather than read back off the spec, because reading it off the spec would
+#: assert ``spec.flag_env == spec.flag_env`` and pass for any value including
+#: ``None``. ``private_shield.breach_monitoring`` is the one row with no switch
+#: — it has no implementation to switch off — and that absence is pinned too.
+_RETIRED_KILL_SWITCHES = {
+    "capital_graph": "CAPITAL_GRAPH_ENABLED",
+    "human_concierge": "PRIVATE_CONCIERGE_ENABLED",
+    "private_briefings": "PRIVATE_BRIEFINGS_ENABLED",
+    "private_facts": "PRIVATE_FACTS_ENABLED",
+    "private_office.conversations": "PRIVATE_CONVERSATIONS_ENABLED",
+    "private_office.document.extraction": "PRIVATE_DOCUMENTS_ENABLED",
+    "private_office.operations": "PRIVATE_OPERATIONS_ENABLED",
+    "private_office.records": "PRIVATE_STRUCTURED_RECORDS_ENABLED",
+    "private_shield": "PRIVATE_SHIELD_ENABLED",
+    "private_shield.breach_monitoring": None,
+}
 
-    ``capital_graph`` moved to IMPLEMENTED because a writer and an owner-scoped
-    reader now exist. That must show up as ENTITLED at PRIVATE and above and as
-    NOT_ENTITLED below — an implemented feature that silently stayed unreachable
-    would be indistinguishable, from the member's side, from one nobody built.
+
+def test_retired_rows_keep_their_matrix_state_and_are_refused_at_the_surface():
+    """Five rows here used to have one test each, and every one of them said
+    its feature was built — two of them said it was *for sale*, and named the
+    tier a member should buy to get it.
+
+    All five are retired now. All five of those tests still passed, unchanged,
+    because ``availability`` and ``is_entitled`` answer an
+    implementation-and-tier question and deliberately know nothing about
+    retirement. That design is right — retirement is a product fact and it is
+    answered in exactly one place, ``access.decide``, before the resolver gate —
+    but it meant five green tests were asserting true things about the matrix
+    while their names and docstrings made a false claim about the product. A
+    test that passes for a reason other than the one it states is the failure
+    mode this whole effort exists to remove, so they are restated here as one
+    table rather than deleted.
+
+    Kept, because two facts about a retired row are still worth pinning. Its
+    implementation state is real history — a row silently flipped to
+    IMPLEMENTED with nothing behind it would be a lie whether or not anyone can
+    reach it — and its kill switch is what makes the row safe to un-retire: a
+    retired row that quietly loses ``flag_env`` is a row that cannot be turned
+    back off after it is turned back on.
+
+    Restated, because the honest claim is the *pair*. The matrix may well say
+    ENTITLED. The surface must still say RETIRED, and must strip the price.
     """
-    got = fm.availability("capital_graph", tiers.TIER_PRIVATE)
-    assert got["implementation"] == fm.IMPL_IMPLEMENTED
-    assert got["availability"] == fm.AVAIL_ENTITLED
-    assert fm.is_entitled("capital_graph", tiers.TIER_PRIVATE_OFFICE)
+    assert set(_RETIRED_KILL_SWITCHES) == set(fm.RETIRED_FEATURE_IDS), (
+        "the retirement set moved without this table moving with it; "
+        "added: "
+        f"{sorted(set(fm.RETIRED_FEATURE_IDS) - set(_RETIRED_KILL_SWITCHES))}, "
+        "removed: "
+        f"{sorted(set(_RETIRED_KILL_SWITCHES) - set(fm.RETIRED_FEATURE_IDS))}"
+    )
 
-    for tier in (tiers.TIER_FREE, tiers.TIER_PREMIUM):
-        below = fm.availability("capital_graph", tier)
-        assert below["availability"] == fm.AVAIL_NOT_ENTITLED, tier
-        # Here a minimum_tier is correct and required: this one is real, it is
-        # for sale, and the member needs to know what to buy.
-        assert below["minimum_tier"] == tiers.TIER_PRIVATE, tier
+    blind_rows = []
+    for feature_id, flag_env in sorted(_RETIRED_KILL_SWITCHES.items()):
+        spec = fm.get(feature_id)
+        assert spec is not None, feature_id
+        assert spec.flag_env == flag_env, feature_id
+
+        top = fm.availability(feature_id, tiers.TIER_PRIVATE_OFFICE)
+        entitled = fm.is_entitled(feature_id, tiers.TIER_PRIVATE_OFFICE)
+        if spec.implementation != fm.IMPL_IMPLEMENTED:
+            # Unbuilt stays unbuilt. Retirement does not launder a row that
+            # never had anything behind it into one that did.
+            assert top["availability"] == fm.AVAIL_NOT_IMPLEMENTED, feature_id
+            assert not entitled, feature_id
+        elif top["availability"] == fm.AVAIL_ENTITLED:
+            assert entitled, feature_id
+            blind_rows.append(feature_id)
+        else:
+            # Built, but its kill switch defaults off — a separate lever from
+            # retirement, and the two must not be confused for each other.
+            assert top["availability"] == fm.AVAIL_FEATURE_DISABLED, feature_id
+            assert not entitled, feature_id
+
+        decision = po_access.decide(
+            {"resolver_state": tiers.RESOLVER_OK,
+             "effective_tier": tiers.TIER_PRIVATE_OFFICE},
+            feature_id,
+        )
+        assert decision["decision"] == po_access.RETIRED, feature_id
+        # Nothing withdrawn may be rendered with a price beside it, whatever
+        # minimum_tier the row still declares internally.
+        assert decision["minimum_tier"] == "", feature_id
+
+    # The anti-vacuity half. Everything above would also hold if every retired
+    # row happened to be disabled or unbuilt, in which case the matrix layer
+    # would be agreeing with the surface by accident and "the matrix is blind
+    # to retirement" would be untested. At least one row must reach the top of
+    # the ladder reading ENTITLED and still be refused.
+    assert blind_rows, (
+        "no retired row still reads ENTITLED at PRIVATE_OFFICE, so this test "
+        "no longer demonstrates that the matrix layer is retirement-blind and "
+        "that decide() is the only thing refusing these rows"
+    )
 
 
 def test_breach_monitoring_is_provider_required_and_never_entitled():
@@ -358,19 +451,6 @@ def test_breach_monitoring_is_provider_required_and_never_entitled():
     assert got["implementation"] == fm.IMPL_PROVIDER_REQUIRED
     assert got["availability"] == fm.AVAIL_NOT_IMPLEMENTED
     assert "provider" in got["note"].lower() or "no breach" in got["note"].lower()
-
-
-def test_document_extraction_is_implemented_with_a_kill_switch():
-    """The vault, deterministic text extraction and claim review are built
-    (services/private_office/documents.py); the matrix must say so, and the
-    OCR gap must live per-document in extraction_state — still no OCR library
-    in the repo, so the *capability* row flipping does not license a clean
-    screen for a PDF. test_private_documents.py holds that edge."""
-    got = fm.availability("private_office.document.extraction", tiers.TIER_PRIVATE)
-    assert got["implementation"] == fm.IMPL_IMPLEMENTED
-    assert got["availability"] == fm.AVAIL_ENTITLED
-    spec = fm.get("private_office.document.extraction")
-    assert spec.flag_env == "PRIVATE_DOCUMENTS_ENABLED"
 
 
 def test_relationship_intelligence_is_implemented_with_a_kill_switch():
@@ -385,45 +465,75 @@ def test_relationship_intelligence_is_implemented_with_a_kill_switch():
     assert spec.flag_env == "PRIVATE_RELATIONSHIPS_ENABLED"
 
 
-def test_private_shield_is_implemented_with_a_kill_switch():
-    """The internal Shield is built (services/private_office/shield.py); the
-    matrix must say so. The external half — breach monitoring — keeps its own
-    PROVIDER_REQUIRED row, pinned by the test above: flipping this row must
-    never imply anything external has been checked."""
-    got = fm.availability("private_shield", tiers.TIER_PRIVATE)
-    assert got["implementation"] == fm.IMPL_IMPLEMENTED
-    assert got["availability"] == fm.AVAIL_ENTITLED
-    spec = fm.get("private_shield")
-    assert spec.flag_env == "PRIVATE_SHIELD_ENABLED"
+def test_a_live_feature_below_its_tier_is_priced_rather_than_hidden():
+    """The counterpart the test above must not be allowed to swallow.
 
+    ``test_retired_rows_...`` pins that nothing withdrawn carries a price. On
+    its own that is half an invariant, and the dangerous half to hold alone: a
+    surface that stripped ``minimum_tier`` from *everything* would satisfy it
+    completely, and a member below the line would be shown a feature that is
+    real, is for sale, and comes with no way to learn what to buy. This used to
+    be carried by ``capital_graph``'s own test; the row retired, so the claim
+    moves to rows that are still on sale.
 
-def test_private_briefings_is_implemented_with_a_kill_switch():
-    """The Office's own briefing engine is built
-    (services/private_office/briefings.py); the matrix must say so. The old
-    fingerprint/paging concern was about a provider inside the shared Pulse
-    engine — the shipped engine is standalone and member-triggered, so no
-    shared fingerprint moves and nothing is ever pushed."""
-    got = fm.availability("private_briefings", tiers.TIER_PRIVATE)
-    assert got["implementation"] == fm.IMPL_IMPLEMENTED
-    assert got["availability"] == fm.AVAIL_ENTITLED
-    spec = fm.get("private_briefings")
-    assert spec.flag_env == "PRIVATE_BRIEFINGS_ENABLED"
+    Derived from the matrix rather than named, so that retiring one of these
+    does not silently empty the check the way it emptied the last one.
+    """
+    candidates = [
+        spec for spec in fm.FEATURES.values()
+        if spec.implementation == fm.IMPL_IMPLEMENTED
+        and not fm.is_retired(spec.feature_id)
+        and tiers.rank(spec.minimum_tier) > 0
+    ]
+    # A row whose kill switch is off is not on sale either, and its price must
+    # be stripped for the same reason a retired row's is. ``private_meetings``
+    # and its recording half are fail-closed by default, so with no env set
+    # they sit here — which is exactly why the split is computed rather than
+    # assumed: the two sets swap membership with an env var.
+    priced, switched_off = [], []
+    for spec in candidates:
+        at_top = fm.availability(spec.feature_id, tiers.TIER_PRIVATE_OFFICE)
+        if at_top["availability"] == fm.AVAIL_FEATURE_DISABLED:
+            switched_off.append(spec)
+        else:
+            priced.append(spec)
 
+    for spec in switched_off:
+        decision = po_access.decide(
+            {"resolver_state": tiers.RESOLVER_OK,
+             "effective_tier": tiers.TIER_FREE},
+            spec.feature_id,
+        )
+        assert decision["decision"] == po_access.FEATURE_DISABLED, spec.feature_id
+        assert decision["minimum_tier"] == "", spec.feature_id
+        # And the ordering that produces that: the switch is consulted before
+        # the ladder, so a member below the tier is told it is off rather than
+        # sold an upgrade into something nobody can currently use.
+        assert fm.availability(spec.feature_id, tiers.TIER_FREE)[
+            "availability"] == fm.AVAIL_FEATURE_DISABLED, spec.feature_id
 
-def test_human_concierge_is_implemented_with_a_kill_switch():
-    """The desk software is built (services/private_office/concierge.py) and
-    gated at the top of the ladder. The old note's concern — a staffed human
-    process — did not vanish: it moved into the runtime roster
-    (PRIVATE_CONCIERGE_OPERATOR_IDS), which every payload reports as
-    `desk.staffed`, and no code path can generate an operator reply."""
-    got = fm.availability("human_concierge", tiers.TIER_PRIVATE_OFFICE)
-    assert got["implementation"] == fm.IMPL_IMPLEMENTED
-    assert got["availability"] == fm.AVAIL_ENTITLED
-    below = fm.availability("human_concierge", tiers.TIER_PRIVATE)
-    assert below["availability"] == fm.AVAIL_NOT_ENTITLED
-    assert below["minimum_tier"] == tiers.TIER_PRIVATE_OFFICE
-    spec = fm.get("human_concierge")
-    assert spec.flag_env == "PRIVATE_CONCIERGE_ENABLED"
+    assert priced, (
+        "no live feature is both enabled and gated above FREE any more, so "
+        "nothing here is for sale and this check has no subject"
+    )
+    for spec in priced:
+        below = [t for t in tiers.TIER_ORDER
+                 if tiers.rank(t) < tiers.rank(spec.minimum_tier)]
+        assert below, spec.feature_id
+        for tier in below:
+            got = fm.availability(spec.feature_id, tier)
+            assert got["availability"] == fm.AVAIL_NOT_ENTITLED, \
+                (spec.feature_id, tier, got["availability"])
+            assert got["minimum_tier"] == spec.minimum_tier, \
+                (spec.feature_id, tier)
+        decision = po_access.decide(
+            {"resolver_state": tiers.RESOLVER_OK, "effective_tier": below[0]},
+            spec.feature_id,
+        )
+        assert decision["decision"] == po_access.NOT_ENTITLED, spec.feature_id
+        # The surface keeps the price here, and this is the only verdict where
+        # it may: an upgrade prompt is the one refusal a member can act on.
+        assert decision["minimum_tier"] == spec.minimum_tier, spec.feature_id
 
 
 def test_implemented_feature_respects_tier():
@@ -459,9 +569,12 @@ def test_availability_map_covers_every_declared_feature():
 
 def test_only_implemented_features_are_listed_as_live():
     live = set(fm.implemented_feature_ids())
-    # human_concierge and private_shield moved to the live set when their
-    # engines shipped; the external breach-monitoring half must never follow
-    # without a provider.
+    # "live" here means IMPLEMENTED, not "on the product surface" — retired
+    # rows still answer True, because this list is the matrix's own record of
+    # what was built and the matrix is deliberately blind to retirement.
+    # breach monitoring is the one row that must never appear, retired or not:
+    # it has no provider, so listing it would claim something external had been
+    # checked when nothing ever checked it.
     assert "private_shield.breach_monitoring" not in live
     for fid in live:
         assert fm.FEATURES[fid].implementation == fm.IMPL_IMPLEMENTED
@@ -486,6 +599,48 @@ def test_status_surface_reports_health_and_providers():
     assert "private_shield.breach_monitoring" in out["providers"]
     assert out["providers"]["private_shield.breach_monitoring"][
         "provider_configured"] is False
+
+
+def test_provider_required_probe_has_a_subject():
+    """The non-vacuity guard for ``resolver.checks.provider_required_never_entitled``.
+
+    That probe is named in ``status.py`` because it is the only thing standing
+    between the check and silent uselessness. The check asserts a property over
+    every PROVIDER_REQUIRED row that is not retired; if that set empties, ``all``
+    over nothing is True and the probe reports healthy forever while testing
+    nothing at all. It reached exactly that state once already, when it named
+    ``private_shield.breach_monitoring`` directly and that feature was retired.
+
+    This lives in CI rather than inside the probe on purpose. Shipping the last
+    outstanding provider is a *good* event, and a health surface that goes red
+    to celebrate it is a health surface people learn to ignore. Here, the same
+    event costs somebody a re-read of this docstring in a pull request.
+    """
+    subjects = [
+        spec.feature_id for spec in fm.FEATURES.values()
+        if spec.implementation == fm.IMPL_PROVIDER_REQUIRED
+        and not fm.is_retired(spec.feature_id)
+    ]
+    assert subjects, (
+        "no live PROVIDER_REQUIRED rows remain, so "
+        "resolver.checks.provider_required_never_entitled now passes "
+        "vacuously. Either point it at a real state or delete it — do not "
+        "leave a green check that asserts nothing."
+    )
+    checks = po_status.subsystem_status()["resolver"]["checks"]
+    assert checks["provider_required_never_entitled"] is True
+
+
+def test_status_surface_names_retirements_beside_the_census():
+    """``by_implementation`` still counts retired rows as IMPLEMENTED — their
+    engines are still there, still serving the member's historical records — so
+    without this list an operator diffing the census against ``live_feature_ids``
+    sees a gap and no way to tell a deliberate retirement from a regression."""
+    features = po_status.subsystem_status()["features"]
+    retired = set(features["retired_feature_ids"])
+    assert retired == set(fm.RETIRED_FEATURE_IDS)
+    assert retired, "nothing retired — this check is not exercising the overlay"
+    assert not retired & set(features["live_feature_ids"])
 
 
 def test_status_surface_counts_by_tier():

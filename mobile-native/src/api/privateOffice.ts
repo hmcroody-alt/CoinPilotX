@@ -127,47 +127,19 @@ export type PrivateOfficeOverview = {
   setupRequired: boolean;
 };
 
-export type PrivateFactProvenance = {
-  sourceType: string;
-  sourceId: string;
-  hasSourceDocument: boolean;
-  provenanceType: string;
-  verification: string;
-  observedAt: string;
-  confidence: number;
-};
-
-export type PrivateFact = {
-  id: number;
-  factType: string;
-  value: string;
-  valueType: string;
-  domain: string;
-  sensitivity: string;
-  observedAt: string;
-  lifecycleState: string;
-  provenance: PrivateFactProvenance;
-  freshness: { stale: boolean; ageDays: number | null; horizonDays: number | null };
-};
-
-/**
- * Why the facts read has its own result union instead of throwing.
+/*
+ * Private Facts lived here: the `PrivateFact` shape, its provenance block, the
+ * tagged `PrivateFactsResult`, the reader and the writer. The feature was
+ * withdrawn and `/api/private-office/facts` no longer exists at either verb, so
+ * the client is gone rather than left compiling against a 404.
  *
- * The four refusals the server distinguishes — unavailable, not implemented,
- * feature disabled, not entitled — are the whole point of the surface. Turned
- * into one thrown Error they become one error banner, which is exactly the
- * collapse the feature matrix exists to prevent. So the caller gets a tagged
- * result and has to name which case it is rendering.
+ * The reasoning it carried is not gone with it. "The four refusals the server
+ * distinguishes are the whole point of the surface, and collapsing them into
+ * one thrown Error is exactly what the feature matrix exists to prevent" is now
+ * stated once, on `PrivateFeatureRefusal` in `privateFeatures.ts`, which is
+ * where the surviving features share it. `OfficeSecurityWriteResult` below is
+ * the same discipline applied to the second lock.
  */
-export type PrivateFactsResult =
-  | { state: "READY"; facts: PrivateFact[]; domain: string }
-  | { state: "NOT_ENTITLED"; minimumTier: string }
-  | { state: "FEATURE_DISABLED" }
-  | { state: "NOT_IMPLEMENTED" }
-  | { state: "UNAVAILABLE" }
-  /** 423: entitled, but no valid unlock grant rode on this request. */
-  | { state: "LOCKED"; setupRequired: boolean }
-  | { state: "ERROR"; message: string };
 
 export const UNKNOWN_OFFICE: PrivateOfficeProductState = {
   featureId: "private_office",
@@ -274,44 +246,9 @@ export function parseOverview(payload: unknown): PrivateOfficeOverview {
   };
 }
 
-function parseProvenance(raw: unknown): PrivateFactProvenance {
-  const row = asRecord(raw);
-  return {
-    sourceType: asText(row.source_type),
-    sourceId: asText(row.source_id),
-    hasSourceDocument: row.has_source_document === true,
-    provenanceType: asText(row.provenance_type),
-    verification: asText(row.verification),
-    observedAt: asText(row.observed_at),
-    confidence: asFiniteNumber(row.confidence) ?? 0
-  };
-}
-
-export function parseFact(raw: unknown): PrivateFact {
-  const row = asRecord(raw);
-  const freshness = asRecord(row.freshness);
-  return {
-    id: asFiniteNumber(row.id) ?? 0,
-    factType: asText(row.fact_type),
-    value: asText(row.value),
-    valueType: asText(row.value_type),
-    domain: asText(row.domain),
-    sensitivity: asText(row.sensitivity),
-    observedAt: asText(row.observed_at),
-    lifecycleState: asText(row.lifecycle_state),
-    provenance: parseProvenance(row.provenance),
-    freshness: {
-      stale: freshness.stale === true,
-      ageDays: asFiniteNumber(freshness.age_days),
-      horizonDays: asFiniteNumber(freshness.horizon_days)
-    }
-  };
-}
-
 /* --- reads -------------------------------------------------------------- */
 
 export const PRIVATE_OFFICE_OVERVIEW_PATH = "/api/private-office/overview";
-export const PRIVATE_OFFICE_FACTS_PATH = "/api/private-office/facts";
 
 /**
  * The Private Office entry state and this member's per-domain counts.
@@ -334,136 +271,6 @@ export async function getPrivateOfficeOverview(): Promise<PrivateOfficeOverview>
       if (parsed.office.state !== "ENTRY_UNKNOWN") return { ...parsed, resolved: false };
     }
     return UNKNOWN_OVERVIEW;
-  }
-}
-
-/** One domain's facts, or the specific reason the server refused. */
-export async function getPrivateFacts(domain?: string): Promise<PrivateFactsResult> {
-  const query = domain ? `?domain=${encodeURIComponent(domain)}` : "";
-  try {
-    const body = asRecord(
-      await pulseApi<unknown>(`${PRIVATE_OFFICE_FACTS_PATH}${query}`, {
-        headers: await officeRequestHeaders()
-      })
-    );
-    const rows = Array.isArray(body.facts) ? body.facts : [];
-    return { state: "READY", facts: rows.map(parseFact), domain: asText(body.domain) };
-  } catch (error) {
-    if (!(error instanceof PulseApiError)) {
-      return { state: "ERROR", message: "" };
-    }
-    const details = asRecord(error.details);
-    const serverState = asText(details.state).trim().toUpperCase();
-
-    // The second lock (Stage 15-16). Checked before the entitlement words:
-    // a 423 carries the one instruction that matters — unlock, or set up.
-    if (serverState === "PRIVATE_OFFICE_LOCKED" || error.status === 423) {
-      return { state: "LOCKED", setupRequired: details.setup_required === true };
-    }
-    if (serverState === "NOT_ENTITLED") {
-      return { state: "NOT_ENTITLED", minimumTier: asText(details.minimum_tier) };
-    }
-    if (serverState === "FEATURE_DISABLED") return { state: "FEATURE_DISABLED" };
-    if (serverState === "NOT_IMPLEMENTED") return { state: "NOT_IMPLEMENTED" };
-    // 503 covers both the degraded resolver and an unreadable store. Both mean
-    // "we could not look", which must never be drawn as an empty store.
-    if (serverState === "UNAVAILABLE" || error.status === 503 || error.status === 504) {
-      return { state: "UNAVAILABLE" };
-    }
-    return { state: "ERROR", message: error.message || "" };
-  }
-}
-
-/* --- writes: the member records a fact ----------------------------------- */
-
-/**
- * The two vocabularies a creation form has to offer before any data exists.
- * They mirror `services/private_office/model.py`; the server re-validates and
- * rejects anything it does not recognise, so a drift here fails loudly rather
- * than storing a mislabeled fact.
- */
-export const FACT_DOMAINS = [
-  "GENERAL",
-  "FINANCIAL",
-  "LEGAL",
-  "HEALTH",
-  "FAMILY",
-  "IDENTITY",
-  "SECURITY"
-] as const;
-
-export const FACT_VALUE_TYPES = [
-  "STRING",
-  "NUMBER",
-  "MONEY",
-  "PERCENT",
-  "DATE",
-  "BOOLEAN"
-] as const;
-
-export type PrivateFactDraft = {
-  domain: string;
-  factType: string;
-  value: string;
-  valueType: string;
-  sensitivity?: string;
-};
-
-export type PrivateFactWriteResult =
-  | { state: "SAVED"; status: string; factId: string }
-  /** The writer's own validation, verbatim — it is written for a person. */
-  | { state: "REJECTED"; message: string }
-  | { state: "NOT_ENTITLED"; minimumTier: string }
-  | { state: "FEATURE_DISABLED" }
-  | { state: "NOT_IMPLEMENTED" }
-  | { state: "UNAVAILABLE" }
-  | { state: "LOCKED"; setupRequired: boolean }
-  | { state: "ERROR"; message: string };
-
-/**
- * Record one fact through `POST /api/private-office/facts`.
- *
- * The owner comes from the session and provenance is fixed server-side at
- * USER_ASSERTED — there is nothing this client could send to claim otherwise,
- * and no field here pretends there is.
- */
-export async function createPrivateFact(draft: PrivateFactDraft): Promise<PrivateFactWriteResult> {
-  try {
-    const body = asRecord(
-      await pulseApi<unknown>(PRIVATE_OFFICE_FACTS_PATH, {
-        method: "POST",
-        headers: await officeRequestHeaders(),
-        body: JSON.stringify({
-          domain: draft.domain,
-          fact_type: draft.factType,
-          value: draft.value,
-          value_type: draft.valueType,
-          ...(draft.sensitivity ? { sensitivity: draft.sensitivity } : {})
-        })
-      })
-    );
-    return { state: "SAVED", status: asText(body.status), factId: asText(body.fact_id) };
-  } catch (error) {
-    if (!(error instanceof PulseApiError)) {
-      return { state: "ERROR", message: "" };
-    }
-    const details = asRecord(error.details);
-    const serverState = asText(details.state).trim().toUpperCase();
-    if (serverState === "PRIVATE_OFFICE_LOCKED" || error.status === 423) {
-      return { state: "LOCKED", setupRequired: details.setup_required === true };
-    }
-    if (serverState === "NOT_ENTITLED") {
-      return { state: "NOT_ENTITLED", minimumTier: asText(details.minimum_tier) };
-    }
-    if (serverState === "FEATURE_DISABLED") return { state: "FEATURE_DISABLED" };
-    if (serverState === "NOT_IMPLEMENTED") return { state: "NOT_IMPLEMENTED" };
-    if (serverState === "UNAVAILABLE" || error.status === 503 || error.status === 504) {
-      return { state: "UNAVAILABLE" };
-    }
-    if (error.status === 400) {
-      return { state: "REJECTED", message: asText(details.message) || error.message || "" };
-    }
-    return { state: "ERROR", message: error.message || "" };
   }
 }
 

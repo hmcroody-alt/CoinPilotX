@@ -326,10 +326,22 @@ def test_a_proof_for_a_row_that_is_no_longer_hub_only_fails_loudly(reconcile,
     assert "no longer an unproven hub-only link" in str(excinfo.value)
 
 
-def test_the_private_office_entry_still_names_a_test_that_exists(reconcile):
-    """The live entry, checked without generating anything. `--check` skips doc
-    generation entirely, so the guards above do not run in the gate."""
-    assert "/pulse/private-office/:view" in reconcile.PROVEN_ELSEWHERE
+def test_every_live_proof_still_names_a_test_that_exists(reconcile):
+    """The live entries, checked without generating anything. `--check` skips
+    doc generation entirely, so the guards above do not run in the gate.
+
+    This used to open by naming `/pulse/private-office/:view` specifically. That
+    row is gone — Private Operations was withdrawn, so the app publishes no such
+    link and the web serves no such rule — and the entry went with it. The
+    hardcoded key is replaced by a non-emptiness check rather than being
+    repointed at whichever entry happens to be left: the reason the line existed
+    was to stop the loop below passing over an empty dict, and pinning a second
+    arbitrary row would only move the same problem to the next deletion.
+    """
+    assert reconcile.PROVEN_ELSEWHERE, (
+        "PROVEN_ELSEWHERE is empty, so the loop below asserts nothing. Either "
+        "every proven row was withdrawn — in which case delete this test with "
+        "the mechanism — or an edit emptied the table by accident")
     for path, (test, why) in reconcile.PROVEN_ELSEWHERE.items():
         assert os.path.exists(os.path.join(REPO, test)), (
             "%s points at %s, which is gone" % (path, test))

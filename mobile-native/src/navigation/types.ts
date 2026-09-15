@@ -550,33 +550,25 @@ export type RootStackParamList = {
     title?: string;
   } | undefined;
   AssetDetail: { symbol: string; name?: string; title?: string };
-  // Private Office and its first real capability. Neither route takes an
-  // entitlement parameter: what the member may see is resolved server-side on
-  // entry, and a param could only ever disagree with that answer while looking
-  // authoritative. `title` is the same optional override every titled route has.
+  // Private Office and the three things it contains: Relationship Intelligence
+  // (`PrivatePeople`), Private Meetings, and Office Security. Nothing here
+  // takes an entitlement parameter: what the member may see is resolved
+  // server-side on entry, and a param could only ever disagree with that answer
+  // while looking authoritative. `title` is the same optional override every
+  // titled route has.
+  //
+  // Ten route names used to sit in this block — facts, operations, the capital
+  // graph and its entity view, documents, briefings, shield, the concierge desk
+  // and the two conversation routes. They are gone rather than kept as unused
+  // entries, because a name in this map is what makes `navigate("PrivateFacts")`
+  // typecheck: leaving them would keep every call site compiling against a
+  // screen that no longer exists, and the failure would arrive at runtime on a
+  // member's phone instead of in CI.
   PrivateOffice: { title?: string } | undefined;
-  PrivateFacts: { title?: string; create?: boolean } | undefined;
-  PrivateOperations: { view?: string; title?: string } | undefined;
-  CapitalGraph: { view?: string; title?: string } | undefined;
-  CapitalEntity: { id: number; view?: string; title?: string };
   PrivateOfficeSecurity: { title?: string } | undefined;
-  PrivateDocuments: { title?: string } | undefined;
   PrivatePeople: { title?: string } | undefined;
-  PrivateBriefings: { title?: string } | undefined;
-  PrivateShield: { title?: string } | undefined;
-  PrivateConcierge: { title?: string } | undefined;
   PrivateMeetings: { title?: string } | undefined;
   PrivateMeetingRoom: { ref?: string; title?: string } | undefined;
-  // Private Conversations. `scope` is a *filter* the list may open pre-applied,
-  // not an authority: the server decides which threads exist for this member
-  // and an unrecognized value falls back to "all" rather than to an empty list.
-  //
-  // There is no thread route here on purpose. An Office conversation is a
-  // canonical conversation, so it opens in `Chat` — the one thread screen. Info
-  // is the only genuinely new surface, and takes the same conversation id the
-  // canonical ledger uses.
-  PrivateConversations: { scope?: string; title?: string } | undefined;
-  PrivateConversationInfo: { conversationId: number; title?: string };
   AccountCenter: { section?: "account" | "security" | "privacy" | "devices"; title?: string } | undefined;
   AccountSettings: { title?: string } | undefined;
   AccountSecurity: { title?: string } | undefined;

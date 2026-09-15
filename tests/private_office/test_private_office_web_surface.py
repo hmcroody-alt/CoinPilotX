@@ -46,18 +46,20 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 #: resolves to TEMPORARILY_DISABLED at every tier, so the server already refuses
 #: it, and a web meeting room would be a second real-time audio publication
 #: path, which `docs/realtime_audio_change_policy.md` forbids outright.
+#: Every path the app may publish. This list shrank with the Office: Facts,
+#: Documents, Briefings, Shield, Concierge, the Capital Graph and Obligations
+#: were retired, and their pages went with them rather than being left as
+#: 404s that the mobile linking table still pointed at.
+#:
+#: The list is hardcoded on purpose. Deriving it from the url_map would make
+#: this suite agree with the server by construction and stop it detecting the
+#: failure it exists for — a published destination the site cannot serve. The
+#: cost is that it must be edited by hand when the surface changes, which is
+#: exactly the moment somebody should be looking at it.
 DEEP_LINKS = (
     "/pulse/private-office",
-    "/pulse/private-office/facts",
     "/pulse/private-office/security",
-    "/pulse/private-office/documents",
     "/pulse/private-office/people",
-    "/pulse/private-office/briefings",
-    "/pulse/private-office/shield",
-    "/pulse/private-office/concierge",
-    "/pulse/private-office/capital-graph",
-    "/pulse/private-office/capital-graph/17",
-    "/pulse/private-office/obligations",
 )
 
 #: Probed alongside the real links. A typo in a record view must 404 rather

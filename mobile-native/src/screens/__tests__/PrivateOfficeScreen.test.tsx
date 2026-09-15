@@ -90,10 +90,20 @@ import { PrivateOfficeScreen } from "../PrivateOfficeScreen";
 /** The member's office passcode for this suite. Any other value is refused. */
 const OFFICE_PASSCODE = "846195";
 
-/** A `_child_state` row exactly as `office.product_state` emits it. */
+/**
+ * A `_child_state` row exactly as `office.product_state` emits it.
+ *
+ * The default id used to be `private_facts`, and the cases below named it
+ * throughout. That feature was withdrawn: the server no longer sends the id, the
+ * screen no longer has a copy key or a destination for it, and a row carrying it
+ * now renders as the unknown-capability fallback. So the default moves to
+ * `relationship_intelligence` — one of the two ids the Office actually has
+ * children for — rather than leaving a suite that exercised the fallback path
+ * while claiming to exercise the known one.
+ */
 function child(overrides: Record<string, unknown> = {}) {
   return {
-    feature_id: "private_facts",
+    feature_id: "relationship_intelligence",
     availability: "ENTITLED",
     implementation: "IMPLEMENTED",
     minimum_tier: "PRIVATE",
@@ -195,19 +205,19 @@ describe("PrivateOfficeScreen", () => {
 
   it("lists the children the server sent and no others", async () => {
     mockGetOverview.mockResolvedValue(
-      overview({
-        available: [child()],
-        unavailable: [
-          child({ feature_id: "capital_graph", availability: "NOT_IMPLEMENTED", reason: "NOT_IMPLEMENTED", opens: false })
-        ]
-      })
+      overview({ available: [child()], unavailable: [] })
     );
     const { getByText, queryByText } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
-    expect(getByText("premium:privateOffice.features.capitalGraph.label")).toBeTruthy();
+    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
     // Nothing invented: a capability this build knows a name for but the server
-    // did not send must not be drawn.
-    expect(queryByText("premium:privateOffice.features.humanConcierge.label")).toBeNull();
+    // did not send must not be drawn. `private_meetings` is the check with teeth
+    // now — the Office has exactly two children, so the only way to state "and
+    // no others" against a name the client can actually render is to withhold
+    // one of the two. It used to be stated against `human_concierge`, which
+    // stopped meaning anything the moment that id left `COPY_KEYS`: a key the
+    // screen can no longer produce is absent from every render, including a
+    // broken one.
+    expect(queryByText("premium:privateOffice.features.privateMeetings.label")).toBeNull();
   });
 
   it("renders a capability it has never heard of rather than dropping it", async () => {
@@ -223,11 +233,11 @@ describe("PrivateOfficeScreen", () => {
     await waitFor(() => getByText("some_future_thing"));
   });
 
-  it("opens Private Facts when the server says the child opens", async () => {
+  it("opens Relationship Intelligence when the server says the child opens", async () => {
     const { getByText, navigation } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
-    fireEvent.press(getByText("premium:privateOffice.features.privateFacts.label"));
-    expect(navigation.navigate).toHaveBeenCalledWith("PrivateFacts");
+    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    fireEvent.press(getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PrivatePeople");
   });
 
   it("does not navigate for a child the server did not mark as opening", async () => {
@@ -235,8 +245,8 @@ describe("PrivateOfficeScreen", () => {
       overview({ available: [child({ opens: false })] })
     );
     const { getByText, navigation } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
-    fireEvent.press(getByText("premium:privateOffice.features.privateFacts.label"));
+    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    fireEvent.press(getByText("premium:privateOffice.features.relationshipIntelligence.label"));
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
 
@@ -245,9 +255,15 @@ describe("PrivateOfficeScreen", () => {
       overview({
         available: [],
         unavailable: [
-          child({ feature_id: "private_shield", reason: "PROVIDER_REQUIRED", availability: "NOT_IMPLEMENTED", opens: false }),
-          child({ feature_id: "capital_graph", reason: "NOT_IMPLEMENTED", availability: "NOT_IMPLEMENTED", opens: false }),
-          child({ feature_id: "private_briefings", reason: "TEMPORARILY_DISABLED", availability: "FEATURE_DISABLED", opens: false })
+          // The three reasons are the subject, not the ids. The ids that used to
+          // carry them here were all withdrawn, so they move to the surviving
+          // children plus one the client has never heard of — which is also the
+          // honest shape of PROVIDER_REQUIRED now that breach monitoring, the
+          // feature that word was written for, is gone. The vocabulary is still
+          // the server's, and the screen must still keep the three apart.
+          child({ feature_id: "some_future_thing", reason: "PROVIDER_REQUIRED", availability: "NOT_IMPLEMENTED", opens: false }),
+          child({ feature_id: "relationship_intelligence", reason: "NOT_IMPLEMENTED", availability: "NOT_IMPLEMENTED", opens: false }),
+          child({ feature_id: "private_meetings", reason: "TEMPORARILY_DISABLED", availability: "FEATURE_DISABLED", opens: false })
         ]
       })
     );
@@ -290,7 +306,7 @@ describe("PrivateOfficeScreen", () => {
     await waitFor(() => getByText("premium:privateOffice.retry"));
     mockGetOverview.mockResolvedValue(overview());
     fireEvent.press(getByText("premium:privateOffice.retry"));
-    await waitFor(() => getByText("premium:privateOffice.features.privateFacts.label"));
+    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
     expect(mockGetOverview).toHaveBeenCalledTimes(2);
   });
 
@@ -323,6 +339,6 @@ describe("PrivateOfficeScreen", () => {
     expect(navigation.navigate).toHaveBeenCalledWith("Premium");
 
     // And the office itself stays shut: a renew prompt is still a closed door.
-    expect(queryByText("premium:privateOffice.features.privateFacts.label")).toBeNull();
+    expect(queryByText("premium:privateOffice.features.relationshipIntelligence.label")).toBeNull();
   });
 });

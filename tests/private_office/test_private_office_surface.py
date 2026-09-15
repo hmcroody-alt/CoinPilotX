@@ -294,15 +294,61 @@ def stage_entry_state_reads_implementation_first():
         check("the entry is shown once something real is inside",
               office.entry_visible("PRIVATE_OFFICE") is True)
 
-    provider = [
-        child for child in top["unavailable"]
-        if child["implementation"] == feature_matrix.IMPL_PROVIDER_REQUIRED
-    ]
-    check("provider-blocked children keep their own reason",
-          bool(provider) and all(child["reason"] == "PROVIDER_REQUIRED" for child in provider),
-          str([child["reason"] for child in provider]))
-    check("a provider-blocked child is not offered as an upgrade",
-          all(child["reason"] != "UPGRADE_REQUIRED" for child in provider))
+    # Only a rank problem may be sold.
+    #
+    # ``reason`` has five words and exactly one of them means "paying more would
+    # change this". The other four describe blockers money cannot move, and they
+    # are separate words precisely so the surface can tell them apart; collapsing
+    # any of them into UPGRADE_REQUIRED would put a checkout button in front of a
+    # member whose payment would change nothing.
+    #
+    # Stated over the whole matrix at every tier rather than over the Office's
+    # own children, because the children change. This check used to name
+    # PROVIDER_REQUIRED and read the Office's unavailable list — and when the
+    # last provider-blocked child left the room, it had no subject left. It
+    # failed rather than passing silently, but only because somebody had thought
+    # to write ``bool(provider) and`` in front of it. Derived from the matrix,
+    # the subject cannot go away while there is a matrix.
+    tiers_to_probe = ("FREE", "PREMIUM", "PRIVATE", "PRIVATE_OFFICE")
+    mis_sold = []
+    mis_reasoned = []
+    seen_reasons = set()
+    for feature_id in feature_matrix.FEATURES:
+        for tier in tiers_to_probe:
+            child = office._child_state(feature_id, tier)
+            seen_reasons.add(child["reason"])
+            rank_blocked = (
+                child["availability"] == feature_matrix.AVAIL_NOT_ENTITLED
+            )
+            if child["reason"] == "UPGRADE_REQUIRED" and not rank_blocked:
+                mis_sold.append((feature_id, tier, child["availability"]))
+            if rank_blocked and child["reason"] != "UPGRADE_REQUIRED":
+                mis_reasoned.append((feature_id, tier, child["reason"]))
+
+    check("only a rank problem is ever offered as an upgrade",
+          not mis_sold, str(mis_sold[:5]))
+    check("and a rank problem is always offered as one — "
+          "a sellable block reported as anything else is a lost sale, "
+          "which is the harmless direction but still a wrong answer",
+          not mis_reasoned, str(mis_reasoned[:5]))
+    check("a provider-blocked row keeps its own word rather than collapsing "
+          "into NOT_IMPLEMENTED",
+          "PROVIDER_REQUIRED" in seen_reasons, str(sorted(seen_reasons)))
+    check("the reason vocabulary is closed",
+          seen_reasons <= {"AVAILABLE", "PROVIDER_REQUIRED", "NOT_IMPLEMENTED",
+                           "TEMPORARILY_DISABLED", "UPGRADE_REQUIRED"},
+          str(sorted(seen_reasons)))
+    check("the probe reached more than one reason — a single-word result would "
+          "mean the loop is not exercising the branch it is testing",
+          len(seen_reasons) >= 3, str(sorted(seen_reasons)))
+
+    # The Office's own children, as actually rendered today.
+    check("no Office child blocked by anything but rank is offered as an upgrade",
+          all(child["reason"] != "UPGRADE_REQUIRED"
+              or child["availability"] == feature_matrix.AVAIL_NOT_ENTITLED
+              for child in top["unavailable"]),
+          str([(c["feature_id"], c["reason"], c["availability"])
+               for c in top["unavailable"]]))
 
     check("children are reported in the declared display order",
           [child["feature_id"] for child in top["available"] + top["unavailable"]]

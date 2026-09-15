@@ -328,7 +328,22 @@ def test_the_scope_check_is_still_a_scope_check():
     hand the owner keys nobody has audited, which is the failure the original
     narrow scope was guarding against."""
     _own(OWNER)
-    for key in ("", "chat.send", "ads.manage", "private.facts.list",
+    # The samples are deliberately mixed, because "not always true" is only
+    # worth asserting against keys the product really uses. `not.a.real.key`
+    # alone would prove nothing a typo could not satisfy.
+    #
+    #   private.people.list                 live: the one Private Office
+    #                                       capability UNDX still publishes
+    #   private_office.document.extraction  retired: a feature_matrix row that
+    #                                       still exists and is withdrawn, so
+    #                                       this also pins that owner lifetime
+    #                                       cannot resurrect one
+    #
+    # `private.facts.list` used to stand in the first slot. Private Facts was
+    # withdrawn, so it was neither a live key nor a retired row with a matrix
+    # entry — it had become a string that named nothing, which is the third
+    # case, and that one is already covered.
+    for key in ("", "chat.send", "ads.manage", "private.people.list",
                 "private_office.document.extraction", "not.a.real.key"):
         assert own.confers(key) is False, key
 
