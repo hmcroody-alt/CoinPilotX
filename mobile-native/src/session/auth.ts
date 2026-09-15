@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 import { getSession, login, logout, logoutAll, PulseUser, RegisterResponse, SessionResponse, signup } from "../api/auth";
 import { unregisterPushDevice } from "../api/push";
+import { revokeVoipPushRegistration } from "../calls/callKitBridge";
 import { PulseApiError, recoverNativeSession } from "../api/pulseApi";
 import {
   clearActiveSessionKeepBiometric,
@@ -284,6 +285,12 @@ export async function signOut(options: SignOutOptions = {}): Promise<AuthState> 
   // member's tier to whoever signs in next on this device.
   resetCanonicalTier();
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
+  // The VoIP token is a *separate* credential in a separate table, so dropping the alert
+  // registration above does not touch it. Left behind it does active harm rather than
+  // nothing: the backend suppresses the incoming-call alert push for any device holding an
+  // active VoIP token, and it will still ring this handset through CallKit — showing a
+  // stranger's name and photo on the lock screen of a phone that has been signed out.
+  await revokeVoipPushRegistration("logout").catch(() => undefined);
   await clearUserScopedMediaState();
 
   if (!options.clearBiometrics && (await shouldRetainBiometricLogin())) {
@@ -327,6 +334,9 @@ async function shouldRetainBiometricLogin(): Promise<boolean> {
 export async function signOutEverywhere(): Promise<AuthState> {
   resetCanonicalTier();
   await unregisterPushDevice({ preservePreferences: true, reason: "logout" }).catch(() => undefined);
+  // Ordered before `logoutAll()` for the same reason the alert revoke is: both calls need a
+  // live session to authenticate, and `logoutAll` invalidates it.
+  await revokeVoipPushRegistration("logout_everywhere").catch(() => undefined);
   await logoutAll();
   await clearUserScopedMediaState();
   await clearNativeSessionCredentials();

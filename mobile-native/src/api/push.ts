@@ -4,7 +4,13 @@ import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
 import { EXPO_PROJECT_ID } from "./config";
+import { getPushInstallationId } from "./installationId";
 import { pulseApi } from "./pulseApi";
+
+// Re-exported so existing importers keep working. The definition moved to
+// `installationId.ts` so the VoIP path can reach it without importing this module's
+// module-scope `setNotificationHandler` side effect — see the docstring there.
+export { getPushInstallationId };
 
 export type PushRegistrationResult = {
   ok?: boolean;
@@ -32,7 +38,6 @@ type CachedPushRegistration = {
 };
 
 const PUSH_REGISTRATION_CACHE_KEY = "pulsesoc.native.push.registration";
-const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
 let activePushRegistration: Promise<PushRegistrationResult> | null = null;
 
 // `handleNotification` runs only for notifications that arrive while the app is
@@ -223,14 +228,6 @@ async function readCachedPushRegistration() {
 
 async function clearCachedPushRegistration() {
   await SecureStore.deleteItemAsync(PUSH_REGISTRATION_CACHE_KEY).catch(() => undefined);
-}
-
-async function getPushInstallationId() {
-  const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
-  if (existing) return existing;
-  const generated = `native-${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
-  await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated).catch(() => undefined);
-  return generated;
 }
 
 async function revokePushEndpoint(endpoint: string, options: {

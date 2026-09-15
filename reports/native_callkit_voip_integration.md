@@ -1,57 +1,175 @@
-# PulseSoc Native — CallKit + PushKit VoIP Integration (Stage 2)
+# PulseSoc Native — CallKit + PushKit VoIP Integration
 
-- **Date:** 2026-07-20
-- **Branch:** `release/undx-nexus-core-v4`
-- **Goal:** Ring the iOS system call UI (CallKit) when a PulseSoc call arrives while the app is backgrounded or killed, delivered via a PushKit VoIP push.
-- **Why it's needed:** Stage 1's in-app ringer (`callSignalMedia.ts` + `IncomingCallLayer.tsx`) only runs while the app is foregrounded and polling `getActiveCalls` every 4.2 s (`IncomingCallLayer.tsx:39`, gated on `appState.current === "active"`). Backgrounded/killed devices never ring today.
+- **Stage 2 scaffolding:** 2026-07-20, branch `release/undx-nexus-core-v4` (flag OFF, inert)
+- **Stage 3 implementation:** 2026-09-15, branch `claude/pushkit-callkit-voip` (this document)
+- **Goal:** Ring the iOS system call UI (CallKit) when a PulseSoc call arrives while the app is backgrounded, in another app, locked, or terminated — delivered via an APNs VoIP push through PushKit.
+- **Why it was needed:** Stage 1's in-app ringer (`callSignalMedia.ts` + `IncomingCallLayer.tsx`) only runs while the app is foregrounded and polling `getActiveCalls` every 4.2 s (`IncomingCallLayer.tsx:39`, gated on `appState.current === "active"`). Backgrounded and killed devices never rang.
 
-## What already landed in JS (this session, safe / flag-OFF)
+> **Correction notice.** The 2026-07-20 revision of this file contained three
+> claims that were wrong and that would have sent the next reader down a blind
+> alley. They are corrected below and called out here so nobody trusts a stale
+> copy: (1) a **VoIP Services certificate is not required** — PulseSoc
+> authenticates to APNs with a token-based `.p8` key, which is valid for every
+> topic of every app on the team, VoIP included; (2) the iOS path is
+> **`ios/PulseSoc/`**, not `ios/PulseSocNative/`; (3) the backend routes
+> `POST /api/calls/voip-token` and `/revoke` were listed as remaining work but
+> **already existed** (`services/pulsesoc_communications_engine.py`,
+> `services/pulsesoc_voip_push.py`).
+
+## Architecture
+
+One rule shapes the whole thing: **all orchestration lives in plain testable JS;
+the pods are touched in exactly one file.**
+
+```
+APNs VoIP push
+   ↓
+AppDelegate.swift  (PKPushRegistryDelegate)      ← native, runs before JS exists
+   ↓ reportNewIncomingCall, synchronously, no network first
+CallKit system UI
+   ↓ answer / decline / hangup
+callKitNativeProvider.ts   ← the ONLY file importing either pod
+   ↓ NativeCallKitProvider port
+callKitBridge.ts   ← every decision: id mapping, gating, signalling
+   ↓
+existing call state  →  existing Agora session
+```
+
+`callKitBridge.ts` holds the decisions and imports no pod, which is what lets it
+be unit-tested against a fake provider on a machine with no pods and no
+simulator. `callKitNativeProvider.ts` holds no decisions.
+
+The existing Agora foundation was **not** rewritten or wrapped. CallKit reports
+call *state* to the system; the call still runs on the same engine through the
+same `callSessionStore` after the answer.
+
+## What shipped
 
 | File | Purpose |
 |---|---|
-| `mobile-native/src/api/config.ts` | `NATIVE_CALLKIT_ENABLED` flag — `EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED === "1"`, **default OFF**. |
-| `mobile-native/src/api/calls.ts` | `registerVoipPushToken(token, payload)` → `POST /api/calls/voip-token`; `unregisterVoipPushToken(token)` → `POST /api/calls/voip-token/revoke`. |
-| `mobile-native/src/calls/callKitBridge.ts` | All orchestration: UUID↔callId map, flag gating, answer→`acceptCall`, reject→`declineCall`, hang-up→`endCall`, VoIP-token→backend. Native calls sit behind an injectable `NativeCallKitProvider` so the app **builds and unit-tests with zero new pods**. |
-| `mobile-native/src/calls/__tests__/callKitBridge.test.ts` | No-op safety when disabled + full handler-routing coverage with an injected fake provider. |
+| `ios/PulseSoc/AppDelegate.swift` | Creates the `PKPushRegistry` at launch (the only reason iOS will relaunch a terminated app for a VoIP push) and implements `PKPushRegistryDelegate`. Reports to CallKit **synchronously**, before any network call or bridge hop. |
+| `ios/PulseSoc/Info.plist`, `app.json` | `voip` appended to `UIBackgroundModes`. `audio` preserved — it is required by `dependency_watch.required_ios_configuration`. |
+| `ios/PulseSoc/PulseSoc-Bridging-Header.h` | Both pods are Objective-C only; AppDelegate.swift needs them. |
+| `src/calls/callKitNativeProvider.ts` | The port implementation. Pins `audioSession.mode` to `voiceChat`; sets `includesCallsInRecents: false`; subscribes to `didLoadWithEvents` for the cold-launch answer replay. |
+| `src/calls/callKitBridge.ts` | Orchestration. Server-UUID identity, double-report guard, answer→`acceptCall`, decline→`declineCall`, hangup→`endCall`, token→backend, sign-out revocation. |
+| `src/api/calls.ts` | `call_uuid` on `PulseCall`; VoIP token register/revoke wire contract. |
+| `src/api/installationId.ts` | The installation id both push registrations must share. |
+| `src/session/auth.ts` | Revokes the VoIP token on sign-out. |
 
-Nothing in the current binary changes behavior: with the flag OFF and no provider registered, `isNativeCallKitEnabled()` returns `false` and every entry point is a no-op.
+## The four things that are easy to get wrong
 
-## Remaining work — NATIVE (needs a rebuild, no Apple account required)
+**1. One UUID, issued by the server.** CallKit, the PushKit payload and the
+backend must name the same call with the same string. The client used to mint a
+UUIDv4; `generateUuidV4()` is now deleted. A VoIP push reports a call natively
+before JS runs, so if the foreground poller then reported the *same* call under a
+locally minted UUID, iOS would show two incoming calls and one of the answers
+would resolve to a call id the server does not recognise — the user picks up and
+nothing happens.
 
-1. **Add pods** to `package.json` and `pod install`:
-   - `react-native-callkeep` (CallKit wrapper)
-   - `react-native-voip-push-notification` (PushKit)
-2. **`ios/PulseSocNative/Info.plist`** — add `voip` to `UIBackgroundModes` (currently only `audio`):
-   ```xml
-   <key>UIBackgroundModes</key>
-   <array>
-     <string>audio</string>
-     <string>voip</string>
-   </array>
-   ```
-3. **AppDelegate** — register the PushKit delegate and, on VoIP push, call `RNCallKeep.reportNewIncomingCall(...)` **synchronously in the push handler** (iOS 13+ kills the app if a VoIP push does not report a call to CallKit). Bridge the CallKit answer/end actions and the `didUpdatePushCredentials` token to JS via the callkeep/voip-push native events.
-4. **Real provider** — author `src/calls/callKitNativeProvider.ts` implementing `NativeCallKitProvider` against `react-native-callkeep` + `react-native-voip-push-notification`, then `setNativeCallKitProvider(...)` + `initNativeCallKit({ onAnswered, onEnded })` at app startup (guarded by `isNativeCallKitEnabled()`), and call `reportIncomingCallKit(...)` / `markCallKitConnected(...)` / `endCallKitCall(...)` from the call lifecycle. Provider→CallKeep method mapping:
-   - `setup` → `RNCallKeep.setup({ ios: { appName: "PulseSoc" } })`
-   - `displayIncomingCall(uuid, i)` → `RNCallKeep.displayIncomingCall(uuid, i.handle, i.displayName, "generic", i.hasVideo)`
-   - `setCallConnected(uuid)` → `RNCallKeep.setCurrentCallActive(uuid)`
-   - `endCall(uuid)` → `RNCallKeep.endCall(uuid)`
-   - `registerVoipToken()` → `VoipPushNotification.registerVoipToken()`
-   - `onAnswer` → `RNCallKeep.addEventListener("answerCall", ...)`
-   - `onEnd` → `RNCallKeep.addEventListener("endCall", ...)`
-   - `onVoipToken` → `VoipPushNotification.addEventListener("register", ...)`
+**2. Report to CallKit before doing anything else.** iOS 13+ terminates the
+process if a VoIP push does not result in `reportNewIncomingCall`, and repeated
+offences revoke VoIP delivery for the app. Nothing may precede it — no fetch, no
+token refresh, not even a JS bridge hop, because when the app was launched *by*
+the push the bridge does not exist yet. This includes the `cancel_call` payload,
+which reports the call and then immediately ends it inside the completion
+handler.
 
-## Remaining work — ACCOUNT-SIDE (blocked on the COINPLOTXAI INC. org transfer / Mission 1)
+**3. The cold-launch lock-screen answer.** When iOS launches PulseSoc to deliver
+a VoIP push and the user answers from the lock screen, the answer happens before
+the JS bundle has finished evaluating — there is no listener to receive it.
+CallKeep queues those actions and replays them through `didLoadWithEvents` the
+moment JS subscribes. Without that subscription the single most important path in
+the feature silently does nothing, and the user gets a connected CallKit UI with
+no call behind it.
 
-1. **VoIP Services certificate** created under the account that owns the app's APNs — this must be the **COINPLOTXAI INC.** team after the App Transfer, so create it **after** the transfer to avoid re-issuing. VoIP certs/keys do **not** transfer with an app.
-2. **Production push entitlement** — `aps-environment` is currently `development` (`PulseSocNative.entitlements`). TestFlight/App Store need `production` (see risk **R2** in `app_store_rejection_risks.json`). VoIP push shares this APNs environment.
-3. **Backend** must implement `POST /api/calls/voip-token` (+ `/revoke`) to store the per-device VoIP token, and send a **VoIP-type** APNs push (topic `com.pulsesoc.nativeapp.voip`) carrying the call id + caller identity at ring time.
+**4. The device id is the join.** The backend suppresses the ordinary
+incoming-call alert push for exactly those device ids holding an active VoIP
+token. Both registrations must therefore use the same `getPushInstallationId()`.
+A mismatch does not error — it rings through CallKit *and* delivers the alert
+banner to the same handset.
 
-## Verification (two devices, after the above)
+## Delivery policy
 
-1. Kill the app on device B. Place a call from device A → device B's screen rings via the **iOS system call UI** even though PulseSoc is not running.
-2. Answer from the CallKit UI → app launches into the connected call; decline → backend records a decline.
-3. Confirm no "app terminated for not reporting a call after VoIP push" crashes.
+VoIP push is the **primary** incoming-call delivery for supported iOS devices;
+the normal alert push is a **compatibility fallback only**.
 
-## Sequencing note
+- Active iOS VoIP token for the device → VoIP push, alert push suppressed **for that device**.
+- No active VoIP token → existing alert push, unchanged.
+- Android, web, older iOS builds without PushKit → existing alert push, unchanged.
+- Never both, to the same eligible device, for the same call.
 
-Do the **App Transfer to COINPLOTXAI INC. first** (Mission 1), then create the VoIP cert + production push entitlement under the new team, then flip `EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED=1` and ship. The JS scaffolding above is already in place and inert until then.
+## Audio ownership
+
+This provider never configures `AVAudioSession`. PulseSoc has one governed audio
+coordinator (`src/core/realtimeAudioEngine.ts`) and a second writer is the
+documented way this app goes silent mid-call.
+
+`react-native-callkeep` does not fully honour that: its internal
+`configureAudioSession` (`RNCallKeep.m:913`) is called from
+`performAnswerCallAction` (`:1083`) and `didActivateAudioSession` (`:1145`), and
+it writes category, mode, sample rate and buffer duration on the shared session.
+**It cannot be prevented from JS.** What it *can* be told is which mode to write,
+so `setup()` pins it to `voiceChat` — the mode a PulseSoc call wants anyway. That
+turns a write which would otherwise contradict the engine
+(`AVAudioSessionModeDefault`: no echo cancellation, wrong routing for a call)
+into one that agrees with it.
+
+**This is a mitigation, not a proof.** CallKit's `didActivateAudioSession` is
+asynchronous and may land after Agora has joined. Only a physical device settles
+it. See the regression-risk section of `reports/realtime_audio_change_declaration.md`.
+
+## Account-side status
+
+| Item | Status |
+|---|---|
+| VoIP Services certificate | **Not required.** Token-based `.p8` (`APNS_KEY_ID` / `APNS_TEAM_ID` / `APNS_PRIVATE_KEY`) signs alert and VoIP pushes alike. |
+| APNs topic | `com.pulsesoc.app.voip` — the bundle id with a `.voip` suffix, derived by `voip_topic()`. |
+| `aps-environment` | Currently `development` in `ios/PulseSoc/PulseSoc.entitlements`. TestFlight/App Store need `production`. VoIP shares this environment; the server picks the APNs host from `APNS_USE_SANDBOX`, which must agree. |
+| Backend routes | Already implemented. |
+
+## Verification
+
+JS, Python and mutation results are recorded in
+`reports/realtime_audio_change_declaration.md` (PushKit VoIP + CallKit addendum),
+along with the twelve-case physical acceptance matrix that must pass on a real
+iPhone before this ships. A simulator cannot receive a PushKit push, cannot run
+CallKit's audio-session activation, and cannot carry the entitlements involved.
+
+### The Swift names in AppDelegate.swift are not the ObjC selectors
+
+Both pods are Objective-C. Swift's importer applies *omit needless words*: a
+trailing noun that restates the parameter's own type is deleted. So
+
+| ObjC | Swift |
+|---|---|
+| `didUpdatePushCredentials:forType:` (arg is `PKPushCredentials *`) | `didUpdate(_:forType:)` |
+| `didReceiveIncomingPushWithPayload:forType:` (arg is `PKPushPayload *`) | `didReceiveIncomingPush(with:forType:)` |
+| `endCallWithUUID:reason:` (arg is `NSString *`) | `endCall(withUUID:reason:)` — **not** omitted |
+
+Reading the header is not enough; the parameter types decide the name. Anyone
+"correcting" these to match the selectors will break the build, which is a
+mistake already made and reverted once on this branch (`b97341a0`).
+
+These names are wrong *only* at native compile time, so a fully green
+`npm run verify` says nothing about them. Check them without a full build:
+
+```sh
+PODS=mobile-native/ios/Pods/Headers/Public
+xcrun -sdk iphoneos swiftc -target arm64-apple-ios15.1 -typecheck \
+  -import-objc-header mobile-native/ios/PulseSoc/PulseSoc-Bridging-Header.h \
+  -I "$PODS" -I "$PODS/React-Core" probe.swift
+```
+
+`-typecheck`, not `-parse` — `-parse` is syntax-only and accepts any name at
+all. Pair it with a deliberately bogus selector as a negative control; without
+one you cannot tell a clean result from a harness that is not checking. All
+eight pod call sites were verified this way against the installed headers.
+
+## Rollback
+
+`EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED=0`. The app stops registering a VoIP token;
+suppression is conditioned on an active token, so it lapses with the
+registration and the alert push rings again — the two halves fail safe together.
+The one ordering that does not self-heal is a build that registered a token
+followed by a build with the flag off; sign-out revocation and the server-side
+`revoke_token` both clear that.

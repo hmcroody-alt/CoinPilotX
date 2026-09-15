@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { PULSE_API_BASE_URL } from "./config";
+import { getPushInstallationId } from "./installationId";
 import { pulseApi } from "./pulseApi";
 
 const ACTIVE_CALLS_CACHE_KEY = "pulsesoc.native.calls.active";
@@ -64,6 +65,16 @@ export type PulseCall = {
   ok?: boolean;
   call_id: string;
   public_id?: string;
+  /**
+   * The call's CallKit identity, issued by the server (a UUIDv5 of `public_id`).
+   *
+   * CallKit requires a UUID and `call_id` is not one, so something has to bridge them.
+   * Deriving it on the device would mean two independent derivations that have to agree
+   * forever; instead the server derives it once and every layer — the PushKit payload,
+   * CallKit, and the call record itself — quotes the same string. Optional only because
+   * a response from a backend older than the VoIP work will not carry it.
+   */
+  call_uuid?: string;
   conversation_id?: number;
   room_name?: string;
   provider?: string;
@@ -270,17 +281,65 @@ export async function markCallConnected(callId: string, payload: Record<string, 
   return call;
 }
 
+/**
+ * File this device's PushKit token so the backend can ring it through CallKit.
+ *
+ * `device_id` is not optional decoration — `register_voip_token` rejects the request with
+ * `missing_device_id` without it, so a call that omits it never registers at all and the
+ * phone silently keeps using the alert-push fallback forever. It is resolved here rather
+ * than asked of the caller precisely so that no caller can forget it, and so that the id
+ * is guaranteed to be the same one `/api/push/subscribe` used: the alert-push suppression
+ * joins the two registrations on that string alone.
+ *
+ * No `environment` is reported. The client cannot tell a sandbox APNs entitlement from a
+ * production one at runtime — `__DEV__` is false in a Release build that still carries
+ * `aps-environment: development` — so a guess here would be wrong exactly when it matters
+ * and would point the server at the wrong APNs host. Omitting it lets the server fall back
+ * to `default_environment()`, the same `APNS_USE_SANDBOX` switch the alert sender already
+ * follows, which keeps VoIP and alert pushes from disagreeing about the host.
+ */
 export async function registerVoipPushToken(token: string, payload: Record<string, unknown> = {}) {
-  return pulseApi<{ ok?: boolean; message?: string }>("/api/calls/voip-token", {
+  const deviceId = await getPushInstallationId().catch(() => "");
+  return pulseApi<{ ok?: boolean; message?: string; voip_ready?: boolean; status?: string }>("/api/calls/voip-token", {
     method: "POST",
-    body: JSON.stringify({ token, platform: "ios", provider: "apns_voip", ...payload, source: "native" })
+    body: JSON.stringify({
+      token,
+      platform: "ios",
+      provider: "apns_voip",
+      device_id: deviceId,
+      installation_id: deviceId,
+      ...payload,
+      source: "native"
+    })
   });
 }
 
-export async function unregisterVoipPushToken(token: string) {
-  return pulseApi<{ ok?: boolean; message?: string }>("/api/calls/voip-token/revoke", {
+/**
+ * Stop this device ringing for the signed-in account.
+ *
+ * Revokes by device id as well as by token because at logout the token is frequently not
+ * in memory: PushKit only hands it to JS through the `register` event, which fires once
+ * per launch, and a user who signs out without having received a call in that session has
+ * nothing to send. The backend's `revoke_token` accepts either identifier and is scoped to
+ * the caller's own `user_id`, so the device-id path is both sufficient and safe.
+ *
+ * Failing to call this leaves an active token behind, and an active token means two things
+ * at once: the server keeps suppressing the alert push for a device that is no longer
+ * listening, and it can still ring a signed-out phone with the caller's name on the
+ * CallKit screen.
+ */
+export async function unregisterVoipPushToken(options: { token?: string; reason?: string } = {}) {
+  const deviceId = await getPushInstallationId().catch(() => "");
+  return pulseApi<{ ok?: boolean; message?: string; revoked?: number }>("/api/calls/voip-token/revoke", {
     method: "POST",
-    body: JSON.stringify({ token, platform: "ios", source: "native" })
+    body: JSON.stringify({
+      token: options.token || undefined,
+      device_id: deviceId,
+      installation_id: deviceId,
+      platform: "ios",
+      reason: options.reason || "logout",
+      source: "native"
+    })
   });
 }
 
