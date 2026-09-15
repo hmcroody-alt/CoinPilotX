@@ -494,6 +494,7 @@ def _scripted_httpx(script):
 
 
 BAD_TOKEN = '{"reason":"BadDeviceToken"}'
+UNREGISTERED = '{"reason":"Unregistered"}'
 
 
 class ApnsEnvironmentCorrectionTest(VoipBase):
@@ -553,17 +554,47 @@ class ApnsEnvironmentCorrectionTest(VoipBase):
         self.assertEqual(result.get("status"), "invalid_device")
         self.assertEqual(len(seen), 2)
 
-    def test_unregistered_is_not_replayed(self):
-        """MUTATION: replay on any 4xx.
+    def test_a_live_token_the_wrong_host_calls_unregistered_is_not_treated_as_dead(self):
+        """MUTATION: restore `http_status == 400` as the only replayable answer.
 
-        410 Unregistered is a positive statement that this host knew the token and
-        the app is gone. Replaying it doubles APNs traffic for every uninstalled
-        app and can only ever produce a second rejection.
+        This test exists because its opposite used to, and production killed it. The
+        old test asserted 410 Unregistered is never replayed, reasoning that it is
+        "a positive statement that this host knew the token and the app is gone."
+
+        The database says otherwise. Token hash `c3bd71e1…b239` was revoked as
+        `apns_unregistered` at 19:02:46Z; at 19:09:43Z the same handset registered
+        the *identical* hash again, because iOS still considered that token valid and
+        was still handing it to the app. It was never uninstalled. It is a sandbox
+        token — the build carries `aps-environment: development` — offered to the
+        production host, which does not know it and therefore says Unregistered.
+
+        "Not known here" only means "the app is gone" if you know you asked the right
+        host, and `token_environment` is recorded from the deployment-wide default
+        rather than the client's real entitlement, so we do not know that.
         """
-        result, seen = self._send([(410, '{"reason":"Unregistered"}')], environment="production")
+        result, seen = self._send([(410, UNREGISTERED), (200, "")], environment="production")
 
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(result.get("status"), "sent")
+        self.assertEqual(result.get("environment_corrected"), "sandbox")
+        self.assertEqual(len(seen), 2, "the push must be replayed against the other host")
+        self.assertTrue(seen[1].startswith("https://api.sandbox.push.apple.com/"))
+
+    def test_an_unregistered_token_both_hosts_refuse_is_still_dead(self):
+        """MUTATION: treat the 410 replay as proof the token is alive.
+
+        Widening the replay to 410 must not become a way for a genuinely uninstalled
+        app to keep its token. An uninstalled app is unknown to *both* hosts, so the
+        replay is refused too and the revocation still happens. This is the property
+        that has to survive the widening: a token kept alive for a handset that can
+        no longer be rung holds alert-push suppression, and that ends in a silent
+        phone.
+        """
+        result, seen = self._send([(410, UNREGISTERED), (410, UNREGISTERED)], environment="production")
+
+        self.assertFalse(result.get("ok"))
         self.assertEqual(result.get("status"), "invalid_device")
-        self.assertEqual(len(seen), 1)
+        self.assertEqual(len(seen), 2)
 
     def test_an_alert_token_on_the_voip_topic_is_not_replayed(self):
         """MUTATION: fold DeviceTokenNotForTopic into the mismatch check.

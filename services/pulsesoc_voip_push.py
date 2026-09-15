@@ -483,13 +483,42 @@ def _post_voip(token: str, payload: dict[str, Any], env: str) -> dict[str, Any]:
 def _is_environment_mismatch(attempt: dict[str, Any]) -> bool:
     """Whether this answer could just mean "right token, wrong host".
 
-    Only ``400 BadDeviceToken`` is ambiguous. ``410 Unregistered`` is a positive
-    statement that this host knew the token and the app is gone, and
-    ``DeviceTokenNotForTopic`` means an alert token reached the VoIP topic — a
-    registration bug the other host would reject identically, so replaying it
-    would only double the request.
+    Two answers are ambiguous, and the second one cost a device its ability to
+    ring before the evidence turned up.
+
+    ``400 BadDeviceToken`` is the obvious one: the token may be perfectly live at
+    the other host.
+
+    ``410 Unregistered`` was previously excluded here, on the reasoning that it is
+    "a positive statement that this host knew the token and the app is gone." That
+    is wrong, and production disproved it. Token hash ``c3bd71e1…b239`` was revoked
+    as ``apns_unregistered`` at 19:02:46Z; at 19:09:43Z the same handset registered
+    **the identical hash** again, because iOS still considered that token valid and
+    was still handing it to the app. A token cannot be both uninstalled and live.
+    What actually happened is that a *sandbox* token (the build carries
+    ``aps-environment: development``) was offered to the *production* host, which
+    does not know it and says ``Unregistered``. That answer means "not known here",
+    which is only the same as "app is gone" when you already know you asked the
+    right host — and with ``token_environment`` recorded from the deployment-wide
+    default rather than from the client's real entitlement, we do not know that.
+
+    Treating it as ambiguous is safe in the direction that matters. A genuinely
+    uninstalled app is unknown to *both* hosts, so the replay is refused too and
+    the token is still revoked — ``test_a_token_both_hosts_reject_is_still_dead``
+    pins that, and it is the property that must not regress, because a token kept
+    alive for an uninstalled app holds alert-push suppression for a handset that
+    can no longer be rung.
+
+    ``DeviceTokenNotForTopic`` stays excluded: that is an alert token on the VoIP
+    topic, a client registration bug which the other host rejects identically.
     """
-    return int(attempt.get("http_status") or 0) == 400 and "BadDeviceToken" in str(attempt.get("body") or "")
+    http_status = int(attempt.get("http_status") or 0)
+    body = str(attempt.get("body") or "")
+    if http_status == 400:
+        return "BadDeviceToken" in body
+    if http_status == 410:
+        return "Unregistered" in body
+    return False
 
 
 def _apns_reason(body: str) -> str:
@@ -593,10 +622,11 @@ def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -
             sent["environment_corrected"] = env
         return sent
 
-    # 410 Unregistered, and a BadDeviceToken that both hosts rejected, mean this
-    # token is dead. DeviceTokenNotForTopic usually means an alert token reached
-    # the VoIP topic — also unusable here, and worth surfacing distinctly because
-    # it points at a registration bug rather than an uninstalled app.
+    # Reaching here with 410 Unregistered or 400 BadDeviceToken now means *both*
+    # hosts refused the token, since either answer is replayed above — so it is
+    # dead rather than merely misrouted. DeviceTokenNotForTopic is not replayed:
+    # it means an alert token reached the VoIP topic, a registration bug rather
+    # than an uninstalled app, and is worth surfacing distinctly.
     invalid = http_status == 410 or (
         http_status == 400 and ("BadDeviceToken" in body or "DeviceTokenNotForTopic" in body)
     )
