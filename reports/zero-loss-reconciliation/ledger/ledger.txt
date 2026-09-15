@@ -1,0 +1,321 @@
+master change ledger — 105 rows
+
+  ALREADY_PRODUCTION       90
+  SUPERSEDED               8
+  OBSOLETE                 7
+
+DANGLING-DUPLICATES        ALREADY_PRODUCTION     unreachable commits whose patch id is already upstream
+                           basis: git cherry three-arg form, '-' prefix
+
+DANGLING-UNCLASSIFIABLE    ALREADY_PRODUCTION     merge commits: no single diff, therefore no patch id. Reported rather 
+                           basis: subject match upstream; no patch id exists to compare
+
+ORPHAN-54cf51d421          ALREADY_PRODUCTION     Record the commit and push outcome in the verification matrix
+                           basis: 34/36 distinctive lines present in main
+
+ORPHAN-571383ef68          ALREADY_PRODUCTION     Record the commit and push outcome in the verification matrix
+                           basis: 34/36 distinctive lines present in main
+
+ORPHAN-5ee6868fa1          ALREADY_PRODUCTION     tmp
+                           basis: 59/60 distinctive lines present in main
+
+ORPHAN-73cdf7350a          ALREADY_PRODUCTION     Heal the saved tables' unique indexes on existing deployments
+                           basis: 42/42 distinctive lines present in main
+
+ORPHAN-7b21f70652          ALREADY_PRODUCTION     feat(premium): dual-provider purchase-option resolver + StoreKit test 
+                           basis: 60/60 distinctive lines present in main
+
+ORPHAN-7e8ce422f8          ALREADY_PRODUCTION     Premium Command Center: rich clickable Premium spaces + Verified Ident
+                           basis: 60/60 distinctive lines present in main
+
+ORPHAN-88fcc963be          ALREADY_PRODUCTION     fix(native): instant optimistic chat bubble + auto-dismissing in-app n
+                           basis: 57/60 distinctive lines present in main
+
+ORPHAN-91812060a0          ALREADY_PRODUCTION     Snapshot working tree: multi-mission in-progress work (ads, marketplac
+                           basis: 60/60 distinctive lines present in main
+
+ORPHAN-b75db5534a          ALREADY_PRODUCTION     Snapshot working tree: multi-mission in-progress work (ads, marketplac
+                           basis: 60/60 distinctive lines present in main
+
+REF-claude-bold-hodgkin-90 ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-bold-jemison-81 ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-businessos-perf ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-charming-poinca ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-cool-pasteur-66 ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-dreamy-proskuri ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-fervent-bose-48 ALREADY_PRODUCTION     1 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-flamboyant-eins ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-loving-banach-1 ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-pedantic-solomo ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-pushkit-callkit ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-claude-vigilant-solomo ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-backup-translat ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-backup-undx-fix ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-adoring- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-business ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-dreamy-e ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-dreamy-w ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-ecstatic ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-elegant- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-eloquent ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-fervent- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-flamboya ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-friendly ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-happy-la ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-intellig ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-loving-b ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-naughty- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-peaceful ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-premium- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-premium- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-pushkit- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-qa-group ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-recursin ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-recursin ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-relaxed- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-suspicio ALREADY_PRODUCTION     1 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-trusting ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-claude-web-nati ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-agora-rtc ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-agora-rtc ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-app-revie ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-apple-iap ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-automated ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-automated ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-continue- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-crypto-re ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-emergency ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-founding- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-governed- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-live-shar ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-livestrea ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-persisten ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-premium-c ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-profile-p ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-sentinel- ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-store-das ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-undx-loca ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-undx-mult ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-undx-save ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-undx-tran ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-undx-v3-p ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-unified-r ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-video-cal ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-codex-work-on-i ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-feat-business-p ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-feat-sentinel-s ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-feature-spatial ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-fix-briefings-e ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-fix-briefings-n ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-fix-presence-sc ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-fix-status-rail ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-integration-rel ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-preserve-privat ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-release-full-sw ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-release-undx-ne ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-release-undx-so ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-origin-work-localizati ALREADY_PRODUCTION     0 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+REF-preserve-bold-hodgkin- ALREADY_PRODUCTION     6 commit(s), every one patch-id equivalent to something upstream
+                           basis: git cherry: no '+' lines
+
+ORPHAN-0e4ad82f97          OBSOLETE               chore: keep private Office uploads out of source control
+                           basis: only 0 distinctive lines — no evidence either way
+
+ORPHAN-9d0a3fb7d7          OBSOLETE               Keep the route_auth imports on one line
+                           basis: only 1 distinctive lines — no evidence either way
+
+ORPHAN-bf87d82821          OBSOLETE               Revert "fix(reels): derive navigator visibility from swipe direction"
+                           basis: 2/46 distinctive lines present in main
+
+ORPHAN-d1faaa8fbc          OBSOLETE               fix(reels): derive navigator visibility from swipe direction
+                           basis: 10/60 distinctive lines present in main
+
+ORPHAN-f26be96cdd          OBSOLETE               chore(ios): bump build to 22 for the tap-to-analyse + native-primitive
+                           basis: only 0 distinctive lines — no evidence either way
+
+REF-claude-nostalgic-neuma OBSOLETE               4 commit(s) with no patch-id twin upstream; 0 already equivalent
+                           basis: branch tip == detached worktree HEAD 997903cf (same 4 patch ids). Merge 7d8c9ffd
+
+REF-origin-claude-nostalgi OBSOLETE               4 commit(s) with no patch-id twin upstream; 0 already equivalent
+                           basis: origin twin of claude/nostalgic-neumann-d9391f, same 4 patch ids; see that row
+
+ORPHAN-4709beed48          SUPERSEDED             fix(live): stop failing healthy broadcasts on a playout signal a host 
+                           basis: 52/60 distinctive lines present in main
+
+ORPHAN-d2837f2064          SUPERSEDED             fix crypto alerts to fire only on threshold crossings
+                           basis: 51/60 distinctive lines present in main
+
+REF-claude-private-office- SUPERSEDED             5 commit(s) with no patch-id twin upstream; 0 already equivalent
+                           basis: 0cb23702/291be457/dee12971 are the same withdrawal, rebuilt on pinned origin/mai
+
+REF-main                   SUPERSEDED             2 commit(s) with no patch-id twin upstream; 0 already equivalent
+                           basis: f1b74e89/5f24c970/a41f1b15 are this mission's own Phase 1 work on a local main t
+
+STASH-stash0               SUPERSEDED             On main: wip: premium command center awaiting 10-locale completion
+                           basis: 40/60 lines present; residue read by hand and found weaker than main
+
+STASH-stash1               SUPERSEDED             On main: undx-v3-pre-integration-preservation-20260719
+                           basis: 56/60 lines present; residue read by hand and found weaker than main
+
+STASH-stash2               SUPERSEDED             On main: autostash
+                           basis: 56/60 lines present; residue read by hand and found weaker than main
+
+STASH-stash3               SUPERSEDED             On main: autostash
+                           basis: 55/60 lines present; residue read by hand and found weaker than main
+

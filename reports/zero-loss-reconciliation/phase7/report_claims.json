@@ -1,0 +1,7484 @@
+[
+  {
+    "report": "ADS_MONEY_RECONCILIATION_REPORT.md",
+    "sampled": 33,
+    "present": 26,
+    "ratio": 0.788,
+    "missing": [
+      "src/api/businessOs.ts",
+      "src/api/adsDelivery.ts",
+      "test_wallet_spend_drawdown.py",
+      "test_economy_metrics_ad_scope.py",
+      "src/api/__tests__/adsDelivery.test.ts",
+      "src/screens/__tests__/AdsManagerScreen.test.tsx",
+      "tests.undx_agent.test_knowledge_map_grounding"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "ADS_RELEASE_VERIFICATION_REPORT.md",
+    "sampled": 40,
+    "present": 28,
+    "ratio": 0.7,
+    "missing": [
+      "VISIBLE_DEFECTS",
+      "PROHIBITED_DISPLAY",
+      "trust_and_policy",
+      "campaign_system",
+      "WALLET_BALANCE_RULES",
+      "STATUS_INDICATOR_RULE",
+      "SPEND_REPORT",
+      "CUSTOMER_COPY_RULE",
+      "TARGETING_SAFETY",
+      "STATE_TRANSITION_RULE",
+      "EDITING_RULES",
+      "SERVER_AUTHORITY"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "ADVERTISING_REBUILD_REPORT.md",
+    "sampled": 27,
+    "present": 12,
+    "ratio": 0.444,
+    "missing": [
+      "src/api/__tests__/adsDashboard.test.ts",
+      "src/screens/__tests__/AdsManagerScreen.test.tsx",
+      "src/screens/__tests__/AdvertisingRoute.test.tsx",
+      "src/screens/__tests__/BusinessOsAdvertisingScreen.test.tsx",
+      "theme/adsLight.ts",
+      "screens/AdsManagerScreen.tsx",
+      "screens/AdvertisingRoute.tsx",
+      "api/adsDashboard.ts",
+      "theme/adsMotion.ts",
+      "navigation/AppNavigator.tsx",
+      "navigation/types.ts",
+      "api/businessOs.ts",
+      "screens/BusinessOsAdvertisingScreen.tsx",
+      "advertising-live.html",
+      "advertising-posts-live.html"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "APP_REVIEW_FINAL_GO_NO_GO_REPORT.md",
+    "sampled": 40,
+    "present": 36,
+    "ratio": 0.9,
+    "missing": [
+      "src/calls/callSessionStore.ts",
+      "/admin/verification/appeals/<id>/decide",
+      "test_agora_rtc_provider_contract.py",
+      "src/navigation/AppNavigator.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "APP_REVIEW_READINESS_REPORT.md",
+    "sampled": 40,
+    "present": 33,
+    "ratio": 0.825,
+    "missing": [
+      "/api/crypto/alerts/<id>/history",
+      "CallScreen.tsx",
+      "calls/useNativeCallRoom.ts",
+      "calls/callSignalMedia.ts",
+      "calls/callKitBridge.ts",
+      "api/calls.ts",
+      "/api/pulse/communications/v2/..."
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "BUSINESS_OS_FINAL_REPORT.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "BUSINESS_PROFILE_REBUILD_REPORT.md",
+    "sampled": 9,
+    "present": 1,
+    "ratio": 0.111,
+    "missing": [
+      "src/theme/logiNexus.ts",
+      "src/theme/businessLiveMotion.ts",
+      "src/components/businessProfile/BusinessLiveParts.tsx",
+      "src/screens/BusinessProfileScreen.tsx",
+      "src/api/businessOs.ts",
+      "src/navigation/types.ts",
+      "src/navigation/AppNavigator.tsx",
+      "src/screens/__tests__/BusinessProfileScreen.test.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "EVENTS_ACTIVITY_COMPLETION_REPORT.md",
+    "sampled": 20,
+    "present": 8,
+    "ratio": 0.4,
+    "missing": [
+      "src/screens/ActivityScreen.tsx",
+      "src/screens/ActivityRoute.tsx",
+      "src/screens/EventsManagerScreen.tsx",
+      "src/core/unreadCounts.ts",
+      "AppNavigator.tsx",
+      "src/api/activityFeed.ts",
+      "paymentsHub.ts",
+      "src/api/paymentsHub.ts",
+      "src/navigation/AppNavigator.tsx",
+      "src/screens/StoreDashboardScreen.tsx",
+      "src/screens/MarketplaceManagerScreen.tsx",
+      "src/api/eventsManager.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "INSIGHTS_REBUILD_REPORT.md",
+    "sampled": 40,
+    "present": 32,
+    "ratio": 0.8,
+    "missing": [
+      "storeDashboard.ts",
+      "src/api/insightsDashboard.ts",
+      "src/api/insightsRules.ts",
+      "BusinessOsInsightsScreen.tsx",
+      "src/components/insights/index.ts",
+      "src/api/__tests__/insightsDashboard.test.ts",
+      "src/api/__tests__/insightsRules.test.ts",
+      "StoreDashboardScreen.test.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "LIVESTREAM_AUDIO_ROUTE_REPORT.md",
+    "sampled": 37,
+    "present": 22,
+    "ratio": 0.595,
+    "missing": [
+      "realtimeAudioEngine.ts",
+      "LiveHostSessionScreen.tsx",
+      "LiveScreen.tsx",
+      "/api/pulse/live/<id>/livekit/token",
+      "pulse_livekit_verify_token_claims",
+      "tests/protection/test_livestream_audio_token_grants.py",
+      "useLiveBroadcastRoom.ts",
+      "liveSession.ts",
+      "tests/protection/test_livestream_contract.py",
+      "callAudioOwnershipRegression.test.ts",
+      "mediaPlaybackCoordinator.test.ts",
+      "createPayloadMusic.test.ts",
+      "pulseRadioQueueOrder.test.ts",
+      "test_media_playback_contract.py",
+      "ReelLiveViewerSurface.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "LIVE_REPLAY_AUTOPUBLISH_REPORT.md",
+    "sampled": 29,
+    "present": 26,
+    "ratio": 0.897,
+    "missing": [
+      "test_live_social_distribution.py",
+      "test_live_end_nonblocking.py",
+      "test_agora_replay_mux_contract.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "MARKETPLACE_REBUILD_REPORT.md",
+    "sampled": 40,
+    "present": 32,
+    "ratio": 0.8,
+    "missing": [
+      "src/api/marketplaceScreen.ts",
+      "src/api/marketplaceOffers.ts",
+      "src/theme/storeLight.ts",
+      "marketplaceLight.ts",
+      "src/components/SponsoredAdCard.tsx",
+      "src/components/store/StoreHeader.tsx",
+      "src/api/marketplace.ts",
+      "src/api/businessOs.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "MARKET_PULSE_UNDX_CONTEXT_REPORT.md",
+    "sampled": 24,
+    "present": 12,
+    "ratio": 0.5,
+    "missing": [
+      "src/undx/marketContext.ts",
+      "src/api/watchlists.ts",
+      "marketContext.ts",
+      "src/undx/undxChatTarget.ts",
+      "marketContext.test.ts",
+      "undxChatTarget.test.ts",
+      "api/__tests__/pulseAiRequestContext.test.ts",
+      "ChatScreen.tsx",
+      "AssetDetailScreen.tsx",
+      "PulseAiScreen.tsx",
+      "types.ts",
+      "undxChatTarget.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "MARKET_PULSE_UNDX_LANDING_REPORT.md",
+    "sampled": 33,
+    "present": 18,
+    "ratio": 0.545,
+    "missing": [
+      "src/undx/__tests__/marketContext.test.ts",
+      "src/undx/__tests__/undxChatTarget.test.ts",
+      "src/api/__tests__/pulseAiRequestContext.test.ts",
+      "ChatScreen.tsx",
+      "undx_agent_policy.py",
+      "undx_architecture.py",
+      "pulseAiRequestContext.test.ts",
+      "api/messenger.ts",
+      "marketContext.test.ts",
+      "AssetDetailScreen.tsx",
+      "PulseAiScreen.tsx",
+      "types.ts",
+      "marketContext.ts",
+      "undxChatTarget.ts",
+      "realtime_audio_change_gate.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "MEDIA_DELIVERY_FOUNDATION_REPORT.md",
+    "sampled": 19,
+    "present": 19,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "MEDIA_FOUNDATION_FINAL_REPORT.md",
+    "sampled": 22,
+    "present": 10,
+    "ratio": 0.455,
+    "missing": [
+      "mediaContract.ts",
+      "mediaAccess.ts",
+      "mediaCache.ts",
+      "mediaDownloader.ts",
+      "mediaActions.ts",
+      "NativeMediaViewer.tsx",
+      "MEDIA_DEVICE_QA.md",
+      "mediaFoundationOwnership.test.ts",
+      "ProfileHeader.tsx",
+      "AppNavigator.tsx",
+      "ProfileScreen.tsx",
+      "src/session/auth.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "MESSENGER_STEP_1_1_IDEMPOTENCY_RELEASE_REPORT.md",
+    "sampled": 19,
+    "present": 17,
+    "ratio": 0.895,
+    "missing": [
+      "ChatScreen.tsx",
+      "routes.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "MISSION7_AUDIT_REPORT.md",
+    "sampled": 22,
+    "present": 9,
+    "ratio": 0.409,
+    "missing": [
+      "NotificationSettingsScreen.tsx",
+      "src/live/LiveChatOverlay.tsx",
+      "src/screens/LiveHostSessionScreen.tsx",
+      "LiveHostSessionScreen.tsx",
+      "src/theme/ThemeContext.tsx",
+      "src/__tests__/accessibilityBaseline.test.ts",
+      "__RegressionProbe",
+      "SavedScreen.tsx",
+      "src/i18n/engine.ts",
+      "src/social/__tests__/actionGuard.test.ts",
+      "screens/settings/DeveloperSettingsScreen.tsx",
+      "SettingsScreen.tsx",
+      "settings/registry.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "MISSION_CONTROL_SECTION_NAVIGATION_REPORT.md",
+    "sampled": 7,
+    "present": 2,
+    "ratio": 0.286,
+    "missing": [
+      "UserDashboardScreen.tsx",
+      "navigation/types.ts",
+      "core/__tests__/dashboardMapNavigation.test.ts",
+      "screens/__tests__/UserDashboardScreen.dashboardMap.test.tsx",
+      "types.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "MULTI_GUEST_CALLS_FINAL_REPORT.md",
+    "sampled": 19,
+    "present": 14,
+    "ratio": 0.737,
+    "missing": [
+      "callParticipants.ts",
+      "test_call_acceptance_sync",
+      "src/live/liveSession.test.ts",
+      "src/screens/ChatScreen.tsx",
+      "src/screens/CameraStudioScreen.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "MULTI_GUEST_LIVE_FINAL_REPORT.md",
+    "sampled": 34,
+    "present": 20,
+    "ratio": 0.588,
+    "missing": [
+      "LiveHostSessionScreen.tsx",
+      "test_agora_token_generation.py",
+      "test_live_moderation_authority.py",
+      "ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG",
+      "src/api/live.ts",
+      "src/live/agoraLiveTelemetry.ts",
+      "src/live/liveMusicMixing.ts",
+      "src/live/liveSession.ts",
+      "src/live/useAgoraLiveBroadcastRoom.ts",
+      "src/screens/LiveHostSessionScreen.tsx",
+      "multiGuestBroadcastScenarios.test.ts",
+      "liveTelemetryPrivacy.test.ts",
+      "liveStreamQuality.ts",
+      "zz_dbg.test.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "OPS2_OPERATIONS_INTEGRITY_REPORT.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "PREMIUM_CRYPTO_INTELLIGENCE_FINAL_REPORT.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "PREMIUM_EXPIRY_CRYPTO_LOCK_REPORT.md",
+    "sampled": 24,
+    "present": 23,
+    "ratio": 0.958,
+    "missing": [
+      "PremiumCenterScreen.cryptoIntelligence.test.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "PREMIUM_HARD_LOCK_FINAL_REPORT.md",
+    "sampled": 17,
+    "present": 17,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "PRIVATE_CONVERSATIONS_STATUS_REPORT.md",
+    "sampled": 31,
+    "present": 31,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "PRIVATE_OFFICE_NATIVE_ENTRY_REPORT.md",
+    "sampled": 40,
+    "present": 23,
+    "ratio": 0.575,
+    "missing": [
+      "PremiumCenterScreen.tsx",
+      "AppNavigator.tsx",
+      "types.ts",
+      "linking.ts",
+      "noClientTierInference.test.ts",
+      "PrivateOfficeScreen.test.tsx",
+      "PrivateFactsScreen.test.tsx",
+      "test_entitlement_routes.py",
+      "test_private_facts_capability.py",
+      "test_private_facts_kill_switch.py",
+      "test_private_observability.py",
+      "test_private_office_routes.py",
+      "test_private_office_surface.py",
+      "test_private_retrieval.py",
+      "test_private_substrate.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "PRIVATE_OPERATIONS_SLICE1_REPORT.md",
+    "sampled": 40,
+    "present": 31,
+    "ratio": 0.775,
+    "missing": [
+      "test_private_records_undx_spec.py",
+      "test_obligation_projection.py",
+      "concierge.py",
+      "advance_request",
+      "private_office_structured_records_routes.py",
+      "/sessions/.../tmp/flasklibs",
+      "test_operations_routes.py",
+      "health.py",
+      "PRIVATE_OFFICE_CONFIGURATION.md"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "PULSESOC_ADS_WORKER_MISSION_REPORT.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "PULSESOC_STATUS_REGRESSION_REPORT.md",
+    "sampled": 23,
+    "present": 19,
+    "ratio": 0.826,
+    "missing": [
+      "ProfileHeader.tsx",
+      "AppNavigator.tsx",
+      "ProfileScreen.tsx",
+      "session/auth.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "PULSESOC_STOREKIT_STRIPE_UNIFIED_PAYMENTS_FINAL_REPORT.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "PULSESOC_SYSTEM_SPEED_REPORT.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "static/vendor/livekit-client.umd.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "SELLER_APPLICATION_REVIEW_REPORT.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "SellerApplicationScreen.tsx",
+      "accessibilityBaseline.test.ts"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "SLICE6_ADVERTISING_REPORT.md",
+    "sampled": 40,
+    "present": 39,
+    "ratio": 0.975,
+    "missing": [
+      "api.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "SMII_FINAL_GATE_REPORT.md",
+    "sampled": 7,
+    "present": 5,
+    "ratio": 0.714,
+    "missing": [
+      "/admin/users/35/send-reset-email",
+      "/webhooks/brevo/delivery"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "SPATIAL_MOTION_CONSOLE_REPORT.md",
+    "sampled": 21,
+    "present": 14,
+    "ratio": 0.667,
+    "missing": [
+      "colorBaseline.test.ts",
+      "run_protection_suite.py",
+      "test_agora_token_generation.py",
+      "package.json",
+      "package-lock.json",
+      "expo/bundledNativeModules.json",
+      "realtime_audio_change_gate.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "STAGE_176B_DRYRUN_ACCEPTANCE_REPORT.md",
+    "sampled": 15,
+    "present": 13,
+    "ratio": 0.867,
+    "missing": [
+      "RESERVATION_SWEEP_CANDIDATE_QUERY_FALLBACK",
+      "CANDIDATE_QUERY_FALLBACK"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "STAGE_176B_SCHEMA_BOOTSTRAP_REPORT.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "reservation_schema_ready"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "STORE_SCREEN_REBUILD_REPORT.md",
+    "sampled": 23,
+    "present": 7,
+    "ratio": 0.304,
+    "missing": [
+      "src/api/__tests__/storeDashboard.test.ts",
+      "src/screens/__tests__/StoreDashboardScreen.test.tsx",
+      "src/screens/__tests__/SellerStoreRoute.test.ts",
+      "src/api/marketplace.ts",
+      "src/theme/storeLight.ts",
+      "src/theme/logiNexus.ts",
+      "src/theme/storeMotion.ts",
+      "src/api/storeDashboard.ts",
+      "src/screens/StoreDashboardScreen.tsx",
+      "src/screens/SellerStoreRoute.tsx",
+      "src/navigation/AppNavigator.tsx",
+      "src/navigation/types.ts",
+      "SellerStoreScreen.tsx",
+      "SellerStoreRoute.test.ts",
+      "src/i18n/hooks.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "STRIPE_ADS_BILLING_MISSION3_FINAL_REPORT.md",
+    "sampled": 22,
+    "present": 19,
+    "ratio": 0.864,
+    "missing": [
+      "acct_1TTVo7FP8qvvGWBI",
+      "we_1U2tZEFP8qvvGWBIk57epzj2",
+      "tests.pulse_ads.test_wallet_spend_drawdown"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "UNDX_CAPABILITY_PLANNER_REPORT.md",
+    "sampled": 40,
+    "present": 36,
+    "ratio": 0.9,
+    "missing": [
+      "test_saved_post_write_pack.py",
+      "test_knowledge_map_grounding.py",
+      "test_selection.py",
+      "test_knowledge.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "UNDX_MISSION_D_REPORT.md",
+    "sampled": 16,
+    "present": 16,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "UNDX_SEMANTIC_INDEX_RUN_REPORT.md",
+    "sampled": 16,
+    "present": 15,
+    "ratio": 0.938,
+    "missing": [
+      "DRIVER_GZ_B64"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mobile_video_detail_page_repair_report.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_reels_status_publish_truth.md",
+    "sampled": 16,
+    "present": 15,
+    "ratio": 0.938,
+    "missing": [
+      "Bams_Eb_T6CK__950ubPiw"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_physical_camera_qa_results.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "index.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_motion_system.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/item4_agora_host_repair_finding.md",
+    "sampled": 40,
+    "present": 6,
+    "ratio": 0.15,
+    "missing": [
+      "liveHostEngineRepair.test.ts",
+      "liveAudioNative.ts",
+      "liveAudioEngine.ts",
+      "package.json",
+      "src/core/index.ts",
+      "src/live-audio/index.ts",
+      "core/realtimeAudioEngine.ts",
+      "core/realtimeMicrophonePublisher.ts",
+      "core/audioOwnershipPolicy.ts",
+      "core/realtimeAudioTelemetry.ts",
+      "live-audio/liveAudioEngine.ts",
+      "live-audio/liveAudioNative.ts",
+      "live-audio/liveMicrophonePublisher.ts",
+      "live/liveAudioPublisher.ts",
+      "live/liveAudioTelemetry.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/economy_loginexus_operating_system.md",
+    "sampled": 20,
+    "present": 18,
+    "ratio": 0.9,
+    "missing": [
+      "/dashboard/economy/<subsystem>",
+      "/admin/economy-command-center/<section>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/undx_phase2_5_content_graph_checkpoint_2026-07-29.md",
+    "sampled": 14,
+    "present": 7,
+    "ratio": 0.5,
+    "missing": [
+      "/tmp/phase25_feed_performance_verified.png",
+      "/tmp/phase25_feed_comment_summary_pass.png",
+      "/tmp/phase25_reels_perf.png",
+      "/tmp/phase25_reel_unsave_confirm.png",
+      "/tmp/phase25_unlike_confirm.png",
+      "/tmp/phase25_content_graph_verified.png",
+      "/tmp/phase25_profile_language_confirm.png"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_ai_command_center_report.md",
+    "sampled": 12,
+    "present": 11,
+    "ratio": 0.917,
+    "missing": [
+      "/dashboard/ai/..."
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_layout_parity.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_pulse_command_completion.md",
+    "sampled": 10,
+    "present": 9,
+    "ratio": 0.9,
+    "missing": [
+      "static/pulsesoc_calls.js"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/realtime_audio_verified_baseline.md",
+    "sampled": 40,
+    "present": 21,
+    "ratio": 0.525,
+    "missing": [
+      "app.json",
+      "src/live/liveAudioFlags.ts",
+      "src/core/__tests__/realtimeAudioEngine.test.ts",
+      "src/core/__tests__/audioOwnershipPolicy.test.ts",
+      "src/core/__tests__/realtimeAudioTelemetry.test.ts",
+      "src/calls/__tests__/callAudioOwnershipRegression.test.ts",
+      "src/calls/__tests__/useNativeCallRoomAudio.test.ts",
+      "src/live/__tests__/liveAudioPublisher.test.ts",
+      "src/live/__tests__/liveAudioConfiguration.test.ts",
+      "src/live/__tests__/liveAudioRecovery.test.ts",
+      "src/live/__tests__/liveAudioTelemetry.test.ts",
+      "src/live/__tests__/cohostPublishGate.test.ts",
+      "src/live/__tests__/remoteAudioReapply.test.ts",
+      "src/live/__tests__/liveSession.test.ts",
+      "src/calls/useNativeCallRoom.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_search_progress.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_elite_platform_completion_2026-07-25.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_media_routing_truth.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_code_reuse_audit.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_ads_qa_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/mobile_release_update_after_home_live_status_fix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_react_native_foundation.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_button_route_inventory.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulseshell_audit.md",
+    "sampled": 16,
+    "present": 14,
+    "ratio": 0.875,
+    "missing": [
+      "App.tsx",
+      "scripts/live_camera_freeze_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/external_platform_legal_name_audit.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_premium_success_readiness.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_new_chat_incident_closure_2026-07-15.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "/tmp/PulseSocMessengerP0Derived/Logs/Test/Test-PulseSocNative-2026.07.15_22-38-20--0700.xcresult"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_master_navigation_drawer.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_inventory_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/arena_pause_strategy.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/post_comment_composer_ui_upgrade.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_physical_interaction_evidence_path.md",
+    "sampled": 15,
+    "present": 11,
+    "ratio": 0.733,
+    "missing": [
+      "device_os",
+      "app_bundle_id",
+      "api_base_url",
+      "evidence_file_path"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_marketplace_media_qa.md",
+    "sampled": 15,
+    "present": 14,
+    "ratio": 0.933,
+    "missing": [
+      "/tmp/pulsesoc_marketplace_media_qa.sqlite"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/undx_phase3c_expert_ecosystem_intelligence_2026-07-29.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_generated_concept_mapping.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/reliability_password_reset_incident.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_communications_legacy_audit.md",
+    "sampled": 40,
+    "present": 32,
+    "ratio": 0.8,
+    "missing": [
+      "/api/chat/thread/<thread_id>",
+      "/api/chat/thread/<thread_id>/new",
+      "/api/chat/thread/<thread_id>/send",
+      "/api/pulse/communications/conversations/<conversation_ref>/messages",
+      "/api/pulse/messages/<conversation_id>/send",
+      "/api/pulse/messages/<conversation_id>/presence",
+      "/api/pulse/messages/group/<conversation_id>/update",
+      "/api/pulse/messages/group/<conversation_id>/members"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_lightspeed_bottlenecks.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_store_progress.md",
+    "sampled": 16,
+    "present": 14,
+    "ratio": 0.875,
+    "missing": [
+      "/pulse/merchant/demo-seller",
+      "/pulse/merchant/<seller>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/production_truth_dashboard.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mobile_videos_hamburger_navigation.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_ads_security_review.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_comm_v2_voice_notes.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/WEB_PARITY_PHASE1_FREEZE.md",
+    "sampled": 39,
+    "present": 37,
+    "ratio": 0.949,
+    "missing": [
+      "pulse_messages_v2.html",
+      "pulse_advertiser_portal.html"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_xctest_camera_qa.md",
+    "sampled": 16,
+    "present": 14,
+    "ratio": 0.875,
+    "missing": [
+      "mobile-native/ios/PulseSocNativeUITests/PulseSocNativeCameraStudioQATests.swift",
+      "XCUIApplication.bundleID"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/settings_release_blocker_2026-07-26.md",
+    "sampled": 26,
+    "present": 22,
+    "ratio": 0.846,
+    "missing": [
+      "AppNavigator.tsx",
+      "navigation/types.ts",
+      "pulse_settings_routes.py",
+      "legalContent.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_post_reel_delete_parity_2026-07-19.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "/api/pulse/posts/<id>",
+      "/api/reels/<id>",
+      "deleteErrors.test.ts",
+      "deleteApi.test.ts",
+      "contentOwnership.test.ts",
+      "LoginScreen.test.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/undx_screen_context_native_2026-07-19.md",
+    "sampled": 24,
+    "present": 18,
+    "ratio": 0.75,
+    "missing": [
+      "src/undx/undxContext.ts",
+      "config.ts",
+      "src/undx/__tests__/undxContext.test.ts",
+      "src/api/config.ts",
+      "src/screens/ChatScreen.tsx",
+      "ChatScreen.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_groups_rooms_simulator_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_notifications_preferences.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/economy_backend_surface_audit.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/brevo_ip_block_diagnosis.md",
+    "sampled": 14,
+    "present": 14,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_interaction_parity.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_webview_visual_port_2026-07-17.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mobile_videos_page_redesign_report.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_request_stabilization_report.md",
+    "sampled": 22,
+    "present": 21,
+    "ratio": 0.955,
+    "missing": [
+      "static/js/pulse_live_studio.js"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_status_futuristic_icon_actions_2026-07-19.md",
+    "sampled": 26,
+    "present": 18,
+    "ratio": 0.692,
+    "missing": [
+      "/api/pulse/status/<id>/reply",
+      "/api/pulse/status/<id>/share",
+      "src/components/__tests__/StatusActionRail.test.tsx",
+      "src/screens/__tests__/StatusScreen.reaction.test.tsx",
+      "api/status.ts",
+      "components/StatusActionRail.tsx",
+      "components/StatusViewerCard.tsx",
+      "screens/StatusScreen.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_composer_completion_2026-07-17.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "pulse_home_core.js",
+      "HomePulseComposer.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_moderation_review_event_emission.md",
+    "sampled": 18,
+    "present": 18,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_advertiser_portal_audit.md",
+    "sampled": 22,
+    "present": 16,
+    "ratio": 0.727,
+    "missing": [
+      "/api/pulse/ads/accounts/<account_id>/profile",
+      "/api/pulse/ads/accounts/<account_id>/billing-summary",
+      "/api/pulse/ads/campaigns/<campaign_id>",
+      "/api/pulse/ads/campaigns/<campaign_id>/action",
+      "/api/pulse/ads/creatives/<creative_id>/action",
+      "/api/pulse/ads/creatives/<creative_id>/replace"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_code_reuse_audit.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_native_app_foundation.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/profile_media_upload_qa.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_courses_learning_progress.md",
+    "sampled": 33,
+    "present": 32,
+    "ratio": 0.97,
+    "missing": [
+      "/pulse/courses/<course_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_music_provider_options.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_ad_platform_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/batch23_spent_approval.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "mutate23.py",
+      "test_dead_approval_says_which"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/status_video_audio_close_fix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/creator_command_center_report.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_master_transformation.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_progress.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-chat-popup-removal/current-simulator-state.png",
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-chat-popup-removal/native-app-after-reopen.png"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_app_store_play_store_readiness.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/home_status_click_performance_report.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_reels_realtime_offline_device_closure_2026-07-12.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_feed_composer_progress.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/undx_phase3a_system_intelligence_map_2026-07-29.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_blocks_mutes_reports_progress.md",
+    "sampled": 16,
+    "present": 11,
+    "ratio": 0.688,
+    "missing": [
+      "/pulse/safety/blocks",
+      "/pulse/safety/mutes",
+      "/api/pulse/blocks",
+      "/api/pulse/blocks/<blocked_user_id>",
+      "/api/pulse/reports"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_feed_card_parity.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/app_store_optional_phone_signup_fix.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_premium_mobile_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/progressive_account_security_plan.md",
+    "sampled": 15,
+    "present": 14,
+    "ratio": 0.933,
+    "missing": [
+      "/api/account/trusted-devices/<id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_ui_ux_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/content_preloading_and_scroll_performance_report.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_launch_readiness.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "bot.py/services/payment_provider.py",
+      "bot.py/pulse_communications_v2/routes.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_app_migration_plan.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_room_polish_audio_report.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/messages_attachment_pipeline_audit.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_ui_ux_audit.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/app_store_metadata_update.md",
+    "sampled": 8,
+    "present": 3,
+    "ratio": 0.375,
+    "missing": [
+      "/tmp/appstore_distribution.png",
+      "/tmp/appstore_find_native.png",
+      "/tmp/appstore_verify_old_absent.png",
+      "/tmp/appstore_direct_replace_attempt.png",
+      "/tmp/appstore_word_replaced.png"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/app_store_1_0_1_backup_inventory_2026-08-30.md",
+    "sampled": 14,
+    "present": 6,
+    "ratio": 0.429,
+    "missing": [
+      "READY_FOR_SALE",
+      "APP_IPHONE_67",
+      "PREVIEW_SETS",
+      "PREPARE_FOR_SUBMISSION",
+      "ONE_MONTH",
+      "MISSING_METADATA",
+      "ONE_YEAR",
+      "UNRESOLVED_ISSUES"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/home_feed_live_placement_repair.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_fullscreen_incoming_call.md",
+    "sampled": 11,
+    "present": 8,
+    "ratio": 0.727,
+    "missing": [
+      "static/pulsesoc_calls.js",
+      "static/js/pulsesoc_global_call_overlay.js",
+      "scripts/pulsesoc_fullscreen_incoming_call_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/music_library_repair.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_call_system_full_functionality_audit.md",
+    "sampled": 15,
+    "present": 11,
+    "ratio": 0.733,
+    "missing": [
+      "/api/calls/<call_id>/ring-seen",
+      "/admin/calls/<call_id>/delivery",
+      "/api/admin/calls/<call_id>/delivery",
+      "static/pulsesoc_calls.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/sentinel_v1_foundation_inventory.md",
+    "sampled": 40,
+    "present": 33,
+    "ratio": 0.825,
+    "missing": [
+      "security_engine.py",
+      "webhook_inbox.py",
+      "undx_capability_registry.py",
+      "undx_verification.py",
+      "business_os/payments/incidents.py",
+      "business_os/payments/seller_payouts.py",
+      "advertising/funding.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_groups_progress.md",
+    "sampled": 19,
+    "present": 17,
+    "ratio": 0.895,
+    "missing": [
+      "/api/pulse/groups/<id-or-slug>/join",
+      "/api/pulse/groups/<id-or-slug>/chat/open"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_completion.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_media_viewer_progress.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "/api/pulse/media/<media_id>/status"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/subscription_billing_wiring_fix.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_trust_safety_review_event_emission.md",
+    "sampled": 14,
+    "present": 14,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_complete_design.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_audio_guest_join_repair_2026-07-21.md",
+    "sampled": 20,
+    "present": 11,
+    "ratio": 0.55,
+    "missing": [
+      "scripts/pulsesoc_native_live_audit.py",
+      "scripts/pulsesoc_live_audio_guest_join_repair_audit.py",
+      "/api/pulse/live/<live_id>/join",
+      "/api/pulse/live/<live_id>/state",
+      "/api/pulse/live/<live_id>/join-request",
+      "/api/pulse/live/<live_id>/join-status",
+      "/api/pulse/live/<live_id>/livekit/token",
+      "/api/pulse/live/<live_id>/guests/<guest_id>/publish-complete",
+      "/api/pulse/live/<live_id>/join-requests"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_device_qa.md",
+    "sampled": 6,
+    "present": 3,
+    "ratio": 0.5,
+    "missing": [
+      "/api/pulse/messages/<conversation_id>/send",
+      "/api/pulse/messages/<conversation_id>/seen",
+      "/api/pulse/messages/<conversation_id>/typing"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/mobile_reels_redesign_report.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_mobile_mux_playback_fix.md",
+    "sampled": 11,
+    "present": 10,
+    "ratio": 0.909,
+    "missing": [
+      "/static/uploads/pulse_media/2026/06/02/pulse-video-9318a38f2b64dfd4.webm"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_courses_learning_qa.md",
+    "sampled": 12,
+    "present": 11,
+    "ratio": 0.917,
+    "missing": [
+      "/tmp/pulsesoc_events_qa_credentials.txt"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/agora_audio_test_relevance_audit.md",
+    "sampled": 40,
+    "present": 6,
+    "ratio": 0.15,
+    "missing": [
+      "App.tsx",
+      "index.ts",
+      "calls/__tests__/callSessionStore.test.ts",
+      "callSessionStore.ts",
+      "calls/__tests__/useAgoraCallRoom.test.ts",
+      "calls/__tests__/callKitBridge.test.ts",
+      "calls/__tests__/callSignalMediaReentrancy.test.ts",
+      "callSignalMedia.ts",
+      "calls/__tests__/callToneLifecycle.test.ts",
+      "callToneLifecycle.ts",
+      "calls/__tests__/callerAcceptanceSync.test.ts",
+      "calls/__tests__/callerPollAppStateGate.test.ts",
+      "calls/__tests__/callParticipants.test.ts",
+      "callParticipants.ts",
+      "live/__tests__/liveSeatReconciliation.test.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/mobile_safari_messaging_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/native_reels_immersive_feed_phase2_2026-07-20.md",
+    "sampled": 6,
+    "present": 3,
+    "ratio": 0.5,
+    "missing": [
+      "src/reels/reelMediaKind.ts",
+      "src/reels/__tests__/reelMediaKind.test.ts",
+      "src/components/PostCard.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/dashboard_user_admin_boundary_audit.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/account_trust_profile_system.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_profile_v2_iphone16pro_2026-07-15.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_ios_toolchain_compatibility.md",
+    "sampled": 19,
+    "present": 10,
+    "ratio": 0.526,
+    "missing": [
+      "/Applications",
+      "/tmp/pulsesoc-native-upgrade-test",
+      "/android/",
+      "/.expo/",
+      "/tmp/pulsesoc-native-sdk54-devclient-launch.png",
+      "/tmp/pulsesoc-native-sdk54-direct-launch.png",
+      "/tmp/pulsesoc-native-sdk54-direct-launch-fixed.png",
+      "/tmp/pulsesoc-native-sdk54-postbundle.png",
+      "/tmp/pulsesoc-native-sdk54-cancel-click.png"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/creator_backend_management_qa.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mobile_mux_video_posting_fix.md",
+    "sampled": 21,
+    "present": 21,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_buyer_orders_progress.md",
+    "sampled": 14,
+    "present": 11,
+    "ratio": 0.786,
+    "missing": [
+      "/api/pulse/payments/orders/<transaction_id>",
+      "/api/pulse/orders/<transaction_id>",
+      "/pulse/orders/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_alert_cadence.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/command_center_notifications_audit.md",
+    "sampled": 21,
+    "present": 19,
+    "ratio": 0.905,
+    "missing": [
+      "/api/pulse/notifications/<id>/read",
+      "/api/pulse/notifications/<id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_dashboard_module_shells.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/email_root_cause_analysis.md",
+    "sampled": 28,
+    "present": 28,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_buyer_orders_qa.md",
+    "sampled": 12,
+    "present": 10,
+    "ratio": 0.833,
+    "missing": [
+      "/api/pulse/orders/<transaction_id>",
+      "/pulse/orders/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_undx_real_brain_identity_pipeline.md",
+    "sampled": 20,
+    "present": 19,
+    "ratio": 0.95,
+    "missing": [
+      "ChatScreen.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_notifications_ui.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_native_rebuild_boundaries.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_live_camera_broadcasting.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "/api/pulse/live/<live_id>/livekit/token"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_dashboard_v2_system_audit.md",
+    "sampled": 27,
+    "present": 27,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/realtime_audio_change_declaration_history.md",
+    "sampled": 40,
+    "present": 35,
+    "ratio": 0.875,
+    "missing": [
+      "realtimeAudioEngine.ts",
+      "realtimeMicrophonePublisher.ts",
+      "realtimeAudioTelemetry.ts",
+      "package.json",
+      "realtimeAudioInvariants.test.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_app_api_contract.md",
+    "sampled": 27,
+    "present": 23,
+    "ratio": 0.852,
+    "missing": [
+      "src/api/auth.ts",
+      "src/api/push.ts",
+      "src/api/pulse.ts",
+      "/api/pulse/messages/<conversation_id>/send"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_livekit_mux_e2e_pipeline_debug.md",
+    "sampled": 13,
+    "present": 4,
+    "ratio": 0.308,
+    "missing": [
+      "static/js/pulse_live_studio_runtime.js",
+      "static/js/pulse_live_studio.js",
+      "scripts/livekit_mux_egress_gate_audit.py",
+      "scripts/pulse_livekit_mux_bridge_audit.py",
+      "scripts/live_audio_video_pipeline_audit.py",
+      "scripts/live_media_transport_audit.py",
+      "scripts/live_egress_quota_fallback_audit.py",
+      "/pulse/live/studio/603",
+      "/pulse/live/603"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_motion.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_iphone_camera_interaction_qa.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_publish_failure_root_cause.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_status_populated_lifecycle_closure_2026-07-12.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_video_detail_crash_root_cause.md",
+    "sampled": 7,
+    "present": 6,
+    "ratio": 0.857,
+    "missing": [
+      "/pulse/videos/<video_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/crypto_alert_request_outage_fix.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_sms_readiness.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/safe_cleanup_inventory.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_room_detail.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/chat_notifications_realtime_repair.md",
+    "sampled": 6,
+    "present": 0,
+    "ratio": 0.0,
+    "missing": [
+      "chat_realtime_audit.py",
+      "chat_send_receive_audit.py",
+      "pulse_message_unread_badge_audit.py",
+      "pulse_comm_v2_message_density_audit.py",
+      "pulse_comm_v2_realtime_readiness_audit.py",
+      "message_realtime_notification_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_ios_codesigning_diagnosis.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/app_store_review_rejection_repair.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/mux_download_failed_root_cause.md",
+    "sampled": 11,
+    "present": 10,
+    "ratio": 0.909,
+    "missing": [
+      "download_failed"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_sci_fi_ads_performance_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_notification_qa_results.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_real_device_notification_qa.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/apple_developer_company_update.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_production_live_audio_repair_2026-07-23.md",
+    "sampled": 12,
+    "present": 7,
+    "ratio": 0.583,
+    "missing": [
+      "src/live/useLiveBroadcastRoom.ts",
+      "src/components/reels/ReelLiveViewerSurface.tsx",
+      "useLiveBroadcastRoom.ts",
+      "src/live/__tests__/liveAudioConfiguration.test.ts",
+      "mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_final_visual_size_pass.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_autonomous_progress.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_default_handle_branding.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_trust_safety_progress.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_social_action_gap_matrix.md",
+    "sampled": 40,
+    "present": 20,
+    "ratio": 0.5,
+    "missing": [
+      "App.tsx",
+      "app.json",
+      "app.config.js",
+      "ReplayViewerScreen.tsx",
+      "eventSync.ts",
+      "api/notifications.ts",
+      "shareComposerHandoff.ts",
+      "assetlinks.json",
+      "package.json",
+      "PostCard.tsx",
+      "ChatScreen.tsx",
+      "StatusActionRail.tsx",
+      "PulseShareScreen.tsx",
+      "ReelPlayerCard.tsx",
+      "NativeMediaViewer.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_calls_progress.md",
+    "sampled": 27,
+    "present": 13,
+    "ratio": 0.481,
+    "missing": [
+      "/api/calls/<call_id>/accept",
+      "/api/calls/<call_id>/join-token",
+      "/api/calls/<call_id>/status",
+      "/api/calls/<call_id>/connected",
+      "scripts/pulsesoc_native_calls_audit.py",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/voice/start",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/video/start",
+      "/api/calls/<call_id>/ring-seen",
+      "/api/calls/<call_id>/decline",
+      "/api/calls/<call_id>/end",
+      "/api/calls/<call_id>/quality",
+      "/api/calls/<call_id>/events",
+      "/api/conversations/<conversation_ref>/calls",
+      "/pulse/calls/<call_id>"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/business_os_stage6_attribution_completion.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_attr_schema.py",
+      "test_attr_engine.py",
+      "test_attr_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_device_qa_setup.md",
+    "sampled": 14,
+    "present": 7,
+    "ratio": 0.5,
+    "missing": [
+      "/Library/Developer/CommandLineTools",
+      "/Applications/Xcode.app",
+      "/opt/homebrew/bin/adb",
+      "/usr/bin/xcrun",
+      "/Applications/Xcode.app/Contents/Developer",
+      "ANDROID_HOME",
+      "ANDROID_SDK_ROOT"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_voice_messages_2026-07-18.md",
+    "sampled": 7,
+    "present": 6,
+    "ratio": 0.857,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/:id/messages"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_new_chat_incident_closure_2026-07-14.md",
+    "sampled": 10,
+    "present": 4,
+    "ratio": 0.4,
+    "missing": [
+      "pulsesoc_native_messenger_new_chat_audit.py",
+      "pulsesoc_native_messenger_audit.py",
+      "pulsesoc_native_messenger_device_qa_audit.py",
+      "messenger_core_audit.py",
+      "messenger_api_audit.py",
+      "pulse_messages_two_user_delivery_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_pulse_command_calls.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_authenticated_wiring_qa.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_railway_domain_readiness.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_full_branding_audit.md",
+    "sampled": 16,
+    "present": 16,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_group_detail.md",
+    "sampled": 6,
+    "present": 3,
+    "ratio": 0.5,
+    "missing": [
+      "/api/pulse/groups/<slug>/join",
+      "/api/pulse/groups/<slug>/leave",
+      "/api/pulse/groups/<slug>/report"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_inventory_progress.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_accessibility.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/full-platform-review.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_lightweight_futuristic_radio_paused_redesign_2026-07-16.md",
+    "sampled": 19,
+    "present": 18,
+    "ratio": 0.947,
+    "missing": [
+      "/api/pulse/music/<track_id>/event"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_call_p0_root_cause_2026-07-18.md",
+    "sampled": 36,
+    "present": 19,
+    "ratio": 0.528,
+    "missing": [
+      "/api/pulse/comm/v2/conversations/:id/voice/start",
+      "/api/pulse/communications/v2/conversations/:id/voice/start",
+      "/api/pulse/comm/v2/conversations/:id/video/start",
+      "/api/pulse/communications/v2/conversations/:id/video/start",
+      "/api/calls/:id/status",
+      "/api/calls/:id/accept",
+      "/api/calls/:id/decline",
+      "/api/calls/:id/end",
+      "/api/calls/:id/join-token",
+      "/api/calls/:id/events",
+      "static/pulsesoc_calls.js",
+      "static/js/pulsesoc_global_call_overlay.js",
+      "src/api/calls.ts",
+      "useNativeCallRoom.ts",
+      "CallScreen.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/live_stream_assessment.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/undx_stage2_consolidation_gate_2026-07-29.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_screen_shells.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_ad_review_board_report.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/command_center_service2_worker_skeleton.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/conversation_control_center.md",
+    "sampled": 10,
+    "present": 9,
+    "ratio": 0.9,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_dashboard_legacy_aliases.md",
+    "sampled": 13,
+    "present": 12,
+    "ratio": 0.923,
+    "missing": [
+      "/dashboard/..."
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/legal_name_correction_audit.md",
+    "sampled": 33,
+    "present": 33,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_email_live_test.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/command_center_presence_engine.md",
+    "sampled": 22,
+    "present": 21,
+    "ratio": 0.955,
+    "missing": [
+      "/internal/command-center/presence/<user_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/traffic-growth-recommendations.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_button_functionality_truth.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/conversation_control_center_v3_wiring.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_group_roles_permissions.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/command_center_messaging_core_audit.md",
+    "sampled": 20,
+    "present": 16,
+    "ratio": 0.8,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation>/messages",
+      "/api/pulse/communications/v2/conversations/<conversation>/read",
+      "/api/pulse/communications/v2/conversations/<conversation>/typing",
+      "/api/pulse/communications/v2/conversations/<conversation>/presence"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_visible_dashboard_qa.md",
+    "sampled": 23,
+    "present": 23,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_code_reuse_map.md",
+    "sampled": 40,
+    "present": 29,
+    "ratio": 0.725,
+    "missing": [
+      "MessengerScreen.tsx",
+      "ChatScreen.tsx",
+      "/api/pulse/messages/:id/messages",
+      "/api/pulse/messages/:id/send",
+      "/api/pulse/messages/:message_id/react",
+      "CallScreen.tsx",
+      "api/calls.ts",
+      "static/pulsesoc_calls.js",
+      "/api/pulse/comm/v2/conversations/:id/voice/start",
+      "GroupsScreen.tsx",
+      "api/groups.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_visible_qa.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_full_ux_repair.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/status_viewer_immersive_redesign.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_feed_posts_complete_design_deep_wiring_2026-07-12.md",
+    "sampled": 9,
+    "present": 8,
+    "ratio": 0.889,
+    "missing": [
+      "/api/pulse/posts/:id"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/command_center_redis_layer.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mux_live_studio_fix.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_call_ringing_answer_unavailable_2026-07-26.md",
+    "sampled": 10,
+    "present": 5,
+    "ratio": 0.5,
+    "missing": [
+      "callToneLifecycle.ts",
+      "scripts/pulsesoc_call_system_full_functionality_audit.py",
+      "scripts/pulsesoc_real_call_experience_audit.py",
+      "scripts/pulsesoc_native_calls_audit.py",
+      "scripts/pulsesoc_fullscreen_incoming_call_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_auth_existing_account_continuity_2026-07-13.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/command_center_service1_architecture.md",
+    "sampled": 26,
+    "present": 25,
+    "ratio": 0.962,
+    "missing": [
+      "/pulse/live/studio/<id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_camera_quality_and_banuba_verification.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_black_bottom_cover_fix.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_calls_phase3_live_qa_activation.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_stage6_merchant_automation_completion.md",
+    "sampled": 38,
+    "present": 32,
+    "ratio": 0.842,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_merchant_schema.py",
+      "test_merchant_engine.py",
+      "test_merchant_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_visual_convergence.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/account_button_intelligence_audit.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/undx_intelligence_bootstrap_v1_integration_2026-07-19.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/live_simulator_batch16_18.md",
+    "sampled": 40,
+    "present": 39,
+    "ratio": 0.975,
+    "missing": [
+      "nativeqa_phase3b_0729"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_app_store_release_duns_2026-07-20.md",
+    "sampled": 22,
+    "present": 21,
+    "ratio": 0.955,
+    "missing": [
+      "PRODUCT_BUNDLE_IDENTIFIER"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/live_replay_mux_mission_2026-09-07.md",
+    "sampled": 23,
+    "present": 21,
+    "ratio": 0.913,
+    "missing": [
+      "tests/test_pulsesoc_call_livekit_grants.py",
+      "mux_retryable"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_accessibility.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_live_device_qa.md",
+    "sampled": 15,
+    "present": 12,
+    "ratio": 0.8,
+    "missing": [
+      "/api/pulse/live/<id>/join",
+      "/api/pulse/live/<id>/chat",
+      "/api/pulse/live/<id>/react"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/command_center_notifications_pipeline.md",
+    "sampled": 15,
+    "present": 13,
+    "ratio": 0.867,
+    "missing": [
+      "/internal/command-center/notifications/unread/<user_id>",
+      "/internal/command-center/notifications/recent/<user_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/notification_delivery_adapters_phase2.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_cursor_multidevice_ordering.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_status_final_width_realtime_accessibility_closure_2026-07-12.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_interaction_parity.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_business_os_entitlement_completion_evidence.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "facade.py",
+      "usage.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_notification_event_coverage.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_ai_learning_foundation.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_advertising_slice4.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "/api/pulse/ads/...",
+      "test_funding_failure_leaves_unfunded"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_feed_progress.md",
+    "sampled": 14,
+    "present": 11,
+    "ratio": 0.786,
+    "missing": [
+      "/api/pulse/posts/<post_id>/react",
+      "/api/pulse/posts/<post_id>/repost",
+      "/api/pulse/posts/<post_id>/comments"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_communications_v2_publish_readiness.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_foreground_notifications.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/intelligence_loginexus_operating_system.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_ads_delivery_engine.md",
+    "sampled": 35,
+    "present": 35,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_visual_parity.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_camera_studio_ios_simulator_qa.md",
+    "sampled": 20,
+    "present": 5,
+    "ratio": 0.25,
+    "missing": [
+      "/tmp/pulsesoc-camera-ios-sim/01-launch.png",
+      "/tmp/pulsesoc-camera-ios-sim/02-bundled.png",
+      "/tmp/pulsesoc-camera-ios-sim/03-camera-deeplink-signed-out.png",
+      "/tmp/pulsesoc-camera-ios-sim/04-relaunch.png",
+      "/tmp/pulsesoc-camera-ios-sim/05-deeplink-warning.png",
+      "/tmp/pulsesoc-camera-ios-sim/06-post-routing-fix.png",
+      "/tmp/pulsesoc-camera-auth-ios-sim/01-login-local-api.png",
+      "/tmp/pulsesoc-camera-auth-ios-sim/03-after-typed-login.png",
+      "/tmp/pulsesoc-camera-auth-ios-sim/08-fields-reset-username.png",
+      "/tmp/pulsesoc-camera-auth-ios-sim/11-clean-fields-filled.png",
+      "/tmp/pulsesoc-camera-auth-ios-sim/13-fields-paste-clean.png",
+      "/tmp/pulsesoc-camera-auth-ios-sim/14-after-paste-login-submit.png",
+      "/tmp/pulsesoc-sim-auth-qa-04-after-fresh-deeplink.png",
+      "/tmp/pulsesoc-sim-auth-qa-07-reel-destination.png",
+      "/tmp/pulsesoc-sim-auth-qa-08-session-restore.png"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_approved_reference_2026-07-18.md",
+    "sampled": 7,
+    "present": 3,
+    "ratio": 0.429,
+    "missing": [
+      "src/core/pulseRadio.ts",
+      "src/api/radio.ts",
+      "src/api/status.ts",
+      "src/api/feed.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/ads_sponsorships_command_center_report.md",
+    "sampled": 28,
+    "present": 28,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_alert_delivery_activation.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_call_camera_sync_fix.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/backend_command_center_operating_system.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_dependency_graph.md",
+    "sampled": 40,
+    "present": 35,
+    "ratio": 0.875,
+    "missing": [
+      "/pulse/signals/<signal_key>",
+      "/api/pulse/messages/<conversation_id>/send",
+      "/api/pulse/messages/<conversation_id>/sync",
+      "/api/pulse/messages/<conversation_id>/typing",
+      "/api/pulse/messages/<conversation_id>/presence"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/native_callkit_voip_integration.md",
+    "sampled": 15,
+    "present": 10,
+    "ratio": 0.667,
+    "missing": [
+      "callSignalMedia.ts",
+      "IncomingCallLayer.tsx",
+      "package.json",
+      "src/calls/callKitNativeProvider.ts",
+      "app_store_rejection_risks.json"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/creator_button_intelligence_audit.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/native_live_broadcast_phase1_2026-07-19.md",
+    "sampled": 19,
+    "present": 7,
+    "ratio": 0.368,
+    "missing": [
+      "notificationRouting.ts",
+      "CreatorStudioScreen.tsx",
+      "liveStudioReadiness.ts",
+      "masterNavigation.ts",
+      "src/live/liveSession.ts",
+      "src/api/live.ts",
+      "/api/pulse/live/<id>/livekit/token",
+      "/api/pulse/live/<id>/end",
+      "src/live/useLiveBroadcastRoom.ts",
+      "src/screens/LiveHostSessionScreen.tsx",
+      "/api/pulse/live/<id>/guests/<userId>/remove",
+      "/api/pulse/live/<id>/chat/<messageId>/delete"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_camera_studio_media_qa.md",
+    "sampled": 16,
+    "present": 9,
+    "ratio": 0.562,
+    "missing": [
+      "/tmp/pulsesoc-media-qa-01-launch.png",
+      "/tmp/pulsesoc-media-qa-02-feed-preview.png",
+      "/tmp/pulsesoc-media-qa-03-feed-publish.png",
+      "/tmp/pulsesoc-media-qa-05-status-publish-after-fix.png",
+      "/tmp/pulsesoc-media-qa-06-reel-publish.png",
+      "/tmp/pulsesoc-media-qa-07-foreground-recovery.png",
+      "/tmp/pulsesoc-media-qa-09-safe-area-final.png"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_visible_qa_runtime.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/consolidation_followup_register_20260904.md",
+    "sampled": 19,
+    "present": 14,
+    "ratio": 0.737,
+    "missing": [
+      "useLiveBroadcastRoom.ts",
+      "realtimeAudioEngine.ts",
+      "sessionStoreQaFallback.test.ts",
+      "realtime_audio_change_declaration.md",
+      "capabilityRegistry.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/indexing-readiness-report.md",
+    "sampled": 16,
+    "present": 12,
+    "ratio": 0.75,
+    "missing": [
+      "/ai-index.json",
+      "/country-intelligence/<country>",
+      "/sports-edge/<sport>",
+      "/intel/<article>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/crypto_backend_surface_audit.md",
+    "sampled": 19,
+    "present": 19,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_backend_exception_440ea1f2c5bc.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_simulator_qa.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_manual_iphone_release_qa.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/network_command_center_report.md",
+    "sampled": 31,
+    "present": 27,
+    "ratio": 0.871,
+    "missing": [
+      "/admin/network-command-center/<subsystem>",
+      "message.delivery_updated",
+      "delivery.health_changed",
+      "network.security_changed"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_intelligence_app_store_cta.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/lighthouse-report.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_member_000_avatar_update.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "pulse_home_core.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_qa_browser_report.md",
+    "sampled": 18,
+    "present": 16,
+    "ratio": 0.889,
+    "missing": [
+      "NO_COLOR",
+      "FORCE_COLOR"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_messenger_media_viewer.md",
+    "sampled": 9,
+    "present": 8,
+    "ratio": 0.889,
+    "missing": [
+      "pulse_messenger_media_viewer.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/home_status_live_layout_repair.md",
+    "sampled": 14,
+    "present": 14,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/network_privacy_security_review.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/system_mission_control_report.md",
+    "sampled": 6,
+    "present": 4,
+    "ratio": 0.667,
+    "missing": [
+      "/dashboard/system/<module>",
+      "/admin/system/<module>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_profile_progress.md",
+    "sampled": 14,
+    "present": 13,
+    "ratio": 0.929,
+    "missing": [
+      "/tmp/PulseSocProfileUITests.xcresult"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/reels_playback_policy_change.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/portfolio_surface_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/high_risk_feature_verification.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_call_ui_v3_redesign.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/account_recovery_security.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/home_status_autoplay_root_cause.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_accessibility.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_dashboard_inventory.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_webview_replacement_readiness.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/verification_center_report.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_app_store_connect_setup.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_issues_3_to_6_repair_evidence_2026-07-24.md",
+    "sampled": 20,
+    "present": 12,
+    "ratio": 0.6,
+    "missing": [
+      "GH_TOKEN",
+      "GITHUB_TOKEN",
+      "src/api/__tests__/messengerOrdering.test.ts",
+      "src/navigation/__tests__/notificationBannerLifecycle.test.ts",
+      "src/live/__tests__/remoteAudioReapply.test.ts",
+      "src/live/__tests__/cohostPublishGate.test.ts",
+      "src/calls/__tests__/callToneLifecycle.test.ts",
+      "src/calls/__tests__/callSignalMediaReentrancy.test.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_comm_v2_media_security_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/messages_ux_repair.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/full-system-assessment-2026-05-31.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_comm_v2_audio_calls.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_audio_regression_recovery.md",
+    "sampled": 7,
+    "present": 4,
+    "ratio": 0.571,
+    "missing": [
+      "live_publisher_quality_enabled",
+      "liveAudioConfiguration.test.ts",
+      "package.json"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_text_replacement_changes.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_listing_composer_qa.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "/tmp/pulsesoc_seller_listing_composer_qa.sqlite"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_comm_v2_phase1_messaging.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_comm_v2_media_sharing.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_lightspeed_fixes.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_stage6_creator_commerce_completion.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_creator_schema.py",
+      "test_creator_engine.py",
+      "test_creator_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/realtime_notification_system_repair.md",
+    "sampled": 6,
+    "present": 2,
+    "ratio": 0.333,
+    "missing": [
+      "pulse_notifications_web_push_audit.py",
+      "pulse_notification_event_coverage_audit.py",
+      "pulse_native_push_delivery_audit.py",
+      "mobile_notification_reply_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/livestream_audio_echo_repair_2026-06-13.md",
+    "sampled": 7,
+    "present": 1,
+    "ratio": 0.143,
+    "missing": [
+      "scripts/live_audio_echo_prevention_audit.py",
+      "scripts/pulse_livekit_mux_bridge_audit.py",
+      "scripts/live_audio_video_pipeline_audit.py",
+      "scripts/livekit_mux_egress_gate_audit.py",
+      "scripts/live_media_transport_audit.py",
+      "scripts/live_egress_quota_fallback_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_web_push_production_readiness.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_final_external_account_qa.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_user_dashboard_parity.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_saved_progress.md",
+    "sampled": 10,
+    "present": 8,
+    "ratio": 0.8,
+    "missing": [
+      "/api/pulse/saved/collections/<collection_id>",
+      "/api/pulse/saved/<item_id>/move"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_web_push_foundation.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_notifications_backend.md",
+    "sampled": 10,
+    "present": 8,
+    "ratio": 0.8,
+    "missing": [
+      "/api/pulse/notifications/<id>/read",
+      "/api/pulse/notifications/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/mux_assets_empty_upload_failure.md",
+    "sampled": 20,
+    "present": 20,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_event_sync_foundation.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_exact_parity_inventory.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_live_progress.md",
+    "sampled": 17,
+    "present": 12,
+    "ratio": 0.706,
+    "missing": [
+      "/api/pulse/live/<live_id>/state",
+      "/api/pulse/live/<live_id>/join",
+      "/api/pulse/live/<live_id>/chat",
+      "/api/pulse/live/<live_id>/react",
+      "/api/pulse/live/<id>/join"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_comm_v2_large_files_composer_fix.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_app_store_readiness_followup.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/intelligence_mobile_qa.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_store_qa.md",
+    "sampled": 14,
+    "present": 13,
+    "ratio": 0.929,
+    "missing": [
+      "/pulse/merchant/<seller>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_owner_iphone_test_setup.md",
+    "sampled": 8,
+    "present": 4,
+    "ratio": 0.5,
+    "missing": [
+      "is_test_account",
+      "roody_native_qa_20260706",
+      "roody_native_qa_20260706_r3",
+      "index.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_realtime_sync_readiness.md",
+    "sampled": 16,
+    "present": 13,
+    "ratio": 0.812,
+    "missing": [
+      "/api/pulse/messages/<conversation_id>/sync",
+      "/internal/command-center/realtime/poll/<user_id>",
+      "/internal/command-center/realtime/stream/<user_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_motion_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/intelligence_button_audit.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_lightspeed_operation.md",
+    "sampled": 16,
+    "present": 16,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/batch22_keyboard_taps.md",
+    "sampled": 32,
+    "present": 24,
+    "ratio": 0.75,
+    "missing": [
+      "Screen.tsx",
+      "src/screens/__tests__/undxKeyboardTaps.test.tsx",
+      "src/navigation/__tests__/sellerEntryPoints.test.ts",
+      "ChatScreen.tsx",
+      "src/settings/__tests__/store.test.tsx",
+      "mutate21.py",
+      "undx_op_86ef59f9a13d2fbfceec",
+      "undx_confirm_a196f90d19eda664b4b6"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_ai_intelligence_upgrade.md",
+    "sampled": 21,
+    "present": 21,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/notification_system_phase3_integration.md",
+    "sampled": 40,
+    "present": 37,
+    "ratio": 0.925,
+    "missing": [
+      "/api/pulse/notifications/counts",
+      "/pulse/live/<live_session_id>",
+      "/pulse/profile/<public_player_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_incoming_calls_qa.md",
+    "sampled": 6,
+    "present": 4,
+    "ratio": 0.667,
+    "missing": [
+      "App.tsx",
+      "/pulse/calls/<call_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/network_backend_management_qa.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_live_audio_viewer_playback_repair_2026-07-26.md",
+    "sampled": 13,
+    "present": 8,
+    "ratio": 0.615,
+    "missing": [
+      "/api/pulse/live/<id>/native-publish",
+      "scripts/pulsesoc_native_live_webrtc_guest_audio_repair_audit.py",
+      "scripts/pulsesoc_native_live_audit.py",
+      "scripts/livekit_mux_egress_gate_audit.py",
+      "tests/protection/test_livestream_contract.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_global_navigation_logi_nexus.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_voice_message_compact_redesign_2026-07-18.md",
+    "sampled": 20,
+    "present": 20,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/email_delivery_recovery_audit.md",
+    "sampled": 17,
+    "present": 17,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_intelligence_collectors_phase2.md",
+    "sampled": 18,
+    "present": 17,
+    "ratio": 0.944,
+    "missing": [
+      "http_451"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mux_source_url_qa_fix.md",
+    "sampled": 10,
+    "present": 9,
+    "ratio": 0.9,
+    "missing": [
+      "download_failed"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_stage4_premium_iap_completion.md",
+    "sampled": 23,
+    "present": 17,
+    "ratio": 0.739,
+    "missing": [
+      "iap_apple.py",
+      "iap_google.py",
+      "iap_api.py",
+      "test_iap_apple.py",
+      "test_iap_google.py",
+      "test_iap_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_reconstruction_plan.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_advertiser_portal_report.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_alert_management_progress.md",
+    "sampled": 24,
+    "present": 16,
+    "ratio": 0.667,
+    "missing": [
+      "/api/crypto/alerts/<alert_id>",
+      "/api/crypto/alerts/<alert_id>/duplicate",
+      "/api/crypto/alerts/<alert_id>/history",
+      "/api/alerts/<alert_id>/pause",
+      "/api/alerts/<alert_id>/resume",
+      "/api/alerts/<alert_id>/delete",
+      "/api/alerts/<alert_id>/test",
+      "/pulse/alerts/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_ad_finance_security_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/loginexus_intelligence_engine_foundation.md",
+    "sampled": 29,
+    "present": 28,
+    "ratio": 0.966,
+    "missing": [
+      "/api/pulse/intelligence/streams/<stream_key>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_phase1_device_qa.md",
+    "sampled": 13,
+    "present": 12,
+    "ratio": 0.923,
+    "missing": [
+      "/api/pulse/messages/<conversation_id>/send"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/verification_backend_management_qa.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_all_video_full_width_fix.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_full_visual_qa_walkthrough.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_event_producer_coverage_audit.md",
+    "sampled": 18,
+    "present": 17,
+    "ratio": 0.944,
+    "missing": [
+      "eventSync.ts"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_videos_system_plan.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/command_center_messaging_core.md",
+    "sampled": 28,
+    "present": 26,
+    "ratio": 0.929,
+    "missing": [
+      "/internal/command-center/messages/unread/<user_id>",
+      "/internal/command-center/messages/conversation/<conversation_id>/state"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_camera_state_sync_fix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_advertising_slice1.md",
+    "sampled": 31,
+    "present": 27,
+    "ratio": 0.871,
+    "missing": [
+      "advertiser_rejected",
+      "test_advertising_slice1.py",
+      "test_entitlement_effective_access.py",
+      "test_premium_visibility_effective_override.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_production_layout_parity.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_visual_comparison.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_component_map.md",
+    "sampled": 8,
+    "present": 7,
+    "ratio": 0.875,
+    "missing": [
+      "components/PulseCommand.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_dashboard_quick_action_parity.md",
+    "sampled": 15,
+    "present": 15,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/production_media_playback_root_cause.md",
+    "sampled": 26,
+    "present": 25,
+    "ratio": 0.962,
+    "missing": [
+      "/api/pulse/media/93/stream"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_architecture_health.md",
+    "sampled": 20,
+    "present": 6,
+    "ratio": 0.3,
+    "missing": [
+      "notificationRouting.ts",
+      "ChatScreen.tsx",
+      "GroupsScreen.tsx",
+      "MarketplaceScreen.tsx",
+      "StatusScreen.tsx",
+      "SavedScreen.tsx",
+      "ReelsScreen.tsx",
+      "StatusCreator.tsx",
+      "mobile-native/src/core/routes.ts",
+      "mobile-native/src/shared/state/LoadingState.tsx",
+      "mobile-native/src/shared/state/EmptyState.tsx",
+      "mobile-native/src/shared/actions/ActionButton.tsx",
+      "mobile-native/src/shared/lists/FilterChip.tsx",
+      "mobile-native/src/shared/lists/HorizontalRail.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/branch_completeness_sweep_20260904.md",
+    "sampled": 40,
+    "present": 15,
+    "ratio": 0.375,
+    "missing": [
+      "private_office_routes.py",
+      "test_pack_is_get_only",
+      "callMediaState.ts",
+      "test_pulsesoc_call_livekit_grants.py",
+      "callSessionStore.ts",
+      "pulsesoc_live_audio_guest_join_repair_audit.py",
+      "pulsesoc_native_calls_audit.py",
+      "realtimeAudioMediaPath.ts",
+      "realtimeRemoteAudioController.ts",
+      "liveAudioConfiguration.test.ts",
+      "liveAudioMatrix.ts",
+      "test_agora_rtc_provider_contract.py",
+      "useLiveBroadcastRoom.ts",
+      "realtimeAudioEngine.ts",
+      "static/vendor/livekit-client.umd.js"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/undx_brain_runtime_activation_2026-08-01.md",
+    "sampled": 14,
+    "present": 12,
+    "ratio": 0.857,
+    "missing": [
+      "calibration.read_calibration",
+      "metacognition.check_completion_claim"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_media_reels_audit.md",
+    "sampled": 17,
+    "present": 17,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_app_store_release_checklist_2026-07-21.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/stripe_webhook_recovery_report.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/app_store_release_status.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/production_readiness_audit.md",
+    "sampled": 30,
+    "present": 30,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_auth_immediate_logout_fix_2026-07-17.md",
+    "sampled": 9,
+    "present": 8,
+    "ratio": 0.889,
+    "missing": [
+      "App.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_rooms_groups_root_cause.md",
+    "sampled": 22,
+    "present": 15,
+    "ratio": 0.682,
+    "missing": [
+      "/api/pulse/communications/conversations/<id>/messages",
+      "/Users/hmcherie/Desktop/CoinPilotX/bot.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/services/chat_health_service.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/scripts/pulse_communications_audit.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/scripts/chat_actual_load_audit.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/scripts/messenger_core_audit.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/database_error_root_causes.md"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_video_autoplay_preview.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_status_progress.md",
+    "sampled": 20,
+    "present": 15,
+    "ratio": 0.75,
+    "missing": [
+      "/api/pulse/status/<status_id>",
+      "/api/pulse/status/<status_id>/view",
+      "/api/pulse/status/<status_id>/react",
+      "/api/pulse/status/<status_id>/reply",
+      "/api/pulse/status/<status_id>/share"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_premium_progress.md",
+    "sampled": 33,
+    "present": 32,
+    "ratio": 0.97,
+    "missing": [
+      "mobile-native/src/screens/PremiumScreen.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/voice_note_mobile_safari_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/backend_management_gap_audit.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_voice_security_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/batch20_dead_approval.md",
+    "sampled": 29,
+    "present": 28,
+    "ratio": 0.966,
+    "missing": [
+      "ChatScreen.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/undx_phase3b_personal_intelligence_2026-07-29.md",
+    "sampled": 34,
+    "present": 33,
+    "ratio": 0.971,
+    "missing": [
+      "nativeqa_phase3b_0729"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mux_migration_truth.md",
+    "sampled": 19,
+    "present": 19,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_premium_route_and_button_audit.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_design_system.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_sci_fi_ads_privacy_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_call_overlay_removal.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_publishing_contract.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/push_real_device_validation.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_simulator_qa.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/undx_agent_stage0_inventory_and_architecture.md",
+    "sampled": 31,
+    "present": 31,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_full_stack_performance_report.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_localized_time_system.md",
+    "sampled": 7,
+    "present": 4,
+    "ratio": 0.571,
+    "missing": [
+      "App.tsx",
+      "types.ts",
+      "src/core/__tests__/localTime.test.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/reels_load_speed_operation.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/dashboard_centers_completion_report.md",
+    "sampled": 8,
+    "present": 7,
+    "ratio": 0.875,
+    "missing": [
+      "/admin/verification/document/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/profile_avatar_cover_persistence_fix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/undx_real_agent_final_report_2026-07-27.md",
+    "sampled": 40,
+    "present": 26,
+    "ratio": 0.65,
+    "missing": [
+      "undx_capability_registry.py",
+      "undx_agent_policy.py",
+      "undx_tool_gateway.py",
+      "undx_verification.py",
+      "undx_agent_tools.py",
+      "undx_agent_runtime.py",
+      "bootstrap.py",
+      "harness.py",
+      "test_adversarial.py",
+      "test_audit_durability.py",
+      "test_confirm_path.py",
+      "test_crypto_alert_pack.py",
+      "test_end_to_end.py",
+      "test_transport_wiring.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_incoming_calls_progress.md",
+    "sampled": 7,
+    "present": 1,
+    "ratio": 0.143,
+    "missing": [
+      "/api/calls/<call_id>/status",
+      "/api/calls/<call_id>/ring-seen",
+      "/api/calls/<call_id>/accept",
+      "/api/calls/<call_id>/decline",
+      "/api/calls/<call_id>/end",
+      "App.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/account_backend_management_qa.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/system_mission_control_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_intelligence_visibility_boundary.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_domain_migration_readiness.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_comm_v2_cloudflare_security_plan.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_visible_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_ai_privacy_security_review.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_layout_system.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_live_reconciliation_nested_closure_2026-07-12.md",
+    "sampled": 7,
+    "present": 5,
+    "ratio": 0.714,
+    "missing": [
+      "pulse_realtime_infra_audit.py",
+      "chat_send_receive_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/message_realtime_notification_fix.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_release_readiness_2026-07-20.md",
+    "sampled": 30,
+    "present": 25,
+    "ratio": 0.833,
+    "missing": [
+      "format.test.ts",
+      "scripts/pulsesoc_native_live_webrtc_guest_audio_repair_audit.py",
+      "scripts/pulsesoc_native_calls_audit.py",
+      "scripts/pulsesoc_native_live_audit.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/screenshots/native-release-readiness-2026-07-20/simulator-current-state.png"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/phase2_closure_report.md",
+    "sampled": 32,
+    "present": 15,
+    "ratio": 0.469,
+    "missing": [
+      "scripts/live_media_transport_audit.py",
+      "scripts/live_audio_video_pipeline_audit.py",
+      "media_attachment_audit.py",
+      "media_integrity_audit.py",
+      "pulse_video_upload_audit.py",
+      "video_playback_reliability_audit.py",
+      "reels_pipeline_audit.py",
+      "live_audio_audit.py",
+      "live_media_transport_audit.py",
+      "live_audio_video_pipeline_audit.py",
+      "live_viewer_playback_audit.py",
+      "static/js/pulse_live_studio.js",
+      "TURN_URL",
+      "TURN_USERNAME",
+      "TURN_PASSWORD"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/realtime_audio_change_declaration.md",
+    "sampled": 40,
+    "present": 26,
+    "ratio": 0.65,
+    "missing": [
+      "src/calls/callSessionStore.ts",
+      "src/calls/useAgoraCallRoom.ts",
+      "src/calls/MinimizedCallBanner.tsx",
+      "src/navigation/AppNavigator.tsx",
+      "src/calls/__tests__/callSessionStore.test.ts",
+      "callSessionStore.test.ts",
+      "useAgoraCallRoom.test.ts",
+      "realtimePublisherMedia.ts",
+      "mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts",
+      "mobile-native/src/core/__tests__/mediaQualityWiring.test.ts",
+      "useLiveBroadcastRoom.connectTransaction",
+      "realtimeAudioEngine.ts",
+      "useLiveBroadcastRoom.ts",
+      "app.json"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_music_license_policy.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_intelligence_push_delivery.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/conversation_control_center_v2_wiring.md",
+    "sampled": 10,
+    "present": 5,
+    "ratio": 0.5,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center/media",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center/links",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center/pins",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center/export",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/control-center/action"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_interactions.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/critical_blockers.md",
+    "sampled": 10,
+    "present": 9,
+    "ratio": 0.9,
+    "missing": [
+      "static/js/pulse_live_studio.js"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_component_map.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/livestream_mux_egress_regression_report_2026-06-13.md",
+    "sampled": 24,
+    "present": 9,
+    "ratio": 0.375,
+    "missing": [
+      "EG_7VwuwPHXxEGP",
+      "EGRESS_STARTING",
+      "EGRESS_ACTIVE",
+      "EGRESS_ENDING",
+      "EGRESS_COMPLETE",
+      "egress_ended",
+      "static/js/pulse_live_studio_runtime.js",
+      "static/js/pulse_live_studio.js",
+      "scripts/live_mux_regression_audit.py",
+      "scripts/live_audio_video_pipeline_audit.py",
+      "scripts/live_media_transport_audit.py",
+      "scripts/live_egress_quota_fallback_audit.py",
+      "scripts/pulse_livekit_mux_bridge_audit.py",
+      "scripts/livekit_mux_egress_gate_audit.py",
+      "scripts/live_audio_echo_prevention_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_simulator_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_visible_qa.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/market_and_crypto_intelligence.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_advertising_slice5.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "/api/pulse/ads/...",
+      "operations.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/release_builds_and_qa_20260904.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/economy_mobile_qa.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_responsive_matrix.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/mux_live_foundation.md",
+    "sampled": 21,
+    "present": 20,
+    "ratio": 0.952,
+    "missing": [
+      "/api/pulse/live/mux/<id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_notification_pipeline_audit.md",
+    "sampled": 24,
+    "present": 23,
+    "ratio": 0.958,
+    "missing": [
+      "/static/service-worker.js"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_ai_music_discovery.md",
+    "sampled": 10,
+    "present": 9,
+    "ratio": 0.9,
+    "missing": [
+      "/api/admin/pulse/music/<track_id>/approval"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_unified_realtime_audio_foundation_2026-08-01.md",
+    "sampled": 40,
+    "present": 33,
+    "ratio": 0.825,
+    "missing": [
+      "mobile-native/src/calls/__tests__/useNativeCallRoomAudio.test.ts",
+      "tests/protection/test_call_livekit_token_grants.py",
+      "/api/pulse/communications/v2/livekit/webhook",
+      "mobile-native/src/live/__tests__/liveAudioConfiguration.test.ts",
+      "scripts/pulsesoc_communications_engine_audit.py",
+      "tests/protection/test_livekit_webhook_route_owner.py",
+      "tests/protection/test_livestream_audio_token_grants.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/livekit_hd_quality_upgrade.md",
+    "sampled": 9,
+    "present": 5,
+    "ratio": 0.556,
+    "missing": [
+      "static/pulsesoc_calls.js",
+      "static/js/pulse_live_studio_runtime.js",
+      "scripts/livekit_hd_quality_audit.py",
+      "/api/admin/calls/quality-test"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/local-auth-config-audit.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_ai_command_center_qa.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/dashboard_to_premium_intelligence_migration.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_elite_media_quality_report.md",
+    "sampled": 23,
+    "present": 11,
+    "ratio": 0.478,
+    "missing": [
+      "useNativeCallRoom.ts",
+      "useLiveBroadcastRoom.ts",
+      "core/mediaQualityPolicy.ts",
+      "core/mediaAdaptationController.ts",
+      "core/mediaQualityFlags.ts",
+      "core/mediaQualityTelemetry.ts",
+      "core/realtimeAudioTelemetry.ts",
+      "mediaQualityWiring.test.ts",
+      "mediaQualityPolicy.test.ts",
+      "REALTIME_MEDIA_QUALITY_V2_ENABLED",
+      "media_quality_policy",
+      "REALTIME_MEDIA_QUALITY_V2_QA_ONLY"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/undx_active_proposal_route_audit.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "/api/undx/desktop-connector/proposal/generate"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_native_app_architecture.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_large_video_upload_fix.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/verification_badge_system_report.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_ios_xcode26_sdk_rebuild.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_bottom_nav_scroll_behavior.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/profile_avatar_persistence_root_cause.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/batch21_tap_outcome.md",
+    "sampled": 30,
+    "present": 27,
+    "ratio": 0.9,
+    "missing": [
+      "src/undx/__tests__/tapOutcome.test.ts",
+      "src/screens/__tests__/undxTapOutcomeCard.test.tsx",
+      "mutate20.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_stage3_marketplace_completion.md",
+    "sampled": 31,
+    "present": 19,
+    "ratio": 0.613,
+    "missing": [
+      "schema.py",
+      "service.py",
+      "orders.py",
+      "refunds.py",
+      "assistant.py",
+      "admin.py",
+      "api.py",
+      "notifications.py",
+      "test_marketplace_core.py",
+      "test_marketplace_assistant.py",
+      "test_marketplace_admin.py",
+      "test_marketplace_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_short_qa_browser_sweep.md",
+    "sampled": 20,
+    "present": 20,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_ads_foundation_audit.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_visual_parity.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_alert_activation_report.md",
+    "sampled": 40,
+    "present": 33,
+    "ratio": 0.825,
+    "missing": [
+      "/api/pulse/notifications/<id>/resolve",
+      "/api/pulse/notifications/<id>/read",
+      "/pulse/calls/<call_id>",
+      "/pulse/profile/<id>",
+      "/pulse/live/studio/<id>",
+      "/pulse/alerts/<id>",
+      "/api/pulse/notifications/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_release_blocker_hardening.md",
+    "sampled": 13,
+    "present": 11,
+    "ratio": 0.846,
+    "missing": [
+      "/api/pulse/posts/<post_id>/hide",
+      "/tmp/pulsesoc_home_release_qa.sqlite"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_os_verification.md",
+    "sampled": 29,
+    "present": 3,
+    "ratio": 0.103,
+    "missing": [
+      "src/sharing/nativeShare.test.ts",
+      "src/sharing/shareComposerHandoff.test.ts",
+      "src/screens/PulseShareScreen.test.tsx",
+      "src/components/StatusActionRail.test.tsx",
+      "src/screens/StatusScreen.reaction.test.tsx",
+      "src/reels/reelMediaKind.test.ts",
+      "src/feed/injectAds.test.ts",
+      "src/navigation/bottomNavPolicy.test.ts",
+      "src/navigation/notificationBannerLifecycle.test.ts",
+      "src/navigation/notificationRouting.test.ts",
+      "src/screens/SettingsScreen.biometric.test.tsx",
+      "src/api/translation.test.ts",
+      "src/components/ContentTranslation.test.tsx",
+      "src/live/liveSession.test.ts",
+      "liveAudioConfiguration.test.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_communications_v2_desktop_speed.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/internal_loginexus_design_directive.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_performance.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_communications_parity_migration.md",
+    "sampled": 40,
+    "present": 23,
+    "ratio": 0.575,
+    "missing": [
+      "/api/pulse/comm/v2/attachments/upload",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/control-center...",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/read",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/typing",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/presence",
+      "/api/pulse/comm/v2/messages/<message_id>...",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/voice/start",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/video/start",
+      "/api/pulse/messages/<conversation_id>/send",
+      "/api/pulse/messages/<conversation_id>/sync",
+      "/api/pulse/messages/<conversation_id>/seen",
+      "/api/pulse/messages/<conversation_id>/typing",
+      "/api/pulse/messages/<conversation_id>/pin",
+      "/api/pulse/messages/<message_id>/react",
+      "/api/pulse/messages/<message_id>/delete"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_command_comm_system_gap_report.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_media_foundation_2026-07-19.md",
+    "sampled": 32,
+    "present": 27,
+    "ratio": 0.844,
+    "missing": [
+      "nativeMediaUpload.ts",
+      "/api/pulse/media/<id>/status",
+      "api/reels.ts",
+      "mediaPlaybackCoordinator.ts",
+      "/api/pulse/media/<media_id>/status"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_iphone_camera_manual_qa.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_visual_comparison.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_push_and_domain_attach.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_badge_separation_report.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_no_forced_mute_audit.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_user_dashboard_progress.md",
+    "sampled": 27,
+    "present": 27,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_advertising_slice2.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "/api/pulse/ads/...",
+      "api.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_missed_branding_audit.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_growth_progress.md",
+    "sampled": 20,
+    "present": 20,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/economy_finance_security_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_rock_solid_reliability.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_conversation_control_center_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/PULSESOC_BACKEND_RECOVERY_FINAL_REPORT.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "useLiveBroadcastRoom.ts",
+      "pulsesoc_intelligence_engine.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_offline_reconnect.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mobile_layout_regression_guard.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/backend_management_launch_readiness.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_incoming_call_screen_redesign.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/dashboard_account_command_center_report.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/live_post_and_replay_video_flow.md",
+    "sampled": 14,
+    "present": 13,
+    "ratio": 0.929,
+    "missing": [
+      "/api/pulse/live/<live_id>/end"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/app_store_compliance_matrix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_exact_parity_inventory.md",
+    "sampled": 19,
+    "present": 10,
+    "ratio": 0.526,
+    "missing": [
+      "pulse_messages_v2.html",
+      "MessengerScreen.tsx",
+      "PulseCommand.tsx",
+      "pulse_messages_v2.js",
+      "CallScreen.tsx",
+      "GroupsScreen.tsx",
+      "PulseAiScreen.tsx",
+      "ChatScreen.tsx",
+      "pulse_chat_recovery.js"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_music_launch_report.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/payment-email-repair-report.md",
+    "sampled": 30,
+    "present": 29,
+    "ratio": 0.967,
+    "missing": [
+      "/admin/users/<id>/convert-paid-pro"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_product_architecture_migration.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_system_consistency_validation.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_media_upload_audit.md",
+    "sampled": 8,
+    "present": 4,
+    "ratio": 0.5,
+    "missing": [
+      "/static/uploads/pulse_media/2026/07/26/pulse-image-3348392b6e80084f.png",
+      "/static/uploads/pulse_media/2026/07/26/pulse-video-c59a3378104e944f.webm",
+      "/static/uploads/pulse_media/2026/07/26/pulse-video-8727668101a27d47.mov",
+      "/static/uploads/pulse_media/2026/07/26/pulse-audio-c53ef7cd53ce2f36.ogg"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/system_mission_control_security_review.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_notifications_progress.md",
+    "sampled": 26,
+    "present": 23,
+    "ratio": 0.885,
+    "missing": [
+      "/api/pulse/notifications/<notification_id>/read",
+      "/api/pulse/notifications/<notification_id>",
+      "/api/pulse/notifications/<notification_id>/resolve"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/performance_assessment.md",
+    "sampled": 9,
+    "present": 8,
+    "ratio": 0.889,
+    "missing": [
+      "static/js/pulse_live_studio.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_verification_qa.md",
+    "sampled": 16,
+    "present": 15,
+    "ratio": 0.938,
+    "missing": [
+      "/pulse/verification/business"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_authenticated_qa_browser_report.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_camera_studio_device_qa.md",
+    "sampled": 14,
+    "present": 7,
+    "ratio": 0.5,
+    "missing": [
+      "/Library/Developer/CommandLineTools",
+      "/usr/bin/xcrun",
+      "/opt/homebrew/bin/adb",
+      "idevice_id",
+      "google-services.json",
+      "/Applications/Xcode.app/Contents/Developer",
+      "/tmp/pulsesoc_camera_sim_qa.sqlite"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_account_security_privacy_qa.md",
+    "sampled": 15,
+    "present": 15,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_push_credentials_audit.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/creator_studio_repair.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_voice_attachment_mime_fix_2026-07-18.md",
+    "sampled": 9,
+    "present": 8,
+    "ratio": 0.889,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation_id>/messages"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/video_reels_status_playback_policy_report.md",
+    "sampled": 6,
+    "present": 0,
+    "ratio": 0.0,
+    "missing": [
+      "pulse_mobile_video_playback_audit.py",
+      "pulse_mobile_hls_support_audit.py",
+      "pulse_mobile_layout_regression_audit.py",
+      "pulse_all_video_sound_policy_audit.py",
+      "pulse_video_scroll_autoplay_audit.py",
+      "video_playback_reliability_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/media_pipeline_assessment.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/intelligence_backend_surface_audit.md",
+    "sampled": 18,
+    "present": 18,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_responsive_layout.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_true_to_publish_preview_2026-07-20.md",
+    "sampled": 13,
+    "present": 2,
+    "ratio": 0.154,
+    "missing": [
+      "src/components/HomePulseComposer.tsx",
+      "src/components/preview/ContentPreviewRenderer.tsx",
+      "src/create/draftToContentModel.ts",
+      "src/api/feed.ts",
+      "src/screens/ContentPreviewScreen.tsx",
+      "navigation/types.ts",
+      "AppNavigator.tsx",
+      "src/create/previewHandoff.ts",
+      "src/utils/format.test.ts",
+      "core/localTime.ts",
+      "format.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_comm_v2_infra_asset_audit.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_music_queue_lockscreen_playback_2026-07-19.md",
+    "sampled": 32,
+    "present": 18,
+    "ratio": 0.562,
+    "missing": [
+      "src/core/pulseRadioQueueOrder.ts",
+      "pulseRadio.ts",
+      "src/core/pulseRadio.ts",
+      "index.js",
+      "index.d.ts",
+      "src/native/nowPlayingBridge.ts",
+      "src/screens/PulseQueueScreen.tsx",
+      "types.ts",
+      "AppNavigator.tsx",
+      "src/navigation/GlobalNavigation.tsx",
+      "src/screens/MusicScreen.tsx",
+      "pulseRadioQueueOrder.test.ts",
+      "pulseRadio.test.ts",
+      "package.json"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/creator_loginexus_operating_system.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/seo-report.md",
+    "sampled": 22,
+    "present": 16,
+    "ratio": 0.727,
+    "missing": [
+      "/ai-index.json",
+      "/sports-edge/<sport>",
+      "/intel/<article>",
+      "/btc-price-prediction",
+      "/ai-crypto-analysis-tools",
+      "/crypto-education-hub"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/undx_phase3b_schema_grounding_audit_2026-07-29.md",
+    "sampled": 40,
+    "present": 39,
+    "ratio": 0.975,
+    "missing": [
+      "marketplace_listings.price_amount"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_iphone_camera_captured_qa.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/video_delivery_root_cause.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "/api/pulse/media/94/stream"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/alerts-worker-railway.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_progress.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_video_call_audio_controls_2026-07-26.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "tests/test_pulsesoc_call_livekit_grants.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_business_os_entitlement_inventory_and_migration.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_pulse_command_performance.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_navigation_command_center_2026-07-19.md",
+    "sampled": 40,
+    "present": 37,
+    "ratio": 0.925,
+    "missing": [
+      "src/navigation/nativeRouteActions.ts",
+      "src/navigation/dashboardRouting.ts",
+      "src/components/MasterNavigationDrawer.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_comm_v2_security.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_push_notification_readiness.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/ads_sponsorships_privacy_security_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/undx_agent_marketplace_listing_workflow.md",
+    "sampled": 18,
+    "present": 18,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/command_center_security_engine.md",
+    "sampled": 25,
+    "present": 25,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_status_creator_progress.md",
+    "sampled": 23,
+    "present": 22,
+    "ratio": 0.957,
+    "missing": [
+      "/api/pulse/media/<media_id>/status"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_call_ringing_delivery_fix.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/reels_startup_audio_policy_repair.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/desktop_videos_page_redesign_report.md",
+    "sampled": 13,
+    "present": 8,
+    "ratio": 0.615,
+    "missing": [
+      "/Users/hmcherie/Desktop/CoinPilotX/bot.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/scripts/pulse_desktop_videos_page_audit.py",
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/desktop_videos_page_redesign_report.md",
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/pulse_videos_desktop_after_1920x1080.png",
+      "/Users/hmcherie/Desktop/CoinPilotX/reports/pulse_videos_desktop_after_1366x768.png"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_compact_inbox_redesign.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_release_device_readiness.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/creator_mobile_qa.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/production_email_delivery_incident.md",
+    "sampled": 22,
+    "present": 21,
+    "ratio": 0.955,
+    "missing": [
+      "/v3/account"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_route_matrix.md",
+    "sampled": 36,
+    "present": 35,
+    "ratio": 0.972,
+    "missing": [
+      "/dashboard/system/feed-intelligence"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_verification_progress.md",
+    "sampled": 11,
+    "present": 10,
+    "ratio": 0.909,
+    "missing": [
+      "/pulse/verification/business"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/saas-readiness-report.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_stage6_localization_completion.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_l10n_schema.py",
+      "test_l10n_engine.py",
+      "test_l10n_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_account_health_appeals_progress.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/account_loginexus_operating_system.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_event_sync_chaos_validation.md",
+    "sampled": 23,
+    "present": 22,
+    "ratio": 0.957,
+    "missing": [
+      "eventSync.ts"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_security_core_directive.md",
+    "sampled": 14,
+    "present": 14,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/production_probe_20260904.md",
+    "sampled": 25,
+    "present": 22,
+    "ratio": 0.88,
+    "missing": [
+      "/api/premium/tiers",
+      "/api/premium/plans",
+      "messenger_idempotency_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_native_device_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_mission_report_template.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_shared_audio_engine_2026-07-27.md",
+    "sampled": 6,
+    "present": 5,
+    "ratio": 0.833,
+    "missing": [
+      "scripts/pulsesoc_live_audio_guest_join_repair_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/chat_notification_delivery_fix.md",
+    "sampled": 17,
+    "present": 17,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/reels_tap_controls_repair_report.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/account_backend_surface_audit.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_create_camera_music_live_split_2026-07-19.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/immersive_video_experience_and_reactions_report.md",
+    "sampled": 11,
+    "present": 8,
+    "ratio": 0.727,
+    "missing": [
+      "/pulse/videos/77",
+      "/api/pulse/videos/<id>/react",
+      "/api/pulse/videos/<id>/comments"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_live_studio_creator_experience_redesign.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_foundation_progress.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/production-hardening-audit.md",
+    "sampled": 25,
+    "present": 24,
+    "ratio": 0.96,
+    "missing": [
+      "PREDICTIONS_API_KEY"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/content_planner_dashboard_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_three_device_acceptance_2026-07-21.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_stage6_undx_actions_completion.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_undx_schema.py",
+      "test_undx_engine.py",
+      "test_undx_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/reactions_and_content_notifications_repair.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_visible_publish_qa.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_growth_engine_foundation.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_reels_physical_realtime_final_closure_2026-07-13.md",
+    "sampled": 6,
+    "present": 4,
+    "ratio": 0.667,
+    "missing": [
+      "/tmp/pulsesoc-reels-final-release.log",
+      "/tmp/pulsesoc-reels-final-device-label.log"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/production_architecture.md",
+    "sampled": 37,
+    "present": 37,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/stripe_founder_checkout.md",
+    "sampled": 25,
+    "present": 22,
+    "ratio": 0.88,
+    "missing": [
+      "prod_UeiBmA8SD9btgM",
+      "pulse_founder_premium_monthly",
+      "we_1TfOwTFP8qvvGWBIyx0agani"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/password_reset_login_failure_incident.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_communications_2_blueprint.md",
+    "sampled": 40,
+    "present": 31,
+    "ratio": 0.775,
+    "missing": [
+      "voice_room",
+      "video_room",
+      "undx_workspace",
+      "pulse_comm_conversations",
+      "linked_community_id",
+      "linked_channel_id",
+      "linked_project_id",
+      "pulse_comm_members",
+      "pulse_comm_messages"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_iphone16pro_installation_2026-07-16.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/verification_feature_unlock_matrix.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_bottom_nav_scroll_behavior.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_safe_area_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/economy_button_audit.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/production_524_root_cause_investigation.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_play_console_android_submission.md",
+    "sampled": 6,
+    "present": 1,
+    "ratio": 0.167,
+    "missing": [
+      "/tmp/pulsesoc-play/pulsesoc-android-v21-home-status-live.aab",
+      "mobile/pulse-react-native/credentials/google-play-service-account.json",
+      "/tmp/pulsesoc-play/pulsesoc-v16.aab",
+      "/tmp/pulsesoc-play/pulsesoc-android-v16.aab",
+      "/tmp/pulsesoc-play/pulsesoc-android-v18-webview-mirror.aab"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_alert_management_qa_hardening.md",
+    "sampled": 20,
+    "present": 12,
+    "ratio": 0.6,
+    "missing": [
+      "/api/crypto/alerts/<alert_id>",
+      "/api/crypto/alerts/<alert_id>/duplicate",
+      "/api/crypto/alerts/<alert_id>/history",
+      "/api/alerts/<alert_id>/pause",
+      "/api/alerts/<alert_id>/resume",
+      "/api/alerts/<alert_id>/delete",
+      "/api/alerts/<alert_id>/test",
+      "/pulse/alerts/<alert_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_feature_parity_qa_readiness.md",
+    "sampled": 34,
+    "present": 32,
+    "ratio": 0.941,
+    "missing": [
+      "/usr/bin/xcrun",
+      "/dashboard/intelligence/<subsystem>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_webview_target_deep_wiring_2026-07-12.md",
+    "sampled": 16,
+    "present": 13,
+    "ratio": 0.812,
+    "missing": [
+      "messenger_core_audit.py",
+      "messenger_api_audit.py",
+      "messenger_media_composer_wiring_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_marketplace_progress.md",
+    "sampled": 22,
+    "present": 21,
+    "ratio": 0.955,
+    "missing": [
+      "/api/pulse/payments/orders/<transaction_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_creator_progress.md",
+    "sampled": 29,
+    "present": 29,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_voice_message_bubble_fix.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_ads_schema_report.md",
+    "sampled": 28,
+    "present": 28,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_comm_v2_media_upload_limits.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_repost_media_fix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/backend_command_center_qa.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_production_publish_trace.md",
+    "sampled": 7,
+    "present": 6,
+    "ratio": 0.857,
+    "missing": [
+      "/static/js/pulse_upload_manager.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_brevo_verification.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_marketplace_media_contract.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_dashboard_db_plan.md",
+    "sampled": 32,
+    "present": 32,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_final_branding_cleanup.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_intelligence_alert_visual_system.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_visible_qa_walkthrough.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/creator_privacy_security_review.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/reels_action_buttons_repair_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_comm_v2_realtime_readiness.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mobile_launch_readiness.md",
+    "sampled": 8,
+    "present": 5,
+    "ratio": 0.625,
+    "missing": [
+      "app.json",
+      "App.tsx",
+      "src/App.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cloudflare_pulse_upload_fix.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/crypto_command_center_report.md",
+    "sampled": 31,
+    "present": 31,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/business_os_advertising_slice3.md",
+    "sampled": 40,
+    "present": 39,
+    "ratio": 0.975,
+    "missing": [
+      "/api/pulse/ads/..."
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/scale-readiness-report.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_feed_interaction_qa.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/desktop_reels_redesign_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/backend_command_center_architecture.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_device_observation_2026-07-24.md",
+    "sampled": 15,
+    "present": 10,
+    "ratio": 0.667,
+    "missing": [
+      "app.json",
+      "src/api/config.ts",
+      "StatusCreator.tsx",
+      "HomePulseComposer.tsx",
+      "StatusCreatorMusicPreview.test.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_reactions_responsiveness_report.md",
+    "sampled": 10,
+    "present": 7,
+    "ratio": 0.7,
+    "missing": [
+      "/api/pulse/communications/v2/messages/<id>/reactions",
+      "static/js/pulse_live_studio.js",
+      "static/js/pulse_live_studio_runtime.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_voice_mobile_validation.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_notification_realtime_delivery.md",
+    "sampled": 6,
+    "present": 6,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/locked_device_push_notification_fix.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/voice_and_media_messaging_repair.md",
+    "sampled": 8,
+    "present": 1,
+    "ratio": 0.125,
+    "missing": [
+      "pulse_comm_v2_attachment_send_audit.py",
+      "pulse_voice_recording_audit.py",
+      "pulse_voice_upload_audit.py",
+      "pulse_voice_playback_audit.py",
+      "pulse_voice_security_audit.py",
+      "pulse_voice_mobile_audit.py",
+      "pulse_attachment_security_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/system_truth_map.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_external_accounts_qa.md",
+    "sampled": 6,
+    "present": 3,
+    "ratio": 0.5,
+    "missing": [
+      "brevo1._domainkey",
+      "brevo2._domainkey",
+      "_dmarc"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_live_replays_plan.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_completion.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_notification_defaults.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/account_dashboard_remaining_blockers.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_store_submission_status.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/legal_name_risky_items_pending_approval.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_reels_progress.md",
+    "sampled": 12,
+    "present": 6,
+    "ratio": 0.5,
+    "missing": [
+      "/api/pulse/reels/<reel_id>/view",
+      "/api/pulse/reels/<reel_id>/react",
+      "/api/pulse/reels/<reel_id>/repost",
+      "/api/pulse/reels/<reel_id>/share",
+      "/api/pulse/reels/<reel_id>/not-interested",
+      "/api/pulse/reels/<reel_id>/follow-creator"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/business_os_stage5_crypto_intelligence_completion.md",
+    "sampled": 40,
+    "present": 32,
+    "ratio": 0.8,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "market.py",
+      "alerts.py",
+      "api.py",
+      "test_crypto_schema.py",
+      "test_crypto_engine.py",
+      "test_crypto_market.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/security_assessment.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_sci_fi_ads_qa_report.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/livekit_vs_agora_decision.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/railway_qa_browser_deploy_investigation.md",
+    "sampled": 10,
+    "present": 9,
+    "ratio": 0.9,
+    "missing": [
+      "/app/.venv"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_full_wiring_autopilot.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_regression_repair.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_exact_parity_2026-07-12.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_stage6_recommendations_completion.md",
+    "sampled": 38,
+    "present": 32,
+    "ratio": 0.842,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_rec_schema.py",
+      "test_rec_engine.py",
+      "test_rec_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_video_layout_inventory.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_dns_email_readiness.md",
+    "sampled": 11,
+    "present": 8,
+    "ratio": 0.727,
+    "missing": [
+      "brevo1._domainkey",
+      "brevo2._domainkey",
+      "_dmarc"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_app_store_release_attempt_2026-07-21.md",
+    "sampled": 27,
+    "present": 24,
+    "ratio": 0.889,
+    "missing": [
+      "scripts/pulsesoc_native_live_audit.py",
+      "scripts/pulsesoc_native_live_webrtc_guest_audio_repair_audit.py",
+      "scripts/pulsesoc_native_calls_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_final_simulator_closure_2026-07-12.md",
+    "sampled": 17,
+    "present": 15,
+    "ratio": 0.882,
+    "missing": [
+      "pulsesoc_native_intelligence_audit.py",
+      "pulsesoc_native_architecture_health_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/batch24_refusal_leaves_no_trace.md",
+    "sampled": 40,
+    "present": 37,
+    "ratio": 0.925,
+    "missing": [
+      "routes.py",
+      "test_it_prefers_the_key_the_services_actually_emit",
+      "test_dead_approval_says_which"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_payment_checkout_event_emission.md",
+    "sampled": 27,
+    "present": 27,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/livekit_mux_configuration_verification_2026-06-13.md",
+    "sampled": 12,
+    "present": 7,
+    "ratio": 0.583,
+    "missing": [
+      "/projects/p_2kh7i9ypewf",
+      "RM_AvTHSCEtZkYs",
+      "/organizations/50i47f",
+      "/environments/1nkm64",
+      "/api/pulse/live/<id>/browser-publish"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_simulator_auth_qa_path.md",
+    "sampled": 13,
+    "present": 9,
+    "ratio": 0.692,
+    "missing": [
+      "/tmp/pulsesoc-sim-auth-qa-01-dev-client.png",
+      "/tmp/pulsesoc-sim-auth-qa-04-after-fresh-deeplink.png",
+      "/tmp/pulsesoc-sim-auth-qa-07-reel-destination.png",
+      "/tmp/pulsesoc-sim-auth-qa-08-session-restore.png"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_video_call_audio_repair_2026-07-26.md",
+    "sampled": 9,
+    "present": 6,
+    "ratio": 0.667,
+    "missing": [
+      "scripts/pulsesoc_call_system_full_functionality_audit.py",
+      "scripts/pulsesoc_real_call_experience_audit.py",
+      "scripts/pulsesoc_native_calls_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_spaces_auto_post_rotation.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/undx_sovereign_mind_v2_v3_integration_2026-07-19.md",
+    "sampled": 18,
+    "present": 14,
+    "ratio": 0.778,
+    "missing": [
+      "/api/pulse/comm/v2/media/init",
+      "/api/pulse/comm/v2/media/upload/<attachment_id>",
+      "/api/pulse/comm/v2/media/<attachment_id>/complete",
+      "/api/pulse-ai/memory/<memory_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_simulator_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_intelligence_push_copy_fix.md",
+    "sampled": 11,
+    "present": 11,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/realtime_audio_hard_lock_report.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "global_livekit_audio_manager_mutation",
+      "useNativeCallRoom.ts",
+      "useLiveBroadcastRoom.ts",
+      "liveAudioPublisher.ts",
+      "realtimeAudioContracts.test.ts",
+      "MarketplaceScreen.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/database_error_root_causes.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/undx_sovereign_mission_verification_matrix.md",
+    "sampled": 40,
+    "present": 35,
+    "ratio": 0.875,
+    "missing": [
+      "drop_readyState_fetch_gate",
+      "poster_warm_every_pass",
+      "rename_production_function",
+      "sitecustomize.py",
+      "pulse_communications_v2_desktop_layout_audit"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/mux_processing_timing_report.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_status_upload_failure.md",
+    "sampled": 19,
+    "present": 18,
+    "ratio": 0.947,
+    "missing": [
+      "MEDIA_ALLOW_UNTRANSCODED_MOV"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_navigation_cleanup.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_persistent_radio_home_reselect_2026-07-19.md",
+    "sampled": 26,
+    "present": 19,
+    "ratio": 0.731,
+    "missing": [
+      "pulseRadio.ts",
+      "app.json",
+      "mediaPlaybackCoordinator.ts",
+      "GlobalNavigation.tsx",
+      "HomeScreen.tsx",
+      "nativeMediaUpload.ts",
+      "homeReselect.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/backend-admin-upgrade-report.md",
+    "sampled": 40,
+    "present": 35,
+    "ratio": 0.875,
+    "missing": [
+      "/admin/users/<id>",
+      "/admin/users/<id>/edit",
+      "/admin/admins/<id>/edit",
+      "/admin/employees/<id>/edit",
+      "/admin/departments/<id>/edit"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/notification_system_foundation.md",
+    "sampled": 30,
+    "present": 27,
+    "ratio": 0.9,
+    "missing": [
+      "/api/pulse/notifications/<id>/resolve",
+      "/api/pulse/notifications/<id>/read",
+      "/api/pulse/notifications/<id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_long_video_upload_strategy.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_communications_v4_call_experience.md",
+    "sampled": 20,
+    "present": 14,
+    "ratio": 0.7,
+    "missing": [
+      "static/pulsesoc_calls.js",
+      "/api/calls/<call_id>/switch-camera",
+      "/api/calls/<call_id>/speaker",
+      "/api/calls/<call_id>/minimize",
+      "/api/calls/<call_id>/restore",
+      "/api/calls/<call_id>/visibility"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_browser_livekit_mux_bridge_repair.md",
+    "sampled": 13,
+    "present": 5,
+    "ratio": 0.385,
+    "missing": [
+      "/api/pulse/live/<id>/browser-publish",
+      "browser_preview",
+      "/twirp/livekit.Egress/StartRoomCompositeEgress",
+      "static/js/pulse_live_studio.js",
+      "scripts/live_audio_video_pipeline_audit.py",
+      "scripts/pulse_livekit_mux_bridge_audit.py",
+      "scripts/pulse_mux_live_publish_path_audit.py",
+      "scripts/pulse_mux_live_studio_truth_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_cursor_integrity_validation.md",
+    "sampled": 26,
+    "present": 26,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/mobile_release_update_after_product_repair.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_alert_provider_device_qa_setup.md",
+    "sampled": 40,
+    "present": 37,
+    "ratio": 0.925,
+    "missing": [
+      "/pulse/alerts/<id>",
+      "/api/alerts/test/push",
+      "/api/alerts/test/sms"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_progress.md",
+    "sampled": 16,
+    "present": 11,
+    "ratio": 0.688,
+    "missing": [
+      "/api/pulse/messages/<conversation_id>/send",
+      "/api/pulse/messages/<conversation_id>/sync",
+      "/api/pulse/messages/<conversation_id>/typing",
+      "/api/pulse/messages/<conversation_id>/seen",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/read"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_dashboard_live_state_panels.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_reels_futuristic_deep_wiring_2026-07-12.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_commerce_boundary_polish.md",
+    "sampled": 15,
+    "present": 14,
+    "ratio": 0.933,
+    "missing": [
+      "/pulse/orders/<id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_full_comm_delivery_system.md",
+    "sampled": 31,
+    "present": 30,
+    "ratio": 0.968,
+    "missing": [
+      "ERR_BLOCKED_BY_CLIENT"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_events_scheduled_live_progress.md",
+    "sampled": 11,
+    "present": 9,
+    "ratio": 0.818,
+    "missing": [
+      "/pulse/events/<event_id>",
+      "/pulse/events/1"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_media_upload_progress.md",
+    "sampled": 10,
+    "present": 8,
+    "ratio": 0.8,
+    "missing": [
+      "/api/pulse/media/<media_id>/status",
+      "/api/pulse/media/<media_id>/repair"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_comm_v2_group_calls.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_listing_composer_progress.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mux_live_qa_browser_report.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/verification_security_privacy_review.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/human-psychology-ux-audit.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/native_reels_moderation_replay_phase3_2026-07-20.md",
+    "sampled": 14,
+    "present": 7,
+    "ratio": 0.5,
+    "missing": [
+      "/api/pulse/live/<id>/join-requests",
+      "/api/pulse/live/<id>/end",
+      "src/api/live.ts",
+      "src/live/liveSession.ts",
+      "liveSession.ts",
+      "src/screens/LiveHostSessionScreen.tsx",
+      "src/screens/ReplayViewerScreen.tsx"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_status_complete_design_deep_wiring_2026-07-12.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_profile_routing_report.md",
+    "sampled": 24,
+    "present": 21,
+    "ratio": 0.875,
+    "missing": [
+      "/api/pulse/profile/<profileKey>",
+      "ProfileScreen.tsx",
+      "/pulse/id/<id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/messages_media_send_failure.md",
+    "sampled": 11,
+    "present": 10,
+    "ratio": 0.909,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<id>/messages"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_messenger_screenshot_target_control_center_closure_2026-07-12.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_undx_chat_conversation.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "/pulse/messages/-9001001"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/railway_build_failure_assessment.md",
+    "sampled": 15,
+    "present": 7,
+    "ratio": 0.467,
+    "missing": [
+      "railway.json",
+      "package.json",
+      "package-lock.json",
+      "_authToken",
+      "NPM_TOKEN",
+      "GITHUB_TOKEN",
+      "PIP_INDEX_URL",
+      "PIP_EXTRA_INDEX_URL"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_ads_placement_inventory.md",
+    "sampled": 13,
+    "present": 13,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/reels_follow_button_repair_report.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_app_review_readiness_2026-07-21.md",
+    "sampled": 20,
+    "present": 17,
+    "ratio": 0.85,
+    "missing": [
+      "scripts/pulsesoc_native_live_audit.py",
+      "scripts/pulsesoc_native_live_webrtc_guest_audio_repair_audit.py",
+      "scripts/pulsesoc_native_calls_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_domain_reference_inventory.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mobile_production_parity_audit.md",
+    "sampled": 18,
+    "present": 16,
+    "ratio": 0.889,
+    "missing": [
+      "NEXT_PUBLIC_API_URL",
+      "src/App.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/voice_note_upload_failure_root_cause.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_messenger_performance.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_payment_systems_audit.md",
+    "sampled": 8,
+    "present": 6,
+    "ratio": 0.75,
+    "missing": [
+      "/api/payments/orders/<transaction_id>",
+      "/api/pulse/payments/orders/<transaction_id>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_ad_payments_report.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/reels_nav_profile_status_mux_fix.md",
+    "sampled": 6,
+    "present": 4,
+    "ratio": 0.667,
+    "missing": [
+      "/api/pulse/media/<media_id>/status",
+      "/api/pulse/media/<media_id>/repair"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_global_navigation_visible_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/db_init_524_fix.md",
+    "sampled": 22,
+    "present": 21,
+    "ratio": 0.955,
+    "missing": [
+      "static/js/pulse_live_studio.js"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_testflight_investigation.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_audio_camera_pipeline_2026-07-28.md",
+    "sampled": 14,
+    "present": 14,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/live_studio_native_preflight_2026-07-19.md",
+    "sampled": 10,
+    "present": 2,
+    "ratio": 0.2,
+    "missing": [
+      "src/api/live.ts",
+      "src/live/liveStudioReadiness.ts",
+      "src/screens/LiveStudioScreen.tsx",
+      "src/live/__tests__/liveStudioReadiness.test.ts",
+      "src/navigation/types.ts",
+      "src/navigation/AppNavigator.tsx",
+      "src/navigation/dashboardRouting.ts",
+      "src/navigation/masterNavigation.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/account_mobile_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/dashboard_user_admin_boundary_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_visible_wiring_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_ads_privacy_review.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_wave0_wave1_auth_home_stabilization_2026-07-20.md",
+    "sampled": 40,
+    "present": 24,
+    "ratio": 0.6,
+    "missing": [
+      "live_audit.py",
+      "live_progress.md",
+      "scripts/pulsesoc_native_live_audit.py",
+      "live_studio_web_fallback",
+      "routeResolution.test.ts",
+      "notificationRouting.test.ts",
+      "SearchScreen.tsx",
+      "LoginScreen.tsx",
+      "HomeScreen.tsx",
+      "components/Screen.tsx",
+      "Screen.tsx",
+      "App.tsx",
+      "src/session/auth.ts",
+      "src/session/qaSimulatorAuth.ts",
+      "src/session/__tests__/restoreSession.test.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_testflight_upload_2026-07-21.md",
+    "sampled": 13,
+    "present": 9,
+    "ratio": 0.692,
+    "missing": [
+      "EXTERNAL_REVIEW_REQUIRED",
+      "app.json",
+      "INTENTIONAL_UNRELATED_WORK",
+      "/opt/homebrew/bin/python3"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_production_ui_token_map.md",
+    "sampled": 21,
+    "present": 21,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_activity_inbox_qa.md",
+    "sampled": 22,
+    "present": 14,
+    "ratio": 0.636,
+    "missing": [
+      "/tmp/pulsesoc_activity_qa.sqlite",
+      "/pulse/activity/messages",
+      "/pulse/activity/calls",
+      "/pulse/activity/safety",
+      "/pulse/activity/verification",
+      "/pulse/activity/creator_growth",
+      "notificationRouting.ts",
+      "/api/pulse/notifications/<id>/resolve"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_content_planner_progress.md",
+    "sampled": 20,
+    "present": 20,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_qa_runtime_stabilization.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_webview_notification_route_parity_2026-07-19.md",
+    "sampled": 40,
+    "present": 26,
+    "ratio": 0.65,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/:id/messages",
+      "src/api/messenger.ts",
+      "/api/pulse/communications/v2/conversations/:id/voice/start",
+      "src/api/calls.ts",
+      "/api/pulse/communications/v2/conversations/:id/video/start",
+      "/api/pulse/posts/:postId/react",
+      "src/api/feed.ts",
+      "/api/pulse/posts/:postId/comments",
+      "/api/pulse/reels/:reelId/react",
+      "src/api/reels.ts",
+      "/api/pulse/reels/:reelId/comments",
+      "/api/pulse/reels/:reelId/share",
+      "src/api/notifications.ts",
+      "src/api/push.ts"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_comms_safety_event_emission.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/command_center_realtime_transport.md",
+    "sampled": 26,
+    "present": 24,
+    "ratio": 0.923,
+    "missing": [
+      "/internal/command-center/realtime/poll/<user_id>",
+      "/internal/command-center/realtime/stream/<user_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/crypto_security_privacy_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/undx_migration_stage0_inventory_baseline.md",
+    "sampled": 32,
+    "present": 26,
+    "ratio": 0.812,
+    "missing": [
+      "PULSE_AI_OPENAI_MODEL",
+      "GOOGLE_AI_API_KEY",
+      "PULSE_AI_GEMINI_MODEL",
+      "DEEPSEEK_API_KEY",
+      "PULSE_AI_DEEPSEEK_MODEL",
+      "PULSE_AI_GROQ_MODEL"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_push_remaining_blockers.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/crypto_alert_reconciliation.md",
+    "sampled": 23,
+    "present": 23,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_status_system_repair.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mobile_push_real_device_qa.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_command_device_nested_parity_2026-07-12.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_full_system_wiring_2026-07-20.md",
+    "sampled": 30,
+    "present": 14,
+    "ratio": 0.467,
+    "missing": [
+      "nativeRouteActions.ts",
+      "dashboardRouting.ts",
+      "linking.ts",
+      "notificationRouting.ts",
+      "config.ts",
+      "pulseApi.ts",
+      "contentOwnership.ts",
+      "feed.ts",
+      "reels.ts",
+      "status.ts",
+      "pulseRadio.ts",
+      "src/screens/LiveHostSessionScreen.tsx",
+      "src/core/mediaPlaybackCoordinator.ts",
+      "src/core/eventSync.ts",
+      "entitlements.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/communications_v2_attachment_voice_fix.md",
+    "sampled": 17,
+    "present": 16,
+    "ratio": 0.941,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/messages"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_account_security_privacy_progress.md",
+    "sampled": 25,
+    "present": 24,
+    "ratio": 0.96,
+    "missing": [
+      "/api/account/trusted-devices/<device_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_chat_conversation_parity_overlay.md",
+    "sampled": 40,
+    "present": 25,
+    "ratio": 0.625,
+    "missing": [
+      "static/js/pulsesoc_calls.js",
+      "static/js/pulsesoc_global_call_overlay.js",
+      "/api/pulse/messages/<conversation_id>/send",
+      "/api/pulse/messages/<conversation_id>/sync",
+      "/api/pulse/messages/<conversation_id>/seen",
+      "/api/pulse/messages/<conversation_id>/typing",
+      "/api/pulse/messages/<message_id>/react",
+      "/api/pulse/messages/<message_id>/delete",
+      "/api/pulse/messages/<message_id>/report",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/voice/start",
+      "/api/pulse/comm/v2/conversations/<conversation_ref>/video/start",
+      "/api/calls/<call_id>/status",
+      "/api/calls/<call_id>/join-token",
+      "/api/calls/<call_id>/end",
+      "scripts/pulsesoc_native_communications_parity_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_screen_inventory.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_live_webrtc_guest_audio_repair_2026-07-20.md",
+    "sampled": 24,
+    "present": 15,
+    "ratio": 0.625,
+    "missing": [
+      "static/js/pulse_live_studio.js",
+      "/api/pulse/live/<id>/webrtc/signal",
+      "/api/pulse/live/<id>/webrtc/signals",
+      "/api/pulse/live/<id>/livekit/token",
+      "static/js/pulse_live_studio_runtime.js",
+      "scripts/pulsesoc_native_live_webrtc_guest_audio_repair_audit.py",
+      "/api/pulse/live/<id>/join",
+      "/api/pulse/live/<id>/chat",
+      "/api/pulse/live/<id>/react"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_music_preview_parity_2026-07-21.md",
+    "sampled": 31,
+    "present": 18,
+    "ratio": 0.581,
+    "missing": [
+      "src/core/attachedMusicAudioPolicy.ts",
+      "StatusCreator.tsx",
+      "src/components/PostCard.tsx",
+      "src/media/mediaContract.ts",
+      "src/api/feed.ts",
+      "src/api/reels.ts",
+      "src/api/status.ts",
+      "src/components/HomePulseComposer.tsx",
+      "src/core/__tests__/attachedMusicAudioPolicy.test.ts",
+      "src/api/__tests__/createPayloadMusic.test.ts",
+      "attachedMusicAudioPolicy.ts",
+      "PostCard.tsx",
+      "feed.ts"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_livekit_mux_full_qa.md",
+    "sampled": 19,
+    "present": 16,
+    "ratio": 0.842,
+    "missing": [
+      "EG_HLP44fWw3Tx7",
+      "/pulse/live/studio/46",
+      "/pulse/live/46"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/founder_premium_membership.md",
+    "sampled": 22,
+    "present": 22,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_banuba_camera_foundation.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/premium_page_restructure_report.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/push_credentials_readiness_report.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_ai_messenger.md",
+    "sampled": 26,
+    "present": 24,
+    "ratio": 0.923,
+    "missing": [
+      "GOOGLE_AI_API_KEY",
+      "DEEPSEEK_API_KEY"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_lightspeed_inventory.md",
+    "sampled": 40,
+    "present": 28,
+    "ratio": 0.7,
+    "missing": [
+      "pulse_home_core.js",
+      "pulse_status_viewer.js",
+      "pulse_messages_v2.js",
+      "pulse_realtime.js",
+      "pulsesoc_calls.js",
+      "pulse_live_studio.js",
+      "pulse_live_studio_runtime.js",
+      "notifications.js",
+      "admin_calls_command_center.html",
+      "search.html",
+      "/static/service-worker.js",
+      "static/vendor/livekit-client.umd.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulse_video_sound_policy_enforcement.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cloudflare_524_origin_timeout.md",
+    "sampled": 8,
+    "present": 5,
+    "ratio": 0.625,
+    "missing": [
+      "/api/pulse/media/93/stream",
+      "performance_audit.py",
+      "static/js/pulse_live_studio.js"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/account_security_privacy_review.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_profile_editing_repair.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_livekit_egress_rejection_repair.md",
+    "sampled": 8,
+    "present": 8,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/brevo_notifications_setup.md",
+    "sampled": 15,
+    "present": 15,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/livestream_source_closed_investigation_2026-06-13.md",
+    "sampled": 24,
+    "present": 8,
+    "ratio": 0.333,
+    "missing": [
+      "EG_7VwuwPHXxEGP",
+      "start_camera_restart",
+      "start_screen_restart",
+      "/api/pulse/live/<live_id>/debug-event",
+      "pulse_livekit_wait_for_host_tracks",
+      "egress_ended",
+      "egress_source_closed",
+      "static/js/pulse_live_studio_runtime.js",
+      "static/js/pulse_live_studio.js",
+      "scripts/live_source_closed_diagnostics_audit.py",
+      "scripts/pulse_livekit_mux_bridge_audit.py",
+      "scripts/live_media_transport_audit.py",
+      "scripts/live_mux_regression_audit.py",
+      "scripts/live_audio_video_pipeline_audit.py",
+      "scripts/live_egress_quota_fallback_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_right_rail_parity.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_advertiser_payment_audit.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_push_real_device_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_intelligence_progress.md",
+    "sampled": 16,
+    "present": 16,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_simulator_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_calls_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_app_store_launch_checklist.md",
+    "sampled": 7,
+    "present": 7,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/ads_sponsorships_qa.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_auth_session_reels_recovery_2026-07-14.md",
+    "sampled": 9,
+    "present": 9,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/user_creation_email_delivery_fix.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/roast_battle_pulse_integration.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_mux_live_publish_pipeline_truth.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_activity_fixture_hardening.md",
+    "sampled": 20,
+    "present": 19,
+    "ratio": 0.95,
+    "missing": [
+      "/pulse/marketplace/:id"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_ad_creative_media_upload_qa.md",
+    "sampled": 12,
+    "present": 12,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/crypto_dashboard_visibility_qa.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse_status_ui_v4.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_stable_livestream_foundation.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_activity_inbox_progress.md",
+    "sampled": 30,
+    "present": 22,
+    "ratio": 0.733,
+    "missing": [
+      "/api/pulse/notifications/<notification_id>/read",
+      "/api/pulse/notifications/<notification_id>",
+      "/api/pulse/notifications/<notification_id>/resolve",
+      "/pulse/activity/messages",
+      "/pulse/activity/calls",
+      "/pulse/activity/safety",
+      "/pulse/activity/verification",
+      "/pulse/activity/creator_growth"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/calls_backend_command_center.md",
+    "sampled": 22,
+    "present": 11,
+    "ratio": 0.5,
+    "missing": [
+      "/admin/calls/<call_id>",
+      "/admin/calls/<call_id>/timeline",
+      "/admin/calls/<call_id>/delivery",
+      "/admin/calls/<call_id>/inspector",
+      "/admin/calls/<call_id>/force-end",
+      "/api/admin/calls/<call_id>/timeline",
+      "/api/admin/calls/<call_id>/inspector",
+      "/api/admin/calls/<call_id>/force-end",
+      "/api/admin/calls/<call_id>",
+      "/api/admin/calls/<call_id>/delivery",
+      "scripts/calls_backend_command_center_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_blocker_inventory_2026-07-20.md",
+    "sampled": 20,
+    "present": 13,
+    "ratio": 0.65,
+    "missing": [
+      "HomeScreen.tsx",
+      "HomeScreen.layout.test.ts",
+      "session/auth.ts",
+      "api/pulseApi.ts",
+      "App.tsx",
+      "restoreSession.test.ts",
+      "scripts/pulsesoc_native_live_audit.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_full_product_repair_summary.md",
+    "sampled": 8,
+    "present": 4,
+    "ratio": 0.5,
+    "missing": [
+      "stripe_webhook_recovery_audit.py",
+      "stripe_premium_audit.py",
+      "creator_economy_audit.py",
+      "payment_email_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_pulse_composer_complete_design_deep_wiring_2026-07-12.md",
+    "sampled": 10,
+    "present": 8,
+    "ratio": 0.8,
+    "missing": [
+      "api/feed.ts",
+      "HomePulseComposer.tsx"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_home_evolution.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_real_call_experience_phase2.md",
+    "sampled": 27,
+    "present": 9,
+    "ratio": 0.333,
+    "missing": [
+      "static/pulsesoc_calls.js",
+      "/api/calls/<call_id>/connected",
+      "/api/calls/<call_id>/events",
+      "/api/conversations/<conversation_id>/calls",
+      "/api/calls/<call_id>/mute-audio",
+      "/api/calls/<call_id>/unmute-audio",
+      "/api/calls/<call_id>/enable-video",
+      "/api/calls/<call_id>/disable-video",
+      "/api/calls/<call_id>/screen-share/start",
+      "/api/calls/<call_id>/screen-share/stop",
+      "/static/vendor/livekit-client.umd.js",
+      "pulsesoc_calls.js",
+      "LIVEKIT_WEBHOOK_SECRET",
+      "TURN_SERVER_URL",
+      "TURN_USERNAME"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_native_post_reel_publish_repair_2026-07-19.md",
+    "sampled": 9,
+    "present": 8,
+    "ratio": 0.889,
+    "missing": [
+      "/api/pulse/media/:id/status"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_communications_engine_foundation.md",
+    "sampled": 36,
+    "present": 19,
+    "ratio": 0.528,
+    "missing": [
+      "static/pulsesoc_calls.js",
+      "scripts/pulsesoc_communications_engine_audit.py",
+      "/api/calls/<call_id>/accept",
+      "/api/calls/<call_id>/decline",
+      "/api/calls/<call_id>/end",
+      "/api/calls/<call_id>/join-token",
+      "/api/calls/<call_id>/status",
+      "/api/calls/<call_id>/quality",
+      "/api/pulse/communications/v2/livekit/webhook",
+      "/api/admin/calls/<call_id>",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/voice/start",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/video/start",
+      "LIVEKIT_WEBHOOK_SECRET",
+      "TURN_SERVER_URL",
+      "TURN_USERNAME"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_comm_v2_video_calls.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/status_experience_repair.md",
+    "sampled": 6,
+    "present": 0,
+    "ratio": 0.0,
+    "missing": [
+      "pulse_home_status_layout_audit.py",
+      "home_status_autoplay_audit.py",
+      "pulse_status_audit.py",
+      "status_system_audit.py",
+      "status_shared_viewer_playback_audit.py",
+      "pulse_status_upload_viewer_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulsesoc_call_start_diagnostics.md",
+    "sampled": 25,
+    "present": 18,
+    "ratio": 0.72,
+    "missing": [
+      "LIVEKIT_CONFIG_MISSING",
+      "LIVEKIT_TOKEN_FAILED",
+      "/admin/calls/<call_id>/delivery",
+      "LIVEKIT_CLIENT_NOT_LOADED",
+      "LIVEKIT_ROOM_CONNECT_FAILED",
+      "MEDIA_PERMISSION_DENIED",
+      "livekit_token_failed"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/pulsesoc_native_seller_inventory_event_emission.md",
+    "sampled": 17,
+    "present": 17,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_activity_notification_visible_qa.md",
+    "sampled": 3,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_shared_foundation_readiness_checkpoint.md",
+    "sampled": 30,
+    "present": 29,
+    "ratio": 0.967,
+    "missing": [
+      "entitlements/schema.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/namecheap_private_email_dns_delivery_report.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/command_center_railway_deployment.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_physical_camera_qa_plan.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_side_by_side_matrix.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_home_mockup_alignment.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/business_os_stage6_performance_completion.md",
+    "sampled": 40,
+    "present": 34,
+    "ratio": 0.85,
+    "missing": [
+      "schema.py",
+      "engine.py",
+      "api.py",
+      "test_perf_schema.py",
+      "test_perf_engine.py",
+      "test_perf_api.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/crypto_alert_locked_push_fix.md",
+    "sampled": 25,
+    "present": 24,
+    "ratio": 0.96,
+    "missing": [
+      "/pulse/alerts/<alert_rule_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_comm_v2_realtime.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_native_camera_studio_progress.md",
+    "sampled": 15,
+    "present": 15,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_sci_fi_ads_layer_report.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_railway_domain_verification.md",
+    "sampled": 14,
+    "present": 14,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/creator_backend_surface_audit.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_live_egress_quota_and_echo_repair.md",
+    "sampled": 11,
+    "present": 5,
+    "ratio": 0.455,
+    "missing": [
+      "resource_exhausted",
+      "/api/pulse/live/<id>/browser-publish",
+      "static/js/pulse_live_studio_runtime.js",
+      "static/js/pulse_live_studio.js",
+      "scripts/live_egress_quota_fallback_audit.py",
+      "scripts/pulse_livekit_mux_bridge_audit.py"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse_communications_v2_build_plan.md",
+    "sampled": 40,
+    "present": 33,
+    "ratio": 0.825,
+    "missing": [
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/messages",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/members",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/read",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/typing",
+      "/api/pulse/communications/v2/conversations/<conversation_ref>/presence",
+      "/api/pulse/communications/v2/messages/<message_id>/reactions",
+      "/api/pulse/communications/v2/messages/<message_id>/report"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/database_assessment.md",
+    "sampled": 10,
+    "present": 10,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/command_center_ai_messaging_layer.md",
+    "sampled": 25,
+    "present": 25,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulsesoc_business_os_stage0_inventory_and_architecture.md",
+    "sampled": 40,
+    "present": 38,
+    "ratio": 0.95,
+    "missing": [
+      "/campaigns/<id>/reserve-budget",
+      "/campaigns/<id>/action"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/pulse_email_notifications_brevo.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc_logi_nexus_pulse_command_transformation.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/media_engine_build_stuck.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/screenshots/native-reels-futuristic-deep-wiring-2026-07-12/README.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/screenshots/native-messenger-new-chat-incident-closure-2026-07-15/README.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/screenshots/native-messenger-screenshot-target-control-center-closure-2026-07-12/README.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulsesoc-composer-video-upload/qa-summary.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/security/security_findings_ledger_a0cc15cd.md",
+    "sampled": 23,
+    "present": 15,
+    "ratio": 0.652,
+    "missing": [
+      "app.json",
+      "src/session/sessionStore.ts",
+      "src/session/biometricAuth.ts",
+      "MAX_CONTENT_LENGTH",
+      "StatusCreator.tsx",
+      "BuyerOrdersScreen.tsx",
+      "perfTrace.test.ts",
+      "eas.json"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_ORDER_STATE_MAPPING.md",
+    "sampled": 14,
+    "present": 2,
+    "ratio": 0.143,
+    "missing": [
+      "customer_refund_status",
+      "supplier_recovery_status",
+      "in_cart",
+      "awaiting_funding",
+      "paid_awaiting_processing",
+      "/api2.0/v1/logistic/trackInfo",
+      "provider_tracking_status_raw",
+      "/api2.0/v1/shopping/order/deleteOrder",
+      "/api2.0/v1/shopping/order/updateLogistics",
+      "cancellation_requested",
+      "/outbound/cancel",
+      "replacement_issued"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_WEBHOOK_EVENT_MAP.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_PULSESOC_DATA_AUTHORITY_MAP.md",
+    "sampled": 27,
+    "present": 12,
+    "ratio": 0.444,
+    "missing": [
+      "supplier_inventory_snapshot",
+      "supplier_recovery_status",
+      "provider_account_ref",
+      "provider_sku",
+      "merchant_product_id",
+      "merchant_variant_id",
+      "customer_order_id",
+      "order_line_id",
+      "fulfillment_id",
+      "fulfillment_line_id",
+      "provider_order_number",
+      "shipment_id",
+      "provider_shipment_ref",
+      "customer_refund_id",
+      "supplier_dispute_id"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_DROPSHIPPING_FORENSIC_REPORT.md",
+    "sampled": 1,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_ONBOARDING_CORRECTION_REPORT.md",
+    "sampled": 24,
+    "present": 19,
+    "ratio": 0.792,
+    "missing": [
+      "src/__tests__/userFacingCopy.test.ts",
+      "cj.py",
+      "connections.py",
+      "test_cj_connections.py",
+      "list_connected_browsers"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cj-discovery/catalog_evidence.md",
+    "sampled": 18,
+    "present": 3,
+    "ratio": 0.167,
+    "missing": [
+      "/product/listV2",
+      "/product/list",
+      "/product/query",
+      "/product/variant/query",
+      "/product/variant/queryByVid",
+      "/product/stock/queryByVid",
+      "/product/stock/queryBySku",
+      "/product/stock/getInventoryByPid",
+      "/storehouseCenterWeb/syncStorehouseVideoRequests",
+      "/webhook/product/subscribe",
+      "/webhook/product/unsubscribe",
+      "/product/queryProductsByImage",
+      "enable_description",
+      "enable_category",
+      "enable_combine"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_FAILURE_RECOVERY_MATRIX.md",
+    "sampled": 19,
+    "present": 8,
+    "ratio": 0.421,
+    "missing": [
+      "auth_refresh_pending",
+      "stock_unavailable",
+      "cost_review",
+      "warehouse_unavailable",
+      "shipping_unavailable",
+      "submission_rejected",
+      "submission_unknown",
+      "funding_unknown",
+      "tracking_pending",
+      "reconciliation_due",
+      "waybill_required"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_API_MAINTENANCE_POLICY.md",
+    "sampled": 14,
+    "present": 13,
+    "ratio": 0.929,
+    "missing": [
+      "cj.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_RATE_LIMIT_SCALE_ANALYSIS.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_STORE_SESSION_AUTHORITY_REPORT.md",
+    "sampled": 40,
+    "present": 40,
+    "ratio": 1.0,
+    "missing": [],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/cj-discovery/PULSESOC_SUPPLIER_CONTRACT.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-discovery/webhooks_limits_evidence.md",
+    "sampled": 40,
+    "present": 1,
+    "ratio": 0.025,
+    "missing": [
+      "/webhook/set",
+      "/webhook/product/subscribe",
+      "data.successProductIds",
+      "/webhook/product/unsubscribe",
+      "/webhook/product/subscribe/list",
+      "PRIVATE_ORDER",
+      "/product/listV2",
+      "/product/list",
+      "/product/query",
+      "/product/variant/query",
+      "/product/variant/queryByVid",
+      "/product/stock/queryByVid",
+      "/product/stock/queryBySku",
+      "/product/stock/privateInventory/querySpuPage",
+      "/product/stock/privateInventory/querySkuListByProductId"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_SECRET_REQUIREMENTS.md",
+    "sampled": 2,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-discovery/CJ_API_REQUIREMENTS.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-discovery/orders_evidence.md",
+    "sampled": 40,
+    "present": 1,
+    "ratio": 0.025,
+    "missing": [
+      "/api2.0/v1/shopping/order/createOrderV2",
+      "/api2.0/v1/shopping/order/createOrderV3",
+      "/api2.0/v1/shopping/order/addCart",
+      "/api2.0/v1/shopping/order/addCartConfirm",
+      "/api2.0/v1/shopping/order/saveGenerateParentOrder",
+      "/api2.0/v1/shopping/order/list",
+      "/api2.0/v1/shopping/order/getOrderDetail",
+      "/api2.0/v1/shopping/order/deleteOrder",
+      "/api2.0/v1/shopping/order/confirmOrder",
+      "/api2.0/v1/shopping/order/changeWarehouse",
+      "/api2.0/v1/shopping/sandbox/simulatePay",
+      "/api2.0/v1/shopping/sandbox/updateStatus",
+      "/api2.0/v1/shopping/order/getOrderLogisticsInfo",
+      "/api2.0/v1/shopping/order/updateLogistics",
+      "/api2.0/v1/shopping/sandbox/updateTrackNumber"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/protection/platform_protection_guardrails.md",
+    "sampled": 7,
+    "present": 0,
+    "ratio": 0.0,
+    "missing": [
+      "/scripts/protection/run_protection_suite.py",
+      "/tests/protection/test_livestream_contract.py",
+      "/tests/protection/test_media_playback_contract.py",
+      "/tests/protection/test_core_platform_contract.py",
+      "/.github/workflows/protection.yml",
+      "/docs/protection/livestream_golden_path.md",
+      "/docs/protection/platform_protection_matrix.md"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/cj-setup/CJ_STAGING_ACCEPTANCE_STATUS.md",
+    "sampled": 8,
+    "present": 7,
+    "ratio": 0.875,
+    "missing": [
+      "CJ_MAIN_RECONCILIATION_REPORT.md"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cj-setup/CJ_LIVE_SANDBOX_ACCEPTANCE.md",
+    "sampled": 12,
+    "present": 10,
+    "ratio": 0.833,
+    "missing": [
+      "OPEN_RELEASE_BLOCKING_FOR_MULTI_MERCHANT_SCALE",
+      "CJ_RAILWAY_STAGING_ACCEPTANCE.md"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cj-setup/CJ_SUPPORT_REQUEST_DRAFT.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-setup/connection_evidence.md",
+    "sampled": 15,
+    "present": 14,
+    "ratio": 0.933,
+    "missing": [
+      "CJ_ROLLOUT_AND_ACCEPTANCE.md"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/cj-setup/CJ_ROLLOUT_AND_ACCEPTANCE.md",
+    "sampled": 20,
+    "present": 19,
+    "ratio": 0.95,
+    "missing": [
+      "/private/tmp/cj-supplier-gateway.ZHIykF"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/cj-setup/CJ_MAIN_RECONCILIATION_REPORT.md",
+    "sampled": 32,
+    "present": 29,
+    "ratio": 0.906,
+    "missing": [
+      "CJ_STAGING_ACCEPTANCE_STATUS.md",
+      "/private/tmp/cj-staging-acceptance.xXCEjH",
+      "tests/test_pulsesoc_call_livekit_grants.py"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/cj-setup/CJ_RAILWAY_STAGING_ACCEPTANCE.md",
+    "sampled": 21,
+    "present": 18,
+    "ratio": 0.857,
+    "missing": [
+      "/private/tmp/cj-staging-acceptance.xXCEjH",
+      "CJ_MAIN_RECONCILIATION_REPORT.md",
+      "CJ_SUPPORT_REQUEST_DRAFT.md"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cj-setup/CJ_IMPLEMENTATION_FOUNDATION_MAP.md",
+    "sampled": 15,
+    "present": 11,
+    "ratio": 0.733,
+    "missing": [
+      "tests/test_pulsesoc_call_livekit_grants.py",
+      "commerce_gateway.py",
+      "business_os_commerce_routes.py",
+      "payments/webhook_inbox.py"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/cj-contract-gates/CJ_AUTH_LIFECYCLE_CONTRACT.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/cj-contract-gates/CJ_SAAS_SCALE_CONTRACT.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse-post-cards-redesign/premium_post_card_redesign_report.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/pulse-video-routing-fix/report.md",
+    "sampled": 11,
+    "present": 10,
+    "ratio": 0.909,
+    "missing": [
+      "/pulse/videos/<video_id>"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/zero-loss-reconciliation/phase4/dangling.md",
+    "sampled": 4,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/zero-loss-reconciliation/phase6/stashes.md",
+    "sampled": 6,
+    "present": 3,
+    "ratio": 0.5,
+    "missing": [
+      "scripts/zero_loss_stash_presence.py",
+      "PremiumCenterScreen.tsx",
+      "i18n/catalogs/en/extended.json"
+    ],
+    "verdict": "unsupported"
+  },
+  {
+    "report": "reports/pulse-video-watch-redesign/report.md",
+    "sampled": 5,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/incidents/2026-07-02-password-reset-reliability.md",
+    "sampled": 0,
+    "verdict": "thin"
+  },
+  {
+    "report": "reports/web_parity/PHASE3_4_DESIGN_SYSTEM.md",
+    "sampled": 29,
+    "present": 27,
+    "ratio": 0.931,
+    "missing": [
+      "colors.ts",
+      "ThemeContext.tsx"
+    ],
+    "verdict": "consistent"
+  },
+  {
+    "report": "reports/web_parity/PHASE2_PARITY_MANIFEST.md",
+    "sampled": 40,
+    "present": 35,
+    "ratio": 0.875,
+    "missing": [
+      "route_table.json",
+      "auth_audit.json",
+      "native_map.json",
+      "parity_matrix.json",
+      "/api/<area>"
+    ],
+    "verdict": "drifted"
+  },
+  {
+    "report": "reports/web_parity/MISSION_REPORT.md",
+    "sampled": 19,
+    "present": 14,
+    "ratio": 0.737,
+    "missing": [
+      "realtimeAudioEngine.ts",
+      "useLiveBroadcastRoom.ts",
+      "shell_audit.json",
+      "colors.ts",
+      "ThemeContext.tsx"
+    ],
+    "verdict": "drifted"
+  }
+]

@@ -17,10 +17,29 @@
 import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "../i18n";
 
+import { isLoadableMediaUrl } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import { messengerMediaCacheIdentity } from "./messengerMediaAccess";
 import { ConversationMediaItem } from "./conversationMediaCollection";
 import { ConversationMediaGalleryState } from "./useConversationMediaGallery";
+
+/**
+ * First candidate a native loader can actually open, in the caller's order.
+ *
+ * Preference is expressed by argument order; loadability is the floor under it.
+ * Falls back to the first non-empty candidate so an unrecognised-but-present URL
+ * still reaches the loader and fails as a *reported* load error rather than
+ * being silently blanked here.
+ */
+function preferLoadable(...candidates: Array<string | null | undefined>): string {
+  for (const candidate of candidates) {
+    if (isLoadableMediaUrl(candidate)) return String(candidate).trim();
+  }
+  for (const candidate of candidates) {
+    if (String(candidate || "").trim()) return String(candidate).trim();
+  }
+  return "";
+}
 
 type GalleryHandle = Pick<ConversationMediaGalleryState, "open">;
 
@@ -83,8 +102,26 @@ export function galleryViewerItems(
         attachmentId: item.attachmentId
       }),
       kind: item.kind,
-      url: unavailable ? "" : grant?.url || item.url,
-      thumbnailUrl: unavailable ? "" : grant?.thumbnailUrl || item.thumbnailUrl,
+      // Never let an unloadable candidate displace a loadable one.
+      //
+      // This read `grant?.url || item.url`, which is the bug that made every
+      // fullscreen item black. The seed carries the URL the chat bubble ALREADY
+      // rendered from — absolute, warm, proven — and the grant arrived
+      // site-relative. Truthiness ranked the broken one first, so tapping media
+      // that was visibly on screen threw away the working URL and handed the
+      // player one AVPlayer rejects outright (§3/§4: tapping content must never
+      // make it disappear).
+      //
+      // Order still prefers the grant: it is the freshest credential and the
+      // only one that can be re-minted when it expires. `isLoadableMediaUrl` is
+      // the floor under that preference, not a replacement for it.
+      url: unavailable ? "" : preferLoadable(grant?.url, item.url),
+      // Poster order is INVERTED on purpose. The seed's thumbnail is the exact
+      // bitmap already decoded in the thread, so preferring it means the viewer
+      // opens on a picture instead of re-fetching an equivalent URL that differs
+      // only in its access token — a different cache key, a second download, and
+      // a black gap where the poster should be.
+      thumbnailUrl: unavailable ? "" : preferLoadable(item.thumbnailUrl, grant?.thumbnailUrl),
       // `subtitle` is what the viewer reads out and displays under the title, so
       // the accessibility requirement ("Photo from Maria Cherie, 12 of 43") and
       // the visible counter are the same string rather than two that can drift.

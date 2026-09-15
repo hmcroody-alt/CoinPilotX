@@ -1,0 +1,406 @@
+dangling commit triage against origin/main
+
+total unreachable ...... 381
+already ancestors ...... 0
+patch-id duplicates .... 174
+unclassifiable ......... 18
+ORPHANS (candidates) ... 189
+
+6501fc7c1443  2026-08-23 18:13:23 -0700|PulseSoc Engineer|fix(music): resolve a deep-linked track by id instead of silently browsing
+    4 files changed, 202 insertions(+), 3 deletions(-)
+e707f6d6153f  2026-08-14 18:23:28 -0700|PulseSoc Engineer|index on claude/dreamy-williamson-82bffc: 6e67e408 fix(ads): let the delivery schema bootstrap own its connection so DDL commits
+    
+ed0740dba1c6  2026-08-31 16:11:00 -0700|PulseSoc Engineer|WIP on fix/briefings-evaluate-without-push-subscription: 6a051182 test(navigation): account for the MarketPulse titled route
+    2 files changed, 95 insertions(+), 2 deletions(-)
+4709beed482f  2026-08-06 00:44:54 +0000|PulseSoc Engineer|fix(live): stop failing healthy broadcasts on a playout signal a host cannot produce
+    4 files changed, 225 insertions(+), 3 deletions(-)
+220b0ea069c8  2026-09-13 02:05:15 -0700|PulseSoc Engineer|Wire the bulk reprice route to the one pricing authority
+    1 file changed, 175 insertions(+), 20 deletions(-)
+be0dfe5c40ba  2026-08-23 10:43:17 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 62ff947e refactor(copy): remove developer vocabulary from user-facing native strings
+    
+510f34d62628  2026-09-12 17:09:54 -0700|PulseSoc Engineer|index on claude/gallant-margulis-3f3b6c: b45a579f Map: selection mode built, token gaps closed, name the i18n gap
+    
+0f11cc0a5e5d  2026-08-02 17:30:51 -0700|PulseSoc Engineer|chore(audio-guard): extend protected paths to media quality lifecycle
+    2 files changed, 37 insertions(+)
+3711b88a2899  2026-08-14 18:23:28 -0700|PulseSoc Engineer|WIP on claude/dreamy-williamson-82bffc: 6e67e408 fix(ads): let the delivery schema bootstrap own its connection so DDL commits
+    1 file changed, 8 insertions(+), 6 deletions(-)
+a71680743dfb  2026-07-18 05:22:44 -0700|HM Cherie|Refine Pulse Command composer and direct call start
+    3 files changed, 69 insertions(+), 33 deletions(-)
+6117d28dc971  2026-09-05 16:13:29 -0700|PulseSoc Engineer|WIP on main: 05d8a8f9 docs(private-office): private meetings foundation map — extend calls engine, 0 new owners
+    2 files changed, 56 insertions(+), 2 deletions(-)
+8a19f2066aed  2026-09-04 21:04:41 +0000|PulseSoc Engineer|index on main: b459f992 chore(ios): bump the native build number to 22
+    
+b21d0608e3c7  2026-09-05 19:27:36 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    
+8a268e016206  2026-09-12 17:09:54 -0700|PulseSoc Engineer|On claude/gallant-margulis-3f3b6c: gap-fix-baseline-check
+    2 files changed, 156 insertions(+), 15 deletions(-)
+ae261c7f79f2  2026-08-22 11:39:59 -0700|PulseSoc Engineer|WIP on codex/app-review-final-readiness: 04731cb8 fix(auth): deliver secure password change links reliably
+    1 file changed, 21 insertions(+), 5 deletions(-)
+5a2e3063fe91  2026-08-24 17:35:44 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even
+    
+bf3472e9521b  2026-09-05 16:13:29 -0700|PulseSoc Engineer|index on main: 05d8a8f9 docs(private-office): private meetings foundation map — extend calls engine, 0 new owners
+    
+6e36486ae8c6  2026-08-24 17:35:45 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even
+    
+ae369876a82d  2026-08-23 16:54:59 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: e1e78248 feat(alerts): publish only the alert options the server can honour
+    
+5837da82a4a6  2026-09-04 13:18:59 -0700|PulseSoc Engineer|WIP on main: b95de7ab Native primitives foundation: capability registry, permissions orchestrator, owned haptics/clipboard/QR/scan/documents/local-reminders/a11y, UNDX device-action classifier, ownership regression guard (zero new paid APIs)
+    1 file changed, 22 insertions(+), 4 deletions(-)
+1a3f3881bd42  2026-08-23 18:49:41 -0700|PulseSoc Engineer|WIP on claude/elegant-mclaren-9ff5ce: 7567c42a feat(alerts): one Premium alert over everything the member actually holds
+    2 files changed, 33 insertions(+), 24 deletions(-)
+b44352a2fe91  2026-06-19 10:18:52 -0400|HM Cherie|Fix App Store review issues for iOS resubmission
+    11 files changed, 259 insertions(+), 15 deletions(-)
+764516cecde8  2026-09-13 15:13:07 -0700|PulseSoc Engineer|Declare the resumable messenger media routes' auth intent
+    1 file changed, 8 insertions(+)
+85454070ddd3  2026-08-15 21:08:50 -0700|PulseSoc Engineer|index on claude/peaceful-tharp-038571: 645cba9f fix(presence): back the shop, videos and events tabs with real data
+    
+21493c8000f8  2026-09-05 14:03:22 -0700|PulseSoc Engineer|index on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features — one spec, four surfaces, read-only by construction
+    
+0e4ad82f9735  2026-09-05 14:11:41 -0700|PulseSoc Engineer|chore: keep private Office uploads out of source control
+    7 files changed, 2 insertions(+), 6 deletions(-)
+a64a901f821a  2026-09-04 23:42:41 -0700|PulseSoc Engineer|On claude/quizzical-yonath-215c94: wip-audio-gate-check
+    2 files changed, 99 insertions(+), 2 deletions(-)
+f74c0630a5e1  2026-09-13 15:05:54 -0700|PulseSoc Engineer|WIP on main: 92a2155f Declare the store-policy routes' auth intent
+    1 file changed, 75 insertions(+), 14 deletions(-)
+754e32c97864  2026-08-24 16:49:01 -0700|PulseSoc Engineer|index on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map — exact tile→section navigation
+    
+ba4fb45a85d3  2026-08-24 17:35:44 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even
+    2 files changed, 60 insertions(+), 25 deletions(-)
+2b50bcedaaf2  2026-09-01 01:58:51 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix
+    63 files changed, 4652 insertions(+), 743 deletions(-)
+32589c896390  2026-09-06 00:49:41 -0700|PulseSoc Engineer|index on main: 55d98f35 docs(capital): revalidate the foundation map against HEAD
+    
+195afafc5bfc  2026-09-14 16:23:45 -0700|PulseSoc Engineer|WIP on claude/bold-hodgkin-9021f1: d45a2664 Add the repair for thumbnail keys that point at nothing
+    1 file changed, 11 insertions(+), 1 deletion(-)
+055d2eec853f  2026-09-06 01:06:08 -0700|PulseSoc Engineer|feat(capital): reach the command center from the native client
+    3 files changed, 1106 insertions(+)
+b95d24a81441  2026-08-22 10:59:55 -0700|PulseSoc Engineer|index on claude/qa-groups-rooms: c73b2c02 fix(calls): end a 1:1 call for both sides when either side hangs up
+    
+856200ed7c56  2026-08-23 19:02:27 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup
+    
+ad6352cbd554  2026-09-05 06:04:37 -0700|PulseSoc Engineer|On claude/nostalgic-neumann-d9391f: owner-lifetime-wip
+    5 files changed, 255 insertions(+), 50 deletions(-)
+f2650257e17c  2026-09-03 20:59:54 -0700|PulseSoc Engineer|index on main: a334d7ed build(ios): link expo-media-library and expo-sharing into the checked-in project
+    
+456890926e8e  2026-09-05 13:37:19 -0700|PulseSoc Engineer|WIP on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+    5 files changed, 544 insertions(+), 9 deletions(-)
+b16abe19105a  2026-08-23 18:13:51 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: a05393ff fix(portfolio): gate the portfolio on the entitlement, not on the platform
+    
+d56bb8cbcfc7  2026-08-23 20:16:22 +0000|Roody C|feat(crypto): advanced alerts, market observations, mobile crypto API
+    8 files changed, 2971 insertions(+), 2 deletions(-)
+516dc870051d  2026-08-15 11:30:18 -0700|PulseSoc Engineer|WIP on claude/serene-agnesi-474d89: 11b8d994 fix(community): wire group member management
+    2 files changed, 58 insertions(+), 8 deletions(-)
+846e42d9d15f  2026-08-23 10:41:58 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: b657763d feat(presence): let a presence be connected to the things it belongs to
+    
+3073d0e0264b  2026-08-31 16:11:00 -0700|PulseSoc Engineer|index on fix/briefings-evaluate-without-push-subscription: 6a051182 test(navigation): account for the MarketPulse titled route
+    
+ef75a4ccf086  2026-09-05 19:22:53 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    
+9578428221a5  2026-07-18 19:24:15 -0700|git stash|On main: autostash
+    105 files changed, 3285 insertions(+), 2168 deletions(-)
+627df29dd792  2026-08-19 21:34:40 -0700|PulseSoc Engineer|index on (no branch): fa4cce7b fix(ios): align embedded build number
+    
+ae7fca08ca4e  2026-08-30 06:43:10 -0700|PulseSoc Engineer|On claude/review-expired-demo: premium-fix-wip
+    1 file changed, 228 insertions(+), 10 deletions(-)
+3f8050c3a7e6  2026-08-25 21:54:32 -0700|PulseSoc Engineer|WIP on claude/happy-lalande-31ed6b: 6f0c1ea7 feat(automated-account): apply galactic profile and cover branding
+    1 file changed, 28 insertions(+), 1 deletion(-)
+91812060a0ad  2026-08-06 19:22:09 +0000|PulseSoc Engineer|Snapshot working tree: multi-mission in-progress work (ads, marketplace, account, chat, events, dashboards, notifications, media/cover system, bot.py)
+    65 files changed, 3833 insertions(+), 189 deletions(-)
+bf87d828212b  2026-08-15 00:19:16 -0700|PulseSoc Engineer|Revert "fix(reels): derive navigator visibility from swipe direction"
+    6 files changed, 57 insertions(+), 106 deletions(-)
+da897c70614f  2026-09-13 02:04:39 -0700|PulseSoc Engineer|Wire the bulk reprice route to the one pricing authority
+    1 file changed, 175 insertions(+), 20 deletions(-)
+228cce41fc82  2026-08-26 17:40:53 -0700|PulseSoc Engineer|index on codex/premium-crypto-intelligence: 97c61716 feat(undx): build verified PulseSoc knowledge corpus and retrieval pipeline
+    
+7e8ce422f8f2  2026-08-14 08:36:16 +0000|PulseSoc Engineer|Premium Command Center: rich clickable Premium spaces + Verified Identity
+    2 files changed, 166 insertions(+), 40 deletions(-)
+37903220783f  2026-08-13 08:19:43 +0000|PulseSoc Engineer|feat(finance): settle marketplace ledgers and reversals
+    25 files changed, 537 insertions(+), 7 deletions(-)
+38903a8a2d1f  2026-08-30 18:02:15 +0000|PulseSoc Engineer|index on full-sweep-20260826: befdb42f merge: integrate App Review fix (ffbc4db0) into release/full-sweep-20260826
+    
+0498e81e785e  2026-08-02 21:09:55 -0700|PulseSoc Engineer|Rebuild seller Insights on a real analytics endpoint
+    21 files changed, 5754 insertions(+), 212 deletions(-)
+2e9e30fd47d2  2026-08-30 22:19:27 +0000|PulseSoc Engineer|index on full-sweep-20260826: 1f02b2e6 perf(live): release native end flow immediately
+    
+fda41ca19bbe  2026-08-26 17:49:12 -0700|PulseSoc Engineer|index on claude/business-os-unlock: 4681e7e5 fix(realtime): keep screen awake during video calls and live
+    
+dda6e6eade6c  2026-09-07 10:10:13 -0700|PulseSoc Engineer|WIP on claude/recursing-lumiere-cf0475: 9b02f28f style(cj): trim the trailing blank line that tripped git diff --check
+    2 files changed, 114 insertions(+), 42 deletions(-)
+13ab1e69ecc9  2026-08-25 04:32:20 -0700|PulseSoc Engineer|On claude/premium-watchlist-row: wip3
+    12 files changed, 51 insertions(+), 2 deletions(-)
+40b034428e2a  2026-09-10 17:41:26 -0700|PulseSoc Engineer|WIP on claude/romantic-northcutt-cab8be: c0f42018 Stop inventing a price in the serializer every read passes through
+    1 file changed, 17 insertions(+), 3 deletions(-)
+41b5ea0c5e73  2026-08-25 04:13:32 -0700|PulseSoc Engineer|index on claude/premium-watchlist-row: d984f107 fix(crypto-premium): register the portfolio alias where registration counts
+    
+3eb77000d2ab  2026-09-14 17:42:40 -0700|PulseSoc Engineer|Stop one unloadable Status from blacking out the rest of the tray
+    2 files changed, 200 insertions(+)
+fab96eb7e0fc  2026-09-12 22:09:35 -0700|PulseSoc Engineer|WIP on main: e6c992a0 Claim the paths the app already knows how to open
+    1 file changed, 39 insertions(+), 3 deletions(-)
+afbc7207e8f2  2026-08-24 16:30:23 -0700|PulseSoc Engineer|index on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map — exact tile→section navigation
+    
+19bd26fa8bdb  2026-08-23 19:45:31 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: a6718a33 Presence: a page is drawn in its own type's colour
+    
+e4c12a05aed9  2026-08-25 04:12:24 -0700|PulseSoc Engineer|On claude/premium-watchlist-row: watchlist-row-wip
+    12 files changed, 50 insertions(+), 1 deletion(-)
+00ccbc2bbd3c  2026-09-05 07:47:08 -0700|PulseSoc Engineer|On main: records-wiring-wip
+    3 files changed, 101 insertions(+)
+a7cce85655b8  2026-08-27 00:04:09 +0000|PulseSoc Engineer|index on premium-crypto-intelligence: 6f0c1ea7 feat(automated-account): apply galactic profile and cover branding
+    
+43cd9aee2add  2026-09-14 16:23:45 -0700|PulseSoc Engineer|index on claude/bold-hodgkin-9021f1: d45a2664 Add the repair for thumbnail keys that point at nothing
+    
+65cdf2be0edf  2026-09-05 19:22:53 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    6 files changed, 273 insertions(+), 14 deletions(-)
+58ce84052b89  2026-07-19 13:51:15 -0700|git stash|On main: undx-v3-pre-integration-preservation-20260719
+    120 files changed, 4373 insertions(+), 1931 deletions(-)
+7dd0f4d6cfb5  2026-08-23 09:26:15 -0700|PulseSoc Engineer|On claude/recursing-antonelli-a52df6: missionb-baseline-check
+    6 files changed, 319 insertions(+), 41 deletions(-)
+e2d134e832de  2026-09-07 10:10:13 -0700|PulseSoc Engineer|index on claude/recursing-lumiere-cf0475: 9b02f28f style(cj): trim the trailing blank line that tripped git diff --check
+    
+35d3969c195f  2026-09-14 08:46:50 -0700|PulseSoc Engineer|Delete the static/assets illustrations the homepage rewrite orphaned
+    14 files changed, 161 deletions(-)
+a3d7f616f9e4  2026-08-23 10:43:17 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 62ff947e refactor(copy): remove developer vocabulary from user-facing native strings
+    4 files changed, 67 insertions(+), 1 deletion(-)
+9ed91c143e1b  2026-09-01 01:58:45 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix
+    63 files changed, 4652 insertions(+), 743 deletions(-)
+80da5656a909  2026-08-22 11:39:59 -0700|PulseSoc Engineer|index on codex/app-review-final-readiness: 04731cb8 fix(auth): deliver secure password change links reliably
+    
+e6da22262380  2026-09-05 14:04:32 -0700|PulseSoc Engineer|WIP on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features — one spec, four surfaces, read-only by construction
+    29 files changed, 2186 insertions(+), 25 deletions(-)
+3ee6aad433e5  2026-09-01 01:58:40 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix
+    63 files changed, 4652 insertions(+), 743 deletions(-)
+5ee6868fa1a6  2026-08-23 20:16:40 +0000|Roody C|tmp
+    8 files changed, 2971 insertions(+), 2 deletions(-)
+95e7422ae297  2026-08-23 18:13:51 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: a05393ff fix(portfolio): gate the portfolio on the entitlement, not on the platform
+    22 files changed, 660 insertions(+)
+1ee8e2bcacc8  2026-09-05 16:15:04 -0700|PulseSoc Engineer|index on main: 05d8a8f9 docs(private-office): private meetings foundation map — extend calls engine, 0 new owners
+    
+c8e8d8e5c819  2026-09-04 13:18:59 -0700|PulseSoc Engineer|index on main: b95de7ab Native primitives foundation: capability registry, permissions orchestrator, owned haptics/clipboard/QR/scan/documents/local-reminders/a11y, UNDX device-action classifier, ownership regression guard (zero new paid APIs)
+    
+f7ee9040fd28  2026-08-22 16:44:40 -0700|PulseSoc Engineer|index on claude/confident-boyd-9ed603: 8d932b08 feat(feed): loop the first 5s of a suggested reel while it is active
+    
+15ef94709d76  2026-08-23 18:49:41 -0700|PulseSoc Engineer|index on claude/elegant-mclaren-9ff5ce: 7567c42a feat(alerts): one Premium alert over everything the member actually holds
+    
+71ef00a60414  2026-09-05 19:27:36 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    9 files changed, 434 insertions(+), 14 deletions(-)
+34f378ca17a1  2026-08-23 10:41:58 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: b657763d feat(presence): let a presence be connected to the things it belongs to
+    17 files changed, 210 insertions(+), 5 deletions(-)
+92f44e67ebc6  2026-08-26 17:49:12 -0700|PulseSoc Engineer|WIP on claude/business-os-unlock: 4681e7e5 fix(realtime): keep screen awake during video calls and live
+    1 file changed, 216 insertions(+), 111 deletions(-)
+d1faaa8fbc61  2026-08-15 00:18:53 -0700|PulseSoc Engineer|fix(reels): derive navigator visibility from swipe direction
+    6 files changed, 106 insertions(+), 57 deletions(-)
+f40039eed867  2026-08-25 04:32:20 -0700|PulseSoc Engineer|index on claude/premium-watchlist-row: d984f107 fix(crypto-premium): register the portfolio alias where registration counts
+    
+960359e86d30  2026-08-24 16:28:25 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 2d26bd35 i18n(premium): translate the alerts and watchlists screens into all 11 locales
+    
+ac03073b979e  2026-09-11 23:53:15 -0700|PulseSoc Engineer|WIP on claude/adoring-gates-fdbf0a: da9e2978 Capture the usage every provider returns and the router threw away
+    2 files changed, 233 insertions(+), 9 deletions(-)
+59093da98baf  2026-08-30 16:46:08 +0000|PulseSoc Engineer|index on full-sweep-20260826: f1759800 feat(undx): agentic run substrate — queue, worker dispatch, health, mobile client
+    
+7109c76fd15b  2026-09-05 13:51:46 -0700|PulseSoc Engineer|WIP on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+    7 files changed, 575 insertions(+), 22 deletions(-)
+9d0a3fb7d7b2  2026-09-13 15:17:39 -0700|PulseSoc Engineer|Keep the route_auth imports on one line
+    1 file changed, 1 insertion(+), 4 deletions(-)
+710bd9293768  2026-08-24 17:35:45 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even
+    2 files changed, 60 insertions(+), 25 deletions(-)
+500f2de73264  2026-09-05 19:17:54 -0700|PulseSoc Engineer|index on main: d21014c8 test(meetings): session-store matrix + digit-free preset copy via interpolation
+    
+d111af84d98c  2026-09-05 06:04:37 -0700|PulseSoc Engineer|index on claude/nostalgic-neumann-d9391f: 674ecc48 fix(premium): guarantee owner lifetime entitlement
+    
+3512f102bbd1  2026-08-22 09:39:49 -0700|PulseSoc Engineer|WIP on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings
+    3 files changed, 266 insertions(+), 60 deletions(-)
+871221943d2a  2026-09-05 14:04:32 -0700|PulseSoc Engineer|index on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features — one spec, four surfaces, read-only by construction
+    
+571383ef68be  2026-07-26 01:00:42 +0000|PulseSoc Engineer|Record the commit and push outcome in the verification matrix
+    1 file changed, 58 insertions(+), 22 deletions(-)
+2a14736601c2  2026-08-24 16:49:01 -0700|PulseSoc Engineer|WIP on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map — exact tile→section navigation
+    19 files changed, 1136 insertions(+), 104 deletions(-)
+631409c7721d  2026-09-13 15:59:48 -0700|PulseSoc Engineer|Document the duration variables an operator has to know about
+    4 files changed, 530 insertions(+), 75 deletions(-)
+6917d9acf8f7  2026-08-06 21:46:56 +0000|PulseSoc Engineer|WIP on emergency-live-audio-recovery: a36563e8 Default futuristic PulseSoc background: one dark network atmosphere behind the whole app
+    18 files changed, 2393 insertions(+), 113 deletions(-)
+f5171bbb8593  2026-09-13 15:05:54 -0700|PulseSoc Engineer|index on main: 92a2155f Declare the store-policy routes' auth intent
+    
+301ca1e18715  2026-09-05 19:17:54 -0700|PulseSoc Engineer|On main: capital-baseline-check
+    4 files changed, 187 insertions(+)
+831fadf2a444  2026-09-05 07:56:08 -0700|PulseSoc Engineer|On main: po-mission-wip
+    4 files changed, 207 insertions(+)
+1d203f41ab5e  2026-08-24 16:28:25 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 2d26bd35 i18n(premium): translate the alerts and watchlists screens into all 11 locales
+    2 files changed, 53 insertions(+), 2 deletions(-)
+7b21f70652b1  2026-08-14 08:25:48 +0000|PulseSoc Engineer|feat(premium): dual-provider purchase-option resolver + StoreKit test config
+    5 files changed, 425 insertions(+)
+4c224300cde7  2026-08-23 09:26:15 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 8b4e02e5 docs(release): correct the Business OS screenshot finding — it is reachable
+    
+d82257bcf3a1  2026-09-10 17:41:26 -0700|PulseSoc Engineer|index on claude/romantic-northcutt-cab8be: c0f42018 Stop inventing a price in the serializer every read passes through
+    
+842369fac257  2026-09-05 07:47:08 -0700|PulseSoc Engineer|index on main: ca6e1522 fix(entitlements): grant owner lifetime access across membership tiers
+    
+512a03dfd035  2026-08-25 21:54:32 -0700|PulseSoc Engineer|index on claude/happy-lalande-31ed6b: 6f0c1ea7 feat(automated-account): apply galactic profile and cover branding
+    
+a72bc554b406  2026-09-04 16:58:58 -0700|PulseSoc Engineer|index on integration/all-work-20260904: c6760a57 fix(messenger): expose idempotency index health
+    
+76345552c52c  2026-09-05 13:51:46 -0700|PulseSoc Engineer|index on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+    
+bc37a32fc89a  2026-07-18 19:24:15 -0700|git stash|index on main: 443ede97 Map PulseSoc native Home to generated concept
+    104 files changed, 3236 insertions(+), 2126 deletions(-)
+5e40b9d20b0f  2026-08-26 01:42:58 +0000|PulseSoc Engineer|index on premium-crypto-intelligence: 081abc83 release: consolidate PulseSoc production readiness work
+    
+d440699d1657  2026-06-02 14:09:57 -0400|HM Cherie|Fix Pulse video media playback delivery
+    5 files changed, 349 insertions(+), 1 deletion(-)
+9541a935c43d  2026-08-15 21:43:13 -0700|PulseSoc Engineer|On claude/affectionate-tharp-66925d: baseline-check
+    3 files changed, 27 insertions(+), 9 deletions(-)
+8142fb0bd8e0  2026-07-18 22:19:20 -0700|HM Cherie|Align native home with PulseSoc mockup direction
+    5 files changed, 407 insertions(+), 190 deletions(-)
+6243b7824d3a  2026-09-06 00:49:41 -0700|PulseSoc Engineer|WIP on main: 55d98f35 docs(capital): revalidate the foundation map against HEAD
+    1 file changed, 25 insertions(+), 7 deletions(-)
+2f45193cc043  2026-09-05 19:26:20 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    
+17477d01145d  2026-09-12 22:46:43 -0700|PulseSoc Engineer|index on main: 070f586e Phase 0: tombstone dead session rows instead of deleting them
+    
+404b336b2f3c  2026-08-31 01:44:32 +0000|PulseSoc Engineer|index on full-sweep-20260826: 082ebeb3 undx: describe what each capability is for, so the embedder has something to place
+    6 files changed, 2561 insertions(+), 9692 deletions(-)
+a54bbb96c5c7  2026-08-26 20:42:57 -0700|PulseSoc Engineer|WIP on release/full-sweep-20260826: ce038534 feat(progress): replace referral rewards with PulseSoc Founding Path
+    1 file changed, 37 insertions(+), 5 deletions(-)
+5e4c75238375  2026-06-02 14:09:51 -0400|HM Cherie|Fix Pulse video media playback delivery
+    5 files changed, 350 insertions(+), 1 deletion(-)
+394db72c4910  2026-08-23 16:54:59 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: e1e78248 feat(alerts): publish only the alert options the server can honour
+    2 files changed, 46 insertions(+)
+414d053b82ec  2026-09-05 07:56:08 -0700|PulseSoc Engineer|index on main: ca6e1522 fix(entitlements): grant owner lifetime access across membership tiers
+    
+054fdf38044e  2026-09-05 13:39:03 -0700|PulseSoc Engineer|WIP on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+    5 files changed, 544 insertions(+), 9 deletions(-)
+d55693463cb3  2026-09-11 23:53:15 -0700|PulseSoc Engineer|index on claude/adoring-gates-fdbf0a: da9e2978 Capture the usage every provider returns and the router threw away
+    
+11576535cbf6  2026-08-15 19:04:55 -0700|PulseSoc Engineer|WIP on (no branch): 645cba9f fix(presence): back the shop, videos and events tabs with real data
+    3 files changed, 214 insertions(+), 69 deletions(-)
+b75db5534ae9  2026-08-06 19:21:42 +0000|PulseSoc Engineer|Snapshot working tree: multi-mission in-progress work (ads, marketplace, account, chat, events, dashboards, notifications, media/cover system, bot.py)
+    65 files changed, 3833 insertions(+), 189 deletions(-)
+755f4f7189b9  2026-09-08 01:28:45 -0700|PulseSoc Engineer|index on claude/web-native-parity-census: 1132dd7b Generalise the Office web client so other pages can reuse it
+    1 file changed, 0 insertions(+), 0 deletions(-)
+895f0d34b48d  2026-07-26 00:01:01 -0700|git stash|index on release/undx-nexus-core-v4: 45277b25 presence: dedup ChatScreen activity vocabulary to shared presenceActivityText
+    11 files changed, 734 insertions(+), 454 deletions(-)
+f26be96cdd47  2026-09-04 13:36:13 -0700|PulseSoc Engineer|chore(ios): bump build to 22 for the tap-to-analyse + native-primitives binary
+    3 files changed, 4 insertions(+), 4 deletions(-)
+807105a64f82  2026-06-18 17:18:03 -0400|HM Cherie|Add production readiness deployment gate
+    7 files changed, 5461 insertions(+)
+00734ff78180  2026-08-23 23:30:48 +0000|Roody C|feat(premium-ui): Crypto Intelligence section + cross-account isolation proofs
+    4556 files changed, 407 insertions(+), 1081164 deletions(-)
+ef736d2814d0  2026-07-30 16:06:06 -0700|PulseSoc Engineer|feat(undx): make the completed-write receipt name what it changed
+    15 files changed, 1357 insertions(+), 56 deletions(-)
+6f792fc0a580  2026-09-01 01:58:29 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix
+    63 files changed, 4652 insertions(+), 743 deletions(-)
+287f15a4b037  2026-08-26 17:40:53 -0700|PulseSoc Engineer|On codex/premium-crypto-intelligence: presence-gate
+    18 files changed, 381 insertions(+), 27 deletions(-)
+9b829f1b4388  2026-08-15 19:04:55 -0700|PulseSoc Engineer|index on (no branch): 645cba9f fix(presence): back the shop, videos and events tabs with real data
+    
+d2837f2064e4  2026-07-25 18:46:03 -0700|HM Cherie|fix crypto alerts to fire only on threshold crossings
+    8 files changed, 704 insertions(+), 313 deletions(-)
+a08495766af6  2026-08-06 21:46:56 +0000|PulseSoc Engineer|index on emergency-live-audio-recovery: a36563e8 Default futuristic PulseSoc background: one dark network atmosphere behind the whole app
+    17 files changed, 2068 insertions(+), 105 deletions(-)
+009153efce72  2026-09-05 16:15:04 -0700|PulseSoc Engineer|WIP on main: 05d8a8f9 docs(private-office): private meetings foundation map — extend calls engine, 0 new owners
+    1 file changed, 13 insertions(+), 2 deletions(-)
+469339a4f423  2026-08-02 17:31:15 -0700|PulseSoc Engineer|chore(audio-guard): extend protected paths to media quality lifecycle
+    3 files changed, 90 insertions(+), 79 deletions(-)
+7a990ba21008  2026-08-23 19:45:31 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: a6718a33 Presence: a page is drawn in its own type's colour
+    6 files changed, 285 insertions(+), 22 deletions(-)
+999bd5954848  2026-08-24 16:30:23 -0700|PulseSoc Engineer|WIP on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map — exact tile→section navigation
+    2 files changed, 256 insertions(+), 31 deletions(-)
+329fbb689cac  2026-08-15 11:30:18 -0700|PulseSoc Engineer|index on claude/serene-agnesi-474d89: 11b8d994 fix(community): wire group member management
+    
+1ea43f6363cb  2026-08-22 10:59:55 -0700|PulseSoc Engineer|WIP on claude/qa-groups-rooms: c73b2c02 fix(calls): end a 1:1 call for both sides when either side hangs up
+    3 files changed, 87 insertions(+), 26 deletions(-)
+a7a745d1a448  2026-08-30 23:21:48 +0000|PulseSoc Engineer|index on full-sweep-20260826: 76145369 chore(undx): add paced canonical semantic-index script and run report
+    
+3fabf190a64f  2026-08-30 03:26:54 +0000|PulseSoc Engineer|index on full-sweep-20260826: 136106ad feat(undx): expand intelligence corpus and harden intent routing
+    
+a0b503973e54  2026-09-05 13:39:03 -0700|PulseSoc Engineer|index on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+    
+b7b5b1d88e2a  2026-09-05 13:37:19 -0700|PulseSoc Engineer|index on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge — a real desk on the REQUEST primitive, staffing truth on every payload
+    
+b1b861a829e8  2026-09-05 19:29:13 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    
+9cb98ba4ca77  2026-08-23 19:02:02 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup
+    1 file changed, 32 insertions(+), 19 deletions(-)
+47bc7f938551  2026-08-23 19:02:02 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup
+    
+d4c269e24349  2026-08-22 09:39:49 -0700|PulseSoc Engineer|index on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings
+    
+4ec33753792b  2026-08-25 04:12:24 -0700|PulseSoc Engineer|index on claude/premium-watchlist-row: d984f107 fix(crypto-premium): register the portfolio alias where registration counts
+    
+24c573bc35f9  2026-08-24 15:54:44 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: 3331ae05 Presence: the screens that change one presence say which one
+    
+7fc7d5237105  2026-09-04 16:58:58 -0700|PulseSoc Engineer|WIP on integration/all-work-20260904: c6760a57 fix(messenger): expose idempotency index health
+    13 files changed, 45 insertions(+), 35 deletions(-)
+a0c8c93e22c7  2026-08-22 16:44:40 -0700|PulseSoc Engineer|WIP on claude/confident-boyd-9ed603: 8d932b08 feat(feed): loop the first 5s of a suggested reel while it is active
+    7 files changed, 177 insertions(+), 26 deletions(-)
+9fcb1d77e4c1  2026-09-03 20:59:54 -0700|PulseSoc Engineer|WIP on main: a334d7ed build(ios): link expo-media-library and expo-sharing into the checked-in project
+    1 file changed, 40 insertions(+), 13 deletions(-)
+57ccab9ced8c  2026-08-15 21:43:13 -0700|PulseSoc Engineer|index on claude/affectionate-tharp-66925d: cc35e418 fix(presence): repair Artist Presence creation flow
+    
+6eccff9b0900  2026-08-23 19:02:27 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup
+    1 file changed, 32 insertions(+), 19 deletions(-)
+73cdf7350aa7  2026-08-07 03:02:53 -0700|PulseSoc Engineer|Heal the saved tables' unique indexes on existing deployments
+    1 file changed, 82 insertions(+)
+54cf51d4216b  2026-07-26 01:01:01 +0000|PulseSoc Engineer|Record the commit and push outcome in the verification matrix
+    1 file changed, 58 insertions(+), 22 deletions(-)
+a6d263bf677d  2026-08-26 20:42:57 -0700|PulseSoc Engineer|index on release/full-sweep-20260826: ce038534 feat(progress): replace referral rewards with PulseSoc Founding Path
+    
+cad6291f280f  2026-09-11 16:37:24 -0700|PulseSoc Engineer|Record the publish+approve sequence that put listing 14 live
+    1 file changed, 138 insertions(+)
+cddce3401383  2026-09-12 22:09:35 -0700|PulseSoc Engineer|index on main: e6c992a0 Claim the paths the app already knows how to open
+    
+3cddbd235ef0  2026-08-30 06:43:10 -0700|PulseSoc Engineer|index on claude/review-expired-demo: f1759800 feat(undx): agentic run substrate — queue, worker dispatch, health, mobile client
+    
+a2e2c52b3441  2026-08-22 09:36:15 -0700|PulseSoc Engineer|index on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings
+    
+17e37d09c870  2026-09-12 22:46:43 -0700|PulseSoc Engineer|WIP on main: 070f586e Phase 0: tombstone dead session rows instead of deleting them
+    1 file changed, 140 insertions(+), 12 deletions(-)
+19e7cda18cb0  2026-08-02 10:28:10 +0000|PulseSoc Engineer|feat(business): two-sided ads manager behind the Advertising route
+    28 files changed, 5887 insertions(+), 251 deletions(-)
+cde8c9d89d22  2026-08-19 21:34:40 -0700|PulseSoc Engineer|WIP on (no branch): fa4cce7b fix(ios): align embedded build number
+    1 file changed, 16 insertions(+), 2 deletions(-)
+a7eb299e12fd  2026-06-13 10:33:34 -0400|HM Cherie|Add platform-wide protection guardrails
+    21 files changed, 1114 insertions(+), 106 deletions(-)
+e7ec6ba0b16a  2026-09-05 14:03:22 -0700|PulseSoc Engineer|WIP on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features — one spec, four surfaces, read-only by construction
+    29 files changed, 2186 insertions(+), 25 deletions(-)
+ffec87203978  2026-08-24 15:54:44 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: 3331ae05 Presence: the screens that change one presence say which one
+    5 files changed, 21 insertions(+), 11 deletions(-)
+55edcbd8a66f  2026-09-05 19:29:13 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    9 files changed, 434 insertions(+), 14 deletions(-)
+dded11b17150  2026-09-04 23:42:41 -0700|PulseSoc Engineer|index on claude/quizzical-yonath-215c94: 20276001 perf(mobile): memoize the Home feed row and window the list
+    2 files changed, 99 insertions(+), 2 deletions(-)
+17ef6fe74a9b  2026-09-08 01:28:45 -0700|PulseSoc Engineer|On claude/web-native-parity-census: t2-check
+    2 files changed, 484 insertions(+), 36 deletions(-)
+8cf493e9f30b  2026-08-15 21:08:50 -0700|PulseSoc Engineer|WIP on claude/peaceful-tharp-038571: 645cba9f fix(presence): back the shop, videos and events tabs with real data
+    3 files changed, 132 insertions(+), 20 deletions(-)
+c4f7d1d0b4f4  2026-09-14 17:42:25 -0700|PulseSoc Engineer|Stop one unloadable Status from blacking out the rest of the tray
+    2 files changed, 200 insertions(+)
+75f82fddeefe  2026-08-25 04:13:32 -0700|PulseSoc Engineer|On claude/premium-watchlist-row: wip2
+    12 files changed, 50 insertions(+), 1 deletion(-)
+18fc57324c2a  2026-08-22 09:36:15 -0700|PulseSoc Engineer|WIP on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings
+    3 files changed, 224 insertions(+), 60 deletions(-)
+88fcc963bec7  2026-07-25 00:13:12 +0000|PulseSoc Engineer|fix(native): instant optimistic chat bubble + auto-dismissing in-app notification banner
+    8 files changed, 559 insertions(+), 19 deletions(-)
+3efdc90394bd  2026-05-15 21:05:37 -0400|HM Cherie|Production hardening and AI intelligence upgrade
+    35 files changed, 10972 insertions(+), 4071 deletions(-)
+88ff0f825931  2026-09-05 19:26:20 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map — extend records.py, no second system
+    9 files changed, 434 insertions(+), 14 deletions(-)
+
+unclassifiable:
+  ea412cb5dd74  merge or empty diff
+  d869cc6033e6  no parent
+  0e6f4cde8231  no parent
+  f0ba68514ef9  no parent
+  c8c17a986cf1  no parent
+  17f5c033c2d1  no parent
+  b0105da5fa33  no parent
+  2216e178738a  no parent
+  5f18a91b98d4  no parent
+  945d75afd5ff  no parent
+  9365efbfc479  no parent
+  6d825f8ff78b  no parent
+  ad8e19695370  merge or empty diff
+  59901d26dc7e  merge or empty diff
+  229b5b3b80e6  no parent
+  d3af07d475fe  no parent
+  b6e78127522e  merge or empty diff
+  17f8a5c3beb1  no parent
