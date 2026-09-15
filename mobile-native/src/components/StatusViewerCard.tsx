@@ -76,6 +76,31 @@ export function StatusViewerCard({
   const playbackOwnerId = `status:${status.id}`;
   const drivesPlayback = kind === "video" || musicPolicy.hasAttachedMusic;
 
+  /**
+   * `playbackFailed` and `buffering` describe one Status's media, but the viewer
+   * keeps a single mounted card and pages a new `status` through it -- so
+   * without this they carry over. One image that fails to decode then marks
+   * every Status the user pages to afterwards as broken, which is why a single
+   * bad item presents as "Statuses only show a black screen" rather than as one
+   * bad Status.
+   *
+   * Only the player-reported half is cleared. `statusMediaUnavailable` is read
+   * from the record on every render, so a Status the backend really has lost
+   * still reports itself the moment it comes up -- this resets a verdict about
+   * the previous Status, not the current one's evidence.
+   *
+   * Reset during render rather than in an effect: an effect resets after the
+   * paint, so the next Status flashes the previous one's error state first.
+   * This is React's documented "adjust state when a prop changes" pattern, and
+   * the extra render it schedules is discarded before the UI sees it.
+   */
+  const [renderedStatusId, setRenderedStatusId] = useState(status.id);
+  if (renderedStatusId !== status.id) {
+    setRenderedStatusId(status.id);
+    setPlaybackFailed(false);
+    setBuffering(false);
+  }
+
   useEffect(() => {
     if (active && drivesPlayback && !muted) {
       startedAt.current = Date.now();
