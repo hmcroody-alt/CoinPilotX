@@ -12,6 +12,7 @@ from flask import Blueprint, Response, jsonify, redirect, render_template, reque
 from . import flags, service
 from services import pulsesoc_communications_engine as call_engine
 from services import pulsesoc_reliability
+from services.route_auth import auth_required
 
 
 comm_v2_blueprint = Blueprint("pulse_communications_v2", __name__)
@@ -1113,6 +1114,21 @@ def conversation_control_media(conversation_ref):
     if denied:
         return denied
     return _timed_json("conversation_control_media", lambda: service.conversation_control_media(user["user_id"], conversation_ref, request.args))
+
+
+@comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/media")
+@auth_required
+def conversation_media_history(conversation_ref):
+    """Paginated image+video history for the full-screen chat media gallery.
+
+    Membership is checked inside `service.conversation_media_history`, which
+    refuses before it reads any attachment row — changing the conversation id
+    here gets a 403, not somebody else's photos.
+    """
+    user, denied = _require_user()
+    if denied:
+        return denied
+    return _timed_json("conversation_media_history", lambda: service.conversation_media_history(user["user_id"], conversation_ref, request.args))
 
 
 @comm_v2_blueprint.get(f"{API_PREFIX}/conversations/<path:conversation_ref>/control-center/links")
