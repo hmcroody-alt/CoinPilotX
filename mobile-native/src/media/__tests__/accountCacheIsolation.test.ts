@@ -6,18 +6,24 @@
  * scope in it, so every account on a handset writes Home, Profiles, Statuses,
  * the activity inbox and the radio queue to the *same* AsyncStorage keys. The
  * only thing standing between user A's cached content and user B is the sweep
- * `clearUserScopedMediaState` performs at sign-out — and that sweep is an
- * explicit six-prefix allowlist that the rest of the app has long outgrown.
+ * `clearUserScopedMediaState` performs at sign-out, which until `storageScope`
+ * was an explicit six-prefix allowlist the rest of the app had long outgrown.
  *
  * These tests are written against the real `core/cache` rather than a mock,
  * because the defect they exist to catch lives in the interaction between the
  * cache's in-memory tier and a sweep that deletes straight from AsyncStorage.
  * A mocked cache cannot express it: it is precisely the real module's own
  * memoisation that keeps serving a value the sweep believes it removed.
+ *
+ * They pull in the real outbox for the same reason. Inverting the sweep put
+ * every queued write in its blast radius, and whether a message the user
+ * pressed Send on survives a sign-out is not a question a mocked queue can be
+ * asked — the answer depends on the key the outbox actually chooses.
  */
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { readJsonCache, resetJsonCacheMemory, writeJsonCache } from "../../core/cache";
+import { enqueueMutation, outboxSize, pendingMutations, setOutboxScope } from "../../core/mutations/outbox";
 import { clearUserScopedMediaState } from "../mediaSessionCleanup";
 
 jest.mock("../../core/mediaPlaybackCoordinator", () => ({
@@ -37,6 +43,7 @@ beforeEach(async () => {
   jest.clearAllMocks();
   resetJsonCacheMemory();
   await AsyncStorage.clear();
+  setOutboxScope(null);
 });
 
 describe("signing out", () => {
@@ -104,6 +111,31 @@ describe("signing out", () => {
     expect(await AsyncStorage.getItem("pulsesoc.native.push.installation_id")).toBe("device-abc");
     expect(await AsyncStorage.getItem("pulsesoc.native.session.rememberedAccounts.v1")).toBe('["a@example.com"]');
     expect(await AsyncStorage.getItem("pulsesoc.native.settings.v1")).toBe('{"language":"fr"}');
+  });
+
+  it("does not destroy a message the user already pressed send on", async () => {
+    // The sharpest edge of inverting the sweep. A queued message is not a
+    // cache and not a draft: the user pressed Send, and the app has been
+    // showing them a bubble ever since. Deleting it at sign-out means a
+    // message they believe was sent silently never sends.
+    //
+    // It is safe to leave precisely because the outbox is scoped per account
+    // in its own key — the leak that justifies sweeping drafts, where the next
+    // account's composer reads a bare key, has no equivalent here. B's session
+    // cannot see or drain A's queue; A signing back in resumes it.
+    setOutboxScope(41);
+    await enqueueMutation({
+      type: "messenger.send",
+      idempotencyKey: "client-msg-1",
+      stream: "conversation:9",
+      payload: { conversationId: 9, payload: { body: "A's unsent message" } }
+    });
+    expect(await outboxSize()).toBe(1);
+
+    await clearUserScopedMediaState();
+
+    expect(await outboxSize()).toBe(1);
+    expect((await pendingMutations()).map((op) => op.idempotencyKey)).toEqual(["client-msg-1"]);
   });
 
   it("leaves the biometric credential for the auth layer to decide about", async () => {

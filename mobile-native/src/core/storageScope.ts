@@ -69,7 +69,23 @@ const DEVICE_KEEP_PREFIXES: readonly string[] = [
 
   // A once-per-device dedupe marker. Clearing it would let a referral be claimed
   // again on the same handset by signing out and back in.
-  "pulsesoc.native.referral.claimAttempted"
+  "pulsesoc.native.referral.claimAttempted",
+
+  // Writes the user has already committed to and is waiting on. This is the one
+  // entry that is NOT device state, and it is the entry the inversion most
+  // nearly got wrong: the old six-prefix sweep did not match the outbox key, so
+  // queued messages survived a sign-out by accident, and inverting the rule
+  // started deleting them on purpose.
+  //
+  // A queued message is not a cache and not a draft. The user pressed Send and
+  // has been looking at a bubble ever since; dropping it means a message they
+  // believe was sent silently never sends, which is the exact failure
+  // `core/mutations/outbox` exists to prevent. It is safe to leave because the
+  // outbox namespaces its own storage per account and drains only the active
+  // scope — the reason drafts must go, that the next account's composer reads
+  // them back from a bare key, has no equivalent here. B cannot see or send A's
+  // queue; A signing back in resumes it.
+  "pulsesoc.native.outbox."
 ];
 
 /**
