@@ -262,6 +262,47 @@ describe("call identity", () => {
     markCallKitConnected("call_never_reported");
     expect(provider.setCallConnected).not.toHaveBeenCalled();
   });
+
+  it("does not re-report a pushed call the poller then finds still ringing", async () => {
+    // MUTATION: delete the `reportedByPush` check from `reportIncomingCallKit`.
+    //
+    // The real sequence on a push-delivered call. AppDelegate reports it to CallKit before
+    // JS exists; the provider's `notification` listener records the mapping — which is
+    // exactly what `rememberCallKitCall` does here — and then the foreground poller finds
+    // the same call still ringing and reports it again, a second report of a call already
+    // on screen.
+    //
+    // `reportedUuids` did not cover this, because recording a mapping never wrote to it, so
+    // the duplicate went straight through. CallKit rejects a repeated UUID, so nothing
+    // visibly doubled — which is why it survived, and why this asserts on what the provider
+    // was *asked* to do rather than on what the user would have seen.
+    const { provider, displayed } = makeFakeProvider();
+    setNativeCallKitProvider(provider);
+    await initNativeCallKit();
+
+    rememberCallKitCall(incoming.callId, incoming.callUuid);
+    reportIncomingCallKit(incoming);
+
+    expect(displayed).toHaveLength(0);
+  });
+
+  it("still displays a call that arrived without a push", async () => {
+    // MUTATION: treat any existing mapping as proof the call is already on screen.
+    //
+    // `reportIncomingCallKit` records the mapping itself, so a check that cannot tell "the
+    // push recorded this" from "I just recorded this" would mark every call and then take
+    // its own early return. Every call with no VoIP push — no token, push refused, an older
+    // build — would stop ringing in-app entirely. That is a far worse failure than the
+    // duplicate above, so it is pinned next to it.
+    const { provider, displayed } = makeFakeProvider();
+    setNativeCallKitProvider(provider);
+    await initNativeCallKit();
+
+    reportIncomingCallKit(incoming);
+
+    expect(displayed).toHaveLength(1);
+    expect(displayed[0].uuid).toBe(SERVER_UUID);
+  });
 });
 
 describe("sign-out", () => {

@@ -3633,3 +3633,103 @@ single `provider.registerVoipToken()` statement back above the `subscriptions.pu
 block and delete the `didLoadWithEvents` listener in `callKitNativeProvider.ts`. That
 restores the previous behaviour exactly, with no schema change and no server-side
 state to undo — the backend already accepted repeat registrations.
+
+## Addendum — the push path fell through the double-report guard (2026-09-15)
+
+Covers this commit. One protected path changes again:
+`mobile-native/src/calls/callKitBridge.ts`, guarded by
+`audio_and_video_call_adapter`. As with the addendum above, the change is to
+**incoming-call reporting only**: the diff contains no `AVAudioSession`, no
+`Audio.setAudioModeAsync`, no audio-mode, audio-track, publication or livestream
+line.
+
+### Why the change is required
+
+`reportIncomingCallKit` guards against reporting the same call to CallKit twice,
+and the comment above that guard asserted it covered the PushKit path: "having
+recorded the mapping above, re-reporting is skipped." It did not. The guard reads
+`reportedUuids`, and `rememberCallKitCall` — the function the push listener uses —
+only ever wrote to `uuidByCallId` and `callIdByUuid`. It never touched
+`reportedUuids`.
+
+So on a push-delivered call the sequence was: AppDelegate reports the call to
+CallKit before JS exists; the provider's `notification` listener records the
+mapping; the foreground poller then finds the call still ringing, calls
+`reportIncomingCallKit`, finds nothing in `reportedUuids`, and reports to CallKit a
+call CallKit is already showing.
+
+Nothing visibly doubled, because CallKit rejects a repeated UUID. That is precisely
+why it survived review and testing — the defect is invisible in the behaviour and
+visible only in what the provider is *asked* to do. It is being fixed now because
+the mission requires the push path to be the primary and unduplicated one, and
+because a guard whose comment describes protection it does not provide is worse
+than no guard: it stops anyone looking again.
+
+### Which feature required it
+
+iOS incoming-call delivery, same as the two addenda above. This is the "no double
+ringing" requirement.
+
+### Which protected files changed
+
+| File | Manifest guard | Change |
+|---|---|---|
+| `mobile-native/src/calls/callKitBridge.ts` | `audio_and_video_call_adapter` | `reportIncomingCallKit` now reads the UUID mapping *before* recording its own, and treats a pre-existing mapping for the same call as proof the push path already put the call on screen. The corrected comment replaces the one that misdescribed the guard. |
+
+No other file changes. `callKitNativeProvider.ts` is deliberately **not** touched —
+see below.
+
+### Expected behavior change
+
+A call already reported to CallKit by AppDelegate is no longer re-reported from JS
+when the foreground poller catches up with it. A call that arrived with no VoIP push
+— no token, a push APNs refused, an older build — is reported exactly as before, on
+the first poll that sees it.
+
+No audio path. No change to the CallKit lifecycle, to answer/decline routing, or to
+which audio session is configured.
+
+### Regression risk
+
+The §21 audio-ownership risk is unchanged and still open; nothing here touches it.
+
+The risk that matters here is the inverse of the fix: a check that cannot distinguish
+"the push recorded this mapping" from "I recorded it myself a line ago" would suppress
+*every* report and the in-app ringer would never display anything. That is far worse
+than the duplicate being fixed, and it is pinned by
+`still displays a call that arrived without a push`.
+
+An earlier draft of this fix passed an `alreadyReported` flag from the provider's push
+listener instead. It was withdrawn after its mutation test failed to fail: the flag
+lived in `callKitNativeProvider.ts`, which imports the native pods and therefore cannot
+be loaded by jest, so deleting the flag at that call site broke nothing any test could
+see. Deriving the answer from state the bridge already owns removes the untestable call
+site rather than documenting around it — which is why the provider is unchanged here.
+
+### Tests run
+
+- `src/calls/__tests__/callKitBridge.test.ts` — **18 passed** (16 before, 2 added).
+- **Mutation check**, both reverted afterwards and the file confirmed clean:
+  - delete the `reportedByPush` check: **exactly 1 failed**, `does not re-report a
+    pushed call the poller then finds still ringing`.
+  - move the mapping read to *after* `rememberCallKitCall`, so any mapping counts:
+    **8 failed**, including `still displays a call that arrived without a push` — the
+    catastrophic direction, failing loudly as intended.
+- `npm run typecheck`, `npm run test:realtime-audio-critical`,
+  `npm run test:realtime-audio`, `npm run test:realtime-audio-architecture`,
+  `python3 -m unittest tests.protection.test_realtime_audio_architecture`, and the
+  Agora token/provider pytest pair — all green; see the run recorded with this commit.
+
+### Physical validation required
+
+The 12-case matrix above remains owed and unrun. This change is *not* independently
+observable on a device: CallKit already suppressed the duplicate, so a passing matrix
+would not have caught the defect and a device test cannot confirm the fix beyond
+showing that single-reporting still rings. It is unit-proven, and it rides along with
+the matrix rather than being validated by it.
+
+### Rollback procedure
+
+Restore the single line `const uuid = rememberCallKitCall(incoming.callId,
+incoming.callUuid);` above the guard and delete the `reportedByPush` term. No schema
+change, no server-side state, no client/server contract affected.

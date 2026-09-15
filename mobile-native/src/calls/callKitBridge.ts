@@ -116,14 +116,20 @@ export async function initNativeCallKit(callbacks: CallKitCallbacks = {}) {
 
 export function reportIncomingCallKit(incoming: CallKitIncoming) {
   if (!isNativeCallKitEnabled() || !provider || !incoming.callId || !incoming.callUuid) return;
-  const uuid = rememberCallKitCall(incoming.callId, incoming.callUuid);
   // A VoIP push reports the call natively, from AppDelegate, before this ever runs. The
   // foreground poller then finds the same call still ringing and arrives here — so on a
   // push-delivered call this is a *second* report of a call CallKit is already showing.
-  // That is the double-ring case, and the guard is the UUID: having recorded the mapping
-  // above, re-reporting is skipped. Dropping this check does not produce a visible second
-  // call (CallKit rejects the duplicate UUID) but it does reset the ringer on every poll.
-  if (reportedUuids.has(uuid)) return;
+  //
+  // Holding this call's UUID *before* being asked to report it is what identifies that
+  // case. The only thing that records a mapping ahead of time is the push listener, and it
+  // cannot run until AppDelegate has already put the call on screen. `reportedUuids` alone
+  // does not cover this — recording a mapping never wrote to it, though the comment here
+  // used to claim otherwise — so the pushed call fell straight through and was re-reported.
+  // CallKit rejects the duplicate UUID, which is why nothing visibly doubled and why this
+  // survived: only what the provider is *asked* to do reveals it.
+  const reportedByPush = uuidByCallId.get(incoming.callId) === incoming.callUuid;
+  const uuid = rememberCallKitCall(incoming.callId, incoming.callUuid);
+  if (reportedByPush || reportedUuids.has(uuid)) return;
   reportedUuids.add(uuid);
   provider.displayIncomingCall(uuid, incoming);
 }
@@ -136,6 +142,12 @@ export function reportIncomingCallKit(incoming: CallKitIncoming) {
  * which only know the call id — would find nothing and silently do nothing, leaving a
  * CallKit call stuck ringing or stuck connected after the call is over. The provider calls
  * this as soon as the VoIP push reaches JS so the reverse lookup exists from that moment.
+ *
+ * Recording a mapping here is also what tells `reportIncomingCallKit` that this call is
+ * already on screen, so the foreground poller does not report it a second time. That works
+ * because this function is the only way a mapping can exist before a report, and no flag is
+ * needed to say so — which matters, because a flag would have to be passed from the
+ * provider, and the provider is the one file in this feature that jest cannot load.
  *
  * Returns the UUID so callers can use it directly.
  */
