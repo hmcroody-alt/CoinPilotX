@@ -1,0 +1,2356 @@
+{
+  "buckets": {
+    "edges": []
+  },
+  "deletedAt": null,
+  "environments": {
+    "edges": [
+      {
+        "node": {
+          "canAccess": true,
+          "deletedAt": null,
+          "id": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+          "name": "production",
+          "serviceInstances": {
+            "edges": [
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.595Z",
+                      "deploymentStopped": false,
+                      "id": "59de0352-7060-4029-844c-69a9e1b29a39",
+                      "instances": [
+                        {
+                          "id": "a9f41fe1-3f90-4a89-9cc5-6825e3536d82",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:ff526a840aa124ec2a591df026031623fd6f43857b02f7725c230232c0b778e5",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python telegram_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "049328bc-e79f-4e8e-8b30-3f5f40493f6b",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.595Z",
+                    "deploymentStopped": false,
+                    "id": "59de0352-7060-4029-844c-69a9e1b29a39",
+                    "instances": [
+                      {
+                        "id": "a9f41fe1-3f90-4a89-9cc5-6825e3536d82",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:ff526a840aa124ec2a591df026031623fd6f43857b02f7725c230232c0b778e5",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python telegram_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "6daec6ca-fe5f-4169-94d9-614110dadbf8",
+                  "serviceName": "python telegram_worker.py",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python telegram_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-08-31T01:54:39.883Z",
+                      "deploymentStopped": true,
+                      "id": "62b8231a-c9d2-4efa-9e1a-cda51d5ffea0",
+                      "instances": [
+                        {
+                          "id": "8a93a797-f5a3-4bb3-8d96-a2f2297a8f02",
+                          "status": "EXITED"
+                        }
+                      ],
+                      "meta": {
+                        "duration": 600,
+                        "image": "postgres:16-alpine",
+                        "imageDigest": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+                        "logsV2": true,
+                        "patchId": "152bbf39-e202-4303-80af-247d0268276b",
+                        "reason": "deploy",
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": null,
+                            "restartPolicyType": "NEVER",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "sh -c 'echo DIAG4_START; psql \"$DATABASE_URL\" -A -P pager=off -c \"SELECT id,job_type,status,attempts,run_after,LEFT(last_error,240) AS err,created_at,updated_at FROM pulse_jobs WHERE job_type LIKE chr(102)||chr(37) ORDER BY id DESC LIMIT 14\" -c \"SELECT id,post_id,user_id,status,LEFT(video_url,90) AS video,created_at FROM pulse_reels ORDER BY id DESC LIMIT 8\" -c \"SELECT id,recording_status,LEFT(recording_error,220) AS rec_err,updated_at FROM pulse_live_sessions ORDER BY id DESC LIMIT 8\" -c \"SELECT id,event_type,post_id,created_at,LEFT(payload_json,200) AS payload FROM pulse_live_events ORDER BY id DESC LIMIT 60\"; echo DIAG4_END; sleep 600'",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "3c449a20-9a64-48f7-81cb-02f7aaf06295",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-08-31T01:54:39.883Z",
+                    "deploymentStopped": true,
+                    "id": "62b8231a-c9d2-4efa-9e1a-cda51d5ffea0",
+                    "instances": [
+                      {
+                        "id": "8a93a797-f5a3-4bb3-8d96-a2f2297a8f02",
+                        "status": "EXITED"
+                      }
+                    ],
+                    "meta": {
+                      "duration": 600,
+                      "image": "postgres:16-alpine",
+                      "imageDigest": "sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685",
+                      "logsV2": true,
+                      "patchId": "152bbf39-e202-4303-80af-247d0268276b",
+                      "reason": "deploy",
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": null,
+                          "restartPolicyType": "NEVER",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "sh -c 'echo DIAG4_START; psql \"$DATABASE_URL\" -A -P pager=off -c \"SELECT id,job_type,status,attempts,run_after,LEFT(last_error,240) AS err,created_at,updated_at FROM pulse_jobs WHERE job_type LIKE chr(102)||chr(37) ORDER BY id DESC LIMIT 14\" -c \"SELECT id,post_id,user_id,status,LEFT(video_url,90) AS video,created_at FROM pulse_reels ORDER BY id DESC LIMIT 8\" -c \"SELECT id,recording_status,LEFT(recording_error,220) AS rec_err,updated_at FROM pulse_live_sessions ORDER BY id DESC LIMIT 8\" -c \"SELECT id,event_type,post_id,created_at,LEFT(payload_json,200) AS payload FROM pulse_live_events ORDER BY id DESC LIMIT 60\"; echo DIAG4_END; sleep 600'",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "5f6ec73b-ee9c-4f26-9b61-ad1a8b38f8ab",
+                  "serviceName": "tmp-replay-diagnostics",
+                  "source": {
+                    "image": "postgres:16-alpine",
+                    "repo": null
+                  },
+                  "startCommand": "sh -c 'echo DIAG4_START; psql \"$DATABASE_URL\" -A -P pager=off -c \"SELECT id,job_type,status,attempts,run_after,LEFT(last_error,240) AS err,created_at,updated_at FROM pulse_jobs WHERE job_type LIKE chr(102)||chr(37) ORDER BY id DESC LIMIT 14\" -c \"SELECT id,post_id,user_id,status,LEFT(video_url,90) AS video,created_at FROM pulse_reels ORDER BY id DESC LIMIT 8\" -c \"SELECT id,recording_status,LEFT(recording_error,220) AS rec_err,updated_at FROM pulse_live_sessions ORDER BY id DESC LIMIT 8\" -c \"SELECT id,event_type,post_id,created_at,LEFT(payload_json,200) AS payload FROM pulse_live_events ORDER BY id DESC LIMIT 60\"; echo DIAG4_END; sleep 600'"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.594Z",
+                      "deploymentStopped": false,
+                      "id": "efe3786f-c41d-4389-bb89-0c1962e42d3d",
+                      "instances": [
+                        {
+                          "id": "e208457d-4d3f-4a39-b6e4-e10575c0f4cd",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:5df360e9e4fa8c8307c3ef38cae22c45f6fe27258829702de9b41dcf82c5818e",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "NIXPACKS",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": "/nixpacks.toml",
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python pulse_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "3e506ab6-5ecc-4b63-b749-ed0ab26267ca",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.594Z",
+                    "deploymentStopped": false,
+                    "id": "efe3786f-c41d-4389-bb89-0c1962e42d3d",
+                    "instances": [
+                      {
+                        "id": "e208457d-4d3f-4a39-b6e4-e10575c0f4cd",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:5df360e9e4fa8c8307c3ef38cae22c45f6fe27258829702de9b41dcf82c5818e",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "NIXPACKS",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": "/nixpacks.toml",
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python pulse_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "094b83d0-6c69-4e0c-9230-a04b9f0d55f4",
+                  "serviceName": "coinpilotx-pulse-worker",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python pulse_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.594Z",
+                      "deploymentStopped": true,
+                      "id": "ba599599-67c1-45bc-ba88-952b287bb94b",
+                      "instances": [
+                        {
+                          "id": "0b6a7073-4837-4865-ac8a-e85b6aae9d98",
+                          "status": "EXITED"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "duration": 0,
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:fb2bee541271fe00f73c21bd9e8ee67a14af875e5806ea57f4a004811f2d3a00",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": null,
+                            "restartPolicyType": "NEVER",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "echo \"TEMP service decommissioned $(date -u). Nothing runs here. Delete this service.\" && exit 0",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "5fe137b3-8d5f-41e1-b44f-897839e9f036",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.594Z",
+                    "deploymentStopped": true,
+                    "id": "ba599599-67c1-45bc-ba88-952b287bb94b",
+                    "instances": [
+                      {
+                        "id": "0b6a7073-4837-4865-ac8a-e85b6aae9d98",
+                        "status": "EXITED"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "duration": 0,
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:fb2bee541271fe00f73c21bd9e8ee67a14af875e5806ea57f4a004811f2d3a00",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": null,
+                          "restartPolicyType": "NEVER",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "echo \"TEMP service decommissioned $(date -u). Nothing runs here. Delete this service.\" && exit 0",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "9d6d2618-859d-4f07-ba9f-8635ff468639",
+                  "serviceName": "TEMP-undx-canonical-index-DELETE-AFTER",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "echo \"TEMP service decommissioned $(date -u). Nothing runs here. Delete this service.\" && exit 0"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.595Z",
+                      "deploymentStopped": false,
+                      "id": "72da3d9c-2f0a-4fca-9411-83aa9e2801c5",
+                      "instances": [
+                        {
+                          "id": "55d803d2-c758-44ad-bf40-bceb9ec31eaf",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:25525f55f9cf52717bca92597a17037f4dd2b2b0b7b36823e20351a8002dbb9e",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python media_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "62b8e7c6-c78d-4cf5-9eb5-debbbf1de20e",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.595Z",
+                    "deploymentStopped": false,
+                    "id": "72da3d9c-2f0a-4fca-9411-83aa9e2801c5",
+                    "instances": [
+                      {
+                        "id": "55d803d2-c758-44ad-bf40-bceb9ec31eaf",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:25525f55f9cf52717bca92597a17037f4dd2b2b0b7b36823e20351a8002dbb9e",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python media_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "4b6bb9ea-7eda-412b-aec1-edef6303ec6e",
+                  "serviceName": "coinpilotx-media-engine",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python media_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.593Z",
+                      "deploymentStopped": true,
+                      "id": "4a5af53f-b37b-43e0-a823-e9f65a93d99e",
+                      "instances": [],
+                      "meta": {
+                        "branch": "main",
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "logsV2": true,
+                        "plan": "pro",
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "gunicorn services.command_center_worker.app:app --bind 0.0.0.0:$PORT",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "BUILDING"
+                    },
+                    {
+                      "createdAt": "2026-09-15T16:25:08.875Z",
+                      "deploymentStopped": false,
+                      "id": "56e50653-c55c-4fd7-b2ff-11a12a655913",
+                      "instances": [
+                        {
+                          "id": "ea99ed1f-ace9-4c59-979c-6cfb909743a2",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "ee26862c37a1ad76f2fa39c56a4e869f704cc04f",
+                        "commitMessage": "Merge remote-tracking branch 'origin/main' into claude/bold-hodgkin-9021f1\n\n# Conflicts:\n#\tmobile-native/src/media/__tests__/mediaCache.test.ts",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:df857228083d6db6e507274875b13f1775c12240b42e3313b2ebfb2dd6df1703",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "gunicorn services.command_center_worker.app:app --bind 0.0.0.0:$PORT",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "6d92a211-22f9-4f2a-b4a6-dcbd1883718b",
+                  "latestDeployment": {
+                    "canRedeploy": false,
+                    "createdAt": "2026-09-15T17:54:49.593Z",
+                    "deploymentStopped": true,
+                    "id": "4a5af53f-b37b-43e0-a823-e9f65a93d99e",
+                    "instances": [],
+                    "meta": {
+                      "branch": "main",
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "logsV2": true,
+                      "plan": "pro",
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "gunicorn services.command_center_worker.app:app --bind 0.0.0.0:$PORT",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "BUILDING"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "0a35d448-e65e-4e45-bafb-812dfa57c76f",
+                  "serviceName": "PulseSoc Command Center Worker",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "gunicorn services.command_center_worker.app:app --bind 0.0.0.0:$PORT"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.593Z",
+                      "deploymentStopped": false,
+                      "id": "669bcb98-f549-4de1-8e09-43f636f91097",
+                      "instances": [
+                        {
+                          "id": "36ebbef5-642a-434c-95ac-efa81fe70ca3",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:f5ddd64ac6499364a45d1f30e0c6181759b5466f1729ee019f54352db6d43636",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python pulse_ads_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "91c82875-22aa-485f-8d4b-4392e61678f4",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.593Z",
+                    "deploymentStopped": false,
+                    "id": "669bcb98-f549-4de1-8e09-43f636f91097",
+                    "instances": [
+                      {
+                        "id": "36ebbef5-642a-434c-95ac-efa81fe70ca3",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:f5ddd64ac6499364a45d1f30e0c6181759b5466f1729ee019f54352db6d43636",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python pulse_ads_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "bf5a0a9a-6b59-42c3-be16-91692a4cb3a8",
+                  "serviceName": "pulsesoc-ads-worker",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python pulse_ads_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.595Z",
+                      "deploymentStopped": false,
+                      "id": "d65c8b47-5895-417d-bbe9-5f3731696ded",
+                      "instances": [
+                        {
+                          "id": "391c3b30-74db-4551-bf72-f38fda5920a3",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:21587b931916ebfbb4d6344132bc51a3051f16e3c2166fa51cfb34a79d2a0d39",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python undx_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "9ac60111-b500-4eef-a574-953557267c52",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.595Z",
+                    "deploymentStopped": false,
+                    "id": "d65c8b47-5895-417d-bbe9-5f3731696ded",
+                    "instances": [
+                      {
+                        "id": "391c3b30-74db-4551-bf72-f38fda5920a3",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:21587b931916ebfbb4d6344132bc51a3051f16e3c2166fa51cfb34a79d2a0d39",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python undx_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "c2c9b804-3e7e-4a5d-9061-54542a5f7d89",
+                  "serviceName": "coinpilotx-undx-worker",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python undx_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.594Z",
+                      "deploymentStopped": true,
+                      "id": "7b7a9a01-e924-443f-827a-ad629cc9fa33",
+                      "instances": [],
+                      "meta": {
+                        "branch": "main",
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "logsV2": true,
+                        "plan": "pro",
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": null,
+                            "restartPolicyType": "ALWAYS",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python email_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "BUILDING"
+                    },
+                    {
+                      "createdAt": "2026-09-15T16:25:08.874Z",
+                      "deploymentStopped": false,
+                      "id": "42d8d341-67db-4a2d-bb1d-e4206220cd0a",
+                      "instances": [
+                        {
+                          "id": "33546c47-71e2-461e-b284-5e73d09f4ad5",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "ee26862c37a1ad76f2fa39c56a4e869f704cc04f",
+                        "commitMessage": "Merge remote-tracking branch 'origin/main' into claude/bold-hodgkin-9021f1\n\n# Conflicts:\n#\tmobile-native/src/media/__tests__/mediaCache.test.ts",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:b5092a92b9c9e4da40b39250ea00af568cdc6372a7ee5095bf2d242021ad62c0",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": null,
+                            "restartPolicyType": "ALWAYS",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python email_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "9cf3338f-237f-4121-92aa-9ba16df32a40",
+                  "latestDeployment": {
+                    "canRedeploy": false,
+                    "createdAt": "2026-09-15T17:54:49.594Z",
+                    "deploymentStopped": true,
+                    "id": "7b7a9a01-e924-443f-827a-ad629cc9fa33",
+                    "instances": [],
+                    "meta": {
+                      "branch": "main",
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "logsV2": true,
+                      "plan": "pro",
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": null,
+                          "restartPolicyType": "ALWAYS",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python email_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "BUILDING"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "b512ca74-5e43-4215-90c1-97a3b4f0205e",
+                  "serviceName": "email_worker",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python email_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-08-23T06:01:38.631Z",
+                      "deploymentStopped": false,
+                      "id": "1f8b65f5-7512-4626-aae2-091c20602b45",
+                      "instances": [
+                        {
+                          "id": "6eccb034-8e3c-46a7-b309-765126888969",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "image": "ghcr.io/railwayapp-templates/postgres-ssl:18",
+                        "imageDigest": "sha256:e617e80d34d40def28ab197662197acc5cd6c1dc120db9cf38d835a2386c226c",
+                        "logsV2": true,
+                        "reason": "autoupdate",
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": "/var/lib/postgresql/data",
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": null,
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": [
+                          "/var/lib/postgresql/data"
+                        ]
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "ba84b2b8-ed8f-4e67-8abc-d91ada6e3b65",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-08-23T06:01:38.631Z",
+                    "deploymentStopped": false,
+                    "id": "1f8b65f5-7512-4626-aae2-091c20602b45",
+                    "instances": [
+                      {
+                        "id": "6eccb034-8e3c-46a7-b309-765126888969",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "image": "ghcr.io/railwayapp-templates/postgres-ssl:18",
+                      "imageDigest": "sha256:e617e80d34d40def28ab197662197acc5cd6c1dc120db9cf38d835a2386c226c",
+                      "logsV2": true,
+                      "reason": "autoupdate",
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": "/var/lib/postgresql/data",
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": null,
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": [
+                        "/var/lib/postgresql/data"
+                      ]
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "be0c6743-ad97-427d-854c-62ad11363a86",
+                  "serviceName": "Postgres",
+                  "source": {
+                    "image": "ghcr.io/railwayapp-templates/postgres-ssl:18",
+                    "repo": null
+                  },
+                  "startCommand": null
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.593Z",
+                      "deploymentStopped": false,
+                      "id": "42b7a633-1c9b-458c-9cc9-5b9b0b3ac83d",
+                      "instances": [
+                        {
+                          "id": "9230927e-8851-41a6-b589-ab2f2527002e",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:afcf07ef76b4a9465990f88b02081850756dec1ff9923bb3d46de83abf409fb7",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": "python alert_worker.py",
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "ce2c9629-067d-45dd-a1f6-cb6179d11af3",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.593Z",
+                    "deploymentStopped": false,
+                    "id": "42b7a633-1c9b-458c-9cc9-5b9b0b3ac83d",
+                    "instances": [
+                      {
+                        "id": "9230927e-8851-41a6-b589-ab2f2527002e",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:afcf07ef76b4a9465990f88b02081850756dec1ff9923bb3d46de83abf409fb7",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": "python alert_worker.py",
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "6d1323e3-277c-4bdc-ba4a-03a442083aca",
+                  "serviceName": "python alert_worker.py",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": "python alert_worker.py"
+                }
+              },
+              {
+                "node": {
+                  "activeDeployments": [
+                    {
+                      "createdAt": "2026-09-15T17:54:49.595Z",
+                      "deploymentStopped": false,
+                      "id": "a1e04a32-3893-48e6-ab58-7ecaa80fb376",
+                      "instances": [
+                        {
+                          "id": "92bb1f9f-2945-4f70-980f-fa7f6bda2831",
+                          "status": "RUNNING"
+                        }
+                      ],
+                      "meta": {
+                        "branch": "main",
+                        "buildOnly": false,
+                        "commitAuthor": "hmcroody-alt",
+                        "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                        "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                        "fileServiceManifest": {},
+                        "imageDigest": "sha256:e1ed82491ea4734b8665068d02a70acfdf915c99e30d7e7a47e2ec338ae9e6da",
+                        "logsV2": true,
+                        "nixpacksProviders": [],
+                        "plan": "pro",
+                        "propertyFileMapping": {},
+                        "railpackInfo": {
+                          "detectedProviders": [
+                            "python"
+                          ],
+                          "metadata": {
+                            "providers": "python",
+                            "pythonPackageManager": "pip",
+                            "pythonRuntime": "flask"
+                          },
+                          "railpackVersion": "0.39.0",
+                          "resolvedPackages": {
+                            "python": {
+                              "requestedVersion": "3.13.13",
+                              "resolvedVersion": "3.13.13"
+                            }
+                          }
+                        },
+                        "reason": "deploy",
+                        "repo": "hmcroody-alt/CoinPilotX",
+                        "rootDirectory": null,
+                        "runtime": "V2",
+                        "serviceManifest": {
+                          "build": {
+                            "buildCommand": null,
+                            "buildEnvironment": "V3",
+                            "builder": "RAILPACK",
+                            "dockerfilePath": null,
+                            "nixpacksConfigPath": null,
+                            "nixpacksPlan": null,
+                            "watchPatterns": []
+                          },
+                          "deploy": {
+                            "cronSchedule": null,
+                            "drainingSeconds": null,
+                            "healthcheckPath": null,
+                            "healthcheckTimeout": null,
+                            "ipv6EgressEnabled": false,
+                            "limitOverride": null,
+                            "multiRegionConfig": {
+                              "sfo": {
+                                "numReplicas": 1
+                              }
+                            },
+                            "numReplicas": 1,
+                            "overlapSeconds": null,
+                            "preDeployCommand": null,
+                            "preDeployTimeoutSeconds": null,
+                            "region": null,
+                            "registryCredentials": null,
+                            "requiredMountPath": null,
+                            "restartPolicyMaxRetries": 10,
+                            "restartPolicyType": "ON_FAILURE",
+                            "runtime": "V2",
+                            "sleepApplication": false,
+                            "startCommand": null,
+                            "useLegacyStacker": false
+                          }
+                        },
+                        "volumeMounts": []
+                      },
+                      "status": "SUCCESS"
+                    }
+                  ],
+                  "cronSchedule": null,
+                  "domains": {
+                    "customDomains": [
+                      {
+                        "domain": "pulsesoc.com",
+                        "id": "b2f5c3d5-1eb6-4ac3-bf89-f7ae294fce79",
+                        "targetPort": 8080
+                      },
+                      {
+                        "domain": "www.pulsesoc.com",
+                        "id": "9238bcf1-e48e-4ca6-a26c-186abf2becb6",
+                        "targetPort": 8080
+                      },
+                      {
+                        "domain": "coinpilotx.app",
+                        "id": "e9aa4469-5fa1-49eb-917a-ec85ab259611",
+                        "targetPort": 8080
+                      }
+                    ],
+                    "serviceDomains": []
+                  },
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "e1046fdb-b243-4e75-a2bb-559200cea6f3",
+                  "latestDeployment": {
+                    "canRedeploy": true,
+                    "createdAt": "2026-09-15T17:54:49.595Z",
+                    "deploymentStopped": false,
+                    "id": "a1e04a32-3893-48e6-ab58-7ecaa80fb376",
+                    "instances": [
+                      {
+                        "id": "92bb1f9f-2945-4f70-980f-fa7f6bda2831",
+                        "status": "RUNNING"
+                      }
+                    ],
+                    "meta": {
+                      "branch": "main",
+                      "buildOnly": false,
+                      "commitAuthor": "hmcroody-alt",
+                      "commitHash": "d007e2ba63af766a20fa1969c13a51d19ff79fe3",
+                      "commitMessage": "Merge claude/pushkit-callkit-voip: iOS incoming calls via PushKit + CallKit",
+                      "fileServiceManifest": {},
+                      "imageDigest": "sha256:e1ed82491ea4734b8665068d02a70acfdf915c99e30d7e7a47e2ec338ae9e6da",
+                      "logsV2": true,
+                      "nixpacksProviders": [],
+                      "plan": "pro",
+                      "propertyFileMapping": {},
+                      "railpackInfo": {
+                        "detectedProviders": [
+                          "python"
+                        ],
+                        "metadata": {
+                          "providers": "python",
+                          "pythonPackageManager": "pip",
+                          "pythonRuntime": "flask"
+                        },
+                        "railpackVersion": "0.39.0",
+                        "resolvedPackages": {
+                          "python": {
+                            "requestedVersion": "3.13.13",
+                            "resolvedVersion": "3.13.13"
+                          }
+                        }
+                      },
+                      "reason": "deploy",
+                      "repo": "hmcroody-alt/CoinPilotX",
+                      "rootDirectory": null,
+                      "runtime": "V2",
+                      "serviceManifest": {
+                        "build": {
+                          "buildCommand": null,
+                          "buildEnvironment": "V3",
+                          "builder": "RAILPACK",
+                          "dockerfilePath": null,
+                          "nixpacksConfigPath": null,
+                          "nixpacksPlan": null,
+                          "watchPatterns": []
+                        },
+                        "deploy": {
+                          "cronSchedule": null,
+                          "drainingSeconds": null,
+                          "healthcheckPath": null,
+                          "healthcheckTimeout": null,
+                          "ipv6EgressEnabled": false,
+                          "limitOverride": null,
+                          "multiRegionConfig": {
+                            "sfo": {
+                              "numReplicas": 1
+                            }
+                          },
+                          "numReplicas": 1,
+                          "overlapSeconds": null,
+                          "preDeployCommand": null,
+                          "preDeployTimeoutSeconds": null,
+                          "region": null,
+                          "registryCredentials": null,
+                          "requiredMountPath": null,
+                          "restartPolicyMaxRetries": 10,
+                          "restartPolicyType": "ON_FAILURE",
+                          "runtime": "V2",
+                          "sleepApplication": false,
+                          "startCommand": null,
+                          "useLegacyStacker": false
+                        }
+                      },
+                      "volumeMounts": []
+                    },
+                    "status": "SUCCESS"
+                  },
+                  "nextCronRunAt": null,
+                  "numReplicas": null,
+                  "serviceId": "ce41f7c5-b882-4aa7-81b3-06de73fded31",
+                  "serviceName": "CoinPilotX",
+                  "source": {
+                    "image": null,
+                    "repo": "hmcroody-alt/CoinPilotX"
+                  },
+                  "startCommand": null
+                }
+              }
+            ]
+          },
+          "unmergedChangesCount": null,
+          "volumeInstances": {
+            "edges": [
+              {
+                "node": {
+                  "currentSizeMB": 2596.4462080000003,
+                  "deletedAt": null,
+                  "environmentId": "8bf01340-99d0-49be-a951-abffc17aa4d3",
+                  "id": "c25f03f1-623a-4da6-bf92-78bf21fec767",
+                  "isPendingDeletion": false,
+                  "mountPath": "/var/lib/postgresql/data",
+                  "serviceId": "be0c6743-ad97-427d-854c-62ad11363a86",
+                  "sizeMB": 50000,
+                  "state": "READY",
+                  "volume": {
+                    "id": "f4227108-bc66-400a-ac91-71ce9959024a",
+                    "name": "postgres-volume"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "id": "111b3838-09d4-4f13-8b8b-6ed332bad06f",
+  "name": "coinpilotx-alert-worker",
+  "services": {
+    "edges": [
+      {
+        "node": {
+          "id": "094b83d0-6c69-4e0c-9230-a04b9f0d55f4",
+          "name": "coinpilotx-pulse-worker"
+        }
+      },
+      {
+        "node": {
+          "id": "0a35d448-e65e-4e45-bafb-812dfa57c76f",
+          "name": "PulseSoc Command Center Worker"
+        }
+      },
+      {
+        "node": {
+          "id": "4b6bb9ea-7eda-412b-aec1-edef6303ec6e",
+          "name": "coinpilotx-media-engine"
+        }
+      },
+      {
+        "node": {
+          "id": "5f6ec73b-ee9c-4f26-9b61-ad1a8b38f8ab",
+          "name": "tmp-replay-diagnostics"
+        }
+      },
+      {
+        "node": {
+          "id": "6d1323e3-277c-4bdc-ba4a-03a442083aca",
+          "name": "python alert_worker.py"
+        }
+      },
+      {
+        "node": {
+          "id": "6daec6ca-fe5f-4169-94d9-614110dadbf8",
+          "name": "python telegram_worker.py"
+        }
+      },
+      {
+        "node": {
+          "id": "9d6d2618-859d-4f07-ba9f-8635ff468639",
+          "name": "TEMP-undx-canonical-index-DELETE-AFTER"
+        }
+      },
+      {
+        "node": {
+          "id": "b512ca74-5e43-4215-90c1-97a3b4f0205e",
+          "name": "email_worker"
+        }
+      },
+      {
+        "node": {
+          "id": "be0c6743-ad97-427d-854c-62ad11363a86",
+          "name": "Postgres"
+        }
+      },
+      {
+        "node": {
+          "id": "bf5a0a9a-6b59-42c3-be16-91692a4cb3a8",
+          "name": "pulsesoc-ads-worker"
+        }
+      },
+      {
+        "node": {
+          "id": "c2c9b804-3e7e-4a5d-9061-54542a5f7d89",
+          "name": "coinpilotx-undx-worker"
+        }
+      },
+      {
+        "node": {
+          "id": "ce41f7c5-b882-4aa7-81b3-06de73fded31",
+          "name": "CoinPilotX"
+        }
+      }
+    ]
+  },
+  "workspace": {
+    "name": "hmcroody-alt's Projects"
+  },
+  "workspaceId": "5f5ff1ee-fdfa-4ffa-bd91-337010a47fba"
+}

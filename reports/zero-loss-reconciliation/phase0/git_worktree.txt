@@ -1,0 +1,72 @@
+worktree /Users/hmcherie/Desktop/CoinPilotX
+HEAD 5f24c970edba1a58e6fd4af6ea6285c1aef2a85c
+branch refs/heads/main
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/bold-hodgkin-9021f1
+HEAD ee26862c37a1ad76f2fa39c56a4e869f704cc04f
+branch refs/heads/claude/bold-hodgkin-9021f1
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/bold-jemison-81cdef
+HEAD ba213cb8260ce40b84659ed54a03b483b4a804d5
+branch refs/heads/claude/bold-jemison-81cdef
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/charming-poincare-180ccb
+HEAD 97acecb1151081bbacb3528c68be18049837ee11
+branch refs/heads/claude/charming-poincare-180ccb
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/cool-pasteur-66d0e0
+HEAD 767f4fbb3837b4681377413c8ef844d953bdddd7
+branch refs/heads/claude/cool-pasteur-66d0e0
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/dreamy-proskuriakova-b042a9
+HEAD 2cbc6a637713871bb46e3a8ad0762dd43637bb57
+branch refs/heads/claude/dreamy-proskuriakova-b042a9
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/fervent-bose-488f38
+HEAD 0f63959782133298285e0ab3e6c2ae6be7de918f
+branch refs/heads/claude/private-office-simplify
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/flamboyant-einstein-4510cf
+HEAD 405470581bd74ec4443b8a489969bd16ed9da553
+branch refs/heads/claude/businessos-perf-flake
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/loving-banach-1ed134
+HEAD 997903cf3f6e42fad4acc799769b340f174493e6
+detached
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/pedantic-solomon-aa99d1
+HEAD 08f26e7bbaa91708acfff335a3feac6265f48bdc
+branch refs/heads/claude/pedantic-solomon-aa99d1
+
+worktree /Users/hmcherie/Desktop/CoinPilotX/.claude/worktrees/vigilant-solomon-1981e1
+HEAD 21630fa008d28f19535542b0801b45f5c92265f4
+detached
+
+worktree /Users/hmcherie/Desktop/cpx-prefetch-iso
+HEAD ee26862c37a1ad76f2fa39c56a4e869f704cc04f
+detached
+
+worktree /private/tmp/po-baseline
+HEAD 7b3bf5ecde476545d9ff77f57e5191bb1a575c63
+detached
+
+worktree /private/tmp/po_base
+HEAD 7b3bf5ecde476545d9ff77f57e5191bb1a575c63
+detached
+
+worktree /private/tmp/suite-base
+HEAD 96e3ddb2c2467cd8809a16a057cc439d340224a0
+detached
+
+worktree /private/tmp/suite-head
+HEAD b64bd934eefb34d0d290977eee3f9d5f670cdebf
+detached
+
+worktree /private/tmp/voip-callkit
+HEAD 121604e28529355e60af149fa0740eaae81b3c7e
+branch refs/heads/claude/pushkit-callkit-voip
+
+worktree /private/tmp/voip-merge
+HEAD d007e2ba63af766a20fa1969c13a51d19ff79fe3
+detached
+
