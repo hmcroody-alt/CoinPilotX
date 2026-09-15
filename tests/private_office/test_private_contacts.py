@@ -286,9 +286,14 @@ def stage_identity_resolution():
     check("the directory did not grow", len(_directory(client)) == before,
           f"{before} → {len(_directory(client))}")
 
-    # The same *name*, and nothing else in common. Two people.
+    # The same *name* as somebody already here, and nothing else in common.
+    # Read the name back rather than writing it as a literal: the step above
+    # renamed this person, so a literal would assert against a collision that
+    # had stopped being one — and the test would pass without testing.
+    held = [p for p in _directory(client) if p["node_id"] == _STATE["dana"]]
+    check("the person to collide with is findable", len(held) == 1, str(held))
     resp = _post(client, "/api/private-office/relationships",
-                 {"name": "Dana Whitfield", "phone": "+1 212 555 9000"})
+                 {"name": held[0]["name"], "phone": "+1 212 555 9000"})
     body = resp.get_json() or {}
     _STATE["dana_two"] = body.get("person", {}).get("node_id")
     check("a shared name is never a merge",
