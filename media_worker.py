@@ -78,6 +78,7 @@ BATCH_SIZE = max(1, min(int(os.getenv("MEDIA_WORKER_BATCH_SIZE", "25")), 100))
 MAX_ATTEMPTS = max(1, int(os.getenv("MEDIA_WORKER_MAX_ATTEMPTS", "3")))
 MEDIA_JOB_TYPES = {"generate_thumbnail", "process_video", "finalize_live_replay"} | messenger_media_foundation.PROCESSING_JOB_TYPES
 REPLAY_WAIT_MAX_AGE_HOURS = max(1, int(os.getenv("MEDIA_WORKER_REPLAY_WAIT_MAX_AGE_HOURS", "72")))
+AVAILABILITY_RECHECK_HOURS = max(1, int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECHECK_HOURS", "24")))
 RUNNING = True
 REPLAYS_READY_TO_PUBLISH: set[int] = set()
 
@@ -1186,6 +1187,102 @@ def reconcile_messenger_media_backlog(limit: int = 50) -> dict:
     return result
 
 
+def _object_presence(key: str):
+    """True if the object is there, False if storage says it is not, None if it could not be asked.
+
+    The three-way answer is the point. Treating an unanswerable check as absence
+    would let one bad minute of bucket connectivity mark healthy media dead across
+    the whole library, and nothing downstream would ever put it back.
+    """
+    key = str(key or "").strip().replace("\\", "/").lstrip("/")
+    if not key:
+        return None
+    try:
+        media_storage.head_object(key)
+        return True
+    except Exception as exc:
+        code = ""
+        response = getattr(exc, "response", None)
+        if isinstance(response, dict):
+            code = str(response.get("Error", {}).get("Code") or response.get("ResponseMetadata", {}).get("HTTPStatusCode") or "")
+        text = f"{code} {exc}"
+        if "404" in text or "NoSuchKey" in text or "Not Found" in text:
+            return False
+        return None
+
+
+def reconcile_media_availability(limit: int = 10) -> dict:
+    """Retire the promise of media the bucket no longer holds.
+
+    Nothing revisited a row once it went ready: the upload path set is_available=1
+    and moved on, so an object later deleted -- or never durably written -- left the
+    row promising bytes forever while the client drew an empty player. Verifying at
+    read time would put a bucket round-trip in front of every feed request, so the
+    check lives here and the read path goes on trusting the column.
+
+    Only durable-store rows are examined. A 'local' row's bytes sit on the web
+    container's disk, which this worker cannot see, so asking here would report every
+    one of them missing; those are handled out-of-band by
+    scripts/repair_media_rows_with_lost_source.py, which asks over HTTP instead.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=AVAILABILITY_RECHECK_HOURS)).isoformat()
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT id, COALESCE(storage_key, '') AS storage_key, COALESCE(object_key, '') AS object_key,
+               COALESCE(playback_storage_key, '') AS playback_storage_key,
+               COALESCE(playback_url, '') AS playback_url, COALESCE(mux_playback_id, '') AS mux_playback_id,
+               COALESCE(mux_status, '') AS mux_status
+        FROM chat_media_uploads
+        WHERE deleted_at IS NULL
+          AND COALESCE(is_available, 1) <> 0
+          AND LOWER(COALESCE(storage_provider, '')) IN ('r2', 's3')
+          AND COALESCE(storage_key, object_key, '') <> ''
+          AND COALESCE(availability_checked_at, '') < ?
+        ORDER BY COALESCE(availability_checked_at, '') ASC
+        LIMIT ?
+        """,
+        (cutoff, max(1, min(int(limit or 10), 100))),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    checked = 0
+    downgraded = 0
+    for row in rows:
+        media_id = int(row.get("id") or 0)
+        checked += 1
+        if row.get("mux_playback_id") and str(row.get("mux_status") or "").lower() in {"ready", "asset_ready", "available"}:
+            # Mux serves this one; the bucket copy is not what playback depends on.
+            presences = [True]
+        else:
+            keys = [str(row[column]).strip() for column in ("storage_key", "object_key", "playback_storage_key") if str(row[column] or "").strip()]
+            presences = [_object_presence(key) for key in keys]
+        # Every key the row carries had to be answered, and every answer had to be
+        # "absent". A single None -- one key we could not ask about -- means the row
+        # might still be fine, and the row keeps its promise for another day.
+        if presences and all(value is False for value in presences):
+            cur.execute(
+                """
+                UPDATE chat_media_uploads
+                SET is_available=0,
+                    processing_status='failed',
+                    availability_error=?,
+                    availability_checked_at=?,
+                    updated_at=?
+                WHERE id=?
+                """,
+                ("SOURCE_MEDIA_MISSING", _now(), _now(), media_id),
+            )
+            downgraded += 1
+            logging.warning("MEDIA_WORKER_AVAILABILITY_DOWNGRADED media_id=%s keys=%s", media_id, row.get("storage_key"))
+        else:
+            cur.execute("UPDATE chat_media_uploads SET availability_checked_at=? WHERE id=?", (_now(), media_id))
+    conn.commit()
+    conn.close()
+    return {"checked": checked, "downgraded": downgraded}
+
+
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
@@ -1194,7 +1291,8 @@ def run_cycle() -> dict:
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
     durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
-    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations}
+    availability = reconcile_media_availability(int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECONCILE_BATCH", "10")))
+    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations, "availability": availability}
 
 
 def main() -> None:
