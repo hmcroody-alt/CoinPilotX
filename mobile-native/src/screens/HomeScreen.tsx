@@ -10,7 +10,7 @@ import {
   getPostDetail,
   hidePost,
   listFeed,
-  loadCachedFeed,
+  loadCachedFeedSnapshot,
   mutePostAuthor,
   PulsePost,
   pulsePostUrl,
@@ -23,7 +23,7 @@ import { isContentOwner } from "../api/contentOwnership";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileTargetFromPost } from "../api/profile";
 import { profileNavigationParams } from "../api/profileTarget";
-import { listStatuses, loadCachedStatuses, PulseStatus, statusPosterUrl } from "../api/status";
+import { listStatuses, loadCachedStatusesSnapshot, PulseStatus, statusPosterUrl } from "../api/status";
 import { HomePulseComposer } from "../components/HomePulseComposer";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { LogiNexusBadge, LogiNexusEmptyState, LogiNexusPanel } from "../components/LogiNexus";
@@ -38,6 +38,7 @@ import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
+import { describeAge } from "../core/sync/freshness";
 import { primaryMediaOf } from "../core/media/mediaDescriptors";
 import type { MediaDescriptor } from "../core/media/mediaIdentity";
 import { useAppForegrounded, useMediaPrefetch } from "../core/media/useMediaPrefetch";
@@ -139,6 +140,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const hasMoreRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const refreshingRef = useRef(false);
+  /**
+   * Increments per load so a late result can tell whether it still owns the
+   * screen. Needed because the cache read introduced a second await before the
+   * network one, and a tab switch between them would otherwise paint the
+   * previous tab's cached posts over the new tab.
+   */
+  const loadGenerationRef = useRef(0);
   const [posts, setPosts] = useState<PulsePost[]>([]);
   const bottomNavScroll = useBottomNavScrollVisibility({ enabled: posts.length > 0 });
   const [selectedFeed, setSelectedFeed] = useState(FEED_TABS[0].key);
@@ -146,6 +154,12 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [offline, setOffline] = useState(false);
+  /**
+   * Age of what is on screen, or null when it came from the network just now.
+   * Null is also what an entry cached before the envelope existed reports, and
+   * that is correct: unknown age must render no age rather than "just now".
+   */
+  const [feedAgeMs, setFeedAgeMs] = useState<number | null>(null);
   const [error, setError] = useState("");
   // Replaces a `busyPostId` scalar. A scalar cannot represent two cards acting at
   // once, and every social handler here only ever *wrote* it — nothing read it —
@@ -162,6 +176,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const [discoveryRefreshToken, setDiscoveryRefreshToken] = useState(0);
   const [statusLoading, setStatusLoading] = useState(true);
   const [statusOffline, setStatusOffline] = useState(false);
+  const [statusAgeMs, setStatusAgeMs] = useState<number | null>(null);
   const [statusError, setStatusError] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const ambientMotionEnabled = useHomeAmbientMotionEnabled();
@@ -335,15 +350,32 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     setStatusLoading(true);
     setStatusOffline(false);
     setStatusError("");
+    // Cache-first. The rail used to consult the cache only from the catch
+    // block, which means the copy on disk was reachable exclusively by failing
+    // — so a slow network showed empty circles for as long as it took, and a
+    // fast one showed them for as long as the round trip. Painting first turns
+    // both into a rail that is populated immediately and corrected in place.
+    let painted = false;
+    try {
+      const cached = await loadCachedStatusesSnapshot("for_you");
+      const cachedRail = cached.rail_items?.length ? cached.rail_items : cached.items || [];
+      if (cachedRail.length) {
+        setStatusItems(cachedRail);
+        setStatusAgeMs(cached.ageMs);
+        setStatusLoading(false);
+        painted = true;
+      }
+    } catch {
+      // A cache read that fails is not news; the network attempt below is the
+      // one whose failure the reader needs to hear about.
+    }
     try {
       const data = await listStatuses({ lane: "for_you" });
       const rail = data.rail_items?.length ? data.rail_items : data.items || [];
       setStatusItems(rail);
+      setStatusAgeMs(null);
     } catch (statusLoadError) {
-      const cached = await loadCachedStatuses("for_you");
-      const rail = cached.rail_items?.length ? cached.rail_items : cached.items || [];
-      if (rail.length) {
-        setStatusItems(rail);
+      if (painted) {
         setStatusOffline(true);
       } else {
         setStatusError(statusLoadError instanceof Error ? statusLoadError.message : "Status rail unavailable.");
@@ -369,18 +401,62 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         loadingMoreRef.current = true;
         setLoadingMore(true);
       }
+
+      // Cache-first, for `initial` only. A refresh is by definition a request
+      // to replace what is on screen, and `more` appends to it; repainting the
+      // cache under either would undo the reader's own action. Only the first
+      // load has nothing to lose and everything to gain.
+      //
+      // The generation counter guards the one ordering that matters: a tab
+      // switch that fires a second load while this cache read is still on the
+      // bridge. Without it the stale read lands afterwards and paints the
+      // previous tab's posts into the new tab.
+      const generation = (loadGenerationRef.current += 1);
+      let paintedFromCache = false;
+      if (mode === "initial") {
+        try {
+          const cached = await loadCachedFeedSnapshot(feedKey);
+          if (cached.posts.length && generation === loadGenerationRef.current) {
+            setPosts(cached.posts);
+            setFeedAgeMs(cached.ageMs);
+            offsetRef.current = cached.posts.length;
+            setLoading(false);
+            paintedFromCache = true;
+          }
+        } catch {
+          // Nothing usable on disk. The network attempt below is the real one.
+        }
+      }
+
       try {
         const data = await listFeed({ feed: feedKey, tab: feedKey, offset: nextOffset, limit: 20 });
-        setPosts((current) => (mode === "more" ? mergePosts(current, data.posts || []) : data.posts || []));
-        offsetRef.current = Number(data.next_offset || nextOffset + (data.posts?.length || 0));
-        hasMoreRef.current = Boolean(data.has_more);
+        // Superseded: a newer load owns the screen now. Returning early here
+        // would skip the `finally`, so the outcome is discarded rather than the
+        // function abandoned.
+        if (generation === loadGenerationRef.current) {
+          setPosts((current) => (mode === "more" ? mergePosts(current, data.posts || []) : data.posts || []));
+          setFeedAgeMs(null);
+          offsetRef.current = Number(data.next_offset || nextOffset + (data.posts?.length || 0));
+          hasMoreRef.current = Boolean(data.has_more);
+        }
       } catch (feedError) {
-        const cached = await loadCachedFeed(feedKey);
-        if (cached.length && mode !== "more") {
-          setPosts(cached);
-          setOffline(true);
-        } else {
-          setError(feedError instanceof Error ? feedError.message : "PulseSoc feed is unavailable.");
+        if (generation === loadGenerationRef.current) {
+          // `refresh` did not paint from cache, so it still needs the fallback —
+          // a failed pull-to-refresh on a cold list should show what is on disk
+          // rather than an error over an empty screen.
+          const cached =
+            paintedFromCache || mode === "more"
+              ? { posts: [] as PulsePost[], ageMs: null }
+              : await loadCachedFeedSnapshot(feedKey);
+          if (paintedFromCache || cached.posts.length) {
+            if (cached.posts.length) {
+              setPosts(cached.posts);
+              setFeedAgeMs(cached.ageMs);
+            }
+            setOffline(true);
+          } else {
+            setError(feedError instanceof Error ? feedError.message : "PulseSoc feed is unavailable.");
+          }
         }
       } finally {
         setLoading(false);
@@ -1031,9 +1107,11 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             statusItems={statusItems}
             statusLoading={statusLoading}
             statusOffline={statusOffline}
+            statusAgeMs={statusAgeMs}
             statusError={statusError}
             posts={posts}
             offline={offline}
+            ageMs={feedAgeMs}
             onOpenDrawer={openDrawer}
             onOpenSearch={openSearchTab}
             onOpenActivity={openActivityInbox}
@@ -1147,9 +1225,11 @@ const HomeHeader = memo(function HomeHeader({
   statusItems,
   statusLoading,
   statusOffline,
+  statusAgeMs,
   statusError,
   posts,
   offline,
+  ageMs,
   onOpenDrawer,
   onOpenSearch,
   onOpenActivity,
@@ -1181,9 +1261,11 @@ const HomeHeader = memo(function HomeHeader({
   statusItems: PulseStatus[];
   statusLoading: boolean;
   statusOffline: boolean;
+  statusAgeMs: number | null;
   statusError: string;
   posts: PulsePost[];
   offline: boolean;
+  ageMs: number | null;
   onOpenDrawer: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
@@ -1224,6 +1306,7 @@ const HomeHeader = memo(function HomeHeader({
             items={statusItems}
             loading={statusLoading}
             offline={statusOffline}
+            ageMs={statusAgeMs}
             error={statusError}
             onAddStatus={onAddStatus}
             onOpenStatus={onOpenStatus}
@@ -1241,6 +1324,11 @@ const HomeHeader = memo(function HomeHeader({
             onOpenRoute={onOpenRoute}
             onOpenPreview={onOpenPreview}
           />
+          {offline ? (
+            <Text style={styles.offlinePill} testID="home-feed-offline-pill">
+              {cachedNotice("Offline — showing saved posts", ageMs)}
+            </Text>
+          ) : null}
           <View style={styles.feedTabsWrap}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.feedTabs}>
               {feedTabs.map((tab) => (
@@ -1628,10 +1716,28 @@ function HeroMetricBlock({
   );
 }
 
+/**
+ * "Using cached metadata · 12m ago".
+ *
+ * The age is appended only when it is known. An entry written before cache
+ * entries carried timestamps reports null, and the sentence simply ends early
+ * — which is the honest rendering. Saying "just now" for an unknown age would
+ * be the app asserting freshness it cannot observe, over content that may be
+ * weeks old.
+ */
+function cachedNotice(base: string, ageMs: number | null): string {
+  const age = describeAge(ageMs);
+  if (!age) return `${base}.`;
+  if (age.unit === "now") return `${base} · updated just now.`;
+  const unit = age.unit === "minutes" ? "m" : age.unit === "hours" ? "h" : "d";
+  return `${base} · updated ${age.value}${unit} ago.`;
+}
+
 function StatusRail({
   items,
   loading,
   offline,
+  ageMs,
   error,
   onAddStatus,
   onOpenStatus,
@@ -1640,6 +1746,7 @@ function StatusRail({
   items: PulseStatus[];
   loading: boolean;
   offline: boolean;
+  ageMs: number | null;
   error: string;
   onAddStatus: () => void;
   onOpenStatus: (status: PulseStatus) => void;
@@ -1680,7 +1787,9 @@ function StatusRail({
           </Pressable>
         ))}
       </ScrollView>
-      {offline ? <Text style={styles.statusOffline}>Status rail is using cached metadata.</Text> : null}
+      {offline ? (
+        <Text style={styles.statusOffline}>{cachedNotice("Status rail is using cached metadata", ageMs)}</Text>
+      ) : null}
     </View>
   );
 }

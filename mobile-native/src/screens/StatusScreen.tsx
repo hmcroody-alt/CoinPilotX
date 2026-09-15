@@ -17,7 +17,7 @@ import {
   DEFAULT_STATUS_REACTION,
   deleteStatus,
   listStatuses,
-  loadCachedStatuses,
+  loadCachedStatusesSnapshot,
   PulseStatus,
   pulseStatusUrl,
   reactToStatus,
@@ -36,6 +36,7 @@ import { mutePostAuthor } from "../api/feed";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { blockPulseUser, reportPulseTarget } from "../api/support";
 import { registerSyncInvalidation } from "../core/eventSync";
+import { describeAge } from "../core/sync/freshness";
 import { primaryMediaList } from "../core/media/mediaDescriptors";
 import { useAppForegrounded, useMediaPrefetch, usePagerDirection, useRouteFocused } from "../core/media/useMediaPrefetch";
 import { StatusCreator } from "../components/StatusCreator";
@@ -56,6 +57,19 @@ type Props = {
 
 const LANE = "for_you";
 
+/**
+ * The age is appended only when it is known. A cache entry written before
+ * entries carried timestamps reports null, and the subtitle ends early rather
+ * than asserting a freshness the app cannot observe.
+ */
+function savedStatusSubtitle(ageMs: number | null): string {
+  const age = describeAge(ageMs);
+  if (!age) return "Showing saved Status";
+  if (age.unit === "now") return "Showing saved Status · just now";
+  const unit = age.unit === "minutes" ? "m" : age.unit === "hours" ? "h" : "d";
+  return `Showing saved Status · ${age.value}${unit} ago`;
+}
+
 export function StatusScreen({ route, navigation }: Props) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
   // reserves the matching clearance so the last row never sits under the dock.
@@ -67,6 +81,8 @@ export function StatusScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
+  /** Age of what is shown; null when it is live, and null when it is unknown. */
+  const [ageMs, setAgeMs] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [muted, setMuted] = useState(false);
@@ -93,17 +109,46 @@ export function StatusScreen({ route, navigation }: Props) {
     setOffline(false);
     if (mode === "initial") setLoading(true);
     if (mode === "refresh") setRefreshing(true);
+
+    // Cache-first on the initial load only. A refresh is the reader explicitly
+    // asking for new content, so repainting the same cached items under them
+    // would answer a different question than the one they asked.
+    let paintedFromCache = false;
+    if (mode === "initial") {
+      try {
+        const cached = await loadCachedStatusesSnapshot(LANE);
+        if (cached.items.length) {
+          setItems(focusInitialStatus(cached.items, initialStatusId));
+          setRailItems(cached.rail_items);
+          setAgeMs(cached.ageMs);
+          setLoading(false);
+          // Deliberately not setting `viewerIndex` here. Opening a viewer is
+          // the one thing a cached paint must not do on its own: the deep link
+          // that carried `initialStatusId` may point at a status that expired
+          // hours ago, and a full-screen viewer over stale media is a worse
+          // answer than the list the reader can act on.
+          paintedFromCache = true;
+        }
+      } catch {
+        // No usable cache. The network attempt below is the one that matters.
+      }
+    }
+
     try {
       const data = await listStatuses({ lane: LANE });
       const nextItems = focusInitialStatus(data.items || [], initialStatusId);
       setItems(nextItems);
       setRailItems(data.rail_items || []);
+      setAgeMs(null);
       if (initialStatusId && nextItems.length) setViewerIndex(Math.max(0, nextItems.findIndex((item) => item.id === initialStatusId)));
     } catch (err) {
-      const cached = await loadCachedStatuses(LANE);
-      if (cached.items.length) {
+      const cached = paintedFromCache ? null : await loadCachedStatusesSnapshot(LANE);
+      if (paintedFromCache) {
+        setOffline(true);
+      } else if (cached && cached.items.length) {
         setItems(focusInitialStatus(cached.items, initialStatusId));
         setRailItems(cached.rail_items);
+        setAgeMs(cached.ageMs);
         setOffline(true);
         if (initialStatusId) setViewerIndex(0);
       } else {
@@ -272,7 +317,7 @@ export function StatusScreen({ route, navigation }: Props) {
             <View style={styles.headerRow}>
               <View>
                 <Text style={styles.title}>Status</Text>
-                <Text style={styles.subtitle}>{offline ? "Showing saved Status" : "PulseSoc native Status"}</Text>
+                <Text style={styles.subtitle}>{offline ? savedStatusSubtitle(ageMs) : "PulseSoc native Status"}</Text>
               </View>
               <View style={styles.headerActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Open Status camera" style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "status", mode: "status", title: "Status Camera" })}>
