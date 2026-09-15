@@ -1784,10 +1784,10 @@ def _store_derived_thumbnail(row: Any, temp_path: str) -> str:
     return key
 
 
-def _ffprobe_value(path: Path, entry: str) -> str:
+def _ffprobe_value(path: Path, entry: str, *select: str) -> str:
     try:
         completed = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", entry, "-of", "default=nw=1:nk=1", str(path)],
+            ["ffprobe", "-v", "error", *select, "-show_entries", entry, "-of", "default=nw=1:nk=1", str(path)],
             capture_output=True, text=True, timeout=45, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -1807,12 +1807,26 @@ def _probe_duration_ms(path: Path) -> int | None:
 
 
 def _probe_dimensions(path: Path) -> tuple[int, int] | None:
-    raw = _ffprobe_value(path, "stream=width,height")
-    values = [line.strip() for line in raw.splitlines() if line.strip().isdigit()]
-    if len(values) < 2:
+    """The largest video stream, which for a tiled image is not the first one.
+
+    An iPhone HEIC is routinely a grid: ffprobe reports one stream per tile
+    ahead of the full image. Production attachment 80 has 95 streams -- sixty
+    512x512 tiles before the 2016x1512 photo -- so reading the first pair stored
+    a square size for a 4:3 picture, and every bubble laid out from those values
+    reserved a square box. Attachment 79 had the same shape.
+
+    Single-stream media is unaffected: one pair in, the same pair out, which is
+    what keeps the generated-thumbnail assertions honest.
+    """
+    # -select_streams v so a subtitle or data stream cannot contribute an N/A
+    # into the positional pairing below.
+    raw = _ffprobe_value(path, "stream=width,height", "-select_streams", "v")
+    values = [int(line.strip()) for line in raw.splitlines() if line.strip().isdigit()]
+    pairs = [(values[i], values[i + 1]) for i in range(0, len(values) - 1, 2)]
+    candidates = [pair for pair in pairs if pair[0] > 0 and pair[1] > 0]
+    if not candidates:
         return None
-    width, height = int(values[0]), int(values[1])
-    return (width, height) if width > 0 and height > 0 else None
+    return max(candidates, key=lambda pair: pair[0] * pair[1])
 
 
 def _extract_video_poster(path: Path, duration_ms: int | None) -> str:
