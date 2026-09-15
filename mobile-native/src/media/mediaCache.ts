@@ -294,6 +294,40 @@ export async function lookupCachedMedia(key: string): Promise<MediaCacheEntry | 
 }
 
 /**
+ * Ask whether a key is present and intact, without counting as a use.
+ *
+ * `lookupCachedMedia` is the read path: it bumps the LRU and emits hit/miss
+ * telemetry, both correct when something is about to consume the bytes. Asking
+ * "what do I hold for this media?" is a different question — a playback-state
+ * report probes several renditions per asset and would otherwise fabricate a
+ * miss for every rendition that was never supposed to exist, and keep entries
+ * alive purely by inspecting them.
+ *
+ * Integrity is still verified, and a bad entry is still dropped. A peek that
+ * skipped verification would be the one thing worse than no peek: it would
+ * report a vanished file as cached.
+ */
+export async function peekCachedMedia(key: string): Promise<MediaCacheEntry | null> {
+  if (!key) return null;
+  const index = await readIndex();
+  const entry = index[key];
+  if (!entry) return null;
+
+  if (maxAgeMs > 0 && Date.now() - entry.createdAt > maxAgeMs) {
+    await dropEntries([entry], "age");
+    return null;
+  }
+
+  const info = await getInfoAsync(entry.fileUri).catch(() => ({ exists: false }) as { exists: boolean });
+  const size = Number((info as { size?: number }).size || 0);
+  if (!info.exists || (entry.bytes > 0 && size !== entry.bytes)) {
+    await dropEntries([entry], "corrupt");
+    return null;
+  }
+  return entry;
+}
+
+/**
  * Make room for `bytes`, or refuse.
  *
  * Called before a download starts rather than after it fails, so the user is

@@ -18,9 +18,20 @@ import {
 
 const { DRAFT_CACHE_KEY, AUTOSAVE_DEBOUNCE_MS } = __testing;
 
+/**
+ * Read what is actually durable, deliberately bypassing `readJsonCache`.
+ *
+ * Going through the cache helper would be served by its memory tier and would
+ * pass even if nothing ever reached storage, which is the one thing these tests
+ * exist to prove. So this reads the raw record — and therefore has to unwrap the
+ * cache's storage envelope, which carries the value alongside the timestamp that
+ * makes "last updated" a measurement rather than a guess.
+ */
 async function storedDraft(): Promise<ListingDraft | null> {
   const raw = await AsyncStorage.getItem(DRAFT_CACHE_KEY);
-  return raw ? (JSON.parse(raw) as ListingDraft) : null;
+  if (!raw) return null;
+  const parsed = JSON.parse(raw) as { v?: number; value?: ListingDraft };
+  return (parsed?.v === 1 && parsed.value ? parsed.value : (parsed as ListingDraft)) ?? null;
 }
 
 beforeEach(async () => {
