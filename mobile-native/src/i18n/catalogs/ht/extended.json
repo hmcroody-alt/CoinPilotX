@@ -374,6 +374,8 @@
       "a11yGalleryPhotoPosition": "Foto {{sender}}, {{position}} sou {{total}}",
       "a11yGalleryVideoPosition": "Videyo {{sender}}, {{position}} sou {{total}}",
       "a11yGifAttachment": "{{label}}. Atachman GIF.",
+      "a11yGridPhotoTile": "{{label}}. Foto {{position}} sou {{total}}.",
+      "a11yGridVideoTile": "{{label}}. Videyo {{position}} sou {{total}}.",
       "a11yImageAttachment": "{{label}}. Atachman imaj.",
       "a11yOpenControls": "Louvri kontwòl konvèsasyon an",
       "a11yOpenUndxResult": "Louvri rezilta {{type}} a",

@@ -90,6 +90,46 @@ describe("the bubble's only job", () => {
   });
 });
 
+describe("a multi-media message's tiles", () => {
+  /**
+   * MUTATION §37: "tapping the third photo of a multi-photo message opens a
+   * different photo". `messageMediaTiles.test.ts` proves the tile and the
+   * collection entry share a key; this proves the screen actually seeds from
+   * the tile. A grid that seeded from `message` would hand every tile the first
+   * attachment's identity — three tiles, all opening photo one.
+   */
+  it("seeds each tile's open from that tile, not from the message", () => {
+    expect(chatScreen).toMatch(/gallerySeedFromMessage\(tile\)/);
+  });
+
+  /**
+   * The grid decision must be made before the single-attachment grant is
+   * consulted. Every branch below reads `mediaUrl`, which is the grant for
+   * attachment *one*; `if (!mediaUrl) return null` sits among them. A grid
+   * placed after that line renders nothing for a three-photo message whose
+   * first photo happens to be the one that failed — and renders correctly for
+   * every message where it did not, which is how it would survive review.
+   */
+  it("decides on the grid before the first attachment's grant can veto it", () => {
+    const gridBranch = chatScreen.indexOf("if (isMultiMediaMessage(mediaTiles))");
+    const singleGrantVeto = chatScreen.indexOf("if (!mediaUrl) return null;");
+    expect(gridBranch).toBeGreaterThan(-1);
+    expect(singleGrantVeto).toBeGreaterThan(-1);
+    expect(gridBranch).toBeLessThan(singleGrantVeto);
+  });
+
+  /**
+   * Each tile needs its own short-lived grant, which needs its own hook, which
+   * is only possible in a per-tile component. A grid that reused the bubble's
+   * single `mediaAccess` would point every tile at the same URL.
+   */
+  it("gives every tile its own media grant", () => {
+    expect(chatScreen).toMatch(/function MediaGridTile\(/);
+    const tileBody = chatScreen.slice(chatScreen.indexOf("function MediaGridTile("));
+    expect(tileBody.slice(0, 1200)).toMatch(/useMessengerMediaAccessUrl\(\s*\{\s*mediaUploadId: tile\.mediaUploadId/);
+  });
+});
+
 describe("no audio-session reach from the gallery", () => {
   /**
    * The realtime-audio policy, restated where it can be broken: pausing a

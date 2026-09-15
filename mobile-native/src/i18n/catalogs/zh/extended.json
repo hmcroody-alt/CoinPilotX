@@ -374,6 +374,8 @@
       "a11yGalleryPhotoPosition": "{{sender}} 的照片，第 {{position}} 张，共 {{total}} 张",
       "a11yGalleryVideoPosition": "{{sender}} 的视频，第 {{position}} 个，共 {{total}} 个",
       "a11yGifAttachment": "{{label}}。GIF 附件。",
+      "a11yGridPhotoTile": "{{label}}。第 {{position}} 张照片，共 {{total}} 张。",
+      "a11yGridVideoTile": "{{label}}。第 {{position}} 个视频，共 {{total}} 个。",
       "a11yImageAttachment": "{{label}}。图片附件。",
       "a11yOpenControls": "打开对话设置",
       "a11yOpenUndxResult": "打开{{type}}结果",

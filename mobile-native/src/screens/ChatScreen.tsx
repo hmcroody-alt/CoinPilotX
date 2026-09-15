@@ -73,6 +73,8 @@ import {
   useConversationGallery
 } from "../media/ConversationMediaGalleryHost";
 import { gallerySeedFromMessage, useConversationMediaGallery } from "../media/useConversationMediaGallery";
+import { ConversationMediaItem } from "../media/conversationMediaCollection";
+import { isMultiMediaMessage, mediaTileColumns, messageMediaTiles } from "../media/messageMediaTiles";
 import {
   MessengerMediaAccessState,
   MessengerMediaMeta,
@@ -2296,6 +2298,33 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   const retryMedia = mediaAccess.retry;
   const mediaUrl = absoluteMediaUrl(mediaAccess.url);
   const thumbnailUrl = absoluteMediaUrl(mediaAccess.thumbnailUrl);
+  /**
+   * §21. The message's own attachments, split back into tiles.
+   *
+   * `firstAttachment` in api/messenger.ts flattens a message down to its first
+   * attachment, which is lossless for anything the mobile composer sends — it
+   * sends exactly one — and quietly drops media for anything the web composer
+   * sends, which may send several. A three-photo message rendered as one photo
+   * with the other two reachable from nowhere.
+   *
+   * Memoised because it feeds a child component's props; the function itself is
+   * pure and cheap, but a fresh array every render re-renders the whole grid.
+   */
+  const mediaTiles = useMemo(
+    () => messageMediaTiles(Number(message.id || message.message_id || 0), message.attachments),
+    [message.attachments, message.id, message.message_id]
+  );
+  /**
+   * The grid decision is made before the single-media grant is consulted at all.
+   *
+   * Every branch below this point reads `mediaUrl`, which is the grant for
+   * attachment *one*. A multi-photo message must not be gated on it: each tile
+   * carries its own identity and fetches its own grant, so a message whose first
+   * photo failed still renders the other two.
+   */
+  if (isMultiMediaMessage(mediaTiles)) {
+    return <MessageMediaGrid message={message} tiles={mediaTiles} />;
+  }
   if ((type === "image" || type === "gif") && mediaAccess.failed && !mediaUrl) {
     return (
       <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Image unavailable.`} style={styles.voiceUnavailable}>
@@ -2384,6 +2413,116 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     return <VideoMessageCard message={message} access={mediaAccess} onOpen={openInGallery} />;
   }
   return <DocumentAttachmentCard message={message} url={mediaUrl} />;
+}
+
+/** Gap between tiles. Small enough that the grid reads as one object. */
+const MEDIA_TILE_GAP = 3;
+
+/**
+ * §21: several photos in one message, as a grid of individually tappable tiles.
+ *
+ * The grid is laid out at the same bubble width as a single photo so a thread
+ * containing both does not visibly change column. Each tile is square — a grid
+ * of mixed aspect ratios reads as a broken layout rather than a deliberate one,
+ * and the true ratio is one tap away in the viewer.
+ *
+ * What makes this more than a layout: every tile opens the *conversation*
+ * gallery seeded with its own item. Tile 3 therefore lands on the third photo
+ * of the message wherever that photo sits among the conversation's 43, because
+ * the tile and the collection entry are the same object with the same key.
+ */
+function MessageMediaGrid({ message, tiles }: { message: MessengerMessage; tiles: ConversationMediaItem[] }) {
+  const { width: windowWidth } = useWindowDimensions();
+  const gallery = useConversationGallery();
+  const columns = mediaTileColumns(tiles.length);
+  const gridWidth = Math.min(MEDIA_MAX_WIDTH, Math.round(windowWidth * MEDIA_WIDTH_RATIO));
+  const tileSize = Math.floor((gridWidth - MEDIA_TILE_GAP * (columns - 1)) / columns);
+  return (
+    <View style={[styles.mediaGrid, { width: gridWidth }]}>
+      {tiles.map((tile, position) => (
+        <MediaGridTile
+          key={tile.key}
+          message={message}
+          tile={tile}
+          size={tileSize}
+          position={position + 1}
+          total={tiles.length}
+          onOpen={() => gallery?.open(gallerySeedFromMessage(tile))}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One tile.
+ *
+ * This is a component rather than a loop body because it needs a hook per tile —
+ * `useMessengerMediaAccessUrl` grants a short-lived URL for one identity, and
+ * hooks cannot be called in a loop over a variable-length array. A tile failing
+ * to load is therefore local to that tile: a three-photo message with one dead
+ * object shows two photos and one legible failure, not an empty bubble.
+ *
+ * The preview is the *thumbnail*, and falls back to the original only once the
+ * rendition is known not to be coming. Three tiles pulling three full-resolution
+ * originals to paint squares a hundred points wide is the same mistake the
+ * single-photo card already learned not to make, multiplied.
+ */
+function MediaGridTile({
+  message,
+  tile,
+  size,
+  position,
+  total,
+  onOpen
+}: {
+  message: MessengerMessage;
+  tile: ConversationMediaItem;
+  size: number;
+  position: number;
+  total: number;
+  onOpen: () => void;
+}) {
+  const { t } = useTranslation();
+  const access = useMessengerMediaAccessUrl(
+    { mediaUploadId: tile.mediaUploadId, attachmentId: tile.attachmentId },
+    tile.url
+  );
+  const url = absoluteMediaUrl(access.url);
+  const thumbnail = absoluteMediaUrl(access.thumbnailUrl);
+  const previewUrl = thumbnail || (isPreviewTerminal(access.meta.processingStatus) ? url : "");
+  const label = tile.kind === "video"
+    ? t("messaging:chat.a11yGridVideoTile", { position, total, label: messageAccessibilityLabel(message) })
+    : t("messaging:chat.a11yGridPhotoTile", { position, total, label: messageAccessibilityLabel(message) });
+  return (
+    <Pressable
+      accessibilityRole="imagebutton"
+      accessibilityLabel={label}
+      accessibilityHint={t("messaging:chat.a11yOpensViewer")}
+      onPress={onOpen}
+      style={[styles.mediaTile, { height: size, width: size }]}
+    >
+      {previewUrl ? (
+        <MediaPreviewImage
+          uri={previewUrl}
+          fallbackUri={isPreviewTerminal(access.meta.processingStatus) ? url : ""}
+          onRetry={access.retry}
+        />
+      ) : (
+        <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
+          <ActivityIndicator color={colors.muted} size="small" />
+        </View>
+      )}
+      {/* A video tile has to say it is a video before it is opened — a poster
+          frame alone is indistinguishable from a photo. The badge is scaled
+          down from the single-card one so it does not swallow a small tile. */}
+      {tile.kind === "video" ? (
+        <View pointerEvents="none" style={styles.mediaTilePlayBadge}>
+          <Ionicons name="play" size={14} color="#04110c" />
+        </View>
+      ) : null}
+    </Pressable>
+  );
 }
 
 /**
@@ -3150,6 +3289,22 @@ const styles = StyleSheet.create({
     position: "relative"
   },
   mediaFill: { height: "100%", width: "100%" },
+  // §21. `gap` rather than per-tile margins so the grid's outer edge lines up
+  // with a single photo's — a margin-based grid is inset by half a gap on every
+  // side and reads as a narrower card sitting inside the bubble.
+  mediaGrid: { borderRadius: 14, flexDirection: "row", flexWrap: "wrap", gap: MEDIA_TILE_GAP, overflow: "hidden" },
+  mediaTile: { backgroundColor: colors.surfaceRaised, overflow: "hidden", position: "relative" },
+  mediaTilePlayBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 13,
+    bottom: 6,
+    height: 26,
+    justifyContent: "center",
+    left: 6,
+    position: "absolute",
+    width: 26
+  },
   mediaPlaceholder: { alignItems: "center", justifyContent: "center" },
   // Absolute so it sits over the `<Image>` it is covering rather than pushing it
   // out of the frame.

@@ -409,6 +409,8 @@
       "a11yGalleryPhotoPosition": "صورة من {{sender}}، {{position}} من {{total}}",
       "a11yGalleryVideoPosition": "فيديو من {{sender}}، {{position}} من {{total}}",
       "a11yGifAttachment": "{{label}}. مرفق GIF.",
+      "a11yGridPhotoTile": "{{label}}. صورة {{position}} من {{total}}.",
+      "a11yGridVideoTile": "{{label}}. فيديو {{position}} من {{total}}.",
       "a11yImageAttachment": "{{label}}. مرفق صورة.",
       "a11yOpenControls": "فتح عناصر التحكم في المحادثة",
       "a11yOpenUndxResult": "فتح نتيجة {{type}}",

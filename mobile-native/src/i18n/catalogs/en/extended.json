@@ -377,6 +377,8 @@
       "a11yGalleryPhotoPosition": "Photo from {{sender}}, {{position}} of {{total}}",
       "a11yGalleryVideoPosition": "Video from {{sender}}, {{position}} of {{total}}",
       "a11yGifAttachment": "{{label}}. GIF attachment.",
+      "a11yGridPhotoTile": "{{label}}. Photo {{position}} of {{total}}.",
+      "a11yGridVideoTile": "{{label}}. Video {{position}} of {{total}}.",
       "a11yImageAttachment": "{{label}}. Image attachment.",
       "a11yOpenControls": "Open conversation controls",
       "a11yOpenUndxResult": "Open {{type}} result",

@@ -374,6 +374,8 @@
       "a11yGalleryPhotoPosition": "{{sender}}님의 사진, {{total}}개 중 {{position}}번째",
       "a11yGalleryVideoPosition": "{{sender}}님의 동영상, {{total}}개 중 {{position}}번째",
       "a11yGifAttachment": "{{label}}. GIF 첨부파일.",
+      "a11yGridPhotoTile": "{{label}}. 사진 {{total}}개 중 {{position}}번째.",
+      "a11yGridVideoTile": "{{label}}. 동영상 {{total}}개 중 {{position}}번째.",
       "a11yImageAttachment": "{{label}}. 이미지 첨부파일.",
       "a11yOpenControls": "대화 관리 열기",
       "a11yOpenUndxResult": "{{type}} 결과 열기",
