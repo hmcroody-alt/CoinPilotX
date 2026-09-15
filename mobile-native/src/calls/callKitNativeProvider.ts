@@ -133,6 +133,22 @@ export function createNativeCallKitProvider(): NativeCallKitProvider | null {
     onVoipToken(cb): Unsubscribe {
       VoipPushNotification.addEventListener("register", (token: string) => cb(token));
 
+      // The pod buffers any event emitted while JS had no listener and replays the whole
+      // backlog as a single `didLoadWithEvents` at the moment the first listener attaches.
+      // PushKit hands iOS the cached VoIP token during launch — before React Native is
+      // running — so on every relaunch the real token is already sitting in that backlog
+      // and arrives here, wrapped, rather than as a plain `register`. Reading only
+      // `register` means the token is visible exactly once per install and never again.
+      VoipPushNotification.addEventListener("didLoadWithEvents", ((
+        events: Array<{ name: string; data: unknown }>
+      ) => {
+        (events || []).forEach((event) => {
+          if (event?.name === "RNVoipPushRemoteNotificationsRegisteredEvent" && event.data) {
+            cb(String(event.data));
+          }
+        });
+      }) as never);
+
       // Every VoIP push also arrives here, after AppDelegate has already reported it to
       // CallKit. Nothing needs to be *displayed* from JS — that work is done — but the
       // call id ↔ UUID mapping only exists natively at this point, and the rest of the app
@@ -149,6 +165,7 @@ export function createNativeCallKitProvider(): NativeCallKitProvider | null {
 
       return () => {
         VoipPushNotification.removeEventListener("register");
+        VoipPushNotification.removeEventListener("didLoadWithEvents");
         VoipPushNotification.removeEventListener("notification");
       };
     }

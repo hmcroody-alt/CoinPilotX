@@ -74,7 +74,6 @@ export async function initNativeCallKit(callbacks: CallKitCallbacks = {}) {
   if (initialized || !isNativeCallKitEnabled() || !provider) return;
   initialized = true;
   await provider.setup();
-  provider.registerVoipToken();
   subscriptions.push(
     provider.onVoipToken((token) => {
       if (!token) return;
@@ -98,6 +97,21 @@ export async function initNativeCallKit(callbacks: CallKitCallbacks = {}) {
       callbacks.onEnded?.(callId);
     })
   );
+
+  // Strictly after the listeners above exist. AppDelegate creates the PKPushRegistry at
+  // launch, so by the time JS runs, `voipRegistration` is already registered and this call
+  // takes the pod's early-return branch: it re-emits the *cached* token immediately and
+  // synchronously. The pod drops an emission that has no listener attached — it diverts it
+  // into `_delayedEvents` — so calling this first threw the token away.
+  //
+  // That race is why a device registers on its first launch after install and never again.
+  // On first launch PushKit has no token yet, so the real `didUpdate` lands later, after JS
+  // subscribed, and registration works. On every relaunch iOS hands over the cached token
+  // before React Native is up, so both that emission and this replay were discarded, and
+  // the device silently kept whatever token the server already had. Once the server revokes
+  // that token the phone can never re-register, alert-push suppression stops applying, and
+  // incoming calls permanently downgrade to a banner instead of CallKit.
+  provider.registerVoipToken();
 }
 
 export function reportIncomingCallKit(incoming: CallKitIncoming) {
