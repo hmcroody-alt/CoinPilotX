@@ -23,13 +23,13 @@ const mockListFeed = jest.fn();
 const mockAuthState = { user: { user_id: 7 } };
 const mockGetMyProfile = jest.fn();
 const mockGetPublicProfile = jest.fn();
-const mockLoadCachedProfile = jest.fn();
+const mockLoadCachedProfileEntry = jest.fn();
 
 jest.mock("../../api/profile", () => ({
   getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
-  loadCachedProfile: (...args: unknown[]) => mockLoadCachedProfile(...args),
+  loadCachedProfileEntry: (...args: unknown[]) => mockLoadCachedProfileEntry(...args),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
 }));
@@ -70,10 +70,19 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/**
+ * What `loadCachedProfileEntry` resolves to: the profile plus how old it is.
+ * The age travels with the value rather than beside it, so a cached paint can
+ * say when it was written without a second read that might disagree.
+ */
+function cachedEntry(value: Record<string, unknown>, ageMs = 60_000) {
+  return { value, storedAt: Date.now() - ageMs, ageMs };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockAuthState.user = { user_id: 7 };
-  mockLoadCachedProfile.mockResolvedValue(null);
+  mockLoadCachedProfileEntry.mockResolvedValue(null);
   mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Roody Cherie", username: "roodycherie", post_count: 4 });
   mockGetPublicProfile.mockResolvedValue({ user_id: 8, display_name: "Maria Cherie", username: "mariacherie", post_count: 5 });
   mockListFeed.mockResolvedValue({ posts, next_offset: 1, has_more: false });
@@ -137,7 +146,7 @@ describe("stale-while-revalidate paint", () => {
   it("paints the cached profile while the canonical request is still in flight", async () => {
     const profile = deferred<Record<string, unknown>>();
     mockGetMyProfile.mockReturnValue(profile.promise);
-    mockLoadCachedProfile.mockResolvedValue({ user_id: 7, display_name: "Cached Roody", post_count: 4 });
+    mockLoadCachedProfileEntry.mockResolvedValue(cachedEntry({ user_id: 7, display_name: "Cached Roody", post_count: 4 }));
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
@@ -150,7 +159,7 @@ describe("stale-while-revalidate paint", () => {
 
   it("never lets a slow cache read overwrite a canonical response that already landed", async () => {
     const cached = deferred<Record<string, unknown>>();
-    mockLoadCachedProfile.mockReturnValue(cached.promise);
+    mockLoadCachedProfileEntry.mockReturnValue(cached.promise);
     mockGetMyProfile.mockResolvedValue({ user_id: 7, display_name: "Canonical Roody", post_count: 4 });
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
@@ -158,7 +167,7 @@ describe("stale-while-revalidate paint", () => {
 
     // The disk read finally answers, with an older copy. Cache is display, not
     // authority: it must lose to a response that has already rendered.
-    cached.resolve({ user_id: 7, display_name: "Stale Roody", post_count: 4 });
+    cached.resolve(cachedEntry({ user_id: 7, display_name: "Stale Roody", post_count: 4 }));
     await waitFor(() => expect(screen.getByText("Canonical Roody")).toBeTruthy());
     expect(screen.queryByText("Stale Roody")).toBeNull();
   });
@@ -195,11 +204,11 @@ describe("stale-while-revalidate paint", () => {
 
   it("reuses the one cache read on the error path instead of hitting disk twice", async () => {
     mockGetMyProfile.mockRejectedValue(new Error("offline"));
-    mockLoadCachedProfile.mockResolvedValue({ user_id: 7, display_name: "Cached Roody", post_count: 4 });
+    mockLoadCachedProfileEntry.mockResolvedValue(cachedEntry({ user_id: 7, display_name: "Cached Roody", post_count: 4 }));
 
     const screen = render(<ProfileScreen navigation={{ navigate } as never} />);
 
     await waitFor(() => expect(screen.getByText("Cached Roody")).toBeTruthy());
-    expect(mockLoadCachedProfile).toHaveBeenCalledTimes(1);
+    expect(mockLoadCachedProfileEntry).toHaveBeenCalledTimes(1);
   });
 });

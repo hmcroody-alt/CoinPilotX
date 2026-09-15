@@ -4,7 +4,8 @@ import { AccessibilityInfo, Animated, FlatList, NativeScrollEvent, NativeSynthet
 import { Ionicons } from "@expo/vector-icons";
 import { deletePost, PulsePost, pulsePostUrl, reactToPost, repostPost, savablePostId } from "../api/feed";
 import { describeDeleteError } from "../api/deleteErrors";
-import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfile, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
+import { withCachedAge } from "../core/sync/ageLabel";
+import { getMyProfile, getPublicProfile, listPublicProfilePosts, loadCachedProfileEntry, profileErrorState, PulseProfile, toggleProfileFollow } from "../api/profile";
 import { MessengerUserSearchResult, openDirectConversation } from "../api/messenger";
 import { NativeProfileTarget, profileNavigationParams, profileTargetFromAuthor, resolveProfileTarget } from "../api/profileTarget";
 import { primaryMediaList } from "../core/media/mediaDescriptors";
@@ -59,6 +60,8 @@ export function ProfileScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [offline, setOffline] = useState(false);
+  /** Age of the cached profile on screen; null when it is live or unknown. */
+  const [ageMs, setAgeMs] = useState<number | null>(null);
   const [errorState, setErrorState] = useState<ReturnType<typeof profileErrorState> | null>(null);
   const [contentUnavailable, setContentUnavailable] = useState(false);
   const [actionMessage, setActionMessage] = useState("");
@@ -223,11 +226,12 @@ export function ProfileScreen({ route, navigation }: Props) {
     // has already landed.
     let settled = false;
     const cachedSeed = mode === "initial"
-      ? loadCachedProfile(owner ? "me" : profileTarget || profileKey).catch(() => null)
+      ? loadCachedProfileEntry(owner ? "me" : profileTarget || profileKey).catch(() => null)
       : null;
     cachedSeed?.then((cached) => {
       if (!cached || settled || !isCurrent()) return;
-      setProfile(cached);
+      setProfile(cached.value);
+      setAgeMs(cached.ageMs);
       setLoading(false);
     });
 
@@ -244,6 +248,7 @@ export function ProfileScreen({ route, navigation }: Props) {
       settled = true;
       if (!isCurrent()) return;
       setProfile(canonicalProfile);
+      setAgeMs(null);
       const canonicalTarget = profilePostTarget(canonicalProfile);
       // If the eager key disagrees with the server's canonical identity, the
       // grid we raced for belongs to a different lookup. Refetch rather than
@@ -266,10 +271,11 @@ export function ProfileScreen({ route, navigation }: Props) {
       settled = true;
       if (!isCurrent()) return;
       const mappedError = profileErrorState(loadError);
-      const cached = await (cachedSeed || loadCachedProfile(owner ? "me" : profileTarget || profileKey));
+      const cached = await (cachedSeed || loadCachedProfileEntry(owner ? "me" : profileTarget || profileKey));
       if (!isCurrent()) return;
       if (cached) {
-        setProfile(cached);
+        setProfile(cached.value);
+        setAgeMs(cached.ageMs);
         setOffline(Boolean(mappedError.offline || mappedError.retryable));
         setErrorState(mappedError.retryable ? mappedError : null);
         setContentUnavailable(true);
@@ -628,7 +634,7 @@ export function ProfileScreen({ route, navigation }: Props) {
             coverBusy={mediaBusy === "cover"}
           />
           <View style={styles.section}>
-            {offline ? <Text style={styles.offline}>Showing saved profile</Text> : null}
+            {offline ? <Text style={styles.offline}>{withCachedAge("Showing saved profile", ageMs)}</Text> : null}
             {errorState ? <Text style={styles.error}>{errorState.body}</Text> : null}
             {contentUnavailable ? (
               <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>

@@ -36,7 +36,7 @@ import { mutePostAuthor } from "../api/feed";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { blockPulseUser, reportPulseTarget } from "../api/support";
 import { registerSyncInvalidation } from "../core/eventSync";
-import { describeAge } from "../core/sync/freshness";
+import { withCachedAge } from "../core/sync/ageLabel";
 import { primaryMediaList } from "../core/media/mediaDescriptors";
 import { useAppForegrounded, useMediaPrefetch, usePagerDirection, useRouteFocused } from "../core/media/useMediaPrefetch";
 import { StatusCreator } from "../components/StatusCreator";
@@ -56,19 +56,6 @@ type Props = {
 };
 
 const LANE = "for_you";
-
-/**
- * The age is appended only when it is known. A cache entry written before
- * entries carried timestamps reports null, and the subtitle ends early rather
- * than asserting a freshness the app cannot observe.
- */
-function savedStatusSubtitle(ageMs: number | null): string {
-  const age = describeAge(ageMs);
-  if (!age) return "Showing saved Status";
-  if (age.unit === "now") return "Showing saved Status · just now";
-  const unit = age.unit === "minutes" ? "m" : age.unit === "hours" ? "h" : "d";
-  return `Showing saved Status · ${age.value}${unit} ago`;
-}
 
 export function StatusScreen({ route, navigation }: Props) {
   // Bottom-dock coupling: drives hide-on-scroll-down / reveal-on-scroll-up and
@@ -317,7 +304,7 @@ export function StatusScreen({ route, navigation }: Props) {
             <View style={styles.headerRow}>
               <View>
                 <Text style={styles.title}>Status</Text>
-                <Text style={styles.subtitle}>{offline ? savedStatusSubtitle(ageMs) : "PulseSoc native Status"}</Text>
+                <Text style={styles.subtitle}>{offline ? withCachedAge("Showing saved Status", ageMs) : "PulseSoc native Status"}</Text>
               </View>
               <View style={styles.headerActions}>
                 <Pressable accessibilityRole="button" accessibilityLabel="Open Status camera" style={styles.cameraButton} onPress={() => navigation.navigate("CameraStudio", { target: "status", mode: "status", title: "Status Camera" })}>

@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { FeedResponse, listFeed, normalizePosts, PulsePost } from "./feed";
 import { PulseApiError, pulseApi } from "./pulseApi";
+import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 import {
   NativeProfileTarget,
   ProfileTargetInput,
@@ -279,20 +280,27 @@ export async function listPublicProfilePosts(input: ProfileTargetInput | NativeP
   }
 }
 
-export async function loadCachedProfile(cacheKey: string | NativeProfileTarget = "me") {
+/**
+ * A cached profile together with what is known about its age.
+ *
+ * Profiles are the one cache that is also *written* by local edits — six
+ * `update*` helpers above read the cache, merge a field and write it back — so
+ * `storedAt` here means "when this client last had a complete picture", which
+ * is exactly what a header needs before it tells someone their own follower
+ * count is current.
+ */
+export async function loadCachedProfileEntry(cacheKey: string | NativeProfileTarget = "me") {
   const resolvedCacheKey = typeof cacheKey === "string" ? cacheKey : profileCacheKey(cacheKey);
-  try {
-    const cached = await AsyncStorage.getItem(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`);
-    if (!cached) return null;
-    return normalizeProfile(JSON.parse(cached) as PulseProfile);
-  } catch {
-    await AsyncStorage.removeItem(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`).catch(() => undefined);
-    return null;
-  }
+  return readJsonCacheEntry<PulseProfile>(`${PROFILE_CACHE_PREFIX}${resolvedCacheKey}`, normalizeProfile);
+}
+
+export async function loadCachedProfile(cacheKey: string | NativeProfileTarget = "me") {
+  const entry = await loadCachedProfileEntry(cacheKey);
+  return entry ? entry.value : null;
 }
 
 export async function cacheProfile(cacheKey: string, profile: PulseProfile) {
-  await AsyncStorage.setItem(`${PROFILE_CACHE_PREFIX}${cacheKey}`, JSON.stringify(profile));
+  await writeJsonCache(`${PROFILE_CACHE_PREFIX}${cacheKey}`, profile);
 }
 
 export async function cacheProfileAliases(target: NativeProfileTarget, profile: PulseProfile) {

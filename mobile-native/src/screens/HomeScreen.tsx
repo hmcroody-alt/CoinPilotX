@@ -38,7 +38,7 @@ import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
-import { describeAge } from "../core/sync/freshness";
+import { withCachedAge } from "../core/sync/ageLabel";
 import { primaryMediaOf } from "../core/media/mediaDescriptors";
 import type { MediaDescriptor } from "../core/media/mediaIdentity";
 import { useAppForegrounded, useMediaPrefetch } from "../core/media/useMediaPrefetch";
@@ -1326,7 +1326,7 @@ const HomeHeader = memo(function HomeHeader({
           />
           {offline ? (
             <Text style={styles.offlinePill} testID="home-feed-offline-pill">
-              {cachedNotice("Offline — showing saved posts", ageMs)}
+              {withCachedAge("Offline — showing saved posts", ageMs)}
             </Text>
           ) : null}
           <View style={styles.feedTabsWrap}>
@@ -1716,23 +1716,6 @@ function HeroMetricBlock({
   );
 }
 
-/**
- * "Using cached metadata · 12m ago".
- *
- * The age is appended only when it is known. An entry written before cache
- * entries carried timestamps reports null, and the sentence simply ends early
- * — which is the honest rendering. Saying "just now" for an unknown age would
- * be the app asserting freshness it cannot observe, over content that may be
- * weeks old.
- */
-function cachedNotice(base: string, ageMs: number | null): string {
-  const age = describeAge(ageMs);
-  if (!age) return `${base}.`;
-  if (age.unit === "now") return `${base} · updated just now.`;
-  const unit = age.unit === "minutes" ? "m" : age.unit === "hours" ? "h" : "d";
-  return `${base} · updated ${age.value}${unit} ago.`;
-}
-
 function StatusRail({
   items,
   loading,
@@ -1788,7 +1771,7 @@ function StatusRail({
         ))}
       </ScrollView>
       {offline ? (
-        <Text style={styles.statusOffline}>{cachedNotice("Status rail is using cached metadata", ageMs)}</Text>
+        <Text style={styles.statusOffline}>{withCachedAge("Status rail is using cached metadata", ageMs)}</Text>
       ) : null}
     </View>
   );

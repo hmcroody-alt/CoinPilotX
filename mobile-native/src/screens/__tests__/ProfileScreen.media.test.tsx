@@ -23,7 +23,7 @@ jest.mock("../../api/profile", () => ({
   getMyProfile: () => mockGetMyProfile(),
   getPublicProfile: (...args: unknown[]) => mockGetPublicProfile(...args),
   listPublicProfilePosts: (...args: unknown[]) => mockListFeed(...args),
-  loadCachedProfile: jest.fn(async () => null),
+  loadCachedProfileEntry: jest.fn(async () => null),
   profileErrorState: jest.fn(() => ({ title: "Error", body: "Error", retryable: true, offline: false })),
   toggleProfileFollow: jest.fn()
 }));
