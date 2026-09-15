@@ -29,6 +29,7 @@ import { isFlagValueOn } from "./src/core/envFlag";
 import { PerfOverlay } from "./src/components/PerfOverlay";
 import { TranslationPreferencesBootstrap } from "./src/components/TranslationPreferencesBootstrap";
 import { configurePulseShareCenter } from "./src/sharing/nativeShare";
+import { startOfflinePlatform, stopOfflinePlatform } from "./src/core/sync/offlinePlatform";
 
 // Captured at module evaluation so app.interactive reflects time-to-first-interactive-frame.
 const APP_MODULE_START = perfNow();
@@ -100,6 +101,14 @@ function AppRoot() {
   useEffect(() => {
     bootstrapSession();
   }, [bootstrapSession]);
+
+  // Started before anything renders, and deliberately not gated on sign-in:
+  // connectivity has to be measured during the session restore itself, since
+  // that request is usually the first evidence there is a network at all.
+  useEffect(() => {
+    startOfflinePlatform();
+    return stopOfflinePlatform;
+  }, []);
 
   const interactiveRecorded = useRef(false);
   useEffect(() => {
