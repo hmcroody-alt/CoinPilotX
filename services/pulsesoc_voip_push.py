@@ -262,6 +262,31 @@ def register_token(
     return {"ok": True, "status": "registered", "environment": env}
 
 
+def record_environment(cur: Any, *, token: str, environment: str) -> bool:
+    """Persist the APNs host that actually accepted this token.
+
+    Keyed on ``token_hash`` rather than the raw token because that column is the
+    indexed one. Best effort on purpose: if this write is lost the next push simply
+    mismatches and corrects itself again, so a failure here costs one extra APNs
+    request and never a missed call.
+    """
+    env = normalize_environment(environment)
+    token = str(token or "").strip()
+    if not env or not token:
+        return False
+    try:
+        now = _now()
+        cur.execute(
+            "UPDATE voip_push_tokens SET token_environment=?, updated_at=? WHERE token_hash=? AND active=1",
+            (env, now, _token_hash(token)),
+        )
+    except Exception:  # pragma: no cover - persistence is best effort
+        logging.debug("PULSESOC_VOIP_ENVIRONMENT_PERSIST_SKIPPED environment=%s", env)
+        return False
+    _event("voip_token_environment_recorded", environment=env, token_suffix=_token_suffix(token))
+    return True
+
+
 def revoke_token(cur: Any, *, user_id: int = 0, token: str = "", device_id: str = "", reason: str = "revoked") -> dict[str, Any]:
     """Deactivate VoIP tokens by token, by device, or for a whole account.
 
@@ -354,32 +379,33 @@ def _apns_jwt() -> str:
     )
 
 
-def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -> dict[str, Any]:
-    """Deliver one VoIP push.
+def other_environment(env: str) -> str:
+    """The APNs host that is not this one."""
+    return ENVIRONMENT_SANDBOX if env == ENVIRONMENT_PRODUCTION else ENVIRONMENT_PRODUCTION
+
+
+def _post_voip(token: str, payload: dict[str, Any], env: str) -> dict[str, Any]:
+    """One APNs request against one host. Makes no judgement about the answer.
 
     ``apns-push-type: voip`` and ``apns-priority: 10`` are both mandatory for the
     VoIP topic; APNs rejects the request otherwise. ``apns-expiration: 0`` says
     "deliver now or discard" — a call that could not be delivered while it was
     ringing must not arrive later and ring for a call that already ended.
-    """
-    if not is_configured():
-        return {"ok": False, "status": "config_missing", "message": "APNs VoIP is not configured."}
-    token = str(token or "").strip()
-    if not token:
-        return {"ok": False, "status": "skipped_no_device", "message": "VoIP token missing."}
 
-    env = normalize_environment(environment) or default_environment()
-    host = APNS_HOSTS[env]
+    Separated from ``send_voip_push`` so the same request can be replayed against
+    the other host without the first answer having already been interpreted as a
+    verdict on the token.
+    """
     try:
         import httpx
     except Exception as exc:  # pragma: no cover - dependency guard
-        return {"ok": False, "status": "config_missing", "message": f"APNs dependency missing: {type(exc).__name__}"}
+        return {"transport": "config_missing", "message": f"APNs dependency missing: {type(exc).__name__}"}
 
     try:
         auth_token = _apns_jwt()
         with httpx.Client(http2=True, timeout=10) as client:
             response = client.post(
-                f"{host}/3/device/{token}",
+                f"{APNS_HOSTS[env]}/3/device/{token}",
                 headers={
                     "authorization": f"bearer {auth_token}",
                     "apns-topic": voip_topic(),
@@ -391,30 +417,115 @@ def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -
             )
     except Exception as exc:
         _event("voip_push_failed", environment=env, token_suffix=_token_suffix(token), error=type(exc).__name__)
-        return {"ok": False, "status": "failed", "message": str(exc)[:200], "error_type": type(exc).__name__}
+        return {"transport": "failed", "message": str(exc)[:200], "error_type": type(exc).__name__}
 
-    apns_id = response.headers.get("apns-id", "")
-    if 200 <= response.status_code < 300:
+    return {
+        "transport": "responded",
+        "http_status": response.status_code,
+        "body": response.text or "",
+        "apns_id": response.headers.get("apns-id", ""),
+    }
+
+
+def _is_environment_mismatch(attempt: dict[str, Any]) -> bool:
+    """Whether this answer could just mean "right token, wrong host".
+
+    Only ``400 BadDeviceToken`` is ambiguous. ``410 Unregistered`` is a positive
+    statement that this host knew the token and the app is gone, and
+    ``DeviceTokenNotForTopic`` means an alert token reached the VoIP topic — a
+    registration bug the other host would reject identically, so replaying it
+    would only double the request.
+    """
+    return int(attempt.get("http_status") or 0) == 400 and "BadDeviceToken" in str(attempt.get("body") or "")
+
+
+def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -> dict[str, Any]:
+    """Deliver one VoIP push, correcting the APNs host if it was guessed wrong.
+
+    ``BadDeviceToken`` is what APNs answers both for a token that is genuinely dead
+    *and* for a perfectly live token offered to the wrong host — a sandbox token
+    (any build carrying ``aps-environment: development``) sent to
+    api.push.apple.com, or a production token sent to the sandbox. The client
+    cannot tell those two entitlements apart at runtime, which is why
+    ``register_token`` falls back to ``default_environment()``; that default is
+    deployment-wide, so it is simply wrong for every build signed against the other
+    entitlement. A deployment with ``APNS_USE_SANDBOX`` unset therefore misroutes
+    every development-signed device, which is exactly the configuration a physical
+    acceptance test runs in.
+
+    Reading that as a dead token is the expensive mistake, because ``_deliver``
+    revokes it — and since alert-push suppression is conditioned on an *active*
+    token, the phone then quietly reverts to the alert push and never rings through
+    CallKit again. The symptom is a device that rings once and then stops, which
+    reads like a CallKit bug and is not one.
+
+    So a ``BadDeviceToken`` is replayed once against the other host. If that is
+    accepted the token was live all along, and ``environment_corrected`` tells the
+    caller to persist the host that worked — so the extra request is paid once per
+    token rather than once per call. Only a token *both* hosts reject is dead. When
+    the replay also fails, the original answer is the one reported: the diagnosis
+    should name the configured environment, not the speculative one.
+    """
+    if not is_configured():
+        return {"ok": False, "status": "config_missing", "message": "APNs VoIP is not configured."}
+    token = str(token or "").strip()
+    if not token:
+        return {"ok": False, "status": "skipped_no_device", "message": "VoIP token missing."}
+
+    env = normalize_environment(environment) or default_environment()
+    attempt = _post_voip(token, payload, env)
+    corrected = False
+
+    if _is_environment_mismatch(attempt):
+        replay_env = other_environment(env)
+        replay = _post_voip(token, payload, replay_env)
+        if 200 <= int(replay.get("http_status") or 0) < 300:
+            _event(
+                "voip_push_environment_corrected",
+                token_suffix=_token_suffix(token),
+                was=env,
+                now=replay_env,
+            )
+            env, attempt, corrected = replay_env, replay, True
+
+    transport = str(attempt.get("transport") or "")
+    if transport == "config_missing":
+        return {"ok": False, "status": "config_missing", "message": str(attempt.get("message") or "")}
+    if transport == "failed":
+        return {
+            "ok": False,
+            "status": "failed",
+            "message": str(attempt.get("message") or ""),
+            "error_type": str(attempt.get("error_type") or ""),
+        }
+
+    http_status = int(attempt.get("http_status") or 0)
+    body = str(attempt.get("body") or "")
+    apns_id = str(attempt.get("apns_id") or "")
+
+    if 200 <= http_status < 300:
         _event("voip_push_accepted_by_apns", environment=env, token_suffix=_token_suffix(token), apns_id=apns_id)
-        return {"ok": True, "status": "sent", "apns_id": apns_id, "environment": env}
+        sent = {"ok": True, "status": "sent", "apns_id": apns_id, "environment": env}
+        if corrected:
+            sent["environment_corrected"] = env
+        return sent
 
-    body = response.text or ""
-    # 410 Unregistered, and 400 BadDeviceToken, both mean this token is dead.
-    # 400 DeviceTokenNotForTopic usually means an alert token reached the VoIP
-    # topic — also unusable here, and worth surfacing distinctly because it points
-    # at a registration bug rather than an uninstalled app.
-    invalid = response.status_code == 410 or (
-        response.status_code == 400 and ("BadDeviceToken" in body or "DeviceTokenNotForTopic" in body)
+    # 410 Unregistered, and a BadDeviceToken that both hosts rejected, mean this
+    # token is dead. DeviceTokenNotForTopic usually means an alert token reached
+    # the VoIP topic — also unusable here, and worth surfacing distinctly because
+    # it points at a registration bug rather than an uninstalled app.
+    invalid = http_status == 410 or (
+        http_status == 400 and ("BadDeviceToken" in body or "DeviceTokenNotForTopic" in body)
     )
     status = "invalid_device" if invalid else "failed"
     _event(
         "voip_push_rejected",
         environment=env,
         token_suffix=_token_suffix(token),
-        http_status=response.status_code,
+        http_status=http_status,
         apns_status=status,
     )
-    return {"ok": False, "status": status, "http_status": response.status_code, "message": body[:200], "apns_id": apns_id}
+    return {"ok": False, "status": status, "http_status": http_status, "message": body[:200], "apns_id": apns_id}
 
 
 # --------------------------------------------------------------------------
@@ -469,6 +580,10 @@ def _deliver(cur: Any, user_id: int, devices: list[dict[str, Any]], payload: dic
         token = str(device.get("voip_token") or "")
         result = send_voip_push(token, payload, str(device.get("token_environment") or ""))
         results.append({"device_id": device.get("device_id"), "status": result.get("status")})
+        if result.get("environment_corrected"):
+            # The recorded host was wrong and the other one worked. Write that down
+            # now so the next call costs one request instead of two.
+            record_environment(cur, token=token, environment=str(result.get("environment_corrected")))
         if result.get("status") == "invalid_device":
             revoke_token(cur, user_id=int(user_id), token=token, reason="apns_unregistered")
             continue

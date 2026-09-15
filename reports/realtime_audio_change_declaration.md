@@ -3382,3 +3382,128 @@ Three levels, cheapest first.
 
 None of these touch `realtimeAudioEngine.ts`, the Agora pins, or any livestream
 path, so none of them can regress audio on the way back out.
+
+---
+
+## Addendum — pod lock, the reverted Swift rename, and the APNs host correction (2026-09-15)
+
+Covers `e3a20a9a`, `b97341a0`, `86f0aaa1`, and this commit. No protected path's
+*behaviour* changes here; the reason a new declaration is owed is that
+`mobile-native/ios/Podfile.lock` is guarded by `dependency_watch` and was written
+after the previous declaration.
+
+### Why the change is required
+
+Three findings from actually building and reading, rather than from reasoning
+about, the work declared above.
+
+**1. The pods had to be locked.** The previous declaration described two pods
+added by autolinking, but `Podfile.lock` had not yet been regenerated against a
+completed `pod install`. It now is: `RNCallKeep (4.3.16)` on `React` and
+`RNVoipPushNotification (3.3.3)` on `React-Core`, both as `:path` development
+pods, **+12 lines and zero churn to any other pod** — the Agora, Expo and
+React-Native entries are byte-identical.
+
+**2. A Swift rename in `AppDelegate.swift` was wrong and is reverted.** I renamed
+three PushKit call sites to match the Objective-C selectors in the pod headers.
+Swift's importer applies *omit needless words*: a trailing noun restating the
+parameter's own type is deleted, so `didUpdatePushCredentials:forType:` imports
+as `didUpdate(_:forType:)`. The originals were right. Reverted in `b97341a0`.
+The mistake is documented in `reports/native_callkit_voip_integration.md`
+together with the `swiftc -typecheck` probe that catches it — `-parse` does not,
+being syntax-only, and a negative control is mandatory or a non-checking harness
+reads as clean. This class of error is invisible to `npm run verify`.
+
+**3. A wrong APNs host was being read as a dead token.** This is the only
+behaviour change in this addendum, and it is backend-only. `BadDeviceToken` is
+APNs' answer both for a genuinely dead token *and* for a live token offered to
+the wrong host. The client cannot distinguish a sandbox from a production
+`aps-environment` at runtime — `__DEV__` is false in a Release build that still
+carries `development` — so `register_token` records the deployment-wide
+`default_environment()`, which is simply wrong for every build signed against the
+other entitlement. Production has `APNS_USE_SANDBOX` unset, so **every
+development-signed device is misrouted**, which is precisely the configuration
+the physical acceptance matrix below runs in.
+
+Classifying that as dead is terminal, not transient: `_deliver` revokes the
+token, and because alert-push suppression is conditioned on an *active* token the
+handset silently reverts to the alert push and never rings through CallKit again.
+The symptom — rings once, then never — reads like a CallKit defect and is not
+one. It would have been diagnosed on the phone, at the user's expense.
+
+### Which feature required it
+
+The same one: iOS incoming-call delivery. Item 3 is a prerequisite for the
+physical matrix producing a meaningful result at all.
+
+### Which protected files changed
+
+| File | Manifest guard | Change |
+|---|---|---|
+| `mobile-native/ios/Podfile.lock` | `dependency_watch` | The two pods above. +12 lines, no other pod moved. |
+
+`services/pulsesoc_voip_push.py` is not a protected path and contains no audio
+code. `AppDelegate.swift` is not protected; its net diff across `e3a20a9a` and
+`b97341a0` is empty.
+
+### Expected behavior change
+
+A VoIP push that APNs rejects with `BadDeviceToken` is replayed **once** against
+the other host. If that is accepted, the token was live, the device rings, it is
+claimed for alert-push suppression exactly as any other accepted device, and the
+host that worked is written to `token_environment` so the correction is paid once
+per token rather than once per call. A token both hosts reject is still revoked.
+`410 Unregistered` and `DeviceTokenNotForTopic` are **not** replayed — the first
+is a positive statement that this host knew the token, the second is a client
+registration bug the other host would reject identically.
+
+No audio path, no client change, no new environment variable.
+
+### Regression risk
+
+The §21 audio-ownership risk recorded above is unchanged and still open; nothing
+here touches it.
+
+New risk introduced here is one extra APNs request in two cases: the first push
+to a misrouted device (then persisted away), and every push to a genuinely dead
+token until it is revoked — which happens on that same call. Bounded at one
+replay, no recursion, and it cannot itself cause a missed call: when the replay
+also fails, the *original* answer is the one reported, so the diagnosis still
+names the configured environment rather than the speculative one.
+
+The failure mode worth naming: the replay must not become a way for an
+uninstalled app to keep its token, because that token holds alert-push
+suppression for a handset that can no longer be rung — the one failure mode that
+ends in a silent phone. `test_a_token_both_hosts_reject_is_still_dead` pins that.
+
+### Tests run
+
+- `pytest tests/test_voip_pushkit_delivery.py` — **31 passed** (23 before, 8 added).
+- **Mutation check**, both reverted afterwards and the file confirmed free of markers:
+  - `_is_environment_mismatch` → `return False` (the pre-fix behaviour): **5 failed**,
+    including the live-token, both-directions, persistence and suppression-claim cases.
+  - the `record_environment` call in `_deliver` → dead branch: **exactly 1 failed**,
+    the persistence test and nothing else.
+- Swift call sites: `swiftc -typecheck` of all eight against the installed pod
+  headers, with a negative control that failed as required; then confirmed again
+  by the real build — `SwiftCompile … AppDelegate.swift (in target 'PulseSoc')`
+  with zero Swift or clang errors anywhere.
+- **Release device build: `** BUILD SUCCEEDED **`.** `UIBackgroundModes` in the
+  built `Info.plist` is `["audio", "voip", "fetch", "remote-notification"]`.
+- Bundle lineage proven against a main-lineage baseline bundle by an *inverting*
+  marker, not a present-in-both one: `generateUuidV4` 2 → **0**, `call_uuid` and
+  `didLoadWithEvents` 0 → **1**, with `PulseSocAgoraLive` steady at 1 as control.
+- No new `os.getenv`, so the environment-contract gate is unaffected.
+
+### Physical validation required
+
+Unchanged — the 12-case matrix above still has to pass on a real iPhone, and
+still has not. Item 3 of this addendum is what makes it runnable against the
+production backend with a development-signed build.
+
+### Rollback procedure
+
+The three levels above still apply. This addendum adds one narrower option:
+delete `_is_environment_mismatch`'s body to `return False` and the sender returns
+to its previous behaviour exactly, with no schema change to undo —
+`token_environment` already existed and already accepted both values.

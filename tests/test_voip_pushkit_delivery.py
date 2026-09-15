@@ -456,6 +456,189 @@ class ApnsContractTest(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# 15b. A wrong APNs host must not be mistaken for a dead token
+# ---------------------------------------------------------------------------
+
+
+def _scripted_httpx(script):
+    """An httpx stand-in that answers from `script` and records the hosts it saw.
+
+    `script` is a list of (status_code, body) answered in order. Returns the fake
+    module and the list of URLs posted to, so a test can assert both *what* APNs
+    replied and *how many* requests it took.
+    """
+    seen = []
+
+    class _Response:
+        def __init__(self, status, body):
+            self.status_code = status
+            self.text = body
+            self.headers = {"apns-id": "fake-apns-id"}
+
+    class _Client:
+        def __init__(self, *a, **kw):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def post(self, url, headers=None, json=None):
+            seen.append(url)
+            status, body = script[min(len(seen) - 1, len(script) - 1)]
+            return _Response(status, body)
+
+    return mock.Mock(Client=_Client), seen
+
+
+BAD_TOKEN = '{"reason":"BadDeviceToken"}'
+
+
+class ApnsEnvironmentCorrectionTest(VoipBase):
+    """`BadDeviceToken` means "wrong token OR wrong host" and cannot be read as either alone."""
+
+    def _send(self, script, environment=""):
+        fake, seen = _scripted_httpx(script)
+        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
+                mock.patch.dict(sys.modules, {"httpx": fake}):
+            result = voip.send_voip_push("devicetoken123", {"event": "incoming_call"}, environment)
+        return result, seen
+
+    def test_a_live_token_on_the_wrong_host_is_not_treated_as_dead(self):
+        """MUTATION: keep classifying every BadDeviceToken as invalid_device.
+
+        This is the whole failure this class exists for. A development-signed build
+        holds a *sandbox* token; a deployment with APNS_USE_SANDBOX unset records it
+        as `production` and sends it to api.push.apple.com, which answers
+        BadDeviceToken. Revoking there is terminal rather than transient: alert-push
+        suppression is conditioned on an *active* token, so the phone silently drops
+        back to the alert push and never rings through CallKit again.
+        """
+        result, seen = self._send([(400, BAD_TOKEN), (200, "")], environment="production")
+
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(result.get("status"), "sent")
+        self.assertEqual(result.get("environment"), "sandbox")
+        self.assertEqual(result.get("environment_corrected"), "sandbox")
+        self.assertEqual(len(seen), 2, "the push must be replayed against the other host")
+        self.assertTrue(seen[0].startswith("https://api.push.apple.com/"))
+        self.assertTrue(seen[1].startswith("https://api.sandbox.push.apple.com/"))
+
+    def test_the_correction_runs_in_both_directions(self):
+        """MUTATION: hard-code the replay host to sandbox.
+
+        A TestFlight build on a deployment with APNS_USE_SANDBOX=1 is the same bug
+        mirrored, and a one-way fix leaves exactly the release builds that matter
+        most unable to ring.
+        """
+        result, seen = self._send([(400, BAD_TOKEN), (200, "")], environment="sandbox")
+
+        self.assertTrue(result.get("ok"), result)
+        self.assertEqual(result.get("environment_corrected"), "production")
+        self.assertTrue(seen[1].startswith("https://api.push.apple.com/"))
+
+    def test_a_token_both_hosts_reject_is_still_dead(self):
+        """MUTATION: treat the replay as proof the token is alive.
+
+        The retry must not become a way for a genuinely uninstalled app to keep its
+        token forever — that token holds alert-push suppression for a device that
+        can no longer be rung, which is the one failure mode ending in a silent
+        phone.
+        """
+        result, seen = self._send([(400, BAD_TOKEN), (400, BAD_TOKEN)], environment="production")
+
+        self.assertFalse(result.get("ok"))
+        self.assertEqual(result.get("status"), "invalid_device")
+        self.assertEqual(len(seen), 2)
+
+    def test_unregistered_is_not_replayed(self):
+        """MUTATION: replay on any 4xx.
+
+        410 Unregistered is a positive statement that this host knew the token and
+        the app is gone. Replaying it doubles APNs traffic for every uninstalled
+        app and can only ever produce a second rejection.
+        """
+        result, seen = self._send([(410, '{"reason":"Unregistered"}')], environment="production")
+
+        self.assertEqual(result.get("status"), "invalid_device")
+        self.assertEqual(len(seen), 1)
+
+    def test_an_alert_token_on_the_voip_topic_is_not_replayed(self):
+        """MUTATION: fold DeviceTokenNotForTopic into the mismatch check.
+
+        That response means an *alert* token reached the VoIP topic — a registration
+        bug the other host rejects identically. Replaying it hides a client defect
+        behind twice the traffic.
+        """
+        result, seen = self._send([(400, '{"reason":"DeviceTokenNotForTopic"}')], environment="production")
+
+        self.assertEqual(result.get("status"), "invalid_device")
+        self.assertEqual(len(seen), 1)
+
+    def test_an_accepted_push_is_never_replayed(self):
+        """MUTATION: replay unconditionally. Every call would ring the device twice."""
+        result, seen = self._send([(200, "")], environment="production")
+
+        self.assertTrue(result.get("ok"))
+        self.assertEqual(len(seen), 1)
+        self.assertNotIn("environment_corrected", result)
+
+    def test_the_corrected_host_is_persisted_so_the_next_call_costs_one_request(self):
+        """MUTATION: correct the host but never write it down.
+
+        Without persistence every call pays a guaranteed failed request first, which
+        also delays the ring by a full APNs round trip on the one push where latency
+        is the product.
+        """
+        self._add_voip_device("device-env")
+        self.cur.execute(
+            "UPDATE voip_push_tokens SET token_environment=? WHERE device_id=?",
+            ("production", "device-env"),
+        )
+        self.conn.commit()
+
+        fake, seen = _scripted_httpx([(400, BAD_TOKEN), (200, "")])
+        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
+                mock.patch.dict(sys.modules, {"httpx": fake}):
+            voip.ring_devices(
+                self.cur,
+                {"public_id": "call_env", "call_type": "audio"},
+                recipient_id=USER_ID,
+                caller_id=OTHER_USER_ID,
+                caller_name="Caller",
+            )
+        self.conn.commit()
+
+        self.cur.execute("SELECT token_environment FROM voip_push_tokens WHERE device_id=?", ("device-env",))
+        row = self.cur.fetchone()
+        stored = row[0] if not hasattr(row, "keys") else row["token_environment"]
+        self.assertEqual(stored, "sandbox", "the host that worked must be remembered")
+
+    def test_a_corrected_device_is_still_claimed_for_suppression(self):
+        """MUTATION: claim only devices accepted on the first attempt.
+
+        A device that rang through CallKit after the replay has rung. If it is not
+        claimed it also receives the alert banner — the duplicate-ring outcome the
+        whole suppression path exists to prevent.
+        """
+        self._add_voip_device("device-claim")
+        fake, _seen = _scripted_httpx([(400, BAD_TOKEN), (200, "")])
+        with mock.patch.object(voip, "_apns_jwt", return_value="fake-jwt"), \
+                mock.patch.dict(sys.modules, {"httpx": fake}):
+            result = voip.ring_devices(
+                self.cur,
+                {"public_id": "call_claim", "call_type": "audio"},
+                recipient_id=USER_ID,
+                caller_id=OTHER_USER_ID,
+                caller_name="Caller",
+            )
+
+        self.assertIn("device-claim", result.get("claimed_device_ids", []))
+
+
+# ---------------------------------------------------------------------------
 # 16-17. Only genuine call events may send a VoIP push (Apple compliance)
 # ---------------------------------------------------------------------------
 
