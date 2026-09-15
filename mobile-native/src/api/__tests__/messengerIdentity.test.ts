@@ -4,7 +4,14 @@ jest.mock("@react-native-async-storage/async-storage", () =>
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { messageKey, mintClientMessageId } from "../messengerOrdering";
-import { createLocalMessage, enqueueMessengerMessage, MessengerMessage, normalizeMessages } from "../messenger";
+import {
+  createLocalMessage,
+  enqueueMessengerMessage,
+  messengerOutboxStream,
+  MessengerMessage,
+  normalizeMessages
+} from "../messenger";
+import { pendingMutations } from "../../core/mutations/outbox";
 import { readFileSync } from "fs";
 import { join } from "path";
 
@@ -86,18 +93,46 @@ describe("outbound queue identity", () => {
     } finally {
       frozen.mockRestore();
     }
-    const queue = JSON.parse((await AsyncStorage.getItem("pulsesoc.native.messenger.v2.outbound_queue")) || "[]");
-    const ids = queue.map((item: { payload: { client_message_id?: string } }) => item.payload.client_message_id);
-    expect(queue).toHaveLength(2);
-    expect(new Set(ids).size).toBe(2);
+    // Observed through the outbox's own query rather than its storage key: the
+    // property under test is "two messages, two identities", and a test that
+    // reads the raw record stops testing that the moment the layout changes.
+    const queued = await pendingMutations(messengerOutboxStream(1));
+    expect(queued).toHaveLength(2);
+    expect(new Set(queued.map((op) => op.idempotencyKey)).size).toBe(2);
   });
 
   it("does not enqueue the same logical message twice", async () => {
     const clientId = mintClientMessageId();
     await enqueueMessengerMessage(1, { body: "hi", client_message_id: clientId });
     await enqueueMessengerMessage(1, { body: "hi", client_message_id: clientId });
-    const queue = JSON.parse((await AsyncStorage.getItem("pulsesoc.native.messenger.v2.outbound_queue")) || "[]");
-    expect(queue).toHaveLength(1);
+    expect(await pendingMutations(messengerOutboxStream(1))).toHaveLength(1);
+  });
+
+  it("queues under the client id the server dedupes on, not a key of its own", async () => {
+    // The idempotency key IS the client_message_id. If the outbox minted its
+    // own, a retry would be a new key to the server and the message would arrive
+    // twice -- the one thing the client id exists to prevent.
+    const clientId = mintClientMessageId();
+    await enqueueMessengerMessage(7, { body: "hi", client_message_id: clientId });
+    const [queued] = await pendingMutations(messengerOutboxStream(7));
+    expect(queued.idempotencyKey).toBe(clientId);
+  });
+
+  it("carries a message queued by an older build into the outbox instead of losing it", async () => {
+    // Upgrading while offline must not drop what the user already typed, and the
+    // users it would affect are the least likely to report it.
+    const legacyId = mintClientMessageId("legacy");
+    await AsyncStorage.setItem(
+      "pulsesoc.native.messenger.v2.outbound_queue",
+      JSON.stringify([{ conversationId: 3, payload: { body: "written offline", client_message_id: legacyId } }])
+    );
+
+    await enqueueMessengerMessage(3, { body: "written after upgrade" });
+
+    const queued = await pendingMutations(messengerOutboxStream(3));
+    expect(queued.map((op) => op.idempotencyKey)).toContain(legacyId);
+    expect(queued).toHaveLength(2);
+    expect(await AsyncStorage.getItem("pulsesoc.native.messenger.v2.outbound_queue")).toBeNull();
   });
 });
 

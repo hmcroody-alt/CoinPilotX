@@ -352,10 +352,13 @@ describe("2.1 — one reconciliation owner", () => {
   });
 
   it("the offline queue drain preserves the identity the bubble on screen was keyed by", () => {
+    // The re-stamp lives in the outbox handler now rather than in a drain loop.
+    // A drained message ALWAYS has a bubble already on screen -- that is what
+    // being queued means -- so a server row returned without the client id would
+    // give the reconciler no way to see the two as one message, and every
+    // message the queue sent would appear twice.
     const transport = readFileSync(join(__dirname, "..", "messenger.ts"), "utf-8");
-    const drain = transport.slice(transport.indexOf("export async function drainMessengerQueue("));
-    expect(drain.slice(0, drain.indexOf("return sent;"))).toContain(
-      "result.data.client_message_id || item.payload.client_message_id"
-    );
+    const handler = transport.slice(transport.indexOf("registerOutboxHandler(MESSENGER_OUTBOX_TYPE"));
+    expect(handler).toContain("result.data.client_message_id || payload.client_message_id");
   });
 });
