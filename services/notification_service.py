@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from . import app_links
 from . import user_context
 from . import email_service
+from . import email_send_guard
 from . import push_service
 from . import sms_service
 from . import db as db_service
@@ -754,7 +755,14 @@ def _ensure_failed_email_queue(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_failed_email_queue_idempotency ON failed_email_queue(idempotency_key)")
 
 
-def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_type="transactional", metadata=None, notification_id=0):
+def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_type="transactional", metadata=None, notification_id=0, send_after=""):
+    """Put one email in the outbox.
+
+    ``send_after`` (UTC ISO) holds the row back until that moment. The
+    processors already filter on ``next_retry_at <= now``, so a future value
+    schedules the send without needing a scheduler: the retry clock and the
+    "not yet" clock are the same column. Default is "send at the next pass".
+    """
     metadata = metadata or {}
     trace_id = _notification_trace_id(metadata)
     if not to_email:
@@ -786,7 +794,7 @@ def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_
         existing_status = existing[1] if not hasattr(existing, "keys") else existing["status"]
         existing_trace = existing[2] if not hasattr(existing, "keys") else existing["trace_id"]
         return {"ok": True, "status": existing_status or "queued", "provider": "brevo", "queue_id": int(existing_id or 0), "trace_id": existing_trace or trace_id, "duplicate": True}
-    next_retry_at = datetime.utcnow().isoformat(timespec="seconds")
+    next_retry_at = str(send_after or "").strip() or datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
         """
         INSERT INTO failed_email_queue
@@ -812,14 +820,39 @@ def _queue_email_job(user_id, to_email, subject, html_body, text_body="", email_
     queue_id = int(getattr(cur, "lastrowid", 0) or 0)
     conn.commit()
     conn.close()
-    logging.info("PULSE_EMAIL_JOB_QUEUED user_id=%s notification_id=%s queue_id=%s trace_id=%s", user_id, notification_id, queue_id, trace_id)
-    schedule_email_queue_processing(reason="notification_email_queued")
-    return {"ok": True, "status": "queued", "provider": "brevo", "queue_id": queue_id, "trace_id": trace_id}
+    logging.info("PULSE_EMAIL_JOB_QUEUED user_id=%s notification_id=%s queue_id=%s trace_id=%s send_after=%s", user_id, notification_id, queue_id, trace_id, next_retry_at)
+    # A row held for later would only be looked at and put back, so a deferred
+    # enqueue does not wake the processor.
+    if next_retry_at <= datetime.utcnow().isoformat(timespec="seconds"):
+        schedule_email_queue_processing(reason="notification_email_queued")
+    return {"ok": True, "status": "queued", "provider": "brevo", "queue_id": queue_id, "trace_id": trace_id, "send_after": next_retry_at}
 
 
 def _email_retry_at(attempts):
     delay_seconds = min(3600, 30 * (2 ** max(0, int(attempts or 1) - 1)))
     return (datetime.utcnow() + timedelta(seconds=delay_seconds)).isoformat(timespec="seconds")
+
+
+def _finish_email_job(queue_id, status, reason=""):
+    """Close a claimed row without having talked to the provider.
+
+    Used when the guard refuses: the row is terminal, so it must leave
+    'processing' or the claim would strand it, and it must not get a
+    next_retry_at or the next pass would pick it up and ask again forever.
+    """
+    stamp = datetime.utcnow().isoformat(timespec="seconds")
+    conn = user_context.connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        UPDATE failed_email_queue
+        SET status=?, last_error=?, next_retry_at='', processed_at=?, updated_at=?
+        WHERE id=?
+        """,
+        (status, str(reason or "")[:1000], stamp, stamp, queue_id),
+    )
+    conn.commit()
+    conn.close()
 
 
 def process_queued_email_notifications(limit=10, provider_send=None):
@@ -844,7 +877,7 @@ def process_queued_email_notifications(limit=10, provider_send=None):
     )
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    sent = retry = dead_letter = 0
+    sent = retry = dead_letter = skipped = 0
     for row in rows:
         queue_id = int(row.get("id") or 0)
         attempts = int(row.get("retry_count") or 0) + 1
@@ -858,6 +891,19 @@ def process_queued_email_notifications(limit=10, provider_send=None):
         claim_conn.commit()
         claim_conn.close()
         if not claimed:
+            continue
+        # The queue doubles as a timer -- a row can be claimed months after it
+        # was written -- so "is this still true?" is asked here, after the claim
+        # and before the send, rather than at enqueue time when the answer was
+        # obviously yes. Email types with no validator are unaffected.
+        may, refusal = email_send_guard.may_send(row)
+        if not may:
+            _finish_email_job(queue_id, "skipped", refusal[:1000])
+            skipped += 1
+            logging.info(
+                "PULSE_EMAIL_JOB_SKIPPED queue_id=%s trace_id=%s reason=%s",
+                queue_id, row.get("trace_id") or "", refusal,
+            )
             continue
         try:
             result = provider_send(
@@ -905,7 +951,8 @@ def process_queued_email_notifications(limit=10, provider_send=None):
         update_conn.commit()
         update_conn.close()
         logging.info("PULSE_EMAIL_JOB_PROCESSED queue_id=%s trace_id=%s status=%s attempts=%s", queue_id, row.get("trace_id") or "", final_status, attempts)
-    return {"ok": True, "attempted": len(rows), "sent": sent, "retry": retry, "dead_letter": dead_letter}
+    return {"ok": True, "attempted": len(rows), "sent": sent, "retry": retry,
+            "dead_letter": dead_letter, "skipped": skipped}
 
 
 def schedule_email_queue_processing(reason="enqueue"):

@@ -5164,18 +5164,16 @@
         "scheduleFailed": "Impossible de planifier",
         "startFailed": "Impossible de démarrer",
         "cancelFailed": "Impossible d'annuler",
+        "rescheduleFailed": "Impossible de reprogrammer",
         "start": "Démarrer",
         "cancel": "Annuler",
+        "reschedule": "Reprogrammer",
+        "saveChanges": "Enregistrer les modifications",
         "untitled": "Réunion",
         "details": "Détails de {{title}}",
         "liveNow": "En direct",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
-        "presets": {
-          "in15m": "Dans {{minutes}} minutes",
-          "in1h": "Dans {{hours}} heure",
-          "tomorrowMorning": "Demain à {{time}}"
-        },
         "buckets": {
           "live": "En cours",
           "upcoming": "À venir",
@@ -5283,6 +5281,40 @@
             "feature_disabled": "Les réunions ont été désactivées pendant que vous étiez connecté.",
             "generic": "La réunion est terminée."
           }
+        },
+        "calendar": {
+          "browse": "Parcourir le calendrier",
+          "previousMonth": "Mois précédent",
+          "nextMonth": "Mois suivant",
+          "pickMonth": "Choisir un mois",
+          "pickYear": "Choisir une année",
+          "jumpToYear": "Aller à une année",
+          "today": "Aujourd'hui",
+          "close": "Fermer",
+          "loadFailed": "Impossible de charger ce mois. Réessayez ou passez à un autre mois.",
+          "noneOnDay": "Rien de prévu ce jour-là.",
+          "dayWithMeetings_one": "{{day}}, {{count}} réunion",
+          "dayWithMeetings_other": "{{day}}, {{count}} réunions"
+        },
+        "wizard": {
+          "steps": {
+            "date": "Choisissez une date",
+            "time": "Choisissez une heure",
+            "zone": "Confirmez le fuseau horaire",
+            "duration": "Quelle durée ?",
+            "details": "Titre et ordre du jour",
+            "review": "Vérifier"
+          },
+          "timeHint": "L'heure telle qu'elle se lira là où la réunion a lieu.",
+          "zoneHint": "Tout le monde est invité au même instant. Le fuseau horaire décide duquel il s'agit.",
+          "zoneUnknown": "Cet appareil n'a indiqué aucun fuseau horaire : la réunion sera lue en UTC.",
+          "looksPast": "D'après cet appareil, ce moment est déjà passé. Le serveur tranche.",
+          "customDuration": "Durée personnalisée en minutes",
+          "durationRange": "Choisissez entre {{min}} et {{max}} minutes.",
+          "agendaField": "Ordre du jour (facultatif)",
+          "inviteLater": "Vous pourrez inviter des personnes une fois la réunion créée.",
+          "back": "Retour",
+          "next": "Suivant"
         }
       },
       "conversations": {

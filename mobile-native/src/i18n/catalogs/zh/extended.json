@@ -5132,18 +5132,16 @@
         "scheduleFailed": "无法安排",
         "startFailed": "无法开始",
         "cancelFailed": "无法取消",
+        "rescheduleFailed": "无法重新安排",
         "start": "开始",
         "cancel": "取消",
+        "reschedule": "重新安排",
+        "saveChanges": "保存更改",
         "untitled": "会议",
         "details": "{{title}} 的详细信息",
         "liveNow": "正在进行",
         "durationMinutes_one": "{{count}} 分钟",
         "durationMinutes_other": "{{count}} 分钟",
-        "presets": {
-          "in15m": "{{minutes}} 分钟后",
-          "in1h": "{{hours}} 小时后",
-          "tomorrowMorning": "明天 {{time}}"
-        },
         "buckets": {
           "live": "正在进行",
           "upcoming": "即将开始",
@@ -5251,6 +5249,39 @@
             "feature_disabled": "在您连接期间会议功能被关闭。",
             "generic": "会议已结束。"
           }
+        },
+        "calendar": {
+          "browse": "浏览日历",
+          "previousMonth": "上个月",
+          "nextMonth": "下个月",
+          "pickMonth": "选择月份",
+          "pickYear": "选择年份",
+          "jumpToYear": "跳转到某一年",
+          "today": "今天",
+          "close": "关闭",
+          "loadFailed": "无法加载这个月。请重试，或切换到其他月份。",
+          "noneOnDay": "这一天没有安排。",
+          "dayWithMeetings_other": "{{day}}，{{count}} 个会议"
+        },
+        "wizard": {
+          "steps": {
+            "date": "选择日期",
+            "time": "选择时间",
+            "zone": "确认时区",
+            "duration": "会议时长",
+            "details": "标题与议程",
+            "review": "确认"
+          },
+          "timeHint": "这是会议所在地显示的时间。",
+          "zoneHint": "所有人受邀参加的是同一个时刻，而时区决定了那是哪一个时刻。",
+          "zoneUnknown": "此设备未提供时区，会议将按 UTC 处理。",
+          "looksPast": "按此设备的时钟，这个时间已经过去了。最终以服务器为准。",
+          "customDuration": "自定义时长（分钟）",
+          "durationRange": "请选择 {{min}} 到 {{max}} 分钟之间。",
+          "agendaField": "议程（选填）",
+          "inviteLater": "会议创建后即可邀请他人。",
+          "back": "返回",
+          "next": "下一步"
         }
       },
       "conversations": {

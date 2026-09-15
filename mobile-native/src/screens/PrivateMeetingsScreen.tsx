@@ -16,10 +16,11 @@
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -46,11 +47,30 @@ import {
   cancelMeeting,
   createInstantMeeting,
   listMeetings,
+  rescheduleMeeting,
   scheduleMeeting,
   startMeeting
 } from "../privateOffice/meetings/api";
 import { enterMeeting, enterMeetingWithProjection } from "../privateOffice/meetings/meetingSession";
-import { MeetingBuckets, MeetingRefusal, MODERATOR_ROLES, PrivateMeeting } from "../privateOffice/meetings/types";
+import { MeetingCalendar } from "../privateOffice/meetings/MeetingCalendar";
+import {
+  ScheduleDraft,
+  ScheduleSeed,
+  ScheduleWizard
+} from "../privateOffice/meetings/ScheduleWizard";
+import { CivilDate } from "../privateOffice/meetings/calendar";
+import {
+  civilFromInstant,
+  longDateLabel,
+  meetingWhenLabel
+} from "../privateOffice/meetings/calendarLabels";
+import {
+  MeetingBuckets,
+  MeetingCalendarEntry,
+  MeetingRefusal,
+  MODERATOR_ROLES,
+  PrivateMeeting
+} from "../privateOffice/meetings/types";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PrivateMeetings">;
@@ -86,43 +106,19 @@ function refusalPanelState(refusal: MeetingRefusal): FeatureRefusalState | "LOCK
   }
 }
 
-/** Schedule presets — honest fixed choices instead of a broken date field. */
-const PRESET_MINUTES = 15;
-const PRESET_HOURS = 1;
-const PRESET_TOMORROW_HOUR = 9;
-
 /**
- * Label numbers are interpolated from the SAME constants that compute the
- * start time (premium copy ships no literal digits — premiumCopy.test.ts),
- * so a chip can never promise a time the preset does not schedule.
+ * When a row happened, or is due to.
+ *
+ * A *scheduled* time is a commitment the host expressed in a particular zone,
+ * so it is shown in that zone and named. A start or an end is a fact about the
+ * past with no zone of its own; those get the device's, which is what an empty
+ * zone asks `meetingWhenLabel` for.
  */
-const PRESET_LABEL_ARGS: Record<
-  "in15m" | "in1h" | "tomorrowMorning",
-  Record<string, unknown>
-> = {
-  in15m: { minutes: PRESET_MINUTES },
-  in1h: { hours: PRESET_HOURS },
-  tomorrowMorning: { time: `${PRESET_TOMORROW_HOUR}:00` }
-};
-
-function presetStartAt(preset: "in15m" | "in1h" | "tomorrowMorning"): string {
-  const now = new Date();
-  if (preset === "in15m") {
-    return new Date(now.getTime() + PRESET_MINUTES * 60000).toISOString();
+function rowWhenLabel(meeting: PrivateMeeting): string {
+  if (meeting.scheduled_start_at) {
+    return meetingWhenLabel(meeting.scheduled_start_at, meeting.scheduled_timezone);
   }
-  if (preset === "in1h") {
-    return new Date(now.getTime() + PRESET_HOURS * 3600000).toISOString();
-  }
-  const tomorrow = new Date(now.getTime() + 24 * 3600000);
-  tomorrow.setHours(PRESET_TOMORROW_HOUR, 0, 0, 0);
-  return tomorrow.toISOString();
-}
-
-function whenLabel(iso: string): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString();
+  return meetingWhenLabel(meeting.ended_at || meeting.started_at, "");
 }
 
 function PrivateMeetingsBody({ navigation }: Props) {
@@ -134,9 +130,15 @@ function PrivateMeetingsBody({ navigation }: Props) {
   const [busy, setBusy] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [scheduleTitle, setScheduleTitle] = useState("");
-  const [schedulePreset, setSchedulePreset] = useState<"in15m" | "in1h" | "tomorrowMorning">("in1h");
-  const [scheduleDuration, setScheduleDuration] = useState(30);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseDay, setBrowseDay] = useState<CivilDate | null>(null);
+  const [browseMeetings, setBrowseMeetings] = useState<MeetingCalendarEntry[]>([]);
+  // The meeting whose edit wizard is open, or null. Held as the projection
+  // rather than an id so the seed is built from what the server last said.
+  const [editing, setEditing] = useState<PrivateMeeting | null>(null);
+  // Bumped after anything that changes what the month grid should show, so the
+  // dots do not keep advertising a meeting that was just cancelled.
+  const [calendarToken, setCalendarToken] = useState(0);
   // The `public_id` of the row whose detail is open, or "" for none. One at a
   // time: each open row is a live read, and three buckets' worth of
   // simultaneous reverse lookups is a lot of requests for an affordance the
@@ -228,26 +230,39 @@ function PrivateMeetingsBody({ navigation }: Props) {
     }
   }, [joinCode, openRoom, t]);
 
-  const submitSchedule = useCallback(async () => {
-    setBusy("schedule");
-    try {
-      await scheduleMeeting({
-        title: scheduleTitle.trim(),
-        scheduledStartAt: presetStartAt(schedulePreset),
-        durationMinutes: scheduleDuration
-      });
-      setScheduleOpen(false);
-      setScheduleTitle("");
-      await load();
-    } catch (error) {
-      Alert.alert(
-        t("premium:privateOffice.meetings.scheduleFailed"),
-        refusalMessage(error, t)
-      );
-    } finally {
-      setBusy("");
-    }
-  }, [load, schedulePreset, scheduleDuration, scheduleTitle, t]);
+  /**
+   * The wizard hands over exactly what it collected: a naive wall clock, the
+   * zone it should be read in, and a key that is stable across retries of this
+   * one intent. Nothing here reshapes any of it — the moment this screen
+   * started "helping" by resolving the instant would be the moment it began
+   * disagreeing with the server about DST.
+   */
+  const submitSchedule = useCallback(
+    async (draft: ScheduleDraft) => {
+      setBusy("schedule");
+      try {
+        await scheduleMeeting({
+          title: draft.title,
+          scheduledStartAt: draft.scheduledStartAt,
+          timezone: draft.timezone,
+          agenda: draft.agenda,
+          durationMinutes: draft.durationMinutes,
+          idempotencyKey: draft.idempotencyKey
+        });
+        setScheduleOpen(false);
+        setCalendarToken((value) => value + 1);
+        await load();
+      } catch (error) {
+        Alert.alert(
+          t("premium:privateOffice.meetings.scheduleFailed"),
+          refusalMessage(error, t)
+        );
+      } finally {
+        setBusy("");
+      }
+    },
+    [load, t]
+  );
 
   const startScheduled = useCallback(
     async (meeting: PrivateMeeting) => {
@@ -268,11 +283,51 @@ function PrivateMeetingsBody({ navigation }: Props) {
     [openRoom, t]
   );
 
+  /**
+   * A reschedule re-sends the wall clock even when only the zone moved.
+   *
+   * The stored instant is canonical UTC and cannot be re-localized without the
+   * wall clock that produced it: "09:00 Tokyo" and "09:00 London" are
+   * different instants, and the server has no way back to the 09:00 once it
+   * has resolved one. So the wizard's naive string goes with every edit.
+   *
+   * Restating unchanged fields is safe — the server compares the *resolved*
+   * instant, zone and duration against the row and only then bumps
+   * `schedule_version`, re-plans reminders and announces. A typo fix to the
+   * title does not re-notify the invitees.
+   */
+  const submitReschedule = useCallback(
+    async (meeting: PrivateMeeting, draft: ScheduleDraft) => {
+      setBusy(`edit:${meeting.public_id}`);
+      try {
+        await rescheduleMeeting(meeting.public_id, {
+          scheduledStartAt: draft.scheduledStartAt,
+          timezone: draft.timezone,
+          durationMinutes: draft.durationMinutes,
+          title: draft.title,
+          agenda: draft.agenda
+        });
+        setEditing(null);
+        setCalendarToken((value) => value + 1);
+        await load();
+      } catch (error) {
+        Alert.alert(
+          t("premium:privateOffice.meetings.rescheduleFailed"),
+          refusalMessage(error, t)
+        );
+      } finally {
+        setBusy("");
+      }
+    },
+    [load, t]
+  );
+
   const cancelScheduled = useCallback(
     async (meeting: PrivateMeeting) => {
       setBusy(`cancel:${meeting.public_id}`);
       try {
         await cancelMeeting(meeting.public_id);
+        setCalendarToken((value) => value + 1);
         await load();
       } catch (error) {
         Alert.alert(
@@ -402,78 +457,69 @@ function PrivateMeetingsBody({ navigation }: Props) {
               />
             </Pressable>
             {scheduleOpen ? (
-              <View style={styles.scheduleForm}>
-                <TextInput
-                  style={styles.input}
-                  value={scheduleTitle}
-                  onChangeText={setScheduleTitle}
-                  placeholder={t("premium:privateOffice.meetings.scheduleTitleField")}
-                  placeholderTextColor={colors.muted}
-                  accessibilityLabel={t("premium:privateOffice.meetings.scheduleTitleField")}
+              <ScheduleWizard
+                busy={busy === "schedule"}
+                onSubmit={submitSchedule}
+                onCancel={() => setScheduleOpen(false)}
+              />
+            ) : null}
+          </View>
+
+          {/*
+            The calendar as a reader, not a form. The buckets above answer
+            "what is next"; this answers "what does March look like", which is
+            the question a bucket list anchored to the present can never
+            answer — and the only place a meeting years out is visible at all.
+          */}
+          <View style={styles.card}>
+            <Pressable
+              style={styles.cardHead}
+              onPress={() => setBrowseOpen(!browseOpen)}
+              accessibilityRole="button"
+              accessibilityLabel={t("premium:privateOffice.meetings.calendar.browse")}
+            >
+              <Text style={styles.cardTitle}>
+                {t("premium:privateOffice.meetings.calendar.browse")}
+              </Text>
+              <Ionicons
+                name={browseOpen ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={colors.muted}
+              />
+            </Pressable>
+            {browseOpen ? (
+              <>
+                <MeetingCalendar
+                  selected={browseDay}
+                  onSelect={setBrowseDay}
+                  reloadToken={calendarToken}
+                  onDayMeetings={(_day, meetings) => setBrowseMeetings(meetings)}
                 />
-                <View style={styles.chipRow}>
-                  {(["in15m", "in1h", "tomorrowMorning"] as const).map((preset) => (
-                    <Pressable
-                      key={preset}
-                      style={[styles.chip, schedulePreset === preset && styles.chipActive]}
-                      onPress={() => setSchedulePreset(preset)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: schedulePreset === preset }}
-                      accessibilityLabel={t(
-                        `premium:privateOffice.meetings.presets.${preset}`,
-                        PRESET_LABEL_ARGS[preset]
-                      )}
-                    >
-                      <Text
-                        style={[styles.chipText, schedulePreset === preset && styles.chipTextActive]}
-                      >
-                        {t(
-                          `premium:privateOffice.meetings.presets.${preset}`,
-                          PRESET_LABEL_ARGS[preset]
-                        )}
+                {browseDay ? (
+                  <View style={styles.dayPanel}>
+                    <Text style={styles.dayPanelTitle}>{longDateLabel(browseDay)}</Text>
+                    {browseMeetings.length === 0 ? (
+                      <Text style={styles.meetingHint}>
+                        {t("premium:privateOffice.meetings.calendar.noneOnDay")}
                       </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <View style={styles.chipRow}>
-                  {[30, 60].map((minutes) => (
-                    <Pressable
-                      key={minutes}
-                      style={[styles.chip, scheduleDuration === minutes && styles.chipActive]}
-                      onPress={() => setScheduleDuration(minutes)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: scheduleDuration === minutes }}
-                      accessibilityLabel={t("premium:privateOffice.meetings.durationMinutes", {
-                        count: minutes
-                      })}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          scheduleDuration === minutes && styles.chipTextActive
-                        ]}
-                      >
-                        {t("premium:privateOffice.meetings.durationMinutes", { count: minutes })}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <Pressable
-                  style={styles.smallButton}
-                  onPress={submitSchedule}
-                  disabled={Boolean(busy)}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("premium:privateOffice.meetings.schedule")}
-                >
-                  {busy === "schedule" ? (
-                    <ActivityIndicator color={colors.accentStrong} />
-                  ) : (
-                    <Text style={styles.smallButtonText}>
-                      {t("premium:privateOffice.meetings.schedule")}
-                    </Text>
-                  )}
-                </Pressable>
-              </View>
+                    ) : (
+                      browseMeetings.map((entry) => (
+                        <View key={entry.public_id} style={styles.dayRow}>
+                          <Text style={styles.meetingTitle} numberOfLines={1}>
+                            {entry.title || t("premium:privateOffice.meetings.untitled")}
+                          </Text>
+                          <Text style={styles.meetingHint} numberOfLines={1}>
+                            {meetingWhenLabel(
+                              entry.scheduled_start_at,
+                              entry.scheduled_timezone
+                            )}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                ) : null}
+              </>
             ) : null}
           </View>
 
@@ -540,6 +586,17 @@ function PrivateMeetingsBody({ navigation }: Props) {
                     </Pressable>
                     <Pressable
                       style={styles.ghostButton}
+                      onPress={() => setEditing(meeting)}
+                      disabled={Boolean(busy)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("premium:privateOffice.meetings.reschedule")}
+                    >
+                      <Text style={styles.ghostButtonText}>
+                        {t("premium:privateOffice.meetings.reschedule")}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.ghostButton}
                       onPress={() => cancelScheduled(meeting)}
                       disabled={Boolean(busy)}
                       accessibilityRole="button"
@@ -568,7 +625,81 @@ function PrivateMeetingsBody({ navigation }: Props) {
           ) : null}
         </>
       ) : null}
+
+      {editing ? (
+        <MeetingEditSheet
+          meeting={editing}
+          busy={busy === `edit:${editing.public_id}`}
+          onClose={() => setEditing(null)}
+          onSubmit={(draft) => submitReschedule(editing, draft)}
+        />
+      ) : null}
     </ScrollView>
+  );
+}
+
+/**
+ * The edit wizard, over the list rather than inside it.
+ *
+ * A panel expanded in place would open below the fold — the button that opens
+ * it lives in a row part-way down a scrolling list — and the user would press
+ * it and see nothing move.
+ */
+function MeetingEditSheet({
+  meeting,
+  busy,
+  onClose,
+  onSubmit
+}: {
+  meeting: PrivateMeeting;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (draft: ScheduleDraft) => void;
+}) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  /**
+   * What the host chose, read back out of the instant.
+   *
+   * `null` when the stored value or zone will not decompose. The wizard then
+   * opens empty, which is the honest outcome: a pre-filled time that is
+   * quietly wrong would be accepted without being read.
+   */
+  const seed = useMemo<ScheduleSeed | null>(() => {
+    const civil = civilFromInstant(meeting.scheduled_start_at, meeting.scheduled_timezone);
+    if (!civil) return null;
+    return {
+      date: civil.date,
+      time: civil.time,
+      timezone: meeting.scheduled_timezone,
+      durationMinutes: meeting.duration_minutes,
+      title: meeting.title,
+      agenda: meeting.agenda
+    };
+  }, [meeting]);
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 12, paddingBottom: Math.max(insets.bottom, 18) + 24 }
+        ]}
+      >
+        <Text style={styles.cardTitle}>{t("premium:privateOffice.meetings.reschedule")}</Text>
+        <Text style={styles.meetingHint} numberOfLines={1}>
+          {meeting.title || t("premium:privateOffice.meetings.untitled")}
+        </Text>
+        <ScheduleWizard
+          busy={busy}
+          initial={seed}
+          submitLabel={t("premium:privateOffice.meetings.saveChanges")}
+          onSubmit={onSubmit}
+          onCancel={onClose}
+        />
+      </ScrollView>
+    </Modal>
   );
 }
 
@@ -631,9 +762,7 @@ function MeetingBucket({
                 <Text style={styles.meetingHint} numberOfLines={1}>
                   {meeting.status === "LIVE"
                     ? t("premium:privateOffice.meetings.liveNow")
-                    : whenLabel(
-                        meeting.scheduled_start_at || meeting.ended_at || meeting.started_at
-                      )}
+                    : rowWhenLabel(meeting)}
                 </Text>
               </Pressable>
               {renderActions(meeting)}
@@ -727,6 +856,14 @@ const styles = StyleSheet.create({
   chipActive: { borderColor: colors.accent },
   chipText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
   chipTextActive: { color: colors.accentStrong },
+  dayPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    gap: 6
+  },
+  dayPanelTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  dayRow: { gap: 2 },
   meetingBlock: { gap: 2 },
   meetingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   meetingDetail: {

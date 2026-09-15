@@ -5164,18 +5164,16 @@
         "scheduleFailed": "शेड्यूल नहीं हो सकी",
         "startFailed": "शुरू नहीं हो सकी",
         "cancelFailed": "रद्द नहीं हो सकी",
+        "rescheduleFailed": "पुनर्निर्धारित नहीं किया जा सका",
         "start": "शुरू करें",
         "cancel": "रद्द करें",
+        "reschedule": "पुनर्निर्धारित करें",
+        "saveChanges": "परिवर्तन सहेजें",
         "untitled": "मीटिंग",
         "details": "{{title}} का विवरण",
         "liveNow": "अभी लाइव",
         "durationMinutes_one": "{{count}} मिनट",
         "durationMinutes_other": "{{count}} मिनट",
-        "presets": {
-          "in15m": "{{minutes}} मिनट में",
-          "in1h": "{{hours}} घंटे में",
-          "tomorrowMorning": "कल सुबह {{time}} बजे"
-        },
         "buckets": {
           "live": "अभी चल रही",
           "upcoming": "आगामी",
@@ -5283,6 +5281,40 @@
             "feature_disabled": "जब आप जुड़े हुए थे तब मीटिंग बंद कर दी गईं।",
             "generic": "मीटिंग समाप्त हो गई है।"
           }
+        },
+        "calendar": {
+          "browse": "कैलेंडर देखें",
+          "previousMonth": "पिछला महीना",
+          "nextMonth": "अगला महीना",
+          "pickMonth": "महीना चुनें",
+          "pickYear": "वर्ष चुनें",
+          "jumpToYear": "किसी वर्ष पर जाएँ",
+          "today": "आज",
+          "close": "बंद करें",
+          "loadFailed": "यह महीना लोड नहीं हो सका। फिर से कोशिश करें या दूसरा महीना देखें।",
+          "noneOnDay": "इस दिन कुछ भी निर्धारित नहीं है।",
+          "dayWithMeetings_one": "{{day}}, {{count}} मीटिंग",
+          "dayWithMeetings_other": "{{day}}, {{count}} मीटिंग"
+        },
+        "wizard": {
+          "steps": {
+            "date": "तारीख़ चुनें",
+            "time": "समय चुनें",
+            "zone": "समय क्षेत्र की पुष्टि करें",
+            "duration": "कितनी देर?",
+            "details": "शीर्षक और एजेंडा",
+            "review": "समीक्षा करें"
+          },
+          "timeHint": "वह समय जैसा वहाँ पढ़ा जाएगा जहाँ मीटिंग होगी।",
+          "zoneHint": "सभी को एक ही क्षण के लिए बुलाया जाता है। समय क्षेत्र तय करता है कि वह क्षण कौन-सा है।",
+          "zoneUnknown": "इस डिवाइस ने कोई समय क्षेत्र नहीं बताया, इसलिए मीटिंग UTC में पढ़ी जाएगी।",
+          "looksPast": "इस डिवाइस के हिसाब से यह समय बीत चुका है। अंतिम निर्णय सर्वर का है।",
+          "customDuration": "मिनटों में अपनी अवधि",
+          "durationRange": "{{min}} से {{max}} मिनट के बीच चुनें।",
+          "agendaField": "एजेंडा (वैकल्पिक)",
+          "inviteLater": "मीटिंग बन जाने के बाद आप लोगों को बुला सकते हैं।",
+          "back": "पीछे",
+          "next": "आगे"
         }
       },
       "conversations": {

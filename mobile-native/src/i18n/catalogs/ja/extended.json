@@ -5125,18 +5125,16 @@
         "scheduleFailed": "予約できませんでした",
         "startFailed": "開始できませんでした",
         "cancelFailed": "キャンセルできませんでした",
+        "rescheduleFailed": "再スケジュールできませんでした",
         "start": "開始",
         "cancel": "キャンセル",
+        "reschedule": "再スケジュール",
+        "saveChanges": "変更を保存",
         "untitled": "ミーティング",
         "details": "{{title}} の詳細",
         "liveNow": "開催中",
         "durationMinutes_one": "{{count}}分",
         "durationMinutes_other": "{{count}}分",
-        "presets": {
-          "in15m": "{{minutes}}分後",
-          "in1h": "{{hours}}時間後",
-          "tomorrowMorning": "明日 {{time}}"
-        },
         "buckets": {
           "live": "開催中",
           "upcoming": "今後の予定",
@@ -5244,6 +5242,39 @@
             "feature_disabled": "接続中にミーティング機能がオフになりました。",
             "generic": "ミーティングは終了しました。"
           }
+        },
+        "calendar": {
+          "browse": "カレンダーを見る",
+          "previousMonth": "前の月",
+          "nextMonth": "次の月",
+          "pickMonth": "月を選択",
+          "pickYear": "年を選択",
+          "jumpToYear": "年を指定して移動",
+          "today": "今日",
+          "close": "閉じる",
+          "loadFailed": "この月を読み込めませんでした。もう一度試すか、別の月に移動してください。",
+          "noneOnDay": "この日の予定はありません。",
+          "dayWithMeetings_other": "{{day}}、{{count}}件のミーティング"
+        },
+        "wizard": {
+          "steps": {
+            "date": "日付を選ぶ",
+            "time": "時刻を選ぶ",
+            "zone": "タイムゾーンを確認",
+            "duration": "所要時間は？",
+            "details": "タイトルと議題",
+            "review": "確認"
+          },
+          "timeHint": "ミーティングが行われる場所での表示時刻です。",
+          "zoneHint": "全員が同じ一瞬に招待されます。その一瞬を決めるのがタイムゾーンです。",
+          "zoneUnknown": "この端末はタイムゾーンを報告しなかったため、ミーティングは UTC として扱われます。",
+          "looksPast": "この端末の時計では既に過ぎています。最終判断はサーバーが行います。",
+          "customDuration": "任意の長さ（分）",
+          "durationRange": "{{min}} 分から {{max}} 分の間で選んでください。",
+          "agendaField": "議題（任意）",
+          "inviteLater": "ミーティングを作成した後に招待できます。",
+          "back": "戻る",
+          "next": "次へ"
         }
       },
       "conversations": {

@@ -268,8 +268,20 @@ RECORD_STATUS_VOCAB = frozenset({
 #: meeting code, or who was in the room. A meeting metric may say that *a*
 #: meeting started and ended for *a* reason — lifecycle words chosen by
 #: ``meetings.py``, never anything a member typed.
+#:
+#: ``create_replayed`` is an idempotent create that returned an existing
+#: meeting rather than making one. It is a separate word from ``created`` on
+#: purpose: counting a replay as a creation would inflate the meeting rate by
+#: however many times clients retry, which is exactly the number you would be
+#: looking at the metric to find out.
+#:
+#: ``rescheduled`` moved the meeting in time; ``edited`` changed only its
+#: title or agenda. Same split, same reason — one invalidates every reminder
+#: and re-mails every attendee, the other does not, and a single "updated"
+#: word would hide which of the two the traffic is.
 MEETING_TRANSITION_VOCAB = frozenset({
-    "created", "started", "ended", "cancelled", "failed",
+    "created", "create_replayed", "started", "ended", "cancelled", "failed",
+    "rescheduled", "edited",
 })
 
 #: Why a meeting reached a terminal state, restated from ``meetings``. The
