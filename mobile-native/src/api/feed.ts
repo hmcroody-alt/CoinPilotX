@@ -5,6 +5,7 @@ import { profileTargetFromAuthor } from "./profileTarget";
 import { CanonicalMediaRecord, hasRenderableImage, hasRenderableMediaUrl, mediaRecordForCache } from "../media/mediaContract";
 import { buildCommentTree } from "../social/commentTree";
 import { observeSavedState } from "../social/savedStore";
+import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 
 const FEED_CACHE_PREFIX = "pulsesoc.native.feed.";
 const POST_CACHE_PREFIX = "pulsesoc.native.post.";
@@ -235,20 +236,27 @@ export async function listFeed(params: FeedParams = {}) {
   };
 }
 
+/**
+ * The cached feed together with how old it is.
+ *
+ * Age is the point. A screen that shows cached posts without saying when they
+ * were fetched is making a claim about freshness it cannot support, and the
+ * reader has no way to tell yesterday's feed from this minute's. `storedAt` is
+ * null only for a record written by a build that predates the cache envelope —
+ * unknown age stays unknown rather than being guessed at as "now", which would
+ * make the oldest possible cache look like the newest.
+ */
+export async function loadCachedFeedSnapshot(feed = "for_you") {
+  const entry = await readJsonCacheEntry<PulsePost[]>(`${FEED_CACHE_PREFIX}${feed}`, normalizePosts);
+  return { posts: entry?.value || [], storedAt: entry?.storedAt ?? null, ageMs: entry?.ageMs ?? null };
+}
+
 export async function loadCachedFeed(feed = "for_you") {
-  const key = `${FEED_CACHE_PREFIX}${feed}`;
-  try {
-    const cached = await AsyncStorage.getItem(key);
-    if (!cached) return [];
-    return normalizePosts(JSON.parse(cached) as PulsePost[]);
-  } catch {
-    await AsyncStorage.removeItem(key).catch(() => undefined);
-    return [];
-  }
+  return (await loadCachedFeedSnapshot(feed)).posts;
 }
 
 export async function cacheFeed(feed: string, posts: PulsePost[]) {
-  await AsyncStorage.setItem(`${FEED_CACHE_PREFIX}${feed}`, JSON.stringify(posts.slice(0, 80).map(postForCache)));
+  await writeJsonCache(`${FEED_CACHE_PREFIX}${feed}`, posts.slice(0, 80).map(postForCache));
 }
 
 export async function getPostDetail(postId: number) {

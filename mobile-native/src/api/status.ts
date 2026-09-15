@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PULSE_API_BASE_URL, PULSESOC_QA_STATUS_FIXTURES } from "./config";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "./feed";
 import { isMediaUnavailable } from "../media/mediaContract";
+import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
 import { pulseApi, PulseApiError } from "./pulseApi";
 
 const STATUS_CACHE_PREFIX = "pulsesoc.native.status.";
@@ -211,23 +212,37 @@ export async function generateStatusAiStory(prompt: string, style = "cinematic")
   });
 }
 
+type CachedStatuses = { items?: PulseStatus[]; rail_items?: PulseStatus[] };
+
+const normalizeCachedStatuses = (cached: CachedStatuses): CachedStatuses => ({
+  items: normalizeStatuses(cached?.items || []),
+  rail_items: normalizeStatuses(cached?.rail_items || [])
+});
+
+/**
+ * The cached lane together with how old it is.
+ *
+ * Status is the surface where age matters most: the content expires by design,
+ * so a cached lane shown without its age can be advertising a story that ended
+ * hours ago as if it were live.
+ */
+export async function loadCachedStatusesSnapshot(lane = "for_you") {
+  const entry = await readJsonCacheEntry<CachedStatuses>(statusCacheKey(lane), normalizeCachedStatuses);
+  return {
+    items: entry?.value.items || [],
+    rail_items: entry?.value.rail_items || [],
+    storedAt: entry?.storedAt ?? null,
+    ageMs: entry?.ageMs ?? null
+  };
+}
+
 export async function loadCachedStatuses(lane = "for_you") {
-  try {
-    const cached = await AsyncStorage.getItem(statusCacheKey(lane));
-    if (!cached) return { items: [], rail_items: [] };
-    const parsed = JSON.parse(cached) as { items?: PulseStatus[]; rail_items?: PulseStatus[] };
-    return {
-      items: normalizeStatuses(parsed.items || []),
-      rail_items: normalizeStatuses(parsed.rail_items || [])
-    };
-  } catch {
-    await AsyncStorage.removeItem(statusCacheKey(lane)).catch(() => undefined);
-    return { items: [], rail_items: [] };
-  }
+  const snapshot = await loadCachedStatusesSnapshot(lane);
+  return { items: snapshot.items, rail_items: snapshot.rail_items };
 }
 
 export async function cacheStatuses(lane: string, items: PulseStatus[], railItems: PulseStatus[]) {
-  await AsyncStorage.setItem(statusCacheKey(lane), JSON.stringify({ items: items.slice(0, 80), rail_items: railItems.slice(0, 24) }));
+  await writeJsonCache(statusCacheKey(lane), { items: items.slice(0, 80), rail_items: railItems.slice(0, 24) });
 }
 
 export async function trackStatusView(statusId: number, params: { completed?: boolean; completionRatio?: number; watchMs?: number } = {}) {
