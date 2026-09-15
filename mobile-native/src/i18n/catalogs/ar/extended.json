@@ -5391,11 +5391,6 @@
         "durationMinutes_few": "{{count}} دقائق",
         "durationMinutes_many": "{{count}} دقيقة",
         "durationMinutes_other": "{{count}} دقيقة",
-        "presets": {
-          "in15m": "بعد {{minutes}} دقيقة",
-          "in1h": "بعد {{hours}} ساعة",
-          "tomorrowMorning": "غدًا الساعة {{time}}"
-        },
         "buckets": {
           "live": "يحدث الآن",
           "upcoming": "القادمة",
@@ -5503,6 +5498,44 @@
             "feature_disabled": "تم إيقاف الاجتماعات أثناء اتصالك.",
             "generic": "انتهى الاجتماع."
           }
+        },
+        "calendar": {
+          "browse": "تصفح التقويم",
+          "previousMonth": "الشهر السابق",
+          "nextMonth": "الشهر التالي",
+          "pickMonth": "اختر شهرًا",
+          "pickYear": "اختر سنة",
+          "jumpToYear": "الانتقال إلى سنة",
+          "today": "اليوم",
+          "close": "إغلاق",
+          "loadFailed": "تعذر تحميل هذا الشهر. أعد المحاولة أو انتقل إلى شهر آخر.",
+          "noneOnDay": "لا يوجد شيء مجدول في هذا اليوم.",
+          "dayWithMeetings_zero": "{{day}}، {{count}} اجتماع",
+          "dayWithMeetings_one": "{{day}}، اجتماع واحد",
+          "dayWithMeetings_two": "{{day}}، اجتماعان",
+          "dayWithMeetings_few": "{{day}}، {{count}} اجتماعات",
+          "dayWithMeetings_many": "{{day}}، {{count}} اجتماعًا",
+          "dayWithMeetings_other": "{{day}}، {{count}} اجتماع"
+        },
+        "wizard": {
+          "steps": {
+            "date": "اختر تاريخًا",
+            "time": "اختر وقتًا",
+            "zone": "أكّد المنطقة الزمنية",
+            "duration": "كم المدة؟",
+            "details": "العنوان وجدول الأعمال",
+            "review": "المراجعة"
+          },
+          "timeHint": "الوقت كما سيُقرأ في المكان الذي يُعقد فيه الاجتماع.",
+          "zoneHint": "الجميع مدعوون إلى اللحظة نفسها. المنطقة الزمنية هي التي تحدد أي لحظة هي.",
+          "zoneUnknown": "لم يُبلّغ هذا الجهاز عن منطقة زمنية، لذا سيُقرأ الاجتماع بتوقيت UTC.",
+          "looksPast": "بحسب ساعة هذا الجهاز مضى هذا الوقت. القرار النهائي للخادم.",
+          "customDuration": "مدة مخصصة بالدقائق",
+          "durationRange": "اختر بين {{min}} و {{max}} دقيقة.",
+          "agendaField": "جدول الأعمال (اختياري)",
+          "inviteLater": "يمكنك دعوة الأشخاص بعد إنشاء الاجتماع.",
+          "back": "رجوع",
+          "next": "التالي"
         }
       },
       "conversations": {

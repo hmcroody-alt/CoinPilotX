@@ -20,6 +20,7 @@ import { officeRequestHeaders } from "../officeLock";
 import {
   MeetingArtifact,
   MeetingBuckets,
+  MeetingCalendarWindow,
   MeetingIntelligence,
   MeetingMessage,
   MeetingParticipant,
@@ -102,19 +103,101 @@ export async function createInstantMeeting(params: {
   return data.meeting;
 }
 
+/**
+ * Schedule a meeting.
+ *
+ * `scheduledStartAt` is a naive wall clock (`"2035-03-14T09:30:00"`) and
+ * `timezone` is the IANA name it should be read in. The pair is sent instead
+ * of an instant on purpose: resolving 09:30 on a date years away needs that
+ * zone's DST rules *as they will be then*, and only the server is in a
+ * position to be right about that. See `calendar.ts` for the long version.
+ *
+ * `idempotencyKey` is what makes a double-tapped Schedule button produce one
+ * meeting. It must be stable across the retries of a single user intent and
+ * different between two intents, so the wizard mints it once when the user
+ * opens the review step, not once per request.
+ */
 export async function scheduleMeeting(params: {
   title?: string;
   scheduledStartAt: string;
+  timezone?: string;
+  agenda?: string;
   durationMinutes?: number;
+  idempotencyKey?: string;
   waitingRoomEnabled?: boolean;
 }): Promise<PrivateMeeting> {
   const data = await post<{ meeting: PrivateMeeting }>(BASE, {
     title: params.title || "",
     scheduled_start_at: params.scheduledStartAt,
+    timezone: params.timezone || "",
+    agenda: params.agenda || "",
     duration_minutes: params.durationMinutes || 0,
+    idempotency_key: params.idempotencyKey || "",
     waiting_room_enabled: params.waitingRoomEnabled !== false
   });
   return data.meeting;
+}
+
+/**
+ * Move or re-title a scheduled meeting. Host only.
+ *
+ * Only the fields present here are sent. The server reads an absent field as
+ * "unchanged" and an empty string as "cleared", so spreading a whole meeting
+ * object into this call would blank the agenda every time someone fixed a
+ * typo in the title.
+ */
+export async function rescheduleMeeting(
+  ref: string,
+  changes: {
+    scheduledStartAt?: string;
+    timezone?: string;
+    durationMinutes?: number;
+    title?: string;
+    agenda?: string;
+  }
+): Promise<PrivateMeeting> {
+  const body: Record<string, unknown> = {};
+  if (changes.scheduledStartAt !== undefined) {
+    body.scheduled_start_at = changes.scheduledStartAt;
+  }
+  if (changes.timezone !== undefined) body.timezone = changes.timezone;
+  if (changes.durationMinutes !== undefined) {
+    body.duration_minutes = changes.durationMinutes;
+  }
+  if (changes.title !== undefined) body.title = changes.title;
+  if (changes.agenda !== undefined) body.agenda = changes.agenda;
+  const data = await post<{ meeting: PrivateMeeting }>(
+    `${BASE}/${encodeURIComponent(ref)}/reschedule`,
+    body
+  );
+  return data.meeting;
+}
+
+/**
+ * One bounded window of the calendar.
+ *
+ * Bounded is the point. `listMeetings` is anchored to now and capped, so a
+ * month in 2045 renders empty through it forever; this asks for a span
+ * instead. The server refuses a span wider than 400 days, which a month grid
+ * plus its slack never approaches.
+ *
+ * `timezone` decides which local day each meeting lands on. Passing the
+ * device's zone keeps the dots under the cells the user is actually reading.
+ */
+export async function fetchCalendar(params: {
+  start: string;
+  end: string;
+  timezone?: string;
+}): Promise<MeetingCalendarWindow> {
+  const query = new URLSearchParams({
+    start: params.start,
+    end: params.end,
+    timezone: params.timezone || ""
+  });
+  const data = await call<{ calendar: MeetingCalendarWindow }>(
+    `${BASE}/calendar?${query.toString()}`
+  );
+  return data.calendar;
 }
 
 export async function listMeetings(limit = 20): Promise<MeetingBuckets> {

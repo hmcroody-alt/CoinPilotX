@@ -113,6 +113,38 @@ export type MeetingBuckets = {
   recent: PrivateMeeting[];
 };
 
+/**
+ * One meeting as a calendar cell sees it — deliberately not a `PrivateMeeting`.
+ *
+ * `calendar_range` returns a summary, never the full projection: no
+ * `meeting_code`, no `call_public_id`, no participant list. A month view that
+ * carried host-only codes for forty meetings would be leaking them forty at a
+ * time to anyone who could read the response.
+ */
+export type MeetingCalendarEntry = {
+  public_id: string;
+  title: string;
+  status: MeetingStatus;
+  scheduled_start_at: string;
+  scheduled_timezone: string;
+  duration_minutes: number;
+  /** `"YYYY-MM-DD"` in the zone the window was requested in. */
+  local_day: string;
+  is_host: boolean;
+};
+
+export type MeetingCalendarWindow = {
+  start: string;
+  end: string;
+  timezone: string;
+  /** `"YYYY-MM-DD"` → count. The indicator dots come from here, not from
+   *  re-bucketing `meetings` client-side in some other timezone. */
+  days: Record<string, number>;
+  meetings: MeetingCalendarEntry[];
+  /** The server hit its row cap. Say so rather than silently showing less. */
+  truncated: boolean;
+};
+
 export type MeetingMessageKind = "text" | "reaction" | "system";
 
 export type MeetingMessage = {

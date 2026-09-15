@@ -5171,11 +5171,6 @@
         "liveNow": "Jetzt live",
         "durationMinutes_one": "{{count}} Minute",
         "durationMinutes_other": "{{count}} Minuten",
-        "presets": {
-          "in15m": "In {{minutes}} Minuten",
-          "in1h": "In {{hours}} Stunde",
-          "tomorrowMorning": "Morgen {{time}} Uhr"
-        },
         "buckets": {
           "live": "Läuft gerade",
           "upcoming": "Bevorstehend",
@@ -5283,6 +5278,40 @@
             "feature_disabled": "Meetings wurden abgeschaltet, während Sie verbunden waren.",
             "generic": "Das Meeting ist vorbei."
           }
+        },
+        "calendar": {
+          "browse": "Kalender durchsuchen",
+          "previousMonth": "Vorheriger Monat",
+          "nextMonth": "Nächster Monat",
+          "pickMonth": "Monat wählen",
+          "pickYear": "Jahr wählen",
+          "jumpToYear": "Zu einem Jahr springen",
+          "today": "Heute",
+          "close": "Schließen",
+          "loadFailed": "Dieser Monat konnte nicht geladen werden. Versuche es erneut oder wechsle den Monat.",
+          "noneOnDay": "An diesem Tag ist nichts geplant.",
+          "dayWithMeetings_one": "{{day}}, {{count}} Meeting",
+          "dayWithMeetings_other": "{{day}}, {{count}} Meetings"
+        },
+        "wizard": {
+          "steps": {
+            "date": "Datum wählen",
+            "time": "Uhrzeit wählen",
+            "zone": "Zeitzone bestätigen",
+            "duration": "Wie lange?",
+            "details": "Titel und Agenda",
+            "review": "Prüfen"
+          },
+          "timeHint": "Die Uhrzeit so, wie sie dort gilt, wo das Meeting stattfindet.",
+          "zoneHint": "Alle werden zum selben Moment eingeladen. Die Zeitzone entscheidet, welcher Moment das ist.",
+          "zoneUnknown": "Dieses Gerät hat keine Zeitzone gemeldet, das Meeting wird daher als UTC gelesen.",
+          "looksPast": "Nach der Uhr dieses Geräts ist das bereits vorbei. Der Server entscheidet endgültig.",
+          "customDuration": "Eigene Dauer in Minuten",
+          "durationRange": "Wähle zwischen {{min}} und {{max}} Minuten.",
+          "agendaField": "Agenda (optional)",
+          "inviteLater": "Du kannst Personen einladen, sobald das Meeting existiert.",
+          "back": "Zurück",
+          "next": "Weiter"
         }
       },
       "conversations": {

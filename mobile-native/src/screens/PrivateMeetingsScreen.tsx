@@ -50,7 +50,17 @@ import {
   startMeeting
 } from "../privateOffice/meetings/api";
 import { enterMeeting, enterMeetingWithProjection } from "../privateOffice/meetings/meetingSession";
-import { MeetingBuckets, MeetingRefusal, MODERATOR_ROLES, PrivateMeeting } from "../privateOffice/meetings/types";
+import { MeetingCalendar } from "../privateOffice/meetings/MeetingCalendar";
+import { ScheduleDraft, ScheduleWizard } from "../privateOffice/meetings/ScheduleWizard";
+import { CivilDate } from "../privateOffice/meetings/calendar";
+import { longDateLabel } from "../privateOffice/meetings/calendarLabels";
+import {
+  MeetingBuckets,
+  MeetingCalendarEntry,
+  MeetingRefusal,
+  MODERATOR_ROLES,
+  PrivateMeeting
+} from "../privateOffice/meetings/types";
 import { colors } from "../theme/colors";
 
 type Props = NativeStackScreenProps<RootStackParamList, "PrivateMeetings">;
@@ -86,38 +96,6 @@ function refusalPanelState(refusal: MeetingRefusal): FeatureRefusalState | "LOCK
   }
 }
 
-/** Schedule presets — honest fixed choices instead of a broken date field. */
-const PRESET_MINUTES = 15;
-const PRESET_HOURS = 1;
-const PRESET_TOMORROW_HOUR = 9;
-
-/**
- * Label numbers are interpolated from the SAME constants that compute the
- * start time (premium copy ships no literal digits — premiumCopy.test.ts),
- * so a chip can never promise a time the preset does not schedule.
- */
-const PRESET_LABEL_ARGS: Record<
-  "in15m" | "in1h" | "tomorrowMorning",
-  Record<string, unknown>
-> = {
-  in15m: { minutes: PRESET_MINUTES },
-  in1h: { hours: PRESET_HOURS },
-  tomorrowMorning: { time: `${PRESET_TOMORROW_HOUR}:00` }
-};
-
-function presetStartAt(preset: "in15m" | "in1h" | "tomorrowMorning"): string {
-  const now = new Date();
-  if (preset === "in15m") {
-    return new Date(now.getTime() + PRESET_MINUTES * 60000).toISOString();
-  }
-  if (preset === "in1h") {
-    return new Date(now.getTime() + PRESET_HOURS * 3600000).toISOString();
-  }
-  const tomorrow = new Date(now.getTime() + 24 * 3600000);
-  tomorrow.setHours(PRESET_TOMORROW_HOUR, 0, 0, 0);
-  return tomorrow.toISOString();
-}
-
 function whenLabel(iso: string): string {
   if (!iso) return "";
   const date = new Date(iso);
@@ -134,9 +112,12 @@ function PrivateMeetingsBody({ navigation }: Props) {
   const [busy, setBusy] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [scheduleTitle, setScheduleTitle] = useState("");
-  const [schedulePreset, setSchedulePreset] = useState<"in15m" | "in1h" | "tomorrowMorning">("in1h");
-  const [scheduleDuration, setScheduleDuration] = useState(30);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseDay, setBrowseDay] = useState<CivilDate | null>(null);
+  const [browseMeetings, setBrowseMeetings] = useState<MeetingCalendarEntry[]>([]);
+  // Bumped after anything that changes what the month grid should show, so the
+  // dots do not keep advertising a meeting that was just cancelled.
+  const [calendarToken, setCalendarToken] = useState(0);
   // The `public_id` of the row whose detail is open, or "" for none. One at a
   // time: each open row is a live read, and three buckets' worth of
   // simultaneous reverse lookups is a lot of requests for an affordance the
@@ -228,26 +209,39 @@ function PrivateMeetingsBody({ navigation }: Props) {
     }
   }, [joinCode, openRoom, t]);
 
-  const submitSchedule = useCallback(async () => {
-    setBusy("schedule");
-    try {
-      await scheduleMeeting({
-        title: scheduleTitle.trim(),
-        scheduledStartAt: presetStartAt(schedulePreset),
-        durationMinutes: scheduleDuration
-      });
-      setScheduleOpen(false);
-      setScheduleTitle("");
-      await load();
-    } catch (error) {
-      Alert.alert(
-        t("premium:privateOffice.meetings.scheduleFailed"),
-        refusalMessage(error, t)
-      );
-    } finally {
-      setBusy("");
-    }
-  }, [load, schedulePreset, scheduleDuration, scheduleTitle, t]);
+  /**
+   * The wizard hands over exactly what it collected: a naive wall clock, the
+   * zone it should be read in, and a key that is stable across retries of this
+   * one intent. Nothing here reshapes any of it — the moment this screen
+   * started "helping" by resolving the instant would be the moment it began
+   * disagreeing with the server about DST.
+   */
+  const submitSchedule = useCallback(
+    async (draft: ScheduleDraft) => {
+      setBusy("schedule");
+      try {
+        await scheduleMeeting({
+          title: draft.title,
+          scheduledStartAt: draft.scheduledStartAt,
+          timezone: draft.timezone,
+          agenda: draft.agenda,
+          durationMinutes: draft.durationMinutes,
+          idempotencyKey: draft.idempotencyKey
+        });
+        setScheduleOpen(false);
+        setCalendarToken((value) => value + 1);
+        await load();
+      } catch (error) {
+        Alert.alert(
+          t("premium:privateOffice.meetings.scheduleFailed"),
+          refusalMessage(error, t)
+        );
+      } finally {
+        setBusy("");
+      }
+    },
+    [load, t]
+  );
 
   const startScheduled = useCallback(
     async (meeting: PrivateMeeting) => {
@@ -273,6 +267,7 @@ function PrivateMeetingsBody({ navigation }: Props) {
       setBusy(`cancel:${meeting.public_id}`);
       try {
         await cancelMeeting(meeting.public_id);
+        setCalendarToken((value) => value + 1);
         await load();
       } catch (error) {
         Alert.alert(
@@ -402,78 +397,66 @@ function PrivateMeetingsBody({ navigation }: Props) {
               />
             </Pressable>
             {scheduleOpen ? (
-              <View style={styles.scheduleForm}>
-                <TextInput
-                  style={styles.input}
-                  value={scheduleTitle}
-                  onChangeText={setScheduleTitle}
-                  placeholder={t("premium:privateOffice.meetings.scheduleTitleField")}
-                  placeholderTextColor={colors.muted}
-                  accessibilityLabel={t("premium:privateOffice.meetings.scheduleTitleField")}
+              <ScheduleWizard
+                busy={busy === "schedule"}
+                onSubmit={submitSchedule}
+                onCancel={() => setScheduleOpen(false)}
+              />
+            ) : null}
+          </View>
+
+          {/*
+            The calendar as a reader, not a form. The buckets above answer
+            "what is next"; this answers "what does March look like", which is
+            the question a bucket list anchored to the present can never
+            answer — and the only place a meeting years out is visible at all.
+          */}
+          <View style={styles.card}>
+            <Pressable
+              style={styles.cardHead}
+              onPress={() => setBrowseOpen(!browseOpen)}
+              accessibilityRole="button"
+              accessibilityLabel={t("premium:privateOffice.meetings.calendar.browse")}
+            >
+              <Text style={styles.cardTitle}>
+                {t("premium:privateOffice.meetings.calendar.browse")}
+              </Text>
+              <Ionicons
+                name={browseOpen ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={colors.muted}
+              />
+            </Pressable>
+            {browseOpen ? (
+              <>
+                <MeetingCalendar
+                  selected={browseDay}
+                  onSelect={setBrowseDay}
+                  reloadToken={calendarToken}
+                  onDayMeetings={(_day, meetings) => setBrowseMeetings(meetings)}
                 />
-                <View style={styles.chipRow}>
-                  {(["in15m", "in1h", "tomorrowMorning"] as const).map((preset) => (
-                    <Pressable
-                      key={preset}
-                      style={[styles.chip, schedulePreset === preset && styles.chipActive]}
-                      onPress={() => setSchedulePreset(preset)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: schedulePreset === preset }}
-                      accessibilityLabel={t(
-                        `premium:privateOffice.meetings.presets.${preset}`,
-                        PRESET_LABEL_ARGS[preset]
-                      )}
-                    >
-                      <Text
-                        style={[styles.chipText, schedulePreset === preset && styles.chipTextActive]}
-                      >
-                        {t(
-                          `premium:privateOffice.meetings.presets.${preset}`,
-                          PRESET_LABEL_ARGS[preset]
-                        )}
+                {browseDay ? (
+                  <View style={styles.dayPanel}>
+                    <Text style={styles.dayPanelTitle}>{longDateLabel(browseDay)}</Text>
+                    {browseMeetings.length === 0 ? (
+                      <Text style={styles.meetingHint}>
+                        {t("premium:privateOffice.meetings.calendar.noneOnDay")}
                       </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <View style={styles.chipRow}>
-                  {[30, 60].map((minutes) => (
-                    <Pressable
-                      key={minutes}
-                      style={[styles.chip, scheduleDuration === minutes && styles.chipActive]}
-                      onPress={() => setScheduleDuration(minutes)}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected: scheduleDuration === minutes }}
-                      accessibilityLabel={t("premium:privateOffice.meetings.durationMinutes", {
-                        count: minutes
-                      })}
-                    >
-                      <Text
-                        style={[
-                          styles.chipText,
-                          scheduleDuration === minutes && styles.chipTextActive
-                        ]}
-                      >
-                        {t("premium:privateOffice.meetings.durationMinutes", { count: minutes })}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <Pressable
-                  style={styles.smallButton}
-                  onPress={submitSchedule}
-                  disabled={Boolean(busy)}
-                  accessibilityRole="button"
-                  accessibilityLabel={t("premium:privateOffice.meetings.schedule")}
-                >
-                  {busy === "schedule" ? (
-                    <ActivityIndicator color={colors.accentStrong} />
-                  ) : (
-                    <Text style={styles.smallButtonText}>
-                      {t("premium:privateOffice.meetings.schedule")}
-                    </Text>
-                  )}
-                </Pressable>
-              </View>
+                    ) : (
+                      browseMeetings.map((entry) => (
+                        <View key={entry.public_id} style={styles.dayRow}>
+                          <Text style={styles.meetingTitle} numberOfLines={1}>
+                            {entry.title || t("premium:privateOffice.meetings.untitled")}
+                          </Text>
+                          <Text style={styles.meetingHint} numberOfLines={1}>
+                            {whenLabel(entry.scheduled_start_at)}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                ) : null}
+              </>
             ) : null}
           </View>
 
@@ -727,6 +710,14 @@ const styles = StyleSheet.create({
   chipActive: { borderColor: colors.accent },
   chipText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
   chipTextActive: { color: colors.accentStrong },
+  dayPanel: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    paddingTop: 10,
+    gap: 6
+  },
+  dayPanelTitle: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  dayRow: { gap: 2 },
   meetingBlock: { gap: 2 },
   meetingRow: { flexDirection: "row", alignItems: "center", gap: 10 },
   meetingDetail: {

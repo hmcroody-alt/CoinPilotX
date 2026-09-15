@@ -5084,11 +5084,6 @@
         "liveNow": "Live now",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
-        "presets": {
-          "in15m": "In {{minutes}} minutes",
-          "in1h": "In {{hours}} hour",
-          "tomorrowMorning": "Tomorrow {{time}}"
-        },
         "buckets": {
           "live": "Happening now",
           "upcoming": "Upcoming",
@@ -5196,6 +5191,40 @@
             "feature_disabled": "Meetings were switched off while you were connected.",
             "generic": "The meeting is over."
           }
+        },
+        "calendar": {
+          "browse": "Browse the calendar",
+          "previousMonth": "Previous month",
+          "nextMonth": "Next month",
+          "pickMonth": "Choose a month",
+          "pickYear": "Choose a year",
+          "jumpToYear": "Jump to a year",
+          "today": "Today",
+          "close": "Close",
+          "loadFailed": "We could not load this month. Try again, or move to another month.",
+          "noneOnDay": "Nothing scheduled on this day.",
+          "dayWithMeetings_one": "{{day}}, {{count}} meeting",
+          "dayWithMeetings_other": "{{day}}, {{count}} meetings"
+        },
+        "wizard": {
+          "steps": {
+            "date": "Pick a date",
+            "time": "Pick a time",
+            "zone": "Confirm the timezone",
+            "duration": "How long?",
+            "details": "Title and agenda",
+            "review": "Review"
+          },
+          "timeHint": "The time as it will read where the meeting happens.",
+          "zoneHint": "Everyone is invited to one moment. The timezone is what decides which moment that is.",
+          "zoneUnknown": "This device did not report a timezone, so the meeting will be read as UTC.",
+          "looksPast": "This looks like it has already passed on this device. The server has the final say.",
+          "customDuration": "Custom length in minutes",
+          "durationRange": "Choose between {{min}} and {{max}} minutes.",
+          "agendaField": "Agenda (optional)",
+          "inviteLater": "You can invite people once the meeting exists.",
+          "back": "Back",
+          "next": "Next"
         }
       },
       "shield": {

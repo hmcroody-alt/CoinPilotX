@@ -5171,11 +5171,6 @@
         "liveNow": "Ao vivo agora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
-        "presets": {
-          "in15m": "Em {{minutes}} minutos",
-          "in1h": "Em {{hours}} hora",
-          "tomorrowMorning": "Amanhã às {{time}}"
-        },
         "buckets": {
           "live": "Acontecendo agora",
           "upcoming": "Próximas",
@@ -5283,6 +5278,40 @@
             "feature_disabled": "As reuniões foram desativadas enquanto você estava conectado.",
             "generic": "A reunião acabou."
           }
+        },
+        "calendar": {
+          "browse": "Navegar pelo calendário",
+          "previousMonth": "Mês anterior",
+          "nextMonth": "Próximo mês",
+          "pickMonth": "Escolher um mês",
+          "pickYear": "Escolher um ano",
+          "jumpToYear": "Ir para um ano",
+          "today": "Hoje",
+          "close": "Fechar",
+          "loadFailed": "Não foi possível carregar este mês. Tente novamente ou vá para outro mês.",
+          "noneOnDay": "Nada agendado neste dia.",
+          "dayWithMeetings_one": "{{day}}, {{count}} reunião",
+          "dayWithMeetings_other": "{{day}}, {{count}} reuniões"
+        },
+        "wizard": {
+          "steps": {
+            "date": "Escolha uma data",
+            "time": "Escolha um horário",
+            "zone": "Confirme o fuso horário",
+            "duration": "Quanto tempo?",
+            "details": "Título e pauta",
+            "review": "Revisar"
+          },
+          "timeHint": "O horário como será lido onde a reunião acontece.",
+          "zoneHint": "Todos são convidados para um mesmo instante. O fuso horário decide qual é esse instante.",
+          "zoneUnknown": "Este dispositivo não informou um fuso horário, então a reunião será lida como UTC.",
+          "looksPast": "Pelo relógio deste aparelho isso já passou. O servidor dá a palavra final.",
+          "customDuration": "Duração personalizada em minutos",
+          "durationRange": "Escolha entre {{min}} e {{max}} minutos.",
+          "agendaField": "Pauta (opcional)",
+          "inviteLater": "Você poderá convidar pessoas assim que a reunião existir.",
+          "back": "Voltar",
+          "next": "Avançar"
         }
       },
       "conversations": {
