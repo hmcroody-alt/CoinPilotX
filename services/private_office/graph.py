@@ -340,6 +340,80 @@ def upsert_node(
             "domain": resolved_domain}
 
 
+def attach_external_ref(
+    cur,
+    *,
+    owner_user_id: int,
+    node_id: object,
+    external_ref: str,
+    actor_user_id: int | None = None,
+    purpose: str = "user_request",
+) -> dict:
+    """Give an existing unreferenced node the external identity it turned out to have.
+
+    A member records a person before knowing they are on PulseSoc, and links
+    the account later. Without this the only ways to express that are to write
+    a second node — which is the duplicate the whole identity story exists to
+    prevent — or to park the account id in a fact, which would leave the
+    platform id outside the uniqueness that makes it canonical.
+
+    Two refusals, both deliberate:
+
+    * **A node that already has a ref is not re-pointed.** Changing an external
+      ref rewrites ``node_key``, which is the node's identity; every fact, edge
+      and record already citing it would silently come to be about somebody
+      else. Correcting a wrong link is a removal and a re-add, on a screen.
+    * **A ref another node already holds is refused**, with
+      :class:`PrivateGraphRejected`. That is the identity collision, and it is
+      the member's to resolve — the server merging two of their people because
+      an identifier matched is exactly the silent rewrite ``add_person``
+      refuses to do for names.
+
+    Returns the same shape as :func:`upsert_node` with status ``written``.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateGraphRejected("owner_user_id is required")
+
+    ref = str(external_ref or "").strip()[:MAX_EXTERNAL_REF]
+    if not ref:
+        raise PrivateGraphRejected("external_ref is required")
+    if not _EXTERNAL_REF_RE.match(ref):
+        raise PrivateGraphRejected(f"external_ref is not identifier-shaped: {ref!r}")
+
+    node = get_node(cur, owner_user_id=owner, node_id=node_id)
+    if node is None:
+        raise PrivateGraphRejected("node not found")
+    if str(node.get("external_ref") or "").strip():
+        raise PrivateGraphRejected("node already has an external_ref")
+
+    kind = str(node["node_type"])
+    holder = resolve_node(
+        cur, owner_user_id=owner, node_type=kind, external_ref=ref)
+    if holder is not None:
+        raise PrivateGraphRejected("external_ref already belongs to another node")
+
+    key = node_key(kind, ref)
+    cur.execute(
+        f"UPDATE {_schema.NODES_TABLE} "
+        f"SET external_ref = ?, node_key = ?, updated_at = ? "
+        f"WHERE owner_user_id = ? AND id = ?",
+        (ref, key, _facts._now_iso(), owner, int(node["id"])),
+    )
+    _audit.record(
+        cur, actor_user_id=int(actor_user_id or owner), owner_user_id=owner,
+        action=_audit.ACTION_GRAPH_WRITE, object_type=kind,
+        object_id=int(node["id"]), purpose=purpose, outcome=_audit.OUTCOME_OK,
+    )
+    _telemetry.emit(
+        _telemetry.EVENT_GRAPH_WRITE, outcome=STATUS_WRITTEN, node_type=kind,
+        domain=str(node.get("domain") or ""),
+        sensitivity=str(node.get("sensitivity") or ""))
+    return {"status": STATUS_WRITTEN, "node_id": int(node["id"]), "node_key": key,
+            "node_type": kind, "sensitivity": str(node.get("sensitivity") or ""),
+            "domain": str(node.get("domain") or "")}
+
+
 def set_node_lifecycle(
     cur,
     *,
