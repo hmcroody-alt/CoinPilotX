@@ -23,16 +23,48 @@ import { join } from "path";
  */
 const source = readFileSync(join(__dirname, "..", "ChatScreen.tsx"), "utf8");
 
-const bubble = (() => {
-  const start = source.indexOf("const mediaIdentity = {");
-  const end = source.indexOf("function DocumentAttachmentCard");
+/**
+ * The text of one top-level function, up to the next top-level declaration.
+ *
+ * This used to be a single slice spanning everything between the bubble's
+ * identity literal and `DocumentAttachmentCard`, and counting one match across
+ * it. That worked while exactly one component in the range took a grant. §21's
+ * multi-photo grid puts a second component in the same range — legitimately, as
+ * each tile is a separate surface with a separate identity — and a span-wide
+ * count cannot tell "one component asking twice for the same photo" (the defect)
+ * apart from "two components each asking once for their own" (the design).
+ *
+ * So the property is now asserted where it actually holds: per surface. The
+ * nested `function openInGallery()` inside the bubble is indented, so anchoring
+ * on column zero keeps it out of the boundary search.
+ */
+function surface(name: string): string {
+  const start = source.indexOf(`function ${name}(`);
   expect(start).toBeGreaterThan(-1);
-  expect(end).toBeGreaterThan(start);
-  return source.slice(start, end);
-})();
+  const next = source.slice(start + 1).search(/\n(?:function|const) [A-Za-z_]/);
+  return next < 0 ? source.slice(start) : source.slice(start, start + 1 + next);
+}
 
-describe("a media bubble takes one access grant", () => {
-  it("calls the grant hook exactly once, carrying both URLs", () => {
-    expect(bubble.match(/useMessengerMediaAccessUrl\(/g)).toHaveLength(1);
+describe("a media surface takes one access grant", () => {
+  it("the single-media bubble calls the grant hook exactly once, carrying both URLs", () => {
+    expect(surface("MessageMedia").match(/useMessengerMediaAccessUrl\(/g)).toHaveLength(1);
+  });
+
+  /**
+   * A tile is the same discipline at a smaller scale: one grant, covering that
+   * tile's original and its preview. A grid of three photos should be three
+   * authorization decisions, not six.
+   */
+  it("a grid tile calls the grant hook exactly once for its own identity", () => {
+    expect(surface("MediaGridTile").match(/useMessengerMediaAccessUrl\(/g)).toHaveLength(1);
+  });
+
+  /**
+   * The layout component must not take one at all. If the grid resolved a URL
+   * itself it would have to pick *an* identity, and the only one available to it
+   * is the message's — which is attachment one, handed to every tile.
+   */
+  it("the grid itself takes no grant, because it has no identity of its own", () => {
+    expect(surface("MessageMediaGrid")).not.toMatch(/useMessengerMediaAccessUrl\(/);
   });
 });
