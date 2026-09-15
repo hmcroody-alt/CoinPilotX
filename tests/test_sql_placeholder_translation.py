@@ -48,12 +48,23 @@ statement translates, not that the route around it is wired correctly.
 `test_no_sql_literal_loses_a_placeholder_to_a_comment` generalises the property
 across every SQL string literal in the repo, so the next query with an
 apostrophe in a comment fails here rather than in production.
+
+That scan identifies SQL by its opening keyword, which prose can satisfy by
+accident: `_create_draft_listing`'s docstring opens "Insert one DRAFT listing.",
+uses `--` as a dash and quotes ``quantity>=?``, and the apostrophes in it
+suppressed the placeholder exactly as a real defect would. It reported a bug in
+a comment. `_sql_literals_in` therefore skips docstrings -- the one string in a
+body that Python can never execute as SQL -- and `LiteralCollectorTests` pins
+both halves of that: the prose stays out, and the statements around it, plus a
+translator that loses a placeholder, still fail the scan.
 """
 
 import ast
 import os
 import re
+import textwrap
 import unittest
+from unittest import mock
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BOT_PATH = os.path.join(REPO_ROOT, "bot.py")
@@ -74,6 +85,80 @@ def _strip_sql_comments(sql):
     whose quoting the caller has already vetted."""
     sql = re.sub(r"/\*.*?\*/", "", sql, flags=re.S)
     return re.sub(r"--[^\n]*", "", sql)
+
+
+def _docstring_node_ids(tree):
+    """`id()` of every string node a module, class or function uses as its
+    docstring. `ast.walk` yields a Constant stripped of its parent, so by the
+    time the collector sees one, prose and SQL are indistinguishable; the
+    parentage has to be recorded before the walk flattens it away."""
+    ids = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.body and isinstance(node.body[0], ast.Expr):
+                first = node.body[0].value
+                if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                    ids.add(id(first))
+    return ids
+
+
+def _sql_literals_in(source):
+    """Every SQL string literal in one module's source, as `(lineno, sql)`.
+
+    Docstrings are excluded. `SQL_START` only checks the opening keyword, so a
+    docstring that begins "Insert one DRAFT listing." reads as an INSERT, and
+    English supplies the rest of the false positive on its own: `--` as a dash,
+    an apostrophe in "the merchant's", a `?` inside quoted sample code. Nothing
+    Python ever executes as SQL is the first bare string in a body, so dropping
+    those costs the scan no coverage -- the statements in the same function,
+    assigned or passed to `execute`, are still collected."""
+    tree = ast.parse(source)
+    docstrings = _docstring_node_ids(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if id(node) in docstrings:
+                continue
+            if SQL_START.match(node.value):
+                yield node.lineno, node.value
+
+
+def _placeholder_loss(sql):
+    """Whether translating `sql` drops a `?` that a comment has hidden from the
+    translator. False for literals with nothing at stake: no comment to hide a
+    placeholder behind, or no placeholder left once the comments are stripped."""
+    if "--" not in sql and "/*" not in sql:
+        return False
+    expected = _strip_sql_comments(sql).count("?")
+    if expected == 0:
+        return False
+    return translate(sql).count("%s") - sql.count("%s") != expected
+
+
+# The shape that made the scan cry wolf, reduced from
+# `services/business_os/suppliers/importer.py::_create_draft_listing`: prose
+# that opens on a SQL verb, uses `--` as a dash, quotes a `?` in sample code,
+# and carries the apostrophes that convinced the translator it was inside an
+# unterminated string literal. The two statements underneath it are the
+# coverage the exclusion must not take with it.
+_IMPORTER_SHAPED_SOURCE = textwrap.dedent('''
+    """Update a seller's drafts -- how many? as many as the importer made."""
+
+
+    def _create_draft_listing(cur, seller_user_id):
+        """Insert one DRAFT listing. Status and approval are not parameters.
+
+        The merchant's own ``quantity>=?`` decrement guard fails closed against
+        NULL, and "import must never publish" is not a default -- it is the
+        invariant, so the column stays unset.
+        """
+        cur.execute(
+            "INSERT INTO marketplace_listings (seller_user_id, status) "
+            "VALUES (?,'draft')", (seller_user_id,))
+        cur.execute(
+            "SELECT id FROM marketplace_listings WHERE seller_user_id=? "
+            "-- newest first, the merchant's latest draft\\n"
+            "ORDER BY id DESC LIMIT ?", (seller_user_id, 1))
+''')
 
 
 def _status_rail_sql():
@@ -178,24 +263,18 @@ class RepoWidePlaceholderTests(unittest.TestCase):
     def _sql_literals(self):
         for path in self._python_sources():
             try:
-                tree = ast.parse(_read(path))
+                literals = list(_sql_literals_in(_read(path)))
             except SyntaxError:
                 continue
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Constant) and isinstance(node.value, str):
-                    if SQL_START.match(node.value):
-                        yield path, node.lineno, node.value
+            for lineno, sql in literals:
+                yield path, lineno, sql
 
     def test_no_sql_literal_loses_a_placeholder_to_a_comment(self):
-        offenders = []
-        for path, lineno, sql in self._sql_literals():
-            if "--" not in sql and "/*" not in sql:
-                continue
-            expected = _strip_sql_comments(sql).count("?")
-            if expected == 0:
-                continue
-            if translate(sql).count("%s") - sql.count("%s") != expected:
-                offenders.append(f"{os.path.relpath(path, REPO_ROOT)}:{lineno}")
+        offenders = [
+            f"{os.path.relpath(path, REPO_ROOT)}:{lineno}"
+            for path, lineno, sql in self._sql_literals()
+            if _placeholder_loss(sql)
+        ]
         self.assertEqual(
             offenders,
             [],
@@ -206,6 +285,64 @@ class RepoWidePlaceholderTests(unittest.TestCase):
         """The old translator's failure mode, pinned so the scanner cannot be neutered."""
         sql = "SELECT * FROM t WHERE a=? -- people's faces\nLIMIT ?"
         self.assertEqual(_strip_sql_comments(sql).count("?"), 2)
+
+
+class LiteralCollectorTests(unittest.TestCase):
+    """The scan is only as good as what it hands the predicate: prose it should
+    never have read, and every statement it must not stop reading."""
+
+    def test_a_docstring_that_reads_as_sql_is_not_scanned(self):
+        collected = [sql for _, sql in _sql_literals_in(_IMPORTER_SHAPED_SOURCE)]
+        self.assertEqual(
+            [sql for sql in collected if "quantity>=?" in sql],
+            [],
+            "the function's prose docstring is being scanned as an INSERT statement",
+        )
+        docstring = ast.get_docstring(ast.parse(_IMPORTER_SHAPED_SOURCE).body[1])
+        self.assertTrue(
+            _placeholder_loss(docstring),
+            "this sample no longer reproduces the false positive: the docstring has to "
+            "be prose the predicate would convict, or excluding it proves nothing",
+        )
+        self.assertEqual(
+            [sql for sql in collected if "as many as the importer made" in sql],
+            [],
+            "the module's prose docstring is being scanned as an UPDATE statement",
+        )
+
+    def test_the_statements_beside_that_docstring_are_still_scanned(self):
+        collected = [sql for _, sql in _sql_literals_in(_IMPORTER_SHAPED_SOURCE)]
+        self.assertEqual(
+            len(collected),
+            2,
+            "excluding docstrings has also excluded real SQL: " + repr(collected),
+        )
+        self.assertTrue(any(sql.startswith("INSERT INTO marketplace_listings") for sql in collected))
+        self.assertTrue(any("-- newest first" in sql for sql in collected))
+
+    def test_the_scan_still_flags_sql_whose_comment_hides_a_placeholder(self):
+        """Excluding docstrings must not cost the scan its teeth.
+
+        The shipped translator understands comments, so nothing in the repo can
+        fail `_placeholder_loss` today -- which means an exclusion that also
+        swallowed real SQL would leave this suite green and scanning nothing.
+        Restoring the pre-fix failure mode, a translator that stops converting
+        partway through, proves the predicate still fires on the statements the
+        collector hands it."""
+        commented = [
+            sql for _, sql in _sql_literals_in(_IMPORTER_SHAPED_SOURCE) if "--" in sql
+        ]
+        self.assertEqual(len(commented), 1)
+        sql = commented[0]
+        self.assertFalse(
+            _placeholder_loss(sql),
+            "the current translator converts both placeholders; this literal is clean",
+        )
+        with mock.patch(f"{__name__}.translate", lambda text: text.replace("?", "%s", 1)):
+            self.assertTrue(
+                _placeholder_loss(sql),
+                "a translator that loses a placeholder no longer fails the scan",
+            )
 
 
 if __name__ == "__main__":
