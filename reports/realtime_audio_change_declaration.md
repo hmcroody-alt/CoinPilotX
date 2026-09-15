@@ -3196,3 +3196,189 @@ Remove the `expo.android.adaptiveIcon` block from `mobile-native/app.json`. The
 Android launcher icon reverts to the Expo default on the next prebuild; nothing
 else changes. Reverting the whole brand commit `02edf493` is also safe and
 self-contained — it touches no audio, call, or live code.
+
+---
+
+## PushKit VoIP + CallKit incoming-call addendum (2026-09-15)
+
+This addendum declares the protected-file changes in branch
+`claude/pushkit-callkit-voip`: APNs VoIP → PushKit → CallKit as the primary
+incoming-call delivery path on supported iOS devices, with the existing alert
+push retained as the compatibility fallback.
+
+### Why the change is required
+
+An incoming PulseSoc call only rang while the app was foregrounded and polling
+`getActiveCalls`. Backgrounded, in another app, or locked, the callee got at best
+a notification banner — never a ringing phone. Reaching a terminated app at all
+requires a `PKPushRegistry` created natively at launch, because iOS decides
+whether to relaunch the process before any JavaScript exists to ask for it. That
+is a native-delegate change by construction; there is no JS-only version.
+
+The existing Agora call foundation was **not** rewritten, wrapped, or replaced.
+CallKit reports call *state* to the system; the call itself still runs on the
+same Agora engine, through the same `callSessionStore`, after the answer.
+
+### Which feature required it
+
+iOS incoming-call delivery (PushKit + CallKit). No audio-quality, routing,
+microphone-publication, livestream, or Agora change was made or authorized.
+Livestream diff is zero lines.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/calls/callKitBridge.ts` | `audio_and_video_call_adapter` | Call identity moved from a client-minted UUIDv4 to the server-issued `call_uuid` (`generateUuidV4()` deleted outright). Added `rememberCallKitCall()` so a push-reported call — reported natively before JS ran — still has a call-id → UUID mapping for later `markCallKitConnected`/`endCallKitCall`. Added a `reportedUuids` set so the foreground poller cannot re-report a call PushKit already displayed. Added `revokeVoipPushRegistration()` for sign-out. **No AVAudioSession call, no audio track, no publication path, no engine reference.** |
+| `mobile-native/src/api/calls.ts` | `backend_token_and_room_policy` | Added the optional `call_uuid` field to the `PulseCall` type. Fixed `registerVoipPushToken` to send the `device_id` the backend requires (without it `register_voip_token` returns `missing_device_id` and registration silently never happened). Widened `unregisterVoipPushToken` to revoke by installation id as well as by token. **No change to `requestCallJoinToken`, the Agora token/app-id/room-name contract, or any call-state route.** |
+
+Watched dependency files changed (`dependency_watch.files`):
+
+| File | Change |
+|---|---|
+| `mobile-native/package.json` | Added exactly two dependencies: `react-native-callkeep@4.3.16`, `react-native-voip-push-notification@3.3.3`. |
+| `mobile-native/package-lock.json` | Programmatically diffed: **2 packages added, 0 removed, 0 changed.** |
+| `mobile-native/app.json` | Added `"voip"` to `expo.ios.infoPlist.UIBackgroundModes`. |
+| `mobile-native/ios/Podfile.lock` | The two pods above, added by autolinking. `mobile-native/ios/Podfile` itself is unchanged. |
+
+The pins the manifest guards are all unmoved and were re-read from the tree after
+the install: `react-native-agora` 4.6.2, `expo-av` ~16.0.8, `expo` ~54.0.36,
+`react-native` ^0.81.5. `required_ios_configuration` still holds:
+`UIBackgroundModes` is `["audio", "voip", "fetch", "remote-notification"]` —
+`audio` was preserved, `voip` was appended — and
+`NSMicrophoneUsageDescription` is unchanged.
+
+Supporting non-protected files: `ios/PulseSoc/AppDelegate.swift` (PushKit
+registry + `PKPushRegistryDelegate`), `ios/PulseSoc/Info.plist`,
+`ios/PulseSoc/PulseSoc-Bridging-Header.h`, `src/calls/callKitNativeProvider.ts`
+(new; the only file that touches either pod),
+`src/calls/IncomingCallLayer.tsx`, `src/api/config.ts`,
+`src/api/installationId.ts` (new), `src/api/push.ts`, `src/session/auth.ts`,
+and two test files.
+
+### Expected behavior change
+
+An incoming call on a supported iOS device rings the **system** call UI —
+backgrounded, in another app, or locked — instead of doing nothing. Answering
+from the lock screen accepts the call server-side and joins the same Agora
+session the foreground path would have. Declining declines it; hanging up from
+the CallKit UI ends it.
+
+Delivery is exclusive, per the agreed policy: a device with an active VoIP token
+gets the VoIP push and the backend suppresses the ordinary incoming-call alert
+push **for that same device**. Android, web, older iOS builds, and any iOS device
+without an active VoIP token keep the existing alert push unchanged.
+
+**Audio capture, routing, session category, ownership arbitration, and livestream
+behaviour are unchanged.** The one audible difference is that the system
+ringtone now plays for an incoming call, which is CallKit's, not ours.
+
+### Regression risk
+
+The honest risk here is audio-session ownership, and it is not fully closed.
+
+`react-native-callkeep` calls its own internal `configureAudioSession`
+(`RNCallKeep.m:913`) from `performAnswerCallAction` (`:1083`) and again from
+`didActivateAudioSession` (`:1145`). That helper writes category, mode, sample
+rate, buffer duration and active state on the shared `AVAudioSession`. **It
+cannot be prevented from JS.** This is exactly the second-writer pattern the
+manifest exists to forbid, arriving inside a third-party pod rather than in our
+code.
+
+What was done about it: `setup()` pins `audioSession: { mode:
+AudioSessionMode.voiceChat }`, which is the mode a PulseSoc call wants anyway.
+That converts a write which would otherwise *contradict* the engine
+(`AVAudioSessionModeDefault` — no echo cancellation, wrong routing for a call)
+into one that agrees with it. Our own code adds no `AVAudioSession` call: the
+forbidden-API scan over `src/` is clean, and `realtimeAudioEngine.ts` remains the
+sole session owner in the repo.
+
+**What is mitigated, not proven:** CallKit's `didActivateAudioSession` is
+asynchronous. If it lands *after* Agora has joined and configured the session, a
+second write occurs mid-call. Because the written mode now matches, the expected
+outcome is a no-op — but "expected" is doing real work in that sentence, and only
+a physical device can settle it. This is the single item below that a green CI
+run does not cover, and it is why the physical validation section is not a
+formality here.
+
+Lower-severity risks, all with a named mitigation:
+
+- **Double ring** — the poller re-reporting a call PushKit already displayed.
+  Guarded by `reportedUuids` and covered by a mutation-killed test.
+- **Identity mismatch** — an answer resolving to a call id the server does not
+  recognise. Removed at the root: the client can no longer mint a UUID.
+- **A phone that rings after sign-out** — an unrevoked VoIP token both suppresses
+  the alert push and keeps the handset ringable, showing a caller's name on a
+  signed-out device. Now revoked in both `signOut` and `signOutEverywhere`.
+- **Apple compliance** — iOS kills the process if a VoIP push does not report a
+  call. Every branch of the delegate, including `cancel_call`, calls
+  `reportNewIncomingCall`.
+
+### Tests run
+
+Against this worktree. None of these suites link the two new pods — that is the
+point of keeping every decision in `callKitBridge.ts` and none in
+`callKitNativeProvider.ts`: the bridge stays testable on a machine with no pods
+and no simulator. Pod integration is proven separately, by the device build.
+
+- `npm run test:realtime-audio-critical` — **11 suites, 191 tests, 0 failures.**
+- `npm run test:realtime-audio` — **21 suites, 377 tests, 0 failures.**
+- `npm run test:realtime-audio-architecture` — **22 tests, 0 failures.**
+- `python -m unittest tests.protection.test_realtime_audio_architecture` — **19 tests, OK.**
+- `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` — **13 passed.**
+- `npx tsc --noEmit` — clean.
+- `src/calls/__tests__/callKitBridge.test.ts` — **15 tests**, including the call-identity
+  and sign-out invariants added here.
+- `src/api/__tests__/voipToken.test.ts` — **8 tests** (new), pinning the VoIP token wire
+  contract including the `device_id` the backend requires.
+- **Mutation check** — `scripts/protection/callkit_voip_mutation_check.py`:
+  13 mutations of the new invariants, **13 killed, 0 survived**, both source files
+  restored and SHA-256-verified afterwards.
+
+The first five figures are identical to the numbers recorded for the previous
+declaration, which is the claim being made: this change moves none of them.
+
+### Physical validation required
+
+**Required, and not yet complete.** A simulator cannot receive a PushKit push,
+cannot run CallKit's audio-session activation, and — per the ad-hoc signing this
+project needs for Agora — cannot carry the entitlements involved. The matrix that
+must pass on a physical iPhone before this ships:
+
+1. Incoming call with the app foregrounded.
+2. Incoming call with the app backgrounded.
+3. Incoming call while using another app.
+4. Incoming call with the device **locked**, answered from the lock screen.
+5. Incoming call with the app **terminated** (the `didLoadWithEvents` replay path).
+6. Video call — CallKit reports video, Agora starts video.
+7. Caller cancels before answer — the CallKit UI dismisses, no phantom call.
+8. Callee declines — the caller sees a decline, not a timeout.
+9. Missed call — no stuck CallKit call, no entry in Recents.
+10. **Audio ownership after answer** — two-way audio confirmed by a human, then
+    confirmed again after backgrounding and returning. This is the check that
+    covers the `didActivateAudioSession` ordering risk above.
+11. No duplicate ring: exactly one of {CallKit ring, alert banner} per device.
+12. Sign out, then call the signed-out device — it must not ring.
+
+### Rollback procedure
+
+Three levels, cheapest first.
+
+1. **Flag off, no rebuild of the backend:** set
+   `EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED=0`. The app stops registering a VoIP
+   token; the backend suppresses the alert push only for devices holding an
+   active token, so suppression lapses with the registration and the alert push
+   rings again. The two halves fail safe together. The one ordering that does
+   *not* self-heal is a build that registered a token followed by a build with
+   the flag off — the already-stored token keeps suppressing. Sign-out revocation
+   and the server-side `revoke_token` both clear it.
+2. **Revert the client:** `git revert` this branch's commits. `UIBackgroundModes`
+   loses `voip`, the pods leave on the next `pod install`, and the app returns to
+   the foreground-only in-app ringer. No backend change needed; the VoIP sender
+   is a no-op for devices with no token.
+3. **Backend kill switch:** stop sending VoIP pushes. Alert-push suppression is
+   conditioned on an active VoIP token, so callees fall back to the alert path
+   without a client change.
+
+None of these touch `realtimeAudioEngine.ts`, the Agora pins, or any livestream
+path, so none of them can regress audio on the way back out.

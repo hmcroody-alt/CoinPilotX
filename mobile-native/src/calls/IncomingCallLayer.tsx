@@ -14,7 +14,8 @@ import {
 import { acceptCall, declineCall, getActiveCalls, markRingSeen, PulseCall, PulseCallParticipant } from "../api/calls";
 import { callHaptic, startCallTone, stopCallTone } from "./callSignalMedia";
 import { isIncomingRingingCall } from "./callToneLifecycle";
-import { endCallKitCall, initNativeCallKit, reportIncomingCallKit } from "./callKitBridge";
+import { endCallKitCall, initNativeCallKit, reportIncomingCallKit, setNativeCallKitProvider } from "./callKitBridge";
+import { createNativeCallKitProvider } from "./callKitNativeProvider";
 import { navigationRef } from "../navigation/notificationRouting";
 import { colors } from "../theme/colors";
 import { createLogiNexusAmbientPulse, useLogiNexusReducedMotion } from "../theme/logiNexusMotion";
@@ -49,12 +50,19 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
     if (ringing) {
       setIncomingCall(ringing);
-      reportIncomingCallKit({
-        callId: ringing.call_id,
-        displayName: callerParticipant(ringing).display_name || callerParticipant(ringing).username || "PulseSoc caller",
-        handle: callerParticipant(ringing).username || ringing.call_id,
-        hasVideo: ringing.call_type === "video"
-      });
+      // `call_uuid` is the server's CallKit identity for this call. When it is absent the
+      // backend predates the VoIP work, and there is no safe local substitute: inventing one
+      // here would be a UUID no push and no other device agrees with. The in-app ringer below
+      // still runs, so the call is not lost — it just does not get the system call UI.
+      if (ringing.call_uuid) {
+        reportIncomingCallKit({
+          callId: ringing.call_id,
+          callUuid: ringing.call_uuid,
+          displayName: callerParticipant(ringing).display_name || callerParticipant(ringing).username || "PulseSoc caller",
+          handle: callerParticipant(ringing).username || ringing.call_id,
+          hasVideo: ringing.call_type === "video"
+        });
+      }
       setError("");
       if (!ringSeenCalls.current.has(ringing.call_id)) {
         ringSeenCalls.current.add(ringing.call_id);
@@ -105,6 +113,12 @@ export function IncomingCallLayer({ signedIn, currentUserId }: IncomingCallLayer
 
   useEffect(() => {
     if (!signedIn) return;
+    // Bind the real pods before init. `initNativeCallKit` is a no-op until a provider is
+    // registered, which is how this whole path stayed inert while it was being built;
+    // registering here is the line that turns it on. `createNativeCallKitProvider` returns
+    // null off iOS and in any binary where the modules are not linked, so the no-op
+    // behaviour is still what non-iOS builds get.
+    setNativeCallKitProvider(createNativeCallKitProvider());
     initNativeCallKit({
       onAnswered: (callId) => {
         callKitAnswered.current.add(callId);

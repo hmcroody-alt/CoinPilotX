@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import { envFlagOn, isFlagValueOn } from "../core/envFlag";
+import { envFlagOn, isFlagValueOn, isFlagValueOnUnlessDisabled } from "../core/envFlag";
 
 const extra = Constants.expoConfig?.extra || {};
 const easConfig = Constants.easConfig || {};
@@ -79,10 +79,24 @@ if (declaredEnvironment && declaredEnvironment !== PULSE_ENVIRONMENT) {
 // can satisfy, so they are only ever reachable from development.
 export const DIGITAL_COMMERCE_ENABLED = isFlagValueOn(process.env.EXPO_PUBLIC_DIGITAL_COMMERCE_ENABLED);
 // Native CallKit + PushKit VoIP (rings the iOS system call UI when the app is
-// backgrounded/killed). Requires react-native-callkeep + react-native-voip-push-notification
-// pods, the `voip` background mode, and a VoIP push certificate under the COINPLOTXAI APNs
-// account (see reports/native_callkit_voip_integration.md). Default OFF until that lands.
-export const NATIVE_CALLKIT_ENABLED = isFlagValueOn(process.env.EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED);
+// backgrounded/killed). The pods, the `voip` background mode and the AppDelegate
+// PushKit delegate have all landed, so this reads the default-ON reader: VoIP push is
+// now the *primary* incoming-call path on iOS, and a primary path must not depend on
+// somebody remembering to export a variable. No VoIP Services Certificate is involved —
+// the same token-based `.p8` credential that signs alert pushes signs VoIP pushes, which
+// is why this no longer waits on an Apple-portal step.
+//
+// The default matters more here than for a normal feature flag because the backend
+// suppresses the ordinary alert push for any device that has registered a VoIP token
+// (services/pulsesoc_voip_push.py). Registration only happens when this is on, so
+// off → no token → no suppression → the alert push still rings: the two halves fail
+// safe together. The dangerous ordering is a build that registers a token and a *later*
+// build that ships with CallKit off, which would leave the server suppressing for a
+// client that no longer answers VoIP pushes. Defaulting to on removes the accidental
+// version of that, and teardownNativeCallKit() revokes the token for the deliberate one.
+//
+// Rollback is still a flag flip, not a revert: EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED=0.
+export const NATIVE_CALLKIT_ENABLED = isFlagValueOnUnlessDisabled(process.env.EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED);
 export const PULSESOC_QA_MESSENGER_FIXTURES =
   envFlagOn("EXPO_PUBLIC_PULSESOC_QA_MESSENGER_FIXTURES") &&
   /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(PULSE_API_BASE_URL);
