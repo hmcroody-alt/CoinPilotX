@@ -57,46 +57,12 @@ DEFAULT_LIMIT = 10
 #: import time — a duplication that announced itself only when someone tripped
 #: over it.
 CAPABILITIES: tuple[dict, ...] = (
-    {
-        "capability_id": "private.documents.list",
-        "feature_id": "private_office.document.extraction",
-        "description": "List the authenticated member's own private documents and their extraction state",
-        "intents": ("my documents", "what did i upload", "my private files",
-                    "status of my document", "what was extracted"),
-        "native_route": "/pulse/private-office/documents",
-        "backend_route": "GET /api/private-office/documents",
-        "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
-        "audit_action": _audit.ACTION_DOCUMENT_READ,
-        "object_type": "DOCUMENT_LIST",
-        "native_screen": "PrivateDocuments",
-        "service_module": "documents",
-    },
-    {
-        # The second read over document intelligence, and the reason the
-        # one-capability-per-feature shape above is no longer the rule: listing
-        # what was uploaded and asking what those uploads *said* are different
-        # questions, and collapsing them into one read would mean either the
-        # file list carries fact values nobody asked for, or the citations are
-        # unreachable. Both reads gate on the same feature id and the same kill
-        # switch, so turning document intelligence off still turns off exactly
-        # its own reads and no sibling's.
-        "capability_id": "private.documents.facts",
-        "feature_id": "private_office.document.extraction",
-        "description": (
-            "Show facts already accepted from the member's own documents, each "
-            "with the document and locator it came from"
-        ),
-        "intents": ("where did this come from", "what do my documents say",
-                    "what did i accept from my documents", "cite that",
-                    "which document says that", "source of that fact"),
-        "native_route": "/pulse/private-office/documents",
-        "backend_route": "GET /api/private-office/documents/facts",
-        "flag_env": "PRIVATE_DOCUMENTS_ENABLED",
-        "audit_action": _audit.ACTION_DOCUMENT_READ,
-        "object_type": "DOCUMENT_FACTS",
-        "native_screen": "PrivateDocuments",
-        "service_module": "documents",
-    },
+    # Reduced to one. Document intelligence, private briefings, private shield
+    # and the concierge desk were withdrawn from the product, and a capability
+    # the agent can still describe is a capability the agent will still offer:
+    # UNDX discovery is where a retired feature comes back to life as a promise
+    # nothing can keep. The refusal in the executor is the backstop, not the
+    # plan.
     {
         "capability_id": "private.people.list",
         "feature_id": "relationship_intelligence",
@@ -111,51 +77,6 @@ CAPABILITIES: tuple[dict, ...] = (
         "object_type": "PERSON_DIRECTORY",
         "native_screen": "PrivatePeople",
         "service_module": "relationships",
-    },
-    {
-        "capability_id": "private.briefings.list",
-        "feature_id": "private_briefings",
-        "description": "List the member's own private briefings, newest first",
-        "intents": ("my briefings", "my latest briefing", "brief me",
-                    "what did my office prepare", "my morning briefing"),
-        "native_route": "/pulse/private-office/briefings",
-        "backend_route": "GET /api/private-office/briefings",
-        "flag_env": "PRIVATE_BRIEFINGS_ENABLED",
-        "audit_action": _audit.ACTION_BRIEFING_READ,
-        "object_type": "BRIEFING_LIST",
-        "native_screen": "PrivateBriefings",
-        "service_module": "briefings",
-    },
-    {
-        "capability_id": "private.shield.posture",
-        "feature_id": "private_shield",
-        # "recorded"/"open" language on purpose: the posture reports what the
-        # internal scan found and is explicit about what no external provider
-        # has checked. It does not reassure.
-        "description": "Report the member's own Private Shield posture: open findings and what has not been checked",
-        "intents": ("my shield", "am i exposed", "my open findings",
-                    "what has my shield found", "my security posture"),
-        "native_route": "/pulse/private-office/shield",
-        "backend_route": "GET /api/private-office/shield",
-        "flag_env": "PRIVATE_SHIELD_ENABLED",
-        "audit_action": _audit.ACTION_SHIELD_READ,
-        "object_type": "SHIELD_POSTURE",
-        "native_screen": "PrivateShield",
-        "service_module": "shield",
-    },
-    {
-        "capability_id": "private.concierge.desk",
-        "feature_id": "human_concierge",
-        "description": "Show the member's own concierge desk: staffing status and their requests",
-        "intents": ("my concierge", "my concierge requests", "is anyone on my request",
-                    "status of my concierge request", "what is my office handling"),
-        "native_route": "/pulse/private-office/concierge",
-        "backend_route": "GET /api/private-office/concierge",
-        "flag_env": "PRIVATE_CONCIERGE_ENABLED",
-        "audit_action": _audit.ACTION_CONCIERGE_READ,
-        "object_type": "REQUEST_LIST",
-        "native_screen": "PrivateConcierge",
-        "service_module": "concierge",
     },
 )
 
@@ -173,7 +94,7 @@ AUDIT_CATEGORY = "private_feature_read"
 
 
 def tool_name(capability_id: str) -> str:
-    """``private.shield.posture`` → ``pulsesoc.private_shield.posture``."""
+    """``private.people.list`` → ``pulsesoc.private_people.list``."""
     head, _, tail = str(capability_id).rpartition(".")
     return "pulsesoc." + head.replace(".", "_") + "." + tail
 
@@ -223,45 +144,9 @@ def execute_capability(
     limit = _bounded_limit(arguments)
     extras: dict[str, Any] = {}
 
-    if spec["capability_id"] == "private.documents.list":
-        from services.private_office import documents as _documents
-        records = [_documents.public_view(doc) for doc in
-                   _documents.list_documents(cur, owner_user_id=owner, limit=limit)]
-    elif spec["capability_id"] == "private.documents.facts":
-        from services.private_office import documents as _documents
-        outcome = _documents.list_document_facts(
-            cur, owner_user_id=owner, limit=limit, actor_user_id=owner)
-        if outcome.get("denied"):
-            # Passed through, not flattened into an empty list. An agent told
-            # "no facts" when a policy withheld them will tell the member they
-            # have nothing on file, which is a false statement about their own
-            # store made in PulseSoc's voice.
-            return {"ok": False, "denied": str(outcome["denied"]),
-                    "records": [], "counts": outcome["counts"],
-                    "extras": {"content_boundary": outcome["boundary"]}}
-        records = outcome["records"]
-        # The boundary rides with the values, always. See documents.CONTENT_BOUNDARY.
-        extras["content_boundary"] = outcome["boundary"]
-        extras["withheld"] = int(outcome["counts"].get("withheld") or 0)
-    elif spec["capability_id"] == "private.people.list":
+    if spec["capability_id"] == "private.people.list":
         from services.private_office import relationships as _relationships
         records = _relationships.directory(cur, owner_user_id=owner, limit=limit)
-    elif spec["capability_id"] == "private.briefings.list":
-        from services.private_office import briefings as _briefings
-        records = _briefings.list_briefings(cur, owner_user_id=owner, limit=limit)
-    elif spec["capability_id"] == "private.shield.posture":
-        from services.private_office import shield as _shield
-        records = _shield.list_findings(
-            cur, owner_user_id=owner,
-            statuses=list(_shield.OPEN_STATUSES), limit=limit)
-        # The posture block carries the external-coverage honesty: what no
-        # provider has checked is named, not implied to be clean.
-        extras["posture"] = _shield.posture(cur, owner_user_id=owner)
-    elif spec["capability_id"] == "private.concierge.desk":
-        from services.private_office import concierge as _concierge
-        records = _concierge.list_requests(cur, owner_user_id=owner, limit=limit)
-        # Staffing truth rides on every payload, agent-facing included.
-        extras["desk"] = _concierge.desk_status()
     else:  # pragma: no cover - CAPABILITIES and this dispatch move together
         return {"ok": False, "denied": "unknown_capability",
                 "records": [], "counts": {"returned": 0}, "extras": {}}

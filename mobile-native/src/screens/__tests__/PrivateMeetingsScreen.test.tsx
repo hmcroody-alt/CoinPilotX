@@ -1,24 +1,21 @@
 /**
- * Private Meetings — the screen's honesty properties, and the per-row
- * disclosure that now hosts `LinkedConversations`.
+ * Private Meetings — the screen's honesty properties.
  *
- * The screen renders three server buckets and a set of host-only actions. Two
- * classes of lie are cheap to ship here and invisible in review:
+ * The screen renders three server buckets and a set of host-only actions. The
+ * class of lie that is cheap to ship here and invisible in review is a read that
+ * failed drawn as "you have no meetings". The refusal panel and the empty panel
+ * are different components on purpose; nothing but a test stops a future edit
+ * from rendering the empty one whenever `buckets` is falsy, which is also true
+ * of every failure.
  *
- *   1. A read that failed drawn as "you have no meetings". The refusal panel and
- *      the empty panel are different components on purpose; nothing but a test
- *      stops a future edit from rendering the empty one whenever `buckets` is
- *      falsy, which is also true of every failure.
- *   2. The reverse-link panel answering for the wrong object. Each row discloses
- *      its own panel, keyed by `public_id`. If the disclosure state or the
- *      target id were shared across rows, opening one meeting would show another
- *      meeting's conversations — and the member has no way to tell, because the
- *      panel renders titles, not ids.
- *
- * The link transport is stubbed at `pulseApi`, not at the panel: the real
- * client, the real parser and the real refusal translator stay in the path. A
- * stubbed panel would leave a suite proving that a hand-built result object
- * renders, which nobody doubted.
+ * A second block used to sit below, covering the per-row disclosure that hosted
+ * `LinkedConversations` — the reverse-link panel answering for the wrong object,
+ * disclosure state shared across rows, one meeting's conversations attributed to
+ * another. Private Conversations was withdrawn, the panel and the whole
+ * expand/collapse mechanism went with it, and those cases went with the panel
+ * rather than being retargeted at something they were never about. What is left
+ * of that block is the one claim that outlived it: the screen has no transport
+ * of its own.
  *
  * `t` returns the key, per the convention in the other screen tests: these
  * assertions survive a copy edit and fail on a wiring change.
@@ -85,7 +82,6 @@ jest.mock("../../session/sessionStore", () => ({
   })
 }));
 
-import { PulseApiError } from "../../api/pulseApi";
 import { MeetingRefusal } from "../../privateOffice/meetings/types";
 import {
   __resetOfficeLockForTests,
@@ -159,10 +155,6 @@ beforeEach(() => {
   jest.clearAllMocks();
   __resetOfficeLockForTests();
   mockListMeetings.mockResolvedValue(buckets({ upcoming: [meeting()] }));
-  // Default: the reverse lookup answers honestly with nothing. Cases that care
-  // override it. Without a default, every disclosure test would exercise the
-  // refusal path by accident.
-  mockPulseApi.mockResolvedValue({ ok: true, count: 0, conversations: [], capabilities: {} });
   mockOfficeStatus.mockResolvedValue({
     state: "READY",
     passcodeSet: true,
@@ -182,8 +174,6 @@ beforeEach(() => {
   });
 });
 
-const EMPTY_LINE = "premium:privateOffice.conversations.linked.none";
-const UNAVAILABLE_LINE = "premium:privateOffice.conversations.linked.unavailable";
 const EMPTY_TITLE = "premium:privateOffice.meetings.empty.title";
 
 describe("PrivateMeetingsScreen", () => {
@@ -215,91 +205,17 @@ describe("PrivateMeetingsScreen", () => {
   });
 });
 
-describe("PrivateMeetingsScreen — linked conversations", () => {
-  /** Render, then disclose the row with this title. */
-  async function discloseRow(title = "Quarterly review") {
-    const utils = await renderScreen();
-    await waitFor(() => utils.getByText(title));
-    fireEvent.press(utils.getByText(title));
-    return utils;
-  }
-
-  it("asks nothing until the member opens a row", async () => {
+describe("PrivateMeetingsScreen — no transport of its own", () => {
+  it("reads the schedule through the meetings client and calls nothing else", async () => {
+    // `pulseApi` is mocked at the module, so any direct read the screen issued
+    // would land here. It used to: each disclosed row fetched its own reverse
+    // links. Nothing replaced that fetch, and nothing should — a per-row read
+    // reintroduced behind the list would multiply one screen into N requests
+    // against a route the Office gates, which is how a second lock starts
+    // getting exercised once per row.
     const utils = await renderScreen();
     await waitFor(() => utils.getByText("Quarterly review"));
-    // Three buckets' worth of eager reverse lookups is exactly what the
-    // one-at-a-time disclosure exists to avoid.
+    expect(mockListMeetings).toHaveBeenCalled();
     expect(mockPulseApi).not.toHaveBeenCalled();
-    expect(utils.queryByText("premium:privateOffice.conversations.linked.title")).toBeNull();
-  });
-
-  it("asks the reverse-link route about this meeting, under the MEETING link type", async () => {
-    await discloseRow();
-    await waitFor(() => expect(mockPulseApi).toHaveBeenCalled());
-    const path = String(mockPulseApi.mock.calls[0][0]);
-    expect(path).toContain("/links/MEETING/mtg-alpha");
-    // The public id is the member-facing handle. The meeting code is host-only
-    // and must never become a link key.
-    expect(path).not.toContain("meeting_code");
-  });
-
-  it("does not print the empty line when the reverse lookup was refused", async () => {
-    mockPulseApi.mockRejectedValue(
-      new PulseApiError("upstream", 503, undefined, { state: "unavailable" })
-    );
-    const utils = await discloseRow();
-    await waitFor(() => utils.getByText(UNAVAILABLE_LINE));
-    expect(utils.queryByText(EMPTY_LINE)).toBeNull();
-  });
-
-  it("says nothing was found only when the server genuinely returned none", async () => {
-    const utils = await discloseRow();
-    await waitFor(() => utils.getByText(EMPTY_LINE));
-    expect(utils.queryByText(UNAVAILABLE_LINE)).toBeNull();
-  });
-
-  it("opens the canonical thread rather than a second reader", async () => {
-    mockPulseApi.mockResolvedValue({
-      ok: true,
-      count: 1,
-      // The row IS the canonical conversation with Office keys added — it is
-      // not nested under a `conversation` field. Shaped as the server sends it
-      // so the real normalizer is what turns it into a row.
-      conversations: [{ id: 77, conversation_id: 77, title: "Budget thread" }],
-      capabilities: {}
-    });
-    const utils = await discloseRow();
-    await waitFor(() => utils.getByText("Budget thread"));
-    fireEvent.press(utils.getByText("Budget thread"));
-    expect(utils.navigation.navigate).toHaveBeenCalledWith("Chat", { conversationId: 77 });
-  });
-
-  it("closes the row again, and asks about the second meeting rather than the first", async () => {
-    // The disclosure is keyed by `public_id`. Were it a shared boolean, opening
-    // the second row would leave the first row's panel — and its answer — on
-    // screen, attributing one meeting's conversations to another.
-    mockListMeetings.mockResolvedValue(
-      buckets({
-        upcoming: [meeting(), meeting({ public_id: "mtg-beta", title: "Board sync" })]
-      })
-    );
-    const utils = await renderScreen();
-    await waitFor(() => utils.getByText("Board sync"));
-
-    fireEvent.press(utils.getByText("Quarterly review"));
-    await waitFor(() => utils.getByText(EMPTY_LINE));
-    expect(String(mockPulseApi.mock.calls[0][0])).toContain("/mtg-alpha");
-
-    fireEvent.press(utils.getByText("Board sync"));
-    await waitFor(() => expect(mockPulseApi).toHaveBeenCalledTimes(2));
-    expect(String(mockPulseApi.mock.calls[1][0])).toContain("/mtg-beta");
-    // Exactly one panel is mounted: the second row's.
-    expect(utils.getAllByText("premium:privateOffice.conversations.linked.title")).toHaveLength(1);
-
-    // Pressing the open row again closes it and leaves no panel behind.
-    fireEvent.press(utils.getByText("Board sync"));
-    await waitFor(() =>
-      expect(utils.queryByText("premium:privateOffice.conversations.linked.title")).toBeNull()
-    );
   });
 });

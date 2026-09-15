@@ -1,0 +1,4 @@
+origin	git@github.com:hmcroody-alt/CoinPilotX.git (fetch)
+origin	git@github.com:hmcroody-alt/CoinPilotX.git (push)
+ro	https://github.com/hmcroody-alt/CoinPilotX.git (fetch)
+ro	https://github.com/hmcroody-alt/CoinPilotX.git (push)

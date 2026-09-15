@@ -1,0 +1,146 @@
+[
+  {
+    "sha": "4709beed482f55405b7917ee17b16d48cca79033",
+    "meta": "2026-08-06 00:44:54 +0000|PulseSoc Engineer|fix(live): stop failing healthy broadcasts on a playout signal a host cannot produce",
+    "summary": "4 files changed, 225 insertions(+), 3 deletions(-)",
+    "sampled": 60,
+    "found": 52,
+    "ratio": 0.867,
+    "verdict": "partial"
+  },
+  {
+    "sha": "0e4ad82f973507bc0aedf5bab81665cce8784295",
+    "meta": "2026-09-05 14:11:41 -0700|PulseSoc Engineer|chore: keep private Office uploads out of source control",
+    "summary": "7 files changed, 2 insertions(+), 6 deletions(-)",
+    "sampled": 0,
+    "found": 0,
+    "ratio": null,
+    "verdict": "inconclusive"
+  },
+  {
+    "sha": "91812060a0ad50b0c1b97103cc3be96dbb0c79e1",
+    "meta": "2026-08-06 19:22:09 +0000|PulseSoc Engineer|Snapshot working tree: multi-mission in-progress work (ads, marketplace, account, chat, events, dashboards, notifications, media/cover system, bot.py)",
+    "summary": "65 files changed, 3833 insertions(+), 189 deletions(-)",
+    "sampled": 60,
+    "found": 60,
+    "ratio": 1.0,
+    "verdict": "present"
+  },
+  {
+    "sha": "bf87d828212b6cc10c7c2ba3213fcecaa8a234e4",
+    "meta": "2026-08-15 00:19:16 -0700|PulseSoc Engineer|Revert \"fix(reels): derive navigator visibility from swipe direction\"",
+    "summary": "6 files changed, 57 insertions(+), 106 deletions(-)",
+    "sampled": 46,
+    "found": 2,
+    "ratio": 0.043,
+    "verdict": "absent"
+  },
+  {
+    "sha": "7e8ce422f8f2c737989df87e434611c0f6355f97",
+    "meta": "2026-08-14 08:36:16 +0000|PulseSoc Engineer|Premium Command Center: rich clickable Premium spaces + Verified Identity",
+    "summary": "2 files changed, 166 insertions(+), 40 deletions(-)",
+    "sampled": 60,
+    "found": 60,
+    "ratio": 1.0,
+    "verdict": "present"
+  },
+  {
+    "sha": "5ee6868fa1a6bfb6cab7157f59a1dd54c0b7e9c3",
+    "meta": "2026-08-23 20:16:40 +0000|Roody C|tmp",
+    "summary": "8 files changed, 2971 insertions(+), 2 deletions(-)",
+    "sampled": 60,
+    "found": 59,
+    "ratio": 0.983,
+    "verdict": "present"
+  },
+  {
+    "sha": "d1faaa8fbc61f5a5871fa8554be6524e9ed3d0bf",
+    "meta": "2026-08-15 00:18:53 -0700|PulseSoc Engineer|fix(reels): derive navigator visibility from swipe direction",
+    "summary": "6 files changed, 106 insertions(+), 57 deletions(-)",
+    "sampled": 60,
+    "found": 10,
+    "ratio": 0.167,
+    "verdict": "absent"
+  },
+  {
+    "sha": "9d0a3fb7d7b2642c3ad48515aa8bdae17454b0a0",
+    "meta": "2026-09-13 15:17:39 -0700|PulseSoc Engineer|Keep the route_auth imports on one line",
+    "summary": "1 file changed, 1 insertion(+), 4 deletions(-)",
+    "sampled": 1,
+    "found": 0,
+    "ratio": null,
+    "verdict": "inconclusive"
+  },
+  {
+    "sha": "571383ef68be2abd0b0fb826865f002df52c6c8b",
+    "meta": "2026-07-26 01:00:42 +0000|PulseSoc Engineer|Record the commit and push outcome in the verification matrix",
+    "summary": "1 file changed, 58 insertions(+), 22 deletions(-)",
+    "sampled": 36,
+    "found": 34,
+    "ratio": 0.944,
+    "verdict": "present"
+  },
+  {
+    "sha": "7b21f70652b138a90fe6f10636b054108bf1fdd8",
+    "meta": "2026-08-14 08:25:48 +0000|PulseSoc Engineer|feat(premium): dual-provider purchase-option resolver + StoreKit test config",
+    "summary": "5 files changed, 425 insertions(+)",
+    "sampled": 60,
+    "found": 60,
+    "ratio": 1.0,
+    "verdict": "present"
+  },
+  {
+    "sha": "b75db5534ae9b1cd1d85b278577c542c827371ef",
+    "meta": "2026-08-06 19:21:42 +0000|PulseSoc Engineer|Snapshot working tree: multi-mission in-progress work (ads, marketplace, account, chat, events, dashboards, notifications, media/cover system, bot.py)",
+    "summary": "65 files changed, 3833 insertions(+), 189 deletions(-)",
+    "sampled": 60,
+    "found": 60,
+    "ratio": 1.0,
+    "verdict": "present"
+  },
+  {
+    "sha": "f26be96cdd478f067b0ded55605ee31dc6291b22",
+    "meta": "2026-09-04 13:36:13 -0700|PulseSoc Engineer|chore(ios): bump build to 22 for the tap-to-analyse + native-primitives binary",
+    "summary": "3 files changed, 4 insertions(+), 4 deletions(-)",
+    "sampled": 0,
+    "found": 0,
+    "ratio": null,
+    "verdict": "inconclusive"
+  },
+  {
+    "sha": "d2837f2064e45e1eba3ec1366096d7de53c86344",
+    "meta": "2026-07-25 18:46:03 -0700|HM Cherie|fix crypto alerts to fire only on threshold crossings",
+    "summary": "8 files changed, 704 insertions(+), 313 deletions(-)",
+    "sampled": 60,
+    "found": 51,
+    "ratio": 0.85,
+    "verdict": "partial"
+  },
+  {
+    "sha": "73cdf7350aa721f722690a3b3b5eee41f6296d44",
+    "meta": "2026-08-07 03:02:53 -0700|PulseSoc Engineer|Heal the saved tables' unique indexes on existing deployments",
+    "summary": "1 file changed, 82 insertions(+)",
+    "sampled": 42,
+    "found": 42,
+    "ratio": 1.0,
+    "verdict": "present"
+  },
+  {
+    "sha": "54cf51d4216b8401935cf0fd51203a6dda488fb5",
+    "meta": "2026-07-26 01:01:01 +0000|PulseSoc Engineer|Record the commit and push outcome in the verification matrix",
+    "summary": "1 file changed, 58 insertions(+), 22 deletions(-)",
+    "sampled": 36,
+    "found": 34,
+    "ratio": 0.944,
+    "verdict": "present"
+  },
+  {
+    "sha": "88fcc963bec768a6054da447ecbb33667a2dfedd",
+    "meta": "2026-07-25 00:13:12 +0000|PulseSoc Engineer|fix(native): instant optimistic chat bubble + auto-dismissing in-app notification banner",
+    "summary": "8 files changed, 559 insertions(+), 19 deletions(-)",
+    "sampled": 60,
+    "found": 57,
+    "ratio": 0.95,
+    "verdict": "present"
+  }
+]

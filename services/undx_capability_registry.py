@@ -231,20 +231,6 @@ _FEED_TYPES = ("for_you", "following", "trending", "my_posts", "crypto", "questi
 
 _ALERT_CONDITIONS = ("above", "below", "moves_up_percent", "moves_down_percent", "volatility_above")
 
-#: The Private Office domain vocabulary, read from its owning module rather than
-#: retyped. ``""`` is included as a choice because the field is optional and its
-#: default is "every domain" — an enum that rejected the empty string would make
-#: the default value unrepresentable and force the model to name a domain it was
-#: never asked about.
-def _private_fact_domain_choices() -> tuple[str, ...]:
-    from services.private_office import model as _po_model
-
-    return ("",) + tuple(_po_model.DOMAINS)
-
-
-_PRIVATE_FACT_DOMAINS = _private_fact_domain_choices()
-
-
 # ---------------------------------------------------------------------------
 # The registry
 # ---------------------------------------------------------------------------
@@ -1143,89 +1129,19 @@ _register(CapabilitySpec(
 
 # --- Private Office --------------------------------------------------------
 #
-# The first Private Office capability UNDX can reach. It is a read of the
-# member's own private fact store and nothing else: there is no companion write
-# here, because a fact written by an agent from a conversation is a fact whose
-# provenance is a model's paraphrase, and the store's whole point is that every
-# row can answer "why does PulseSoc know this?". Recording a fact stays a
-# deliberate act on the member's own screen.
+# One capability: the Relationship Intelligence directory read. Private Facts,
+# the Batch C record views and the Capital Graph portfolio read were retired
+# with their features, so they are not registered here at all rather than
+# registered and refused. A registered capability is a capability the planner
+# can still choose, and a planner that chooses a retired read spends a turn
+# earning a refusal it could not have avoided — the intent phrases above were
+# the thing steering it there.
 #
-# The domain choices are imported rather than restated. A vocabulary typed twice
-# is a vocabulary that will eventually disagree with itself, and the failure
-# would be quiet — a domain the model may name that the reader then filters to
-# nothing, indistinguishable from an empty store.
-_register(CapabilitySpec(
-    capability_id="private.facts.list",
-    description="List the authenticated member's own recorded private facts",
-    intents=("my private office", "what do you know about me",
-             "what have i recorded", "my private facts", "private information",
-             "what does pulsesoc know about me", "my recorded details",
-             "show my private office", "what is in my private office"),
-    risk=RiskLevel.READ_ONLY,
-    confirmation=ConfirmationPolicy.NEVER,
-    tool_name="pulsesoc.private_facts.list",
-    # There is no field naming another account, so the scope is structural: the
-    # only owner this capability can reach is the caller.
-    permission=PermissionScope.SELF_ACCOUNT_ONLY,
-    fields=(
-        FieldSpec("domain", "enum", required=False,
-                  choices=_PRIVATE_FACT_DOMAINS, default=""),
-        FieldSpec("limit", "int", required=False, minimum=1, maximum=25, default=10),
-    ),
-    executor="private_facts_list",
-    verifier="",
-    native_route="/pulse/private-office/facts",
-    result_card=CardType.SEARCH_RESULTS,
-    audit_category="private_facts_read",
-))
-
-
-# The Batch C record views — obligations, events, decisions, requests, risks,
-# opportunities. Derived from the spec module rather than restated, so the six
-# entries here, the six policy-table names and the six executors agree by
-# construction: the vocabulary is typed exactly once, in
-# ``services.private_office.undx_records_spec``. Read-only for the same reason
-# ``private.facts.list`` is — a record written by an agent from a conversation
-# has a model's paraphrase as its provenance, and an obligation is worse than a
-# fact in that respect because it carries a date somebody may act on.
-def _register_private_record_capabilities() -> None:
-    from services.private_office import undx_records_spec as _po_spec
-
-    for _entry in _po_spec.CAPABILITIES:
-        _cid = _entry["capability_id"]
-        _register(CapabilitySpec(
-            capability_id=_cid,
-            description=_entry["description"],
-            intents=tuple(_entry["intents"]),
-            risk=RiskLevel.READ_ONLY,
-            confirmation=ConfirmationPolicy.NEVER,
-            tool_name=_po_spec.tool_name(_cid),
-            # No field names an account, so the scope is structural: the only
-            # owner any of these can reach is the caller.
-            permission=PermissionScope.SELF_ACCOUNT_ONLY,
-            fields=(
-                FieldSpec("status", "str", required=False, max_length=32, default=""),
-                FieldSpec("limit", "int", required=False, minimum=1,
-                          maximum=_po_spec.MAX_LIMIT, default=_po_spec.DEFAULT_LIMIT),
-            ),
-            executor=_po_spec.executor_name(_cid),
-            verifier="",
-            native_route=_entry["native_route"],
-            result_card=CardType.SEARCH_RESULTS,
-            audit_category=_po_spec.AUDIT_CATEGORY,
-        ))
-
-
-_register_private_record_capabilities()
-
-
-# The five shipped feature reads — documents, people, briefings, shield
-# posture, concierge desk. Derived from
-# ``services.private_office.undx_feature_reads_spec`` exactly as Batch C
-# derives from its spec, and read-only for a stronger reason than provenance
-# alone: several of the writes behind these features have consequences —
-# a briefing generation does bulk reads, a concierge request summons a human —
-# that must stay deliberate acts on the member's own screen.
+# Derived from ``services.private_office.undx_feature_reads_spec`` rather than
+# restated, so the registry entry, the policy-table name and the executor agree
+# by construction: the vocabulary is typed exactly once. Read-only for a
+# stronger reason than provenance alone — the writes behind Relationship
+# Intelligence must stay deliberate acts on the member's own screen.
 def _register_private_feature_read_capabilities() -> None:
     from services.private_office import undx_feature_reads_spec as _po_reads
 
@@ -1255,40 +1171,6 @@ def _register_private_feature_read_capabilities() -> None:
 
 
 _register_private_feature_read_capabilities()
-
-
-# The Capital Graph portfolio read. One capability, zero fields: the strongest
-# possible statement that nothing an agent says can widen the read. Everything
-# else — description, intents, tool name, executor name, native route, audit
-# category — derives from ``undx_capital_spec`` so the registry, the policy
-# ledger, the knowledge map and the executor table agree by construction.
-# Read-only for the same reason the fact and record reads are, plus one more:
-# the projection's totals refuse to sum an unpriced set, and a write surface
-# here would be a place for an agent to "fix" that refusal.
-def _register_private_capital_capability() -> None:
-    from services.private_office import undx_capital_spec as _po_capital
-
-    _cid = _po_capital.CAPABILITY_ID
-    _register(CapabilitySpec(
-        capability_id=_cid,
-        description=_po_capital.SPEC["description"],
-        intents=tuple(_po_capital.SPEC["intents"]),
-        risk=RiskLevel.READ_ONLY,
-        confirmation=ConfirmationPolicy.NEVER,
-        tool_name=_po_capital.tool_name(_cid),
-        # No field names an account, so the scope is structural: the only
-        # portfolio this capability can reach is the caller's own.
-        permission=PermissionScope.SELF_ACCOUNT_ONLY,
-        fields=(),
-        executor=_po_capital.executor_name(_cid),
-        verifier="",
-        native_route=_po_capital.SPEC["native_route"],
-        result_card=CardType.SEARCH_RESULTS,
-        audit_category=_po_capital.AUDIT_CATEGORY,
-    ))
-
-
-_register_private_capital_capability()
 
 for _capability, _intent, _saved, _executor, _verifier, _undo in (
     ("reels.save", "save reel", True, "reels_save", "reel_saved_value", "reels.unsave"),

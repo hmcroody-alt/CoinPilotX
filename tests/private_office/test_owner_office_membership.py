@@ -67,6 +67,7 @@ import pytest  # noqa: E402
 from flask import Flask  # noqa: E402
 
 from services import db  # noqa: E402
+from services import private_office_relationships_routes as rel_routes  # noqa: E402
 from services import private_office_routes as routes  # noqa: E402
 from services.business_os.entitlements import facade  # noqa: E402
 from services.business_os.entitlements import owner as own  # noqa: E402
@@ -137,10 +138,23 @@ def _as(user_id, status="active"):
     }
 
 
+#: An Office-data route that stands behind BOTH gates — the tier gate on
+#: ``relationship_intelligence`` and the second lock — so a 423 from it is a
+#: statement about the lock and not about the plan.
+#:
+#: This suite used ``/api/private-office/facts`` until Private Facts was
+#: retired. The choice of path is not incidental to what tests 8-12 prove: a
+#: retired path answers 410 from the gate before the lock is ever consulted, so
+#: pointing them at one would have turned five second-lock assertions into five
+#: assertions that a route is gone, all still green.
+OFFICE_DATA_ROUTE = "/api/private-office/relationships"
+
+
 @pytest.fixture()
 def client():
     app = Flask(__name__)
     routes.register(app)
+    rel_routes.register(app)
     return app.test_client()
 
 
@@ -249,7 +263,7 @@ def test_08_an_owner_with_no_passcode_is_locked_out_of_the_data(client):
     proved who is holding the phone, which is a different sentence entirely."""
     _own(OWNER)
     _as(OWNER)
-    resp = client.get("/api/private-office/facts")
+    resp = client.get(OFFICE_DATA_ROUTE)
     assert resp.status_code == 423
     body = resp.get_json()
     assert body["code"] == po_security.ERR_LOCKED
@@ -261,7 +275,7 @@ def test_09_an_owner_with_a_passcode_but_no_grant_stays_out(client):
     _own(OWNER)
     _unlock(client, OWNER)
     _as(OWNER)
-    resp = client.get("/api/private-office/facts", headers={routes.GRANT_HEADER: ""})
+    resp = client.get(OFFICE_DATA_ROUTE, headers={routes.GRANT_HEADER: ""})
     assert resp.status_code == 423
     assert resp.get_json()["setup_required"] is False
 
@@ -270,7 +284,7 @@ def test_10_a_forged_grant_does_not_open_the_office(client):
     _own(OWNER)
     _unlock(client, OWNER)
     _as(OWNER)
-    resp = client.get("/api/private-office/facts",
+    resp = client.get(OFFICE_DATA_ROUTE,
                       headers={routes.GRANT_HEADER: "not-a-real-grant"})
     assert resp.status_code == 423
 
@@ -282,7 +296,7 @@ def test_11_the_owner_gets_in_by_unlocking_like_anybody_else(client):
     token = _unlock(client, OWNER)
     assert token, "unlock must mint a grant"
     _as(OWNER)
-    resp = client.get("/api/private-office/facts",
+    resp = client.get(OFFICE_DATA_ROUTE,
                       headers={routes.GRANT_HEADER: token})
     assert resp.status_code == 200
 
@@ -292,9 +306,9 @@ def test_12_a_locked_refusal_carries_no_office_data(client):
     entire input: a code and a boolean."""
     _own(OWNER)
     _as(OWNER)
-    body = client.get("/api/private-office/facts").get_json()
+    body = client.get(OFFICE_DATA_ROUTE).get_json()
     assert set(body) <= {"ok", "state", "code", "setup_required", "message"}
-    assert "facts" not in body and "items" not in body
+    assert "people" not in body and "items" not in body
 
 
 def test_13_undx_reaches_the_same_locked_door():
@@ -305,7 +319,7 @@ def test_13_undx_reaches_the_same_locked_door():
     the one with no proof of who is holding the phone."""
     _own(OWNER)
     resolved = tiers.resolve_tier(OWNER)
-    assert po_access.decide(resolved, routes.FACTS_FEATURE_ID)["decision"] == \
+    assert po_access.decide(resolved, rel_routes.RELATIONSHIPS_FEATURE_ID)["decision"] == \
         po_access.ALLOW, "membership must pass, or this proves nothing"
 
     conn = db.connect()
@@ -360,6 +374,52 @@ def test_16_the_top_rung_does_not_build_anything(client):
         assert decision["decision"] != po_access.ALLOW, fid
         assert decision["minimum_tier"] == "", \
             f"{fid}: an unbuilt feature must offer no upgrade path"
+
+
+def test_16b_a_retired_feature_offers_the_owner_no_upgrade_path(client):
+    """Retirement is an overlay on the matrix, not a deleted row, and this is
+    the reason: a deleted row is *unranked*, and an unranked feature id is not
+    refused by ``access.decide`` at all. Asserting on the overlay is asserting
+    that the rows are still there to be refused.
+
+    ``minimum_tier`` is the load-bearing half. A retired feature that named a
+    tier would send the member to checkout for something no amount of money
+    restores — the same lie test_16 refuses for unbuilt features, told about a
+    capability that used to work, which is worse."""
+    _own(OWNER)
+    resolved = tiers.resolve_tier(OWNER)
+    retired = sorted(feature_matrix.RETIRED_FEATURE_IDS)
+    assert retired, "this proves nothing if nothing is retired"
+    for fid in retired:
+        decision = po_access.decide(resolved, fid)
+        assert decision["decision"] == po_access.RETIRED, fid
+        assert decision["minimum_tier"] == "", \
+            f"{fid}: a retired feature must offer no upgrade path"
+
+
+def test_16c_retirement_beats_the_top_tier_and_the_resolver_both(client):
+    """Retirement is decided before tier is consulted, so it has to hold for
+    the owner, for a degraded resolver that returned nothing, and for FREE
+    alike. The degraded case is the one worth pinning: a resolver failure that
+    fell through to "no opinion" must not read as "not retired"."""
+    _own(OWNER)
+    fid = sorted(feature_matrix.RETIRED_FEATURE_IDS)[0]
+    for resolved in (
+        tiers.resolve_tier(OWNER),
+        {},
+        {"effective_tier": tiers.TIER_FREE},
+    ):
+        assert po_access.decide(resolved, fid)["decision"] == po_access.RETIRED
+
+
+def test_16d_a_retired_path_is_gone_rather_than_forbidden(client):
+    """The Private Facts route was removed with its feature, so the refusal is
+    made by the router rather than by the gate. The 410-on-retired contract
+    lives on ``access`` and is exercised against the matrix above; this asserts
+    only that the handler did not survive its feature."""
+    _own(OWNER)
+    _as(OWNER)
+    assert client.get("/api/private-office/facts").status_code == 404
 
 
 def test_17_an_empty_allowlist_grants_this_to_nobody(client):

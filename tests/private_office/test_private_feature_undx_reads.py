@@ -1,21 +1,25 @@
-"""The five feature reads UNDX gets over the shipped Private Office engines.
+"""The feature reads UNDX gets over the shipped Private Office engines.
 
-``services.private_office.undx_feature_reads_spec`` declares one read per
-feature — documents, people, briefings, shield posture, concierge desk — and
-the registry, the policy table, the knowledge map and the executor table all
-derive from it. This suite holds that arrangement to its promises:
+``services.private_office.undx_feature_reads_spec`` declares one read per live
+feature, and the registry, the policy table, the knowledge map and the executor
+table all derive from it. This suite holds that arrangement to its promises:
 
 * every capability is registered in all four surfaces, or in none;
-* all five are read-only, self-scoped, and carry no field that can name an
+* every one is read-only, self-scoped, and carries no field that can name an
   account, a table, or a row in someone else's office;
 * the service hook reads the caller's office and nobody else's, and a forged
   owner argument is ignored rather than honoured;
 * every read leaves an audit row with purpose ``undx_context``, and no seeded
-  secret text leaks into the audit trail;
-* the truth blocks survive the trip: the concierge read carries ``desk``
-  staffing honesty and the shield read carries the ``external`` coverage
-  block, because an agent answering from these payloads must not be able to
-  imply a human or an external check that does not exist.
+  secret text leaks into the audit trail.
+
+The spec declared five reads — documents, people, briefings, shield posture,
+concierge desk — until four of those features were retired. The interesting
+property is the one that did *not* change: a capability must be registered in
+all four surfaces or in none, and that is asserted over ``spec.CAPABILITIES``
+rather than over a list of names, so the retirement narrowed the suite without
+weakening it. What had to be written by hand is the count assertion below,
+which is deliberately not derived from the spec — a count that reads itself
+cannot notice a capability quietly reappearing.
 """
 
 from __future__ import annotations
@@ -34,21 +38,16 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from services import db  # noqa: E402
 from services.private_office import audit  # noqa: E402
-from services.private_office import briefings  # noqa: E402
-from services.private_office import concierge  # noqa: E402
-from services.private_office import documents  # noqa: E402
 from services.private_office import feature_matrix  # noqa: E402
-from services.private_office import records  # noqa: E402
 from services.private_office import relationships  # noqa: E402
 from services.private_office import schema  # noqa: E402
-from services.private_office import shield  # noqa: E402
 from services.private_office import undx_feature_reads_spec as spec  # noqa: E402
 
 USER_A = 9821
 USER_B = 9822
 
 #: Text that must never surface in an audit row or in B's answers.
-_SECRETS = ("Meridian escrow deed", "Dr. Ansel Keeler", "overdue berth fee")
+_SECRETS = ("Dr. Ansel Keeler",)
 
 _FAILURES: list[str] = []
 
@@ -66,11 +65,6 @@ def _connect():
     conn = db.connect()
     cur = conn.cursor()
     schema.ensure_private_schema(cur)
-    records.ensure_records_schema(cur)
-    documents.ensure_documents_schema(cur)
-    briefings.ensure_briefings_schema(cur)
-    shield.ensure_shield_schema(cur)
-    concierge.ensure_concierge_schema(cur)
     return conn, cur
 
 
@@ -79,12 +73,10 @@ def _iso_in(days: int) -> str:
 
 
 def setup_environment() -> None:
+    # Only the schemas a live capability reads. The retired engines keep their
+    # own caches and their own tables — this suite simply no longer has a
+    # reason to touch them.
     schema.reset_schema_cache()
-    records.reset_records_schema_cache()
-    documents.reset_documents_schema_cache()
-    briefings.reset_briefings_schema_cache()
-    shield.reset_shield_schema_cache()
-    concierge.reset_concierge_schema_cache()
     conn, cur = _connect()
     conn.commit()
     conn.close()
@@ -101,10 +93,23 @@ def stage_registered_everywhere() -> None:
     from services import undx_knowledge_map as knowledge
     from services import undx_policy as policy
 
-    check("six capabilities are declared", len(spec.CAPABILITIES) == 6,
+    # Written out rather than derived. A count that reads itself cannot notice
+    # a retired capability being quietly re-registered, and re-registering one
+    # is the specific mistake this stage exists to catch: a registered
+    # capability is one the planner can still choose, and it would spend a turn
+    # earning a refusal it had no way to avoid.
+    check("exactly one capability is declared", len(spec.CAPABILITIES) == 1,
           str(len(spec.CAPABILITIES)))
     ids = [entry["capability_id"] for entry in spec.CAPABILITIES]
+    check("the declared capability is the relationships read",
+          ids == ["private.people.list"], str(ids))
     check("no capability id is declared twice", len(set(ids)) == len(ids), str(ids))
+    check("no retired feature has a read declared for it",
+          not (set(ids) & {
+              "private.documents.list", "private.briefings.list",
+              "private.shield.posture", "private.concierge.desk",
+              "private.facts.list", "private.capital.portfolio",
+          }), str(ids))
 
     for entry in spec.CAPABILITIES:
         cid = entry["capability_id"]
@@ -214,21 +219,16 @@ def stage_read_only_vocabulary() -> None:
 # ---------------------------------------------------------------------------
 
 def _seed_office(cur, owner: int) -> None:
-    documents.store_document(
-        cur, owner_user_id=owner, filename="deed.txt",
-        content=b"holder: Meridian escrow deed\n", title="Meridian escrow deed")
+    """Seed only what a live capability can read.
+
+    This seeded six engines while six reads were declared. The retired engines
+    still exist — they hold members' historical records — so seeding them would
+    still work, which is exactly why it is worth not doing: a row written here
+    and readable by nothing would make the isolation and audit stages below
+    pass over data no capability can reach.
+    """
     relationships.add_person(
         cur, owner_user_id=owner, name="Dr. Ansel Keeler", role="advisor")
-    # An overdue obligation gives the shield scan something true to find.
-    records.create_record(
-        cur, record_type=records.TYPE_OBLIGATION, owner_user_id=owner,
-        title="overdue berth fee", obligation_type="TAX", due_at=_iso_in(-5),
-        sensitivity="INTERNAL")
-    shield.run_scan(cur, owner_user_id=owner)
-    briefings.generate_briefing(cur, owner_user_id=owner)
-    concierge.submit_request(
-        cur, owner_user_id=owner, title="Meridian escrow deed review",
-        category="LEGAL")
 
 
 def stage_hook_reads_the_office() -> None:
@@ -249,53 +249,37 @@ def stage_hook_reads_the_office() -> None:
               str(result["counts"]))
     conn.commit()
 
-    check("the documents read finds the seeded document",
-          any("Meridian" in str(r.get("title")) for r in
-              results["private.documents.list"]["records"]))
-    check("the documents read never ships a storage key",
-          all("storage_key" not in r for r in
-              results["private.documents.list"]["records"]))
     check("the people read finds the seeded advisor",
           any("Keeler" in str(r.get("name")) for r in
               results["private.people.list"]["records"]))
-    check("the briefings read finds the generated briefing",
-          len(results["private.briefings.list"]["records"]) >= 1)
-    check("the shield read finds the overdue obligation",
-          any(r.get("kind") == shield.KIND_OVERDUE_OBLIGATION for r in
-              results["private.shield.posture"]["records"]))
-    check("the concierge read finds the filed request",
-          any("escrow" in str(r.get("title")) for r in
-              results["private.concierge.desk"]["records"]))
-
-    posture = results["private.shield.posture"]["extras"].get("posture", {})
-    check("the shield read carries the posture block",
-          "open_findings" in posture, str(posture.keys() if posture else posture))
-    external = posture.get("external", {})
-    check("the posture names what no provider has checked",
-          bool(external) and all(
-              str(v.get("state", v) if isinstance(v, dict) else v)
-              for v in ([external] if not isinstance(external, dict) else external.values())),
-          str(external))
-
-    desk = results["private.concierge.desk"]["extras"].get("desk", {})
-    check("the concierge read carries the desk staffing block",
-          "staffed" in desk and "operator_count" in desk, str(desk))
-    check("an empty roster reads as unstaffed, not as a quiet human",
-          desk.get("staffed") is False or int(desk.get("operator_count") or 0) > 0,
-          str(desk))
 
     over = spec.execute_capability(
-        cur, capability_id="private.documents.list", owner_user_id=USER_A,
+        cur, capability_id="private.people.list", owner_user_id=USER_A,
         arguments={"limit": 10_000})
     check("an oversized limit is bounded, not honoured",
           over["ok"] and over["counts"]["returned"] <= spec.MAX_LIMIT,
           str(over["counts"]))
 
     junk = spec.execute_capability(
-        cur, capability_id="private.documents.list", owner_user_id=USER_A,
+        cur, capability_id="private.people.list", owner_user_id=USER_A,
         arguments={"limit": "a lot"})
     check("a junk limit falls back to the default rather than erroring",
           junk["ok"], str(junk))
+
+    # Retirement must reach the executor, not only the registry. A capability
+    # id that was removed from the spec has to be refused by the same path an
+    # invented one takes — if a stale caller could still name it and be served,
+    # the removal would only have hidden the read from the planner.
+    for gone in ("private.documents.list", "private.briefings.list",
+                 "private.shield.posture", "private.concierge.desk",
+                 "private.facts.list", "private.capital.portfolio"):
+        retired = spec.execute_capability(
+            cur, capability_id=gone, owner_user_id=USER_A)
+        check(f"the retired {gone} is refused, not served",
+              not retired["ok"] and retired["denied"] == "unknown_capability",
+              str(retired))
+        check(f"the {gone} refusal carries no records",
+              retired["records"] == [], str(retired.get("records")))
 
     unknown = spec.execute_capability(
         cur, capability_id="private.everything.dump", owner_user_id=USER_A)

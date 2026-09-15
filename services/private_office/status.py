@@ -174,8 +174,28 @@ def _resolver_health() -> dict:
             for spec in _fm.FEATURES.values()
             if spec.implementation != _fm.IMPL_IMPLEMENTED
         )
-        checks["provider_required_never_entitled"] = not _fm.is_entitled(
-            "private_shield.breach_monitoring", _tiers.TIER_PRIVATE_OFFICE
+        # PROVIDER_REQUIRED specifically, separated from the check above because
+        # it is the state most likely to be mistaken for shipped: the
+        # integration point exists and the code path is real, so only the
+        # absent provider makes it unusable.
+        #
+        # This named ``private_shield.breach_monitoring`` until that feature was
+        # retired, at which point the probe silently stopped testing anything —
+        # a retired feature is refused before its implementation state is ever
+        # consulted, so the assertion would have held no matter how badly
+        # PROVIDER_REQUIRED behaved. Derived from the matrix now, and explicitly
+        # skipping retired rows for the same reason: those are the rows that can
+        # pass it vacuously.
+        # The probe losing its last subject is a real risk but not an outage,
+        # so it is not asserted here: an empty set passing would page nobody,
+        # and an empty set failing would page somebody for having shipped a
+        # provider. ``test_provider_required_probe_has_a_subject`` holds that
+        # line in CI, where a false alarm costs a re-read instead of a night.
+        checks["provider_required_never_entitled"] = all(
+            not _fm.is_entitled(spec.feature_id, _tiers.TIER_PRIVATE_OFFICE)
+            for spec in _fm.FEATURES.values()
+            if spec.implementation == _fm.IMPL_PROVIDER_REQUIRED
+            and not _fm.is_retired(spec.feature_id)
         )
         healthy = all(bool(v) for v in checks.values())
         return {"healthy": healthy, "checks": checks, "error": ""}
@@ -193,6 +213,12 @@ def _feature_summary() -> dict:
         "total": len(_fm.FEATURES),
         "by_implementation": summary,
         "live_feature_ids": list(_fm.implemented_feature_ids()),
+        # Named rather than merely subtracted from the total. A retired row is
+        # still IMPLEMENTED in the census above — the engine is still there and
+        # still reads the member's historical records — so without this list an
+        # operator comparing by_implementation against live_feature_ids sees a
+        # gap of eight and no way to tell a retirement from a regression.
+        "retired_feature_ids": sorted(_fm.RETIRED_FEATURE_IDS),
     }
 
 

@@ -68,35 +68,17 @@ PRODUCTION_TOOL_REGISTRY: dict[str, dict[str, Any]] = {
     # "this needs read-after-write". The agent pack supplies a real read-back verdict via
     # ``canonical_verified``, so it needs no stand-in and must not advertise a route it
     # does not have. Write semantics live in ``risk`` and ``verification_route``.
-    # Private Office. Read-only and owner-scoped by construction: the capability
-    # declares no field naming an account, so the only store it can reach is the
-    # caller's. Reached in-process, hence no method.
-    "pulsesoc.private_facts.list": {"method": None, "route": "services.private_office.facts.list_facts", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    # The Batch C record views, all through the one sanctioned retrieval door.
-    # Same structural owner scope as the facts read: no field names an account.
-    "pulsesoc.private_obligations.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_events.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_decisions.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_requests.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_risks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_opportunities.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_tasks.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_projects.list": {"method": None, "route": "services.private_office.retrieval.retrieve_records", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    # The shipped feature reads, each behind its own feature gate. Same
-    # structural owner scope: no field names an account. Document intelligence
-    # carries two — the file list and the cited facts drawn from those files —
-    # sharing one feature id and one kill switch.
-    "pulsesoc.private_documents.list": {"method": None, "route": "services.private_office.documents.list_documents", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_documents.facts": {"method": None, "route": "services.private_office.documents.list_document_facts", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
+    # Private Office. One read: the Relationship Intelligence directory.
+    # Read-only and owner-scoped by construction — the capability declares no
+    # field naming an account, so the only store it can reach is the caller's.
+    # Reached in-process, hence no method.
+    #
+    # Fourteen more entries stood here for Private Facts, the Batch C record
+    # views and the Capital Graph portfolio. They are gone rather than kept as
+    # dead rows: this ledger is what makes a tool executable at all, so a row
+    # surviving its capability would be a name an executor could still be
+    # reached by if anything ever re-registered it.
     "pulsesoc.private_people.list": {"method": None, "route": "services.private_office.relationships.directory", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_briefings.list": {"method": None, "route": "services.private_office.briefings.list_briefings", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_shield.posture": {"method": None, "route": "services.private_office.shield.posture", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    "pulsesoc.private_concierge.desk": {"method": None, "route": "services.private_office.concierge.list_requests", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
-    # The Capital Graph portfolio read — the projection view, not the ledger
-    # tables. Prices at read time and refuses to total an unpriced set; the
-    # agent relays that refusal rather than filling it in. Same structural
-    # owner scope as the other Private Office reads: no field names an account.
-    "pulsesoc.private_capital.portfolio": {"method": None, "route": "services.private_office.portfolio_projection.portfolio_view", "risk": "read_only", "confirmation": False, "canonical_key": "user_id"},
     "pulsesoc.crypto_alerts.list": {"method": None, "route": "services.alert_engine.list_alert_rules", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.get": {"method": None, "route": "services.alert_engine.get_alert_rule", "risk": "read_only", "confirmation": False, "canonical_key": "alert_id"},
     "pulsesoc.crypto_alerts.pause": {"method": None, "route": "services.alert_engine.pause_alert", "risk": "medium", "confirmation": False, "canonical_key": "alert_id", "verification_route": "services.alert_engine.get_alert_rule"},

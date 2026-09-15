@@ -27,10 +27,21 @@ Four outcomes, and they are four rather than two on purpose:
 ``NOT_ENTITLED``
     A real capability, out of reach. This is the only outcome that carries a
     ``minimum_tier``.
+``RETIRED``
+    The capability was withdrawn from the product. Distinct from
+    NOT_IMPLEMENTED because the two are not the same admission: NOT_IMPLEMENTED
+    means we never built it, RETIRED means we did, the member may well have
+    used it, and their rows are still there. Collapsing retirement into "not
+    implemented" would tell someone who filed a hundred records that the
+    feature never existed. Like NOT_IMPLEMENTED it offers no upgrade — no tier
+    brings a withdrawn feature back, so quoting a price for one would be taking
+    money for nothing.
 
-The implementation state is consulted *before* the tier, which is what makes
-"PRIVATE_OFFICE does not magically make an unbuilt feature available" a property
-of the code rather than a promise in a document.
+Retirement is checked *before* the resolver, because whether a feature still
+exists in the product does not depend on who is asking or on whether we managed
+to resolve their tier. The implementation state is then consulted before the
+tier, which is what makes "PRIVATE_OFFICE does not magically make an unbuilt
+feature available" a property of the code rather than a promise in a document.
 """
 
 from __future__ import annotations
@@ -43,11 +54,15 @@ UNAVAILABLE = "UNAVAILABLE"
 NOT_IMPLEMENTED = _matrix.AVAIL_NOT_IMPLEMENTED
 FEATURE_DISABLED = _matrix.AVAIL_FEATURE_DISABLED
 NOT_ENTITLED = _matrix.AVAIL_NOT_ENTITLED
+RETIRED = "RETIRED"
 
 #: Decisions that mean "no rows may be read". Callers branch on membership here
 #: rather than on ``!= ALLOW`` so that adding a fifth outcome later forces a
 #: deliberate choice at every surface instead of silently defaulting to refusal.
-REFUSALS = frozenset({UNAVAILABLE, NOT_IMPLEMENTED, FEATURE_DISABLED, NOT_ENTITLED})
+#: RETIRED is that fifth outcome, and it is in here rather than handled
+#: separately so that every existing caller refuses it on the day it is added —
+#: the fail-closed direction was the whole point of the membership test.
+REFUSALS = frozenset({UNAVAILABLE, NOT_IMPLEMENTED, FEATURE_DISABLED, NOT_ENTITLED, RETIRED})
 
 
 def decide(resolved: dict, feature_id: str) -> dict:
@@ -65,6 +80,17 @@ def decide(resolved: dict, feature_id: str) -> dict:
         "implementation": "",
         "minimum_tier": "",
     }
+
+    if _matrix.is_retired(feature_id):
+        # Before the resolver on purpose. "Does this product still have this
+        # feature" is not a question about the member, so a degraded tier
+        # resolve must not turn a withdrawn feature into UNAVAILABLE — that
+        # shape means "try again", and retrying will not bring it back.
+        record["decision"] = RETIRED
+        spec = _matrix.get(feature_id)
+        record["implementation"] = spec.implementation if spec else ""
+        # No minimum_tier: nothing to sell.
+        return record
 
     if (resolved or {}).get("resolver_state") != _tiers.RESOLVER_OK:
         # No tier is reported. Naming one here would be inventing the answer the
@@ -96,5 +122,5 @@ def allowed(resolved: dict, feature_id: str) -> bool:
 
 __all__ = [
     "ALLOW", "UNAVAILABLE", "NOT_IMPLEMENTED", "FEATURE_DISABLED",
-    "NOT_ENTITLED", "REFUSALS", "decide", "allowed",
+    "NOT_ENTITLED", "RETIRED", "REFUSALS", "decide", "allowed",
 ]

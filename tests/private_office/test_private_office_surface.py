@@ -294,15 +294,61 @@ def stage_entry_state_reads_implementation_first():
         check("the entry is shown once something real is inside",
               office.entry_visible("PRIVATE_OFFICE") is True)
 
-    provider = [
-        child for child in top["unavailable"]
-        if child["implementation"] == feature_matrix.IMPL_PROVIDER_REQUIRED
-    ]
-    check("provider-blocked children keep their own reason",
-          bool(provider) and all(child["reason"] == "PROVIDER_REQUIRED" for child in provider),
-          str([child["reason"] for child in provider]))
-    check("a provider-blocked child is not offered as an upgrade",
-          all(child["reason"] != "UPGRADE_REQUIRED" for child in provider))
+    # Only a rank problem may be sold.
+    #
+    # ``reason`` has five words and exactly one of them means "paying more would
+    # change this". The other four describe blockers money cannot move, and they
+    # are separate words precisely so the surface can tell them apart; collapsing
+    # any of them into UPGRADE_REQUIRED would put a checkout button in front of a
+    # member whose payment would change nothing.
+    #
+    # Stated over the whole matrix at every tier rather than over the Office's
+    # own children, because the children change. This check used to name
+    # PROVIDER_REQUIRED and read the Office's unavailable list — and when the
+    # last provider-blocked child left the room, it had no subject left. It
+    # failed rather than passing silently, but only because somebody had thought
+    # to write ``bool(provider) and`` in front of it. Derived from the matrix,
+    # the subject cannot go away while there is a matrix.
+    tiers_to_probe = ("FREE", "PREMIUM", "PRIVATE", "PRIVATE_OFFICE")
+    mis_sold = []
+    mis_reasoned = []
+    seen_reasons = set()
+    for feature_id in feature_matrix.FEATURES:
+        for tier in tiers_to_probe:
+            child = office._child_state(feature_id, tier)
+            seen_reasons.add(child["reason"])
+            rank_blocked = (
+                child["availability"] == feature_matrix.AVAIL_NOT_ENTITLED
+            )
+            if child["reason"] == "UPGRADE_REQUIRED" and not rank_blocked:
+                mis_sold.append((feature_id, tier, child["availability"]))
+            if rank_blocked and child["reason"] != "UPGRADE_REQUIRED":
+                mis_reasoned.append((feature_id, tier, child["reason"]))
+
+    check("only a rank problem is ever offered as an upgrade",
+          not mis_sold, str(mis_sold[:5]))
+    check("and a rank problem is always offered as one — "
+          "a sellable block reported as anything else is a lost sale, "
+          "which is the harmless direction but still a wrong answer",
+          not mis_reasoned, str(mis_reasoned[:5]))
+    check("a provider-blocked row keeps its own word rather than collapsing "
+          "into NOT_IMPLEMENTED",
+          "PROVIDER_REQUIRED" in seen_reasons, str(sorted(seen_reasons)))
+    check("the reason vocabulary is closed",
+          seen_reasons <= {"AVAILABLE", "PROVIDER_REQUIRED", "NOT_IMPLEMENTED",
+                           "TEMPORARILY_DISABLED", "UPGRADE_REQUIRED"},
+          str(sorted(seen_reasons)))
+    check("the probe reached more than one reason — a single-word result would "
+          "mean the loop is not exercising the branch it is testing",
+          len(seen_reasons) >= 3, str(sorted(seen_reasons)))
+
+    # The Office's own children, as actually rendered today.
+    check("no Office child blocked by anything but rank is offered as an upgrade",
+          all(child["reason"] != "UPGRADE_REQUIRED"
+              or child["availability"] == feature_matrix.AVAIL_NOT_ENTITLED
+              for child in top["unavailable"]),
+          str([(c["feature_id"], c["reason"], c["availability"])
+               for c in top["unavailable"]]))
 
     check("children are reported in the declared display order",
           [child["feature_id"] for child in top["available"] + top["unavailable"]]
@@ -350,6 +396,80 @@ def stage_no_sql_in_the_surface_layer():
           "_facts.count_facts_by_domain" in source)
 
 
+def stage_every_vocabulary_normalizes_to_itself():
+    """Each closed vocabulary round-trips through its own normalizer.
+
+    Sounds tautological and is not. ``model._canonical`` upper-cases before
+    comparing, so a vocabulary member spelled in lower case can never match
+    itself: the normalizer returns ``None`` for its own constant. Every caller
+    in this package treats ``None`` as "unrecognised, carry on without it" —
+    which is the right thing to do with a typo from outside and the wrong thing
+    to do with one of our own constants, because the value is then dropped
+    silently, for every row, at every call site that touches that axis. Nothing
+    raises and nothing logs; the column just comes back empty.
+
+    The pairing below is written out by hand because only a human knows which
+    normalizer belongs to which vocabulary — but the *coverage* is not trusted
+    to a human. The last check discovers every closed vocabulary the module
+    exports and fails if one is missing from the list, so this protects the
+    vocabularies that exist rather than the ones that existed the day it was
+    written. `model.py` gains vocabularies faster than anyone re-reads this file.
+
+    What is deliberately NOT asserted here is that the provenance and
+    verification vocabularies are disjoint. They are not: ``VERIFIED``,
+    ``CONFLICTING`` and ``LEGACY_UNKNOWN`` appear in both, and `model.py` says
+    why at the point of definition — the two axes were one column once, and
+    those three labels are the rows written before the split. Removing them from
+    ``PROVENANCE_TYPES`` would not clean anything up; it would make every
+    pre-split row fail to normalize, which is this check's own failure mode
+    applied to real data. The overlap is only ambiguous for code that takes a
+    bare string and asks which axis it belongs to, and no code here does that:
+    every reader calls an axis-specific normalizer against an axis-specific
+    tuple.
+    """
+    print("\n[vocabulary round-trip]")
+    pairs = (
+        ("DOMAINS", model.DOMAINS, model.normalize_domain),
+        ("EVIDENCE_TYPES", model.EVIDENCE_TYPES, model.normalize_evidence_type),
+        ("LIFECYCLE_STATES", model.LIFECYCLE_STATES, model.normalize_lifecycle),
+        ("NODE_TYPES", model.NODE_TYPES, model.normalize_node_type),
+        ("PROVENANCE_TYPES", model.PROVENANCE_TYPES, model.normalize_provenance),
+        ("RELATION_TYPES", model.RELATION_TYPES, model.normalize_relation),
+        ("SENSITIVITIES", model.SENSITIVITIES, model.normalize_sensitivity),
+        ("VALUE_TYPES", model.VALUE_TYPES, model.normalize_value_type),
+        ("VERIFICATION_STATES", model.VERIFICATION_STATES,
+         model.normalize_verification_state),
+    )
+    for name, values, normalizer in pairs:
+        broken = [v for v in values if normalizer(v) != v]
+        check(f"{name} round-trips through its normalizer",
+              not broken, f"unmatchable: {broken}")
+        # A duplicate is not harmless here even though the normalizer would
+        # still match: the tuples are also iterated to build rank tables and
+        # summaries, so a repeated member silently double-counts.
+        check(f"{name} has no duplicate members",
+              len(set(values)) == len(values), str(values))
+
+    # Coverage. Every plural uppercase tuple-of-strings the module exports is a
+    # closed vocabulary, and every closed vocabulary needs a normalizer that can
+    # recognise its own members. Anything found here and absent above is either
+    # a vocabulary with no normalizer at all or one this check forgot; both are
+    # worth failing on, and neither is discoverable by reading the list above.
+    covered = {name for name, _values, _fn in pairs}
+    discovered = {
+        name for name in dir(model)
+        if name.isupper() and isinstance(getattr(model, name), tuple)
+        and getattr(model, name)
+        and all(isinstance(item, str) for item in getattr(model, name))
+    }
+    check("every closed vocabulary in model.py is covered above",
+          discovered <= covered, f"uncovered: {sorted(discovered - covered)}")
+    # The other direction, or the check above passes when `pairs` is padded with
+    # names `model` no longer exports and the discovery set shrinks to nothing.
+    check("every vocabulary named above still exists in model.py",
+          covered <= discovered, f"stale: {sorted(covered - discovered)}")
+
+
 # ---------------------------------------------------------------------------
 def main() -> int:
     _FAILURES.clear()
@@ -362,6 +482,7 @@ def main() -> int:
     stage_verification_never_rounds_up()
     stage_entry_state_reads_implementation_first()
     stage_no_sql_in_the_surface_layer()
+    stage_every_vocabulary_normalizes_to_itself()
     print("\n" + "=" * 60)
     if _FAILURES:
         print(f"FAIL — {len(_FAILURES)} check(s) failed:")

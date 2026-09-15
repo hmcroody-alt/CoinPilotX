@@ -43,6 +43,7 @@ from flask import Flask  # noqa: E402
 
 from services import db  # noqa: E402
 from services.business_os.entitlements import service as svc  # noqa: E402
+from services import private_office_relationships_routes as rel_routes  # noqa: E402
 from services import private_office_routes as routes  # noqa: E402
 from services.private_office import tiers  # noqa: E402
 
@@ -248,25 +249,126 @@ def test_the_entitlement_endpoints_stay_read_only():
             assert rule.methods <= {"GET", "HEAD", "OPTIONS"}, str(rule.methods)
 
 
-def test_the_fact_write_takes_no_owner_parameter():
+def test_the_office_write_takes_no_owner_parameter():
     """Owner isolation on the write path is a property of the endpoint's shape.
 
     The owner comes from the session. There is no URL argument to point the
-    write at somebody else, and the handler never reads an owner from the body
-    — asserted on the source so that adding one is a test failure rather than a
-    review miss."""
-    app = _app()
+    write at somebody else, and no handler reads an owner from the body —
+    asserted on the source so that adding one is a test failure rather than a
+    review miss.
+
+    This was written against the Private Facts write. That endpoint retired
+    with its feature, and the property did not: it belongs to every Office
+    write, not to that one. It is repointed at Relationship Intelligence, which
+    now holds the Office's only body-carrying writes.
+
+    The assertion is made over the module's syntax tree rather than over one
+    function's text, and that change has a history worth keeping. The earlier
+    version read the handler's source with ``inspect.getsource`` and looked for
+    the literal ``owner_user_id=user["user_id"]``. When the person write grew a
+    ``_save`` helper and the handler became a two-line delegation, the literal
+    moved one frame down and the test failed — while the property it names was
+    not merely intact but now enforced at *twelve* call sites instead of one.
+
+    A security test that a refactor can turn red is a security test people learn
+    to edit rather than believe, and the edit that makes it green again is
+    usually the one that deletes it. So the claim is restated in terms the
+    refactor cannot move: every ``owner_user_id`` and ``actor_user_id`` keyword
+    *anywhere in the route pack* must be the session's own id, spelled
+    ``user["user_id"]``. Delegation does not hide it, a new endpoint is covered
+    the day it is written, and the way to break this test is to actually take an
+    owner from somewhere other than the session.
+    """
+    app = Flask(__name__)
+    routes.register(app)
+    rel_routes.register(app)
     rules = [r for r in app.url_map.iter_rules()
-             if str(r.rule) == "/api/private-office/facts"]
-    assert rules, "facts route not registered"
+             if str(r.rule) == "/api/private-office/relationships"
+             and "POST" in r.methods]
+    assert rules, "relationships write route not registered"
     assert rules[0].arguments == set()
 
+    import ast
     import inspect
-    source = inspect.getsource(routes.api_private_office_create_fact)
-    assert 'body.get("owner_user_id")' not in source
-    assert 'body.get("provenance' not in source, \
-        "a client that names its own provenance can label its typing VERIFIED"
-    assert 'owner_user_id=user["user_id"]' in source
+    tree = ast.parse(inspect.getsource(rel_routes))
+
+    def is_session_owner(node) -> bool:
+        """True for exactly ``user["user_id"]`` and nothing else."""
+        return (isinstance(node, ast.Subscript)
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "user"
+                and isinstance(node.slice, ast.Constant)
+                and node.slice.value == "user_id")
+
+    owner_bindings = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for kw in node.keywords:
+            if kw.arg not in ("owner_user_id", "actor_user_id"):
+                continue
+            owner_bindings += 1
+            assert is_session_owner(kw.value), (
+                "%s= is bound to %r at line %d, not to the session's own "
+                "user[\"user_id\"]. An owner that comes from anywhere but the "
+                "session is an owner a client can choose."
+                % (kw.arg, ast.dump(kw.value)[:120], getattr(kw.value, "lineno", -1)))
+
+    # Anti-vacuity. If the route pack is ever restructured so that these
+    # keywords are passed positionally, or through a dict splat, the loop above
+    # finds nothing and passes for the worst possible reason.
+    assert owner_bindings >= 8, (
+        "expected the route pack to bind owner_user_id/actor_user_id by keyword "
+        "at many call sites; found %d. If the calls moved to positional "
+        "arguments or **kwargs this test can no longer see them, and it is "
+        "passing vacuously rather than truthfully." % owner_bindings)
+
+    # The other half: an owner the client supplies cannot be read even to be
+    # ignored. Stated over the whole pack for the same reason as above.
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "body"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)):
+            continue
+        key = str(node.args[0].value)
+        assert key != "owner_user_id", "the body cannot name the owner"
+        assert not key.startswith("actor"), \
+            "a client that names its own actor can forge the audit trail"
+        assert not key.startswith("provenance"), \
+            "a client that names its own provenance can label its typing VERIFIED"
+
+
+def test_every_office_write_route_is_owner_scoped_by_shape():
+    """The same property, stated over the surface instead of over one handler.
+
+    Naming a single endpoint is what let the previous version of this test
+    retire along with its subject. Derived from the URL map, a write added
+    tomorrow is covered the day it is added — and a write that takes an owner
+    from the URL fails here rather than in an incident.
+    """
+    app = Flask(__name__)
+    routes.register(app)
+    rel_routes.register(app)
+
+    writes = [r for r in app.url_map.iter_rules()
+              if str(r.rule).startswith("/api/private-office/")
+              and r.methods & {"POST", "PUT", "PATCH", "DELETE"}]
+    assert writes, "no Office writes found — this check has gone vacuous"
+
+    for rule in writes:
+        # ``node_id`` and friends address a row the owner already owns; the
+        # handlers scope every such lookup by owner_user_id. What must never
+        # appear is an argument naming *whose* office to write to.
+        offenders = {a for a in rule.arguments
+                     if "user" in a.lower() or "owner" in a.lower()}
+        assert not offenders, (
+            f"{rule.rule} takes {sorted(offenders)} from the URL — an Office "
+            f"write must read its owner from the session, never from the path"
+        )
 
 
 if __name__ == "__main__":

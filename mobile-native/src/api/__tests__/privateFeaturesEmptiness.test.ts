@@ -1,10 +1,10 @@
 /**
  * A refusal and an empty result must never render the same.
  *
- * Every Private Office feature client answers a tagged result, and the screens
- * render `READY` with a zero-length list as a settled statement about the
- * member's own belongings: "No documents yet." "No open findings." Those
- * sentences are only true if the server actually said so.
+ * Relationship Intelligence answers a tagged result, and the screens render
+ * `READY` with a zero-length list as a settled statement about the member's own
+ * belongings: "No one here yet." That sentence is only true if the server
+ * actually said so.
  *
  * `pulseApi` already throws on a non-2xx, on `ok: false`, and on a body it
  * could not parse, so the whole obvious class of failure never reaches these
@@ -19,14 +19,12 @@
  * merely that the list is empty, because an implementation that returned
  * `READY` with no rows would satisfy a laxer assertion perfectly.
  *
- * Two deliberate non-guards are pinned here too, so that a later reader does
- * not "fix" them:
- *
- *   - the concierge `desk` block fails closed to UNSTAFFED, because implying a
- *     human who is not on the roster is the one error this feature exists to
- *     never make;
- *   - a genuinely empty list from a well-formed payload stays `READY`. The
- *     point is not to distrust the server. It is to stop speaking for it.
+ * This file used to cover five features. Four were withdrawn from the product
+ * and their clients are gone, so their cases went with them rather than being
+ * retargeted at whatever was nearest — including the one asymmetry the old
+ * docstring warned a reader not to "fix", the concierge desk that failed closed
+ * to UNSTAFFED. What survives here is the whole of what is still shipped, and
+ * the deliberate non-guard below is the one that still has a subject.
  */
 
 const mockPulseApi = jest.fn();
@@ -46,17 +44,8 @@ jest.mock("expo-secure-store", () => ({
   AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "afterFirstUnlockThisDeviceOnly"
 }));
 
-import {
-  getConciergeHome,
-  getConciergeRequest,
-  getPrivateBriefing,
-  getPrivateBriefings,
-  getPrivateDocument,
-  getPrivateDocuments,
-  getPrivatePeople,
-  getPrivatePersonProfile,
-  getShieldHome
-} from "../privateFeatures";
+import { PulseApiError } from "../pulseApi";
+import { getPrivatePeople, getPrivatePersonProfile } from "../privateFeatures";
 import { __resetOfficeLockForTests } from "../../privateOffice/officeLock";
 
 beforeEach(() => {
@@ -69,141 +58,93 @@ function serves(body: unknown) {
   mockPulseApi.mockResolvedValue(body);
 }
 
-/** Answer calls in order — the shield home issues two. */
-function servesInOrder(...bodies: unknown[]) {
-  bodies.forEach((body) => mockPulseApi.mockResolvedValueOnce(body));
+/** Answer every call by throwing — the server refusing, not the transport. */
+function refuses(error: unknown) {
+  mockPulseApi.mockRejectedValue(error);
 }
 
-describe("a 200 that did not carry its list is a refusal, not an empty vault", () => {
+describe("a 200 that did not carry its list is a refusal, not an empty directory", () => {
   const malformed: [string, unknown][] = [
     ["the key is missing entirely", {}],
-    ["the key is null", { documents: null }],
-    ["the key is an object, not a list", { documents: {} }],
-    ["the key is a string", { documents: "" }],
+    ["the key is null", { people: null }],
+    ["the key is an object, not a list", { people: {} }],
+    ["the key is a string", { people: "" }],
     ["the body is not an object at all", "<html>maintenance</html>"]
   ];
 
-  it.each(malformed)("documents: %s", async (_label, body) => {
+  it.each(malformed)("people: %s", async (_label, body) => {
     serves(body);
-    const result = await getPrivateDocuments();
+    const result = await getPrivatePeople();
     expect(result.state).toBe("ERROR");
     // The assertion that matters: the caller is never handed a list it could
-    // render as "you have nothing".
-    expect(result).not.toHaveProperty("documents");
-  });
-
-  it("people: a payload with no people list refuses", async () => {
-    serves({ ok: true });
-    expect((await getPrivatePeople()).state).toBe("ERROR");
-  });
-
-  it("briefings: a payload with no briefings list refuses", async () => {
-    serves({ ok: true });
-    expect((await getPrivateBriefings()).state).toBe("ERROR");
-  });
-
-  it("concierge: a payload with no requests list refuses", async () => {
-    serves({ ok: true, desk: { staffed: false, operator_count: 0, note: "" } });
-    expect((await getConciergeHome()).state).toBe("ERROR");
-  });
-});
-
-describe("the shield never assembles a clean bill of health from a bad response", () => {
-  const posture = {
-    posture: {
-      open_findings: 0,
-      by_severity: {},
-      checks: ["breached_credentials", "exposed_contact"],
-      external: {
-        dark_web: { monitored: false, state: "NOT_MONITORED", note: "No provider integrated." }
-      }
-    }
-  };
-
-  it("refuses when the findings list is absent", async () => {
-    servesInOrder(posture, { ok: true });
-    expect((await getShieldHome()).state).toBe("ERROR");
-  });
-
-  it("refuses when the posture block is absent", async () => {
-    servesInOrder({ ok: true }, { findings: [] });
-    const result = await getShieldHome();
-    expect(result.state).toBe("ERROR");
-    // Spelled out because this is the specific harm: a missing posture parses
-    // to zero findings and an empty `external` list, which is the block that
-    // says what nobody has checked. Rendered, that reads as "you are clear"
-    // — assembled entirely from a response we failed to read.
-    expect(result).not.toHaveProperty("posture");
-  });
-
-  it("still reports a real all-clear when the server actually sent one", async () => {
-    servesInOrder(posture, { findings: [] });
-    const result = await getShieldHome();
-    expect(result.state).toBe("READY");
-    if (result.state !== "READY") throw new Error("unreachable");
-    expect(result.findings).toEqual([]);
-    // The external caveat survives the parse — absence of findings is not
-    // external safety, and the member is told so.
-    expect(result.posture.external).toHaveLength(1);
-    expect(result.posture.external[0].monitored).toBe(false);
-    expect(result.posture.checks).toHaveLength(2);
+    // render as "you have nobody".
+    expect(result).not.toHaveProperty("people");
   });
 });
 
 describe("a phantom record is a refusal too", () => {
-  it("document detail refuses a payload with no document block", async () => {
-    serves({ ok: true, claims: [] });
-    expect((await getPrivateDocument(7)).state).toBe("ERROR");
-  });
-
-  it("document detail refuses a payload with no claims list", async () => {
-    serves({ ok: true, document: { id: 7, title: "Deed" } });
-    expect((await getPrivateDocument(7)).state).toBe("ERROR");
-  });
-
   it("a person profile refuses rather than opening on node 0", async () => {
     serves({ ok: true, person: { name: "" } });
     expect((await getPrivatePersonProfile(12)).state).toBe("ERROR");
   });
 
-  it("a briefing refuses rather than rendering an untitled empty one", async () => {
-    serves({ ok: true, briefing: {} });
-    expect((await getPrivateBriefing(3)).state).toBe("ERROR");
+  it("a person profile refuses a body carrying no person block at all", async () => {
+    serves({ ok: true, facts: [], commitments: [], timeline: [] });
+    const result = await getPrivatePersonProfile(12);
+    expect(result.state).toBe("ERROR");
+    // Spelled out because this is the specific harm the guard prevents: without
+    // it the surrounding lists parse fine and the header parses to a blank name
+    // on node 0, so the screen opens on a person who does not exist and reports
+    // that they have no commitments.
+    expect(result).not.toHaveProperty("profile");
+  });
+});
+
+describe("a refusal and an absence are different answers", () => {
+  it("a 404 for a person who is not in the directory is NOT_FOUND, not ERROR", async () => {
+    refuses(new PulseApiError("no such person", 404, undefined, {}));
+    expect((await getPrivatePersonProfile(12)).state).toBe("NOT_FOUND");
   });
 
-  it("a concierge thread refuses rather than opening on request 0", async () => {
-    serves({ ok: true, thread: [], desk: {} });
-    expect((await getConciergeRequest(9)).state).toBe("ERROR");
+  it("a 404 that names a feature state is that state, not a missing person", async () => {
+    // The route answering 404 because the whole feature is switched off is not
+    // the member asking after somebody who was never added. Rendering the first
+    // as the second tells them their own records are gone.
+    refuses(new PulseApiError("off", 404, undefined, { state: "FEATURE_DISABLED" }));
+    expect((await getPrivatePersonProfile(12)).state).toBe("FEATURE_DISABLED");
+  });
+
+  it("the second lock's refusal survives as LOCKED rather than collapsing to ERROR", async () => {
+    refuses(new PulseApiError("locked", 423, undefined, { setup_required: false }));
+    const result = await getPrivatePersonProfile(12);
+    expect(result.state).toBe("LOCKED");
+    if (result.state !== "LOCKED") throw new Error("unreachable");
+    expect(result.setupRequired).toBe(false);
   });
 });
 
 describe("what is deliberately not guarded", () => {
-  it("a real empty vault is still READY — the point is not to distrust the server", async () => {
-    serves({ ok: true, documents: [] });
-    const result = await getPrivateDocuments();
+  it("a real empty directory is still READY — the point is not to distrust the server", async () => {
+    serves({ ok: true, people: [] });
+    const result = await getPrivatePeople();
     expect(result.state).toBe("READY");
     if (result.state !== "READY") throw new Error("unreachable");
-    expect(result.documents).toEqual([]);
+    expect(result.people).toEqual([]);
   });
 
-  it("an empty concierge thread on a real request is ordinary, not a refusal", async () => {
-    serves({ ok: true, request: { id: 9, title: "Book the notary" }, thread: [], desk: {} });
-    const result = await getConciergeRequest(9);
+  it("a real person with no facts yet is READY, not a refusal", async () => {
+    // The asymmetry with the block above is deliberate. A missing `people` key
+    // proves nothing about the member, because nothing in the payload
+    // identified it as the directory document at all. Here `node_id` already
+    // did that job: this *is* the profile for person 4, so an absent `facts`
+    // key is the server saying there are none.
+    serves({ ok: true, person: { node_id: 4, name: "Ada" } });
+    const result = await getPrivatePersonProfile(4);
     expect(result.state).toBe("READY");
     if (result.state !== "READY") throw new Error("unreachable");
-    expect(result.thread).toEqual([]);
-  });
-
-  it("a missing desk block fails closed to UNSTAFFED instead of refusing", async () => {
-    // The asymmetry is the point. Everywhere else a missing block is a
-    // refusal; here the parsed default is itself the safe claim, and refusing
-    // would hide the member's real requests over a block whose absence cannot
-    // mislead them.
-    serves({ ok: true, requests: [] });
-    const result = await getConciergeHome();
-    expect(result.state).toBe("READY");
-    if (result.state !== "READY") throw new Error("unreachable");
-    expect(result.desk.staffed).toBe(false);
-    expect(result.desk.operatorCount).toBe(0);
+    expect(result.profile.nodeId).toBe(4);
+    expect(result.profile.facts).toEqual([]);
+    expect(result.profile.commitments).toEqual([]);
+    expect(result.profile.timeline).toEqual([]);
   });
 });

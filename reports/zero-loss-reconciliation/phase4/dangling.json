@@ -1,0 +1,1027 @@
+{
+  "upstream": "origin/main",
+  "total": 381,
+  "ancestors_of_upstream": 0,
+  "patch_id_duplicates": 174,
+  "unclassifiable": [
+    {
+      "sha": "ea412cb5dd74aa28b5c22a9576c2900f9814b82c",
+      "why": "merge or empty diff"
+    },
+    {
+      "sha": "d869cc6033e682cde56723b829413d62b346dd68",
+      "why": "no parent"
+    },
+    {
+      "sha": "0e6f4cde8231a77c41f0a0dde8b93b73e8b6238f",
+      "why": "no parent"
+    },
+    {
+      "sha": "f0ba68514ef9878b82ddef949fae93f5e0b3116c",
+      "why": "no parent"
+    },
+    {
+      "sha": "c8c17a986cf1b4c22558bf9665ba09d68f23ad27",
+      "why": "no parent"
+    },
+    {
+      "sha": "17f5c033c2d1cde1fb79ae5edc49b379b0f7e2f1",
+      "why": "no parent"
+    },
+    {
+      "sha": "b0105da5fa33fd78ee66f3af720d9755f53e96cc",
+      "why": "no parent"
+    },
+    {
+      "sha": "2216e178738a0629ca934df2d3d1200bdcf88a76",
+      "why": "no parent"
+    },
+    {
+      "sha": "5f18a91b98d4c47266216a468fb63dfe1a3e0c7a",
+      "why": "no parent"
+    },
+    {
+      "sha": "945d75afd5ff803410d1faaed2a95afe70a9d612",
+      "why": "no parent"
+    },
+    {
+      "sha": "9365efbfc47919864894b55bf6cc681412f8d277",
+      "why": "no parent"
+    },
+    {
+      "sha": "6d825f8ff78b9767feaab1bb9c4d766e0061c69a",
+      "why": "no parent"
+    },
+    {
+      "sha": "ad8e196953705965f02f56d384b864b108d43500",
+      "why": "merge or empty diff"
+    },
+    {
+      "sha": "59901d26dc7eeb5664b1c8cc09de124ca2c8f55d",
+      "why": "merge or empty diff"
+    },
+    {
+      "sha": "229b5b3b80e681a9ba8d8ab3a4185e57d125d1ee",
+      "why": "no parent"
+    },
+    {
+      "sha": "d3af07d475fe7810be8b32ad0eaabe9548bd3ff2",
+      "why": "no parent"
+    },
+    {
+      "sha": "b6e78127522e7995d9e7f4e59a5f19c17bb9b10b",
+      "why": "merge or empty diff"
+    },
+    {
+      "sha": "17f8a5c3beb19c68fdc2b542397bdc5448907ae9",
+      "why": "no parent"
+    }
+  ],
+  "orphans": [
+    {
+      "sha": "6501fc7c144322262d7455defa3acf3c45d86121",
+      "meta": "2026-08-23 18:13:23 -0700|PulseSoc Engineer|fix(music): resolve a deep-linked track by id instead of silently browsing",
+      "summary": "4 files changed, 202 insertions(+), 3 deletions(-)"
+    },
+    {
+      "sha": "e707f6d6153f516406e9c322634e527c55b2ed59",
+      "meta": "2026-08-14 18:23:28 -0700|PulseSoc Engineer|index on claude/dreamy-williamson-82bffc: 6e67e408 fix(ads): let the delivery schema bootstrap own its connection so DDL commits",
+      "summary": ""
+    },
+    {
+      "sha": "ed0740dba1c61309494979f2cb5ac552c89b8f4d",
+      "meta": "2026-08-31 16:11:00 -0700|PulseSoc Engineer|WIP on fix/briefings-evaluate-without-push-subscription: 6a051182 test(navigation): account for the MarketPulse titled route",
+      "summary": "2 files changed, 95 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "4709beed482f55405b7917ee17b16d48cca79033",
+      "meta": "2026-08-06 00:44:54 +0000|PulseSoc Engineer|fix(live): stop failing healthy broadcasts on a playout signal a host cannot produce",
+      "summary": "4 files changed, 225 insertions(+), 3 deletions(-)"
+    },
+    {
+      "sha": "220b0ea069c862ca2f15f77a6d9adb3f7a5551fd",
+      "meta": "2026-09-13 02:05:15 -0700|PulseSoc Engineer|Wire the bulk reprice route to the one pricing authority",
+      "summary": "1 file changed, 175 insertions(+), 20 deletions(-)"
+    },
+    {
+      "sha": "be0dfe5c40ba2122220ae12d654562ad55dde6ee",
+      "meta": "2026-08-23 10:43:17 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 62ff947e refactor(copy): remove developer vocabulary from user-facing native strings",
+      "summary": ""
+    },
+    {
+      "sha": "510f34d626286a64b6579b1273a1f9c4664be648",
+      "meta": "2026-09-12 17:09:54 -0700|PulseSoc Engineer|index on claude/gallant-margulis-3f3b6c: b45a579f Map: selection mode built, token gaps closed, name the i18n gap",
+      "summary": ""
+    },
+    {
+      "sha": "0f11cc0a5e5d25afe4aee9b1643dfd7f8a064e81",
+      "meta": "2026-08-02 17:30:51 -0700|PulseSoc Engineer|chore(audio-guard): extend protected paths to media quality lifecycle",
+      "summary": "2 files changed, 37 insertions(+)"
+    },
+    {
+      "sha": "3711b88a2899b9de355fb0d6c44e65a34fbb7cc2",
+      "meta": "2026-08-14 18:23:28 -0700|PulseSoc Engineer|WIP on claude/dreamy-williamson-82bffc: 6e67e408 fix(ads): let the delivery schema bootstrap own its connection so DDL commits",
+      "summary": "1 file changed, 8 insertions(+), 6 deletions(-)"
+    },
+    {
+      "sha": "a71680743dfbdfb515a28edaab26b6dd30a82b80",
+      "meta": "2026-07-18 05:22:44 -0700|HM Cherie|Refine Pulse Command composer and direct call start",
+      "summary": "3 files changed, 69 insertions(+), 33 deletions(-)"
+    },
+    {
+      "sha": "6117d28dc97129046eabf7effd05ed9a3de8acee",
+      "meta": "2026-09-05 16:13:29 -0700|PulseSoc Engineer|WIP on main: 05d8a8f9 docs(private-office): private meetings foundation map \u2014 extend calls engine, 0 new owners",
+      "summary": "2 files changed, 56 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "8a19f2066aeda323512b8bcb353dfb93d9d18a91",
+      "meta": "2026-09-04 21:04:41 +0000|PulseSoc Engineer|index on main: b459f992 chore(ios): bump the native build number to 22",
+      "summary": ""
+    },
+    {
+      "sha": "b21d0608e3c73a40f17f9aa8353e51549895940b",
+      "meta": "2026-09-05 19:27:36 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": ""
+    },
+    {
+      "sha": "8a268e016206f8c28a63e52587a75228b217c546",
+      "meta": "2026-09-12 17:09:54 -0700|PulseSoc Engineer|On claude/gallant-margulis-3f3b6c: gap-fix-baseline-check",
+      "summary": "2 files changed, 156 insertions(+), 15 deletions(-)"
+    },
+    {
+      "sha": "ae261c7f79f272c383ff6a3c932877ae595bbdf2",
+      "meta": "2026-08-22 11:39:59 -0700|PulseSoc Engineer|WIP on codex/app-review-final-readiness: 04731cb8 fix(auth): deliver secure password change links reliably",
+      "summary": "1 file changed, 21 insertions(+), 5 deletions(-)"
+    },
+    {
+      "sha": "5a2e3063fe9166bdf87952ce05d1538f91600792",
+      "meta": "2026-08-24 17:35:44 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even",
+      "summary": ""
+    },
+    {
+      "sha": "bf3472e9521bde245a5d6192ae107b82c2459798",
+      "meta": "2026-09-05 16:13:29 -0700|PulseSoc Engineer|index on main: 05d8a8f9 docs(private-office): private meetings foundation map \u2014 extend calls engine, 0 new owners",
+      "summary": ""
+    },
+    {
+      "sha": "6e36486ae8c63bbc300ee4318cd26c3873417071",
+      "meta": "2026-08-24 17:35:45 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even",
+      "summary": ""
+    },
+    {
+      "sha": "ae369876a82d0edbca4abfbca8755147ede94b45",
+      "meta": "2026-08-23 16:54:59 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: e1e78248 feat(alerts): publish only the alert options the server can honour",
+      "summary": ""
+    },
+    {
+      "sha": "5837da82a4a6f5b926cc7066798ff515269373db",
+      "meta": "2026-09-04 13:18:59 -0700|PulseSoc Engineer|WIP on main: b95de7ab Native primitives foundation: capability registry, permissions orchestrator, owned haptics/clipboard/QR/scan/documents/local-reminders/a11y, UNDX device-action classifier, ownership regression guard (zero new paid APIs)",
+      "summary": "1 file changed, 22 insertions(+), 4 deletions(-)"
+    },
+    {
+      "sha": "1a3f3881bd42591448804302aae4c008f635be21",
+      "meta": "2026-08-23 18:49:41 -0700|PulseSoc Engineer|WIP on claude/elegant-mclaren-9ff5ce: 7567c42a feat(alerts): one Premium alert over everything the member actually holds",
+      "summary": "2 files changed, 33 insertions(+), 24 deletions(-)"
+    },
+    {
+      "sha": "b44352a2fe918ffc38e297966cae6178fab7db14",
+      "meta": "2026-06-19 10:18:52 -0400|HM Cherie|Fix App Store review issues for iOS resubmission",
+      "summary": "11 files changed, 259 insertions(+), 15 deletions(-)"
+    },
+    {
+      "sha": "764516cecde87aafb52b9e927b28964022bac529",
+      "meta": "2026-09-13 15:13:07 -0700|PulseSoc Engineer|Declare the resumable messenger media routes' auth intent",
+      "summary": "1 file changed, 8 insertions(+)"
+    },
+    {
+      "sha": "85454070ddd3f1c7da522e8681ee44ec586de5f5",
+      "meta": "2026-08-15 21:08:50 -0700|PulseSoc Engineer|index on claude/peaceful-tharp-038571: 645cba9f fix(presence): back the shop, videos and events tabs with real data",
+      "summary": ""
+    },
+    {
+      "sha": "21493c8000f8b87d9dade33d3e756db67caeabcf",
+      "meta": "2026-09-05 14:03:22 -0700|PulseSoc Engineer|index on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features \u2014 one spec, four surfaces, read-only by construction",
+      "summary": ""
+    },
+    {
+      "sha": "0e4ad82f973507bc0aedf5bab81665cce8784295",
+      "meta": "2026-09-05 14:11:41 -0700|PulseSoc Engineer|chore: keep private Office uploads out of source control",
+      "summary": "7 files changed, 2 insertions(+), 6 deletions(-)"
+    },
+    {
+      "sha": "a64a901f821a733e878ccce97bebaced866b082c",
+      "meta": "2026-09-04 23:42:41 -0700|PulseSoc Engineer|On claude/quizzical-yonath-215c94: wip-audio-gate-check",
+      "summary": "2 files changed, 99 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "f74c0630a5e1dd4918372f710ed5b38a55e59143",
+      "meta": "2026-09-13 15:05:54 -0700|PulseSoc Engineer|WIP on main: 92a2155f Declare the store-policy routes' auth intent",
+      "summary": "1 file changed, 75 insertions(+), 14 deletions(-)"
+    },
+    {
+      "sha": "754e32c978646844bcdb17af48b9c24016bbbf3a",
+      "meta": "2026-08-24 16:49:01 -0700|PulseSoc Engineer|index on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map \u2014 exact tile\u2192section navigation",
+      "summary": ""
+    },
+    {
+      "sha": "ba4fb45a85d39927bc8d811d4f22d7e33bcfe7ac",
+      "meta": "2026-08-24 17:35:44 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even",
+      "summary": "2 files changed, 60 insertions(+), 25 deletions(-)"
+    },
+    {
+      "sha": "2b50bcedaaf20fc2174a1d44a956398c480cf27f",
+      "meta": "2026-09-01 01:58:51 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix",
+      "summary": "63 files changed, 4652 insertions(+), 743 deletions(-)"
+    },
+    {
+      "sha": "32589c8963900beb90b8120c60fbe18780c40af9",
+      "meta": "2026-09-06 00:49:41 -0700|PulseSoc Engineer|index on main: 55d98f35 docs(capital): revalidate the foundation map against HEAD",
+      "summary": ""
+    },
+    {
+      "sha": "195afafc5bfc6a5ef726048ed7b14a9d53e75a87",
+      "meta": "2026-09-14 16:23:45 -0700|PulseSoc Engineer|WIP on claude/bold-hodgkin-9021f1: d45a2664 Add the repair for thumbnail keys that point at nothing",
+      "summary": "1 file changed, 11 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "055d2eec853f27f8ed69c08602c3a94ffa143ebe",
+      "meta": "2026-09-06 01:06:08 -0700|PulseSoc Engineer|feat(capital): reach the command center from the native client",
+      "summary": "3 files changed, 1106 insertions(+)"
+    },
+    {
+      "sha": "b95d24a81441583c6a57f7be92e44a053cec31a3",
+      "meta": "2026-08-22 10:59:55 -0700|PulseSoc Engineer|index on claude/qa-groups-rooms: c73b2c02 fix(calls): end a 1:1 call for both sides when either side hangs up",
+      "summary": ""
+    },
+    {
+      "sha": "856200ed7c563e38ca6c4ee6cdbb84c46b11f895",
+      "meta": "2026-08-23 19:02:27 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup",
+      "summary": ""
+    },
+    {
+      "sha": "ad6352cbd554384221bbef4611e0411285ac5b87",
+      "meta": "2026-09-05 06:04:37 -0700|PulseSoc Engineer|On claude/nostalgic-neumann-d9391f: owner-lifetime-wip",
+      "summary": "5 files changed, 255 insertions(+), 50 deletions(-)"
+    },
+    {
+      "sha": "f2650257e17c2b76c1bf11360368289b3264ade1",
+      "meta": "2026-09-03 20:59:54 -0700|PulseSoc Engineer|index on main: a334d7ed build(ios): link expo-media-library and expo-sharing into the checked-in project",
+      "summary": ""
+    },
+    {
+      "sha": "456890926e8e696366dff9e47d47e59637c2f5ee",
+      "meta": "2026-09-05 13:37:19 -0700|PulseSoc Engineer|WIP on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge \u2014 a real desk on the REQUEST primitive, staffing truth on every payload",
+      "summary": "5 files changed, 544 insertions(+), 9 deletions(-)"
+    },
+    {
+      "sha": "b16abe19105a540252afef83c1b1c1bdbe1d3746",
+      "meta": "2026-08-23 18:13:51 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: a05393ff fix(portfolio): gate the portfolio on the entitlement, not on the platform",
+      "summary": ""
+    },
+    {
+      "sha": "d56bb8cbcfc7a8ea25acc4547c663bd045ad1897",
+      "meta": "2026-08-23 20:16:22 +0000|Roody C|feat(crypto): advanced alerts, market observations, mobile crypto API",
+      "summary": "8 files changed, 2971 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "516dc870051d0061d7f8260d5bd499c704ffedcd",
+      "meta": "2026-08-15 11:30:18 -0700|PulseSoc Engineer|WIP on claude/serene-agnesi-474d89: 11b8d994 fix(community): wire group member management",
+      "summary": "2 files changed, 58 insertions(+), 8 deletions(-)"
+    },
+    {
+      "sha": "846e42d9d15f88ceffb0cdfff24a2246a18392ce",
+      "meta": "2026-08-23 10:41:58 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: b657763d feat(presence): let a presence be connected to the things it belongs to",
+      "summary": ""
+    },
+    {
+      "sha": "3073d0e0264b14decf2cacd9db725d61b3f4d26e",
+      "meta": "2026-08-31 16:11:00 -0700|PulseSoc Engineer|index on fix/briefings-evaluate-without-push-subscription: 6a051182 test(navigation): account for the MarketPulse titled route",
+      "summary": ""
+    },
+    {
+      "sha": "ef75a4ccf086332ad981c79293df4bd900197d17",
+      "meta": "2026-09-05 19:22:53 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": ""
+    },
+    {
+      "sha": "9578428221a5bbc94b4b3fc786f6c04202c03809",
+      "meta": "2026-07-18 19:24:15 -0700|git stash|On main: autostash",
+      "summary": "105 files changed, 3285 insertions(+), 2168 deletions(-)"
+    },
+    {
+      "sha": "627df29dd7929e8b36cf70a9a04fad6228e13041",
+      "meta": "2026-08-19 21:34:40 -0700|PulseSoc Engineer|index on (no branch): fa4cce7b fix(ios): align embedded build number",
+      "summary": ""
+    },
+    {
+      "sha": "ae7fca08ca4edfe1c422f73b871b17e773d2c796",
+      "meta": "2026-08-30 06:43:10 -0700|PulseSoc Engineer|On claude/review-expired-demo: premium-fix-wip",
+      "summary": "1 file changed, 228 insertions(+), 10 deletions(-)"
+    },
+    {
+      "sha": "3f8050c3a7e67f392e4183e72fba6690e47b3249",
+      "meta": "2026-08-25 21:54:32 -0700|PulseSoc Engineer|WIP on claude/happy-lalande-31ed6b: 6f0c1ea7 feat(automated-account): apply galactic profile and cover branding",
+      "summary": "1 file changed, 28 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "91812060a0ad50b0c1b97103cc3be96dbb0c79e1",
+      "meta": "2026-08-06 19:22:09 +0000|PulseSoc Engineer|Snapshot working tree: multi-mission in-progress work (ads, marketplace, account, chat, events, dashboards, notifications, media/cover system, bot.py)",
+      "summary": "65 files changed, 3833 insertions(+), 189 deletions(-)"
+    },
+    {
+      "sha": "bf87d828212b6cc10c7c2ba3213fcecaa8a234e4",
+      "meta": "2026-08-15 00:19:16 -0700|PulseSoc Engineer|Revert \"fix(reels): derive navigator visibility from swipe direction\"",
+      "summary": "6 files changed, 57 insertions(+), 106 deletions(-)"
+    },
+    {
+      "sha": "da897c70614f0dbfa0592f8bb394abdda38e862a",
+      "meta": "2026-09-13 02:04:39 -0700|PulseSoc Engineer|Wire the bulk reprice route to the one pricing authority",
+      "summary": "1 file changed, 175 insertions(+), 20 deletions(-)"
+    },
+    {
+      "sha": "228cce41fc825102258cd087d01a078e568a2b62",
+      "meta": "2026-08-26 17:40:53 -0700|PulseSoc Engineer|index on codex/premium-crypto-intelligence: 97c61716 feat(undx): build verified PulseSoc knowledge corpus and retrieval pipeline",
+      "summary": ""
+    },
+    {
+      "sha": "7e8ce422f8f2c737989df87e434611c0f6355f97",
+      "meta": "2026-08-14 08:36:16 +0000|PulseSoc Engineer|Premium Command Center: rich clickable Premium spaces + Verified Identity",
+      "summary": "2 files changed, 166 insertions(+), 40 deletions(-)"
+    },
+    {
+      "sha": "37903220783f2d544216f7bc8278a8df34870b8e",
+      "meta": "2026-08-13 08:19:43 +0000|PulseSoc Engineer|feat(finance): settle marketplace ledgers and reversals",
+      "summary": "25 files changed, 537 insertions(+), 7 deletions(-)"
+    },
+    {
+      "sha": "38903a8a2d1faa4f9a25cfd4814495e87047cb4d",
+      "meta": "2026-08-30 18:02:15 +0000|PulseSoc Engineer|index on full-sweep-20260826: befdb42f merge: integrate App Review fix (ffbc4db0) into release/full-sweep-20260826",
+      "summary": ""
+    },
+    {
+      "sha": "0498e81e785ed6f5728968167caacbf243bdf184",
+      "meta": "2026-08-02 21:09:55 -0700|PulseSoc Engineer|Rebuild seller Insights on a real analytics endpoint",
+      "summary": "21 files changed, 5754 insertions(+), 212 deletions(-)"
+    },
+    {
+      "sha": "2e9e30fd47d2162b383af3770d1af856695db009",
+      "meta": "2026-08-30 22:19:27 +0000|PulseSoc Engineer|index on full-sweep-20260826: 1f02b2e6 perf(live): release native end flow immediately",
+      "summary": ""
+    },
+    {
+      "sha": "fda41ca19bbe22d19c81081d38ac1d66a11eb305",
+      "meta": "2026-08-26 17:49:12 -0700|PulseSoc Engineer|index on claude/business-os-unlock: 4681e7e5 fix(realtime): keep screen awake during video calls and live",
+      "summary": ""
+    },
+    {
+      "sha": "dda6e6eade6c737caf597c4454ae1470af19fae7",
+      "meta": "2026-09-07 10:10:13 -0700|PulseSoc Engineer|WIP on claude/recursing-lumiere-cf0475: 9b02f28f style(cj): trim the trailing blank line that tripped git diff --check",
+      "summary": "2 files changed, 114 insertions(+), 42 deletions(-)"
+    },
+    {
+      "sha": "13ab1e69ecc976c7e4de4487b2f41b172ecf2ca0",
+      "meta": "2026-08-25 04:32:20 -0700|PulseSoc Engineer|On claude/premium-watchlist-row: wip3",
+      "summary": "12 files changed, 51 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "40b034428e2ac32e58f2f7a39d3ce12ebc8ce377",
+      "meta": "2026-09-10 17:41:26 -0700|PulseSoc Engineer|WIP on claude/romantic-northcutt-cab8be: c0f42018 Stop inventing a price in the serializer every read passes through",
+      "summary": "1 file changed, 17 insertions(+), 3 deletions(-)"
+    },
+    {
+      "sha": "41b5ea0c5e73d2bbf66e08db297f74ec126837c5",
+      "meta": "2026-08-25 04:13:32 -0700|PulseSoc Engineer|index on claude/premium-watchlist-row: d984f107 fix(crypto-premium): register the portfolio alias where registration counts",
+      "summary": ""
+    },
+    {
+      "sha": "3eb77000d2ab4bd98c28e6f58448a1194a273f2f",
+      "meta": "2026-09-14 17:42:40 -0700|PulseSoc Engineer|Stop one unloadable Status from blacking out the rest of the tray",
+      "summary": "2 files changed, 200 insertions(+)"
+    },
+    {
+      "sha": "fab96eb7e0fcb435d193951efa359dff1d974baf",
+      "meta": "2026-09-12 22:09:35 -0700|PulseSoc Engineer|WIP on main: e6c992a0 Claim the paths the app already knows how to open",
+      "summary": "1 file changed, 39 insertions(+), 3 deletions(-)"
+    },
+    {
+      "sha": "afbc7207e8f23de72e15f5128f5b38ecc580d950",
+      "meta": "2026-08-24 16:30:23 -0700|PulseSoc Engineer|index on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map \u2014 exact tile\u2192section navigation",
+      "summary": ""
+    },
+    {
+      "sha": "19bd26fa8bdb4a634ad73cdbf7d65b84fa3df601",
+      "meta": "2026-08-23 19:45:31 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: a6718a33 Presence: a page is drawn in its own type's colour",
+      "summary": ""
+    },
+    {
+      "sha": "e4c12a05aed93d7cb3b851413a3e32b54c63cc40",
+      "meta": "2026-08-25 04:12:24 -0700|PulseSoc Engineer|On claude/premium-watchlist-row: watchlist-row-wip",
+      "summary": "12 files changed, 50 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "00ccbc2bbd3cbd79922763a6f31b50f583cfbd21",
+      "meta": "2026-09-05 07:47:08 -0700|PulseSoc Engineer|On main: records-wiring-wip",
+      "summary": "3 files changed, 101 insertions(+)"
+    },
+    {
+      "sha": "a7cce85655b8823b7862f3d0becb92ec999ef5e3",
+      "meta": "2026-08-27 00:04:09 +0000|PulseSoc Engineer|index on premium-crypto-intelligence: 6f0c1ea7 feat(automated-account): apply galactic profile and cover branding",
+      "summary": ""
+    },
+    {
+      "sha": "43cd9aee2add4965c421b6e015daf4e755d7da3b",
+      "meta": "2026-09-14 16:23:45 -0700|PulseSoc Engineer|index on claude/bold-hodgkin-9021f1: d45a2664 Add the repair for thumbnail keys that point at nothing",
+      "summary": ""
+    },
+    {
+      "sha": "65cdf2be0edf365115dad3da55de1209f1b9cb1a",
+      "meta": "2026-09-05 19:22:53 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": "6 files changed, 273 insertions(+), 14 deletions(-)"
+    },
+    {
+      "sha": "58ce84052b89c17c19c6090d90ecc192dcd029b9",
+      "meta": "2026-07-19 13:51:15 -0700|git stash|On main: undx-v3-pre-integration-preservation-20260719",
+      "summary": "120 files changed, 4373 insertions(+), 1931 deletions(-)"
+    },
+    {
+      "sha": "7dd0f4d6cfb50f2238d1496f0c503f40458c54e6",
+      "meta": "2026-08-23 09:26:15 -0700|PulseSoc Engineer|On claude/recursing-antonelli-a52df6: missionb-baseline-check",
+      "summary": "6 files changed, 319 insertions(+), 41 deletions(-)"
+    },
+    {
+      "sha": "e2d134e832de4c04bceeb285962518e14fcd9238",
+      "meta": "2026-09-07 10:10:13 -0700|PulseSoc Engineer|index on claude/recursing-lumiere-cf0475: 9b02f28f style(cj): trim the trailing blank line that tripped git diff --check",
+      "summary": ""
+    },
+    {
+      "sha": "35d3969c195fe711423e256bc7422f73a06f6e3c",
+      "meta": "2026-09-14 08:46:50 -0700|PulseSoc Engineer|Delete the static/assets illustrations the homepage rewrite orphaned",
+      "summary": "14 files changed, 161 deletions(-)"
+    },
+    {
+      "sha": "a3d7f616f9e45dd1abe55c0e08852ec8ca30b088",
+      "meta": "2026-08-23 10:43:17 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 62ff947e refactor(copy): remove developer vocabulary from user-facing native strings",
+      "summary": "4 files changed, 67 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "9ed91c143e1b3a3c6632a3e5287057a330020087",
+      "meta": "2026-09-01 01:58:45 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix",
+      "summary": "63 files changed, 4652 insertions(+), 743 deletions(-)"
+    },
+    {
+      "sha": "80da5656a9094540a3e9abd5f6e1f5e0ab061c31",
+      "meta": "2026-08-22 11:39:59 -0700|PulseSoc Engineer|index on codex/app-review-final-readiness: 04731cb8 fix(auth): deliver secure password change links reliably",
+      "summary": ""
+    },
+    {
+      "sha": "e6da22262380a9b0f8a882d0748739fb55c912af",
+      "meta": "2026-09-05 14:04:32 -0700|PulseSoc Engineer|WIP on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features \u2014 one spec, four surfaces, read-only by construction",
+      "summary": "29 files changed, 2186 insertions(+), 25 deletions(-)"
+    },
+    {
+      "sha": "3ee6aad433e5a8759d8d9e11ed5606a8d0c0814b",
+      "meta": "2026-09-01 01:58:40 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix",
+      "summary": "63 files changed, 4652 insertions(+), 743 deletions(-)"
+    },
+    {
+      "sha": "5ee6868fa1a6bfb6cab7157f59a1dd54c0b7e9c3",
+      "meta": "2026-08-23 20:16:40 +0000|Roody C|tmp",
+      "summary": "8 files changed, 2971 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "95e7422ae2977c92963e6c037bdd2788f7b307c7",
+      "meta": "2026-08-23 18:13:51 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: a05393ff fix(portfolio): gate the portfolio on the entitlement, not on the platform",
+      "summary": "22 files changed, 660 insertions(+)"
+    },
+    {
+      "sha": "1ee8e2bcacc85d113d53368b16f96ad8865c8ad3",
+      "meta": "2026-09-05 16:15:04 -0700|PulseSoc Engineer|index on main: 05d8a8f9 docs(private-office): private meetings foundation map \u2014 extend calls engine, 0 new owners",
+      "summary": ""
+    },
+    {
+      "sha": "c8e8d8e5c8199d9c9c86947bb1e61f9434d257dd",
+      "meta": "2026-09-04 13:18:59 -0700|PulseSoc Engineer|index on main: b95de7ab Native primitives foundation: capability registry, permissions orchestrator, owned haptics/clipboard/QR/scan/documents/local-reminders/a11y, UNDX device-action classifier, ownership regression guard (zero new paid APIs)",
+      "summary": ""
+    },
+    {
+      "sha": "f7ee9040fd28111d683d32dac54ed7f8d85e086b",
+      "meta": "2026-08-22 16:44:40 -0700|PulseSoc Engineer|index on claude/confident-boyd-9ed603: 8d932b08 feat(feed): loop the first 5s of a suggested reel while it is active",
+      "summary": ""
+    },
+    {
+      "sha": "15ef94709d762873d7987b6748f9a53220cb68ba",
+      "meta": "2026-08-23 18:49:41 -0700|PulseSoc Engineer|index on claude/elegant-mclaren-9ff5ce: 7567c42a feat(alerts): one Premium alert over everything the member actually holds",
+      "summary": ""
+    },
+    {
+      "sha": "71ef00a6041463646dabc4c325387a3290a87f8d",
+      "meta": "2026-09-05 19:27:36 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": "9 files changed, 434 insertions(+), 14 deletions(-)"
+    },
+    {
+      "sha": "34f378ca17a127c46f2a0c350d13defcb6ec0efe",
+      "meta": "2026-08-23 10:41:58 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: b657763d feat(presence): let a presence be connected to the things it belongs to",
+      "summary": "17 files changed, 210 insertions(+), 5 deletions(-)"
+    },
+    {
+      "sha": "92f44e67ebc6b90a8950b84b7adad43e62d06582",
+      "meta": "2026-08-26 17:49:12 -0700|PulseSoc Engineer|WIP on claude/business-os-unlock: 4681e7e5 fix(realtime): keep screen awake during video calls and live",
+      "summary": "1 file changed, 216 insertions(+), 111 deletions(-)"
+    },
+    {
+      "sha": "d1faaa8fbc61f5a5871fa8554be6524e9ed3d0bf",
+      "meta": "2026-08-15 00:18:53 -0700|PulseSoc Engineer|fix(reels): derive navigator visibility from swipe direction",
+      "summary": "6 files changed, 106 insertions(+), 57 deletions(-)"
+    },
+    {
+      "sha": "f40039eed8676520f569ab8852856457c27123a4",
+      "meta": "2026-08-25 04:32:20 -0700|PulseSoc Engineer|index on claude/premium-watchlist-row: d984f107 fix(crypto-premium): register the portfolio alias where registration counts",
+      "summary": ""
+    },
+    {
+      "sha": "960359e86d30f51dfd599c601b3c76951af08925",
+      "meta": "2026-08-24 16:28:25 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 2d26bd35 i18n(premium): translate the alerts and watchlists screens into all 11 locales",
+      "summary": ""
+    },
+    {
+      "sha": "ac03073b979ed7e7350ad8b3fefb837cbc6c15e3",
+      "meta": "2026-09-11 23:53:15 -0700|PulseSoc Engineer|WIP on claude/adoring-gates-fdbf0a: da9e2978 Capture the usage every provider returns and the router threw away",
+      "summary": "2 files changed, 233 insertions(+), 9 deletions(-)"
+    },
+    {
+      "sha": "59093da98bafe3dd118abed5363c173f5d064848",
+      "meta": "2026-08-30 16:46:08 +0000|PulseSoc Engineer|index on full-sweep-20260826: f1759800 feat(undx): agentic run substrate \u2014 queue, worker dispatch, health, mobile client",
+      "summary": ""
+    },
+    {
+      "sha": "7109c76fd15b1379e5e2d132df75311adf8e8c56",
+      "meta": "2026-09-05 13:51:46 -0700|PulseSoc Engineer|WIP on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge \u2014 a real desk on the REQUEST primitive, staffing truth on every payload",
+      "summary": "7 files changed, 575 insertions(+), 22 deletions(-)"
+    },
+    {
+      "sha": "9d0a3fb7d7b2642c3ad48515aa8bdae17454b0a0",
+      "meta": "2026-09-13 15:17:39 -0700|PulseSoc Engineer|Keep the route_auth imports on one line",
+      "summary": "1 file changed, 1 insertion(+), 4 deletions(-)"
+    },
+    {
+      "sha": "710bd9293768c0e33d294ca3ca7b156fbb1353e3",
+      "meta": "2026-08-24 17:35:45 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 8345e541 fix(portfolio): never report an unknown P/L as break-even",
+      "summary": "2 files changed, 60 insertions(+), 25 deletions(-)"
+    },
+    {
+      "sha": "500f2de73264664310572265b293129ea8b50c4b",
+      "meta": "2026-09-05 19:17:54 -0700|PulseSoc Engineer|index on main: d21014c8 test(meetings): session-store matrix + digit-free preset copy via interpolation",
+      "summary": ""
+    },
+    {
+      "sha": "d111af84d98cb49908f34eb9bcaef94a2db96e8e",
+      "meta": "2026-09-05 06:04:37 -0700|PulseSoc Engineer|index on claude/nostalgic-neumann-d9391f: 674ecc48 fix(premium): guarantee owner lifetime entitlement",
+      "summary": ""
+    },
+    {
+      "sha": "3512f102bbd17d3cc9a6e25817dd57d53204482a",
+      "meta": "2026-08-22 09:39:49 -0700|PulseSoc Engineer|WIP on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings",
+      "summary": "3 files changed, 266 insertions(+), 60 deletions(-)"
+    },
+    {
+      "sha": "871221943d2a06ce533c062262b31e71ef8532b6",
+      "meta": "2026-09-05 14:04:32 -0700|PulseSoc Engineer|index on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features \u2014 one spec, four surfaces, read-only by construction",
+      "summary": ""
+    },
+    {
+      "sha": "571383ef68be2abd0b0fb826865f002df52c6c8b",
+      "meta": "2026-07-26 01:00:42 +0000|PulseSoc Engineer|Record the commit and push outcome in the verification matrix",
+      "summary": "1 file changed, 58 insertions(+), 22 deletions(-)"
+    },
+    {
+      "sha": "2a14736601c2264a017ea50f81ea28331893bd81",
+      "meta": "2026-08-24 16:49:01 -0700|PulseSoc Engineer|WIP on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map \u2014 exact tile\u2192section navigation",
+      "summary": "19 files changed, 1136 insertions(+), 104 deletions(-)"
+    },
+    {
+      "sha": "631409c7721d925ebd1c3bc6e841922a2edd3aa3",
+      "meta": "2026-09-13 15:59:48 -0700|PulseSoc Engineer|Document the duration variables an operator has to know about",
+      "summary": "4 files changed, 530 insertions(+), 75 deletions(-)"
+    },
+    {
+      "sha": "6917d9acf8f74da8d1db411ae1f3125e403395e1",
+      "meta": "2026-08-06 21:46:56 +0000|PulseSoc Engineer|WIP on emergency-live-audio-recovery: a36563e8 Default futuristic PulseSoc background: one dark network atmosphere behind the whole app",
+      "summary": "18 files changed, 2393 insertions(+), 113 deletions(-)"
+    },
+    {
+      "sha": "f5171bbb8593ab71761436b40ba89c362c44ad94",
+      "meta": "2026-09-13 15:05:54 -0700|PulseSoc Engineer|index on main: 92a2155f Declare the store-policy routes' auth intent",
+      "summary": ""
+    },
+    {
+      "sha": "301ca1e187152fc840c10a1b3924c8a4b5319741",
+      "meta": "2026-09-05 19:17:54 -0700|PulseSoc Engineer|On main: capital-baseline-check",
+      "summary": "4 files changed, 187 insertions(+)"
+    },
+    {
+      "sha": "831fadf2a4449e9b461b4f098f1970abbcc85b52",
+      "meta": "2026-09-05 07:56:08 -0700|PulseSoc Engineer|On main: po-mission-wip",
+      "summary": "4 files changed, 207 insertions(+)"
+    },
+    {
+      "sha": "1d203f41ab5e19e3404a8e84a7a8d77f5a13bde8",
+      "meta": "2026-08-24 16:28:25 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: 2d26bd35 i18n(premium): translate the alerts and watchlists screens into all 11 locales",
+      "summary": "2 files changed, 53 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "7b21f70652b138a90fe6f10636b054108bf1fdd8",
+      "meta": "2026-08-14 08:25:48 +0000|PulseSoc Engineer|feat(premium): dual-provider purchase-option resolver + StoreKit test config",
+      "summary": "5 files changed, 425 insertions(+)"
+    },
+    {
+      "sha": "4c224300cde7258f24ea273e862974b320ad38d2",
+      "meta": "2026-08-23 09:26:15 -0700|PulseSoc Engineer|index on claude/recursing-antonelli-a52df6: 8b4e02e5 docs(release): correct the Business OS screenshot finding \u2014 it is reachable",
+      "summary": ""
+    },
+    {
+      "sha": "d82257bcf3a1a70560aa406f6057e2a9139bded0",
+      "meta": "2026-09-10 17:41:26 -0700|PulseSoc Engineer|index on claude/romantic-northcutt-cab8be: c0f42018 Stop inventing a price in the serializer every read passes through",
+      "summary": ""
+    },
+    {
+      "sha": "842369fac257eef4656b686df2af831ce05e22b1",
+      "meta": "2026-09-05 07:47:08 -0700|PulseSoc Engineer|index on main: ca6e1522 fix(entitlements): grant owner lifetime access across membership tiers",
+      "summary": ""
+    },
+    {
+      "sha": "512a03dfd03598d9881b552cde5003f031b71d18",
+      "meta": "2026-08-25 21:54:32 -0700|PulseSoc Engineer|index on claude/happy-lalande-31ed6b: 6f0c1ea7 feat(automated-account): apply galactic profile and cover branding",
+      "summary": ""
+    },
+    {
+      "sha": "a72bc554b406cf303e7307b3c5dfde79fe3ca364",
+      "meta": "2026-09-04 16:58:58 -0700|PulseSoc Engineer|index on integration/all-work-20260904: c6760a57 fix(messenger): expose idempotency index health",
+      "summary": ""
+    },
+    {
+      "sha": "76345552c52cfcae08b3d9e40f6f1ea15cb0916a",
+      "meta": "2026-09-05 13:51:46 -0700|PulseSoc Engineer|index on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge \u2014 a real desk on the REQUEST primitive, staffing truth on every payload",
+      "summary": ""
+    },
+    {
+      "sha": "bc37a32fc89a1297851e0e0957de228f1492d107",
+      "meta": "2026-07-18 19:24:15 -0700|git stash|index on main: 443ede97 Map PulseSoc native Home to generated concept",
+      "summary": "104 files changed, 3236 insertions(+), 2126 deletions(-)"
+    },
+    {
+      "sha": "5e40b9d20b0f6a987d60067684049f3ca8725721",
+      "meta": "2026-08-26 01:42:58 +0000|PulseSoc Engineer|index on premium-crypto-intelligence: 081abc83 release: consolidate PulseSoc production readiness work",
+      "summary": ""
+    },
+    {
+      "sha": "d440699d16571c06c1dcd1b56f0f9b4d603ec00b",
+      "meta": "2026-06-02 14:09:57 -0400|HM Cherie|Fix Pulse video media playback delivery",
+      "summary": "5 files changed, 349 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "9541a935c43d0402ff9c24277191824a7ffb63b3",
+      "meta": "2026-08-15 21:43:13 -0700|PulseSoc Engineer|On claude/affectionate-tharp-66925d: baseline-check",
+      "summary": "3 files changed, 27 insertions(+), 9 deletions(-)"
+    },
+    {
+      "sha": "8142fb0bd8e0165cbb6c62db81b5b21ea0cb8f2b",
+      "meta": "2026-07-18 22:19:20 -0700|HM Cherie|Align native home with PulseSoc mockup direction",
+      "summary": "5 files changed, 407 insertions(+), 190 deletions(-)"
+    },
+    {
+      "sha": "6243b7824d3a30d8d1ede892f11977864e55ea29",
+      "meta": "2026-09-06 00:49:41 -0700|PulseSoc Engineer|WIP on main: 55d98f35 docs(capital): revalidate the foundation map against HEAD",
+      "summary": "1 file changed, 25 insertions(+), 7 deletions(-)"
+    },
+    {
+      "sha": "2f45193cc0434b42a101a2bf0b849a697fde9c05",
+      "meta": "2026-09-05 19:26:20 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": ""
+    },
+    {
+      "sha": "17477d01145dfa1da0d865e000fb632383949b8a",
+      "meta": "2026-09-12 22:46:43 -0700|PulseSoc Engineer|index on main: 070f586e Phase 0: tombstone dead session rows instead of deleting them",
+      "summary": ""
+    },
+    {
+      "sha": "404b336b2f3c66141dfb2fc5ad9ec3c6cb6485c0",
+      "meta": "2026-08-31 01:44:32 +0000|PulseSoc Engineer|index on full-sweep-20260826: 082ebeb3 undx: describe what each capability is for, so the embedder has something to place",
+      "summary": "6 files changed, 2561 insertions(+), 9692 deletions(-)"
+    },
+    {
+      "sha": "a54bbb96c5c79ec870c0355c1b9fd7a93c73a07a",
+      "meta": "2026-08-26 20:42:57 -0700|PulseSoc Engineer|WIP on release/full-sweep-20260826: ce038534 feat(progress): replace referral rewards with PulseSoc Founding Path",
+      "summary": "1 file changed, 37 insertions(+), 5 deletions(-)"
+    },
+    {
+      "sha": "5e4c75238375b6421eeb89351b0d1b1395d92701",
+      "meta": "2026-06-02 14:09:51 -0400|HM Cherie|Fix Pulse video media playback delivery",
+      "summary": "5 files changed, 350 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "394db72c49103d0986fac2dfd7efb945d34641e6",
+      "meta": "2026-08-23 16:54:59 -0700|PulseSoc Engineer|WIP on claude/recursing-antonelli-a52df6: e1e78248 feat(alerts): publish only the alert options the server can honour",
+      "summary": "2 files changed, 46 insertions(+)"
+    },
+    {
+      "sha": "414d053b82ece25722fe05c493b025f756969a81",
+      "meta": "2026-09-05 07:56:08 -0700|PulseSoc Engineer|index on main: ca6e1522 fix(entitlements): grant owner lifetime access across membership tiers",
+      "summary": ""
+    },
+    {
+      "sha": "054fdf38044eb8e2b892a0b201921d90d5fc790a",
+      "meta": "2026-09-05 13:39:03 -0700|PulseSoc Engineer|WIP on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge \u2014 a real desk on the REQUEST primitive, staffing truth on every payload",
+      "summary": "5 files changed, 544 insertions(+), 9 deletions(-)"
+    },
+    {
+      "sha": "d55693463cb3699578536c3aea96ca3a5f709ad9",
+      "meta": "2026-09-11 23:53:15 -0700|PulseSoc Engineer|index on claude/adoring-gates-fdbf0a: da9e2978 Capture the usage every provider returns and the router threw away",
+      "summary": ""
+    },
+    {
+      "sha": "11576535cbf6228f49d7e1fd6ce325b8814dee2d",
+      "meta": "2026-08-15 19:04:55 -0700|PulseSoc Engineer|WIP on (no branch): 645cba9f fix(presence): back the shop, videos and events tabs with real data",
+      "summary": "3 files changed, 214 insertions(+), 69 deletions(-)"
+    },
+    {
+      "sha": "b75db5534ae9b1cd1d85b278577c542c827371ef",
+      "meta": "2026-08-06 19:21:42 +0000|PulseSoc Engineer|Snapshot working tree: multi-mission in-progress work (ads, marketplace, account, chat, events, dashboards, notifications, media/cover system, bot.py)",
+      "summary": "65 files changed, 3833 insertions(+), 189 deletions(-)"
+    },
+    {
+      "sha": "755f4f7189b903e6a46caeaffa7e7c32029ed6ec",
+      "meta": "2026-09-08 01:28:45 -0700|PulseSoc Engineer|index on claude/web-native-parity-census: 1132dd7b Generalise the Office web client so other pages can reuse it",
+      "summary": "1 file changed, 0 insertions(+), 0 deletions(-)"
+    },
+    {
+      "sha": "895f0d34b48df229d519f2c7b17ba911cea23ab5",
+      "meta": "2026-07-26 00:01:01 -0700|git stash|index on release/undx-nexus-core-v4: 45277b25 presence: dedup ChatScreen activity vocabulary to shared presenceActivityText",
+      "summary": "11 files changed, 734 insertions(+), 454 deletions(-)"
+    },
+    {
+      "sha": "f26be96cdd478f067b0ded55605ee31dc6291b22",
+      "meta": "2026-09-04 13:36:13 -0700|PulseSoc Engineer|chore(ios): bump build to 22 for the tap-to-analyse + native-primitives binary",
+      "summary": "3 files changed, 4 insertions(+), 4 deletions(-)"
+    },
+    {
+      "sha": "807105a64f8224fb91e0dc1513d76b9d7026f3c0",
+      "meta": "2026-06-18 17:18:03 -0400|HM Cherie|Add production readiness deployment gate",
+      "summary": "7 files changed, 5461 insertions(+)"
+    },
+    {
+      "sha": "00734ff7818082f42fb362f1ba411cd5020597ce",
+      "meta": "2026-08-23 23:30:48 +0000|Roody C|feat(premium-ui): Crypto Intelligence section + cross-account isolation proofs",
+      "summary": "4556 files changed, 407 insertions(+), 1081164 deletions(-)"
+    },
+    {
+      "sha": "ef736d2814d037e0607dabd23c2f08065c6f1e3a",
+      "meta": "2026-07-30 16:06:06 -0700|PulseSoc Engineer|feat(undx): make the completed-write receipt name what it changed",
+      "summary": "15 files changed, 1357 insertions(+), 56 deletions(-)"
+    },
+    {
+      "sha": "6f792fc0a5800c99742e6db0291b9fb8b69d4775",
+      "meta": "2026-09-01 01:58:29 +0000|PulseSoc Engineer|SMII final gate report: merge+deploy and authenticated crawl gates closed; Brevo webhook URL doc fix",
+      "summary": "63 files changed, 4652 insertions(+), 743 deletions(-)"
+    },
+    {
+      "sha": "287f15a4b0372e4f3ee70274e874176dd8c4a8f2",
+      "meta": "2026-08-26 17:40:53 -0700|PulseSoc Engineer|On codex/premium-crypto-intelligence: presence-gate",
+      "summary": "18 files changed, 381 insertions(+), 27 deletions(-)"
+    },
+    {
+      "sha": "9b829f1b43888f01c8915dd270acc7738134f8f5",
+      "meta": "2026-08-15 19:04:55 -0700|PulseSoc Engineer|index on (no branch): 645cba9f fix(presence): back the shop, videos and events tabs with real data",
+      "summary": ""
+    },
+    {
+      "sha": "d2837f2064e45e1eba3ec1366096d7de53c86344",
+      "meta": "2026-07-25 18:46:03 -0700|HM Cherie|fix crypto alerts to fire only on threshold crossings",
+      "summary": "8 files changed, 704 insertions(+), 313 deletions(-)"
+    },
+    {
+      "sha": "a08495766af62fb49de17944c28115526d15308b",
+      "meta": "2026-08-06 21:46:56 +0000|PulseSoc Engineer|index on emergency-live-audio-recovery: a36563e8 Default futuristic PulseSoc background: one dark network atmosphere behind the whole app",
+      "summary": "17 files changed, 2068 insertions(+), 105 deletions(-)"
+    },
+    {
+      "sha": "009153efce725ffd1c5461da0b2ee9e775d27b53",
+      "meta": "2026-09-05 16:15:04 -0700|PulseSoc Engineer|WIP on main: 05d8a8f9 docs(private-office): private meetings foundation map \u2014 extend calls engine, 0 new owners",
+      "summary": "1 file changed, 13 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "469339a4f4234e9eca010ec7f365f922e9aafda3",
+      "meta": "2026-08-02 17:31:15 -0700|PulseSoc Engineer|chore(audio-guard): extend protected paths to media quality lifecycle",
+      "summary": "3 files changed, 90 insertions(+), 79 deletions(-)"
+    },
+    {
+      "sha": "7a990ba2100840d2d163783acd1a2ad23113007e",
+      "meta": "2026-08-23 19:45:31 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: a6718a33 Presence: a page is drawn in its own type's colour",
+      "summary": "6 files changed, 285 insertions(+), 22 deletions(-)"
+    },
+    {
+      "sha": "999bd5954848fe74eba46f9e989b523ab37acf46",
+      "meta": "2026-08-24 16:30:23 -0700|PulseSoc Engineer|WIP on claude/premium-subscription-details: 5c86f063 feat(mobile): Mission Control dashboard map \u2014 exact tile\u2192section navigation",
+      "summary": "2 files changed, 256 insertions(+), 31 deletions(-)"
+    },
+    {
+      "sha": "329fbb689cacfd92fd2ab664f6a55f4a8d2e794d",
+      "meta": "2026-08-15 11:30:18 -0700|PulseSoc Engineer|index on claude/serene-agnesi-474d89: 11b8d994 fix(community): wire group member management",
+      "summary": ""
+    },
+    {
+      "sha": "1ea43f6363cb14b60704d5acd0812e893a99e82a",
+      "meta": "2026-08-22 10:59:55 -0700|PulseSoc Engineer|WIP on claude/qa-groups-rooms: c73b2c02 fix(calls): end a 1:1 call for both sides when either side hangs up",
+      "summary": "3 files changed, 87 insertions(+), 26 deletions(-)"
+    },
+    {
+      "sha": "a7a745d1a44843cb0e004462902d25b1efef23c8",
+      "meta": "2026-08-30 23:21:48 +0000|PulseSoc Engineer|index on full-sweep-20260826: 76145369 chore(undx): add paced canonical semantic-index script and run report",
+      "summary": ""
+    },
+    {
+      "sha": "3fabf190a64f468b00d803ae587c446b1f15a590",
+      "meta": "2026-08-30 03:26:54 +0000|PulseSoc Engineer|index on full-sweep-20260826: 136106ad feat(undx): expand intelligence corpus and harden intent routing",
+      "summary": ""
+    },
+    {
+      "sha": "a0b503973e54d4a94de5fe842e21a758c410dce4",
+      "meta": "2026-09-05 13:39:03 -0700|PulseSoc Engineer|index on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge \u2014 a real desk on the REQUEST primitive, staffing truth on every payload",
+      "summary": ""
+    },
+    {
+      "sha": "b7b5b1d88e2ad1587fd0d6ac272bda02d7b51f87",
+      "meta": "2026-09-05 13:37:19 -0700|PulseSoc Engineer|index on claude/recursing-ramanujan-611f2c: 6ba854ac feat(private-office): Human Concierge \u2014 a real desk on the REQUEST primitive, staffing truth on every payload",
+      "summary": ""
+    },
+    {
+      "sha": "b1b861a829e8750df3eb2868450c4ecf1b7a672c",
+      "meta": "2026-09-05 19:29:13 -0700|PulseSoc Engineer|index on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": ""
+    },
+    {
+      "sha": "9cb98ba4ca777c42f89840f449a7a323bda2288c",
+      "meta": "2026-08-23 19:02:02 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup",
+      "summary": "1 file changed, 32 insertions(+), 19 deletions(-)"
+    },
+    {
+      "sha": "47bc7f938551d8b10b518fddbdd156930999e459",
+      "meta": "2026-08-23 19:02:02 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup",
+      "summary": ""
+    },
+    {
+      "sha": "d4c269e2434951996b7f7653414ce750dc73d27c",
+      "meta": "2026-08-22 09:39:49 -0700|PulseSoc Engineer|index on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings",
+      "summary": ""
+    },
+    {
+      "sha": "4ec33753792b383b724f802490be80c908527c0d",
+      "meta": "2026-08-25 04:12:24 -0700|PulseSoc Engineer|index on claude/premium-watchlist-row: d984f107 fix(crypto-premium): register the portfolio alias where registration counts",
+      "summary": ""
+    },
+    {
+      "sha": "24c573bc35f9351c7a8353ef09ce4287eaf8127b",
+      "meta": "2026-08-24 15:54:44 -0700|PulseSoc Engineer|index on claude/eloquent-golick-1ce78c: 3331ae05 Presence: the screens that change one presence say which one",
+      "summary": ""
+    },
+    {
+      "sha": "7fc7d5237105c0ede355cb65af4de2f9071e1859",
+      "meta": "2026-09-04 16:58:58 -0700|PulseSoc Engineer|WIP on integration/all-work-20260904: c6760a57 fix(messenger): expose idempotency index health",
+      "summary": "13 files changed, 45 insertions(+), 35 deletions(-)"
+    },
+    {
+      "sha": "a0c8c93e22c747bedac6fa45318fb1d9fd0620f0",
+      "meta": "2026-08-22 16:44:40 -0700|PulseSoc Engineer|WIP on claude/confident-boyd-9ed603: 8d932b08 feat(feed): loop the first 5s of a suggested reel while it is active",
+      "summary": "7 files changed, 177 insertions(+), 26 deletions(-)"
+    },
+    {
+      "sha": "9fcb1d77e4c1c3a59e819c5bfaaec604c141a224",
+      "meta": "2026-09-03 20:59:54 -0700|PulseSoc Engineer|WIP on main: a334d7ed build(ios): link expo-media-library and expo-sharing into the checked-in project",
+      "summary": "1 file changed, 40 insertions(+), 13 deletions(-)"
+    },
+    {
+      "sha": "57ccab9ced8c7af4a070f44fe780ab14f04706b0",
+      "meta": "2026-08-15 21:43:13 -0700|PulseSoc Engineer|index on claude/affectionate-tharp-66925d: cc35e418 fix(presence): repair Artist Presence creation flow",
+      "summary": ""
+    },
+    {
+      "sha": "6eccff9b0900eeb8c7813c5ac26893c7c36e9c22",
+      "meta": "2026-08-23 19:02:27 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: e76e570b Creation: tie the handle verdict to the handle, and land on setup",
+      "summary": "1 file changed, 32 insertions(+), 19 deletions(-)"
+    },
+    {
+      "sha": "73cdf7350aa721f722690a3b3b5eee41f6296d44",
+      "meta": "2026-08-07 03:02:53 -0700|PulseSoc Engineer|Heal the saved tables' unique indexes on existing deployments",
+      "summary": "1 file changed, 82 insertions(+)"
+    },
+    {
+      "sha": "54cf51d4216b8401935cf0fd51203a6dda488fb5",
+      "meta": "2026-07-26 01:01:01 +0000|PulseSoc Engineer|Record the commit and push outcome in the verification matrix",
+      "summary": "1 file changed, 58 insertions(+), 22 deletions(-)"
+    },
+    {
+      "sha": "a6d263bf677d44fd94679c475fd9b57f32ab7684",
+      "meta": "2026-08-26 20:42:57 -0700|PulseSoc Engineer|index on release/full-sweep-20260826: ce038534 feat(progress): replace referral rewards with PulseSoc Founding Path",
+      "summary": ""
+    },
+    {
+      "sha": "cad6291f280fbb267ab01d9135c9f106926d9bdc",
+      "meta": "2026-09-11 16:37:24 -0700|PulseSoc Engineer|Record the publish+approve sequence that put listing 14 live",
+      "summary": "1 file changed, 138 insertions(+)"
+    },
+    {
+      "sha": "cddce3401383bf41a3fb8ffd9457692b1c0d378d",
+      "meta": "2026-09-12 22:09:35 -0700|PulseSoc Engineer|index on main: e6c992a0 Claim the paths the app already knows how to open",
+      "summary": ""
+    },
+    {
+      "sha": "3cddbd235ef0b83683b016fc0b01e1a460ce7e00",
+      "meta": "2026-08-30 06:43:10 -0700|PulseSoc Engineer|index on claude/review-expired-demo: f1759800 feat(undx): agentic run substrate \u2014 queue, worker dispatch, health, mobile client",
+      "summary": ""
+    },
+    {
+      "sha": "a2e2c52b34414649fbfece6c46e0d67b434cbc4c",
+      "meta": "2026-08-22 09:36:15 -0700|PulseSoc Engineer|index on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings",
+      "summary": ""
+    },
+    {
+      "sha": "17e37d09c87059cd61996a5a5d9a0596b4430100",
+      "meta": "2026-09-12 22:46:43 -0700|PulseSoc Engineer|WIP on main: 070f586e Phase 0: tombstone dead session rows instead of deleting them",
+      "summary": "1 file changed, 140 insertions(+), 12 deletions(-)"
+    },
+    {
+      "sha": "19e7cda18cb0c3284fbec7adabde86579c46aed2",
+      "meta": "2026-08-02 10:28:10 +0000|PulseSoc Engineer|feat(business): two-sided ads manager behind the Advertising route",
+      "summary": "28 files changed, 5887 insertions(+), 251 deletions(-)"
+    },
+    {
+      "sha": "cde8c9d89d221cfb382ccc0616186ac681cb9932",
+      "meta": "2026-08-19 21:34:40 -0700|PulseSoc Engineer|WIP on (no branch): fa4cce7b fix(ios): align embedded build number",
+      "summary": "1 file changed, 16 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "a7eb299e12fd94734b694d7597bf63494581b65b",
+      "meta": "2026-06-13 10:33:34 -0400|HM Cherie|Add platform-wide protection guardrails",
+      "summary": "21 files changed, 1114 insertions(+), 106 deletions(-)"
+    },
+    {
+      "sha": "e7ec6ba0b16a774d48665a890553f979fc1d729c",
+      "meta": "2026-09-05 14:03:22 -0700|PulseSoc Engineer|WIP on main: 1571a800 feat(private-office): UNDX typed reads for the five shipped features \u2014 one spec, four surfaces, read-only by construction",
+      "summary": "29 files changed, 2186 insertions(+), 25 deletions(-)"
+    },
+    {
+      "sha": "ffec872039787496ace71e386813a53e9c5ce78c",
+      "meta": "2026-08-24 15:54:44 -0700|PulseSoc Engineer|WIP on claude/eloquent-golick-1ce78c: 3331ae05 Presence: the screens that change one presence say which one",
+      "summary": "5 files changed, 21 insertions(+), 11 deletions(-)"
+    },
+    {
+      "sha": "55edcbd8a66fec303d72aeffb4c33b41493ce074",
+      "meta": "2026-09-05 19:29:13 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": "9 files changed, 434 insertions(+), 14 deletions(-)"
+    },
+    {
+      "sha": "dded11b17150c60424e5c413d68bb6fee9328cab",
+      "meta": "2026-09-04 23:42:41 -0700|PulseSoc Engineer|index on claude/quizzical-yonath-215c94: 20276001 perf(mobile): memoize the Home feed row and window the list",
+      "summary": "2 files changed, 99 insertions(+), 2 deletions(-)"
+    },
+    {
+      "sha": "17ef6fe74a9b0d1add72e3289c29fd959d23ae7c",
+      "meta": "2026-09-08 01:28:45 -0700|PulseSoc Engineer|On claude/web-native-parity-census: t2-check",
+      "summary": "2 files changed, 484 insertions(+), 36 deletions(-)"
+    },
+    {
+      "sha": "8cf493e9f30bb3a73c5bddea8784f87660a3e3c7",
+      "meta": "2026-08-15 21:08:50 -0700|PulseSoc Engineer|WIP on claude/peaceful-tharp-038571: 645cba9f fix(presence): back the shop, videos and events tabs with real data",
+      "summary": "3 files changed, 132 insertions(+), 20 deletions(-)"
+    },
+    {
+      "sha": "c4f7d1d0b4f4b50b17d9607827ea8400c428141d",
+      "meta": "2026-09-14 17:42:25 -0700|PulseSoc Engineer|Stop one unloadable Status from blacking out the rest of the tray",
+      "summary": "2 files changed, 200 insertions(+)"
+    },
+    {
+      "sha": "75f82fddeefec640e665e3c95607a78a35f52b26",
+      "meta": "2026-08-25 04:13:32 -0700|PulseSoc Engineer|On claude/premium-watchlist-row: wip2",
+      "summary": "12 files changed, 50 insertions(+), 1 deletion(-)"
+    },
+    {
+      "sha": "18fc57324c2adde6780f9c6242b923b32e0714eb",
+      "meta": "2026-08-22 09:36:15 -0700|PulseSoc Engineer|WIP on claude/persistent-crypto-alerts: 88d44731 fix(security): actually send the password-change email from Settings",
+      "summary": "3 files changed, 224 insertions(+), 60 deletions(-)"
+    },
+    {
+      "sha": "88fcc963bec768a6054da447ecbb33667a2dfedd",
+      "meta": "2026-07-25 00:13:12 +0000|PulseSoc Engineer|fix(native): instant optimistic chat bubble + auto-dismissing in-app notification banner",
+      "summary": "8 files changed, 559 insertions(+), 19 deletions(-)"
+    },
+    {
+      "sha": "3efdc90394bdb08ff04594d8a9f77b9a6c6690c3",
+      "meta": "2026-05-15 21:05:37 -0400|HM Cherie|Production hardening and AI intelligence upgrade",
+      "summary": "35 files changed, 10972 insertions(+), 4071 deletions(-)"
+    },
+    {
+      "sha": "88ff0f82593151c9910f60a1486378f277e5f61e",
+      "meta": "2026-09-05 19:26:20 -0700|PulseSoc Engineer|WIP on claude/zen-heisenberg-143623: 15c0e44b docs(private-office): operations foundation map \u2014 extend records.py, no second system",
+      "summary": "9 files changed, 434 insertions(+), 14 deletions(-)"
+    }
+  ]
+}
