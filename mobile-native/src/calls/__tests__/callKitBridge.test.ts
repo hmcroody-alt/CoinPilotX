@@ -97,6 +97,37 @@ describe("callKitBridge with an injected provider", () => {
     expect(mockRegisterVoipPushToken).toHaveBeenCalledWith("voip-token-abc");
   });
 
+  it("still receives a token that registerVoipToken replays synchronously", async () => {
+    // MUTATION: call `provider.registerVoipToken()` before subscribing `onVoipToken`.
+    //
+    // This is the real pod's behaviour, not a hypothetical. AppDelegate creates the
+    // PKPushRegistry at launch, so `voipRegistration` is already registered by the time JS
+    // runs and takes its early-return branch, which re-emits the cached token immediately
+    // and synchronously. An emission with no listener attached is diverted into the pod's
+    // `_delayedEvents` and never reaches `register`.
+    //
+    // The old ordering therefore worked exactly once per install: on a first launch PushKit
+    // has no token yet, so the real one arrives later, after JS subscribed. On every
+    // relaunch the cached token arrives before React Native is up and was dropped — so a
+    // device whose token the server had revoked could never register again, and its calls
+    // silently downgraded from CallKit to an ordinary notification banner.
+    //
+    // Emitting from inside `registerVoipToken` is what makes this test able to fail; the
+    // test above hand-fires the handler afterwards and passes under either ordering.
+    const { provider } = makeFakeProvider();
+    let emit: ((token: string) => void) | undefined;
+    provider.onVoipToken = (cb) => {
+      emit = cb;
+      return () => undefined;
+    };
+    provider.registerVoipToken = jest.fn(() => emit?.("voip-token-replayed"));
+
+    setNativeCallKitProvider(provider);
+    await initNativeCallKit();
+
+    expect(mockRegisterVoipPushToken).toHaveBeenCalledWith("voip-token-replayed");
+  });
+
   it("accepts the call when CallKit answers", async () => {
     const { provider, handlers, displayed } = makeFakeProvider();
     setNativeCallKitProvider(provider);
