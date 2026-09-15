@@ -18,6 +18,7 @@ import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "../i18n";
 
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
+import { messengerMediaCacheIdentity } from "./messengerMediaAccess";
 import { ConversationMediaItem } from "./conversationMediaCollection";
 import { ConversationMediaGalleryState } from "./useConversationMediaGallery";
 
@@ -72,6 +73,15 @@ export function galleryViewerItems(
       // collide, which is why the collection is keyed on a composite — the
       // position is what is unique here and cheap to hand over.
       id: item.attachmentId,
+      // `id` above separates two items for the playback coordinator; it is not
+      // safe as a cache key, because an attachment id and a media-upload id are
+      // different tables' autoincrements and the same number names two files.
+      // Save, share and open-document all key on this, so without it the gallery
+      // silently falls back to URL keying.
+      cacheIdentity: messengerMediaCacheIdentity({
+        mediaUploadId: item.mediaUploadId,
+        attachmentId: item.attachmentId
+      }),
       kind: item.kind,
       url: unavailable ? "" : grant?.url || item.url,
       thumbnailUrl: unavailable ? "" : grant?.thumbnailUrl || item.thumbnailUrl,

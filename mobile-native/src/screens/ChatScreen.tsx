@@ -78,6 +78,7 @@ import { isMultiMediaMessage, mediaTileColumns, messageMediaTiles } from "../med
 import {
   MessengerMediaAccessState,
   MessengerMediaMeta,
+  messengerMediaCacheIdentity,
   useMessengerMediaAccessUrl
 } from "../media/messengerMediaAccess";
 import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
@@ -2791,7 +2792,7 @@ function DocumentAttachmentCard({ message, url }: { message: MessengerMessage; u
     setFailure("");
     const result = await openDocument({
       url,
-      mediaId: message.media_upload_id || message.attachment_id || null,
+      mediaId: messengerMediaCacheIdentity({ mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id }),
       mimeType: message.mime_type || undefined,
       expectedBytes: Number(message.file_size || 0) || undefined,
       surface: "messenger",

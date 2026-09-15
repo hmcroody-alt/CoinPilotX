@@ -27,6 +27,7 @@ import {
   attachmentIdFromMediaUrl,
   grantMessengerMediaAccess,
   isProtectedMessengerMediaUrl,
+  messengerMediaCacheIdentity,
   resetMessengerMediaAccess,
   resolveCanonicalMessengerMediaId,
   resolveMessengerMediaAccess,
@@ -155,6 +156,37 @@ describe("canonical media identity", () => {
     expect(resolveCanonicalMessengerMediaId(undefined, "https://cdn.example.com/o.jpg").id).toBe(0);
     expect(resolveCanonicalMessengerMediaId({ mediaUploadId: 0, attachmentId: 0 }, "").id).toBe(0);
     expect(resolveCanonicalMessengerMediaId({ mediaUploadId: -4 }, "").id).toBe(0);
+  });
+});
+
+describe("the cache identity keeps the two id spaces apart", () => {
+  /**
+   * The same divergence as above, one layer down. `resolveCanonicalMessengerMediaId`
+   * decides which id to *ask the server for*; this decides what the downloaded
+   * file is *filed under on disk*. Both ids are row ids in different tables, so
+   * collapsing them to a bare integer gives two unrelated attachments one cache
+   * entry — and the entry passes every integrity check, because its recorded size
+   * does match the file sitting there. The person just opens the wrong document.
+   */
+  it("never gives two tables' row 7 the same identity", () => {
+    expect(messengerMediaCacheIdentity({ mediaUploadId: 7 })).toBe("media_upload:7");
+    expect(messengerMediaCacheIdentity({ attachmentId: 7 })).toBe("attachment:7");
+    expect(messengerMediaCacheIdentity({ mediaUploadId: 7 })).not.toBe(
+      messengerMediaCacheIdentity({ attachmentId: 7 })
+    );
+  });
+
+  it("keeps the foundation id ahead of the transport id, as the access path does", () => {
+    // Production shape: attachment_id=422 and media_upload_id=33 on one message.
+    expect(messengerMediaCacheIdentity({ attachmentId: 422, mediaUploadId: 33 })).toBe("media_upload:33");
+  });
+
+  it("has no identity rather than a made-up one", () => {
+    // Null falls the cache through to URL keying. A placeholder would be a third
+    // id space, and the widest one — every attachment without ids would share it.
+    expect(messengerMediaCacheIdentity({})).toBeNull();
+    expect(messengerMediaCacheIdentity(undefined)).toBeNull();
+    expect(messengerMediaCacheIdentity({ mediaUploadId: 0, attachmentId: 0 })).toBeNull();
   });
 });
 
