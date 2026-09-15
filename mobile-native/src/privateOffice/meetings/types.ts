@@ -88,7 +88,13 @@ export type PrivateMeeting = {
   status: MeetingStatus;
   waiting_room_enabled: boolean;
   locked: boolean;
+  /** Canonical UTC. Render it with `scheduled_timezone`, never on its own. */
   scheduled_start_at: string;
+  /** The zone the host chose. Empty on rows written before it was stored. */
+  scheduled_timezone: string;
+  /** Bumped by every reschedule; reminders for older versions are dropped. */
+  schedule_version: number;
+  agenda: string;
   duration_minutes: number;
   started_at: string;
   ended_at: string;

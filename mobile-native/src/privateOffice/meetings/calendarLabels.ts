@@ -96,6 +96,93 @@ export function wallClockLabel(time: WallClock, locale?: string): string {
 }
 
 /**
+ * A stored instant, named in the zone the host booked it in.
+ *
+ * `new Date(iso).toLocaleString()` renders the canonical UTC instant in the
+ * *device's* zone, which silently relabels the meeting. A host who booked
+ * 09:00 Tokyo sees "20:00" on a London phone, with nothing on screen saying
+ * which of those two numbers the other attendees are working from — and the
+ * one they will say out loud is the host's. The zone travels beside the
+ * instant precisely so it can be formatted with it.
+ *
+ * An empty zone is a row written before that column existed. Those genuinely
+ * are only an instant, so they keep the device-zone rendering rather than
+ * being told a Tokyo they were never given.
+ */
+export function meetingWhenLabel(iso: string, zone: string, locale?: string): string {
+  if (!iso) return "";
+  const moment = new Date(iso);
+  if (Number.isNaN(moment.getTime())) return "";
+  const shape: Intl.DateTimeFormatOptions = {
+    dateStyle: "medium",
+    timeStyle: "short"
+  };
+  if (!zone) {
+    try {
+      return new Intl.DateTimeFormat(locale || getActiveLocale(), shape).format(moment);
+    } catch {
+      return moment.toLocaleString();
+    }
+  }
+  try {
+    const stamp = new Intl.DateTimeFormat(locale || getActiveLocale(), {
+      ...shape,
+      timeZone: zone
+    }).format(moment);
+    return `${stamp} (${timezoneLabel(zone)})`;
+  } catch {
+    return moment.toLocaleString();
+  }
+}
+
+/**
+ * The civil date and wall clock a stored instant reads as in a given zone.
+ *
+ * The inverse of what the wizard sends, and the only way to seed an edit with
+ * what the host actually chose. `Intl` resolves it against that zone's rules
+ * *for that date*, not against the device's current offset, so a meeting on
+ * the far side of a changeover comes back as the clock time the host typed.
+ *
+ * Returns `null` rather than a guess when the instant or the zone is
+ * unusable: an edit form pre-filled with a wrong time is worse than one the
+ * user has to fill in, because they will not check a field that looks right.
+ */
+export function civilFromInstant(
+  iso: string,
+  zone: string
+): { date: CivilDate; time: WallClock } | null {
+  if (!iso) return null;
+  const moment = new Date(iso);
+  if (Number.isNaN(moment.getTime())) return null;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: zone || undefined,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(moment);
+    const read = (type: string) => {
+      const found = parts.find((part) => part.type === type);
+      return found ? Number(found.value) : NaN;
+    };
+    const year = read("year");
+    const month = read("month");
+    const day = read("day");
+    const hour = read("hour");
+    const minute = read("minute");
+    if ([year, month, day, hour, minute].some((value) => !Number.isFinite(value))) {
+      return null;
+    }
+    return { date: { year, month, day }, time: { hour, minute } };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * A timezone as a person reads it: "New York" rather than "America/New_York".
  *
  * The region half is dropped because it is the half that is never in doubt —

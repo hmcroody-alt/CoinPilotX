@@ -99,10 +99,30 @@ export type ScheduleDraft = {
   scheduledStartAt: string;
 };
 
+/**
+ * What an existing meeting looks like on the way back into the wizard.
+ *
+ * Editing reuses the same six steps rather than a second, smaller form: a
+ * reschedule is the same decision as a schedule, and a cut-down edit screen is
+ * how a meeting ends up with a new time in the old zone.
+ */
+export type ScheduleSeed = {
+  date: CivilDate;
+  time: WallClock;
+  timezone: string;
+  durationMinutes: number;
+  title: string;
+  agenda: string;
+};
+
 export type ScheduleWizardProps = {
   busy: boolean;
   onSubmit: (draft: ScheduleDraft) => void;
   onCancel: () => void;
+  /** Absent when scheduling something new. */
+  initial?: ScheduleSeed | null;
+  /** Overrides the final button's label; defaults to "Schedule". */
+  submitLabel?: string;
 };
 
 /** Unique enough for a per-intent key; never used as a secret or an id. */
@@ -110,16 +130,34 @@ function mintKey(): string {
   return `m-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function ScheduleWizard({ busy, onSubmit, onCancel }: ScheduleWizardProps) {
+export function ScheduleWizard({
+  busy,
+  onSubmit,
+  onCancel,
+  initial,
+  submitLabel
+}: ScheduleWizardProps) {
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>("DATE");
-  const [date, setDate] = useState<CivilDate | null>(null);
-  const [time, setTime] = useState<WallClock>({ hour: 9, minute: 0 });
-  const [zone, setZone] = useState<string>(() => deviceTimezone());
-  const [duration, setDuration] = useState(30);
-  const [customDuration, setCustomDuration] = useState("");
-  const [title, setTitle] = useState("");
-  const [agenda, setAgenda] = useState("");
+  const [date, setDate] = useState<CivilDate | null>(initial ? initial.date : null);
+  const [time, setTime] = useState<WallClock>(initial ? initial.time : { hour: 9, minute: 0 });
+  const [zone, setZone] = useState<string>(() => initial?.timezone || deviceTimezone());
+  // A seeded duration that is not one of the six chips is carried in the
+  // custom field, which is where the user will look for it. A seed of zero is
+  // a row from before the column was required, not a choice, so it gets the
+  // same default a new meeting gets rather than an unusable "0".
+  const [duration, setDuration] = useState(() =>
+    initial && DURATION_CHOICES.includes(initial.durationMinutes) ? initial.durationMinutes : 30
+  );
+  const [customDuration, setCustomDuration] = useState(() =>
+    initial &&
+    initial.durationMinutes > 0 &&
+    !DURATION_CHOICES.includes(initial.durationMinutes)
+      ? String(initial.durationMinutes)
+      : ""
+  );
+  const [title, setTitle] = useState(initial ? initial.title : "");
+  const [agenda, setAgenda] = useState(initial ? initial.agenda : "");
   const [idempotencyKey, setIdempotencyKey] = useState(mintKey);
 
   const zones = useMemo(() => {
@@ -415,13 +453,13 @@ export function ScheduleWizard({ busy, onSubmit, onCancel }: ScheduleWizardProps
             onPress={submit}
             disabled={busy || !date || !durationValid}
             accessibilityRole="button"
-            accessibilityLabel={t("premium:privateOffice.meetings.schedule")}
+            accessibilityLabel={submitLabel || t("premium:privateOffice.meetings.schedule")}
           >
             {busy ? (
               <ActivityIndicator color={colors.accentStrong} />
             ) : (
               <Text style={styles.primaryButtonText}>
-                {t("premium:privateOffice.meetings.schedule")}
+                {submitLabel || t("premium:privateOffice.meetings.schedule")}
               </Text>
             )}
           </Pressable>

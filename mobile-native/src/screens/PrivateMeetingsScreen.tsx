@@ -16,10 +16,11 @@
  */
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -46,14 +47,23 @@ import {
   cancelMeeting,
   createInstantMeeting,
   listMeetings,
+  rescheduleMeeting,
   scheduleMeeting,
   startMeeting
 } from "../privateOffice/meetings/api";
 import { enterMeeting, enterMeetingWithProjection } from "../privateOffice/meetings/meetingSession";
 import { MeetingCalendar } from "../privateOffice/meetings/MeetingCalendar";
-import { ScheduleDraft, ScheduleWizard } from "../privateOffice/meetings/ScheduleWizard";
+import {
+  ScheduleDraft,
+  ScheduleSeed,
+  ScheduleWizard
+} from "../privateOffice/meetings/ScheduleWizard";
 import { CivilDate } from "../privateOffice/meetings/calendar";
-import { longDateLabel } from "../privateOffice/meetings/calendarLabels";
+import {
+  civilFromInstant,
+  longDateLabel,
+  meetingWhenLabel
+} from "../privateOffice/meetings/calendarLabels";
 import {
   MeetingBuckets,
   MeetingCalendarEntry,
@@ -96,11 +106,19 @@ function refusalPanelState(refusal: MeetingRefusal): FeatureRefusalState | "LOCK
   }
 }
 
-function whenLabel(iso: string): string {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString();
+/**
+ * When a row happened, or is due to.
+ *
+ * A *scheduled* time is a commitment the host expressed in a particular zone,
+ * so it is shown in that zone and named. A start or an end is a fact about the
+ * past with no zone of its own; those get the device's, which is what an empty
+ * zone asks `meetingWhenLabel` for.
+ */
+function rowWhenLabel(meeting: PrivateMeeting): string {
+  if (meeting.scheduled_start_at) {
+    return meetingWhenLabel(meeting.scheduled_start_at, meeting.scheduled_timezone);
+  }
+  return meetingWhenLabel(meeting.ended_at || meeting.started_at, "");
 }
 
 function PrivateMeetingsBody({ navigation }: Props) {
@@ -115,6 +133,9 @@ function PrivateMeetingsBody({ navigation }: Props) {
   const [browseOpen, setBrowseOpen] = useState(false);
   const [browseDay, setBrowseDay] = useState<CivilDate | null>(null);
   const [browseMeetings, setBrowseMeetings] = useState<MeetingCalendarEntry[]>([]);
+  // The meeting whose edit wizard is open, or null. Held as the projection
+  // rather than an id so the seed is built from what the server last said.
+  const [editing, setEditing] = useState<PrivateMeeting | null>(null);
   // Bumped after anything that changes what the month grid should show, so the
   // dots do not keep advertising a meeting that was just cancelled.
   const [calendarToken, setCalendarToken] = useState(0);
@@ -260,6 +281,45 @@ function PrivateMeetingsBody({ navigation }: Props) {
       }
     },
     [openRoom, t]
+  );
+
+  /**
+   * A reschedule re-sends the wall clock even when only the zone moved.
+   *
+   * The stored instant is canonical UTC and cannot be re-localized without the
+   * wall clock that produced it: "09:00 Tokyo" and "09:00 London" are
+   * different instants, and the server has no way back to the 09:00 once it
+   * has resolved one. So the wizard's naive string goes with every edit.
+   *
+   * Restating unchanged fields is safe — the server compares the *resolved*
+   * instant, zone and duration against the row and only then bumps
+   * `schedule_version`, re-plans reminders and announces. A typo fix to the
+   * title does not re-notify the invitees.
+   */
+  const submitReschedule = useCallback(
+    async (meeting: PrivateMeeting, draft: ScheduleDraft) => {
+      setBusy(`edit:${meeting.public_id}`);
+      try {
+        await rescheduleMeeting(meeting.public_id, {
+          scheduledStartAt: draft.scheduledStartAt,
+          timezone: draft.timezone,
+          durationMinutes: draft.durationMinutes,
+          title: draft.title,
+          agenda: draft.agenda
+        });
+        setEditing(null);
+        setCalendarToken((value) => value + 1);
+        await load();
+      } catch (error) {
+        Alert.alert(
+          t("premium:privateOffice.meetings.rescheduleFailed"),
+          refusalMessage(error, t)
+        );
+      } finally {
+        setBusy("");
+      }
+    },
+    [load, t]
   );
 
   const cancelScheduled = useCallback(
@@ -449,7 +509,10 @@ function PrivateMeetingsBody({ navigation }: Props) {
                             {entry.title || t("premium:privateOffice.meetings.untitled")}
                           </Text>
                           <Text style={styles.meetingHint} numberOfLines={1}>
-                            {whenLabel(entry.scheduled_start_at)}
+                            {meetingWhenLabel(
+                              entry.scheduled_start_at,
+                              entry.scheduled_timezone
+                            )}
                           </Text>
                         </View>
                       ))
@@ -523,6 +586,17 @@ function PrivateMeetingsBody({ navigation }: Props) {
                     </Pressable>
                     <Pressable
                       style={styles.ghostButton}
+                      onPress={() => setEditing(meeting)}
+                      disabled={Boolean(busy)}
+                      accessibilityRole="button"
+                      accessibilityLabel={t("premium:privateOffice.meetings.reschedule")}
+                    >
+                      <Text style={styles.ghostButtonText}>
+                        {t("premium:privateOffice.meetings.reschedule")}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.ghostButton}
                       onPress={() => cancelScheduled(meeting)}
                       disabled={Boolean(busy)}
                       accessibilityRole="button"
@@ -551,7 +625,81 @@ function PrivateMeetingsBody({ navigation }: Props) {
           ) : null}
         </>
       ) : null}
+
+      {editing ? (
+        <MeetingEditSheet
+          meeting={editing}
+          busy={busy === `edit:${editing.public_id}`}
+          onClose={() => setEditing(null)}
+          onSubmit={(draft) => submitReschedule(editing, draft)}
+        />
+      ) : null}
     </ScrollView>
+  );
+}
+
+/**
+ * The edit wizard, over the list rather than inside it.
+ *
+ * A panel expanded in place would open below the fold — the button that opens
+ * it lives in a row part-way down a scrolling list — and the user would press
+ * it and see nothing move.
+ */
+function MeetingEditSheet({
+  meeting,
+  busy,
+  onClose,
+  onSubmit
+}: {
+  meeting: PrivateMeeting;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (draft: ScheduleDraft) => void;
+}) {
+  const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
+  /**
+   * What the host chose, read back out of the instant.
+   *
+   * `null` when the stored value or zone will not decompose. The wizard then
+   * opens empty, which is the honest outcome: a pre-filled time that is
+   * quietly wrong would be accepted without being read.
+   */
+  const seed = useMemo<ScheduleSeed | null>(() => {
+    const civil = civilFromInstant(meeting.scheduled_start_at, meeting.scheduled_timezone);
+    if (!civil) return null;
+    return {
+      date: civil.date,
+      time: civil.time,
+      timezone: meeting.scheduled_timezone,
+      durationMinutes: meeting.duration_minutes,
+      title: meeting.title,
+      agenda: meeting.agenda
+    };
+  }, [meeting]);
+
+  return (
+    <Modal visible animationType="slide" onRequestClose={onClose}>
+      <ScrollView
+        style={styles.root}
+        contentContainerStyle={[
+          styles.content,
+          { paddingTop: insets.top + 12, paddingBottom: Math.max(insets.bottom, 18) + 24 }
+        ]}
+      >
+        <Text style={styles.cardTitle}>{t("premium:privateOffice.meetings.reschedule")}</Text>
+        <Text style={styles.meetingHint} numberOfLines={1}>
+          {meeting.title || t("premium:privateOffice.meetings.untitled")}
+        </Text>
+        <ScheduleWizard
+          busy={busy}
+          initial={seed}
+          submitLabel={t("premium:privateOffice.meetings.saveChanges")}
+          onSubmit={onSubmit}
+          onCancel={onClose}
+        />
+      </ScrollView>
+    </Modal>
   );
 }
 
@@ -614,9 +762,7 @@ function MeetingBucket({
                 <Text style={styles.meetingHint} numberOfLines={1}>
                   {meeting.status === "LIVE"
                     ? t("premium:privateOffice.meetings.liveNow")
-                    : whenLabel(
-                        meeting.scheduled_start_at || meeting.ended_at || meeting.started_at
-                      )}
+                    : rowWhenLabel(meeting)}
                 </Text>
               </Pressable>
               {renderActions(meeting)}
