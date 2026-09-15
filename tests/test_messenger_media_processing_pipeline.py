@@ -185,6 +185,63 @@ class PhotoProcessingProducesAThumbnail(ProcessingHarness):
 
 
 @unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required to generate and probe fixtures")
+class TiledImagesMeasureTheImageAndNotATile(ProcessingHarness):
+    """An iPhone HEIC is a grid of tiles, and each tile is its own ffprobe stream.
+
+    ``_probe_dimensions`` took the first two numbers ffprobe printed, which for a
+    tiled image is tile zero. Production attachment 80 is one of these: 95
+    streams, sixty of them 512x512 tiles, with the 2016x1512 photo at streams
+    61-63 -- and the row stored 512x512, claiming a square aspect ratio for a 4:3
+    photo. Attachment 79 had 54 tiles and the same wrong shape. Nothing downstream
+    can notice, because a plausible pair of positive integers is exactly what the
+    caller expects; the defect only appears as a chat bubble that reserves a
+    square box and then renders a letterboxed photo into it.
+
+    The fixture is a two-video-stream container rather than a real HEIC because
+    the tiles are not a HEIC-specific fact -- what the parser sees is a stream
+    list whose first entry is not the picture, and ffmpeg can build that directly.
+    """
+
+    GRID = [
+        "-f", "lavfi", "-i", "testsrc=size=512x512:rate=1:duration=1",
+        "-f", "lavfi", "-i", "testsrc=size=2016x1512:rate=1:duration=1",
+        "-map", "0:v", "-map", "1:v", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-t", "1",
+        # Named explicitly so the fixture can be written under a .heic key, which
+        # is the extension the rows that hit this carry.
+        "-f", "matroska",
+    ]
+
+    def test_the_largest_stream_wins_over_the_first_one(self):
+        source = self._place("messenger/44/grid.mkv", self.GRID)
+        self.assertEqual(foundation._probe_dimensions(source), (2016, 1512))
+
+    def test_a_tiled_photo_is_not_recorded_as_square(self):
+        """MUTATION: return values[0], values[1] and the stored ratio becomes 1:1."""
+        key = "messenger/44/grid.heic"
+        self._place(key, self.GRID)
+        attachment_id = self._attachment("photo", "image/heic", key)
+
+        foundation.process_attachment(self.cur, attachment_id, "messenger_photo_thumbnail")
+
+        row = self._row(attachment_id)
+        self.assertEqual((row["width"], row["height"]), (2016, 1512))
+        self.assertNotEqual(row["width"], row["height"])
+
+    def test_a_single_stream_image_measures_exactly_as_it_did_before(self):
+        """The generated thumbnails are probed with this function too."""
+        source = self._place(
+            "messenger/44/plain.jpg",
+            ["-f", "lavfi", "-i", "testsrc=size=640x896:rate=1:duration=1", "-frames:v", "1"],
+        )
+        self.assertEqual(foundation._probe_dimensions(source), (640, 896))
+
+    def test_media_with_no_video_stream_at_all_still_measures_nothing(self):
+        source = self._place("messenger/44/silence.m4a",
+                             ["-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:a", "aac"])
+        self.assertIsNone(foundation._probe_dimensions(source))
+
+
+@unittest.skipUnless(HAS_FFMPEG, "ffmpeg and ffprobe are required to generate and probe fixtures")
 class VoiceProcessingRecoversDuration(ProcessingHarness):
     def test_a_voice_note_gains_a_server_measured_duration(self):
         key = "messenger/44/note.m4a"

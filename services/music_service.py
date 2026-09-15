@@ -223,6 +223,7 @@ def _db_track(row) -> dict:
 
 
 def _load_db_tracks(query: str = "", limit: int = 300) -> list[dict]:
+    conn = None
     try:
         conn = _connection()
         cur = conn.cursor()
@@ -260,13 +261,21 @@ def _load_db_tracks(query: str = "", limit: int = 300) -> list[dict]:
             (*params, limit),
         )
         rows = [_db_track(row) for row in cur.fetchall()]
-        conn.close()
         return [row for row in rows if _safe_track(row)]
     except Exception:
         return []
+    finally:
+        # Closed in `finally` rather than on the success path. `_connection()`
+        # checks a connection out of a pool of 8 with 8 overflow, so returning it
+        # only when the query succeeded meant every failure permanently cost one
+        # slot -- and this catalog is 21k rows behind the global search route, so
+        # the query that fails is exactly the query under load.
+        if conn is not None:
+            conn.close()
 
 
 def _load_db_track_by_id(track_id: str) -> dict:
+    conn = None
     try:
         conn = _connection()
         cur = conn.cursor()
@@ -286,13 +295,15 @@ def _load_db_track_by_id(track_id: str) -> dict:
             (track_id,),
         )
         row = cur.fetchone()
-        conn.close()
         if not row:
             return {}
         track = _db_track(row)
         return track if _safe_track(track) else {}
     except Exception:
         return {}
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _catalog_tracks(query: str = "") -> list[dict]:

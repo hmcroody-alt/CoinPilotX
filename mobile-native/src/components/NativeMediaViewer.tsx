@@ -1,11 +1,12 @@
 import { Audio, ResizeMode, Video } from "expo-av";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Animated, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Animated, Dimensions, Image, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { PanGestureHandler, PinchGestureHandler, State, TapGestureHandler } from "react-native-gesture-handler";
 import { mediaDisplayUrl, mediaKind, PulseAuthor, PulseMedia } from "../api/feed";
 import { pollNativeMediaProcessing } from "../media/nativeMediaUpload";
 import { colors } from "../theme/colors";
 import { saveMediaToGallery, shareMedia, type MediaActionTarget } from "../media/mediaActions";
+import { namespacedMediaId } from "../media/mediaCache";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { AttachedMusicPolicy, resolveViewerAudioPlan } from "../core/attachedMusicAudioPolicy";
@@ -14,6 +15,16 @@ import { createThemedStyles } from "../theme/themedStyles";
 
 export type NativeMediaViewerItem = {
   id?: number;
+  /**
+   * What the underlying file is cached under, namespaced by the id space it came
+   * from — see `namespacedMediaId`.
+   *
+   * Deliberately not derived from `id`. Producers set `id` to whichever row they
+   * built the item from, and Messenger sets a *message* id there, so keying the
+   * media cache on it would file a chat attachment under a feed media row's
+   * number and hand one of them the other's bytes.
+   */
+  cacheIdentity?: string | null;
   media?: PulseMedia;
   kind?: "image" | "video" | "file";
   url: string;
@@ -34,10 +45,49 @@ export type NativeMediaViewerItem = {
   musicPolicy?: AttachedMusicPolicy;
 };
 
+/** Horizontal travel, in points, that commits a swipe to the next/previous item. */
+export const SWIPE_COMMIT_DISTANCE = 60;
+/** Vertical travel that commits a dismiss. Unchanged; named so the two can be compared. */
+export const DISMISS_COMMIT_DISTANCE = 90;
+/** Ceiling on pinch zoom. Beyond this a photo is texture, not content. */
+export const MAX_ZOOM = 4;
+/** What a double-tap zooms to, and toggles back from. */
+export const DOUBLE_TAP_ZOOM = 2.5;
+
 type Props = {
   visible: boolean;
   items: NativeMediaViewerItem[];
   initialIndex?: number;
+  /**
+   * Drive the position from outside. Pass this together with `onIndexChange` to
+   * make the viewer controlled.
+   *
+   * The chat gallery must be controlled, and the reason is specific: its
+   * collection grows while the viewer is open. When an older page lands, every
+   * item is pushed up by however many arrived, so an index the viewer had kept
+   * privately would now name a different photo — the picture would change under
+   * the user's hands. The owner tracks the item by key and recomputes the
+   * position, which is a thing only the owner can do.
+   *
+   * Left undefined, the viewer stays uncontrolled and every existing caller
+   * behaves exactly as before.
+   */
+  index?: number;
+  onIndexChange?: (index: number) => void;
+  /**
+   * Size of the whole collection when more of it exists than has been paged in,
+   * so the counter can say "12 of 43" rather than "12 of 60". Falls back to
+   * `items.length`.
+   */
+  totalCount?: number;
+  /**
+   * Swipe left/right to move through `items`.
+   *
+   * Off by default. The surfaces that show a single item, or that rely on the
+   * horizontal axis for something else, must not grow a gesture they never
+   * asked for.
+   */
+  swipeToNavigate?: boolean;
   title?: string;
   onClose: () => void;
   onSave?: (item: NativeMediaViewerItem) => void;
@@ -87,6 +137,10 @@ export function NativeMediaViewer({
   visible,
   items,
   initialIndex = 0,
+  index: controlledIndex,
+  onIndexChange,
+  totalCount,
+  swipeToNavigate = false,
   title = "Media",
   onClose,
   onSave,
@@ -97,7 +151,7 @@ export function NativeMediaViewer({
   shareAsLink = false,
   allowGallerySave = true
 }: Props) {
-  const [index, setIndex] = useState(initialIndex);
+  const [internalIndex, setInternalIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
   const [buffering, setBuffering] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -113,12 +167,34 @@ export function NativeMediaViewer({
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const videoPlayingRef = useRef(false);
-  const scale = useRef(new Animated.Value(1)).current;
+  /**
+   * Zoom is two values multiplied, not one value assigned.
+   *
+   * `baseScale` is what the photo is zoomed to right now and survives the end of
+   * a gesture; `pinchScale` is the live gesture, which always starts at 1. A
+   * single value cannot express both, which is why the previous implementation
+   * had to spring back to 1 when the fingers lifted — the zoom had nowhere to
+   * live. Requirement §10 is that the zoom *stays*.
+   */
+  const baseScale = useRef(new Animated.Value(1)).current;
+  const pinchScale = useRef(new Animated.Value(1)).current;
+  const scale = useRef(Animated.multiply(baseScale, pinchScale)).current;
+  /** Committed zoom, readable synchronously. Animated.Value is not. */
+  const zoomRef = useRef(1);
+  const translateX = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(0)).current;
+  /** Where the zoomed photo has been dragged to, committed across gestures. */
+  const panOffset = useRef({ x: 0, y: 0 });
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const panRef = useRef<PanGestureHandler>(null);
   const pinchRef = useRef<PinchGestureHandler>(null);
   const doubleTapRef = useRef<TapGestureHandler>(null);
+  const controlled = typeof controlledIndex === "number";
+  // Clamped on read, because a controlled owner whose collection just shrank can
+  // legitimately hand us a position that no longer exists for one render.
+  const index = controlled
+    ? Math.max(0, Math.min(controlledIndex as number, items.length - 1))
+    : internalIndex;
   const item = items[index] || items[0];
   const author = item?.author || {};
   const kind = item?.kind || (item?.media ? mediaKind(item.media) : "file");
@@ -143,13 +219,32 @@ export function NativeMediaViewer({
       releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
       return;
     }
+    // Capture the player while the ref is still attached.
+    //
+    // React detaches refs during the commit, and a `useEffect` cleanup runs
+    // afterwards — so reading `videoRef.current` from the cleanup finds `null`
+    // in precisely the case that matters: swiping from a video to a photo, when
+    // the <Video> is being unmounted. Holding the instance in the effect's own
+    // closure is what makes the pause below reach a real player.
+    const player = videoRef.current;
     claimMediaPlayback({
       id: playbackOwnerId,
       kind: "viewer",
+      // These run while the component is mounted and the coordinator wants the
+      // *current* player, so they stay on the live ref.
       pause: () => videoRef.current?.pauseAsync().then(() => undefined),
       stop: () => videoRef.current?.stopAsync().then(() => undefined)
     }).then((granted) => granted ? videoRef.current?.playAsync() : undefined).catch(() => undefined);
-    return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
+    return () => {
+      // Pause the outgoing video *before* handing the claim back. Releasing only
+      // tells the coordinator nobody owns playback any more; it does not stop a
+      // player that is already running, and on a video→video swipe the same
+      // <Video> survives with a new source. Without this, audio from the item
+      // you swiped away keeps playing over the next one.
+      // `pauseAsync` touches this player only — it is not an audio-session call.
+      player?.pauseAsync().catch(() => undefined);
+      releaseMediaPlayback(playbackOwnerId).catch(() => undefined);
+    };
   }, [item?.url, kind, playbackOwnerId, visible]);
 
   // Load (and tear down) the attached-music track that must play in place of the
@@ -199,9 +294,13 @@ export function NativeMediaViewer({
   }, []);
 
   useEffect(() => {
-    if (!visible) return;
-    setIndex(Math.max(0, Math.min(initialIndex, items.length - 1)));
-  }, [initialIndex, items.length, visible]);
+    // A controlled viewer takes its position from its owner. Seeding from
+    // `initialIndex` here would fight that owner on every collection change —
+    // the gallery pages in older media, `items.length` moves, this effect fires,
+    // and the photo on screen jumps back to wherever the caller first opened.
+    if (!visible || controlled) return;
+    setInternalIndex(Math.max(0, Math.min(initialIndex, items.length - 1)));
+  }, [controlled, initialIndex, items.length, visible]);
 
   useEffect(() => {
     setFailed(false);
@@ -210,38 +309,122 @@ export function NativeMediaViewer({
     // The status line describes one specific file. Swiping to the next item must
     // not leave "Saved to your library." sitting under a photo that was not saved.
     setActionStatus("");
-    scale.setValue(1);
+    // A new photo arrives unzoomed and centred. Carrying the previous item's zoom
+    // over would open the next picture already cropped into its middle.
+    zoomRef.current = 1;
+    panOffset.current = { x: 0, y: 0 };
+    baseScale.setValue(1);
+    pinchScale.setValue(1);
+    translateX.setOffset(0);
+    translateX.setValue(0);
+    translateY.setOffset(0);
     translateY.setValue(0);
-  }, [index, scale, translateY]);
+  }, [baseScale, index, pinchScale, translateX, translateY]);
 
   const pinchEvent = useMemo(
     () =>
-      Animated.event([{ nativeEvent: { scale } }], {
+      Animated.event([{ nativeEvent: { scale: pinchScale } }], {
         useNativeDriver: true
       }),
-    [scale]
+    [pinchScale]
   );
 
   const panEvent = useMemo(
     () =>
-      Animated.event([{ nativeEvent: { translationY: translateY } }], {
+      Animated.event([{ nativeEvent: { translationX: translateX, translationY: translateY } }], {
         useNativeDriver: true
       }),
-    [translateY]
+    [translateX, translateY]
   );
 
   if (!item) return null;
 
+  /**
+   * The one place the position changes, controlled or not.
+   *
+   * Controlled callers are *told*; they are not written to. Writing local state
+   * as well would give the viewer a second opinion about which photo is showing,
+   * and the two would disagree the moment the owner's collection moved.
+   */
+  function goToIndex(next: number) {
+    const clamped = Math.max(0, Math.min(next, items.length - 1));
+    if (clamped === index) return;
+    if (!controlled) setInternalIndex(clamped);
+    onIndexChange?.(clamped);
+  }
+
+  /** How far a photo at this zoom can be dragged before it shows empty space. */
+  function panBounds() {
+    const window = Dimensions.get("window");
+    const overflow = Math.max(0, zoomRef.current - 1) / 2;
+    return { x: window.width * overflow, y: window.height * overflow };
+  }
+
+  function settleZoom(next: number) {
+    const clamped = Math.max(1, Math.min(next, MAX_ZOOM));
+    zoomRef.current = clamped;
+    pinchScale.setValue(1);
+    Animated.spring(baseScale, { toValue: clamped, useNativeDriver: true }).start();
+    if (clamped === 1) recentre();
+    else clampPan();
+  }
+
+  function recentre() {
+    panOffset.current = { x: 0, y: 0 };
+    translateX.setOffset(0);
+    translateY.setOffset(0);
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+    Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+  }
+
+  /** Commit the live drag into the persistent offset, inside the zoom's bounds. */
+  function clampPan(translationX = 0, translationY = 0) {
+    const bounds = panBounds();
+    const x = Math.max(-bounds.x, Math.min(panOffset.current.x + translationX, bounds.x));
+    const y = Math.max(-bounds.y, Math.min(panOffset.current.y + translationY, bounds.y));
+    panOffset.current = { x, y };
+    translateX.setOffset(x);
+    translateY.setOffset(y);
+    translateX.setValue(0);
+    translateY.setValue(0);
+  }
+
   function handleImageDoubleTap(event: { nativeEvent: { state: number; x: number; y: number } }) {
-    if (event.nativeEvent.state !== State.ACTIVE || !onLike) return;
-    onLike(item);
-    likeBurstRef.current?.trigger(event.nativeEvent.x, event.nativeEvent.y);
+    if (event.nativeEvent.state !== State.ACTIVE) return;
+    // Double-tap already means "like" on the surfaces that pass `onLike` (feed,
+    // status). Those surfaces keep it. Only a viewer with no like handler — the
+    // chat gallery, Marketplace — is free to spend the gesture on zoom.
+    if (onLike) {
+      onLike(item);
+      likeBurstRef.current?.trigger(event.nativeEvent.x, event.nativeEvent.y);
+      return;
+    }
+    settleZoom(zoomRef.current > 1 ? 1 : DOUBLE_TAP_ZOOM);
+  }
+
+  function handlePanEnd(translationX: number, translationY: number) {
+    // Zoomed in, the horizontal axis belongs to panning the photo. Swiping to
+    // the next item from inside a zoom would make it impossible to look at the
+    // right-hand side of anything.
+    if (zoomRef.current > 1) {
+      clampPan(translationX, translationY);
+      return;
+    }
+    const horizontal = Math.abs(translationX);
+    const vertical = Math.abs(translationY);
+    if (swipeToNavigate && horizontal > vertical && horizontal > SWIPE_COMMIT_DISTANCE) {
+      goToIndex(translationX < 0 ? index + 1 : index - 1);
+    } else if (vertical > DISMISS_COMMIT_DISTANCE) {
+      onClose();
+    }
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+    Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
   }
 
   function actionTargetFor(current: NativeMediaViewerItem): MediaActionTarget {
     return {
       url: current.url,
-      mediaId: current.id || current.media?.id,
+      mediaId: current.cacheIdentity || null,
       kind: (current.kind === "file" ? "file" : current.kind) as MediaActionTarget["kind"],
       mimeType: current.media?.mime_type,
       expectedBytes: Number(current.media?.file_size || 0) || undefined,
@@ -310,36 +493,38 @@ export function NativeMediaViewer({
       <View style={styles.root} testID="native-media-viewer" accessibilityLabel="Native media viewer">
         <PanGestureHandler
           ref={panRef}
+          simultaneousHandlers={[pinchRef]}
           onGestureEvent={panEvent}
           onHandlerStateChange={(event) => {
             if (event.nativeEvent.state === State.END) {
-              if (Math.abs(event.nativeEvent.translationY) > 90) onClose();
-              Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+              handlePanEnd(event.nativeEvent.translationX, event.nativeEvent.translationY);
             }
           }}
         >
-          <Animated.View style={[styles.stage, { transform: [{ translateY }] }]}>
+          <Animated.View style={[styles.stage, { transform: [{ translateX }, { translateY }] }]}>
             {processing ? (
               <ProcessingState checking={checking} message={processingMessage || item.processingStatus || "PulseSoc is processing this media."} onRetry={checkProcessing} />
             ) : kind === "image" && item.url ? (
               <PinchGestureHandler
                 ref={pinchRef}
-                simultaneousHandlers={onLike ? [doubleTapRef] : undefined}
+                simultaneousHandlers={[doubleTapRef, panRef]}
                 onGestureEvent={pinchEvent}
                 onHandlerStateChange={(event) => {
                   if (event.nativeEvent.state === State.END) {
-                    Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start();
+                    settleZoom(zoomRef.current * event.nativeEvent.scale);
                   }
                 }}
               >
                 <Animated.View style={styles.imageWrap}>
-                  {onLike ? (
-                    <TapGestureHandler ref={doubleTapRef} numberOfTaps={2} simultaneousHandlers={[pinchRef]} onHandlerStateChange={handleImageDoubleTap}>
-                      <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
-                    </TapGestureHandler>
-                  ) : (
-                    <Animated.Image source={{ uri: item.url }} style={[styles.image, { transform: [{ scale }] }]} resizeMode="contain" onError={() => setFailed(true)} />
-                  )}
+                  <TapGestureHandler ref={doubleTapRef} numberOfTaps={2} simultaneousHandlers={[pinchRef]} onHandlerStateChange={handleImageDoubleTap}>
+                    <Animated.Image
+                      testID="native-media-viewer-image"
+                      source={{ uri: item.url }}
+                      style={[styles.image, { transform: [{ scale }] }]}
+                      resizeMode="contain"
+                      onError={() => setFailed(true)}
+                    />
+                  </TapGestureHandler>
                 </Animated.View>
               </PinchGestureHandler>
             ) : kind === "video" && item.url && !failed ? (
@@ -395,7 +580,7 @@ export function NativeMediaViewer({
           </Pressable>
           <View style={styles.titleWrap}>
             <Text style={styles.title} numberOfLines={1}>{item.title || title}</Text>
-            <Text style={styles.subtitle} numberOfLines={1}>{item.subtitle || item.alt || `${index + 1} of ${items.length}`}</Text>
+            <Text testID="native-media-viewer-position" style={styles.subtitle} numberOfLines={1}>{item.subtitle || item.alt || `${index + 1} of ${Math.max(totalCount || 0, items.length)}`}</Text>
           </View>
         </View>
 
@@ -410,10 +595,10 @@ export function NativeMediaViewer({
             </Pressable>
           ) : null}
           <View style={styles.actions}>
-            <Pressable testID="native-media-viewer-prev" accessibilityRole="button" accessibilityLabel="Previous media" style={[styles.actionButton, !canGoPrevious && styles.disabled]} disabled={!canGoPrevious} onPress={() => setIndex((current) => Math.max(0, current - 1))}>
+            <Pressable testID="native-media-viewer-prev" accessibilityRole="button" accessibilityLabel="Previous media" style={[styles.actionButton, !canGoPrevious && styles.disabled]} disabled={!canGoPrevious} onPress={() => goToIndex(index - 1)}>
               <Text style={styles.actionText}>Prev</Text>
             </Pressable>
-            <Pressable testID="native-media-viewer-next" accessibilityRole="button" accessibilityLabel="Next media" style={[styles.actionButton, !canGoNext && styles.disabled]} disabled={!canGoNext} onPress={() => setIndex((current) => Math.min(items.length - 1, current + 1))}>
+            <Pressable testID="native-media-viewer-next" accessibilityRole="button" accessibilityLabel="Next media" style={[styles.actionButton, !canGoNext && styles.disabled]} disabled={!canGoNext} onPress={() => goToIndex(index + 1)}>
               <Text style={styles.actionText}>Next</Text>
             </Pressable>
             {onSave ? (
@@ -467,6 +652,7 @@ export function mediaViewerItemFromPulseMedia(media: PulseMedia, context: Partia
   }) as NativeMediaViewerItem["kind"];
   return {
     id: Number(media.id || 0),
+    cacheIdentity: namespacedMediaId("pulse_media", media.id),
     media,
     kind,
     url: playbackUrl || thumbnailUrl,

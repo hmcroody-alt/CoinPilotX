@@ -44,6 +44,7 @@ import {
   mediaBudgetForDisk,
   mediaCacheKey,
   mediaCacheStats,
+  namespacedMediaId,
   setMediaCacheScope,
   type MediaRetention
 } from "../mediaCache";
@@ -116,6 +117,65 @@ describe("cache keys", () => {
 
   it("returns an empty key when there is nothing to key on", () => {
     expect(mediaCacheKey({ url: "" })).toBe("");
+  });
+});
+
+/**
+ * A row id is unique inside its own table and nowhere else. A Comm-v2 message
+ * carries a `chat_media_uploads` id and a `comm_v2_attachments` id at once, from
+ * independent autoincrements, so `7` from each names a different file.
+ *
+ * This is not caught anywhere downstream. The colliding entry is internally
+ * consistent — the recorded size matches the file on disk — so `lookupCachedMedia`
+ * verifies it and hands it over. The only symptom is a person opening attachment
+ * X and getting unrelated file Y.
+ */
+describe("id spaces do not collide", () => {
+  it("keys the same row number from two tables as two different entries", () => {
+    const upload = mediaCacheKey({ mediaId: namespacedMediaId("media_upload", 7) });
+    const attachment = mediaCacheKey({ mediaId: namespacedMediaId("attachment", 7) });
+    expect(upload).toBe("media:media_upload:7#full");
+    expect(attachment).toBe("media:attachment:7#full");
+    expect(upload).not.toBe(attachment);
+  });
+
+  it("does not quietly fall back to the URL when handed a namespaced id", () => {
+    // The dangerous failure, because it looks like it works. `Number()` on a
+    // namespaced identity is NaN, which reads as "no id" and drops the caller
+    // onto URL keying — a different bug, silently, with no way to tell from here.
+    //
+    // Asserted structurally rather than against a literal: what matters is that
+    // the identity survived and the URL was not consulted, and that claim should
+    // not have to be rewritten the next time the key format moves.
+    const key = mediaCacheKey({ mediaId: "attachment:7", url: "https://cdn.pulsesoc.com/a.pdf" });
+    expect(key).toContain("attachment:7");
+    expect(key).not.toContain("url:");
+    expect(key).not.toContain("cdn.pulsesoc.com");
+  });
+
+  it("still keys a bare number as itself, so entries written before namespacing resolve", () => {
+    expect(mediaCacheKey({ mediaId: 42 })).toBe("media:42#full");
+  });
+
+  it("refuses to namespace something that is not a usable id", () => {
+    // Null rather than a fabricated identity: "no id" must fall through to URL
+    // keying, which is honest, instead of inventing a key two callers could share.
+    expect(namespacedMediaId("attachment", 0)).toBeNull();
+    expect(namespacedMediaId("attachment", undefined)).toBeNull();
+    expect(namespacedMediaId("attachment", "not-a-number")).toBeNull();
+  });
+
+  it("gives the two ids two files on disk rather than one they fight over", async () => {
+    const upload = mediaCacheKey({ mediaId: namespacedMediaId("media_upload", 7) });
+    const attachment = mediaCacheKey({ mediaId: namespacedMediaId("attachment", 7) });
+    await writeCached(upload, 1000);
+    await writeCached(attachment, 2000);
+
+    // Sharing a key would mean the second write replaced the first, and the read
+    // below would return 2000 for both while passing every integrity check.
+    expect((await lookupCachedMedia(upload))?.bytes).toBe(1000);
+    expect((await lookupCachedMedia(attachment))?.bytes).toBe(2000);
+    expect(cacheFileUriFor(upload, ".pdf")).not.toBe(cacheFileUriFor(attachment, ".pdf"));
   });
 });
 

@@ -2498,6 +2498,20 @@ def _prepare_attachment_media(cur, media: dict, media_id: int) -> dict:
 
 
 def _attachment_payload(row: dict) -> dict:
+    """The one canonical attachment payload for every comm_v2 read/write path.
+
+    This function must exist EXACTLY ONCE at module scope. A second module-scope
+    definition silently shadows this one for all four call sites above it, which
+    is how the read path lost ``media_upload_id``/``width``/``height``/
+    ``waveform``/``playback_url`` in production. See
+    ``tests/test_messenger_media_gallery.py``.
+
+    It accepts three row shapes and must degrade without raising on any of them:
+      * a bare ``SELECT *`` from ``comm_v2_attachments`` (no message columns)
+      * that row JOINed to ``comm_v2_messages``/``users`` (media history)
+      * a hand-built dict from the send path
+    """
+    media_type = str(row.get("media_type") or "file").lower()
     mux_playback_id = row.get("mux_playback_id") or ""
     playback_url = row.get("playback_url") or ""
     if mux_playback_id and not playback_url:
@@ -2508,7 +2522,11 @@ def _attachment_payload(row: dict) -> dict:
         except Exception:
             playback_url = ""
     cdn_url = row.get("cdn_url") or row.get("valid_url") or row.get("media_url") or row.get("public_url") or row.get("url") or ""
-    url = playback_url if (row.get("media_type") or "").lower() == "video" and playback_url else (row.get("url") or cdn_url)
+    thumbnail_url = row.get("thumbnail_url") or row.get("poster_url") or ""
+    if media_type == "video" and playback_url:
+        url = playback_url
+    else:
+        url = row.get("url") or cdn_url or playback_url or thumbnail_url or ""
     try:
         waveform = json.loads(row.get("waveform_json") or "[]")
     except Exception:
@@ -2518,15 +2536,18 @@ def _attachment_payload(row: dict) -> dict:
         "attachment_id": int(row.get("id") or 0),
         "attachment_public_id": row.get("attachment_public_id") or "",
         "media_upload_id": int(row.get("media_upload_id") or row.get("id") or 0),
+        "message_id": int(row.get("message_id") or 0),
         "media_type": row.get("media_type") or "file",
         "url": url,
         "cdn_url": cdn_url,
         "playback_url": playback_url,
-        "thumbnail_url": row.get("thumbnail_url") or row.get("poster_url") or "",
+        "thumbnail_url": thumbnail_url,
         "mime_type": row.get("mime_type") or "",
         "file_size": int(row.get("file_size") or row.get("file_size_bytes") or 0),
-        "file_size_bytes": int(row.get("file_size_bytes") or 0),
+        "file_size_bytes": int(row.get("file_size_bytes") or row.get("file_size") or 0),
         "duration_seconds": float(row.get("duration_seconds") or row.get("duration") or 0),
+        "width": int(row.get("width") or 0),
+        "height": int(row.get("height") or 0),
         "waveform": waveform if isinstance(waveform, list) else [],
         "voice_note": bool(int(row.get("voice_note") or 0)),
         "storage_provider": row.get("storage_provider") or "",
@@ -2534,6 +2555,10 @@ def _attachment_payload(row: dict) -> dict:
         "mux_asset_id": row.get("mux_asset_id") or "",
         "mux_playback_id": mux_playback_id,
         "mux_status": row.get("mux_status") or "",
+        "created_at": row.get("created_at") or row.get("message_created_at") or "",
+        "sender_user_id": int(row.get("sender_user_id") or row.get("uploader_user_id") or 0),
+        "sender_display_name": row.get("sender_display_name") or "Pulse member",
+        "body_preview": _safe_preview(row.get("body") or "", row.get("message_type") or "", "")[:180],
     }
 
 
@@ -3594,24 +3619,6 @@ def _attachment_filter_clause(kind: str) -> str:
     return ""
 
 
-def _attachment_payload(row: dict) -> dict:
-    url = row.get("playback_url") or row.get("cdn_url") or row.get("url") or row.get("thumbnail_url") or ""
-    return {
-        "id": int(row.get("id") or 0),
-        "message_id": int(row.get("message_id") or 0),
-        "media_type": row.get("media_type") or "file",
-        "mime_type": row.get("mime_type") or "",
-        "file_size_bytes": int(row.get("file_size_bytes") or row.get("file_size") or 0),
-        "duration_seconds": float(row.get("duration_seconds") or 0),
-        "url": url,
-        "thumbnail_url": row.get("thumbnail_url") or "",
-        "created_at": row.get("created_at") or row.get("message_created_at") or "",
-        "sender_user_id": int(row.get("sender_user_id") or 0),
-        "sender_display_name": row.get("sender_display_name") or "Pulse member",
-        "body_preview": _safe_preview(row.get("body") or "", row.get("message_type") or "", "")[:180],
-    }
-
-
 def conversation_control_media(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
     disabled = _disabled("conversation_control_media")
     if disabled:
@@ -3645,6 +3652,168 @@ def conversation_control_media(user_id: int, conversation_ref: int | str, filter
         )
         items = [_attachment_payload(_row(row)) for row in cur.fetchall()]
         return _ok({"conversation": _conversation_payload(cur, conversation, user_id), "items": items, "kind": kind, "count": len(items)})
+    finally:
+        conn.close()
+
+
+#: The full-screen chat gallery is a *visual* gallery. Voice notes keep their
+#: waveform player and documents keep their document card; neither is ever an
+#: item you can swipe onto, so neither is ever in this collection.
+MEDIA_HISTORY_KINDS = ("image", "video")
+
+#: The canonical order for the whole feature, in one place, so the inline thread
+#: and the viewer cannot disagree about what "item 17" means.
+#:
+#: `comm_v2_attachments.id` is a monotonic insert-order key and attachments are
+#: inserted while their message is being sent, so ascending `a.id` is the same
+#: sequence the thread renders. It is also a single integer, which is what makes
+#: keyset paging here honest: an OFFSET page would silently shift every index
+#: when new media arrives mid-session (requirement: a new message must not move
+#: the item the viewer is currently on).
+MEDIA_HISTORY_ORDER_SQL = "a.id"
+
+
+def _media_history_clause(media_type: str) -> tuple[str, str]:
+    """(sql, normalized_kind) for the gallery filter.
+
+    Unlike `_attachment_filter_clause`, an unrecognised value does NOT widen to
+    "everything" — it falls back to image+video. Widening here would put voice
+    notes and PDFs into a swipeable photo gallery, so the default has to be the
+    narrow one.
+    """
+    normalized = str(media_type or "").strip().lower()
+    image_sql = "(LOWER(COALESCE(a.media_type,'')) IN ('image','photo','gif') OR LOWER(COALESCE(a.mime_type,'')) LIKE 'image/%')"
+    video_sql = "(LOWER(COALESCE(a.media_type,''))='video' OR LOWER(COALESCE(a.mime_type,'')) LIKE 'video/%')"
+    if normalized in {"image", "images", "photo", "photos"}:
+        return f"AND {image_sql}", "image"
+    if normalized in {"video", "videos"}:
+        return f"AND {video_sql}", "video"
+    return f"AND ({image_sql} OR {video_sql})", "all"
+
+
+def conversation_media_history(user_id: int, conversation_ref: int | str, filters: dict | None = None) -> dict:
+    """One paginated, membership-authorized page of the conversation's media.
+
+    This is the only supported source for the chat media gallery. The client
+    must not assemble the collection from mounted message cells: cells are
+    recycled and windowed, so a collection built from them is a collection of
+    whatever happened to be on screen, which is why tapping the 17th photo used
+    to open the first.
+
+    Paging is keyset on `a.id`, in both directions, because the viewer needs to
+    walk backwards from the tapped item as readily as forwards:
+      * `before_id` -> the page immediately OLDER than that id
+      * `after_id`  -> the page immediately NEWER than that id
+      * neither     -> the newest page
+    `items` always comes back in canonical ascending order regardless of which
+    direction was asked for, so the caller can splice a page onto either end of
+    its collection without re-sorting.
+    """
+    disabled = _disabled("conversation_media_history")
+    if disabled:
+        return disabled
+    filters = filters or {}
+    try:
+        limit = max(1, min(int(filters.get("limit") or 60), 120))
+    except Exception:
+        limit = 60
+    try:
+        before_id = max(0, int(filters.get("before_id") or 0))
+    except Exception:
+        before_id = 0
+    try:
+        after_id = max(0, int(filters.get("after_id") or 0))
+    except Exception:
+        after_id = 0
+    clause, kind = _media_history_clause(filters.get("media_type") or filters.get("kind") or "")
+    conn, cur = _open_db()
+    try:
+        conversation, conversation_id, error = _control_conversation(cur, user_id, conversation_ref)
+        if error:
+            # `_control_conversation` is the authorization boundary. Changing the
+            # conversation id in the URL has to fail here and not reach a query,
+            # so nothing below this line may be reordered above it.
+            return error
+
+        visibility = f"""
+            FROM comm_v2_attachments a
+            JOIN comm_v2_messages m ON m.id=a.message_id
+            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+            LEFT JOIN users u ON u.user_id=m.sender_user_id
+            WHERE a.conversation_id=?
+              AND COALESCE(a.scan_status,'approved')!='blocked'
+              AND COALESCE(m.deleted_at,'')=''
+              AND d.id IS NULL
+              {clause}
+        """
+        base_args = [int(user_id), int(conversation_id)]
+
+        cur.execute(f"SELECT COUNT(*) AS total {visibility}", tuple(base_args))
+        total = int(_row(cur.fetchone()).get("total") or 0)
+
+        # Fetch limit+1 so "is there another page" is an observed fact rather
+        # than an inference from a full page.
+        if after_id:
+            cur.execute(
+                f"""SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
+                           COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
+                    {visibility} AND {MEDIA_HISTORY_ORDER_SQL} > ?
+                    ORDER BY {MEDIA_HISTORY_ORDER_SQL} ASC LIMIT ?""",
+                tuple(base_args + [after_id, limit + 1]),
+            )
+            rows = [_row(row) for row in cur.fetchall()]
+            has_newer = len(rows) > limit
+            rows = rows[:limit]
+        elif before_id:
+            cur.execute(
+                f"""SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
+                           COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
+                    {visibility} AND {MEDIA_HISTORY_ORDER_SQL} < ?
+                    ORDER BY {MEDIA_HISTORY_ORDER_SQL} DESC LIMIT ?""",
+                tuple(base_args + [before_id, limit + 1]),
+            )
+            rows = [_row(row) for row in cur.fetchall()]
+            has_older = len(rows) > limit
+            rows = list(reversed(rows[:limit]))
+        else:
+            cur.execute(
+                f"""SELECT a.*, m.body, m.message_type, m.created_at AS message_created_at, m.sender_user_id,
+                           COALESCE(u.display_name,u.username,'Pulse member') AS sender_display_name
+                    {visibility}
+                    ORDER BY {MEDIA_HISTORY_ORDER_SQL} DESC LIMIT ?""",
+                tuple(base_args + [limit + 1]),
+            )
+            rows = [_row(row) for row in cur.fetchall()]
+            has_older = len(rows) > limit
+            rows = list(reversed(rows[:limit]))
+
+        items = [_attachment_payload(row) for row in rows]
+        oldest_id = int(items[0].get("attachment_id") or 0) if items else 0
+        newest_id = int(items[-1].get("attachment_id") or 0) if items else 0
+
+        if after_id:
+            # We paged forwards, so "older" is whatever sits below the page we
+            # asked from, not below the page we got back.
+            cur.execute(f"SELECT COUNT(*) AS total {visibility} AND {MEDIA_HISTORY_ORDER_SQL} <= ?", tuple(base_args + [after_id]))
+            has_older = int(_row(cur.fetchone()).get("total") or 0) > 0
+        elif newest_id:
+            cur.execute(f"SELECT COUNT(*) AS total {visibility} AND {MEDIA_HISTORY_ORDER_SQL} > ?", tuple(base_args + [newest_id]))
+            has_newer = int(_row(cur.fetchone()).get("total") or 0) > 0
+        else:
+            has_newer = False
+
+        return _ok({
+            "conversation_id": int(conversation_id),
+            "conversation_public_id": conversation.get("public_id") or "",
+            "media_type": kind,
+            "items": items,
+            "count": len(items),
+            "total": total,
+            "has_older": bool(has_older),
+            "has_newer": bool(has_newer),
+            "oldest_id": oldest_id,
+            "newest_id": newest_id,
+        })
     finally:
         conn.close()
 

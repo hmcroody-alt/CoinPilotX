@@ -371,7 +371,11 @@
       "a11yDiscardRecording": "음성 녹음 취소",
       "a11yDismissStatus": "메시지 상태 닫기",
       "a11yForwardFive": "5초 앞으로",
+      "a11yGalleryPhotoPosition": "{{sender}}님의 사진, {{total}}개 중 {{position}}번째",
+      "a11yGalleryVideoPosition": "{{sender}}님의 동영상, {{total}}개 중 {{position}}번째",
       "a11yGifAttachment": "{{label}}. GIF 첨부파일.",
+      "a11yGridPhotoTile": "{{label}}. 사진 {{total}}개 중 {{position}}번째.",
+      "a11yGridVideoTile": "{{label}}. 동영상 {{total}}개 중 {{position}}번째.",
       "a11yImageAttachment": "{{label}}. 이미지 첨부파일.",
       "a11yOpenControls": "대화 관리 열기",
       "a11yOpenUndxResult": "{{type}} 결과 열기",
@@ -450,6 +454,8 @@
       "fileSharingUnavailableTitle": "파일 공유를 사용할 수 없어요",
       "forwarded": "전달됨",
       "forwardedSignal": "전달된 시그널",
+      "galleryUnavailable": "사용할 수 없음",
+      "galleryUnavailableOffline": "오프라인에서 사용할 수 없음",
       "headerCachedHistory": "저장된 기록",
       "headerLiveChannel": "실시간 채널",
       "headerReconnecting": "다시 연결 중",
@@ -5132,18 +5138,16 @@
         "scheduleFailed": "예약할 수 없습니다",
         "startFailed": "시작할 수 없습니다",
         "cancelFailed": "취소할 수 없습니다",
+        "rescheduleFailed": "일정을 변경할 수 없습니다",
         "start": "시작",
         "cancel": "취소",
+        "reschedule": "일정 변경",
+        "saveChanges": "변경사항 저장",
         "untitled": "회의",
         "details": "{{title}} 세부 정보",
         "liveNow": "지금 진행 중",
         "durationMinutes_one": "{{count}}분",
         "durationMinutes_other": "{{count}}분",
-        "presets": {
-          "in15m": "{{minutes}}분 후",
-          "in1h": "{{hours}}시간 후",
-          "tomorrowMorning": "내일 오전 {{time}}"
-        },
         "buckets": {
           "live": "진행 중",
           "upcoming": "예정",
@@ -5251,6 +5255,39 @@
             "feature_disabled": "연결 중에 회의 기능이 꺼졌습니다.",
             "generic": "회의가 끝났습니다."
           }
+        },
+        "calendar": {
+          "browse": "캘린더 보기",
+          "previousMonth": "이전 달",
+          "nextMonth": "다음 달",
+          "pickMonth": "월 선택",
+          "pickYear": "연도 선택",
+          "jumpToYear": "연도로 이동",
+          "today": "오늘",
+          "close": "닫기",
+          "loadFailed": "이 달을 불러오지 못했습니다. 다시 시도하거나 다른 달로 이동하세요.",
+          "noneOnDay": "이 날에는 예정된 일정이 없습니다.",
+          "dayWithMeetings_other": "{{day}}, 미팅 {{count}}건"
+        },
+        "wizard": {
+          "steps": {
+            "date": "날짜 선택",
+            "time": "시간 선택",
+            "zone": "시간대 확인",
+            "duration": "얼마나 걸리나요?",
+            "details": "제목과 안건",
+            "review": "검토"
+          },
+          "timeHint": "미팅이 열리는 곳에서 표시될 시간입니다.",
+          "zoneHint": "모두가 같은 순간에 초대됩니다. 그 순간을 결정하는 것이 시간대입니다.",
+          "zoneUnknown": "이 기기가 시간대를 알려주지 않아 미팅은 UTC로 해석됩니다.",
+          "looksPast": "이 기기의 시계로는 이미 지난 시간입니다. 최종 판단은 서버가 합니다.",
+          "customDuration": "직접 입력한 길이(분)",
+          "durationRange": "{{min}}분에서 {{max}}분 사이로 선택하세요.",
+          "agendaField": "안건 (선택)",
+          "inviteLater": "미팅이 생성된 뒤에 사람들을 초대할 수 있습니다.",
+          "back": "뒤로",
+          "next": "다음"
         }
       },
       "conversations": {

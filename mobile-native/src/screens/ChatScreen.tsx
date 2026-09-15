@@ -67,10 +67,18 @@ import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { buildUndxSendContext, clearMarketContext, peekMarketContext } from "../undx/marketContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
 import { goBackFromUndxChat } from "../undx/undxChatTarget";
-import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
+import {
+  ConversationGalleryProvider,
+  ConversationMediaGalleryViewer,
+  useConversationGallery
+} from "../media/ConversationMediaGalleryHost";
+import { gallerySeedFromMessage, useConversationMediaGallery } from "../media/useConversationMediaGallery";
+import { ConversationMediaItem } from "../media/conversationMediaCollection";
+import { isMultiMediaMessage, mediaTileColumns, messageMediaTiles } from "../media/messageMediaTiles";
 import {
   MessengerMediaAccessState,
   MessengerMediaMeta,
+  messengerMediaCacheIdentity,
   useMessengerMediaAccessUrl
 } from "../media/messengerMediaAccess";
 import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
@@ -321,6 +329,16 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [error, setError] = useState("");
   const [initialFetchComplete, setInitialFetchComplete] = useState(false);
   const [usingCachedMessages, setUsingCachedMessages] = useState(false);
+  /**
+   * The conversation's media gallery, owned here rather than in a bubble.
+   *
+   * It has to live above the list. The collection is the whole conversation's
+   * media, which a message cell cannot see — a cell only knows itself, and only
+   * the cells near the viewport are mounted at all. Hoisting it is what makes
+   * "tap the 17th photo, land on the 17th photo" a property of the code rather
+   * than a coincidence of where the thread happened to be scrolled.
+   */
+  const mediaGallery = useConversationMediaGallery(conversationId, { online: !usingCachedMessages });
   const [typing, setTyping] = useState("");
   // Live peer presence, refreshed from every conversation fetch and sync.
   // route.params.presence is only a snapshot taken at navigation time; relying
@@ -889,6 +907,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [t]);
 
+  const dropGalleryMedia = mediaGallery.dropMessage;
   const removeMessage = useCallback(async (message: MessengerMessage, scope: "self" | "everyone" = "self") => {
     if (message.id <= 0) {
       setMessages((current) => current.filter((item) => item.id !== message.id));
@@ -897,6 +916,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
     try {
       await deleteMessage(message.id, scope);
+      // The viewer may be open on exactly this photo. Dropping it from the
+      // collection lands the viewer on the next item, or closes it when there is
+      // no next item — rather than leaving a black frame over a deleted file.
+      dropGalleryMedia(message.id);
       setMessages((current) =>
         current.map((item) =>
           item.id === message.id
@@ -908,7 +931,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     } catch (deleteError) {
       setStatusMessage(deleteError instanceof Error ? deleteError.message : t("messaging:chat.deleteFailed"));
     }
-  }, [t]);
+  }, [dropGalleryMedia, t]);
 
   const report = useCallback(async (message: MessengerMessage) => {
     if (message.id <= 0) {
@@ -1204,6 +1227,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   }, [load, sync]);
 
   return (
+    <ConversationGalleryProvider gallery={mediaGallery}>
     <View style={styles.root}>
       <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
       {/* The atmosphere is the first paint layer. Keeping it after the header
@@ -1985,7 +2009,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         }}
       />
       </LogiNexusScreenShell>
+      {/* One viewer for the whole conversation, outside the shell so it is not
+          affected by the list's layout, and mounted unconditionally so that
+          opening it is a state change rather than a screen push — requirement
+          §6: swiping between photos must never push a new screen. */}
+      <ConversationMediaGalleryViewer gallery={mediaGallery} online={!usingCachedMessages} />
     </View>
+    </ConversationGalleryProvider>
   );
 }
 
@@ -2072,9 +2102,20 @@ function MessageBubble({
   const moderated = Boolean(message.moderated_at || message.moderation_state);
   const body = deleted ? t("messaging:chat.deletedMessageBody") : moderated ? t("messaging:chat.moderatedMessageBody") : displayMessageBody(message);
   const voiceMessage = isVoiceLikeMessage(message);
+  /**
+   * A photo or video sent with no caption gets a slimmer bubble.
+   *
+   * The 12/10 padding exists so a sentence is not pressed against a rounded
+   * edge. A picture is not a sentence: the same padding draws a visible frame of
+   * bubble colour around the image on all four sides, and with the media card
+   * also carrying its own radius the result is a rounded rectangle inside a
+   * rounded rectangle — §2, exactly. Caption messages keep the text padding,
+   * because there the padding is doing its job.
+   */
+  const mediaOnly = !deleted && !moderated && !body && isVisualMediaMessage(message);
   return (
     <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage} accessibilityLabel={messageAccessibilityLabel(message)}>
-      <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, moderated && styles.moderatedBubble]}>
+      <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, mediaOnly && styles.mediaBubble, moderated && styles.moderatedBubble]}>
         {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : t("common:identity.member"))}</Text> : null}
         {message.reply_preview ? (
           <View style={styles.replyBlock}>
@@ -2232,7 +2273,7 @@ const MEDIA_DEFAULT_RATIO = 1.25;
 
 function MessageMedia({ message }: { message: MessengerMessage }) {
   const { t } = useTranslation();
-  const [viewerOpen, setViewerOpen] = useState(false);
+  const gallery = useConversationGallery();
   const type = (message.message_type || "text").toLowerCase();
   // The message carries media identity; the renderer gets a short-lived access
   // URL for it. Handing the platform image loader a protected API path is what
@@ -2258,6 +2299,33 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
   const retryMedia = mediaAccess.retry;
   const mediaUrl = absoluteMediaUrl(mediaAccess.url);
   const thumbnailUrl = absoluteMediaUrl(mediaAccess.thumbnailUrl);
+  /**
+   * §21. The message's own attachments, split back into tiles.
+   *
+   * `firstAttachment` in api/messenger.ts flattens a message down to its first
+   * attachment, which is lossless for anything the mobile composer sends — it
+   * sends exactly one — and quietly drops media for anything the web composer
+   * sends, which may send several. A three-photo message rendered as one photo
+   * with the other two reachable from nowhere.
+   *
+   * Memoised because it feeds a child component's props; the function itself is
+   * pure and cheap, but a fresh array every render re-renders the whole grid.
+   */
+  const mediaTiles = useMemo(
+    () => messageMediaTiles(Number(message.id || message.message_id || 0), message.attachments),
+    [message.attachments, message.id, message.message_id]
+  );
+  /**
+   * The grid decision is made before the single-media grant is consulted at all.
+   *
+   * Every branch below this point reads `mediaUrl`, which is the grant for
+   * attachment *one*. A multi-photo message must not be gated on it: each tile
+   * carries its own identity and fetches its own grant, so a message whose first
+   * photo failed still renders the other two.
+   */
+  if (isMultiMediaMessage(mediaTiles)) {
+    return <MessageMediaGrid message={message} tiles={mediaTiles} />;
+  }
   if ((type === "image" || type === "gif") && mediaAccess.failed && !mediaUrl) {
     return (
       <View accessible accessibilityRole="text" accessibilityLabel={`${messageAccessibilityLabel(message)}. Image unavailable.`} style={styles.voiceUnavailable}>
@@ -2275,15 +2343,34 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     );
   }
   if (!mediaUrl) return null;
-  const viewerItem: NativeMediaViewerItem = {
-    id: Number(message.id || message.message_id || 0),
-    kind: type === "video" ? "video" : type === "image" || type === "gif" ? "image" : "file",
-    url: mediaUrl,
-    thumbnailUrl,
-    title: type === "video" ? t("messaging:chat.videoAttachment") : type === "image" || type === "gif" ? t("messaging:chat.imageAttachment") : t("messaging:chat.messengerAttachment"),
-    subtitle: message.body || messageDeliveryLabel(message.local_status || message.delivery_status || "sent", message.seen_at),
-    sourceUrl: mediaUrl
-  };
+  /**
+   * Open the conversation gallery *on this item*.
+   *
+   * The seed is everything this bubble knows: which photo it is, and the URL it
+   * already decoded. The host puts that seed into the real collection and pages
+   * the rest of the conversation in around it, which is why the viewer opens on
+   * the tapped photo instantly and still ends up holding all 43.
+   *
+   * With no host — a preview, a harness — there is nothing to open, and a photo
+   * that does not expand is a better outcome than a crash.
+   */
+  function openInGallery() {
+    gallery?.open(gallerySeedFromMessage({
+      messageId: Number(message.id || message.message_id || 0),
+      attachmentId: Number(message.attachment_id || message.media_upload_id || message.id || 0),
+      mediaUploadId: Number(message.media_upload_id || 0),
+      kind: type === "video" ? "video" : "image",
+      url: mediaUrl,
+      thumbnailUrl,
+      mimeType: String(message.mime_type || ""),
+      width: mediaAccess.meta.width,
+      height: mediaAccess.meta.height,
+      durationSeconds: Number(message.duration_seconds || message.duration || 0),
+      senderId: Number(message.sender_user_id || message.sender_id || 0),
+      senderName: String(message.sender_display_name || ""),
+      createdAt: String(message.created_at || "")
+    }));
+  }
   if (type === "image" || type === "gif") {
     const photoPreviewUrl = thumbnailUrl || (isPreviewTerminal(mediaAccess.meta.processingStatus) ? mediaUrl : "");
     return (
@@ -2294,7 +2381,7 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
             ? t("messaging:chat.a11yGifAttachment", { label: messageAccessibilityLabel(message) })
             : t("messaging:chat.a11yImageAttachment", { label: messageAccessibilityLabel(message) })}
           accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-          onPress={() => setViewerOpen(true)}
+          onPress={openInGallery}
         >
           {/* The derived rendition first, always. A photo may fall back to the
               original because its size is bounded by the photo limit and the
@@ -2317,7 +2404,6 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
             )}
           </MediaSurface>
         </Pressable>
-        <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
       </>
     );
   }
@@ -2325,9 +2411,128 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
     return <VoiceMessageCard message={message} url={mediaUrl} />;
   }
   if (type === "video") {
-    return <VideoMessageCard message={message} access={mediaAccess} viewerItem={viewerItem} />;
+    return <VideoMessageCard message={message} access={mediaAccess} onOpen={openInGallery} />;
   }
   return <DocumentAttachmentCard message={message} url={mediaUrl} />;
+}
+
+/** Gap between tiles. Small enough that the grid reads as one object. */
+const MEDIA_TILE_GAP = 3;
+
+/**
+ * §21: several photos in one message, as a grid of individually tappable tiles.
+ *
+ * The grid is laid out at the same bubble width as a single photo so a thread
+ * containing both does not visibly change column. Each tile is square — a grid
+ * of mixed aspect ratios reads as a broken layout rather than a deliberate one,
+ * and the true ratio is one tap away in the viewer.
+ *
+ * What makes this more than a layout: every tile opens the *conversation*
+ * gallery seeded with its own item. Tile 3 therefore lands on the third photo
+ * of the message wherever that photo sits among the conversation's 43, because
+ * the tile and the collection entry are the same object with the same key.
+ */
+function MessageMediaGrid({ message, tiles }: { message: MessengerMessage; tiles: ConversationMediaItem[] }) {
+  const { width: windowWidth } = useWindowDimensions();
+  const gallery = useConversationGallery();
+  const columns = mediaTileColumns(tiles.length);
+  const gridWidth = Math.min(MEDIA_MAX_WIDTH, Math.round(windowWidth * MEDIA_WIDTH_RATIO));
+  const tileSize = Math.floor((gridWidth - MEDIA_TILE_GAP * (columns - 1)) / columns);
+  return (
+    <View style={[styles.mediaGrid, { width: gridWidth }]}>
+      {tiles.map((tile, position) => (
+        <MediaGridTile
+          key={tile.key}
+          message={message}
+          tile={tile}
+          size={tileSize}
+          position={position + 1}
+          total={tiles.length}
+          // The tile hands its *granted* identity up rather than the grid
+          // reaching for `tile` directly: `tile.url` is the protected API path
+          // off the attachment payload, and the gallery shows a seeded URL until
+          // its own resolve lands (`grant?.url || item.url` in the host). Seeding
+          // the raw path would both lose the instant open and hand the platform
+          // image loader a protected path — the thing that made image loads run
+          // session refresh on the server.
+          onOpen={(granted) => gallery?.open(gallerySeedFromMessage(granted))}
+        />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One tile.
+ *
+ * This is a component rather than a loop body because it needs a hook per tile —
+ * `useMessengerMediaAccessUrl` grants a short-lived URL for one identity, and
+ * hooks cannot be called in a loop over a variable-length array. A tile failing
+ * to load is therefore local to that tile: a three-photo message with one dead
+ * object shows two photos and one legible failure, not an empty bubble.
+ *
+ * The preview is the *thumbnail*, and falls back to the original only once the
+ * rendition is known not to be coming. Three tiles pulling three full-resolution
+ * originals to paint squares a hundred points wide is the same mistake the
+ * single-photo card already learned not to make, multiplied.
+ */
+function MediaGridTile({
+  message,
+  tile,
+  size,
+  position,
+  total,
+  onOpen
+}: {
+  message: MessengerMessage;
+  tile: ConversationMediaItem;
+  size: number;
+  position: number;
+  total: number;
+  onOpen: (granted: ConversationMediaItem) => void;
+}) {
+  const { t } = useTranslation();
+  const access = useMessengerMediaAccessUrl(
+    { mediaUploadId: tile.mediaUploadId, attachmentId: tile.attachmentId },
+    tile.url
+  );
+  const url = absoluteMediaUrl(access.url);
+  const thumbnail = absoluteMediaUrl(access.thumbnailUrl);
+  const previewUrl = thumbnail || (isPreviewTerminal(access.meta.processingStatus) ? url : "");
+  const label = tile.kind === "video"
+    ? t("messaging:chat.a11yGridVideoTile", { position, total, label: messageAccessibilityLabel(message) })
+    : t("messaging:chat.a11yGridPhotoTile", { position, total, label: messageAccessibilityLabel(message) });
+  return (
+    <Pressable
+      accessibilityRole="imagebutton"
+      accessibilityLabel={label}
+      accessibilityHint={t("messaging:chat.a11yOpensViewer")}
+      // The key is deliberately left alone: it is what makes this tile and the
+      // same photo in the server-paged collection one entry rather than two.
+      onPress={() => onOpen({ ...tile, url, thumbnailUrl: thumbnail })}
+      style={[styles.mediaTile, { height: size, width: size }]}
+    >
+      {previewUrl ? (
+        <MediaPreviewImage
+          uri={previewUrl}
+          fallbackUri={isPreviewTerminal(access.meta.processingStatus) ? url : ""}
+          onRetry={access.retry}
+        />
+      ) : (
+        <View style={[styles.mediaFill, styles.mediaPlaceholder, styles.mediaSkeleton]}>
+          <ActivityIndicator color={colors.muted} size="small" />
+        </View>
+      )}
+      {/* A video tile has to say it is a video before it is opened — a poster
+          frame alone is indistinguishable from a photo. The badge is scaled
+          down from the single-card one so it does not swallow a small tile. */}
+      {tile.kind === "video" ? (
+        <View pointerEvents="none" style={styles.mediaTilePlayBadge}>
+          <Ionicons name="play" size={14} color="#04110c" />
+        </View>
+      ) : null}
+    </Pressable>
+  );
 }
 
 /**
@@ -2469,13 +2674,13 @@ function isPreviewTerminal(status: string) {
  * and collapsing them is how a permanently broken card ends up claiming it is
  * still working.
  */
-function VideoMessageCard({ message, access, viewerItem }: {
+function VideoMessageCard({ message, access, onOpen }: {
   message: MessengerMessage;
   access: MessengerMediaAccessState;
-  viewerItem: NativeMediaViewerItem;
+  /** Open the conversation gallery on this video. The card no longer owns a viewer. */
+  onOpen: () => void;
 }) {
   const { t } = useTranslation();
-  const [viewerOpen, setViewerOpen] = useState(false);
   const poster = absoluteMediaUrl(access.thumbnailUrl);
   const durationMs = access.meta.durationMs || Number(message.duration_seconds || 0) * 1000;
   const duration = formatMediaDuration(durationMs);
@@ -2487,7 +2692,7 @@ function VideoMessageCard({ message, access, viewerItem }: {
         ? t("messaging:chat.a11yVideoAttachmentDuration", { duration: spokenDuration(durationMs) })
         : t("messaging:chat.a11yVideoAttachment")}
       accessibilityHint={t("messaging:chat.a11yOpensViewer")}
-      onPress={() => setViewerOpen(true)}
+      onPress={onOpen}
     >
       <MediaSurface meta={access.meta} message={message}>
         {poster ? (
@@ -2529,7 +2734,6 @@ function VideoMessageCard({ message, access, viewerItem }: {
           </View>
         ) : null}
       </MediaSurface>
-      <NativeMediaViewer visible={viewerOpen} items={[viewerItem]} title={t("messaging:chat.mediaViewerTitle")} onClose={() => setViewerOpen(false)} />
     </Pressable>
   );
 }
@@ -2588,7 +2792,7 @@ function DocumentAttachmentCard({ message, url }: { message: MessengerMessage; u
     setFailure("");
     const result = await openDocument({
       url,
-      mediaId: message.media_upload_id || message.attachment_id || null,
+      mediaId: messengerMediaCacheIdentity({ mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id }),
       mimeType: message.mime_type || undefined,
       expectedBytes: Number(message.file_size || 0) || undefined,
       surface: "messenger",
@@ -2708,6 +2912,19 @@ function isVoiceType(type?: string) {
 
 function isVoiceLikeMessage(message: MessengerMessage) {
   return isVoiceType(message.message_type || message.type);
+}
+
+/**
+ * Photo or video — the two things that belong in the swipeable gallery.
+ *
+ * Voice notes and documents are deliberately excluded (§28): a waveform player
+ * and a document card are not things you can swipe onto, and they keep their own
+ * chrome. This is the client half of the same classification the media-history
+ * endpoint applies server-side, so the inline thread and the gallery agree on
+ * what "media" means.
+ */
+function isVisualMediaMessage(message: MessengerMessage) {
+  return ["image", "gif", "video"].includes(normalizedMessageType(message.message_type || message.type));
 }
 
 /**
@@ -2979,6 +3196,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10
   },
+  mediaBubble: {
+    gap: 4,
+    minWidth: 0,
+    paddingHorizontal: 6,
+    paddingVertical: 6
+  },
   mineBubble: {
     backgroundColor: "rgba(37,83,158,0.82)",
     borderColor: "rgba(93,174,255,0.58)",
@@ -3066,15 +3289,32 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     width: 220
   },
+  // No border. The card sits inside a bubble that already has an edge, and a
+  // second hairline outline around the photo is the "nested rounded rectangle"
+  // §2 rules out. The radius stays so the image corners follow the bubble's.
   mediaSurface: {
     backgroundColor: colors.surfaceRaised,
-    borderColor: "rgba(97,216,255,0.22)",
-    borderRadius: 16,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 14,
     overflow: "hidden",
     position: "relative"
   },
   mediaFill: { height: "100%", width: "100%" },
+  // §21. `gap` rather than per-tile margins so the grid's outer edge lines up
+  // with a single photo's — a margin-based grid is inset by half a gap on every
+  // side and reads as a narrower card sitting inside the bubble.
+  mediaGrid: { borderRadius: 14, flexDirection: "row", flexWrap: "wrap", gap: MEDIA_TILE_GAP, overflow: "hidden" },
+  mediaTile: { backgroundColor: colors.surfaceRaised, overflow: "hidden", position: "relative" },
+  mediaTilePlayBadge: {
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 13,
+    bottom: 6,
+    height: 26,
+    justifyContent: "center",
+    left: 6,
+    position: "absolute",
+    width: 26
+  },
   mediaPlaceholder: { alignItems: "center", justifyContent: "center" },
   // Absolute so it sits over the `<Image>` it is covering rather than pushing it
   // out of the frame.

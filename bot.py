@@ -235,6 +235,7 @@ from services import (
     db as db_service,
     day_signal as day_signal_service,
     email_service as email_service_service,
+    email_send_guard,
     ai_router as ai_router_service,
     alert_engine as alert_engine_service,
     arena_commentator,
@@ -17784,7 +17785,16 @@ def admin_emails_page():
     pending_verification_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT COUNT(*) AS c FROM email_logs WHERE status LIKE 'failed_brevo%'")
     brevo_error_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
-    cur.execute("SELECT COUNT(*) AS c FROM failed_email_queue WHERE status IN ('pending','failed','retry_ready','processing')")
+    # Only rows that are actually *waiting on us*. The queue also holds
+    # scheduled mail — a meeting reminder due in 2032 is a pending row with a
+    # far-future next_retry_at — and counting those as backlog would put a
+    # permanent, growing number in front of an operator whose job is to react
+    # to backlog. Nothing is wrong with a row that is not due yet.
+    cur.execute(
+        "SELECT COUNT(*) AS c FROM failed_email_queue "
+        "WHERE status IN ('pending','failed','retry_ready','processing') "
+        "AND (next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)",
+        (datetime.utcnow().isoformat(timespec="seconds"),))
     queued_retry_count = int((cur.fetchone() or {"c": 0})["c"] or 0)
     cur.execute("SELECT created_at FROM email_logs WHERE COALESCE(provider,'brevo')='brevo' AND status LIKE 'sent%' ORDER BY created_at DESC LIMIT 1")
     latest_brevo_sent_at = (cur.fetchone() or {"created_at": ""})["created_at"] or ""
@@ -108946,7 +108956,7 @@ def process_email_delivery_jobs(limit=10, provider_send=None):
     )
     rows = [dict(row) for row in cur.fetchall()]
     conn.close()
-    sent = retried = dead_letter = 0
+    sent = retried = dead_letter = skipped = 0
     for row in rows:
         queue_id = int(row.get("id") or 0)
         attempts = int(row.get("retry_count") or 0) + 1
@@ -108960,6 +108970,30 @@ def process_email_delivery_jobs(limit=10, provider_send=None):
         conn.commit()
         conn.close()
         if not claimed:
+            continue
+        # A far-future next_retry_at turns this queue into a timer, so a claimed
+        # row may describe a world that is months old. Ask before sending.
+        may_send_now, refusal = email_send_guard.may_send(row)
+        if not may_send_now:
+            stamp = datetime.now().isoformat()
+            conn = db()
+            cur = conn.cursor()
+            cur.execute(
+                """
+                UPDATE failed_email_queue
+                SET status='skipped', last_error=?, next_retry_at='',
+                    processed_at=?, updated_at=?
+                WHERE id=?
+                """,
+                (str(refusal or "")[:1000], stamp, stamp, queue_id),
+            )
+            conn.commit()
+            conn.close()
+            skipped += 1
+            logging.info(
+                "EMAIL_JOB_SKIPPED id=%s trace_id=%s reason=%s",
+                queue_id, row.get("trace_id") or "", refusal,
+            )
             continue
         try:
             result = provider_send(
@@ -109030,7 +109064,8 @@ def process_email_delivery_jobs(limit=10, provider_send=None):
                 retry_count=attempts,
             )
         logging.info("EMAIL_JOB_PROCESSED id=%s trace_id=%s status=%s attempts=%s", queue_id, row.get("trace_id") or "", final_status, attempts)
-    return {"attempted": len(rows), "sent": sent, "retry": retried, "dead_letter": dead_letter}
+    return {"attempted": len(rows), "sent": sent, "retry": retried,
+            "dead_letter": dead_letter, "skipped": skipped}
 
 
 def schedule_email_delivery_processing(reason="enqueue"):
@@ -109060,10 +109095,26 @@ def schedule_email_delivery_processing(reason="enqueue"):
 
 
 def retry_failed_email_queue(limit=50):
+    """Force every *overdue* queued email to be retried immediately.
+
+    "Overdue" is the load-bearing word. This used to drag the whole pending
+    backlog forward unconditionally, which was harmless while `next_retry_at`
+    only ever held a backoff delay measured in minutes. It is not harmless
+    now: `failed_email_queue` is also the durable timer for scheduled things
+    -- a meeting reminder for 2032 is a pending row with `next_retry_at` in
+    2032 -- and hauling those to the present would mail everyone their
+    reminders years early, in one burst, the first time an operator clicked
+    Retry. Rows that are not due yet are left where they are.
+
+    The clock is UTC because every writer of this column uses `utcnow()`, and
+    so does the processor that reads it. Comparing those values against local
+    time made the filter stricter or looser by the machine's UTC offset --
+    which is to say, correct only in London, and only in winter.
+    """
     limit = max(1, min(int(limit or 50), 200))
     conn = db()
     cur = conn.cursor()
-    now = datetime.now().isoformat()
+    now = datetime.utcnow().isoformat(timespec="seconds")
     cur.execute(
         """
         UPDATE failed_email_queue
@@ -109072,11 +109123,12 @@ def retry_failed_email_queue(limit=50):
             SELECT id FROM failed_email_queue
             WHERE status IN ('pending','failed','retry_ready')
               AND retry_count < COALESCE(max_attempts, 5)
+              AND (next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)
             ORDER BY created_at ASC
             LIMIT ?
         )
         """,
-        (now, now, limit),
+        (now, now, now, limit),
     )
     conn.commit()
     conn.close()

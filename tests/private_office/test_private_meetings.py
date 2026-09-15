@@ -79,6 +79,27 @@ def _instant(cursor, owner=HOST, **kwargs):
         cursor, owner_user_id=owner, title="Standup", instant=True, **kwargs)
 
 
+def _future_iso(days=30, hour=10):
+    """An instant that is always genuinely in the future.
+
+    Hardcoded literals rot: a test written with ``2026-09-06`` passes until
+    that date arrives, then fails for a reason unrelated to the code under
+    test. The model now refuses a past schedule, so fixture dates have to be
+    computed from the clock rather than typed.
+    """
+    from datetime import timedelta
+    moment = (meetings._now_dt() + timedelta(days=days)).replace(
+        hour=hour, minute=0, second=0, microsecond=0)
+    return moment.isoformat(timespec="seconds")
+
+
+def _scheduled(cursor, owner=HOST, *, days=30, duration=30, **kwargs):
+    return meetings.create_meeting(
+        cursor, owner_user_id=owner,
+        scheduled_start_at=_future_iso(days), duration_minutes=duration,
+        **kwargs)
+
+
 def _call_id(cursor, meeting_payload):
     cursor.execute("SELECT id FROM communication_calls WHERE public_id=?",
                    (meeting_payload["call_public_id"],))
@@ -140,9 +161,7 @@ def test_scheduled_create_requires_valid_time(cur):
     _reject(lambda: meetings.create_meeting(
         cur, owner_user_id=HOST, scheduled_start_at="not-a-time"),
         status=400, code="invalid_schedule")
-    m = meetings.create_meeting(
-        cur, owner_user_id=HOST, title="Board",
-        scheduled_start_at="2026-09-06T10:00:00+00:00", duration_minutes=30)
+    m = _scheduled(cur, title="Board")
     assert m["status"] == meetings.ST_SCHEDULED
     assert m["call_public_id"] == "" if "call_public_id" in m else True
 
@@ -163,8 +182,7 @@ def test_meeting_code_shape_and_rotation_revokes(cur):
 
 
 def test_only_host_starts_and_rotates(cur):
-    m = meetings.create_meeting(
-        cur, owner_user_id=HOST, scheduled_start_at="2026-09-06T10:00:00+00:00")
+    m = _scheduled(cur)
     _reject(lambda: meetings.start_meeting(
         cur, actor_user_id=GUEST, meeting_ref=m["public_id"]),
         status=403, code="forbidden")
@@ -469,9 +487,15 @@ def test_sweep_kills_zombies(cur, monkeypatch):
     meetings.mark_joined(cur, user_id=HOST, meeting_ref=m2["public_id"])
     cur.execute("UPDATE communication_calls SET status='expired' WHERE public_id=?",
                 (m2["call_public_id"],))
-    # 3) SCHEDULED that never started, >24h past its slot.
-    meetings.create_meeting(cur, owner_user_id=HOST, title="Stale",
-                            scheduled_start_at="2026-09-01T10:00:00+00:00")
+    # 3) SCHEDULED that never started, >24h past its slot. It cannot be
+    # *created* in the past any more — the model refuses that — so it is
+    # booked legally and then backdated, which is how a stale row actually
+    # comes to exist: the slot passes and nobody starts the meeting.
+    stale = _scheduled(cur, title="Stale")
+    cur.execute(
+        f"UPDATE {meetings.MEETINGS_TABLE} SET scheduled_start_at=? "
+        f"WHERE public_id=?",
+        (_future_iso(days=-3), stale["public_id"]))
     later = meetings._now_dt() + timedelta(seconds=120)
     swept = meetings.sweep_meetings(cur, now=later)
     assert swept == 3
@@ -732,9 +756,7 @@ def test_invite_accept_lands_in_waiting_room_and_decline_records(cur):
 
 def test_list_meetings_buckets(cur):
     live = _instant(cur, waiting_room_enabled=False)
-    meetings.create_meeting(
-        cur, owner_user_id=HOST, title="Later",
-        scheduled_start_at="2027-01-01T10:00:00+00:00")
+    _scheduled(cur, title="Later", days=120)
     done = _instant(cur, waiting_room_enabled=False)
     meetings.end_meeting(cur, actor_user_id=HOST, meeting_ref=done["public_id"])
     listing = meetings.list_meetings(cur, user_id=HOST)
@@ -761,8 +783,7 @@ def test_audit_rows_are_metadata_only(cur):
 
 
 def test_invalid_transitions_are_409(cur):
-    m = meetings.create_meeting(
-        cur, owner_user_id=HOST, scheduled_start_at="2026-09-06T10:00:00+00:00")
+    m = _scheduled(cur)
     meetings.cancel_meeting(cur, actor_user_id=HOST, meeting_ref=m["public_id"])
     _reject(lambda: meetings.start_meeting(
         cur, actor_user_id=HOST, meeting_ref=m["public_id"]),

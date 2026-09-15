@@ -374,7 +374,11 @@
       "a11yDiscardRecording": "Descartar la grabación de voz",
       "a11yDismissStatus": "Descartar el estado del mensaje",
       "a11yForwardFive": "Avanzar 5 segundos",
+      "a11yGalleryPhotoPosition": "Foto de {{sender}}, {{position}} de {{total}}",
+      "a11yGalleryVideoPosition": "Vídeo de {{sender}}, {{position}} de {{total}}",
       "a11yGifAttachment": "{{label}}. GIF adjunto.",
+      "a11yGridPhotoTile": "{{label}}. Foto {{position}} de {{total}}.",
+      "a11yGridVideoTile": "{{label}}. Video {{position}} de {{total}}.",
       "a11yImageAttachment": "{{label}}. Imagen adjunta.",
       "a11yOpenControls": "Abrir los controles de la conversación",
       "a11yOpenUndxResult": "Abrir el resultado de {{type}}",
@@ -453,6 +457,8 @@
       "fileSharingUnavailableTitle": "No se pueden compartir archivos",
       "forwarded": "Reenviado",
       "forwardedSignal": "Señal reenviada",
+      "galleryUnavailable": "No disponible",
+      "galleryUnavailableOffline": "No disponible sin conexión",
       "headerCachedHistory": "Historial en caché",
       "headerLiveChannel": "Canal en directo",
       "headerReconnecting": "Reconectando",
@@ -5164,18 +5170,16 @@
         "scheduleFailed": "No se pudo programar",
         "startFailed": "No se pudo iniciar",
         "cancelFailed": "No se pudo cancelar",
+        "rescheduleFailed": "No se pudo reprogramar",
         "start": "Iniciar",
         "cancel": "Cancelar",
+        "reschedule": "Reprogramar",
+        "saveChanges": "Guardar cambios",
         "untitled": "Reunión",
         "details": "Detalles de {{title}}",
         "liveNow": "En vivo ahora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
-        "presets": {
-          "in15m": "En {{minutes}} minutos",
-          "in1h": "En {{hours}} hora",
-          "tomorrowMorning": "Mañana a las {{time}}"
-        },
         "buckets": {
           "live": "Sucediendo ahora",
           "upcoming": "Próximas",
@@ -5283,6 +5287,40 @@
             "feature_disabled": "Las reuniones se desactivaron mientras estabas conectado.",
             "generic": "La reunión ha terminado."
           }
+        },
+        "calendar": {
+          "browse": "Explorar el calendario",
+          "previousMonth": "Mes anterior",
+          "nextMonth": "Mes siguiente",
+          "pickMonth": "Elegir un mes",
+          "pickYear": "Elegir un año",
+          "jumpToYear": "Ir a un año",
+          "today": "Hoy",
+          "close": "Cerrar",
+          "loadFailed": "No pudimos cargar este mes. Inténtalo de nuevo o ve a otro mes.",
+          "noneOnDay": "No hay nada programado este día.",
+          "dayWithMeetings_one": "{{day}}, {{count}} reunión",
+          "dayWithMeetings_other": "{{day}}, {{count}} reuniones"
+        },
+        "wizard": {
+          "steps": {
+            "date": "Elige una fecha",
+            "time": "Elige una hora",
+            "zone": "Confirma la zona horaria",
+            "duration": "¿Cuánto durará?",
+            "details": "Título y agenda",
+            "review": "Revisar"
+          },
+          "timeHint": "La hora tal como se leerá donde ocurra la reunión.",
+          "zoneHint": "Todos están invitados a un mismo instante. La zona horaria decide cuál es ese instante.",
+          "zoneUnknown": "Este dispositivo no indicó una zona horaria, así que la reunión se leerá como UTC.",
+          "looksPast": "Parece que ya pasó según este dispositivo. El servidor tiene la última palabra.",
+          "customDuration": "Duración personalizada en minutos",
+          "durationRange": "Elige entre {{min}} y {{max}} minutos.",
+          "agendaField": "Agenda (opcional)",
+          "inviteLater": "Podrás invitar a personas cuando la reunión exista.",
+          "back": "Atrás",
+          "next": "Siguiente"
         }
       },
       "conversations": {

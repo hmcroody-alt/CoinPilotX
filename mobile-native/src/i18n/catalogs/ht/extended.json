@@ -371,7 +371,11 @@
       "a11yDiscardRecording": "Jete anrejistreman vokal la",
       "a11yDismissStatus": "Inyore estati mesaj la",
       "a11yForwardFive": "Avanse 5 segonn",
+      "a11yGalleryPhotoPosition": "Foto {{sender}}, {{position}} sou {{total}}",
+      "a11yGalleryVideoPosition": "Videyo {{sender}}, {{position}} sou {{total}}",
       "a11yGifAttachment": "{{label}}. Atachman GIF.",
+      "a11yGridPhotoTile": "{{label}}. Foto {{position}} sou {{total}}.",
+      "a11yGridVideoTile": "{{label}}. Videyo {{position}} sou {{total}}.",
       "a11yImageAttachment": "{{label}}. Atachman imaj.",
       "a11yOpenControls": "Louvri kontwòl konvèsasyon an",
       "a11yOpenUndxResult": "Louvri rezilta {{type}} a",
@@ -450,6 +454,8 @@
       "fileSharingUnavailableTitle": "Pataj fichye pa disponib",
       "forwarded": "Transfere",
       "forwardedSignal": "Siyal transfere",
+      "galleryUnavailable": "Pa disponib",
+      "galleryUnavailableOffline": "Pa disponib san koneksyon",
       "headerCachedHistory": "Istorik nan kach",
       "headerLiveChannel": "Kanal ann dirèk",
       "headerReconnecting": "L ap rekonekte",
@@ -5133,18 +5139,16 @@
         "scheduleFailed": "Nou pa t ka pwograme",
         "startFailed": "Nou pa t ka kòmanse",
         "cancelFailed": "Nou pa t ka anile",
+        "rescheduleFailed": "Nou pa t ka chanje dat la",
         "start": "Kòmanse",
         "cancel": "Anile",
+        "reschedule": "Chanje dat",
+        "saveChanges": "Anrejistre chanjman yo",
         "untitled": "Reyinyon",
         "details": "Detay pou {{title}}",
         "liveNow": "An dirèk kounye a",
         "durationMinutes_one": "{{count}} minit",
         "durationMinutes_other": "{{count}} minit",
-        "presets": {
-          "in15m": "Nan {{minutes}} minit",
-          "in1h": "Nan {{hours}} èdtan",
-          "tomorrowMorning": "Demen {{time}}"
-        },
         "buckets": {
           "live": "K ap fèt kounye a",
           "upcoming": "K ap vini",
@@ -5252,6 +5256,39 @@
             "feature_disabled": "Reyinyon yo te fèmen pandan ou te konekte.",
             "generic": "Reyinyon an fini."
           }
+        },
+        "calendar": {
+          "browse": "Gade kalandriye a",
+          "previousMonth": "Mwa anvan",
+          "nextMonth": "Mwa apre",
+          "pickMonth": "Chwazi yon mwa",
+          "pickYear": "Chwazi yon ane",
+          "jumpToYear": "Ale nan yon ane",
+          "today": "Jodi a",
+          "close": "Fèmen",
+          "loadFailed": "Nou pa t kapab chaje mwa sa a. Eseye ankò oswa ale nan yon lòt mwa.",
+          "noneOnDay": "Pa gen anyen pwograme jou sa a.",
+          "dayWithMeetings_other": "{{day}}, {{count}} reyinyon"
+        },
+        "wizard": {
+          "steps": {
+            "date": "Chwazi yon dat",
+            "time": "Chwazi yon lè",
+            "zone": "Konfime zòn lè a",
+            "duration": "Konbyen tan?",
+            "details": "Tit ak ajanda",
+            "review": "Tcheke"
+          },
+          "timeHint": "Lè a jan l ap li kote reyinyon an ap fèt la.",
+          "zoneHint": "Tout moun envite nan menm moman an. Zòn lè a deside ki moman sa ye.",
+          "zoneUnknown": "Aparèy sa a pa bay okenn zòn lè, donk reyinyon an ap li kòm UTC.",
+          "looksPast": "Dapre aparèy sa a, moman an gentan pase. Sèvè a gen dènye mo a.",
+          "customDuration": "Longè pa w an minit",
+          "durationRange": "Chwazi ant {{min}} ak {{max}} minit.",
+          "agendaField": "Ajanda (opsyonèl)",
+          "inviteLater": "Ou ka envite moun lè reyinyon an fin kreye.",
+          "back": "Retounen",
+          "next": "Kontinye"
         }
       },
       "conversations": {

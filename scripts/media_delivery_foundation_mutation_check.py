@@ -523,9 +523,14 @@ MUTATIONS = [
         # §4/§53. Asking for the transport attachment id instead of the foundation
         # media id. A 404 for the person, indistinguishable from a working open in
         # any test that only checks the press happened.
+        #
+        # The mutation also strips the namespace, which is the same defect one layer
+        # down: `media_upload_id` and `attachment_id` are row ids in different
+        # tables, so as bare integers they share a cache entry and one message opens
+        # the other's file.
         "document opened by transport id",
         CHAT_SCREEN,
-        "      mediaId: message.media_upload_id || message.attachment_id || null,",
+        "      mediaId: messengerMediaCacheIdentity({ mediaUploadId: message.media_upload_id, attachmentId: message.attachment_id }),",
         "      mediaId: message.attachment_id || null,",
         "calls the shared open action with the granted URL and the foundation media id",
         "src/screens/__tests__/ChatScreenAttachmentRender.test.tsx",

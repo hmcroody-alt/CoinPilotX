@@ -41,10 +41,12 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pulse_communications_v2 import service as comm_service
 from services import pulsesoc_communications_engine as call_engine
 from services.private_office import audit
+from services.private_office import schema
 from services.private_office import telemetry as _telemetry
 
 LOGGER = logging.getLogger("private_office.meetings")
@@ -55,6 +57,7 @@ INVITES_TABLE = "private_meeting_invites"
 MESSAGES_TABLE = "private_meeting_messages"
 RECORDINGS_TABLE = "private_meeting_recordings"
 MEETING_ARTIFACT_TABLE = "private_meeting_artifacts"
+REMINDERS_TABLE = "private_meeting_reminders"
 
 # ---------------------------------------------------------------------------
 # Vocabulary — closed sets, same discipline as audit.ACTIONS
@@ -163,12 +166,85 @@ PROV_USER = "USER_CONFIRMED"
 PROV_SYSTEM = "SYSTEM_FACT"
 PROVENANCES: frozenset[str] = frozenset({PROV_TRANSCRIPT, PROV_USER, PROV_SYSTEM})
 
+#: Reminder row lifecycle. PENDING is the only state the due-sweep picks up;
+#: everything else is a resting place. SENDING exists so a crashed worker
+#: leaves evidence rather than silently re-sending on the next tick, and
+#: SKIPPED is distinct from CANCELLED: SKIPPED means "the offset was already
+#: in the past when the meeting was booked" (booking a meeting 20 minutes out
+#: cannot honour a 24h reminder), CANCELLED means the meeting or the schedule
+#: it belonged to went away.
+R_PENDING = "PENDING"
+R_SENDING = "SENDING"
+R_SENT = "SENT"
+R_FAILED = "FAILED"
+R_BOUNCED = "BOUNCED"
+R_SKIPPED = "SKIPPED"
+R_CANCELLED = "CANCELLED"
+
+REMINDER_STATUSES: frozenset[str] = frozenset({
+    R_PENDING, R_SENDING, R_SENT, R_FAILED, R_BOUNCED, R_SKIPPED, R_CANCELLED,
+})
+#: Rows the sweep must never touch again.
+REMINDER_FINAL: frozenset[str] = frozenset({
+    R_SENT, R_BOUNCED, R_SKIPPED, R_CANCELLED,
+})
+
+#: What a row is *for*. Reminders are scheduled ahead of time; the other kinds
+#: are one-shot rows written at the moment the event happens, and share this
+#: table so a single delivery pipeline covers every meeting email.
+RK_REMINDER = "REMINDER"
+RK_CONFIRMATION = "CONFIRMATION"
+RK_RESCHEDULE = "RESCHEDULE"
+RK_CANCELLATION = "CANCELLATION"
+REMINDER_KINDS: frozenset[str] = frozenset({
+    RK_REMINDER, RK_CONFIRMATION, RK_RESCHEDULE, RK_CANCELLATION,
+})
+
+#: Default reminder ladder, in minutes before the start instant. Offsets that
+#: have already elapsed at booking time are written as SKIPPED, not dropped, so
+#: the row set is a complete record of what was intended.
+DEFAULT_REMINDER_OFFSETS: tuple[int, ...] = (1440, 60, 15)
+MAX_REMINDER_OFFSET_MINUTES = 525600  # one year
+MAX_REMINDER_OFFSETS = 8
+
 MAX_TITLE_CHARS = 200
+MAX_AGENDA_CHARS = 4000
 MAX_MESSAGE_CHARS = 2000
 MAX_REACTION_CHARS = 16
 MAX_ARTIFACT_CONTENT_CHARS = 8000
+MAX_IDEMPOTENCY_KEY_CHARS = 128
 MAX_LIST_LIMIT = 100
 DEFAULT_LIST_LIMIT = 30
+
+# --- Calendar window -------------------------------------------------------
+# A calendar asks for a window; it must never ask for a history. The month grid
+# is 42 cells and a year jump is twelve of those, so a year plus a month of
+# slack covers every legitimate request. Without a cap, "show me March 2045"
+# and "select every meeting I have ever been invited to" are the same query,
+# and the second one gets slower every year the product is alive.
+MAX_CALENDAR_SPAN_DAYS = 400
+# Belt to the span's braces: a window can be legal and still contain more
+# meetings than a grid can show. The cap is per request, not per day, so a
+# pathological month cannot outweigh the rest of the year.
+MAX_CALENDAR_ROWS = 500
+
+# --- Schedule bounds -------------------------------------------------------
+# A meeting may be scheduled arbitrarily far ahead; the product requirement is
+# explicitly "any future date", so the only ceiling here is a technical one.
+# 4000-01-01 keeps every instant inside the range `datetime` can represent
+# after a timezone conversion (`datetime.max` is 9999-12-31, and converting a
+# near-max instant eastward overflows), and inside the 4-digit ISO year that
+# `fromisoformat` round-trips. It is a guard against nonsense and overflow, not
+# a product limit: it is ~1,975 years out.
+MAX_SCHEDULE_YEAR = 4000
+# A meeting may not be scheduled into the past. A small backward tolerance
+# absorbs clock skew between the phone that composed the request and the
+# server, and the seconds the request spent in flight -- without it a user who
+# picks "today, two minutes from now" on a slightly fast phone gets a
+# confusing rejection.
+SCHEDULE_PAST_TOLERANCE_SECONDS = 120
+MIN_DURATION_MINUTES = 5
+MAX_DURATION_MINUTES = 1440
 
 # ---------------------------------------------------------------------------
 # Schema — SQLite dialect; services.db rewrites for Postgres. No INSERT OR
@@ -187,6 +263,10 @@ CREATE TABLE IF NOT EXISTS {MEETINGS_TABLE} (
     waiting_room_enabled INTEGER NOT NULL DEFAULT 1,
     locked INTEGER NOT NULL DEFAULT 0,
     scheduled_start_at TEXT NOT NULL DEFAULT '',
+    scheduled_timezone TEXT NOT NULL DEFAULT '',
+    schedule_version INTEGER NOT NULL DEFAULT 1,
+    agenda TEXT NOT NULL DEFAULT '',
+    idempotency_key TEXT NOT NULL DEFAULT '',
     duration_minutes INTEGER NOT NULL DEFAULT 0,
     call_id INTEGER NOT NULL DEFAULT 0,
     call_public_id TEXT NOT NULL DEFAULT '',
@@ -277,11 +357,45 @@ CREATE TABLE IF NOT EXISTS {MEETING_ARTIFACT_TABLE} (
 )
 """
 
+REMINDERS_TABLE_DDL = f"""
+CREATE TABLE IF NOT EXISTS {REMINDERS_TABLE} (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    meeting_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    offset_minutes INTEGER NOT NULL,
+    schedule_version INTEGER NOT NULL DEFAULT 1,
+    send_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT '{R_PENDING}',
+    kind TEXT NOT NULL DEFAULT '{RK_REMINDER}',
+    idempotency_key TEXT NOT NULL DEFAULT '',
+    queued_at TEXT NOT NULL DEFAULT '',
+    resolved_at TEXT NOT NULL DEFAULT '',
+    detail TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (meeting_id, user_id, offset_minutes, schedule_version)
+)
+"""
+
 INDEX_DDL: tuple[str, ...] = (
     f"CREATE INDEX IF NOT EXISTS idx_pm_meetings_owner "
     f"ON {MEETINGS_TABLE} (owner_user_id, status, id)",
+    # The reminder sweep's only hot query: "what is due?". Status first so the
+    # scan skips the large tail of already-sent rows.
+    f"CREATE INDEX IF NOT EXISTS idx_pm_reminders_due "
+    f"ON {REMINDERS_TABLE} (status, send_at, id)",
+    f"CREATE INDEX IF NOT EXISTS idx_pm_reminders_meeting "
+    f"ON {REMINDERS_TABLE} (meeting_id, user_id, status)",
     f"CREATE INDEX IF NOT EXISTS idx_pm_meetings_status "
     f"ON {MEETINGS_TABLE} (status, updated_at)",
+    # Replay lookup on create. Owner-scoped so one user's key cannot match
+    # another's row, and so the index is selective on a table where most rows
+    # carry the empty-string default.
+    f"CREATE INDEX IF NOT EXISTS idx_pm_meetings_idem "
+    f"ON {MEETINGS_TABLE} (owner_user_id, idempotency_key)",
+    # The Upcoming list's query: future meetings for one user, in start order.
+    f"CREATE INDEX IF NOT EXISTS idx_pm_meetings_schedule "
+    f"ON {MEETINGS_TABLE} (owner_user_id, scheduled_start_at)",
     f"CREATE INDEX IF NOT EXISTS idx_pm_participants_user "
     f"ON {PARTICIPANTS_TABLE} (user_id, state, meeting_id)",
     f"CREATE INDEX IF NOT EXISTS idx_pm_participants_meeting "
@@ -313,6 +427,51 @@ def reset_meetings_schema_cache() -> None:
     _SCHEMA_READY = False
 
 
+#: Columns added to an already-deployed table. ``CREATE TABLE IF NOT EXISTS``
+#: is a no-op where the table exists, so every column introduced after the
+#: first deploy has to arrive by ALTER as well as by the DDL above. Keep the
+#: two in sync: a column here that is missing from the CREATE only reaches
+#: upgraded databases, and one in the CREATE but missing here only reaches
+#: fresh ones. Definitions carry NOT NULL DEFAULT so existing rows are legal
+#: the moment the column lands.
+ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    (MEETINGS_TABLE, "scheduled_start_at", "TEXT NOT NULL DEFAULT ''"),
+    (MEETINGS_TABLE, "scheduled_timezone", "TEXT NOT NULL DEFAULT ''"),
+    (MEETINGS_TABLE, "schedule_version", "INTEGER NOT NULL DEFAULT 1"),
+    (MEETINGS_TABLE, "agenda", "TEXT NOT NULL DEFAULT ''"),
+    (MEETINGS_TABLE, "idempotency_key", "TEXT NOT NULL DEFAULT ''"),
+    (MEETINGS_TABLE, "duration_minutes", "INTEGER NOT NULL DEFAULT 0"),
+)
+
+
+def _add_missing_columns(cur) -> None:
+    """Bring an existing deployment's tables up to the current shape."""
+    wanted: dict[str, list[tuple[str, str]]] = {}
+    for table, column, definition in ADDED_COLUMNS:
+        wanted.setdefault(table, []).append((column, definition))
+    for table, columns in wanted.items():
+        try:
+            present = schema.table_columns(cur, table, refresh=True)
+        except Exception:
+            # Introspection failed: do not guess. A blind ALTER would either
+            # duplicate a column or abort the caller's transaction, and this
+            # runs inside whatever transaction the request already opened.
+            LOGGER.exception("PM_COLUMN_INTROSPECT_FAILED table=%s", table)
+            continue
+        for column, definition in columns:
+            if column in present:
+                continue
+            try:
+                cur.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+            except Exception:
+                # The web process and a worker can ensure at the same instant;
+                # losing that race means the column now exists, which is the
+                # outcome we wanted. Anything else surfaces at query time.
+                LOGGER.exception(
+                    "PM_COLUMN_ADD_FAILED table=%s column=%s", table, column)
+
+
 def ensure_meetings_schema(cur, *, force: bool = False) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY and not force:
@@ -323,6 +482,8 @@ def ensure_meetings_schema(cur, *, force: bool = False) -> None:
     cur.execute(MESSAGES_TABLE_DDL)
     cur.execute(RECORDINGS_TABLE_DDL)
     cur.execute(MEETING_ARTIFACT_TABLE_DDL)
+    cur.execute(REMINDERS_TABLE_DDL)
+    _add_missing_columns(cur)
     for ddl in INDEX_DDL:
         cur.execute(ddl)
     # A meeting rides a communication_calls row, so this schema is not ready
@@ -419,6 +580,179 @@ def _parse_iso(value: object) -> datetime | None:
     return parsed
 
 
+def _to_utc_iso(moment: datetime) -> str:
+    """The one way an instant is allowed to reach the database.
+
+    Every stored timestamp is UTC, normalised, with an explicit `+00:00`.
+    Before this existed the column kept whatever offset the client happened to
+    send, so the same instant was written three different ways depending on
+    where the organiser was standing -- and `list_meetings` sorts that column
+    as *text*. Mixed offsets therefore did not merely look untidy, they put
+    the upcoming list in the wrong order: `2032-05-18T22:00:00-07:00` sorts
+    before `2032-05-18T23:00:00+02:00` while actually starting eight hours
+    later. Normalising on the way in makes the lexicographic sort and the
+    chronological sort the same sort, which is what the rest of the module
+    already assumes.
+    """
+    return moment.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
+def normalize_timezone(value: object) -> str:
+    """Validate an IANA zone name, returning '' for absent and raising on junk.
+
+    An empty zone is allowed and means "the organiser expressed no preference";
+    callers render UTC in that case. An *invalid* zone is refused rather than
+    silently coerced, because silently falling back to UTC would show every
+    invitee a time that is wrong by the organiser's offset -- a failure that
+    looks like a working feature.
+    """
+    name = str(value or "").strip()
+    if not name:
+        return ""
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        raise PrivateMeetingRejected(
+            "That time zone is not recognised.",
+            status=400, code="invalid_timezone")
+    return name
+
+
+def resolve_schedule(scheduled_start_at: object, tz_name: object = "",
+                     *, now: datetime | None = None) -> tuple[str, str]:
+    """Turn a client's requested start into a canonical (utc_iso, zone) pair.
+
+    Accepts either an absolute instant (`...Z` / `...+02:00`) or a *local wall
+    clock* time plus a zone. The second form is what a calendar UI naturally
+    produces -- the user picked "2:35 PM" on a day, in a zone -- and it is the
+    only form that can express DST intent correctly, so it is handled here
+    rather than asking the client to do timezone arithmetic it cannot do
+    reliably.
+    """
+    zone_name = normalize_timezone(tz_name)
+    text = str(scheduled_start_at or "").strip()
+    if not text:
+        raise PrivateMeetingRejected(
+            "A scheduled meeting needs a valid start time.",
+            status=400, code="invalid_schedule")
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        raise PrivateMeetingRejected(
+            "A scheduled meeting needs a valid start time.",
+            status=400, code="invalid_schedule")
+    if "T" not in text and " " not in text:
+        # `fromisoformat("2032-06-01")` succeeds and yields midnight. A client
+        # that sent only a date has not chosen a time, and silently booking
+        # 00:00 puts the meeting somewhere the host never picked -- on the
+        # wrong day, in most zones. The flow is date *then* time; a date alone
+        # is an incomplete request, not a midnight one.
+        raise PrivateMeetingRejected(
+            "A scheduled meeting needs a time of day, not just a date.",
+            status=400, code="invalid_schedule")
+
+    if parsed.tzinfo is None:
+        # A wall-clock time. Interpret it in the organiser's zone; with no zone
+        # the historical behaviour (assume UTC) is preserved so existing
+        # callers do not change meaning.
+        if zone_name:
+            parsed = _localize_wall_clock(parsed, zone_name)
+        else:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+
+    if parsed.year > MAX_SCHEDULE_YEAR:
+        raise PrivateMeetingRejected(
+            "That date is too far in the future.",
+            status=400, code="schedule_out_of_range")
+
+    reference = now or _now_dt()
+    if parsed < reference - timedelta(seconds=SCHEDULE_PAST_TOLERANCE_SECONDS):
+        raise PrivateMeetingRejected(
+            "A meeting cannot be scheduled in the past.",
+            status=400, code="schedule_in_past")
+
+    return _to_utc_iso(parsed), zone_name
+
+
+def _localize_wall_clock(naive: datetime, zone_name: str) -> datetime:
+    """Attach a zone to a wall-clock time, resolving DST edge cases explicitly.
+
+    Two days a year a local time is not a simple function of the clock:
+
+    * **Spring forward** -- 2:30 AM may not exist. `ZoneInfo` does not raise;
+      it invents an answer by applying the pre-transition offset, which lands
+      the meeting an hour before the user meant. We detect the gap (the
+      round-trip through UTC does not return the wall clock we started with)
+      and move *forward* past it, so "2:30 AM" on a spring-forward day becomes
+      3:30 AM rather than 1:30 AM. Forward is the safe direction: a meeting
+      that drifts later is late, one that drifts earlier is missed.
+    * **Fall back** -- 1:30 AM happens twice. `fold=0` selects the first
+      (pre-transition) occurrence, which is the earlier instant and the
+      conventional reading of an ambiguous local time. We pin it explicitly so
+      the choice is a decision rather than a default that could change.
+    """
+    zone = ZoneInfo(zone_name)
+    attached = naive.replace(tzinfo=zone, fold=0)
+    # Round-trip: if the wall clock does not survive a trip through UTC, the
+    # time we were handed does not exist on that day.
+    round_tripped = attached.astimezone(timezone.utc).astimezone(zone)
+    if round_tripped.replace(tzinfo=None) != naive:
+        shifted = (attached + timedelta(hours=1))
+        recovered = shifted.astimezone(timezone.utc).astimezone(zone)
+        if recovered.replace(tzinfo=None) != shifted.replace(tzinfo=None):
+            # Pathological zone (a gap wider than an hour). Fall back to the
+            # instant ZoneInfo derives rather than refusing the booking.
+            return attached
+        return shifted
+    return attached
+
+
+def _clean_duration(value: object, *, required: bool = False) -> int:
+    """Clamp a duration, refusing the degenerate ones.
+
+    Zero used to be legal and meant "unset". It is still accepted when a
+    duration is genuinely optional (an instant meeting has no planned length),
+    but a *scheduled* meeting with a zero-minute duration cannot be rendered in
+    an invitation or used for conflict detection, so `required=True` refuses it
+    rather than storing a meeting that ends when it starts.
+    """
+    if value is None or value == "":
+        minutes = 0
+    elif isinstance(value, bool):
+        # `int(True)` is 1, which would book a one-minute meeting from a
+        # JSON `true`. Nonsense in, refusal out.
+        raise PrivateMeetingRejected(
+            "Duration must be a whole number of minutes.",
+            status=400, code="invalid_duration")
+    else:
+        try:
+            minutes = int(value)
+        except (TypeError, ValueError):
+            raise PrivateMeetingRejected(
+                "Duration must be a whole number of minutes.",
+                status=400, code="invalid_duration")
+        if isinstance(value, float) and minutes != value:
+            # int(45.9) is 45. Truncating silently would end the meeting at a
+            # time the caller never asked for; a fractional minute is a bug in
+            # the caller, not an input to round.
+            raise PrivateMeetingRejected(
+                "Duration must be a whole number of minutes.",
+                status=400, code="invalid_duration")
+    if minutes < 0:
+        raise PrivateMeetingRejected(
+            "Duration cannot be negative.", status=400, code="invalid_duration")
+    if minutes == 0:
+        if required:
+            raise PrivateMeetingRejected(
+                "A scheduled meeting needs a duration.",
+                status=400, code="invalid_duration")
+        return 0
+    if minutes < MIN_DURATION_MINUTES:
+        raise PrivateMeetingRejected(
+            "That duration is too short.", status=400, code="invalid_duration")
+    return min(minutes, MAX_DURATION_MINUTES)
+
+
 def _row(value: Any) -> dict:
     if value is None:
         return {}
@@ -509,6 +843,42 @@ def _meeting_by_ref(cur, ref: object) -> dict:
         return {}
     cur.execute(f"SELECT * FROM {MEETINGS_TABLE} WHERE id=? LIMIT 1", (meeting_id,))
     return _row(cur.fetchone())
+
+
+def _clean_idempotency_key(value: object) -> str:
+    """Normalize a client-supplied replay key, or '' for "no key given".
+
+    Deliberately lenient about *shape* — any opaque token the client can
+    generate is fine — and strict about length, because the key is stored and
+    indexed. It is scoped to the owner at lookup time, so one user cannot
+    collide with, or probe for, another user's meeting by guessing a key.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) > MAX_IDEMPOTENCY_KEY_CHARS:
+        raise PrivateMeetingRejected(
+            "Idempotency key is too long.",
+            status=400, code="invalid_idempotency_key")
+    return text
+
+
+def _meeting_by_idempotency(cur, owner_user_id: int, key: str) -> dict | None:
+    """The meeting this owner already created under ``key``, or None.
+
+    None and `{}` would be the same thing to a caller that only truth-tests,
+    so this returns None explicitly: "no prior attempt" is a different fact
+    from "a row that happens to be empty", and the create path branches on it.
+    """
+    if not key:
+        return None
+    cur.execute(
+        f"""SELECT * FROM {MEETINGS_TABLE}
+        WHERE owner_user_id=? AND idempotency_key=? ORDER BY id LIMIT 1""",
+        (int(owner_user_id), str(key)),
+    )
+    row = _row(cur.fetchone())
+    return row or None
 
 
 def _require_meeting(cur, ref: object) -> dict:
@@ -696,22 +1066,39 @@ def _end_room_call(cur, call_id: int, reason: str) -> None:
 def create_meeting(cur, *, owner_user_id: int, title: str = "",
                    scheduled_start_at: str = "", duration_minutes: int = 0,
                    waiting_room_enabled: bool = True,
-                   instant: bool = False) -> dict:
+                   instant: bool = False, timezone_name: str = "",
+                   agenda: str = "", idempotency_key: str = "",
+                   reminder_offsets: object = None) -> dict:
     _require_enabled()
     ensure_meetings_schema(cur)
     owner = int(owner_user_id or 0)
     if owner <= 0:
         raise PrivateMeetingRejected("Owner required.", status=401, code="unauthorized")
     clean_title = _clip(title, MAX_TITLE_CHARS)
-    scheduled = ""
+    clean_agenda = _clip(agenda, MAX_AGENDA_CHARS)
+    # An instant meeting starts now, so it has no schedule to validate and no
+    # duration to honour; a scheduled one must survive every check before a
+    # row exists. resolve_schedule returns the canonical UTC instant plus the
+    # zone it was expressed in — both are stored, because the instant alone
+    # cannot tell a later reschedule what "same time next week" means.
+    scheduled, zone = "", ""
+    duration = 0
     if not instant:
-        parsed = _parse_iso(scheduled_start_at)
-        if not parsed:
-            raise PrivateMeetingRejected(
-                "A scheduled meeting needs a valid start time.",
-                status=400, code="invalid_schedule")
-        scheduled = parsed.isoformat(timespec="seconds")
-    duration = max(0, min(int(duration_minutes or 0), 1440))
+        scheduled, zone = resolve_schedule(scheduled_start_at, timezone_name)
+        duration = _clean_duration(duration_minutes, required=True)
+    key = _clean_idempotency_key(idempotency_key)
+    if key:
+        existing = _meeting_by_idempotency(cur, owner, key)
+        if existing is not None:
+            # A retry, not a second meeting. Returning the original is the
+            # whole contract: the client cannot tell whether its first request
+            # was lost before or after the insert, so both must look the same.
+            _telemetry.emit(_telemetry.EVENT_MEETING_LIFECYCLE,
+                            transition="create_replayed", end_reason="not_ended",
+                            scheduled=bool(existing.get("scheduled_start_at")),
+                            waiting_room=bool(existing.get("waiting_room_enabled")),
+                            participant_count=1)
+            return _project_meeting(cur, existing, viewer_user_id=owner)
     now = _now_iso()
     public_id = _new_public_id()
     meeting_code = ""
@@ -730,11 +1117,13 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
     cur.execute(
         f"""INSERT INTO {MEETINGS_TABLE}
         (owner_user_id, public_id, meeting_code, title, status,
-         waiting_room_enabled, locked, scheduled_start_at, duration_minutes,
+         waiting_room_enabled, locked, scheduled_start_at, scheduled_timezone,
+         schedule_version, agenda, idempotency_key, duration_minutes,
          created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)""",
+        VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 1, ?, ?, ?, ?, ?)""",
         (owner, public_id, meeting_code, clean_title, status,
-         1 if waiting_room_enabled else 0, scheduled, duration, now, now),
+         1 if waiting_room_enabled else 0, scheduled, zone, clean_agenda,
+         key, duration, now, now),
     )
     meeting = _require_meeting(cur, public_id)
     _insert_participant(
@@ -748,7 +1137,54 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
                     participant_count=1)
     if instant:
         return start_meeting(cur, actor_user_id=owner, meeting_ref=public_id)
+    _plan_reminders(cur, int(meeting["id"]), reminder_offsets)
+    _announce(cur, meeting, "CONFIRMATION")
     return _project_meeting(cur, meeting, viewer_user_id=owner)
+
+
+def _plan_reminders(cur, meeting_id: int, offsets: object = None) -> None:
+    """Plan (or replan) reminders, never at the cost of the meeting itself.
+
+    Imported here rather than at module scope because the reminder module
+    reads this one. A reminder that could not be planned is a degraded
+    meeting, not a failed booking — refusing the schedule because the mail
+    plan hiccuped would be the tail wagging the dog.
+    """
+    try:
+        from services.private_office import meeting_emails, meeting_reminders
+
+        meeting_reminders.plan_reminders(
+            cur, meeting_id=int(meeting_id), offsets=offsets)
+        # Straight into the outbox, each row held until its own moment. This is
+        # the step that makes the plan survive a deploy, a restart, or nine
+        # years of nothing happening.
+        meeting_emails.enqueue_reminders(cur, meeting_id=int(meeting_id))
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_REMINDER_PLAN_FAILED meeting=%s", meeting_id)
+
+
+def _drop_reminders(cur, meeting_id: int, *, reason: str,
+                    user_id: int = 0, before_version: int = 0) -> None:
+    try:
+        from services.private_office import meeting_reminders
+
+        meeting_reminders.cancel_reminders(
+            cur, meeting_id=int(meeting_id), user_id=int(user_id or 0),
+            before_version=int(before_version or 0), reason=reason)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_REMINDER_CANCEL_FAILED meeting=%s", meeting_id)
+
+
+def _announce(cur, meeting: dict, kind: str, *, user_ids=None) -> None:
+    """Mail the people on a meeting, one message each. Never fatal."""
+    try:
+        from services.private_office import meeting_emails
+
+        meeting_emails.announce(cur, kind=kind, meeting=meeting,
+                                user_ids=user_ids)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_ANNOUNCE_FAILED kind=%s meeting=%s",
+                         kind, meeting.get("id"))
 
 
 def start_meeting(cur, *, actor_user_id: int, meeting_ref: object) -> dict:
@@ -818,6 +1254,8 @@ def cancel_meeting(cur, *, actor_user_id: int, meeting_ref: object,
         f"UPDATE {INVITES_TABLE} SET status=?, responded_at=? "
         f"WHERE meeting_id=? AND status=?",
         (INVITE_REVOKED, _now_iso(), int(meeting["id"]), INVITE_PENDING))
+    _drop_reminders(cur, int(meeting["id"]), reason="meeting_cancelled")
+    _announce(cur, meeting, "CANCELLATION")
     _audit(cur, actor=actor, owner=actor, action=audit.ACTION_MEETING_CANCEL,
            meeting_id=int(meeting["id"]))
     # `reason` goes through vocabulary membership in telemetry — a caller-
@@ -828,6 +1266,138 @@ def cancel_meeting(cur, *, actor_user_id: int, meeting_ref: object,
                     scheduled=bool(meeting.get("scheduled_start_at")),
                     waiting_room=bool(int(meeting.get("waiting_room_enabled") or 0)),
                     participant_count=0)
+    return _project_meeting(cur, meeting, viewer_user_id=actor)
+
+
+#: Fields a reschedule may touch. Anything outside this set is a different
+#: operation with its own rules: the status is a state machine, the meeting
+#: code has its own rotation verb, the waiting-room flag is a security control.
+EDITABLE_FIELDS: frozenset[str] = frozenset({
+    "title", "agenda", "scheduled_start_at", "timezone_name", "duration_minutes",
+})
+
+
+def reschedule_meeting(cur, *, actor_user_id: int, meeting_ref: object,
+                       scheduled_start_at: object = None,
+                       timezone_name: object = None,
+                       duration_minutes: object = None,
+                       title: object = None,
+                       agenda: object = None) -> dict:
+    """Move or re-title a scheduled meeting. Host only.
+
+    `None` means "leave this alone" — distinct from `""`, which for the text
+    fields means "clear it". That distinction is why every parameter defaults
+    to None rather than to the empty string: a partial edit from the UI sends
+    only what changed, and treating an absent field as a blank would wipe the
+    agenda every time someone fixed a typo in the title.
+
+    **Only a time change bumps `schedule_version`.** The version is the
+    invalidation token for everything keyed to *when* the meeting happens —
+    pending reminders, "the time you were told" in an already-delivered
+    invitation. Fixing a typo in the title must not invalidate them; moving
+    the meeting must. Bumping on every edit would mean a title fix silently
+    re-queues every reminder, and re-mails every attendee.
+
+    A meeting that has started, ended, or been cancelled cannot be moved: the
+    thing being rescheduled is a plan, and once it is a fact there is nothing
+    to move. That refusal is 409, not 403 — the caller had the right, the
+    meeting was in the wrong state.
+    """
+    _require_enabled()
+    ensure_meetings_schema(cur)
+    meeting = _require_meeting(cur, meeting_ref)
+    actor = int(actor_user_id or 0)
+    if actor <= 0:
+        raise PrivateMeetingRejected("Sign in required.", status=401,
+                                     code="unauthorized")
+    if actor != int(meeting.get("owner_user_id") or 0):
+        # Deliberately the same 403 an unrelated stranger gets. A participant
+        # learning "you may not reschedule" and a stranger learning "no such
+        # meeting" are different leaks; this endpoint is reached by public_id,
+        # which a participant already holds, so 403 leaks nothing new to them.
+        raise PrivateMeetingRejected(
+            "Only the host can reschedule this meeting.",
+            status=403, code="forbidden")
+
+    status = str(meeting.get("status") or "")
+    if status not in (ST_DRAFT, ST_SCHEDULED):
+        raise PrivateMeetingRejected(
+            "This meeting can no longer be rescheduled.",
+            status=409, code="not_reschedulable")
+
+    sets: list[str] = []
+    params: list[object] = []
+    time_changed = False
+
+    if scheduled_start_at is not None or timezone_name is not None:
+        # The instant and the zone resolve together. Changing only the zone
+        # still has to re-resolve, because "09:00 in the host's zone" means a
+        # different instant once the zone changes -- and because a stored UTC
+        # instant cannot be re-localized without the wall clock that produced
+        # it. Re-sending the wall clock is the caller's job; the current zone
+        # is the default when only the time moves.
+        zone_in = (meeting.get("scheduled_timezone") or ""
+                   if timezone_name is None else timezone_name)
+        start_in = scheduled_start_at
+        if start_in is None:
+            start_in = str(meeting.get("scheduled_start_at") or "")
+        new_start, new_zone = resolve_schedule(start_in, zone_in)
+        old_start = str(meeting.get("scheduled_start_at") or "")
+        old_zone = str(meeting.get("scheduled_timezone") or "")
+        if new_start != old_start or new_zone != old_zone:
+            time_changed = True
+        sets.append("scheduled_start_at=?")
+        params.append(new_start)
+        sets.append("scheduled_timezone=?")
+        params.append(new_zone)
+
+    if duration_minutes is not None:
+        new_duration = _clean_duration(duration_minutes, required=True)
+        if new_duration != int(meeting.get("duration_minutes") or 0):
+            # The end time is part of "when". An attendee who blocked out an
+            # hour needs to know it became three.
+            time_changed = True
+        sets.append("duration_minutes=?")
+        params.append(new_duration)
+
+    if title is not None:
+        sets.append("title=?")
+        params.append(_clip(title, MAX_TITLE_CHARS))
+
+    if agenda is not None:
+        sets.append("agenda=?")
+        params.append(_clip(agenda, MAX_AGENDA_CHARS))
+
+    if not sets:
+        raise PrivateMeetingRejected(
+            "Nothing to change.", status=400, code="no_changes")
+
+    if time_changed:
+        sets.append("schedule_version=schedule_version+1")
+
+    params.append(_now_iso())
+    params.append(int(meeting["id"]))
+    cur.execute(
+        f"UPDATE {MEETINGS_TABLE} SET {', '.join(sets)}, updated_at=? WHERE id=?",
+        tuple(params))
+
+    meeting = _require_meeting(cur, int(meeting["id"]))
+    if time_changed:
+        # Retire the old version's plan and lay down a new one. Order matters
+        # only for tidiness: the guard already refuses any survivor of the old
+        # version, because the version on the meeting row has moved past it.
+        _drop_reminders(cur, int(meeting["id"]), reason="schedule_changed",
+                        before_version=int(meeting.get("schedule_version") or 1))
+        _plan_reminders(cur, int(meeting["id"]))
+        _announce(cur, meeting, "RESCHEDULE")
+    _audit(cur, actor=actor, owner=actor,
+           action=audit.ACTION_MEETING_RESCHEDULE, meeting_id=int(meeting["id"]))
+    _telemetry.emit(_telemetry.EVENT_MEETING_LIFECYCLE,
+                    transition="rescheduled" if time_changed else "edited",
+                    end_reason="not_ended",
+                    scheduled=bool(meeting.get("scheduled_start_at")),
+                    waiting_room=bool(int(meeting.get("waiting_room_enabled") or 0)),
+                    participant_count=_present_count(cur, int(meeting["id"])))
     return _project_meeting(cur, meeting, viewer_user_id=actor)
 
 
@@ -1030,6 +1600,8 @@ def remove_participant(cur, *, actor_user_id: int, meeting_ref: object,
         extra_params=(_clip(reason, 64), _now_iso()))
     _drop_call_participant(cur, int(meeting.get("call_id") or 0), int(user_id),
                            status="removed")
+    _drop_reminders(cur, int(meeting["id"]), reason="removed",
+                    user_id=int(user_id))
     _audit(cur, actor=actor, owner=int(meeting["owner_user_id"]),
            action=audit.ACTION_MEETING_REMOVE, meeting_id=int(meeting["id"]))
     return _project_participant(target)
@@ -1253,6 +1825,14 @@ def invite_users(cur, *, actor_user_id: int, meeting_ref: object,
                 cur, meeting_id=meeting_id, user_id=invitee,
                 role=ROLE_PARTICIPANT, state=P_INVITED, invited_by=actor)
         invited.append(invitee)
+    if invited:
+        # Someone invited late still gets the reminders that have not gone yet;
+        # planning is keyed on the recipient, so this adds rows for the new
+        # people and leaves everyone else's plan exactly as it was.
+        _plan_reminders(cur, meeting_id)
+        # Only the new people. Re-confirming everyone else every time someone
+        # else is added is how a meeting turns into a mailing list.
+        _announce(cur, meeting, "CONFIRMATION", user_ids=invited)
     _audit(cur, actor=actor, owner=owner, action=audit.ACTION_MEETING_INVITE,
            meeting_id=meeting_id, count=len(invited))
     return {"invited": invited, "skipped": skipped}
@@ -1294,6 +1874,7 @@ def respond_invite(cur, *, user_id: int, meeting_ref: object,
                     cur, int(meeting["call_id"]), invitee, host=False)
         else:
             participant = _transition_participant(cur, participant, P_DECLINED)
+            _drop_reminders(cur, meeting_id, reason="declined", user_id=invitee)
     return {"invite_status": new_status,
             "participant": _project_participant(participant) if participant else None}
 
@@ -1760,7 +2341,13 @@ def _project_meeting(cur, meeting: dict, *, viewer_user_id: int) -> dict:
         "status": str(meeting.get("status") or ""),
         "waiting_room_enabled": bool(int(meeting.get("waiting_room_enabled") or 0)),
         "locked": bool(int(meeting.get("locked") or 0)),
+        # The instant is canonical UTC; the zone is what the host chose. The
+        # client needs both: rendering the UTC instant in the *device's* zone
+        # would silently relabel a meeting the host booked as 09:00 Tokyo.
         "scheduled_start_at": str(meeting.get("scheduled_start_at") or ""),
+        "scheduled_timezone": str(meeting.get("scheduled_timezone") or ""),
+        "schedule_version": int(meeting.get("schedule_version") or 1),
+        "agenda": str(meeting.get("agenda") or ""),
         "duration_minutes": int(meeting.get("duration_minutes") or 0),
         "started_at": str(meeting.get("started_at") or ""),
         "ended_at": str(meeting.get("ended_at") or ""),
@@ -1826,6 +2413,101 @@ def list_meetings(cur, *, user_id: int,
                      for m in upcoming[:capped]],
         "recent": [_project_meeting(cur, m, viewer_user_id=viewer)
                    for m in recent[:capped]],
+    }
+
+
+def _calendar_bounds(start: object, end: object) -> tuple[datetime, datetime]:
+    """Parse and sanity-check a requested window.
+
+    Both ends are required. A half-open request ("everything after March") is
+    refused rather than defaulted, because every sensible default here is a
+    guess about how much history the caller wanted, and the wrong guess is the
+    unbounded one.
+    """
+    first = _parse_iso(start)
+    last = _parse_iso(end)
+    if not first or not last:
+        raise PrivateMeetingRejected(
+            "A calendar window needs a start and an end.",
+            status=400, code="invalid_range")
+    if last <= first:
+        raise PrivateMeetingRejected(
+            "The calendar window ends before it starts.",
+            status=400, code="invalid_range")
+    if (last - first) > timedelta(days=MAX_CALENDAR_SPAN_DAYS):
+        raise PrivateMeetingRejected(
+            "That calendar window is too wide.",
+            status=400, code="range_too_wide")
+    return first, last
+
+
+def calendar_range(cur, *, user_id: int, start: object, end: object,
+                   timezone_name: object = "") -> dict:
+    """Meetings inside one bounded window, grouped by local day.
+
+    This is what the month grid reads, and it is deliberately a different
+    query from :func:`list_meetings`. That one answers "what is happening
+    around now" and is anchored to the present; a calendar is anchored to
+    whatever month the user scrolled to, which may be in 2045 and may contain
+    the only three meetings that matter. Filtering the recent-first list in
+    the client would show an empty March 2045 forever while the rows sat in
+    the table, and widening that list until far-future rows appeared would
+    mean loading a lifetime to render six weeks.
+
+    Days are keyed in ``timezone_name`` rather than UTC because "which day is
+    this meeting on" is a local question: 23:30 UTC on the 4th is the 5th in
+    Tokyo, and a grid that disagrees with the invitation is worse than no
+    grid. The zone the *host* chose still travels on each entry, so a viewer
+    in another country sees the cell in their own calendar and the time in the
+    organiser's words.
+    """
+    _require_enabled()
+    ensure_meetings_schema(cur)
+    viewer = int(user_id or 0)
+    first, last = _calendar_bounds(start, end)
+    zone_name = normalize_timezone(timezone_name)
+    zone = ZoneInfo(zone_name) if zone_name else timezone.utc
+    cur.execute(
+        f"""SELECT m.* FROM {MEETINGS_TABLE} m
+        JOIN {PARTICIPANTS_TABLE} p ON p.meeting_id = m.id
+        WHERE p.user_id=? AND p.state NOT IN (?, ?)
+          AND m.scheduled_start_at >= ? AND m.scheduled_start_at < ?
+        ORDER BY m.scheduled_start_at ASC LIMIT ?""",
+        (viewer, P_REMOVED, P_BLOCKED,
+         _to_utc_iso(first), _to_utc_iso(last), MAX_CALENDAR_ROWS + 1))
+    rows = [_row(item) for item in cur.fetchall()]
+    truncated = len(rows) > MAX_CALENDAR_ROWS
+    rows = rows[:MAX_CALENDAR_ROWS]
+    entries: list[dict] = []
+    days: dict[str, int] = {}
+    for meeting in rows:
+        moment = _parse_iso(meeting.get("scheduled_start_at"))
+        if not moment:
+            continue
+        day = moment.astimezone(zone).date().isoformat()
+        days[day] = days.get(day, 0) + 1
+        # A summary, not a projection. The grid draws a dot and a title; the
+        # participant list, the code and the call identity are all answers to
+        # questions a calendar cell never asks, and running the full
+        # projection for every meeting in a year would fan one request out
+        # into hundreds of participant queries.
+        entries.append({
+            "public_id": str(meeting.get("public_id") or ""),
+            "title": str(meeting.get("title") or ""),
+            "status": str(meeting.get("status") or ""),
+            "scheduled_start_at": str(meeting.get("scheduled_start_at") or ""),
+            "scheduled_timezone": str(meeting.get("scheduled_timezone") or ""),
+            "duration_minutes": int(meeting.get("duration_minutes") or 0),
+            "local_day": day,
+            "is_host": viewer == int(meeting.get("owner_user_id") or 0),
+        })
+    return {
+        "start": _to_utc_iso(first),
+        "end": _to_utc_iso(last),
+        "timezone": zone_name,
+        "days": days,
+        "meetings": entries,
+        "truncated": truncated,
     }
 
 

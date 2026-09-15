@@ -406,7 +406,11 @@
       "a11yDiscardRecording": "تجاهل التسجيل الصوتي",
       "a11yDismissStatus": "تجاهل حالة الرسالة",
       "a11yForwardFive": "تقدّم 5 ثوانٍ",
+      "a11yGalleryPhotoPosition": "صورة من {{sender}}، {{position}} من {{total}}",
+      "a11yGalleryVideoPosition": "فيديو من {{sender}}، {{position}} من {{total}}",
       "a11yGifAttachment": "{{label}}. مرفق GIF.",
+      "a11yGridPhotoTile": "{{label}}. صورة {{position}} من {{total}}.",
+      "a11yGridVideoTile": "{{label}}. فيديو {{position}} من {{total}}.",
       "a11yImageAttachment": "{{label}}. مرفق صورة.",
       "a11yOpenControls": "فتح عناصر التحكم في المحادثة",
       "a11yOpenUndxResult": "فتح نتيجة {{type}}",
@@ -485,6 +489,8 @@
       "fileSharingUnavailableTitle": "مشاركة الملفات غير متاحة",
       "forwarded": "معاد توجيهها",
       "forwardedSignal": "إشارة معاد توجيهها",
+      "galleryUnavailable": "غير متاح",
+      "galleryUnavailableOffline": "غير متاح دون اتصال",
       "headerCachedHistory": "سجل مخزَّن مؤقتًا",
       "headerLiveChannel": "قناة مباشرة",
       "headerReconnecting": "جارٍ إعادة الاتصال",
@@ -5380,8 +5386,11 @@
         "scheduleFailed": "تعذّرت الجدولة",
         "startFailed": "تعذّر البدء",
         "cancelFailed": "تعذّر الإلغاء",
+        "rescheduleFailed": "تعذّرت إعادة الجدولة",
         "start": "بدء",
         "cancel": "إلغاء",
+        "reschedule": "إعادة الجدولة",
+        "saveChanges": "حفظ التغييرات",
         "untitled": "اجتماع",
         "details": "تفاصيل {{title}}",
         "liveNow": "مباشر الآن",
@@ -5391,11 +5400,6 @@
         "durationMinutes_few": "{{count}} دقائق",
         "durationMinutes_many": "{{count}} دقيقة",
         "durationMinutes_other": "{{count}} دقيقة",
-        "presets": {
-          "in15m": "بعد {{minutes}} دقيقة",
-          "in1h": "بعد {{hours}} ساعة",
-          "tomorrowMorning": "غدًا الساعة {{time}}"
-        },
         "buckets": {
           "live": "يحدث الآن",
           "upcoming": "القادمة",
@@ -5503,6 +5507,44 @@
             "feature_disabled": "تم إيقاف الاجتماعات أثناء اتصالك.",
             "generic": "انتهى الاجتماع."
           }
+        },
+        "calendar": {
+          "browse": "تصفح التقويم",
+          "previousMonth": "الشهر السابق",
+          "nextMonth": "الشهر التالي",
+          "pickMonth": "اختر شهرًا",
+          "pickYear": "اختر سنة",
+          "jumpToYear": "الانتقال إلى سنة",
+          "today": "اليوم",
+          "close": "إغلاق",
+          "loadFailed": "تعذر تحميل هذا الشهر. أعد المحاولة أو انتقل إلى شهر آخر.",
+          "noneOnDay": "لا يوجد شيء مجدول في هذا اليوم.",
+          "dayWithMeetings_zero": "{{day}}، {{count}} اجتماع",
+          "dayWithMeetings_one": "{{day}}، اجتماع واحد",
+          "dayWithMeetings_two": "{{day}}، اجتماعان",
+          "dayWithMeetings_few": "{{day}}، {{count}} اجتماعات",
+          "dayWithMeetings_many": "{{day}}، {{count}} اجتماعًا",
+          "dayWithMeetings_other": "{{day}}، {{count}} اجتماع"
+        },
+        "wizard": {
+          "steps": {
+            "date": "اختر تاريخًا",
+            "time": "اختر وقتًا",
+            "zone": "أكّد المنطقة الزمنية",
+            "duration": "كم المدة؟",
+            "details": "العنوان وجدول الأعمال",
+            "review": "المراجعة"
+          },
+          "timeHint": "الوقت كما سيُقرأ في المكان الذي يُعقد فيه الاجتماع.",
+          "zoneHint": "الجميع مدعوون إلى اللحظة نفسها. المنطقة الزمنية هي التي تحدد أي لحظة هي.",
+          "zoneUnknown": "لم يُبلّغ هذا الجهاز عن منطقة زمنية، لذا سيُقرأ الاجتماع بتوقيت UTC.",
+          "looksPast": "بحسب ساعة هذا الجهاز مضى هذا الوقت. القرار النهائي للخادم.",
+          "customDuration": "مدة مخصصة بالدقائق",
+          "durationRange": "اختر بين {{min}} و {{max}} دقيقة.",
+          "agendaField": "جدول الأعمال (اختياري)",
+          "inviteLater": "يمكنك دعوة الأشخاص بعد إنشاء الاجتماع.",
+          "back": "رجوع",
+          "next": "التالي"
         }
       },
       "conversations": {
