@@ -53,6 +53,15 @@ export const DISMISS_COMMIT_DISTANCE = 90;
 export const MAX_ZOOM = 4;
 /** What a double-tap zooms to, and toggles back from. */
 export const DOUBLE_TAP_ZOOM = 2.5;
+/**
+ * How long a video may show nothing before the viewer calls it a failure.
+ *
+ * Generous on purpose: a cold segment fetch on a poor connection is allowed to
+ * take a while, and the poster is showing throughout, so this is not a deadline
+ * for a good load. It is the floor under a source that will never report
+ * anything at all.
+ */
+export const FIRST_FRAME_TIMEOUT_MS = 15_000;
 
 type Props = {
   visible: boolean;
@@ -167,6 +176,8 @@ export function NativeMediaViewer({
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const videoPlayingRef = useRef(false);
+  /** Has THIS source ever reported a loaded status? Drives the watchdog below. */
+  const loadedOnceRef = useRef(false);
   /**
    * Zoom is two values multiplied, not one value assigned.
    *
@@ -303,7 +314,6 @@ export function NativeMediaViewer({
   }, [controlled, initialIndex, items.length, visible]);
 
   useEffect(() => {
-    setFailed(false);
     setBuffering(false);
     setProcessingMessage("");
     // The status line describes one specific file. Swiping to the next item must
@@ -336,6 +346,60 @@ export function NativeMediaViewer({
       }),
     [translateX, translateY]
   );
+
+  /**
+   * Per-item load state, reset DURING RENDER and keyed on the item's identity.
+   *
+   * Two bugs live in the obvious alternative (`useEffect(..., [index])`):
+   *
+   *   - It keys on a POSITION. The gallery pages older media in underneath, so
+   *     the same photo's index moves while the photo does not, and a different
+   *     photo can arrive at the same index. When the item changes but the index
+   *     does not, the effect never fires and the previous item's `failed` stays
+   *     on — one dead video reads as "everything after it is broken too".
+   *   - It fires AFTER the commit. React paints one frame with the new item and
+   *     the old item's state, which is a visible flash of the previous item's
+   *     error card over the new item's media.
+   *
+   * Assigning during render is React's documented pattern for exactly this: the
+   * re-render happens before anything is painted, so there is no intermediate
+   * frame and no effect ordering to reason about.
+   */
+  const identityKey = String(item?.cacheIdentity || item?.id || item?.url || "");
+  const [loadStateKey, setLoadStateKey] = useState(identityKey);
+  if (loadStateKey !== identityKey) {
+    setLoadStateKey(identityKey);
+    setFailed(false);
+    loadedOnceRef.current = false;
+  }
+
+  /**
+   * A video that never loads and never errors must still stop looking like one
+   * that is loading.
+   *
+   * This is the generalisation of the bug that opened this mission. AVPlayer
+   * rejected a site-relative URL with NSURLErrorUnsupportedURL and expo-av
+   * surfaced it as `isLoaded: false` with no `error`, so there was no event to
+   * render — the viewer sat on a black rectangle indefinitely with every control
+   * working and no way for the user (or a test) to tell it had failed.
+   *
+   * The URL bug is fixed at the source. This exists so the NEXT source that
+   * fails without an error event is reported instead of disappearing: an
+   * unrecognised codec, a 302 to somewhere unreachable, a DNS hole. Bounded to
+   * "has never reported a loaded status", so a buffering stall on a video that
+   * already played is untouched.
+   */
+  const watchdogUrl = kind === "video" ? item?.url || "" : "";
+  useEffect(() => {
+    if (!visible || !watchdogUrl) return;
+    const timer = setTimeout(() => {
+      if (!loadedOnceRef.current) {
+        console.warn(`[NativeMediaViewer] no first frame in ${FIRST_FRAME_TIMEOUT_MS}ms: ${watchdogUrl.slice(0, 120)}`);
+        setFailed(true);
+      }
+    }, FIRST_FRAME_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [visible, watchdogUrl, loadStateKey]);
 
   if (!item) return null;
 
@@ -541,10 +605,23 @@ export function NativeMediaViewer({
                 posterSource={item.thumbnailUrl ? { uri: item.thumbnailUrl } : undefined}
                 onPlaybackStatusUpdate={(status) => {
                   if (!status.isLoaded) {
-                    setFailed(Boolean(status.error));
+                    // `setFailed(Boolean(status.error))` used to live here, and it
+                    // is why a dead video looked like a loading video forever.
+                    // expo-av reports `isLoaded: false` with NO `error` field for
+                    // a source AVPlayer rejected outright — a relative URL fails
+                    // exactly this way — so the assignment CLEARED the failure
+                    // flag on every tick, including one `onError` had just set.
+                    // An unloaded status is the absence of news, not good news:
+                    // it may never clear a failure, only the watchdog or a real
+                    // error may set one.
+                    if (status.error) setFailed(true);
                     setBuffering(false);
                     return;
                   }
+                  // Genuine recovery — a later successful load clears an earlier
+                  // failure, so a re-minted grant can heal the surface in place.
+                  setFailed(false);
+                  loadedOnceRef.current = true;
                   setBuffering(Boolean(status.isBuffering));
                   // Keep the attached-music track in lockstep with the video's
                   // play/pause state. Only act on transitions so we don't spam

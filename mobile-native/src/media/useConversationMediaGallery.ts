@@ -33,9 +33,11 @@ import {
   removeConversationMedia
 } from "./conversationMediaCollection";
 import {
+  grantMessengerMediaAccess,
   isProtectedMessengerMediaUrl,
-  resolveMessengerMediaAccess
+  resolveCanonicalMessengerMediaId
 } from "./messengerMediaAccess";
+import { absoluteApiUrl } from "../api/config";
 
 const PAGE_SIZE = 60;
 
@@ -214,19 +216,51 @@ export function useConversationMediaGallery(
       if (!isProtectedMessengerMediaUrl(item.url)) {
         // Already loadable. Recorded anyway so the window is not re-examined
         // every render, and so "resolved" means one thing for every item.
+        // Absolutized on the way in for the same reason the granted URLs are:
+        // a site-relative URL that never needed a grant is still unloadable by
+        // a native player, and fails as a black rectangle rather than an error.
         setResolved((current) => current[item.key]
           ? current
-          : { ...current, [item.key]: { url: item.url, thumbnailUrl: item.thumbnailUrl, unavailable: !item.url } });
+          : {
+              ...current,
+              [item.key]: {
+                url: absoluteApiUrl(item.url),
+                thumbnailUrl: absoluteApiUrl(item.thumbnailUrl),
+                unavailable: !item.url
+              }
+            });
         continue;
       }
-      const canonicalId = item.mediaUploadId || item.attachmentId;
-      if (!canonicalId) continue;
-      resolveMessengerMediaAccess(canonicalId)
+      /**
+       * Ask for the id the access endpoint is actually keyed on.
+       *
+       * `mediaUploadId || attachmentId` looks equivalent and is not. The two are
+       * autoincrements from different tables whose ranges overlap, so a falsy
+       * `media_upload_id` silently promotes a transport row id into a foundation
+       * media id — which either 404s or, worse, resolves to somebody else's
+       * attachment. `resolveCanonicalMessengerMediaId` also mines the id out of
+       * the protected URL we just matched, which is direct evidence rather than
+       * a sibling integer that happens to be truthy.
+       */
+      const canonical = resolveCanonicalMessengerMediaId(
+        { mediaUploadId: item.mediaUploadId, attachmentId: item.attachmentId },
+        item.url
+      );
+      if (!canonical.id) continue;
+      // `grant…` not `resolve…`: this is the call that carries the one bounded
+      // recovery (expired grant -> re-mint and retry once; wrong id -> try a
+      // proven alternate). The gallery is where expiry is MOST likely, because
+      // it is the surface that opens six-month-old media.
+      grantMessengerMediaAccess(canonical)
         .then((grant) => {
           if (cancelled || !mountedRef.current) return;
           setResolved((current) => ({
             ...current,
-            [item.key]: { url: grant.url, thumbnailUrl: grant.thumbnailUrl || item.thumbnailUrl, unavailable: !grant.url }
+            [item.key]: {
+              url: grant.url,
+              thumbnailUrl: grant.thumbnailUrl || absoluteApiUrl(item.thumbnailUrl),
+              unavailable: !grant.url
+            }
           }));
         })
         .catch(() => {

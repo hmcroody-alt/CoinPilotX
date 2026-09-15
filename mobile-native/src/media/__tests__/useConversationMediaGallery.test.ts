@@ -16,10 +16,30 @@ jest.mock("../../api/conversationMedia", () => ({
   fetchConversationMedia: (...args: unknown[]) => mockFetchConversationMedia(...args)
 }));
 
-jest.mock("../messengerMediaAccess", () => ({
-  isProtectedMessengerMediaUrl: (url: string) => mockIsProtected(url),
-  resolveMessengerMediaAccess: (id: number) => mockResolveAccess(id)
-}));
+/**
+ * `resolveCanonicalMessengerMediaId` is deliberately the REAL implementation.
+ *
+ * It is pure, and it is the thing that decides which id the gallery asks for —
+ * mocking it would mean these tests assert that the hook calls a stub with the
+ * id the stub was told to return, which proves nothing about the id-space
+ * collision it exists to prevent.
+ *
+ * `grantMessengerMediaAccess` is routed through the same `mockResolveAccess`
+ * spy the suite already asserts on, so "which ids were requested, and how many
+ * times" keeps its existing meaning.
+ */
+jest.mock("../messengerMediaAccess", () => {
+  const actual = jest.requireActual("../messengerMediaAccess");
+  return {
+    isProtectedMessengerMediaUrl: (url: string) => mockIsProtected(url),
+    resolveCanonicalMessengerMediaId: actual.resolveCanonicalMessengerMediaId,
+    resolveMessengerMediaAccess: (id: number) => mockResolveAccess(id),
+    grantMessengerMediaAccess: async (canonical: { id: number }) => ({
+      ...(await mockResolveAccess(canonical.id)),
+      attachmentId: canonical.id
+    })
+  };
+});
 
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 

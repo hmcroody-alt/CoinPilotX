@@ -447,7 +447,61 @@ describe("the preview and the original are different objects", () => {
       .mockResolvedValueOnce(grantWithPreview(33));
     await expect(grantMessengerMediaAccess({ id: 41, alternates: [33] })).resolves.toMatchObject({
       attachmentId: 33,
-      thumbnailUrl: "/api/messages/media/33/thumbnail?mt=tok"
+      thumbnailUrl: "https://pulsesoc.com/api/messages/media/33/thumbnail?mt=tok"
     });
+  });
+});
+
+/**
+ * A grant has to be loadable, not merely correct.
+ *
+ * The server mints site-relative paths. A browser resolves those against the
+ * current origin; React Native has no origin, and the two native loaders each
+ * fail silently and differently — AVPlayer rejects the URL with
+ * NSURLErrorUnsupportedURL (-1002) and draws a black rectangle, `<Image>` drops
+ * the URI before it reaches the network and draws nothing. Both read to a user
+ * as "the media area is black", with no error anywhere to explain it.
+ *
+ * This shipped: the chat bubble re-absolutized on its own, so inline media
+ * looked healthy while the fullscreen viewer, Save to Photos and Share — every
+ * other consumer of the same grant — were handed a URL that cannot be fetched.
+ * These assertions are on the module rather than on a screen for that exact
+ * reason: the guarantee has to hold for consumers that do not exist yet.
+ */
+describe("a grant is loadable by a native player, not just well-formed", () => {
+  it("absolutizes the access URL the server returns as a site-relative path", async () => {
+    mockPulseApi.mockResolvedValue(grant(87));
+    const access = await resolveMessengerMediaAccess(87);
+    expect(access.url).toBe("https://pulsesoc.com/api/messages/media/87/download?mt=tok");
+    // The property that matters, stated directly: a native loader can open it.
+    expect(access.url.startsWith("https://")).toBe(true);
+  });
+
+  it("absolutizes the preview URL too, so the poster is not the black frame", async () => {
+    mockPulseApi.mockResolvedValue({
+      ...grant(87),
+      thumbnail_access_url: "/api/messages/media/87/thumbnail?mt=tok"
+    });
+    const access = await resolveMessengerMediaAccess(87);
+    expect(access.thumbnailUrl).toBe("https://pulsesoc.com/api/messages/media/87/thumbnail?mt=tok");
+  });
+
+  it("leaves an absolute URL alone rather than doubling the origin", async () => {
+    // Signed R2 URLs already carry their own host. Prefixing one would produce
+    // `https://pulsesoc.comhttps://…`, which fails in a completely new way.
+    mockPulseApi.mockResolvedValue({
+      ok: true,
+      access_url: "https://media.r2.example/obj?sig=abc",
+      expires_in: 900
+    });
+    expect((await resolveMessengerMediaAccess(88)).url).toBe("https://media.r2.example/obj?sig=abc");
+  });
+
+  it("keeps an absent preview absent instead of inventing a bare origin", async () => {
+    // `absoluteApiUrl("")` must stay "": a thumbnail slot holding the site root
+    // would load the homepage HTML into an <Image> and report a decode failure
+    // for media that is simply still processing.
+    mockPulseApi.mockResolvedValue(grant(89));
+    expect((await resolveMessengerMediaAccess(89)).thumbnailUrl).toBe("");
   });
 });

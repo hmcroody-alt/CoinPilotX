@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { absoluteApiUrl } from "../api/config";
 import { pulseApi } from "../api/pulseApi";
 import { namespacedMediaId } from "./mediaCache";
 
@@ -274,6 +275,33 @@ function readMeta(attachment: Record<string, unknown> | undefined): MessengerMed
   };
 }
 
+/**
+ * A grant is only useful if a native loader can actually fetch it.
+ *
+ * `/access` mints site-relative paths — `/api/messages/media/87/download?mt=…`.
+ * A browser resolves those against the current origin. React Native has no
+ * origin, and the two native loaders fail in two DIFFERENT silent ways:
+ *
+ *   - AVPlayer rejects a relative URL with NSURLErrorUnsupportedURL (-1002) and
+ *     renders a black rectangle. `onPlaybackStatusUpdate` reports
+ *     `isLoaded: false` with no `error` field, so the viewer cannot even tell
+ *     that it failed.
+ *   - `<Image>` drops the relative URI before it reaches CFNetwork, so there is
+ *     no request and no error at all — just an empty box.
+ *
+ * Both present as "the media area is black", which is precisely the failure this
+ * mission exists to kill. Absolutizing HERE rather than in each renderer is the
+ * point: this module is the single authority for messenger media URLs, and
+ * every consumer past it (chat bubble, conversation gallery, fullscreen viewer,
+ * save-to-photos, share) inherits a URL that is loadable by construction. The
+ * chat bubble happened to re-absolutize on its own, which is why inline media
+ * looked healthy while every other consumer of the same grant was broken.
+ *
+ * `absoluteApiUrl` is the codebase's existing rule for this, already carrying
+ * the same lesson from the feed's blank-avatar bug. It leaves `https:`, `data:`
+ * and `file:` untouched, so a grant the server returns as an R2 signed URL
+ * passes through unchanged.
+ */
 async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
   const response = await pulseApi<{
     ok?: boolean;
@@ -282,12 +310,12 @@ async function requestAccessUrl(attachmentId: number): Promise<AccessEntry> {
     expires_in?: number;
     attachment?: Record<string, unknown>;
   }>(`/api/messages/media/${attachmentId}/access`);
-  const url = String(response.access_url || "");
+  const url = absoluteApiUrl(response.access_url);
   if (!url) throw new Error("messenger_media_access_url_missing");
   const ttlMs = Math.max(0, Number(response.expires_in || 0)) * 1000;
   const entry: AccessEntry = {
     url,
-    thumbnailUrl: String(response.thumbnail_access_url || ""),
+    thumbnailUrl: absoluteApiUrl(response.thumbnail_access_url),
     meta: readMeta(response.attachment),
     expiresAt: Date.now() + ttlMs
   };

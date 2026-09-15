@@ -136,6 +136,24 @@ export function absoluteApiUrl(value: string | null | undefined) {
   return url.startsWith("/") ? `${PULSE_API_BASE_URL}${url}` : `${PULSE_API_BASE_URL}/${url}`;
 }
 
+/**
+ * Can a native loader actually fetch this, or will it fail as a blank rectangle?
+ *
+ * The counterpart to `absoluteApiUrl`, for the places that must CHOOSE between
+ * two candidate URLs rather than repair one. React Native's image loader and
+ * AVPlayer both reject a site-relative URL, and both do it silently — no error
+ * surface, just an empty box or a black frame. So a renderer picking
+ * `fresh || fallback` can quietly replace a URL that works with one that cannot,
+ * and nothing in the type system or the logs says so.
+ *
+ * Deliberately a shape test, not a reachability test: it answers "is this
+ * well-formed enough to attempt", which is the only question a chooser can
+ * answer synchronously. A 404 is still a 404 and is reported as a load failure.
+ */
+export function isLoadableMediaUrl(value: string | null | undefined): boolean {
+  return /^(https?:|data:|file:)/i.test(String(value || "").trim());
+}
+
 function normalizeApiBaseUrl(value: string) {
   const url = String(value || "").trim().replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(url)) return "https://pulsesoc.com";
