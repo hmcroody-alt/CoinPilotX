@@ -3048,21 +3048,32 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
         typing = typing_state(user_id, conversation_id, existing_conn=(conn, cur)).get("typing") or []
         read_state_committed = False
         try:
-            for message in raw_messages:
-                if int(message.get("sender_user_id") or 0) != int(user_id):
-                    cur.execute(
-                        """
-                        INSERT OR IGNORE INTO comm_v2_read_receipts
-                        (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        """,
-                        (int(message.get("id") or 0), conversation_id, int(user_id), now, now, now),
-                    )
-                    cur.execute(
-                        "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
-                        (now, now, int(message.get("id") or 0), int(user_id)),
-                    )
+            # mark_read walks every message id in the conversation ascending; the
+            # delivery loop below only covers the page just fetched, which is the
+            # high end of that same range. Running the page first would take a
+            # lock on id 100 before id 1, inverting the order a concurrent /read
+            # uses and closing a deadlock cycle on comm_v2_read_receipts. Calling
+            # mark_read first keeps this transaction's first-acquisition order
+            # ascending; the loop then only re-touches rows it already holds.
             mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
+            incoming_ids = sorted(
+                int(message.get("id") or 0)
+                for message in raw_messages
+                if int(message.get("sender_user_id") or 0) != int(user_id)
+            )
+            for message_id in incoming_ids:
+                cur.execute(
+                    """
+                    INSERT OR IGNORE INTO comm_v2_read_receipts
+                    (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (message_id, conversation_id, int(user_id), now, now, now),
+                )
+                cur.execute(
+                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
+                    (now, now, message_id, int(user_id)),
+                )
             conn.commit()
             read_state_committed = True
         except Exception as exc:
@@ -3274,7 +3285,12 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
             (max_id, now, now, now, conversation_id, int(user_id)),
         )
         if _read_receipts_allowed(cur, user_id, conversation_id):
-            cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')=''", (conversation_id, max_id, int(user_id)))
+            # ORDER BY is load-bearing, not cosmetic: the loop below takes a row
+            # lock per receipt, and two concurrent requests from the same user
+            # target the identical (message_id, user_id) keys. Without a fixed
+            # order Postgres is free to hand back the same set in two different
+            # orders and the two transactions deadlock on the unique index.
+            cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')='' ORDER BY id ASC", (conversation_id, max_id, int(user_id)))
             for row in cur.fetchall():
                 cur.execute(
                     """
