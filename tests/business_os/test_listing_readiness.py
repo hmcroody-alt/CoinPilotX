@@ -664,3 +664,266 @@ def test_a_suspended_listing_cannot_submit_its_way_out():
     the other state `_restricted` refuses, and a seller must not clear an admin
     hold by tapping a button on their own row."""
     assert r.evaluate(listing(approval_status="suspended"))["resubmittable"] is False
+
+
+# --- the supplier-aware half --------------------------------------------------
+#
+# The defect these cover, measured in production on 2026-09-16: 34 CJ listings,
+# 719 variants, every one of them carrying a non-null `price_cents` AND a
+# non-null `cost_cents` -- and 31 listings reporting "Price required" on the
+# merchant's Store screen. The verdict was reading `marketplace_listings.
+# price_label`, which `drafts.publish` writes and an unpublished draft therefore
+# does not have. The merchant was offered "Add price" for the one fault they had
+# not got, and no words at all for the two they had.
+
+
+#: The media store the *publish gate* reads -- `drafts._media_of` parses
+#: `listing_metadata_json.media`, not `marketplace_product_media`. A supplier
+#: fixture without it is a draft the gate refuses for a reason that has nothing
+#: to do with what these tests are about.
+SUPPLIER_METADATA = '{"media": ["https://cdn.example/lamp.jpg"]}'
+
+
+def supplier_listing(**overrides):
+    """A supplier draft in the state production actually holds: no `price_label`
+    and no `quantity`, because `drafts.publish` writes both and it has not run."""
+    base = {"price_label": "", "quantity": None,
+            "listing_metadata_json": SUPPLIER_METADATA}
+    base.update(overrides)
+    return listing(**base)
+
+
+def supplier_facts(*, bound=None, variants=None, fulfillment_mode="DROPSHIP",
+                   sync_state="SYNCED"):
+    """A `marketplace_product_sources` row and its variants, as the route loads them.
+
+    Defaults describe the ordinary repaired case: one CJ variant, priced, in
+    stock, and bound -- so that each test below breaks exactly one fact.
+    """
+    rows = variants if variants is not None else [
+        {"provider_variant_id": "vid-1", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 132},
+    ]
+    return {
+        "source": {"provider": "cj", "provider_product_id": "pid-1",
+                   "provider_variant_id": bound if bound is not None else "vid-1",
+                   "fulfillment_mode": fulfillment_mode, "sync_state": sync_state},
+        "variants": rows,
+    }
+
+
+def test_a_priced_supplier_draft_is_not_missing_a_price():
+    """The production defect, stated directly.
+
+    `price_label` is empty -- which is the true state of all 31 affected rows --
+    and every variant is priced. Before this, the verdict read the empty column
+    and announced MISSING_PRICE.
+    """
+    verdict = r.evaluate(supplier_listing(),
+                         supplier=supplier_facts())
+    assert r.MISSING_PRICE not in verdict["blockers"]
+    assert verdict["publishable"] is True
+    assert verdict["summary"] == "Ready to publish"
+
+
+def test_an_unpriced_supplier_variant_is_still_missing_a_price():
+    """The positive control for the test above.
+
+    Without this, "supplier listings never report MISSING_PRICE" would pass it
+    just as well -- and that rule would publish a product at no price.
+    """
+    facts = supplier_facts(variants=[
+        {"provider_variant_id": "vid-1", "price_cents": None, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 10}])
+    verdict = r.evaluate(supplier_listing(price_label="$24.00"), supplier=facts)
+    assert r.MISSING_PRICE in verdict["blockers"]
+    assert verdict["publishable"] is False
+
+
+def test_the_price_label_is_ignored_entirely_for_a_supplier_listing():
+    """Not "consulted as a fallback". A supplier listing's price lives in its
+    variants, and a `price_label` that disagrees with them is stale, not
+    evidence. Production listings 35 and 36 carry labels of "$35.00" and
+    "$38.00" over variant prices of 1433c and 229c."""
+    facts = supplier_facts(variants=[
+        {"provider_variant_id": "vid-1", "price_cents": None, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 10}])
+    assert r.MISSING_PRICE in r.evaluate(
+        supplier_listing(price_label="$35.00"), supplier=facts)["blockers"]
+
+
+def test_unknown_supplier_stock_blocks_publication_and_says_so():
+    """683 of 719 production variants sit at UNKNOWN, and the publish gate
+    genuinely refuses them. Reporting that as a mere warning here would put a
+    green Publish button over a refusal -- the same class of lie as the price."""
+    facts = supplier_facts(variants=[
+        {"provider_variant_id": "vid-1", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "UNKNOWN", "stock_quantity": None}])
+    verdict = r.evaluate(supplier_listing(), supplier=facts)
+    assert r.UNKNOWN_INVENTORY in verdict["blockers"]
+    assert verdict["publishable"] is False
+    assert {"code": r.UNKNOWN_INVENTORY, "label": "Set stock count",
+            "section": "inventory"} in verdict["fixes"]
+
+
+def test_an_unbound_multivariant_listing_names_the_binding_as_the_fault():
+    """28 of 34 production source rows are unbound, all multi-variant. Nothing
+    can be ordered for them, `drafts._validate` refuses them, and the Store
+    screen used to say "Price required"."""
+    facts = supplier_facts(bound="", variants=[
+        {"provider_variant_id": "vid-1", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 40},
+        {"provider_variant_id": "vid-2", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 40}])
+    verdict = r.evaluate(supplier_listing(), supplier=facts)
+    assert r.SUPPLIER_VARIANT_UNBOUND in verdict["blockers"]
+    assert r.MISSING_PRICE not in verdict["blockers"]
+    assert verdict["publishable"] is False
+
+
+def test_every_supplier_code_can_be_said_in_words():
+    """A blocker with no entry in FIXES renders as "Review this listing", which
+    is what the two real faults looked like on the merchant's row. The verdict
+    carries its own prose precisely so no surface has to own this table."""
+    for code in (r.NO_VARIANTS_SELECTED, r.VARIANT_PRICE_SPREAD,
+                 r.PRICE_ABOVE_CHECKOUT_LIMIT, r.NEGATIVE_MARGIN,
+                 r.SUPPLIER_DISCONNECTED, r.PROVIDER_PRODUCT_UNAVAILABLE,
+                 r.SUPPLIER_VARIANT_UNBOUND):
+        assert code in r.FIXES, f"{code} has no merchant-readable label"
+        assert code in r.SECTIONS, f"{code} sends the merchant nowhere"
+        assert r.FIXES[code] != "Review this listing"
+
+
+def test_the_supplier_vocabulary_matches_the_supplier_evaluator():
+    """The anti-drift guard, extended over the codes this module now carries.
+
+    These are not re-derived here -- `_supplier_problems` delegates to
+    `drafts._validate` -- but the names are restated for FIXES and SECTIONS, and
+    a rename on either side would leave a merchant reading a raw code.
+    """
+    from services.business_os.suppliers import drafts as supplier
+
+    for name in ("NO_VARIANTS_SELECTED", "VARIANT_PRICE_SPREAD",
+                 "PRICE_ABOVE_CHECKOUT_LIMIT", "NEGATIVE_MARGIN",
+                 "SUPPLIER_DISCONNECTED", "PROVIDER_PRODUCT_UNAVAILABLE",
+                 "SUPPLIER_VARIANT_UNBOUND"):
+        assert getattr(r, name) == getattr(supplier, name) == name
+
+
+def test_the_store_verdict_and_the_publish_gate_name_the_same_faults():
+    """The property the whole extension exists for, asserted over states rather
+    than by restating the rule: whatever `drafts._validate` refuses, the Store
+    screen reports. It is that divergence -- not any single code -- that made a
+    merchant unable to fix their own store.
+    """
+    from services.business_os.suppliers import drafts as supplier
+
+    cases = [
+        supplier_facts(),
+        supplier_facts(bound=""),
+        supplier_facts(sync_state="DISCONNECTED"),
+        supplier_facts(sync_state="REMOVED"),
+        supplier_facts(variants=[
+            {"provider_variant_id": "vid-1", "price_cents": None,
+             "cost_cents": 900, "stock_state": "IN_STOCK", "stock_quantity": 5}]),
+        supplier_facts(variants=[
+            {"provider_variant_id": "vid-1", "price_cents": 2400,
+             "cost_cents": 900, "stock_state": "UNKNOWN", "stock_quantity": None}]),
+        supplier_facts(bound="", variants=[
+            {"provider_variant_id": "vid-1", "price_cents": 2400,
+             "cost_cents": 900, "stock_state": "IN_STOCK", "stock_quantity": 9},
+            {"provider_variant_id": "vid-2", "price_cents": 3100,
+             "cost_cents": 900, "stock_state": "IN_STOCK", "stock_quantity": 9}]),
+        supplier_facts(variants=[]),
+    ]
+    row = supplier_listing()
+    media = [{"media_type": "image", "media_url": "https://cdn.example/a.jpg"}]
+    for facts in cases:
+        source, priced = r._supplier_facts(facts)
+        theirs = supplier._validate(
+            row, priced, source, supplier._media_of(row))["problems"]
+        mine = r.evaluate(row, media=media, supplier=facts)["blockers"]
+        assert set(theirs) <= set(mine), (
+            f"the publish gate refuses {sorted(set(theirs) - set(mine))} that the "
+            f"Store screen does not report, for {facts}")
+        assert (not theirs) == r.evaluate(
+            row, media=media, supplier=facts)["publishable"]
+
+
+def test_a_listing_with_no_supplier_row_is_judged_exactly_as_before():
+    """The extension is additive. A merchant-authored listing has no source row,
+    and every verdict it got before must be the verdict it gets now."""
+    for supplier in (None, {}, {"source": None, "variants": []}, "nonsense"):
+        assert r.evaluate(listing(), supplier=supplier) == r.evaluate(listing())
+        assert r.evaluate(listing(price_label=""), supplier=supplier)["blockers"] \
+            == [r.MISSING_PRICE]
+
+
+def test_supplier_stock_reports_the_units_the_buyer_would_actually_get():
+    """Mirrors `drafts._publish_core`, which seeds the buyer's ledger from the
+    *sold* variant's units. A sum across the catalogue, or a count of variants,
+    would put a number on the Store row that publication contradicts -- which is
+    how production listing 14 came to offer one unit of a 132-unit product."""
+    facts = supplier_facts(variants=[
+        {"provider_variant_id": "vid-1", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 3},
+        {"provider_variant_id": "vid-2", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "IN_STOCK", "stock_quantity": 900}])
+    verdict = r.evaluate(supplier_listing(), supplier=facts)
+    assert r.LOW_STOCK in verdict["warnings"]
+    assert verdict["publishable"] is True
+    assert verdict["checkout_ready"] is True
+
+
+def test_a_sold_out_supplier_variant_publishes_but_cannot_be_bought():
+    facts = supplier_facts(variants=[
+        {"provider_variant_id": "vid-1", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "OUT_OF_STOCK", "stock_quantity": 0}])
+    verdict = r.evaluate(supplier_listing(), supplier=facts)
+    assert verdict["warnings"] == [r.OUT_OF_STOCK]
+    assert verdict["publishable"] is True
+    assert verdict["checkout_ready"] is False
+
+
+def test_unknown_supplier_stock_is_counted_once_not_twice():
+    """It is a blocker for a supplier listing. Emitting it as a warning as well
+    would make "1 thing left" read "2 things left" for one fault."""
+    facts = supplier_facts(variants=[
+        {"provider_variant_id": "vid-1", "price_cents": 2400, "cost_cents": 900,
+         "stock_state": "UNKNOWN", "stock_quantity": None}])
+    verdict = r.evaluate(supplier_listing(), supplier=facts)
+    assert verdict["blockers"].count(r.UNKNOWN_INVENTORY) == 1
+    assert r.UNKNOWN_INVENTORY not in verdict["warnings"]
+    assert verdict["summary"] == "1 thing left"
+
+
+def test_a_supplier_verdict_still_carries_no_money_and_no_supplier_facts():
+    """The privacy property, re-asserted now that the verdict is computed from
+    costs and provider ids. Decision (11): supplier cost never reaches a buyer,
+    and this object is rendered on surfaces that do not distinguish."""
+    import json
+
+    facts = supplier_facts()
+    blob = json.dumps(r.evaluate(supplier_listing(), supplier=facts))
+    for secret in ("900", "2400", "pid-1", "vid-1", "cj", "cost", "margin"):
+        assert secret not in blob, f"{secret!r} leaked into the verdict"
+
+
+def test_the_content_blockers_still_apply_to_a_supplier_listing():
+    """`drafts._validate` has no description check and a weaker media check.
+    Delegating to it must not drop this module's own gates -- a supplier draft
+    with a video and no photo is still NO_VALID_MEDIA here."""
+    verdict = r.evaluate(
+        supplier_listing(description="", cover_image_url=""),
+        media=[{"media_type": "video", "media_url": "https://cdn.example/a.mp4"}],
+        supplier=supplier_facts())
+    assert r.MISSING_DESCRIPTION in verdict["blockers"]
+    assert r.NO_VALID_MEDIA in verdict["blockers"]
+
+
+def test_a_shared_fault_is_reported_once_not_twice():
+    """Both evaluators answer MISSING_CATEGORY. "2 things left" for one missing
+    category is the merchant-visible cost of a careless union."""
+    verdict = r.evaluate(supplier_listing(category=""),
+                         supplier=supplier_facts())
+    assert verdict["blockers"].count(r.MISSING_CATEGORY) == 1

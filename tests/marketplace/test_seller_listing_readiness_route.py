@@ -40,7 +40,11 @@ BUYER = 94502
 NOW = "2026-09-01T00:00:00"
 
 
-class SellerListingReadinessRouteTestCase(unittest.TestCase):
+class _ReadinessRouteBase(unittest.TestCase):
+    """Fixtures only. Carries no test of its own, so it collects as nothing and
+    the supplier class below inherits the store without re-running the store's
+    assertions."""
+
     @classmethod
     def setUpClass(cls):
         cls.db_path = _DB_PATH
@@ -113,6 +117,8 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
         self.assertIsNotNone(item, f"listing {listing_id} missing from the seller's own store")
         return item
 
+
+class SellerListingReadinessRouteTestCase(_ReadinessRouteBase):
     # -- the verdict is on the wire -------------------------------------------
 
     def test_a_ready_listing_carries_the_verdict(self):
@@ -370,3 +376,152 @@ class SellerListingReadinessRouteTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SupplierListingReadinessRouteTestCase(_ReadinessRouteBase):
+    """The supplier half, on the wire.
+
+    The engine test proves `evaluate(..., supplier=facts)` reads variant prices.
+    It cannot prove the route ever LOADS those facts, and a route that passes
+    `supplier=None` compiles, passes every engine test, and leaves all 31
+    production drafts saying "Price required" -- which is the state this whole
+    branch exists to leave. So the assertion here is made against a row written
+    exactly as the CJ importer writes it: no `price_label`, no `quantity`, and
+    the money in `marketplace_listing_variants`.
+    """
+
+    def insert_supplier_listing(self, *, variants, provider_variant_id=None,
+                                sync_state="SYNCED", fulfillment_mode="DROPSHIP",
+                                **overrides):
+        overrides.setdefault("price_label", "")
+        overrides.setdefault("quantity", None)
+        overrides.setdefault(
+            "listing_metadata_json",
+            '{"media": ["https://cdn.example/lamp.jpg"]}')
+        listing_id = self.insert_listing(**overrides)
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO marketplace_product_sources"
+            " (listing_id, seller_user_id, provider, provider_product_id,"
+            "  provider_variant_id, fulfillment_mode, sync_state, created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (listing_id, SELLER, "cj", "pid-1", provider_variant_id,
+             fulfillment_mode, sync_state, NOW, NOW))
+        for position, variant in enumerate(variants):
+            cur.execute(
+                "INSERT INTO marketplace_listing_variants"
+                " (listing_id, seller_user_id, variant_key, provider_variant_id,"
+                "  price_cents, cost_cents, currency, stock_state, stock_quantity,"
+                "  position, status, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (listing_id, SELLER, variant["provider_variant_id"],
+                 variant["provider_variant_id"], variant.get("price_cents"),
+                 variant.get("cost_cents"), "USD", variant.get("stock_state"),
+                 variant.get("stock_quantity"), position, "active", NOW, NOW))
+        conn.commit()
+        conn.close()
+        return listing_id
+
+    def test_a_priced_cj_draft_does_not_ask_the_merchant_for_a_price(self):
+        listing_id = self.insert_supplier_listing(
+            provider_variant_id="vid-1",
+            variants=[{"provider_variant_id": "vid-1", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "IN_STOCK",
+                       "stock_quantity": 132}])
+        verdict = self.seller_item(listing_id)["readiness"]
+        self.assertNotIn(readiness.MISSING_PRICE, verdict["blockers"])
+        self.assertEqual(verdict["summary"], "Ready to publish")
+
+    def test_the_same_row_without_the_supplier_facts_still_asks_for_a_price(self):
+        """The negative control that makes the test above mean something.
+
+        A listing with an empty `price_label` and no source row is exactly the
+        state MISSING_PRICE exists for. If this passed too, the route would be
+        ignoring `price_label` for everyone.
+        """
+        listing_id = self.insert_listing(price_label="", quantity=None)
+        verdict = self.seller_item(listing_id)["readiness"]
+        self.assertIn(readiness.MISSING_PRICE, verdict["blockers"])
+
+    def test_the_real_faults_reach_the_merchant_in_words(self):
+        """Production's dominant shape: unknown stock, unbound, multi-variant.
+
+        Before this the row read "1 thing left - Add price". The price was not
+        missing and neither named fault was reachable.
+        """
+        listing_id = self.insert_supplier_listing(
+            provider_variant_id=None,
+            variants=[{"provider_variant_id": "vid-1", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "UNKNOWN",
+                       "stock_quantity": None},
+                      {"provider_variant_id": "vid-2", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "UNKNOWN",
+                       "stock_quantity": None}])
+        verdict = self.seller_item(listing_id)["readiness"]
+        self.assertNotIn(readiness.MISSING_PRICE, verdict["blockers"])
+        self.assertIn(readiness.UNKNOWN_INVENTORY, verdict["blockers"])
+        self.assertIn(readiness.SUPPLIER_VARIANT_UNBOUND, verdict["blockers"])
+        labels = {entry["label"] for entry in verdict["fixes"]}
+        self.assertNotIn("Review this listing", labels)
+        self.assertNotIn("Add price", labels)
+
+    def test_the_submit_gate_and_the_store_row_agree_about_a_supplier_draft(self):
+        """The divergence, closed at both ends.
+
+        The submit route refuses on `listing_readiness`; `drafts._validate`
+        refuses the publish. Production's state was the Store row reporting a
+        price fault while those two refused a stock fault and a binding fault --
+        so the merchant could not clear their own store by following it. A draft
+        the row calls ready must be a draft submit accepts.
+        """
+        ready = self.insert_supplier_listing(
+            provider_variant_id="vid-1", status="draft",
+            variants=[{"provider_variant_id": "vid-1", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "IN_STOCK",
+                       "stock_quantity": 132}])
+        self.assertEqual(self.seller_item(ready)["readiness"]["summary"],
+                         "Ready to publish")
+        accepted = self.client.post(
+            f"/api/pulse/marketplace/seller/listings/{ready}/submit")
+        self.assertEqual(accepted.status_code, 200,
+                         accepted.get_data(as_text=True))
+
+        # The negative control: the row that is genuinely not ready is refused,
+        # and refused by name rather than by "Add price".
+        blocked = self.insert_supplier_listing(
+            provider_variant_id=None, status="draft",
+            variants=[{"provider_variant_id": "vid-1", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "UNKNOWN",
+                       "stock_quantity": None},
+                      {"provider_variant_id": "vid-2", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "UNKNOWN",
+                       "stock_quantity": None}])
+        refused = self.client.post(
+            f"/api/pulse/marketplace/seller/listings/{blocked}/submit")
+        self.assertEqual(refused.status_code, 409, refused.get_data(as_text=True))
+        body = refused.get_json()
+        codes = {entry["code"] for entry in (body.get("readiness") or {}).get("fixes", [])}
+        self.assertIn(readiness.SUPPLIER_VARIANT_UNBOUND, codes)
+        self.assertNotIn(readiness.MISSING_PRICE, codes)
+
+    def test_the_bulk_preview_and_the_row_agree_about_a_supplier_draft(self):
+        """`evaluate_rows` decides the batch. Loading supplier facts in the list
+        route and not in the batch route would have "Publish 1" report the row
+        blocked while the screen offered it."""
+        listing_id = self.insert_supplier_listing(
+            provider_variant_id="vid-1", status="draft",
+            variants=[{"provider_variant_id": "vid-1", "price_cents": 2400,
+                       "cost_cents": 900, "stock_state": "IN_STOCK",
+                       "stock_quantity": 132}])
+        response = self.client.post(
+            "/api/pulse/marketplace/seller/listings/batch",
+            json={"action": "publish", "listing_ids": [listing_id],
+                  "mode": "preview", "idempotency_key": "supplier-preview-1"})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        body = response.get_json()
+        blocked = [item for item in (body.get("items") or [])
+                   if (item.get("block") or {}).get("code")]
+        self.assertEqual(
+            blocked, [],
+            f"the batch route blocked a draft the store row calls ready: {blocked}")

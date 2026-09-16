@@ -579,6 +579,7 @@ def evaluate_rows(
     action: str,
     media_by_listing: Optional[dict] = None,
     plans: Optional[dict] = None,
+    supplier_by_listing: Optional[dict] = None,
 ) -> list:
     """Decide every row in one pass, returning ``(row, block)`` pairs.
 
@@ -601,14 +602,22 @@ def evaluate_rows(
     name is now the general one, because a second parameter for the second
     payload action would be two channels for one idea and a third would be
     three.
+
+    ``supplier_by_listing`` is the same map the seller's list route builds, and
+    it is not optional in practice for exactly the reason ``media_by_listing``
+    is not: without it a supplier draft reads ``MISSING_PRICE`` here and reads
+    ready on the row the merchant selected, so "Publish 14" would report 14
+    blocked while the screen offered 14 eligible.
     """
     lookup = media_by_listing or {}
+    supplier_lookup = supplier_by_listing or {}
     plans = plans or {}
     decided = []
     for row in rows:
         listing_id = int(row.get("id") or 0)
         if action == "publish":
-            verdict = _readiness.evaluate(row, media=lookup.get(listing_id))
+            verdict = _readiness.evaluate(row, media=lookup.get(listing_id),
+                                          supplier=supplier_lookup.get(listing_id))
         else:
             verdict = None
         decided.append((row, block_reason(row, action, verdict, plans.get(listing_id))))

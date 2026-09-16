@@ -514,7 +514,7 @@ def link_source(cur, *, listing_id: int, seller_user_id: int, provider: str,
                 supplier_cost_cents: Any = None,
                 supplier_cost_currency: Any = None,
                 inventory_source: Any = None, inventory_reference: Any = None,
-                sync_state: Any = None) -> int:
+                sync_state: Any = None, last_sync_error: Any = None) -> int:
     """Record where a listing came from. Idempotent per listing.
 
     This is the *only* writer of supplier provenance. The CJ gateway used to
@@ -568,6 +568,12 @@ def link_source(cur, *, listing_id: int, seller_user_id: int, provider: str,
         "inventory_source": _optional_text(inventory_source, 190),
         "inventory_reference": _optional_text(inventory_reference, 190),
         "sync_state": state,
+        # What the linking read could not establish, in the caller's own code.
+        # An import whose inventory read failed used to record `SYNCED` and
+        # nothing else, so a listing that had never had its stock confirmed was
+        # indistinguishable from one confirmed a second ago -- which is how 32 of
+        # 34 production source rows came to claim a sync that never happened.
+        "last_sync_error": _optional_text(last_sync_error, 190),
     }
 
     cur.execute(
