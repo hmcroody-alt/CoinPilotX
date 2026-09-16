@@ -11,7 +11,7 @@ import {
 type Props = {
   /**
    * The viewer's `appearance.wallpaper` for this conversation. Anything
-   * unrecognised or absent resolves to the PulseSoc Cosmic default, so the
+   * unrecognised or absent resolves to the PulseSoc Graphite default, so the
    * caller may pass a raw stored value straight through.
    */
   wallpaper?: ChatWallpaperId | string | null;

@@ -23,6 +23,8 @@
  * server's allowed set in `pulse_communications_v2/service.py`.
  */
 
+import { chatGraphite } from "./chatGraphite";
+
 export type ChatWallpaperId =
   | "pulsesoc_cosmic"
   | "deep_space"
@@ -89,48 +91,42 @@ export const CHAT_WALLPAPER_STARS = [
 ] as const;
 
 /**
- * PulseSoc Cosmic — the default.
+ * PulseSoc Graphite — the default.
  *
- * Deep navy into indigo, one soft blue glow with a cyan highlight beside it,
- * a very light violet accent opposite, and two wide low-alpha curves for the
- * futuristic sweep.
+ * A cool graphite canvas and nothing else: one restrained vertical run from
+ * `chatGraphite.canvasTop` to `canvasBottom`, no glows, no curves, no stars, no
+ * scrim. It is the only spec in this file with an empty `shapes` array, and
+ * that emptiness is the design rather than an omission — the approved direction
+ * asks for a calm field the messages sit on, and every soft shape the other ten
+ * specs carry is something the eye has to dismiss before it reaches a sentence.
  *
- * The layer intensities are not eyeballed — they are the output of the
- * objective in `__tests__/chatWallpaperContrast.test.ts`. A translucent bubble
- * over a field has two failure modes that pull in opposite directions: brighten
- * the field and the 0.82-alpha outgoing bubble dissolves into it; darken the
- * field and the 0.88-alpha incoming bubble does. Maximising the *worse* of the
- * two separations puts both at 1.45:1, which is a wider margin than any of the
- * ten inherited wallpapers manages, and leaves the field dark enough
- * (luminance 0.039) to still read as a dark-mode background.
+ * The id is unchanged because it is a wire value: the server's allowed set in
+ * `pulse_communications_v2/service.py`, its `CONTROL_SETTING_DEFAULTS`, the web
+ * build's `--control-wallpaper` stacks and every stored
+ * `appearance.wallpaper` row all name `pulsesoc_cosmic`. Introducing a new id
+ * would mean a new default on both sides of a cross-language contract for a
+ * change that is entirely about colour. The ten wallpapers below are untouched,
+ * so anyone who picked one still gets exactly what they picked.
  *
- * The first draft of this spec was roughly twice as bright and failed exactly
- * that way: it was the lightest field of the eleven and the outgoing bubble sat
- * at 1.13:1 against it — technically still AA-legible text, but the bubble had
- * stopped looking like a bubble.
+ * The contrast objective the previous spec was tuned against no longer applies:
+ * the bubbles above it are opaque now, so the field contributes nothing to the
+ * text they contain. What replaces it is a separation floor — the bubble has to
+ * stay a shape against the field — which is audited in
+ * `__tests__/chatGraphiteContrast.test.ts` alongside the rest of the palette.
  */
-const PULSESOC_COSMIC: ChatWallpaperSpec = {
+const PULSESOC_GRAPHITE: ChatWallpaperSpec = {
   id: "pulsesoc_cosmic",
-  base: "#050C1E",
-  gradient: ["#050D20", "#08132C", "#091631", "#060F21"],
-  locations: [0, 0.34, 0.66, 1],
-  shapes: [
-    // The blue glow and its cyan highlight, upper right.
-    { color: "rgba(52,104,204,0.12)", width: 520, height: 470, x: 78, y: 14, radius: 260 },
-    { color: "rgba(72,196,226,0.06)", width: 300, height: 280, x: 88, y: 44, radius: 150 },
-    // Indigo depth low-left, violet accent high-left.
-    { color: "rgba(66,74,178,0.09)", width: 560, height: 520, x: 14, y: 80, radius: 280 },
-    { color: "rgba(124,96,212,0.06)", width: 340, height: 320, x: 6, y: 12, radius: 170 },
-    // Two curves. Wide, shallow, rotated, and faint enough to be structure.
-    { color: "rgba(96,150,232,0.033)", width: 720, height: 150, x: 44, y: 58, radius: 300, rotate: -15 },
-    { color: "rgba(112,206,230,0.021)", width: 640, height: 110, x: 58, y: 33, radius: 280, rotate: 9 }
-  ],
-  scrim: ["rgba(4,9,20,0.20)", "rgba(4,9,20,0.00)", "rgba(3,7,16,0.30)"],
-  stars: 22
+  base: chatGraphite.canvasTop,
+  gradient: [chatGraphite.canvasTop, chatGraphite.canvasBottom],
+  locations: [0, 1],
+  shapes: [],
+  // Nothing to hold down. A scrim over a flat field only darkens the field.
+  scrim: ["rgba(0,0,0,0)", "rgba(0,0,0,0)"],
+  stars: 0
 };
 
 const SPECS: Record<ChatWallpaperId, ChatWallpaperSpec> = {
-  pulsesoc_cosmic: PULSESOC_COSMIC,
+  pulsesoc_cosmic: PULSESOC_GRAPHITE,
   // The former default. Faint teal/cyan over near-black, with no large shapes.
   deep_space: {
     id: "deep_space",
@@ -270,10 +266,10 @@ export function isChatWallpaperId(value: unknown): value is ChatWallpaperId {
  * Resolve a stored `appearance.wallpaper` value to something drawable.
  *
  * The precedence the product asks for is *user's explicit choice, then the
- * PulseSoc Cosmic default*, so this only ever substitutes the default for a
+ * PulseSoc Graphite default*, so this only ever substitutes the default for a
  * value that is absent or unrecognised — it never replaces a value it knows.
  * `"default"` is accepted because the server has always allowed it as a
- * synonym for "whatever PulseSoc ships"; that is now Cosmic.
+ * synonym for "whatever PulseSoc ships"; that is now Graphite.
  */
 export function resolveChatWallpaper(value: unknown): ChatWallpaperSpec {
   if (value === "default" || value === "" || value === null || value === undefined) return SPECS[DEFAULT_CHAT_WALLPAPER];

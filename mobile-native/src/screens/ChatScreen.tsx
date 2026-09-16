@@ -113,6 +113,7 @@ import {
   reactionIcon,
   typingSummary
 } from "../pulseCommand/domain";
+import { chatGraphite } from "../theme/chatGraphite";
 import { colors } from "../theme/colors";
 import { EmojiPicker, QUICK_REACTIONS } from "../emoji";
 import { logiNexus } from "../theme/logiNexus";
@@ -1932,7 +1933,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             multiline
             autoFocus={qaChatState === "keyboard" || qaChatState === "reply-keyboard"}
             placeholder={assistantConversation ? t("messaging:chat.composerPlaceholderUndx") : t("messaging:chat.composerPlaceholder")}
-            placeholderTextColor={colors.muted}
+            placeholderTextColor={chatGraphite.secondaryText}
             style={styles.input}
             value={draft}
             onChangeText={notifyTyping}
@@ -3111,8 +3112,8 @@ const styles = StyleSheet.create({
     flex: 1
   },
   header: {
-    backgroundColor: "rgba(7,15,32,0.96)",
-    borderBottomColor: "rgba(97,216,255,0.26)",
+    backgroundColor: chatGraphite.headerSurface,
+    borderBottomColor: chatGraphite.quietDivider,
     borderBottomWidth: 1,
     padding: logiNexus.spacing.sm,
     paddingBottom: logiNexus.spacing.sm,
@@ -3120,10 +3121,10 @@ const styles = StyleSheet.create({
     zIndex: 3
   },
   threadHeader: { alignItems: "center", flexDirection: "row", gap: 8, minHeight: 56 },
-  backButton: { alignItems: "center", backgroundColor: "rgba(255,255,255,0.035)", borderColor: colors.border, borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
-  backButtonText: { color: colors.text, fontSize: 30, fontWeight: "400", marginTop: -3 },
+  backButton: { alignItems: "center", backgroundColor: chatGraphite.controlSurface, borderColor: chatGraphite.quietDivider, borderRadius: 13, borderWidth: 1, height: 46, justifyContent: "center", width: 42 },
+  backButtonText: { color: chatGraphite.primaryText, fontSize: 30, fontWeight: "400", marginTop: -3 },
   threadIdentity: { flex: 1, gap: 3, minWidth: 0 },
-  threadTitle: { color: colors.text, fontSize: 18, fontWeight: "900" },
+  threadTitle: { color: chatGraphite.primaryText, fontSize: 18, fontWeight: "900" },
   threadStatusRow: { alignItems: "center", flexDirection: "row", gap: 5 },
   threadStatusSignal: { alignItems: "center", height: 10, justifyContent: "center", width: 10 },
   threadStatusHalo: { backgroundColor: colors.accent, borderRadius: 6, height: 10, position: "absolute", width: 10 },
@@ -3136,7 +3137,7 @@ const styles = StyleSheet.create({
   },
   signalButton: {
     alignItems: "center",
-    backgroundColor: "rgba(4,16,28,0.9)",
+    backgroundColor: chatGraphite.controlSurface,
     borderRadius: 15,
     borderWidth: 1,
     justifyContent: "center",
@@ -3194,7 +3195,7 @@ const styles = StyleSheet.create({
     marginTop: logiNexus.spacing.xxl
   },
   loadingOlder: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 12,
     fontWeight: "800",
     padding: logiNexus.spacing.md,
@@ -3224,24 +3225,24 @@ const styles = StyleSheet.create({
     paddingVertical: 6
   },
   mineBubble: {
-    backgroundColor: "rgba(37,83,158,0.82)",
-    borderColor: "rgba(93,174,255,0.58)",
+    backgroundColor: chatGraphite.outgoingSurface,
+    borderColor: chatGraphite.outgoingBorder,
     borderBottomRightRadius: 6,
     borderWidth: 1
   },
   theirBubble: {
-    backgroundColor: "rgba(12,24,43,0.88)",
+    backgroundColor: chatGraphite.incomingSurface,
     borderBottomLeftRadius: 6,
-    borderColor: "rgba(105,218,240,0.28)",
+    borderColor: chatGraphite.incomingBorder,
     borderWidth: 1
   },
   body: {
-    color: colors.text,
+    color: chatGraphite.primaryText,
     fontSize: 15,
     lineHeight: 21
   },
   forwarded: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 11,
     fontWeight: "800",
     textTransform: "uppercase"
@@ -3253,14 +3254,14 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end"
   },
   meta: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 9
   },
   moderatedBubble: {
     borderColor: "rgba(255, 204, 102, 0.35)"
   },
   systemBody: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontStyle: "italic"
   },
   reactionRow: {
@@ -3269,8 +3270,8 @@ const styles = StyleSheet.create({
     gap: 6
   },
   reactionPill: {
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderColor: colors.border,
+    backgroundColor: chatGraphite.insetSurface,
+    borderColor: chatGraphite.quietDivider,
     borderRadius: logiNexus.radius.capsule,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 7,
@@ -3280,33 +3281,33 @@ const styles = StyleSheet.create({
     borderColor: colors.accent
   },
   reactionText: {
-    color: colors.text,
+    color: chatGraphite.primaryText,
     fontSize: 11,
     fontWeight: "800",
     textTransform: "capitalize"
   },
   replyBlock: {
-    backgroundColor: "rgba(97,216,255,0.08)",
-    borderLeftColor: colors.accent,
+    backgroundColor: chatGraphite.insetSurface,
+    borderLeftColor: chatGraphite.senderAccent,
     borderLeftWidth: 2,
     borderRadius: 10,
     gap: 2,
     padding: 7
   },
   replyTitle: {
-    color: colors.accentStrong,
+    color: chatGraphite.senderAccent,
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase"
   },
   replyPreview: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 12,
     lineHeight: 17
   },
   image: {
     aspectRatio: 1.12,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: chatGraphite.insetSurface,
     borderRadius: 12,
     width: 220
   },
@@ -3314,7 +3315,7 @@ const styles = StyleSheet.create({
   // second hairline outline around the photo is the "nested rounded rectangle"
   // §2 rules out. The radius stays so the image corners follow the bubble's.
   mediaSurface: {
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: chatGraphite.insetSurface,
     borderRadius: 14,
     overflow: "hidden",
     position: "relative"
@@ -3324,7 +3325,7 @@ const styles = StyleSheet.create({
   // with a single photo's — a margin-based grid is inset by half a gap on every
   // side and reads as a narrower card sitting inside the bubble.
   mediaGrid: { borderRadius: 14, flexDirection: "row", flexWrap: "wrap", gap: MEDIA_TILE_GAP, overflow: "hidden" },
-  mediaTile: { backgroundColor: colors.surfaceRaised, overflow: "hidden", position: "relative" },
+  mediaTile: { backgroundColor: chatGraphite.insetSurface, overflow: "hidden", position: "relative" },
   mediaTilePlayBadge: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.92)",
@@ -3341,8 +3342,8 @@ const styles = StyleSheet.create({
   // out of the frame.
   mediaSkeleton: { backgroundColor: "rgba(255,255,255,0.04)", bottom: 0, left: 0, position: "absolute", right: 0, top: 0 },
   mediaFailed: { backgroundColor: "rgba(255,255,255,0.04)", bottom: 0, gap: 3, left: 0, padding: 12, position: "absolute", right: 0, top: 0 },
-  mediaFailedTitle: { color: colors.text, fontSize: 12, fontWeight: "800", textAlign: "center" },
-  mediaFailedHint: { color: colors.muted, fontSize: 11, fontWeight: "700", textAlign: "center" },
+  mediaFailedTitle: { color: chatGraphite.primaryText, fontSize: 12, fontWeight: "800", textAlign: "center" },
+  mediaFailedHint: { color: chatGraphite.secondaryText, fontSize: 11, fontWeight: "700", textAlign: "center" },
   videoPlayBadge: {
     alignItems: "center",
     backgroundColor: "rgba(255,255,255,0.92)",
@@ -3378,8 +3379,8 @@ const styles = StyleSheet.create({
   },
   videoStatusText: { color: "#ffffff", fontSize: 11, fontWeight: "600" },
   attachment: {
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderColor: "rgba(97,216,255,0.24)",
+    backgroundColor: chatGraphite.insetSurface,
+    borderColor: chatGraphite.quietDivider,
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     gap: 3,
@@ -3388,7 +3389,7 @@ const styles = StyleSheet.create({
   },
   videoPoster: {
     aspectRatio: 1.6,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: chatGraphite.insetSurface,
     borderRadius: 10,
     marginBottom: 4,
     width: 200
@@ -3412,12 +3413,12 @@ const styles = StyleSheet.create({
   voiceRate: { alignItems: "center", backgroundColor: "rgba(167,124,255,0.13)", borderColor: "rgba(167,124,255,0.62)", borderRadius: 11, borderWidth: 1, minHeight: 32, minWidth: 36, justifyContent: "center" },
   voiceRateText: { color: "#d7caff", fontSize: 12, fontWeight: "900" },
   attachmentTitle: {
-    color: colors.text,
+    color: chatGraphite.primaryText,
     fontSize: 14,
     fontWeight: "800"
   },
   attachmentMeta: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 12
   },
   retry: {
@@ -3434,8 +3435,8 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   composer: {
-    backgroundColor: "rgba(2,10,20,0.98)",
-    borderColor: "rgba(65,236,198,0.48)",
+    backgroundColor: chatGraphite.headerSurface,
+    borderColor: chatGraphite.quietDivider,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
     borderWidth: 1,
@@ -3445,13 +3446,13 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     paddingHorizontal: 10,
     paddingTop: 7,
-    shadowColor: colors.accent,
+    shadowColor: chatGraphite.shadow,
     shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.22,
+    shadowOpacity: chatGraphite.shadowOpacity,
     shadowRadius: 24
   },
   composerAvoider: {
-    backgroundColor: colors.background,
+    backgroundColor: chatGraphite.headerSurface,
     flexShrink: 0,
     width: "100%"
   },
@@ -3488,7 +3489,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4
   },
   composerState: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 0.8
@@ -3533,8 +3534,8 @@ const styles = StyleSheet.create({
   },
   replyComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: colors.border,
+    backgroundColor: chatGraphite.composerSurface,
+    borderColor: chatGraphite.quietDivider,
     borderRadius: 10,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
@@ -3546,14 +3547,14 @@ const styles = StyleSheet.create({
     minWidth: 0
   },
   replyCancel: {
-    borderColor: colors.border,
+    borderColor: chatGraphite.quietDivider,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 10,
     paddingVertical: 7
   },
   replyCancelText: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 12,
     fontWeight: "900"
   },
@@ -3563,8 +3564,8 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.045)",
-    borderColor: colors.border,
+    backgroundColor: chatGraphite.controlSurface,
+    borderColor: chatGraphite.quietDivider,
     borderRadius: logiNexus.radius.medium,
     borderWidth: StyleSheet.hairlineWidth,
     minHeight: 44,
@@ -3576,7 +3577,7 @@ const styles = StyleSheet.create({
     opacity: 0.55
   },
   iconText: {
-    color: colors.text,
+    color: chatGraphite.primaryText,
     fontSize: 12,
     fontWeight: "800"
   },
@@ -3614,11 +3615,11 @@ const styles = StyleSheet.create({
   voiceCaptureBarPurple: { backgroundColor: "#a77cff" },
   voiceCaptureSend: { alignItems: "center", backgroundColor: colors.accent, borderColor: "rgba(255,255,255,0.56)", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", shadowColor: colors.accent, shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.42, shadowRadius: 14, width: 46 },
   input: {
-    backgroundColor: "rgba(2,9,19,0.92)",
+    backgroundColor: chatGraphite.composerSurface,
     borderColor: "rgba(97,216,255,0.5)",
     borderRadius: 23,
     borderWidth: 1,
-    color: colors.text,
+    color: chatGraphite.primaryText,
     flex: 1,
     fontSize: 16,
     maxHeight: 76,
@@ -3691,7 +3692,7 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   senderLabel: {
-    color: colors.accentStrong,
+    color: chatGraphite.senderAccent,
     fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase"
