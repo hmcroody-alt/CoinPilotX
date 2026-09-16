@@ -237,6 +237,132 @@ describe("cover fallback", () => {
     expect(getByTestId("profile-generated-cover")).toBeTruthy();
   });
 
+  // The field is a *generated cover*, so its strength is tuned to be the image.
+  // Laid over an uploaded photo at that strength it read as a shield: the
+  // gradient's middle stop alone was #050910 at 95%, which is very nearly
+  // painting the hero black. These pin the step-down, in both directions —
+  // an account with no cover must keep the full-strength artwork.
+  describe("an uploaded cover outranks the decoration over it", () => {
+    /** A cover that has actually arrived — the field only yields to a picture. */
+    const withCover = () => {
+      const tree = render(<ProfileHeader profile={baseProfile({ cover_url: "https://cdn/c.jpg" })} owner />);
+      fireEvent(tree.getByTestId("profile-cover-image"), "load");
+      return tree;
+    };
+    const withoutCover = () => render(<ProfileHeader profile={baseProfile({ cover_url: "" })} owner />);
+
+    // Walks the rendered hero rather than reaching for testIDs, so a *new*
+    // overlay added later is caught too instead of being invisible to the test.
+    /** The hero subtree only — the body's glass cards are not over the photo. */
+    function hero(tree: ReturnType<typeof withCover>) {
+      let hit: any = null;
+      const find = (node: any) => {
+        if (!node || typeof node !== "object" || hit) return;
+        if (node.props?.testID === "profile-hero") { hit = node; return; }
+        (node.children ?? []).forEach(find);
+      };
+      find(tree.toJSON());
+      if (!hit) throw new Error("hero not rendered");
+      return hit;
+    }
+
+    function heroFills(tree: ReturnType<typeof withCover>) {
+      const found: string[] = [];
+      const visit = (node: any) => {
+        if (!node || typeof node !== "object") return;
+        const flat = StyleSheet.flatten(node.props?.style) as { backgroundColor?: string } | undefined;
+        if (flat?.backgroundColor) found.push(String(flat.backgroundColor));
+        if (Array.isArray(node.props?.colors)) found.push(...node.props.colors.map(String));
+        (node.children ?? []).forEach(visit);
+      };
+      visit(hero(tree));
+      return found;
+    }
+
+    /** Alpha of a colour in any of the spellings this surface uses. */
+    function alphaOf(colour: string): number {
+      if (colour === "transparent") return 0;
+      const rgba = colour.match(/^rgba?\([^,]+,[^,]+,[^,]+,\s*([\d.]+)\s*\)$/);
+      if (rgba) return Number(rgba[1]);
+      if (/^#[0-9a-f]{8}$/i.test(colour)) return parseInt(colour.slice(7), 16) / 255;
+      return 1;
+    }
+
+    /** Near-black, i.e. a layer whose only effect is to remove the picture. */
+    function isDark(colour: string): boolean {
+      const hex = colour.match(/^#([0-9a-f]{6})/i);
+      if (!hex) return /^rgba?\(\s*[0-5]?\d\s*,\s*[0-5]?\d\s*,\s*[0-9]|[1-5]\d\s*,/.test(colour);
+      const n = parseInt(hex[1], 16);
+      return (n >> 16) < 60 && ((n >> 8) & 255) < 60 && (n & 255) < 60;
+    }
+
+    it("stops painting the hero nearly black", () => {
+      const dark = heroFills(withCover()).filter(isDark).map(alphaOf);
+      // The bottom blend still reaches the page colour, but nothing may sit at
+      // full-bleed near-opacity the way the old middle stop did.
+      expect(dark.filter((a) => a >= 0.6 && a < 1)).toEqual([]);
+      expect(Math.max(...dark.filter((a) => a < 1))).toBeLessThanOrEqual(0.45);
+    });
+
+    it("keeps the black middle stop when the field IS the cover", () => {
+      expect(heroFills(withoutCover())).toContain("#050910f2");
+    });
+
+    it("drops the lit limb to framing strength and out of the subject's way", () => {
+      const framed = StyleSheet.flatten(withCover().getByTestId("profile-generated-cover").props.style);
+      expect(framed).toMatchObject({ borderColor: profileNeon.borderFramed, top: 252 });
+      const full = StyleSheet.flatten(withoutCover().getByTestId("profile-generated-cover").props.style);
+      expect(full).toMatchObject({ borderColor: profileNeon.borderStrong, top: 196 });
+    });
+
+    it("confines the page blend to the bottom quarter", () => {
+      const blend = heroFills(withCover());
+      expect(blend).toContain("transparent");
+      // Unlocated, the ramp starts at half the hero and eats the subject.
+      const ramps: number[][] = [];
+      const visit = (node: any) => {
+        if (!node || typeof node !== "object") return;
+        if (Array.isArray(node.props?.locations)) ramps.push(node.props.locations);
+        (node.children ?? []).forEach(visit);
+      };
+      visit(hero(withCover()));
+      expect(ramps.some((r) => r[1] >= 0.7)).toBe(true);
+    });
+
+    // Found on a simulator whose CDN images never arrived: the field had
+    // stepped down for a photo that was not there, so the hero came out
+    // DARKER than before the fix (mean luminance 40 -> 20). Stepping down has
+    // to follow the picture, not the URL.
+    //
+    // The guard is `onLoad` rather than "has not errored" on purpose: a request
+    // that is cancelled instead of failed (a remount mid-flight reports
+    // NSURLError -999) never reaches `onError`, and that is exactly the case
+    // the simulator hit. Holding full strength until the picture arrives covers
+    // failure, cancellation and still-in-flight with one invariant.
+    it("keeps the field at full strength until the picture actually arrives", () => {
+      const tree = render(<ProfileHeader profile={baseProfile({ cover_url: "https://cdn/c.jpg" })} owner />);
+      expect(heroFills(tree)).toContain("#050910f2");
+      expect(StyleSheet.flatten(tree.getByTestId("profile-generated-cover").props.style))
+        .toMatchObject({ borderColor: profileNeon.borderStrong, top: 196 });
+      fireEvent(tree.getByTestId("profile-cover-image"), "load");
+      expect(heroFills(tree)).not.toContain("#050910f2");
+    });
+
+    it("takes the field back when the cover is swapped for one that has not loaded", () => {
+      const tree = withCover();
+      expect(heroFills(tree)).not.toContain("#050910f2");
+      tree.rerender(<ProfileHeader profile={baseProfile({ cover_url: "https://cdn/next.jpg" })} owner />);
+      expect(heroFills(tree)).toContain("#050910f2");
+    });
+
+    it("does not dim the photo itself instead of fixing the overlay", () => {
+      const image = withCover().getByTestId("profile-cover-image");
+      const style = StyleSheet.flatten(image.props.style) as { opacity?: number; tintColor?: string };
+      expect(style.opacity).toBeUndefined();
+      expect(style.tintColor).toBeUndefined();
+    });
+  });
+
   it("shows initials rather than a blank disc when there is no avatar", () => {
     const { getByText, queryByTestId } = render(
       <ProfileHeader profile={baseProfile({ avatar_url: "", display_name: "Ada Pulse" })} owner />

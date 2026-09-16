@@ -40,6 +40,18 @@ export const profileNeon = {
   /** Borders. The neon edge that does the work without a glow. */
   border: "rgba(61, 139, 255, 0.34)",
   borderStrong: "rgba(61, 139, 255, 0.52)",
+
+  /**
+   * Framed variants — used only when the hero is drawn over a cover the user
+   * uploaded. The decorative field doubles as a *generated* cover for accounts
+   * that never set one, so at its normal strength it is meant to be the image.
+   * Laid over a real photo at that strength it reads as a shield sitting on top
+   * of the user's content. These alphas are the same geometry at framing
+   * intensity: enough to keep the surface futuristic, not enough to compete
+   * with a face.
+   */
+  borderFramed: "rgba(61, 139, 255, 0.18)",
+  fillFramed: "rgba(61, 139, 255, 0.03)",
   /** Halo behind the avatar ring and the primary action. */
   glow: "rgba(61, 139, 255, 0.45)",
   glowCyan: "rgba(97, 216, 255, 0.38)",
@@ -61,6 +73,8 @@ export const profileNeon = {
   primaryAction: ["#4f9bff", "#8b5cff", "#f45cd8"] as const,
   identityRing: ["#61d8ff", "#4f9bff", "#9d5cff", "#f45cd8"] as const,
   horizon: ["rgba(61, 139, 255, 0.00)", "rgba(157, 92, 255, 0.24)", "rgba(244, 92, 216, 0.40)"] as const,
+  /** `horizon` at framing intensity. See `borderFramed` for why this exists. */
+  horizonFramed: ["rgba(61, 139, 255, 0.00)", "rgba(157, 92, 255, 0.09)", "rgba(244, 92, 216, 0.15)"] as const,
   /**
    * Hue rotation for the Profile OS tiles that carry no fixed brand colour.
    * Applied by grid position, so the grid reads as a spectrum instead of as

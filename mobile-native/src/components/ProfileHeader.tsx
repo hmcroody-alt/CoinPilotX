@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Animated, Easing, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseProfile, profileWebUrl } from "../api/profile";
 import { hasMembershipMark } from "../entitlements/membershipMark";
@@ -239,6 +239,23 @@ export function ProfileHeader({
   const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
   const galacticAccountCover = profile.public_player_id === "pulsesoc_insight"
     && Boolean(profile.cover_url?.includes("pulsesoc-insight-cover-20260825.png"));
+  // The energy field below is a *generated cover* for accounts that never set
+  // one, so its normal strength is calibrated to be the image rather than to
+  // sit over one. When the user has supplied a photo the same geometry drops to
+  // framing intensity: the cover is the user's content and has to win.
+  //
+  // Stepping down on `cover_url` alone dims the field over a photo that never
+  // arrives, which is strictly worse than before — the decoration is the only
+  // thing lighting the hero in that case. Keying on "has not errored" is not
+  // enough either: a cover request that is cancelled rather than failed (a
+  // remount mid-flight reports NSURLError -999) never reaches `onError`, so the
+  // field stays dim forever behind nothing. The step-down therefore waits for
+  // the picture to actually arrive, and the field is the placeholder until it
+  // does.
+  const coverUrl = galacticAccountCover ? "" : profile.cover_url || "";
+  const [coverLoaded, setCoverLoaded] = useState(false);
+  useEffect(() => { setCoverLoaded(false); }, [coverUrl]);
+  const hasCover = Boolean(coverUrl) && coverLoaded;
 
   const pulse = useRef(new Animated.Value(0)).current;
   const float1 = useRef(new Animated.Value(0)).current;
@@ -301,19 +318,41 @@ export function ProfileHeader({
   return (
     <View style={styles.root} testID="profile-v6-header">
       {/* Immersive energy field */}
-      <View style={[styles.hero, { height: PROFILE_HERO_HEIGHT }]} pointerEvents="none">
+      <View testID="profile-hero" style={[styles.hero, { height: PROFILE_HERO_HEIGHT }]} pointerEvents="none">
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: fieldOpacity, transform: [{ translateY: bgTranslateY }, { scale: bgScale }] }]}>
-          {profile.cover_url && !galacticAccountCover ? <Image testID="profile-cover-image" source={{ uri: profile.cover_url }} style={styles.coverImage} resizeMode="cover" /> : null}
-          <LinearGradient colors={[`${accent}33`, "#050910f2", colors.background]} start={{ x: 0.1, y: 0 }} end={{ x: 0.9, y: 1 }} style={StyleSheet.absoluteFill} />
-          <Animated.View style={[styles.nebula, { backgroundColor: `${accent}2e`, transform: [{ translateX: float1X }, { translateY: float1Y }] }]} />
-          <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}22`, transform: [{ translateY: float2Y }] }]} />
+          {coverUrl ? (
+            <Image
+              testID="profile-cover-image"
+              source={{ uri: coverUrl }}
+              style={styles.coverImage}
+              resizeMode="cover"
+              onLoad={() => setCoverLoaded(true)}
+            />
+          ) : null}
+          {/* Over a real cover this ramp becomes a vignette, not a tint: the
+              centre — where a face sits — is left clear, and only the bottom
+              darkens, because the avatar and the page blend need that contrast.
+              The diagonal is kept for the generated field, where the gradient
+              IS the artwork. */}
+          <LinearGradient
+            colors={hasCover
+              ? [`${accent}1a`, "transparent", "rgba(5,9,16,0.45)"]
+              : [`${accent}33`, "#050910f2", colors.background]}
+            start={hasCover ? { x: 0.5, y: 0 } : { x: 0.1, y: 0 }}
+            end={hasCover ? { x: 0.5, y: 1 } : { x: 0.9, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <Animated.View style={[styles.nebula, { backgroundColor: `${accent}${hasCover ? "14" : "2e"}`, transform: [{ translateX: float1X }, { translateY: float1Y }] }]} />
+          <Animated.View style={[styles.nebulaTwo, { backgroundColor: `${profileNeon.violet}${hasCover ? "0f" : "22"}`, transform: [{ translateY: float2Y }] }]} />
           {/* Planetary curve. A single oversized circle clipped by the hero's
               own overflow:hidden — no SVG, no image payload, one static view.
               The border is the lit limb; the fill is barely there so the name
-              above it never loses contrast. */}
-          <View testID="profile-generated-cover" style={[styles.horizon, { borderColor: profileNeon.borderStrong, backgroundColor: profileNeon.fillSoft }]} pointerEvents="none" />
+              above it never loses contrast. Over a cover the limb also drops
+              lower, so the brightest geometry on the screen stops crossing the
+              middle of the photo where the subject usually is. */}
+          <View testID="profile-generated-cover" style={[styles.horizon, hasCover && styles.horizonFramed, { borderColor: hasCover ? profileNeon.borderFramed : profileNeon.borderStrong, backgroundColor: hasCover ? profileNeon.fillFramed : profileNeon.fillSoft }]} pointerEvents="none" />
           <LinearGradient
-            colors={profileNeon.horizon}
+            colors={hasCover ? profileNeon.horizonFramed : profileNeon.horizon}
             start={{ x: 0.5, y: 1 }}
             end={{ x: 0.5, y: 0 }}
             style={styles.horizonGlow}
@@ -323,10 +362,22 @@ export function ProfileHeader({
               they cost one layout each and nothing per frame. */}
           <View style={[styles.trail, styles.trailLeft, { backgroundColor: profileNeon.hairline }]} pointerEvents="none" />
           <View style={[styles.trail, styles.trailRight, { backgroundColor: profileNeon.hairline }]} pointerEvents="none" />
-          <Animated.View style={[styles.pulseWave, { borderColor: `${accent}55`, opacity: waveOpacity, transform: [{ scale: waveScale }] }]} />
-          <View style={styles.grain} />
+          {/* The wave expands from the dead centre of the hero, which is exactly
+              where a face lands. Over a cover it stays as motion and stops being
+              a shape. */}
+          <Animated.View style={[styles.pulseWave, { borderColor: `${accent}${hasCover ? "22" : "55"}`, opacity: waveOpacity, transform: [{ scale: waveScale }] }]} />
+          <View style={[styles.grain, hasCover && styles.grainFramed]} />
         </Animated.View>
-        <LinearGradient colors={["transparent", "transparent", colors.background]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+        {/* Blend into the page body. Evenly spaced stops put the ramp's start at
+            half the hero's height, which over a photo crushes everything below
+            the subject. Over a cover the same blend is confined to the bottom
+            quarter, where the avatar needs it and the picture is already gone. */}
+        <LinearGradient
+          colors={["transparent", "transparent", colors.background]}
+          locations={hasCover ? [0, 0.74, 1] : undefined}
+          style={StyleSheet.absoluteFill}
+          pointerEvents="none"
+        />
         {galacticAccountCover ? (
           <Image testID="automated-account-brand-cover" source={{ uri: profile.cover_url }}
             style={styles.automatedBrandCover} resizeMode="contain" />
@@ -695,10 +746,14 @@ const styles = createThemedStyles(() => ({
   nebulaTwo: { borderRadius: 160, height: 220, left: -70, position: "absolute", top: 40, width: 220 },
   pulseWave: { borderRadius: 200, borderWidth: 1.5, height: 320, left: "50%", marginLeft: -160, marginTop: -160, position: "absolute", top: "50%", width: 320 },
   grain: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(5,9,16,0.12)" },
+  grainFramed: { backgroundColor: "rgba(5,9,16,0.04)" },
   // Oversized circle: only the top arc falls inside the hero, so it reads as a
   // planet limb. Width is fixed rather than a percentage because a percentage
   // border-radius is not reliable across RN platforms.
   horizon: { borderRadius: 480, borderWidth: 1, height: 960, left: "50%", marginLeft: -480, position: "absolute", top: 196, width: 960 },
+  // 56px lower, which puts the lit limb in the bottom quarter of the hero
+  // instead of across its middle. Subject safety, not decoration.
+  horizonFramed: { top: 252 },
   horizonGlow: { bottom: 0, height: 132, left: 0, position: "absolute", right: 0 },
   trail: { position: "absolute", width: 1 },
   trailLeft: { height: 150, left: "22%", top: 40, transform: [{ rotate: "14deg" }] },
