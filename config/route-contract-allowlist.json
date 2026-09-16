@@ -11,18 +11,5 @@
     "allowlisted path, the entry has to go. A list that can only ever hide",
     "failures rots until it is hiding a real one."
   ],
-  "pending_backend": [
-    {
-      "path": "/api/calls/voip-token",
-      "reason": "CallKit + PushKit Stage 2 scaffolding. The JS landed ahead of the backend deliberately: the path is unreachable because setNativeCallKitProvider() is never called outside tests, so isNativeCallKitEnabled() is false and initNativeCallKit() returns before registering a token. EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED is also off by default. Blocked on the COINPLOTXAI INC. app transfer, which has to happen before the VoIP Services certificate can be issued.",
-      "reference": "reports/native_callkit_voip_integration.md (Remaining work - ACCOUNT-SIDE, item 3)",
-      "added": "2026-09-13"
-    },
-    {
-      "path": "/api/calls/voip-token/revoke",
-      "reason": "The revoke half of the same unbuilt endpoint pair. Same gating, same blocker.",
-      "reference": "reports/native_callkit_voip_integration.md (Remaining work - ACCOUNT-SIDE, item 3)",
-      "added": "2026-09-13"
-    }
-  ]
+  "pending_backend": []
 }
