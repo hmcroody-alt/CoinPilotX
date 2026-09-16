@@ -1,7 +1,6 @@
 # CJ dropshipping price and inventory repair — final report
 
-Status: **IN PROGRESS** (this file is written as the work lands; the verdict at the
-bottom is authoritative only once it reads PASS, PARTIAL or BLOCKED).
+Status: **COMPLETE** — verdict `PARTIAL`, recorded in §14.
 
 ## 1. Provenance
 
@@ -10,6 +9,8 @@ bottom is authoritative only once it reads PASS, PARTIAL or BLOCKED).
 | Starting branch | `main` |
 | Base commit | `de3f87db7de9beabf9bb93c9ef3dbf343c40fd87` (`origin/main`) |
 | Working branch | `commerce/cj-price-inventory-repair` |
+| Commits | `2e9a82b0` readiness · `d327552d` repair job · `21917785` this report · `3b140292` merge of `origin/main` `f4a5f2f1` · `bb6b3cf7` test-count correction |
+| Pushed | `origin/commerce/cj-price-inventory-repair`; `main` untouched, no history rewritten |
 | Worktree | `/Users/hmcherie/Desktop/cjrepair-wt` (isolated; the primary checkout at `/Users/hmcherie/Desktop/CoinPilotX` holds ~14 unrelated modified files owned by other sessions and was not committed from) |
 | Production database | Railway Postgres 18.6, read via `DATABASE_PUBLIC_URL` |
 | Census taken | 2026-09-16 |
