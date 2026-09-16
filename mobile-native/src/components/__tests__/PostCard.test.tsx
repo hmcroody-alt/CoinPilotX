@@ -389,3 +389,92 @@ describe("PostCard options menu", () => {
     expect(queryByTestId("home-feed-report-42")).toBeNull();
   });
 });
+
+describe("The reported ghost post, end to end", () => {
+  // Every other test in this file builds its own record, which means every other
+  // test encodes an assumption about what the server sends. This one does not.
+  // The object below is the verbatim media entry returned by
+  // `pulse_feed_engine.get_post(2409, viewer_user_id=2, include_private=False)`
+  // against the production database -- post 2409 is the post in the report, and
+  // viewer 2 is not its author, so this is what the public sees. Copied field for
+  // field, including the fields the client never reads.
+  //
+  // Read it and the defect is plain: `is_available: true`, `processing_status:
+  // "ready"`, four separate live CDN urls, and `width: 0, height: 0,
+  // aspect_ratio: 0.0`. The bytes were always there and the server always served
+  // them. The old `hasRenderableImage` asked for a positive width, the width had
+  // never been written by any upload since May, so `feedRenderableMedia` returned
+  // an empty list and the card rendered an author, a caption, and no picture --
+  // while the profile grid, which reads `thumbnail_url` into a fixed square and
+  // asks no dimension question, showed it perfectly.
+  const PRODUCTION_MEDIA_2409 = {
+    id: 739,
+    type: "image",
+    media_type: "image",
+    media_url:
+      "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/37a3897fa35a558fe967d828/31D00996-549A-4F6A-BF74-AC5B2E73281B.jpg",
+    valid_url:
+      "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/37a3897fa35a558fe967d828/31D00996-549A-4F6A-BF74-AC5B2E73281B.jpg",
+    cdn_url:
+      "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/37a3897fa35a558fe967d828/31D00996-549A-4F6A-BF74-AC5B2E73281B.jpg",
+    playback_url:
+      "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/37a3897fa35a558fe967d828/31D00996-549A-4F6A-BF74-AC5B2E73281B.jpg",
+    mux_playback_id: "",
+    mux_asset_id: "",
+    mux_status: "",
+    mux_processing: false,
+    processing_status: "ready",
+    mux_hls_url: "",
+    mux_thumbnail_url: "",
+    thumbnail_url:
+      "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/37a3897fa35a558fe967d828/31D00996-549A-4F6A-BF74-AC5B2E73281B-cover-medium.jpg",
+    poster_url:
+      "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/37a3897fa35a558fe967d828/31D00996-549A-4F6A-BF74-AC5B2E73281B-cover-large.jpg",
+    fallback_url: "/static/img/media-unavailable.svg",
+    width: 0,
+    height: 0,
+    aspect_ratio: 0.0,
+    mime_type: "image/jpeg",
+    playback_mime_type: "",
+    embed_type: "upload",
+    source_platform: "coinpilotx",
+    preload_priority: "high",
+    orientation: "unknown",
+    is_available: true,
+    storage_provider: "r2",
+    fit_mode: "smart",
+    hydration_state: "ready",
+    source_url: ""
+  } as unknown as NonNullable<PulsePost["media"]>[number];
+
+  beforeEach(() => {
+    resetSavedStoreForTests();
+  });
+
+  it("survives the gate that used to drop it", () => {
+    // The narrowest statement of the bug: one real record in, one record out.
+    expect(feedApi.feedRenderableMedia([PRODUCTION_MEDIA_2409])).toHaveLength(1);
+  });
+
+  it("renders the picture, not an empty shell", () => {
+    const { queryByTestId, getAllByText } = render(
+      <PostCard post={basePost({ body: "Caption on the reported post", media: [PRODUCTION_MEDIA_2409] })} />
+    );
+    // The whole acceptance criterion in two lines: the media box exists, and the
+    // caption that rendered even while the picture was missing still renders.
+    expect(queryByTestId("home-feed-media-42-0")).not.toBeNull();
+    expect(getAllByText("Caption on the reported post").length).toBeGreaterThan(0);
+  });
+
+  it("draws the image from a url the server actually gave us", () => {
+    // Passing the gate is not the same as drawing something. A record can clear
+    // renderability and still mount `<Image uri="">` if the display resolver
+    // reads a different field than the gate does -- that exact mismatch is a
+    // separate test above. Pin the resolved source to one of the four urls in
+    // the production payload.
+    const { getByTestId } = render(<PostCard post={basePost({ media: [PRODUCTION_MEDIA_2409] })} />);
+    const image = getByTestId("home-feed-media-42-0").findByType("Image" as never);
+    const uri = (image.props as { source?: { uri?: string } }).source?.uri ?? "";
+    expect(uri).toContain("31D00996-549A-4F6A-BF74-AC5B2E73281B");
+  });
+});
