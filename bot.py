@@ -83160,6 +83160,75 @@ def pulse_private_office_section_page(section):
 # (/pulse/private-office/<obligations|events|...>) and the two Capital Graph
 # pages. The APIs they rendered are gone too, so leaving the pages would have
 # produced a shell that loads and then reports its own data source as missing.
+#
+# Their URL space is kept and redirected rather than deleted. These paths were
+# published as universal links — the AASA file claims /pulse/* — so they are in
+# shared links, in notification payloads and in browser history, and a member
+# who follows one is not doing anything wrong. A 404 says the site is broken; a
+# redirect to the Office home says the room is still there and this part of it
+# is not. The native app answers the same link the same way, in
+# `retiredOfficeDeepLink` in mobile-native/src/navigation/linking.ts; a device
+# with the app and a device without it should not disagree about where an old
+# link goes.
+#
+# The names are enumerated rather than accepted as a free parameter for the
+# reason the live section route gives above: `any(...)` still closes the space,
+# so a typo is still a 404 rather than a confident bounce, and the list is a
+# record of exactly what was withdrawn.
+#
+# The names are quoted because Werkzeug parses converter arguments as literals
+# and `capital-graph` unquoted is a parse error at import — which, in a route
+# pack registered inside `except Exception`, would not have raised here but
+# silently unregistered the whole Private Office on the web.
+RETIRED_OFFICE_HOME = "/pulse/private-office"
+
+_RETIRED_OFFICE_SECTIONS = (
+    "facts", "documents", "briefings", "shield", "concierge",
+    "obligations", "events", "decisions", "requests", "risks",
+    "opportunities", "capital-graph",
+)
+
+
+@webhook_app.route(
+    "/pulse/private-office/<any({}):section>".format(
+        ",".join('"%s"' % name for name in _RETIRED_OFFICE_SECTIONS)),
+    methods=["GET"])
+@auth_required
+def pulse_private_office_retired_page(section):
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return redirect(RETIRED_OFFICE_HOME)
+
+
+@webhook_app.route("/pulse/private-office/capital-graph/<node_id>",
+                   methods=["GET"])
+@auth_required
+def pulse_private_office_retired_entity_page(node_id):
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return redirect(RETIRED_OFFICE_HOME)
+
+
+# Meetings are not retired — they are app-only, which is a different thing and
+# needs a different answer.
+#
+# There is no web meeting room and there will not be one: a browser join path
+# would be a second real-time audio publication path, which
+# `docs/realtime_audio_change_policy.md` forbids outright. But the app publishes
+# `pulse/private-office/meetings` as a universal link, so the URL gets shared,
+# and a 404 for the recipient without the app is the worst of the three
+# outcomes. Bouncing to the Office home lands them on a page that already lists
+# Meetings among its children with no web URL of its own — the explanation is
+# the destination, rather than something this route has to say for itself.
+@webhook_app.route("/pulse/private-office/meetings", methods=["GET"])
+@auth_required
+def pulse_private_office_meetings_page():
+    blocked = private_office_web_guard()
+    if blocked:
+        return blocked
+    return redirect(RETIRED_OFFICE_HOME)
 
 
 # --- Orders on the web ------------------------------------------------------

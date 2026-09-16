@@ -62,6 +62,35 @@ DEEP_LINKS = (
     "/pulse/private-office/people",
 )
 
+#: The URL space the retired capabilities left behind.
+#:
+#: These paths were published as universal links before the Office was narrowed,
+#: so they are in shared links, notification payloads and browser history. They
+#: are kept and redirected to the Office home rather than deleted: a 404 reads
+#: as the site being broken, a redirect reads as the room still being there and
+#: this part of it not. `retiredOfficeDeepLink` in
+#: mobile-native/src/navigation/linking.ts answers the same link the same way,
+#: so a device with the app and a device without it do not disagree about where
+#: an old link goes.
+#:
+#: Hardcoded for the same reason DEEP_LINKS is: derived from the url_map, this
+#: would agree with the server by construction and stop detecting anything.
+RETIRED_LINKS = (
+    "/pulse/private-office/facts",
+    "/pulse/private-office/documents",
+    "/pulse/private-office/briefings",
+    "/pulse/private-office/shield",
+    "/pulse/private-office/concierge",
+    "/pulse/private-office/obligations",
+    "/pulse/private-office/events",
+    "/pulse/private-office/decisions",
+    "/pulse/private-office/requests",
+    "/pulse/private-office/risks",
+    "/pulse/private-office/opportunities",
+    "/pulse/private-office/capital-graph",
+    "/pulse/private-office/capital-graph/node-42",
+)
+
 #: Probed alongside the real links. A typo in a record view must 404 rather
 #: than render a confident empty Office.
 UNKNOWN_VIEW = "/pulse/private-office/nonsense"
@@ -101,6 +130,7 @@ for path in %(paths)r:
     response = client.get(path)
     body = response.get_data()
     pages[path] = {"status": response.status_code,
+                   "location": response.headers.get("Location", ""),
                    "shell": b"office-root" in body,
                    "client": b"GRANT_KEY" in body}
 report["pages"] = pages
@@ -119,7 +149,8 @@ def office_probe():
     # daemon thread whose traceback only reaches the log.
     env["COINPILOTX_DB_INIT_STARTUP_MODE"] = "sync"
     env["PYTHONPATH"] = REPO
-    code = _PROBE % {"repo": REPO, "paths": list(DEEP_LINKS) + [UNKNOWN_VIEW]}
+    code = _PROBE % {"repo": REPO,
+                     "paths": list(DEEP_LINKS) + list(RETIRED_LINKS) + [UNKNOWN_VIEW]}
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=600)
     return parse_report(proc.stdout, proc.stderr)
@@ -129,8 +160,23 @@ def test_every_office_deep_link_resolves(office_probe):
     """Werkzeug decides whether these URLs exist, not a string comparison."""
     broken = {path: info["status"]
               for path, info in office_probe["pages"].items()
-              if path != UNKNOWN_VIEW and info["status"] != 200}
+              if path in DEEP_LINKS and info["status"] != 200}
     assert not broken, f"published app URLs that the site cannot serve: {broken}"
+
+
+def test_every_retired_office_link_redirects_to_the_office(office_probe):
+    """A withdrawn feature's URL must bounce, not 404.
+
+    The status is asserted as well as the destination because a 200 here would
+    mean the page came back — the failure this guards against runs in both
+    directions.
+    """
+    wrong = {path: (info["status"], info["location"])
+             for path, info in office_probe["pages"].items()
+             if path in RETIRED_LINKS
+             and (info["status"] != 302
+                  or not info["location"].endswith("/pulse/private-office"))}
+    assert not wrong, f"retired Office URLs that do not bounce to the Office: {wrong}"
 
 
 def test_every_office_page_ships_the_client(office_probe):
