@@ -284,15 +284,128 @@ describe("attached music starts with the picture", () => {
 
       // The track reports 2750ms. 250ms later the video reports 3000ms. Those
       // are the same instant seen twice, not a 250ms error.
-      nowSpy.mockReturnValue(1_000_000);
-      musicTick({ positionMillis: 2750, isPlaying: true });
-      nowSpy.mockReturnValue(1_000_250);
-      await videoTick({ positionMillis: 3000, isPlaying: true });
+      //
+      // Run it for eight ticks rather than one. A single tick no longer
+      // distinguishes anything: the persistence rule declines every first
+      // reading, so a card that had stopped timestamping would pass a one-tick
+      // assertion while still being wrong. The stale-sample defect produces a
+      // CONSTANT -250 -- persistent, same-side, and therefore exactly the shape
+      // the persistence rule is built to let through. Only a sustained run
+      // separates "the gap was accounted for" from "the gap was confirmed and
+      // seeked at half the old rate".
+      for (let tick = 0; tick < 8; tick += 1) {
+        const musicAt = 1_000_000 + tick * 250;
+        nowSpy.mockReturnValue(musicAt);
+        musicTick({ positionMillis: 2750 + tick * 250, isPlaying: true });
+        nowSpy.mockReturnValue(musicAt + 250);
+        await videoTick({ positionMillis: 3000 + tick * 250, isPlaying: true });
+      }
 
       expect(mockSound.setStatusAsync).not.toHaveBeenCalled();
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  /**
+   * The second measurement, and the second time the wiring was the bug.
+   *
+   * Timestamping the music sample was necessary and not sufficient. On a
+   * physical iPhone 16 Pro both players report position quantised to a 250ms
+   * step, so projecting a sample forward from the instant it was *received*
+   * still carries up to a full step of error -- against a 120ms deadband. A
+   * 195-second capture produced 190 corrections whose drift swung between +63
+   * and -186 around a true value near -60, and every one of the 190 was a run of
+   * length ONE.
+   *
+   * The planner's persistence rule is what discards those, but the rule is
+   * useless unless the card carries the previous reading from tick to tick. That
+   * carrying is what these three tests pin: one proves a lone spike is dropped,
+   * one proves a confirmed drift is still repaired -- the test a card that
+   * stopped threading the ref would fail -- and one proves the history is
+   * cleared by the correction rather than re-confirming it.
+   */
+  describe("one-tick drift spikes", () => {
+    /** Drive one tick with both clocks frozen at the same instant. */
+    async function driftTick(nowSpy: jest.SpyInstance, at: number, videoMs: number, musicMs: number) {
+      nowSpy.mockReturnValue(at);
+      musicTick({ positionMillis: musicMs, isPlaying: true });
+      await videoTick({ positionMillis: videoMs, isPlaying: true });
+    }
+
+    async function settled() {
+      const nowSpy = jest.spyOn(Date, "now").mockReturnValue(1_000_000);
+      render(<ReelPlayerCard {...cardProps(true)} />);
+      await act(async () => undefined);
+      // Get the track playing through the `play` branch first, so the cases
+      // below exercise the drift path and not the start path.
+      await driftTick(nowSpy, 1_000_000, 0, 0);
+      mockSound.setStatusAsync.mockClear();
+      return nowSpy;
+    }
+
+    it("ignores a single over-deadband reading", async () => {
+      const nowSpy = await settled();
+      try {
+        // One tick 900ms out. On the device this shape was noise 190 times out
+        // of 190, so acting on it is what produced a seek four times a second.
+        await driftTick(nowSpy, 1_000_250, 3000, 2100);
+        expect(mockSound.setStatusAsync).not.toHaveBeenCalled();
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it("does not let an alternating reading confirm the next one", async () => {
+      const nowSpy = await settled();
+      try {
+        // The capture's actual signature: past the deadband on alternating
+        // sides, tick after tick. Not one of these is a track that is out.
+        await driftTick(nowSpy, 1_000_250, 3000, 2100);
+        await driftTick(nowSpy, 1_000_500, 3250, 4150);
+        await driftTick(nowSpy, 1_000_750, 3500, 2600);
+        await driftTick(nowSpy, 1_001_000, 3750, 4650);
+        expect(mockSound.setStatusAsync).not.toHaveBeenCalled();
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it("still repairs a drift that is there on the following tick", async () => {
+      const nowSpy = await settled();
+      try {
+        // The same gap twice, on the same side. That is a track that is really
+        // out, and dropping it would trade a seek storm for silent desync --
+        // which is the failure the persistence rule must not introduce.
+        //
+        // A card that stopped handing the planner its previous reading would
+        // see every tick as a first tick and seek here never. This assertion is
+        // the one that notices.
+        await driftTick(nowSpy, 1_000_250, 3000, 2100);
+        await driftTick(nowSpy, 1_000_500, 3250, 2350);
+        expect(mockSound.setStatusAsync).toHaveBeenCalledWith(
+          expect.objectContaining({ positionMillis: 3250, shouldPlay: true })
+        );
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
+
+    it("does not re-confirm against the reading it just corrected", async () => {
+      const nowSpy = await settled();
+      try {
+        // Three ticks of the same genuine drift produce exactly ONE seek, not
+        // two. The correction moved the track, so the reading that triggered it
+        // describes a position that no longer exists; letting it confirm the
+        // next tick would restore the every-tick seek this whole rule removes.
+        await driftTick(nowSpy, 1_000_250, 3000, 2100);
+        await driftTick(nowSpy, 1_000_500, 3250, 2350);
+        await driftTick(nowSpy, 1_000_750, 3500, 2600);
+        expect(mockSound.setStatusAsync).toHaveBeenCalledTimes(1);
+      } finally {
+        nowSpy.mockRestore();
+      }
+    });
   });
 
   it("does not make a muted reel's track audible", async () => {

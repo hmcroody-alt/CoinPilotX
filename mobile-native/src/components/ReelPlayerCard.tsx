@@ -110,6 +110,15 @@ export function ReelPlayerCard({
   const musicStatusRef = useRef<MusicTimelineState | null>(null);
   /** Serialises corrections so a slow seek cannot overlap the next tick's. */
   const correctingMusic = useRef(false);
+  /**
+   * The drift the previous tick measured, so a one-tick quantisation spike can
+   * be told from a track that is really out.
+   *
+   * Per-card, not per-module: two Reels are mounted at once during a swipe, and
+   * a shared history would let one card's reading confirm the other card's
+   * spike and seek a track it has never looked at.
+   */
+  const previousDriftRef = useRef<number | null>(null);
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const muteGlyphRef = useRef<MuteGlyphPulseHandle>(null);
   const refreshAttempted = useRef(false);
@@ -389,8 +398,17 @@ export function ReelPlayerCard({
       // old as its own callback interval. Handing over the instant lets the
       // planner age the music sample up to this one instead of treating a
       // sampling gap as drift.
-      Date.now()
+      Date.now(),
+      previousDriftRef.current
     );
+    // Recorded on EVERY tick, not just corrected ones. The persistence rule
+    // needs the immediately preceding reading, and the readings that matter
+    // most are the uncorrected ones -- a spike is, by definition, a tick on
+    // which nothing was done. Anything that actuates the track clears the
+    // history instead: the track has just been moved, so the previous reading
+    // describes a position that no longer exists, and letting it confirm the
+    // next one would seek on every tick again.
+    previousDriftRef.current = plan.action === "none" ? plan.driftMillis ?? null : null;
     if (plan.action === "none") return;
     correctingMusic.current = true;
     try {

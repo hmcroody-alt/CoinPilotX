@@ -126,7 +126,19 @@ export function projectedMusicPosition(music: MusicTimelineState, nowMillis?: nu
  * that applies the same instruction twice cannot double-correct.
  */
 export type MusicCorrection =
-  | { action: "none" }
+  /**
+   * Nothing to do this tick.
+   *
+   * `driftMillis` is present only when this tick actually produced a comparable
+   * reading -- both players loaded, the video playing and not stalled. That is
+   * what a caller feeds back as `previousDriftMillis` on the next tick, and
+   * carrying it here rather than letting the caller re-derive it keeps one
+   * authority on when a reading is meaningful. Its ABSENCE is equally load
+   * bearing: a tick that could not measure clears the caller's history, so the
+   * first reading after a pause or a stall has nothing to confirm against and
+   * cannot, on its own, seek.
+   */
+  | { action: "none"; driftMillis?: number }
   | { action: "pause"; reason: "video_stalled" | "video_paused" }
   | { action: "play"; seekToMillis: number; driftMillis: number }
   | { action: "resync"; seekToMillis: number; driftMillis: number };
@@ -184,6 +196,53 @@ export function musicDriftMillis(
 }
 
 /**
+ * Whether a drift reading is worth acting on, given the one before it.
+ *
+ * MEASURED ON DEVICE, and the reason this rule exists at all. Both players
+ * report position quantised to their update interval, so `positionMillis` is a
+ * step function, not a continuous reading. Projecting a step function forward
+ * from the instant it was *received* therefore carries an error of up to one
+ * whole step, and on an iPhone 16 Pro that step is 250ms against a 120ms
+ * deadband. A 195-second capture showed `videoPosition - musicPosition` sitting
+ * at exactly 250 on 369 ticks and exactly 0 on 335 -- the two quantisation
+ * phases -- which swung the computed drift between +63ms and -186ms around a
+ * true value near -60ms.
+ *
+ * The result was 190 corrections in 195 seconds, and EVERY ONE of them was a
+ * run of length one: never twice in a row, because the next tick landed in the
+ * other phase and read as aligned. That is the signature of noise rather than
+ * drift, and it is what makes persistence the right discriminator: a real
+ * divergence -- a stall, a loop, a scrub -- does not alternate. It is still
+ * there on the following tick, and on the one after that.
+ *
+ * So a correction requires two consecutive readings that are both past the
+ * deadband AND on the same side of it. Against that capture this rule issues
+ * zero of the 190 seeks, while leaving every genuine transition untouched: the
+ * start and resume cases are handled by the `play` branch, which is not gated
+ * on the deadband at all.
+ *
+ * The cost is one tick of delay -- 250ms -- before a genuine drift is repaired.
+ * That is the right trade: the correction is an audible seek, so paying a tick
+ * to be sure beats seeking four times a second at a track that was never out.
+ */
+function driftIsWorthCorrecting(
+  drift: number,
+  previousDrift: number | null | undefined,
+  toleranceMillis: number
+): boolean {
+  if (Math.abs(drift) <= toleranceMillis) return false;
+  const previous = Number(previousDrift);
+  // No previous reading means this is the first tick of a correction loop that
+  // has nothing to confirm against. Waiting one tick is the whole point.
+  if (!Number.isFinite(previous)) return false;
+  if (Math.abs(previous) <= toleranceMillis) return false;
+  // Same side. A +150 followed by a -150 is the quantisation swing, not a track
+  // that is 150ms out; acting on it would seek in a direction the previous tick
+  // disagreed with.
+  return drift > 0 === previous > 0;
+}
+
+/**
  * The one instruction that keeps the track with the picture.
  *
  * Ordering matters and is not arbitrary. The stall check comes before the drift
@@ -202,7 +261,15 @@ export function planMusicCorrection(
    * `Date.now()` so this stays pure and a test can state the sampling gap it
    * means to exercise instead of racing the real clock.
    */
-  nowMillis?: number | null
+  nowMillis?: number | null,
+  /**
+   * The drift this same loop computed on the previous tick, or null on the
+   * first. Held by the caller rather than here so this function stays a pure
+   * mapping from state to instruction -- the alternative, a module-level
+   * variable, would make two Reels on screen share one history and correct
+   * each other's tracks.
+   */
+  previousDriftMillis?: number | null
 ): MusicCorrection {
   // Nothing to align against. Acting on an unloaded player's position -- which
   // reads 0 -- would seek the music to the creator's start offset every tick
@@ -228,8 +295,10 @@ export function planMusicCorrection(
   // why there is no separate seek handler.
   if (!music.isPlaying) return { action: "play", seekToMillis: target, driftMillis: drift };
 
-  if (Math.abs(drift) > toleranceMillis) {
+  if (driftIsWorthCorrecting(drift, previousDriftMillis, toleranceMillis)) {
     return { action: "resync", seekToMillis: target, driftMillis: drift };
   }
-  return { action: "none" };
+  // Reported even though nothing is done, because an unconfirmed over-deadband
+  // reading is exactly what the next tick needs in order to confirm it.
+  return { action: "none", driftMillis: drift };
 }

@@ -60,6 +60,39 @@ const music = (over: Partial<MusicTimelineState> = {}): MusicTimelineState => ({
   ...over
 });
 
+/**
+ * A second tick, carrying forward whatever drift the first one reported.
+ *
+ * Corrections now need two consecutive readings, so most of the cases below are
+ * two-tick sequences. Threading `previousDriftMillis` by hand each time buried
+ * the case being tested under argument lists.
+ */
+const confirmedBy = (
+  previous: ReturnType<typeof planMusicCorrection>,
+  videoState: VideoTimelineState,
+  musicState: MusicTimelineState,
+  nowMillis: number | null = null
+) =>
+  planMusicCorrection(
+    videoState,
+    musicState,
+    withMusic,
+    MUSIC_DRIFT_TOLERANCE_MS,
+    nowMillis,
+    previous.action === "none" ? previous.driftMillis ?? null : null
+  );
+
+/** The video at 5s, the track at `position`, after a tick that read `previous`. */
+const withPrevious = (position: number, previous: number | null) =>
+  planMusicCorrection(
+    video({ positionMillis: 5000 }),
+    music({ positionMillis: position }),
+    withMusic,
+    MUSIC_DRIFT_TOLERANCE_MS,
+    null,
+    previous
+  );
+
 describe("where the track should be", () => {
   it("advances with the video from the creator's chosen in-point", () => {
     // The offset is not a one-time seek applied at start; it is part of the
@@ -140,22 +173,67 @@ describe("keeping the track with the picture", () => {
     // The user scrubs to 20s. Nothing here knows a seek happened; the video is
     // simply at a new position and the music is told to match. That is the whole
     // reason the video is the clock.
-    expect(planMusicCorrection(video({ positionMillis: 20000 }), music({ positionMillis: 4000 }), withMusic))
+    //
+    // It takes two ticks, because a first reading of a 16s gap is -- to this
+    // function -- the same shape as a first reading of a quantisation spike,
+    // and the device capture was full of spikes. Tick one reports the drift
+    // without acting; tick two confirms it and seeks.
+    const first = planMusicCorrection(video({ positionMillis: 20000 }), music({ positionMillis: 4000 }), withMusic);
+    expect(first).toEqual({ action: "none", driftMillis: -16000 });
+    expect(confirmedBy(first, video({ positionMillis: 20000 }), music({ positionMillis: 4000 })))
       .toEqual({ action: "resync", seekToMillis: 20000, driftMillis: -16000 });
   });
 
   it("leaves drift inside the deadband alone, because the correction is louder than the error", () => {
     const within = MUSIC_DRIFT_TOLERANCE_MS - 1;
     expect(planMusicCorrection(video({ positionMillis: 5000 }), music({ positionMillis: 5000 + within }), withMusic))
-      .toEqual({ action: "none" });
+      .toEqual({ action: "none", driftMillis: within });
   });
 
-  it("corrects once drift exceeds the deadband, in either direction", () => {
+  it("corrects once a second reading confirms the drift, in either direction", () => {
+    const beyond = MUSIC_DRIFT_TOLERANCE_MS + 1;
+    expect(withPrevious(5000 + beyond, beyond)).toEqual({ action: "resync", seekToMillis: 5000, driftMillis: beyond });
+    expect(withPrevious(5000 - beyond, -beyond)).toEqual({ action: "resync", seekToMillis: 5000, driftMillis: -beyond });
+  });
+
+  it("does not act on a single over-deadband reading", () => {
+    // MEASURED, and the reason the deadband alone is not enough. A 195-second
+    // capture on a physical iPhone 16 Pro produced 190 corrections and not one
+    // was real: every one was a run of length ONE. `videoPosition -
+    // musicPosition` alternated between exactly 250ms and exactly 0ms -- the two
+    // phases of a 250ms quantisation step -- which swung the computed drift
+    // between +63 and -186 around a true value near -60.
+    //
+    // So a first reading is not evidence. This assertion is what turns those
+    // 190 audible seeks into zero.
     const beyond = MUSIC_DRIFT_TOLERANCE_MS + 1;
     expect(planMusicCorrection(video({ positionMillis: 5000 }), music({ positionMillis: 5000 + beyond }), withMusic))
-      .toEqual({ action: "resync", seekToMillis: 5000, driftMillis: beyond });
-    expect(planMusicCorrection(video({ positionMillis: 5000 }), music({ positionMillis: 5000 - beyond }), withMusic))
-      .toEqual({ action: "resync", seekToMillis: 5000, driftMillis: -beyond });
+      .toEqual({ action: "none", driftMillis: beyond });
+  });
+
+  it("does not let an alternating reading confirm a spike", () => {
+    // The device's noise did not merely exceed the deadband, it exceeded it on
+    // BOTH sides. A rule that asked only for "two large readings" would still
+    // fire on a +150/-150 swing and seek in the direction the previous tick
+    // disagreed with, so sameness of sign is part of the rule, not a nicety.
+    const beyond = MUSIC_DRIFT_TOLERANCE_MS + 1;
+    expect(withPrevious(5000 + beyond, -beyond)).toEqual({ action: "none", driftMillis: beyond });
+  });
+
+  it("does not let a settled previous reading confirm a spike", () => {
+    // A previous tick comfortably inside the deadband is evidence the track was
+    // fine a moment ago, which makes the spike less credible rather than more.
+    const beyond = MUSIC_DRIFT_TOLERANCE_MS + 1;
+    expect(withPrevious(5000 + beyond, 0)).toEqual({ action: "none", driftMillis: beyond });
+  });
+
+  it("reports the drift it declined to act on, so the next tick can confirm it", () => {
+    // The feedback channel itself. Without a drift on the `none` plan the
+    // caller has nothing to hold, every tick looks like a first tick, and the
+    // persistence rule silently degrades into "never correct anything".
+    const beyond = MUSIC_DRIFT_TOLERANCE_MS + 1;
+    const plan = planMusicCorrection(video({ positionMillis: 5000 }), music({ positionMillis: 5000 + beyond }), withMusic);
+    expect(plan.action === "none" && plan.driftMillis).toBe(beyond);
   });
 
   it("does not seek a looping track against its own wrap", () => {
@@ -163,7 +241,7 @@ describe("keeping the track with the picture", () => {
     // A correction computed without the wrap would see 30s of drift and seek
     // every tick for the rest of the reel.
     expect(planMusicCorrection(video({ positionMillis: 32000 }), music({ positionMillis: 2000 }), withMusic))
-      .toEqual({ action: "none" });
+      .toEqual({ action: "none", driftMillis: 0 });
   });
 
   it("does not read a stale music sample as drift", () => {
@@ -187,22 +265,25 @@ describe("keeping the track with the picture", () => {
       MUSIC_DRIFT_TOLERANCE_MS,
       1_000_250
     );
-    expect(sampled).toEqual({ action: "none" });
+    expect(sampled).toEqual({ action: "none", driftMillis: 0 });
   });
 
   it("still corrects real drift when the sample is fresh", () => {
     // The projection must not become a blanket excuse. With no elapsed time
     // between the two readings there is nothing to carry forward, so a track
-    // that genuinely sits a second behind the picture is still corrected.
-    expect(
-      planMusicCorrection(
-        video({ positionMillis: 5000 }),
-        music({ positionMillis: 4000, sampledAtMillis: 1_000_000 }),
-        withMusic,
-        MUSIC_DRIFT_TOLERANCE_MS,
-        1_000_000
-      )
-    ).toEqual({ action: "resync", seekToMillis: 5000, driftMillis: -1000 });
+    // that genuinely sits a second behind the picture is still corrected --
+    // once a second reading agrees with the first.
+    const behind = music({ positionMillis: 4000, sampledAtMillis: 1_000_000 });
+    const first = planMusicCorrection(
+      video({ positionMillis: 5000 }),
+      behind,
+      withMusic,
+      MUSIC_DRIFT_TOLERANCE_MS,
+      1_000_000
+    );
+    expect(first).toEqual({ action: "none", driftMillis: -1000 });
+    expect(confirmedBy(first, video({ positionMillis: 5000 }), behind, 1_000_000))
+      .toEqual({ action: "resync", seekToMillis: 5000, driftMillis: -1000 });
   });
 
   it("does not carry a paused track forward", () => {
@@ -234,7 +315,7 @@ describe("keeping the track with the picture", () => {
         MUSIC_DRIFT_TOLERANCE_MS,
         999_000
       )
-    ).toEqual({ action: "none" });
+    ).toEqual({ action: "none", driftMillis: 0 });
   });
 
   it("does not issue a pause to a track that is already paused", () => {
