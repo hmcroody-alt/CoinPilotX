@@ -125,6 +125,16 @@ export async function scheduleMeeting(params: {
   durationMinutes?: number;
   idempotencyKey?: string;
   waitingRoomEnabled?: boolean;
+  /**
+   * Guests to invite as part of creating the meeting.
+   *
+   * Sent with the create request rather than as a second call, so a meeting
+   * cannot end up existing with nobody on it because the app was backgrounded
+   * between the two — with the host already shown a confirmation. The server
+   * decides which addresses are usable, which already belong to members and
+   * which are duplicates; this only carries what the host typed.
+   */
+  invitees?: { name: string; email: string }[];
 }): Promise<PrivateMeeting> {
   const data = await post<{ meeting: PrivateMeeting }>(BASE, {
     title: params.title || "",
@@ -133,7 +143,8 @@ export async function scheduleMeeting(params: {
     agenda: params.agenda || "",
     duration_minutes: params.durationMinutes || 0,
     idempotency_key: params.idempotencyKey || "",
-    waiting_room_enabled: params.waitingRoomEnabled !== false
+    waiting_room_enabled: params.waitingRoomEnabled !== false,
+    invitees: params.invitees || []
   });
   return data.meeting;
 }

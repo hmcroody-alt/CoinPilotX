@@ -4449,6 +4449,29 @@
         "liveNow": "開催中",
         "durationMinutes_one": "{{count}}分",
         "durationMinutes_other": "{{count}}分",
+        "confirmed": {
+          "title": "会議を予定しました",
+          "when": "日時",
+          "duration": "所要時間",
+          "guests": "招待済み",
+          "guestsNone": "まだ誰も招待していません。会議の中からいつでも招待できます。",
+          "memberFallback": "メンバー {{id}}",
+          "someone": "ゲストのお一人",
+          "reminders": "リマインダー",
+          "remindersNone": "この会議にリマインダーは設定されていません。",
+          "reminderSkipped": "開催が近すぎるため送信されません",
+          "meetingId": "会議 ID",
+          "meetingCode": "招待コード",
+          "done": "完了",
+          "skipped": {
+            "emailRequired": "未招待 — メールアドレスがありません",
+            "emailInvalid": "未招待 — このアドレスは使用できません",
+            "tooMany": "未招待 — この会議にはゲストが多すぎます",
+            "isHost": "すでに参加中 — あなたが主催者です",
+            "alreadyIn": "すでにこの会議にいます",
+            "unavailable": "招待できませんでした"
+          }
+        },
         "buckets": {
           "live": "開催中",
           "upcoming": "今後の予定",
@@ -4577,6 +4600,7 @@
             "zone": "タイムゾーンを確認",
             "duration": "所要時間は？",
             "details": "タイトルと議題",
+            "guests": "参加するのは誰ですか？",
             "review": "確認"
           },
           "timeHint": "ミーティングが行われる場所での表示時刻です。",
@@ -4587,6 +4611,18 @@
           "durationRange": "{{min}} 分から {{max}} 分の間で選んでください。",
           "agendaField": "議題（任意）",
           "inviteLater": "ミーティングを作成した後に招待できます。",
+          "guestsHint": "ここに追加した全員に招待とリマインダーが届きます。PulseSoc のアカウントは不要です。",
+          "guestsNone": "ゲストはまだいません。今すぐ追加することも、後から招待することもできます。",
+          "guestsNoneShort": "まだ誰もいません",
+          "guestName": "氏名（任意）",
+          "guestEmail": "メールアドレス",
+          "addGuest": "ゲストを追加",
+          "updateGuest": "ゲストを更新",
+          "editGuest": "{{name}} を編集",
+          "removeGuest": "{{name}} を削除",
+          "remove": "削除",
+          "guestEmailInvalid": "招待を送れるようにメールアドレスを入力してください。",
+          "guestDuplicate": "そのアドレスはすでにリストにあります。",
           "back": "戻る",
           "next": "次へ"
         }

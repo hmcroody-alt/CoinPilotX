@@ -4488,6 +4488,29 @@
         "liveNow": "Ao vivo agora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
+        "confirmed": {
+          "title": "Reunião agendada",
+          "when": "Quando",
+          "duration": "Duração",
+          "guests": "Convidados",
+          "guestsNone": "Ninguém foi convidado ainda. Você pode convidar pessoas a partir da própria reunião.",
+          "memberFallback": "Membro {{id}}",
+          "someone": "Uma das pessoas convidadas",
+          "reminders": "Lembretes",
+          "remindersNone": "Nenhum lembrete está agendado para esta reunião.",
+          "reminderSkipped": "cedo demais para enviar",
+          "meetingId": "ID da reunião",
+          "meetingCode": "Código de convite",
+          "done": "Concluído",
+          "skipped": {
+            "emailRequired": "Não convidado — sem endereço de e-mail",
+            "emailInvalid": "Não convidado — esse endereço não pode ser usado",
+            "tooMany": "Não convidado — convidados demais para uma reunião",
+            "isHost": "Já está aqui — você é o anfitrião",
+            "alreadyIn": "Já está nesta reunião",
+            "unavailable": "Não foi possível convidar"
+          }
+        },
         "buckets": {
           "live": "Acontecendo agora",
           "upcoming": "Próximas",
@@ -4617,6 +4640,7 @@
             "zone": "Confirme o fuso horário",
             "duration": "Quanto tempo?",
             "details": "Título e pauta",
+            "guests": "Quem vai participar?",
             "review": "Revisar"
           },
           "timeHint": "O horário como será lido onde a reunião acontece.",
@@ -4627,6 +4651,18 @@
           "durationRange": "Escolha entre {{min}} e {{max}} minutos.",
           "agendaField": "Pauta (opcional)",
           "inviteLater": "Você poderá convidar pessoas assim que a reunião existir.",
+          "guestsHint": "Todos aqui recebem o convite e os lembretes. Não precisam de uma conta PulseSoc.",
+          "guestsNone": "Ainda sem convidados. Você pode adicioná-los agora ou convidar depois.",
+          "guestsNoneShort": "Ninguém ainda",
+          "guestName": "Nome completo (opcional)",
+          "guestEmail": "Endereço de e-mail",
+          "addGuest": "Adicionar convidado",
+          "updateGuest": "Atualizar convidado",
+          "editGuest": "Editar {{name}}",
+          "removeGuest": "Remover {{name}}",
+          "remove": "Remover",
+          "guestEmailInvalid": "Adicione um endereço de e-mail para podermos enviar o convite.",
+          "guestDuplicate": "Esse endereço já está na lista.",
           "back": "Voltar",
           "next": "Avançar"
         }

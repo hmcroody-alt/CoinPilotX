@@ -4456,6 +4456,29 @@
         "liveNow": "지금 진행 중",
         "durationMinutes_one": "{{count}}분",
         "durationMinutes_other": "{{count}}분",
+        "confirmed": {
+          "title": "회의가 예약되었습니다",
+          "when": "일시",
+          "duration": "소요 시간",
+          "guests": "초대됨",
+          "guestsNone": "아직 아무도 초대하지 않았습니다. 회의 안에서 언제든 초대할 수 있습니다.",
+          "memberFallback": "멤버 {{id}}",
+          "someone": "참석자 중 한 명",
+          "reminders": "알림",
+          "remindersNone": "이 회의에 예약된 알림이 없습니다.",
+          "reminderSkipped": "시간이 너무 촉박해 보내지 않습니다",
+          "meetingId": "회의 ID",
+          "meetingCode": "초대 코드",
+          "done": "완료",
+          "skipped": {
+            "emailRequired": "초대되지 않음 — 이메일 주소 없음",
+            "emailInvalid": "초대되지 않음 — 사용할 수 없는 주소입니다",
+            "tooMany": "초대되지 않음 — 회의 하나에 참석자가 너무 많습니다",
+            "isHost": "이미 참여 중 — 본인이 주최자입니다",
+            "alreadyIn": "이미 이 회의에 있습니다",
+            "unavailable": "초대할 수 없습니다"
+          }
+        },
         "buckets": {
           "live": "진행 중",
           "upcoming": "예정",
@@ -4584,6 +4607,7 @@
             "zone": "시간대 확인",
             "duration": "얼마나 걸리나요?",
             "details": "제목과 안건",
+            "guests": "누가 참석하나요?",
             "review": "검토"
           },
           "timeHint": "미팅이 열리는 곳에서 표시될 시간입니다.",
@@ -4594,6 +4618,18 @@
           "durationRange": "{{min}}분에서 {{max}}분 사이로 선택하세요.",
           "agendaField": "안건 (선택)",
           "inviteLater": "미팅이 생성된 뒤에 사람들을 초대할 수 있습니다.",
+          "guestsHint": "여기 있는 모든 분에게 초대장과 알림이 전송됩니다. PulseSoc 계정은 필요하지 않습니다.",
+          "guestsNone": "아직 참석자가 없습니다. 지금 추가하거나 나중에 초대할 수 있습니다.",
+          "guestsNoneShort": "아직 없음",
+          "guestName": "이름 (선택 사항)",
+          "guestEmail": "이메일 주소",
+          "addGuest": "참석자 추가",
+          "updateGuest": "참석자 수정",
+          "editGuest": "{{name}} 편집",
+          "removeGuest": "{{name}} 삭제",
+          "remove": "삭제",
+          "guestEmailInvalid": "초대장을 보낼 수 있도록 이메일 주소를 입력하세요.",
+          "guestDuplicate": "이미 목록에 있는 주소입니다.",
           "back": "뒤로",
           "next": "다음"
         }

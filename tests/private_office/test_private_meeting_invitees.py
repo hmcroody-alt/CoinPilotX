@@ -628,5 +628,195 @@ def test_identity_prefers_the_account_over_the_address():
     assert meetings.invite_identity() == ""
 
 
+# ---------------------------------------------------------------------------
+# What the confirmation screen is allowed to claim
+# ---------------------------------------------------------------------------
+#
+# The wizard used to close on success and say nothing, which is indistinguishable
+# from a wizard that closed on failure. Replacing it with a confirmation screen
+# only helps if every line on that screen is something the server asserted —
+# otherwise the fake success moves one screen later and gets more convincing.
+# These tests pin the three fields that screen reads.
+
+
+def test_the_create_response_reports_the_reminders_that_exist(cur, outbox):
+    """Not the ladder — the rows.
+
+    ``DEFAULT_REMINDER_OFFSETS`` is intent. ``_plan_reminders`` is non-fatal by
+    design, so intent and reality can differ, and a screen reciting the ladder
+    from a constant would promise three mails in exactly the case where none
+    were planned.
+    """
+    meeting = _schedule(cur)
+
+    offsets = [row["offset_minutes"] for row in meeting["reminders"]]
+    assert offsets, "the create response claimed no reminders at all"
+    assert sorted(offsets, reverse=True) == sorted(
+        meetings.DEFAULT_REMINDER_OFFSETS, reverse=True), (
+        f"reported {offsets}, ladder is {meetings.DEFAULT_REMINDER_OFFSETS}")
+
+    # And they are the rows, not a copy of the constant: every one must be
+    # findable in the table with the send_at that was reported for it.
+    meeting_id = _meeting_id(cur, meeting)
+    cur.execute(
+        "SELECT offset_minutes, send_at FROM private_meeting_reminders "
+        "WHERE meeting_id=? AND user_id=? AND kind='REMINDER'",
+        (meeting_id, HOST))
+    stored = {int(row[0]): str(row[1]) for row in cur.fetchall()}
+    assert {row["offset_minutes"]: row["send_at"]
+            for row in meeting["reminders"]} == stored
+
+
+def test_a_meeting_whose_reminders_could_not_be_planned_admits_it(
+        cur, monkeypatch, outbox):
+    """The case the constant would have lied about.
+
+    A booking survives a reminder store that is down — that is settled
+    elsewhere. What is settled here is that it does not go on to tell the host
+    they will be reminded.
+    """
+    from services.private_office import meeting_reminders
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("reminder store down")
+
+    monkeypatch.setattr(meeting_reminders, "plan_reminders", broken)
+    meeting = _schedule(cur)
+
+    assert _meeting_id(cur, meeting), "the booking did not survive"
+    assert meeting["reminders"] == [], (
+        f"claimed reminders none of which were planned: {meeting['reminders']}")
+
+
+def test_an_offset_already_in_the_past_is_reported_not_hidden(cur, outbox):
+    """Booking 30 minutes out cannot honour a 24h reminder.
+
+    The row is written SKIPPED rather than dropped, and it is reported rather
+    than filtered, because "you will be reminded 24 hours before" is false and
+    a silence where that line would be is not how anyone reads a list.
+    """
+    soon = (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+    meeting = meetings.create_meeting(
+        cur, owner_user_id=HOST, title="Soon", scheduled_start_at=soon,
+        duration_minutes=15, timezone_name="UTC")
+
+    by_offset = {row["offset_minutes"]: row["status"]
+                 for row in meeting["reminders"]}
+    assert by_offset.get(1440) == "SKIPPED", (
+        f"the unhonourable 24h reminder was not reported as skipped: {by_offset}")
+    assert by_offset.get(15) == "PENDING", (
+        f"the 15m reminder should still be live: {by_offset}")
+
+
+def test_a_member_invited_by_address_is_named_not_counted(cur, outbox):
+    """The host typed an address; the confirmation must be able to show it.
+
+    An address belonging to a member is invited as that member, and the id is
+    all ``invited`` carries. A screen with nothing but that id can only say
+    "1 member invited" — which is precisely the summary that lets a wrong
+    address through unread. ``invited_members`` is the same person with the
+    label the host supplied.
+    """
+    meeting = _schedule(cur, invitees=[
+        {"name": "Morgan Ellis", "email": MEMBER_EMAIL.upper()},
+        {"name": "Dana Reeves", "email": "dana@outside.example"},
+    ])
+    result = meeting["invite_result"]
+
+    assert result["invited"] == [MEMBER]
+    assert result["invited_members"] == [
+        {"user_id": MEMBER, "email": MEMBER_EMAIL, "name": "Morgan Ellis"}], (
+        f"the member's own typed address was lost: {result['invited_members']}")
+    assert result["invited_contacts"] == [
+        {"email": "dana@outside.example", "name": "Dana Reeves"}]
+
+
+def test_the_label_survives_being_offered_by_id_first(cur, outbox):
+    """Otherwise the confirmation could name someone or not by request order.
+
+    Sending a member's id *and* typing their address is one invitee. The id
+    offer arrives first and carries no label, and the address offer that would
+    have supplied one is deduplicated away — so without the merge the host
+    watches the same person be nameable or not depending on which list they
+    happened to end up in.
+    """
+    meeting = _schedule(
+        cur, invite_user_ids=[MEMBER],
+        invitees=[{"name": "Morgan Ellis", "email": MEMBER_EMAIL}])
+    result = meeting["invite_result"]
+
+    assert result["invited"] == [MEMBER], "one person, invited twice"
+    assert result["invited_members"] == [
+        {"user_id": MEMBER, "email": MEMBER_EMAIL, "name": "Morgan Ellis"}]
+
+
+def test_every_invited_member_is_listed_even_with_nothing_to_show(cur, outbox):
+    """`invited_members` is `invited` with labels, not the subset that had any.
+
+    A member invited by id alone has no name and no typed address, so the
+    temptation is to leave them out of a list whose whole purpose is display.
+    That drops them off the confirmation entirely while `invited` still counts
+    them — the host reads a shorter guest list than the one the server acted on,
+    with nothing on screen suggesting anyone is missing. It is the counting bug
+    again, arrived at by trying to avoid an empty row.
+
+    The empty entry is renderable: the screen names the member id rather than
+    leaving a blank, which is thin but visibly thin. Same length and same order
+    as `invited`, always — that parity is the contract.
+    """
+    meeting = _schedule(
+        cur, invite_user_ids=[MEMBER],
+        invitees=[{"name": "Dana Reeves", "email": "dana@outside.example"}])
+    result = meeting["invite_result"]
+
+    assert result["invited"] == [MEMBER]
+    assert result["invited_members"] == [
+        {"user_id": MEMBER, "email": "", "name": ""}], (
+        "a member with no label was dropped from the display list: "
+        f"{result['invited_members']}")
+    assert [m["user_id"] for m in result["invited_members"]] == result["invited"]
+
+
+def test_a_replayed_booking_confirms_as_much_as_the_first_one(cur, outbox):
+    """A double-tapped Schedule must not report less than a single tap.
+
+    Idempotency returns the original meeting, and the original meeting's
+    confirmation screen is the one the host is about to read. A bare projection
+    there would show a meeting with no invitees and no reminders — a second tap
+    quietly retracting the first tap's answer.
+    """
+    first = _schedule(cur, idempotency_key="tap-1", invitees=[
+        {"name": "Dana Reeves", "email": "dana@outside.example"}])
+    second = _schedule(cur, idempotency_key="tap-1", invitees=[
+        {"name": "Dana Reeves", "email": "dana@outside.example"}])
+
+    assert second["public_id"] == first["public_id"], "a second meeting was made"
+    assert second["invite_result"]["invited_contacts"] == [
+        {"email": "dana@outside.example", "name": "Dana Reeves"}]
+    assert ([row["offset_minutes"] for row in second["reminders"]]
+            == [row["offset_minutes"] for row in first["reminders"]])
+
+
+def test_a_replay_reports_the_rows_not_the_request(cur, outbox):
+    """The retry's body is not evidence of anything.
+
+    A replay that echoed its own ``invitees`` back would confirm an invitation
+    this call never wrote — which is the same fabrication as the original bug,
+    reached by retrying instead of by failing.
+    """
+    first = _schedule(cur, idempotency_key="tap-2")
+    assert first["invite_result"]["invited_contacts"] == []
+
+    replay = _schedule(cur, idempotency_key="tap-2", invitees=[
+        {"name": "Never Invited", "email": "ghost@outside.example"}])
+
+    assert replay["public_id"] == first["public_id"]
+    assert replay["invite_result"]["invited_contacts"] == [], (
+        "the replay confirmed an invitation it did not send: "
+        f"{replay['invite_result']['invited_contacts']}")
+    assert [row["invitee_email"] for row in _invites(cur, first)] == [], (
+        "and it wrote one")
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v", "-p", "no:randomly"]))

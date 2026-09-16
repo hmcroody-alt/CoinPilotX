@@ -4488,6 +4488,29 @@
         "liveNow": "En direct",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
+        "confirmed": {
+          "title": "Réunion programmée",
+          "when": "Quand",
+          "duration": "Durée",
+          "guests": "Invités",
+          "guestsNone": "Personne n'a encore été invité. Vous pouvez inviter des personnes depuis la réunion elle-même.",
+          "memberFallback": "Membre {{id}}",
+          "someone": "L'un de vos invités",
+          "reminders": "Rappels",
+          "remindersNone": "Aucun rappel n'est programmé pour cette réunion.",
+          "reminderSkipped": "trop tard pour être envoyé",
+          "meetingId": "Identifiant de la réunion",
+          "meetingCode": "Code d'invitation",
+          "done": "Terminé",
+          "skipped": {
+            "emailRequired": "Non invité — aucune adresse e-mail",
+            "emailInvalid": "Non invité — cette adresse est inutilisable",
+            "tooMany": "Non invité — trop d'invités pour une réunion",
+            "isHost": "Déjà présent — vous êtes l'organisateur",
+            "alreadyIn": "Déjà dans cette réunion",
+            "unavailable": "N'a pas pu être invité"
+          }
+        },
         "buckets": {
           "live": "En cours",
           "upcoming": "À venir",
@@ -4617,6 +4640,7 @@
             "zone": "Confirmez le fuseau horaire",
             "duration": "Quelle durée ?",
             "details": "Titre et ordre du jour",
+            "guests": "Qui participe ?",
             "review": "Vérifier"
           },
           "timeHint": "L'heure telle qu'elle se lira là où la réunion a lieu.",
@@ -4627,6 +4651,18 @@
           "durationRange": "Choisissez entre {{min}} et {{max}} minutes.",
           "agendaField": "Ordre du jour (facultatif)",
           "inviteLater": "Vous pourrez inviter des personnes une fois la réunion créée.",
+          "guestsHint": "Toutes ces personnes reçoivent l'invitation et les rappels. Aucun compte PulseSoc n'est nécessaire.",
+          "guestsNone": "Aucun invité pour l'instant. Vous pouvez en ajouter maintenant ou inviter plus tard.",
+          "guestsNoneShort": "Personne pour l'instant",
+          "guestName": "Nom complet (facultatif)",
+          "guestEmail": "Adresse e-mail",
+          "addGuest": "Ajouter un invité",
+          "updateGuest": "Mettre à jour l'invité",
+          "editGuest": "Modifier {{name}}",
+          "removeGuest": "Retirer {{name}}",
+          "remove": "Retirer",
+          "guestEmailInvalid": "Ajoutez une adresse e-mail pour que nous puissions envoyer l'invitation.",
+          "guestDuplicate": "Cette adresse figure déjà dans la liste.",
           "back": "Retour",
           "next": "Suivant"
         }

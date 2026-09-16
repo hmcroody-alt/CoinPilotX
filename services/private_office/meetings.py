@@ -1169,7 +1169,17 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
                             scheduled=bool(existing.get("scheduled_start_at")),
                             waiting_room=bool(existing.get("waiting_room_enabled")),
                             participant_count=1)
-            return _project_meeting(cur, existing, viewer_user_id=owner)
+            # "Both must look the same" has to include the parts the
+            # confirmation screen renders. A replay that returned a bare
+            # projection would show the host a meeting with no invitees and no
+            # reminders — so a double-tapped Schedule would report *less* than a
+            # single tap, on exactly the same meeting. Rebuilt from the rows
+            # rather than from the request: the invitations that exist are the
+            # ones the first call actually managed to write.
+            replayed = _project_meeting(cur, existing, viewer_user_id=owner)
+            replayed["invite_result"] = _invite_result_of(cur, int(existing["id"]))
+            replayed["reminders"] = _reminder_plan(cur, int(existing["id"]), owner)
+            return replayed
     now = _now_iso()
     public_id = _new_public_id()
     meeting_code = ""
@@ -1214,7 +1224,8 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
     # collects them on the way to the confirm button, so requiring a second
     # request would mean a meeting could exist with nobody on it because the
     # app was closed in between — the host having been told they were invited.
-    invite_result = {"invited": [], "invited_contacts": [], "skipped": []}
+    invite_result = {"invited": [], "invited_members": [],
+                     "invited_contacts": [], "skipped": []}
     if invitees or invite_user_ids:
         invite_result = invite_users(
             cur, actor_user_id=owner, meeting_ref=public_id,
@@ -1222,7 +1233,75 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
         meeting = _require_meeting(cur, public_id)
     projected = _project_meeting(cur, meeting, viewer_user_id=owner)
     projected["invite_result"] = invite_result
+    projected["reminders"] = _reminder_plan(cur, int(meeting["id"]), owner)
     return projected
+
+
+def _invite_result_of(cur, meeting_id: int) -> dict:
+    """The invitations a meeting actually holds, in create-response shape.
+
+    Only for the replay path, and deliberately without a ``skipped`` list: an
+    address the first call refused left no row behind, so there is nothing here
+    to reconstruct it from. Reporting an empty ``skipped`` is the honest answer
+    to "what is on this meeting" — inventing entries by re-reading the retry's
+    request would claim knowledge of a ruling this call never made.
+
+    A member's ``invited_members`` entry carries no address, because the row
+    does not hold one: ``invitee_email`` is the identity of an outside guest and
+    is left empty for an account, which is what keeps the column from meaning
+    two things. So a replay can name a member only if the host typed a name.
+    Thinner than the first response, and thin in a way that is visible — which
+    is the better failure when the alternative is a plausible-looking address
+    that was reconstructed rather than recorded.
+    """
+    result: dict = {"invited": [], "invited_members": [],
+                    "invited_contacts": [], "skipped": []}
+    with _nonfatal(cur, "read_invite_result"):
+        cur.execute(
+            f"SELECT invitee_user_id, invitee_email, invitee_name FROM "
+            f"{INVITES_TABLE} WHERE meeting_id=? ORDER BY id ASC",
+            (int(meeting_id),))
+        for row in cur.fetchall() or []:
+            user_id = int(row[0] or 0)
+            email, name = str(row[1] or ""), str(row[2] or "")
+            if user_id > 0:
+                result["invited"].append(user_id)
+                result["invited_members"].append(
+                    {"user_id": user_id, "email": "", "name": name})
+            else:
+                result["invited_contacts"].append({"email": email, "name": name})
+    return result
+
+
+def _reminder_plan(cur, meeting_id: int, user_id: int) -> list[dict]:
+    """What was planned for one person — not what was meant to be.
+
+    ``DEFAULT_REMINDER_OFFSETS`` is a statement of intent, and ``_plan_reminders``
+    is deliberately non-fatal: a reminder store that is down degrades a meeting
+    rather than cancelling one. So the ladder and the rows can disagree, and only
+    the rows are true. A confirmation screen reciting "24 hours, 1 hour, 15
+    minutes" from a constant would promise three mails in exactly the case where
+    none were scheduled — which is the same fake success as a wizard that closes
+    without booking anything, moved one screen later.
+
+    Every planned row is reported, SKIPPED ones included. Booking a meeting
+    twenty minutes out cannot honour a 24h reminder, and the host is better told
+    that the 24h one will not arrive than left to infer it from a silence.
+    """
+    plan: list[dict] = []
+    with _nonfatal(cur, "read_reminder_plan"):
+        cur.execute(
+            f"SELECT offset_minutes, send_at, status FROM {REMINDERS_TABLE} "
+            f"WHERE meeting_id=? AND user_id=? AND kind=? "
+            f"ORDER BY send_at ASC, offset_minutes DESC",
+            (int(meeting_id), int(user_id), RK_REMINDER))
+        for row in cur.fetchall() or []:
+            plan.append({
+                "offset_minutes": int(row[0]),
+                "send_at": str(row[1] or ""),
+                "status": str(row[2] or ""),
+            })
+    return plan
 
 
 @contextmanager
@@ -2015,15 +2094,38 @@ def _plan_invitees(cur, *, user_ids, invitees, owner: int) -> tuple[list, list]:
     skipped: list[dict] = []
     seen: set[str] = set()
 
-    def offer(*, user_id: int = 0, email: str = "", name: str = "") -> None:
+    by_key: dict[str, dict] = {}
+
+    def offer(*, user_id: int = 0, email: str = "", name: str = "",
+              typed_email: str = "") -> None:
         key = invite_identity(user_id=user_id, email=email)
-        if not key or key in seen:
+        if not key:
+            return
+        if key in seen:
+            # Same person, offered twice. The second offer is not a second
+            # invite, but it may carry the label the first one lacked — which
+            # is the case when a host sends a member's id *and* types their
+            # address. Dropping it wholesale would make the confirmation able
+            # to name that person or not depending on request order.
+            already = by_key[key]
+            if typed_email and not already["typed_email"]:
+                already["typed_email"] = typed_email
+            if name and not already["name"]:
+                already["name"] = _clip(name, MAX_INVITE_NAME)
             return
         seen.add(key)
-        candidates.append({
+        record = {
             "user_id": int(user_id or 0), "email": email,
             "name": _clip(name, MAX_INVITE_NAME), "key": key,
-        })
+            # The address the host typed, kept only as a label. For an outside
+            # guest it is also the identity; for a member it is emphatically
+            # not — `key` is — and it exists here solely so the confirmation
+            # screen can say *who* was invited instead of counting them. It is
+            # the host's own input being read back, never a lookup.
+            "typed_email": typed_email,
+        }
+        by_key[key] = record
+        candidates.append(record)
 
     for raw in list(user_ids or []):
         try:
@@ -2049,10 +2151,11 @@ def _plan_invitees(cur, *, user_ids, invitees, owner: int) -> tuple[list, list]:
         member = _resolve_member_by_email(cur, email)
         if member > 0:
             # They already have an account. Invite the account, and keep the
-            # typed name only as a label — it never overrides their own.
-            offer(user_id=member, name=name)
+            # typed name and address only as labels — neither overrides their
+            # own, and neither is the identity this invite is keyed on.
+            offer(user_id=member, name=name, typed_email=email)
         else:
-            offer(email=email, name=name)
+            offer(email=email, name=name, typed_email=email)
 
     if len(candidates) > MAX_INVITES_PER_CALL:
         for extra in candidates[MAX_INVITES_PER_CALL:]:
@@ -2128,6 +2231,7 @@ def invite_users(cur, *, actor_user_id: int, meeting_ref: object,
         cur, user_ids=user_ids, invitees=invitees, owner=owner)
 
     invited: list[int] = []
+    invited_members: list[dict] = []
     invited_contacts: list[dict] = []
     for candidate in candidates:
         invitee = candidate["user_id"]
@@ -2152,6 +2256,11 @@ def invite_users(cur, *, actor_user_id: int, meeting_ref: object,
                     cur, meeting_id=meeting_id, user_id=invitee,
                     role=ROLE_PARTICIPANT, state=P_INVITED, invited_by=actor)
             invited.append(invitee)
+            invited_members.append({
+                "user_id": invitee,
+                "email": candidate["typed_email"],
+                "name": candidate["name"],
+            })
             continue
 
         _upsert_invite(cur, meeting_id=meeting_id, actor=actor,
@@ -2173,8 +2282,13 @@ def invite_users(cur, *, actor_user_id: int, meeting_ref: object,
     _audit(cur, actor=actor, owner=owner, action=audit.ACTION_MEETING_INVITE,
            meeting_id=meeting_id,
            count=len(invited) + len(invited_contacts))
-    return {"invited": invited, "invited_contacts": invited_contacts,
-            "skipped": skipped}
+    # `invited` stays the machine answer — ids, in request order — because that
+    # is what every existing caller asserts on. `invited_members` is the same
+    # people with the labels the host gave, and exists because a confirmation
+    # that can only say "1 member invited" is how a wrong address gets through
+    # unread. Same length, same order; one is the identity, one is the display.
+    return {"invited": invited, "invited_members": invited_members,
+            "invited_contacts": invited_contacts, "skipped": skipped}
 
 
 def respond_invite(cur, *, user_id: int, meeting_ref: object,

@@ -25,6 +25,13 @@
  * generated when the user reaches Review and survives every retry from there,
  * so a double-tapped Schedule returns the first meeting instead of creating a
  * second. It is regenerated only when the wizard is reopened.
+ *
+ * **It collects guests before the meeting is created, not after.** Booking and
+ * inviting in one request is what stops a meeting existing with nobody on it
+ * because the app was closed in between — with the host already told otherwise.
+ * The address shape is checked here only so a typo is caught while the user is
+ * still looking at it; whether an address is usable, already a member, or a
+ * duplicate is the server's ruling, exactly as with the date.
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -53,9 +60,28 @@ import {
 } from "./calendar";
 import { longDateLabel, timezoneLabel, timezoneOffsetLabel, wallClockLabel } from "./calendarLabels";
 
-type Step = "DATE" | "TIME" | "ZONE" | "DURATION" | "DETAILS" | "REVIEW";
+type Step = "DATE" | "TIME" | "ZONE" | "DURATION" | "DETAILS" | "GUESTS" | "REVIEW";
 
-const STEP_ORDER: Step[] = ["DATE", "TIME", "ZONE", "DURATION", "DETAILS", "REVIEW"];
+export const NEW_MEETING_STEPS: Step[] = [
+  "DATE",
+  "TIME",
+  "ZONE",
+  "DURATION",
+  "DETAILS",
+  "GUESTS",
+  "REVIEW"
+];
+
+/**
+ * Rescheduling skips Guests.
+ *
+ * The guest list is sent with the create request and nowhere else — a
+ * reschedule carries only the fields it can actually change. Offering the step
+ * during an edit would show an existing meeting's invitees as an empty list and
+ * then discard whatever was typed into it, which is the same lie as a wizard
+ * that closes without booking anything.
+ */
+export const EDIT_STEPS: Step[] = NEW_MEETING_STEPS.filter((name) => name !== "GUESTS");
 
 /** Quarter-hour grid. Anything else is typed in the custom field below it. */
 const MINUTE_CHOICES = [0, 15, 30, 45];
@@ -86,6 +112,19 @@ const COMMON_ZONES = [
   "UTC"
 ];
 
+/**
+ * One person to invite, as the host typed them.
+ *
+ * `id` is local to this component — a list key and an edit handle, never sent
+ * and never an identity. The server keys an invitee on the normalized address,
+ * which is the only thing here that means anything outside this screen.
+ */
+export type GuestDraft = {
+  id: string;
+  name: string;
+  email: string;
+};
+
 export type ScheduleDraft = {
   date: CivilDate;
   time: WallClock;
@@ -97,7 +136,34 @@ export type ScheduleDraft = {
   idempotencyKey: string;
   /** The naive local datetime the server will resolve. */
   scheduledStartAt: string;
+  /** Sent with the create request; empty when rescheduling. */
+  invitees: { name: string; email: string }[];
 };
+
+/**
+ * The shape check, mirroring the server's `_EMAIL_SHAPE`.
+ *
+ * Deliberately crude, and deliberately the same crudeness as the server: one
+ * `@`, a dot after it, no whitespace. Anything stricter starts refusing valid
+ * addresses — and an address this rejects is a typo the user can see, not a
+ * judgement about whether the inbox exists.
+ */
+const EMAIL_SHAPE = /^[^@\s]+@[^@\s.]+\.[^@\s]+$/;
+
+/**
+ * Trim and lowercase, matching `auth_service.normalize_email`.
+ *
+ * No provider-specific folding: stripping dots or `+tags` is right at Gmail and
+ * wrong nearly everywhere else, and a rule that silently merges two genuinely
+ * different addresses sends someone else's meeting to the wrong person.
+ */
+export function normalizeGuestEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+export function guestEmailLooksValid(value: string): boolean {
+  return EMAIL_SHAPE.test(normalizeGuestEmail(value));
+}
 
 /**
  * What an existing meeting looks like on the way back into the wizard.
@@ -159,6 +225,13 @@ export function ScheduleWizard({
   const [title, setTitle] = useState(initial ? initial.title : "");
   const [agenda, setAgenda] = useState(initial ? initial.agenda : "");
   const [idempotencyKey, setIdempotencyKey] = useState(mintKey);
+  const [guests, setGuests] = useState<GuestDraft[]>([]);
+  const [guestName, setGuestName] = useState("");
+  const [guestEmail, setGuestEmail] = useState("");
+  const [editingGuestId, setEditingGuestId] = useState<string | null>(null);
+  const [guestError, setGuestError] = useState<"invalid" | "duplicate" | "">("");
+
+  const STEP_ORDER = initial ? EDIT_STEPS : NEW_MEETING_STEPS;
 
   const zones = useMemo(() => {
     const device = deviceTimezone();
@@ -182,9 +255,77 @@ export function ScheduleWizard({
     (step === "TIME" && true) ||
     (step === "ZONE" && true) ||
     (step === "DURATION" && durationValid) ||
-    step === "DETAILS";
+    step === "DETAILS" ||
+    // Guests are optional, so this step never blocks on an empty list. It
+    // blocks only on text the user has typed and not yet added, which `goNext`
+    // resolves rather than discards.
+    step === "GUESTS";
+
+  /**
+   * Commit the guest currently in the fields.
+   *
+   * Returns the new list, or `null` if the typed text cannot be added. The
+   * caller uses that to decide whether advancing is safe — the wizard must
+   * never carry a half-typed guest past this step and silently drop them.
+   */
+  const commitGuest = useCallback((): GuestDraft[] | null => {
+    const email = normalizeGuestEmail(guestEmail);
+    const name = guestName.trim();
+    if (!email) {
+      // A name with no address is not a guest we can reach. The server refuses
+      // it too; saying so here means the host finds out while they can fix it.
+      setGuestError(name ? "invalid" : "");
+      return name ? null : guests;
+    }
+    if (!guestEmailLooksValid(email)) {
+      setGuestError("invalid");
+      return null;
+    }
+    const clash = guests.some(
+      (guest) => guest.id !== editingGuestId && normalizeGuestEmail(guest.email) === email
+    );
+    if (clash) {
+      setGuestError("duplicate");
+      return null;
+    }
+    const next = editingGuestId
+      ? guests.map((guest) =>
+          guest.id === editingGuestId ? { ...guest, name, email } : guest
+        )
+      : [...guests, { id: mintKey(), name, email }];
+    setGuests(next);
+    setGuestName("");
+    setGuestEmail("");
+    setEditingGuestId(null);
+    setGuestError("");
+    return next;
+  }, [editingGuestId, guestEmail, guestName, guests]);
+
+  const editGuest = useCallback((guest: GuestDraft) => {
+    setGuestName(guest.name);
+    setGuestEmail(guest.email);
+    setEditingGuestId(guest.id);
+    setGuestError("");
+  }, []);
+
+  const removeGuest = useCallback(
+    (id: string) => {
+      setGuests((current) => current.filter((guest) => guest.id !== id));
+      if (editingGuestId === id) {
+        setGuestName("");
+        setGuestEmail("");
+        setEditingGuestId(null);
+      }
+      setGuestError("");
+    },
+    [editingGuestId]
+  );
 
   const goNext = useCallback(() => {
+    // Pressing Next with a valid address still in the field means "add this
+    // one and carry on" — the alternative is a guest the host typed, watched
+    // the review step omit, and has no reason to suspect was never invited.
+    if (step === "GUESTS" && commitGuest() === null) return;
     setStep((current) => {
       const at = STEP_ORDER.indexOf(current);
       const next = STEP_ORDER[Math.min(at + 1, STEP_ORDER.length - 1)];
@@ -192,11 +333,11 @@ export function ScheduleWizard({
       if (next === "REVIEW" && current !== "REVIEW") setIdempotencyKey(mintKey());
       return next;
     });
-  }, []);
+  }, [STEP_ORDER, commitGuest, step]);
 
   const goBack = useCallback(() => {
     setStep((current) => STEP_ORDER[Math.max(STEP_ORDER.indexOf(current) - 1, 0)]);
-  }, []);
+  }, [STEP_ORDER]);
 
   const submit = useCallback(() => {
     if (!date || !durationValid) return;
@@ -208,9 +349,21 @@ export function ScheduleWizard({
       title: title.trim(),
       agenda: agenda.trim(),
       idempotencyKey,
-      scheduledStartAt: localStartAt(date, time)
+      scheduledStartAt: localStartAt(date, time),
+      invitees: guests.map((guest) => ({ name: guest.name, email: guest.email }))
     });
-  }, [agenda, date, durationValid, idempotencyKey, onSubmit, resolvedDuration, time, title, zone]);
+  }, [
+    agenda,
+    date,
+    durationValid,
+    guests,
+    idempotencyKey,
+    onSubmit,
+    resolvedDuration,
+    time,
+    title,
+    zone
+  ]);
 
   // A hint, not a gate. The server rules on this in the meeting's own zone.
   const looksPast = date ? isPastLocally(date, time) : false;
@@ -393,6 +546,110 @@ export function ScheduleWizard({
         </View>
       ) : null}
 
+      {step === "GUESTS" ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionHint}>
+            {t("premium:privateOffice.meetings.wizard.guestsHint")}
+          </Text>
+
+          {guests.length === 0 ? (
+            <Text style={styles.sectionHint}>
+              {t("premium:privateOffice.meetings.wizard.guestsNone")}
+            </Text>
+          ) : (
+            <View style={styles.guestList}>
+              {guests.map((guest) => (
+                <View key={guest.id} style={styles.guestRow}>
+                  <Pressable
+                    style={styles.guestIdentity}
+                    onPress={() => editGuest(guest)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      "premium:privateOffice.meetings.wizard.editGuest",
+                      { name: guest.name || guest.email }
+                    )}
+                  >
+                    {guest.name ? (
+                      <Text style={styles.guestName} numberOfLines={1}>
+                        {guest.name}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.guestEmail} numberOfLines={1}>
+                      {guest.email}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.guestRemove}
+                    onPress={() => removeGuest(guest.id)}
+                    accessibilityRole="button"
+                    accessibilityLabel={t(
+                      "premium:privateOffice.meetings.wizard.removeGuest",
+                      { name: guest.name || guest.email }
+                    )}
+                  >
+                    <Text style={styles.guestRemoveText}>
+                      {t("premium:privateOffice.meetings.wizard.remove")}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <TextInput
+            style={styles.input}
+            value={guestName}
+            onChangeText={setGuestName}
+            placeholder={t("premium:privateOffice.meetings.wizard.guestName")}
+            placeholderTextColor={colors.muted}
+            autoCapitalize="words"
+            accessibilityLabel={t("premium:privateOffice.meetings.wizard.guestName")}
+          />
+          <TextInput
+            style={styles.input}
+            value={guestEmail}
+            onChangeText={(value) => {
+              setGuestEmail(value);
+              setGuestError("");
+            }}
+            placeholder={t("premium:privateOffice.meetings.wizard.guestEmail")}
+            placeholderTextColor={colors.muted}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            onSubmitEditing={() => commitGuest()}
+            accessibilityLabel={t("premium:privateOffice.meetings.wizard.guestEmail")}
+          />
+          {guestError ? (
+            <Text style={styles.warnText}>
+              {t(
+                guestError === "duplicate"
+                  ? "premium:privateOffice.meetings.wizard.guestDuplicate"
+                  : "premium:privateOffice.meetings.wizard.guestEmailInvalid"
+              )}
+            </Text>
+          ) : null}
+          <Pressable
+            style={styles.addGuestButton}
+            onPress={() => commitGuest()}
+            accessibilityRole="button"
+            accessibilityLabel={t(
+              editingGuestId
+                ? "premium:privateOffice.meetings.wizard.updateGuest"
+                : "premium:privateOffice.meetings.wizard.addGuest"
+            )}
+          >
+            <Text style={styles.addGuestText}>
+              {t(
+                editingGuestId
+                  ? "premium:privateOffice.meetings.wizard.updateGuest"
+                  : "premium:privateOffice.meetings.wizard.addGuest"
+              )}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {step === "REVIEW" && date ? (
         <View style={styles.section}>
           <ReviewRow
@@ -421,6 +678,20 @@ export function ScheduleWizard({
             label={t("premium:privateOffice.meetings.scheduleTitleField")}
             value={title.trim() || t("premium:privateOffice.meetings.untitled")}
           />
+          {initial ? null : (
+            <ReviewRow
+              label={t("premium:privateOffice.meetings.wizard.steps.guests")}
+              // Naming every guest, not counting them. "3 guests" is exactly
+              // the summary that lets a wrong address through unread.
+              value={
+                guests.length === 0
+                  ? t("premium:privateOffice.meetings.wizard.guestsNoneShort")
+                  : guests
+                      .map((guest) => (guest.name ? `${guest.name} (${guest.email})` : guest.email))
+                      .join("\n")
+              }
+            />
+          )}
           {looksPast ? (
             <Text style={styles.warnText}>
               {t("premium:privateOffice.meetings.wizard.looksPast")}
@@ -483,10 +754,14 @@ export function ScheduleWizard({
 }
 
 function ReviewRow({ label, value }: { label: string; value: string }) {
+  // The guest list is one row holding several lines, and a guest clipped out of
+  // the review is a guest the host never gets to notice is wrong. The cap
+  // scales with the content instead of truncating it.
+  const lines = Math.max(2, value.split("\n").length);
   return (
     <View style={styles.reviewRow}>
       <Text style={styles.reviewLabel}>{label}</Text>
-      <Text style={styles.reviewValue} numberOfLines={2}>
+      <Text style={styles.reviewValue} numberOfLines={lines}>
         {value}
       </Text>
     </View>
@@ -541,6 +816,33 @@ const styles = StyleSheet.create({
     fontSize: 14
   },
   inputMultiline: { minHeight: 76, textAlignVertical: "top" },
+  guestList: { gap: 6 },
+  guestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: 1
+  },
+  guestIdentity: { flex: 1, gap: 2 },
+  guestName: { color: colors.text, fontSize: 13, fontWeight: "600" },
+  guestEmail: { color: colors.muted, fontSize: 12 },
+  guestRemove: { paddingHorizontal: 6, paddingVertical: 4 },
+  guestRemoveText: { color: colors.muted, fontSize: 12, fontWeight: "600" },
+  addGuestButton: {
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderColor: colors.border,
+    borderWidth: 1,
+    alignItems: "center",
+    backgroundColor: colors.surfaceRaised
+  },
+  addGuestText: { color: colors.accentStrong, fontSize: 13, fontWeight: "700" },
   reviewRow: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
   reviewLabel: { color: colors.muted, fontSize: 12, width: 92 },
   reviewValue: { color: colors.text, fontSize: 13, fontWeight: "600", flex: 1 },

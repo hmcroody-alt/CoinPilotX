@@ -4456,6 +4456,29 @@
         "liveNow": "正在进行",
         "durationMinutes_one": "{{count}} 分钟",
         "durationMinutes_other": "{{count}} 分钟",
+        "confirmed": {
+          "title": "会议已安排",
+          "when": "时间",
+          "duration": "时长",
+          "guests": "已邀请",
+          "guestsNone": "还没有邀请任何人。你可以在会议中随时邀请。",
+          "memberFallback": "成员 {{id}}",
+          "someone": "你的一位来宾",
+          "reminders": "提醒",
+          "remindersNone": "此会议没有安排提醒。",
+          "reminderSkipped": "距离开始太近，不会发送",
+          "meetingId": "会议 ID",
+          "meetingCode": "邀请码",
+          "done": "完成",
+          "skipped": {
+            "emailRequired": "未邀请 — 没有电子邮件地址",
+            "emailInvalid": "未邀请 — 该地址无法使用",
+            "tooMany": "未邀请 — 一场会议的来宾过多",
+            "isHost": "已在其中 — 你是主持人",
+            "alreadyIn": "已在此会议中",
+            "unavailable": "无法邀请"
+          }
+        },
         "buckets": {
           "live": "正在进行",
           "upcoming": "即将开始",
@@ -4584,6 +4607,7 @@
             "zone": "确认时区",
             "duration": "会议时长",
             "details": "标题与议程",
+            "guests": "谁会参加？",
             "review": "确认"
           },
           "timeHint": "这是会议所在地显示的时间。",
@@ -4594,6 +4618,18 @@
           "durationRange": "请选择 {{min}} 到 {{max}} 分钟之间。",
           "agendaField": "议程（选填）",
           "inviteLater": "会议创建后即可邀请他人。",
+          "guestsHint": "这里的每个人都会收到邀请和提醒。他们无需拥有 PulseSoc 账户。",
+          "guestsNone": "还没有来宾。你可以现在添加，也可以稍后邀请。",
+          "guestsNoneShort": "暂无",
+          "guestName": "全名（可选）",
+          "guestEmail": "电子邮件地址",
+          "addGuest": "添加来宾",
+          "updateGuest": "更新来宾",
+          "editGuest": "编辑 {{name}}",
+          "removeGuest": "移除 {{name}}",
+          "remove": "移除",
+          "guestEmailInvalid": "请填写电子邮件地址，以便我们发送邀请。",
+          "guestDuplicate": "该地址已在列表中。",
           "back": "返回",
           "next": "下一步"
         }

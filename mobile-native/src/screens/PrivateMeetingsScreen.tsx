@@ -52,6 +52,7 @@ import {
 } from "../privateOffice/meetings/api";
 import { enterMeeting, enterMeetingWithProjection } from "../privateOffice/meetings/meetingSession";
 import { MeetingCalendar } from "../privateOffice/meetings/MeetingCalendar";
+import { ScheduleConfirmation } from "../privateOffice/meetings/ScheduleConfirmation";
 import {
   ScheduleDraft,
   ScheduleSeed,
@@ -135,6 +136,10 @@ function PrivateMeetingsBody({ navigation }: Props) {
   // The meeting whose edit wizard is open, or null. Held as the projection
   // rather than an id so the seed is built from what the server last said.
   const [editing, setEditing] = useState<PrivateMeeting | null>(null);
+  // The meeting a just-finished booking returned, or null. The server's
+  // projection, kept verbatim — the confirmation sheet renders this and never
+  // the draft, so what the host reads is what was actually written.
+  const [confirmed, setConfirmed] = useState<PrivateMeeting | null>(null);
   // Bumped after anything that changes what the month grid should show, so the
   // dots do not keep advertising a meeting that was just cancelled.
   const [calendarToken, setCalendarToken] = useState(0);
@@ -227,15 +232,21 @@ function PrivateMeetingsBody({ navigation }: Props) {
     async (draft: ScheduleDraft) => {
       setBusy("schedule");
       try {
-        await scheduleMeeting({
+        const scheduled = await scheduleMeeting({
           title: draft.title,
           scheduledStartAt: draft.scheduledStartAt,
           timezone: draft.timezone,
           agenda: draft.agenda,
           durationMinutes: draft.durationMinutes,
-          idempotencyKey: draft.idempotencyKey
+          idempotencyKey: draft.idempotencyKey,
+          invitees: draft.invitees
         });
         setScheduleOpen(false);
+        // Held, not discarded. The confirmation reads this object; closing the
+        // wizard and saying nothing is the same thing the host saw when the
+        // booking was silently rolling back, and it would still be the same
+        // thing if it ever started doing that again.
+        setConfirmed(scheduled);
         setCalendarToken((value) => value + 1);
         await load();
       } catch (error) {
@@ -601,6 +612,22 @@ function PrivateMeetingsBody({ navigation }: Props) {
             />
           ) : null}
         </>
+      ) : null}
+
+      {confirmed ? (
+        <Modal
+          visible
+          animationType="slide"
+          onRequestClose={() => setConfirmed(null)}
+        >
+          <View style={styles.root}>
+            <View style={{ height: insets.top }} />
+            <ScheduleConfirmation
+              meeting={confirmed}
+              onDone={() => setConfirmed(null)}
+            />
+          </View>
+        </Modal>
       ) : null}
 
       {editing ? (
