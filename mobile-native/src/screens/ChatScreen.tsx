@@ -66,7 +66,7 @@ import { recoverRoomConversation } from "../community/roomConversationRecovery";
 import { buildUndxUiContext, UndxUiContext } from "../undx/undxContext";
 import { buildUndxSendContext, clearMarketContext, peekMarketContext } from "../undx/marketContext";
 import { choiceRowsOf, describeTransition, readTapOutcome, toActionCard, UndxTapOutcome } from "../undx/actionCards";
-import { goBackFromUndxChat } from "../undx/undxChatTarget";
+import { goBackFromChat } from "../undx/undxChatTarget";
 import {
   ConversationGalleryProvider,
   ConversationMediaGalleryViewer,
@@ -370,12 +370,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // only as a fallback, never in preference to the real stack, because the
   // stack knows about screens the member visited in between and this does not.
   const undxReturn = route.params.undxReturn;
-  // The rule itself lives in `goBackFromUndxChat` (real stack first, recorded
-  // origin second, dashboard as the guaranteed floor) so the rendered
-  // navigation regression test exercises exactly what this screen runs.
-  const goBackFromChat = useCallback(() => {
-    goBackFromUndxChat(navigation, undxReturn);
-  }, [navigation, undxReturn]);
+  // The rule itself lives in `goBackFromChat` (real stack first, recorded origin
+  // second, a guaranteed floor last) so the rendered navigation regression test
+  // exercises exactly what this screen runs.
+  //
+  // `conversationId` is passed because the floor depends on it: UNDX falls back
+  // to the dashboard, everyone else to the conversations list. This screen used
+  // to hand over only `undxReturn`, which meant a rule written for the one
+  // conversation that has no list behind it was being applied to all twelve —
+  // and a member arriving from a notification or a deep link pressed Back on a
+  // thread and got Mission Control.
+  const onBackPress = useCallback(() => {
+    goBackFromChat(navigation, { conversationId, undxReturn });
+  }, [navigation, conversationId, undxReturn]);
   const [controlCenterOpen, setControlCenterOpen] = useState(false);
   const [undxComponents, setUndxComponents] = useState<UndxResponseComponent[]>([]);
   const [undxActionBusy, setUndxActionBusy] = useState(false);
@@ -1236,7 +1243,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
-          <Pressable accessibilityRole="button" accessibilityLabel={undxReturn ? `Back to ${undxReturn.params.name || undxReturn.params.symbol}` : "Back to conversations"} style={styles.backButton} onPress={goBackFromChat}><Text style={styles.backButtonText}>‹</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={undxReturn ? `Back to ${undxReturn.params.name || undxReturn.params.symbol}` : "Back to conversations"} style={styles.backButton} onPress={onBackPress}><Text style={styles.backButtonText}>‹</Text></Pressable>
           <PulseCommandAvatar label={assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Chat"} imageUrl={assistantConversation ? undefined : route.params.avatarUrl} active={assistantConversation || peerIsOnline} size={48} tone={assistantConversation ? "intelligence" : "default"} />
           <View style={styles.threadIdentity}>
             <Text style={styles.threadTitle} numberOfLines={1}>{threadTitle}</Text>
