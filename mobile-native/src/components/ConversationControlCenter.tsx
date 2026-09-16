@@ -41,6 +41,13 @@ type Props = {
   // and must never be used to claim the other person is online.
   activityStatus?: string;
   assistantConversation?: boolean;
+  /**
+   * Called with `appearance.wallpaper` whenever this sheet learns it — on load
+   * and after a save. The chat screen draws the background, so it needs to be
+   * told; without this a new pick would not appear until the thread was
+   * reopened.
+   */
+  onWallpaperChange?: (wallpaper: string) => void;
   onClose: () => void;
   onOpenSafety: (section: "reports" | "blocks") => void;
   onStartCall?: (callType: "audio" | "video") => void;
@@ -118,7 +125,10 @@ const OPTIONS: Record<string, SelectOption[]> = {
   mute_choice: [["off", "messaging:controls.options.muteChoice.off"], ["1_hour", "messaging:controls.options.muteChoice.hour1"], ["8_hours", "messaging:controls.options.muteChoice.hours8"], ["today", "messaging:controls.options.muteChoice.today"], ["1_week", "messaging:controls.options.muteChoice.week1"], ["forever", "messaging:controls.options.muteChoice.forever"]],
   sound: [["pulse_beam", "messaging:controls.options.sound.pulseBeam"], ["soft_orbit", "messaging:controls.options.sound.softOrbit"], ["deep_signal", "messaging:controls.options.sound.deepSignal"], ["crystal_ping", "messaging:controls.options.sound.crystalPing"], ["silent", "messaging:controls.options.sound.silent"]],
   theme: [["dark_galaxy", "messaging:controls.options.theme.darkGalaxy"], ["pulse_green", "messaging:controls.options.theme.pulseGreen"], ["deep_space", "messaging:controls.options.theme.deepSpace"], ["nebula", "messaging:controls.options.theme.nebula"], ["cyber_night", "messaging:controls.options.theme.cyberNight"], ["solar_flame", "messaging:controls.options.theme.solarFlame"], ["ocean_signal", "messaging:controls.options.theme.oceanSignal"], ["royal_purple", "messaging:controls.options.theme.royalPurple"], ["haiti_night", "messaging:controls.options.theme.haitiNight"], ["creator_gold", "messaging:controls.options.theme.creatorGold"]],
-  wallpaper: [["deep_space", "messaging:controls.options.wallpaper.deepSpace"], ["neon_planet", "messaging:controls.options.wallpaper.neonPlanet"], ["galaxy_grid", "messaging:controls.options.wallpaper.galaxyGrid"], ["pulse_horizon", "messaging:controls.options.wallpaper.pulseHorizon"], ["alien_city", "messaging:controls.options.wallpaper.alienCity"], ["cosmic_ocean", "messaging:controls.options.wallpaper.cosmicOcean"], ["aurora_signal", "messaging:controls.options.wallpaper.auroraSignal"], ["dark_nebula", "messaging:controls.options.wallpaper.darkNebula"], ["star_tunnel", "messaging:controls.options.wallpaper.starTunnel"], ["minimal_black", "messaging:controls.options.wallpaper.minimalBlack"]],
+  // PulseSoc Cosmic leads the list because it is the default a conversation
+  // already has. Every other id stays exactly where it was — this adds a
+  // choice, it does not take one away.
+  wallpaper: [["pulsesoc_cosmic", "messaging:controls.options.wallpaper.pulsesocCosmic"], ["deep_space", "messaging:controls.options.wallpaper.deepSpace"], ["neon_planet", "messaging:controls.options.wallpaper.neonPlanet"], ["galaxy_grid", "messaging:controls.options.wallpaper.galaxyGrid"], ["pulse_horizon", "messaging:controls.options.wallpaper.pulseHorizon"], ["alien_city", "messaging:controls.options.wallpaper.alienCity"], ["cosmic_ocean", "messaging:controls.options.wallpaper.cosmicOcean"], ["aurora_signal", "messaging:controls.options.wallpaper.auroraSignal"], ["dark_nebula", "messaging:controls.options.wallpaper.darkNebula"], ["star_tunnel", "messaging:controls.options.wallpaper.starTunnel"], ["minimal_black", "messaging:controls.options.wallpaper.minimalBlack"]],
   bubble_color: [["cyan", "messaging:controls.options.bubbleColor.cyan"], ["purple", "messaging:controls.options.bubbleColor.purple"], ["rose", "messaging:controls.options.bubbleColor.rose"], ["orange", "messaging:controls.options.bubbleColor.orange"], ["green", "messaging:controls.options.bubbleColor.green"], ["gold", "messaging:controls.options.bubbleColor.gold"], ["blue", "messaging:controls.options.bubbleColor.blue"]],
   font_size: [["small", "messaging:controls.options.fontSize.small"], ["medium", "messaging:controls.options.fontSize.medium"], ["large", "messaging:controls.options.fontSize.large"], ["extra_large", "messaging:controls.options.fontSize.extraLarge"]],
   density: [["compact", "messaging:controls.options.density.compact"], ["balanced", "messaging:controls.options.density.balanced"], ["relaxed", "messaging:controls.options.density.relaxed"]],
@@ -197,7 +207,7 @@ function createAssistantControlData(messageCount: number, connected: boolean): C
   };
 }
 
-export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, activityStatus = "", assistantConversation = false, onClose, onOpenSafety, onStartCall }: Props) {
+export function ConversationControlCenter({ visible, conversationId, title, messages, connected = true, activityStatus = "", assistantConversation = false, onWallpaperChange, onClose, onOpenSafety, onStartCall }: Props) {
   const { t } = useTranslation();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<Section[]>(["conversation"]);
@@ -228,13 +238,15 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
       }
       const next = await getConversationControlCenter(conversationId);
       setControlData(next);
+      const wallpaper = next.settings?.appearance?.wallpaper;
+      if (typeof wallpaper === "string") onWallpaperChange?.(wallpaper);
       setNotice("");
     } catch (error) {
       setNotice(errorMessage(error, t("messaging:controls.loadFailed")));
     } finally {
       setLoading(false);
     }
-  }, [assistantConversation, connected, conversationId, messages.length, t, visible]);
+  }, [assistantConversation, connected, conversationId, messages.length, onWallpaperChange, t, visible]);
 
   useEffect(() => {
     if (!visible) return;
@@ -443,6 +455,7 @@ export function ConversationControlCenter({ visible, conversationId, title, mess
     try {
       const data = await updateConversationControlSetting(conversationId, row.setting.section, row.setting.key, nextValue);
       setControlData((current) => ({ ...(current || {}), ...data, settings: data.settings || current?.settings }));
+      if (row.setting.section === "appearance" && row.setting.key === "wallpaper" && typeof nextValue === "string") onWallpaperChange?.(nextValue);
       setNotice(t("messaging:controls.settingSaved", { label: row.label }));
     } catch (error) {
       setNotice(errorMessage(error, t("messaging:controls.settingSaveFailed", { label: row.label })));

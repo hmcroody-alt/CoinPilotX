@@ -143,6 +143,9 @@
     ["creator_gold", "Creator Gold"],
   ];
   const CONTROL_WALLPAPER_OPTIONS = [
+    // PulseSoc Cosmic first: it is the wallpaper a conversation already has
+    // when nobody has picked one. The rest keep their order and their ids.
+    ["pulsesoc_cosmic", "PulseSoc Cosmic"],
     ["deep_space", "Deep Space"],
     ["neon_planet", "Neon Planet"],
     ["galaxy_grid", "Galaxy Grid"],
@@ -1476,8 +1479,8 @@
     const text = String(value || "").trim().toLowerCase();
     if (kind === "theme") return CONTROL_THEME_OPTIONS.some(([id]) => id === text) ? text : "dark_galaxy";
     if (kind === "wallpaper") {
-      if (text === "default") return "deep_space";
-      return CONTROL_WALLPAPER_OPTIONS.some(([id]) => id === text) ? text : "deep_space";
+      if (text === "default") return "pulsesoc_cosmic";
+      return CONTROL_WALLPAPER_OPTIONS.some(([id]) => id === text) ? text : "pulsesoc_cosmic";
     }
     if (kind === "bubble") return CONTROL_BUBBLE_OPTIONS.some(([id]) => id === text) ? text : "cyan";
     return text;
@@ -1491,7 +1494,7 @@
     const accessibility = settings.accessibility || {};
     if (!root) return;
     root.dataset.controlTheme = normalizeAppearanceValue("theme", appearance.theme || "dark_galaxy");
-    root.dataset.controlWallpaper = normalizeAppearanceValue("wallpaper", appearance.wallpaper || "deep_space");
+    root.dataset.controlWallpaper = normalizeAppearanceValue("wallpaper", appearance.wallpaper || "pulsesoc_cosmic");
     root.dataset.controlBubble = normalizeAppearanceValue("bubble", appearance.bubble_color || "cyan");
     root.dataset.controlDensity = appearance.density || "balanced";
     root.dataset.controlFont = accessibility.large_text ? "large" : (appearance.font_size || "medium");

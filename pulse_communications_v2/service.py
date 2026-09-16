@@ -887,7 +887,11 @@ CONTROL_SETTING_DEFAULTS = {
     },
     "appearance": {
         "theme": "dark_galaxy",
-        "wallpaper": "deep_space",
+        # Defaults only fill gaps: `_merge_control_settings` layers the stored
+        # row over this dict, so a conversation somebody explicitly set to
+        # `deep_space` keeps `deep_space`, and a conversation nobody has ever
+        # touched now reports PulseSoc Cosmic.
+        "wallpaper": "pulsesoc_cosmic",
         "bubble_color": "cyan",
         "font_size": "medium",
         "density": "balanced",
@@ -940,7 +944,7 @@ CONTROL_SETTING_ALLOWED = {
     },
     "appearance": {
         "theme": {"dark_galaxy", "pulse_green", "deep_space", "nebula", "cyber_night", "solar_flame", "ocean_signal", "royal_purple", "haiti_night", "creator_gold"},
-        "wallpaper": {"default", "deep_space", "neon_planet", "galaxy_grid", "pulse_horizon", "alien_city", "cosmic_ocean", "aurora_signal", "dark_nebula", "star_tunnel", "minimal_black"},
+        "wallpaper": {"default", "pulsesoc_cosmic", "deep_space", "neon_planet", "galaxy_grid", "pulse_horizon", "alien_city", "cosmic_ocean", "aurora_signal", "dark_nebula", "star_tunnel", "minimal_black"},
         "bubble_color": {"cyan", "purple", "rose", "orange", "green", "gold", "blue"},
         "font_size": {"small", "medium", "large", "extra_large"},
         "density": {"compact", "balanced", "relaxed"},

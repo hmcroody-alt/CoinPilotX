@@ -31,7 +31,7 @@ import {
   View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
+import { ChatWallpaper } from "../components/ChatWallpaper";
 import {
   cacheMessages,
   cancelPulseAiAction,
@@ -60,6 +60,7 @@ import {
   uploadMessengerMedia
 } from "../api/messenger";
 import { mergeConversationMessages } from "../api/messengerOrdering";
+import { useConversationWallpaper } from "../messaging/conversationWallpaper";
 import { APP_VERSION, PULSE_API_BASE_URL } from "../api/config";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "../api/config";
 import { recoverRoomConversation } from "../community/roomConversationRecovery";
@@ -319,6 +320,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const { t } = useTranslation();
   const { authState } = useAuth();
   const selfUserId = Number(authState.user?.user_id || 0);
+  // Resolves to the PulseSoc Cosmic default on the first render and only
+  // changes if this viewer has picked something else for this thread. The
+  // assistant thread and the QA fixtures have no settings row to read.
+  const { applyWallpaper, wallpaper } = useConversationWallpaper(
+    selfUserId,
+    conversationId,
+    !assistantConversation && !isLocalMessengerFixtureConversation(conversationId)
+  );
   const [messages, setMessages] = useState<MessengerMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
@@ -1237,10 +1246,11 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     <ConversationGalleryProvider gallery={mediaGallery}>
     <View style={styles.root}>
       <LogiNexusScreenShell bottomDock={false} contentStyle={styles.shellContent}>
-      {/* The atmosphere is the first paint layer. Keeping it after the header
-          lets its opaque deep-space gradient cover the identity and call
-          controls even though it cannot receive touches. */}
-      <GalacticAtmosphere variant="messages" testID="messages-galactic-atmosphere" />
+      {/* The wallpaper is the first paint layer, and its base colour is opaque,
+          so the conversation never opens on black and then fills in. Keeping it
+          after the header lets it cover the identity and call controls even
+          though it cannot receive touches. */}
+      <ChatWallpaper wallpaper={wallpaper} testID="messages-chat-wallpaper" />
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 10) }]}>
         <View style={styles.threadHeader}>
           <Pressable accessibilityRole="button" accessibilityLabel={undxReturn ? `Back to ${undxReturn.params.name || undxReturn.params.symbol}` : "Back to conversations"} style={styles.backButton} onPress={onBackPress}><Text style={styles.backButtonText}>‹</Text></Pressable>
@@ -2000,6 +2010,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
         connected={!error}
         activityStatus={peerPresenceControlLabel(peerPresence)}
         assistantConversation={assistantConversation}
+        onWallpaperChange={applyWallpaper}
         onClose={() => setControlCenterOpen(false)}
         onStartCall={!assistantConversation ? (callType) => {
           setControlCenterOpen(false);

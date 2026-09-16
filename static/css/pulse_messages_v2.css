@@ -2994,6 +2994,32 @@ select:focus-visible {
   --control-wallpaper-size: auto, 220px 100%, auto, auto;
 }
 
+/*
+ * PulseSoc Cosmic — the default conversation wallpaper, and the web twin of
+ * `mobile-native/src/theme/chatWallpaper.ts`. Deep navy into indigo, one soft
+ * blue glow with a cyan highlight beside it, a light violet accent opposite,
+ * and two wide low-alpha curves.
+ *
+ * Keep these values in step with the native spec. They are not free choices:
+ * they are the output of the contrast objective in
+ * `mobile-native/src/theme/__tests__/chatWallpaperContrast.test.ts`, which
+ * balances the outgoing bubble dissolving into a bright field against the
+ * incoming bubble dissolving into a dark one. Brightening any layer here
+ * reintroduces the failure that test exists to catch.
+ */
+.comm-shell[data-control-wallpaper="pulsesoc_cosmic"] {
+  --control-wallpaper:
+    radial-gradient(circle at 78% 14%, rgba(52, 104, 204, .12), transparent 26rem),
+    radial-gradient(circle at 88% 44%, rgba(72, 196, 226, .06), transparent 16rem),
+    radial-gradient(circle at 14% 80%, rgba(66, 74, 178, .09), transparent 28rem),
+    radial-gradient(circle at 6% 12%, rgba(124, 96, 212, .06), transparent 18rem),
+    radial-gradient(ellipse at 44% 58%, rgba(96, 150, 232, .033), transparent 24rem),
+    linear-gradient(180deg, #050D20 0%, #08132C 34%, #091631 66%, #060F21 100%);
+  --control-wallpaper-size: auto, auto, auto, auto, auto, auto;
+  --control-wallpaper-overlay:
+    linear-gradient(180deg, rgba(4, 9, 20, .20), rgba(4, 9, 20, 0) 45%, rgba(3, 7, 16, .30));
+}
+
 .comm-shell[data-control-wallpaper="cosmic_ocean"] {
   --control-wallpaper: radial-gradient(ellipse at 42% 105%, rgba(45, 224, 192, .18), transparent 28rem), radial-gradient(circle at 88% 18%, rgba(58, 141, 255, .14), transparent 24rem), linear-gradient(180deg, rgba(1, 10, 20, .96), rgba(1, 18, 27, .98));
   --control-wallpaper-size: auto, auto, auto;
