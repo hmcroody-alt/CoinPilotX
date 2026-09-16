@@ -77,6 +77,10 @@ CAPABILITIES: tuple[dict, ...] = (
         "object_type": "PERSON_DIRECTORY",
         "native_screen": "PrivatePeople",
         "service_module": "relationships",
+        # The function the read actually lands on. The knowledge map publishes
+        # this as the capability's domain operation, and a name no module
+        # defines makes the map describe a call that cannot be placed.
+        "service_operation": "directory",
     },
 )
 

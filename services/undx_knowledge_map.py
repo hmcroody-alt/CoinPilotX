@@ -2792,7 +2792,7 @@ def _register_private_feature_read_map_entries() -> None:
             native_screen=_entry["native_screen"],
             backend_route=_entry["backend_route"],
             domain_service=_service,
-            domain_operation="undx_feature_reads_spec.execute_capability",
+            domain_operation=_entry["service_operation"],
             authorization_scope=_SELF, owner_field="owner_user_id",
             output_schema=_PRIVATE_FEATURE_OUTPUT_SCHEMAS[_cid],
             feature_flag="UNDX_AGENT_READS_ENABLED",
