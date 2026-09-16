@@ -4488,6 +4488,29 @@
         "liveNow": "Live now",
         "durationMinutes_one": "{{count}} minute",
         "durationMinutes_other": "{{count}} minutes",
+        "confirmed": {
+          "title": "Meeting scheduled",
+          "when": "When",
+          "duration": "Duration",
+          "guests": "Invited",
+          "guestsNone": "Nobody has been invited yet. You can invite people from the meeting itself.",
+          "memberFallback": "Member {{id}}",
+          "someone": "One of your guests",
+          "reminders": "Reminders",
+          "remindersNone": "No reminders are scheduled for this meeting.",
+          "reminderSkipped": "too soon to send",
+          "meetingId": "Meeting ID",
+          "meetingCode": "Invite code",
+          "done": "Done",
+          "skipped": {
+            "emailRequired": "Not invited — no email address",
+            "emailInvalid": "Not invited — that address is not usable",
+            "tooMany": "Not invited — too many guests for one meeting",
+            "isHost": "Already here — you are the host",
+            "alreadyIn": "Already in this meeting",
+            "unavailable": "Could not be invited"
+          }
+        },
         "buckets": {
           "live": "Happening now",
           "upcoming": "Upcoming",
@@ -4617,6 +4640,7 @@
             "zone": "Confirm the timezone",
             "duration": "How long?",
             "details": "Title and agenda",
+            "guests": "Who is coming?",
             "review": "Review"
           },
           "timeHint": "The time as it will read where the meeting happens.",
@@ -4627,6 +4651,18 @@
           "durationRange": "Choose between {{min}} and {{max}} minutes.",
           "agendaField": "Agenda (optional)",
           "inviteLater": "You can invite people once the meeting exists.",
+          "guestsHint": "Everyone here gets the invitation and the reminders. They do not need a PulseSoc account.",
+          "guestsNone": "No guests yet. You can add them now or invite people later.",
+          "guestsNoneShort": "Nobody yet",
+          "guestName": "Full name (optional)",
+          "guestEmail": "Email address",
+          "addGuest": "Add guest",
+          "updateGuest": "Update guest",
+          "editGuest": "Edit {{name}}",
+          "removeGuest": "Remove {{name}}",
+          "remove": "Remove",
+          "guestEmailInvalid": "Add an email address so we can send the invitation.",
+          "guestDuplicate": "That address is already on the list.",
           "back": "Back",
           "next": "Next"
         }

@@ -111,6 +111,64 @@ export type PrivateMeeting = {
   /** Admitted-only. */
   call_public_id?: string;
   channel_name?: string;
+  /**
+   * Present only on the response to a create-or-invite call — never on a read.
+   *
+   * It reports what the server actually did with the guests it was sent, which
+   * is not always what was asked: an address belonging to a member is invited
+   * as that member and appears in `invited` rather than `invited_contacts`, and
+   * anything unusable lands in `skipped` with a reason. The confirmation screen
+   * renders this rather than the list the host typed, so "invited" means the
+   * server invited them.
+   */
+  invite_result?: MeetingInviteResult;
+  /**
+   * Also create-only: the reminder rows that actually exist, not the ladder.
+   *
+   * The server's default is 24h / 1h / 15m, but planning them is deliberately
+   * non-fatal — a reminder store that is down degrades a meeting rather than
+   * cancelling one, so the ladder and the rows can disagree. A confirmation
+   * screen reciting the ladder from a constant would promise three mails in
+   * precisely the case where none were scheduled. Absent means the server did
+   * not say; empty means it said none.
+   */
+  reminders?: MeetingReminder[];
+};
+
+/** One planned reminder. `status` is the backend's vocabulary, verbatim. */
+export type MeetingReminder = {
+  /** Minutes before the start instant. */
+  offset_minutes: number;
+  send_at: string;
+  /**
+   * PENDING / SENDING / SENT / FAILED / BOUNCED / SKIPPED / CANCELLED.
+   *
+   * SKIPPED is not a failure and not a silence: the offset had already elapsed
+   * when the meeting was booked (a meeting twenty minutes out cannot honour a
+   * 24h reminder). It is reported so the host is told that one is not coming
+   * rather than left to infer it.
+   */
+  status: string;
+};
+
+export type MeetingInviteResult = {
+  /** Member user ids that now hold an invitation. */
+  invited: number[];
+  /**
+   * The same members, with the labels the host supplied.
+   *
+   * Same length and order as `invited` — one is the identity, one is what can
+   * be shown. A confirmation built from `invited` alone could only say "1
+   * member invited", which is exactly the summary that lets a wrong address
+   * through unread. `email` is the address the host typed, read back; it is
+   * empty on a replayed booking, because the invite row stores an address only
+   * for a guest who has no account.
+   */
+  invited_members: { user_id: number; email: string; name: string }[];
+  /** Guests with no account, as stored: the normalized address and a label. */
+  invited_contacts: { email: string; name: string }[];
+  /** Everyone not invited, each with a machine reason. */
+  skipped: { user_id?: number; email?: string; name?: string; reason: string }[];
 };
 
 export type MeetingBuckets = {

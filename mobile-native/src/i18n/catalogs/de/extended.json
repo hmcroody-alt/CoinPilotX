@@ -4488,6 +4488,29 @@
         "liveNow": "Jetzt live",
         "durationMinutes_one": "{{count}} Minute",
         "durationMinutes_other": "{{count}} Minuten",
+        "confirmed": {
+          "title": "Termin geplant",
+          "when": "Wann",
+          "duration": "Dauer",
+          "guests": "Eingeladen",
+          "guestsNone": "Es wurde noch niemand eingeladen. Du kannst Personen direkt aus dem Meeting einladen.",
+          "memberFallback": "Mitglied {{id}}",
+          "someone": "Eine deiner eingeladenen Personen",
+          "reminders": "Erinnerungen",
+          "remindersNone": "Für dieses Meeting sind keine Erinnerungen geplant.",
+          "reminderSkipped": "zu kurzfristig zum Senden",
+          "meetingId": "Meeting-ID",
+          "meetingCode": "Einladungscode",
+          "done": "Fertig",
+          "skipped": {
+            "emailRequired": "Nicht eingeladen – keine E-Mail-Adresse",
+            "emailInvalid": "Nicht eingeladen – diese Adresse ist unbrauchbar",
+            "tooMany": "Nicht eingeladen – zu viele Gäste für ein Meeting",
+            "isHost": "Schon dabei – du bist der Gastgeber",
+            "alreadyIn": "Bereits in diesem Meeting",
+            "unavailable": "Konnte nicht eingeladen werden"
+          }
+        },
         "buckets": {
           "live": "Läuft gerade",
           "upcoming": "Bevorstehend",
@@ -4617,6 +4640,7 @@
             "zone": "Zeitzone bestätigen",
             "duration": "Wie lange?",
             "details": "Titel und Agenda",
+            "guests": "Wer kommt?",
             "review": "Prüfen"
           },
           "timeHint": "Die Uhrzeit so, wie sie dort gilt, wo das Meeting stattfindet.",
@@ -4627,6 +4651,18 @@
           "durationRange": "Wähle zwischen {{min}} und {{max}} Minuten.",
           "agendaField": "Agenda (optional)",
           "inviteLater": "Du kannst Personen einladen, sobald das Meeting existiert.",
+          "guestsHint": "Alle hier erhalten die Einladung und die Erinnerungen. Ein PulseSoc-Konto ist nicht erforderlich.",
+          "guestsNone": "Noch keine Gäste. Du kannst sie jetzt hinzufügen oder später einladen.",
+          "guestsNoneShort": "Noch niemand",
+          "guestName": "Vollständiger Name (optional)",
+          "guestEmail": "E-Mail-Adresse",
+          "addGuest": "Gast hinzufügen",
+          "updateGuest": "Gast aktualisieren",
+          "editGuest": "{{name}} bearbeiten",
+          "removeGuest": "{{name}} entfernen",
+          "remove": "Entfernen",
+          "guestEmailInvalid": "Gib eine E-Mail-Adresse an, damit wir die Einladung senden können.",
+          "guestDuplicate": "Diese Adresse steht bereits auf der Liste.",
           "back": "Zurück",
           "next": "Weiter"
         }

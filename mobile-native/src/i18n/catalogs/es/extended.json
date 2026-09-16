@@ -4488,6 +4488,29 @@
         "liveNow": "En vivo ahora",
         "durationMinutes_one": "{{count}} minuto",
         "durationMinutes_other": "{{count}} minutos",
+        "confirmed": {
+          "title": "Reunión programada",
+          "when": "Cuándo",
+          "duration": "Duración",
+          "guests": "Invitados",
+          "guestsNone": "Aún no has invitado a nadie. Puedes invitar a personas desde la propia reunión.",
+          "memberFallback": "Miembro {{id}}",
+          "someone": "Una de tus personas invitadas",
+          "reminders": "Recordatorios",
+          "remindersNone": "No hay recordatorios programados para esta reunión.",
+          "reminderSkipped": "demasiado pronto para enviarlo",
+          "meetingId": "ID de la reunión",
+          "meetingCode": "Código de invitación",
+          "done": "Listo",
+          "skipped": {
+            "emailRequired": "Sin invitar: falta la dirección de correo",
+            "emailInvalid": "Sin invitar: esa dirección no se puede usar",
+            "tooMany": "Sin invitar: demasiados invitados para una reunión",
+            "isHost": "Ya estás aquí: eres el anfitrión",
+            "alreadyIn": "Ya está en esta reunión",
+            "unavailable": "No se pudo invitar"
+          }
+        },
         "buckets": {
           "live": "Sucediendo ahora",
           "upcoming": "Próximas",
@@ -4617,6 +4640,7 @@
             "zone": "Confirma la zona horaria",
             "duration": "¿Cuánto durará?",
             "details": "Título y agenda",
+            "guests": "¿Quién asistirá?",
             "review": "Revisar"
           },
           "timeHint": "La hora tal como se leerá donde ocurra la reunión.",
@@ -4627,6 +4651,18 @@
           "durationRange": "Elige entre {{min}} y {{max}} minutos.",
           "agendaField": "Agenda (opcional)",
           "inviteLater": "Podrás invitar a personas cuando la reunión exista.",
+          "guestsHint": "Todas las personas aquí reciben la invitación y los recordatorios. No necesitan una cuenta de PulseSoc.",
+          "guestsNone": "Aún no hay invitados. Puedes añadirlos ahora o invitar a alguien más tarde.",
+          "guestsNoneShort": "Nadie todavía",
+          "guestName": "Nombre completo (opcional)",
+          "guestEmail": "Dirección de correo electrónico",
+          "addGuest": "Añadir invitado",
+          "updateGuest": "Actualizar invitado",
+          "editGuest": "Editar a {{name}}",
+          "removeGuest": "Quitar a {{name}}",
+          "remove": "Quitar",
+          "guestEmailInvalid": "Añade una dirección de correo para poder enviar la invitación.",
+          "guestDuplicate": "Esa dirección ya está en la lista.",
           "back": "Atrás",
           "next": "Siguiente"
         }

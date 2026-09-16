@@ -4457,6 +4457,29 @@
         "liveNow": "An dirèk kounye a",
         "durationMinutes_one": "{{count}} minit",
         "durationMinutes_other": "{{count}} minit",
+        "confirmed": {
+          "title": "Reyinyon an pwograme",
+          "when": "Kilè",
+          "duration": "Konbyen tan",
+          "guests": "Moun ki envite",
+          "guestsNone": "Poko gen pèsonn ki envite. Ou ka envite moun depi nan reyinyon an menm.",
+          "memberFallback": "Manm {{id}}",
+          "someone": "Youn nan envite ou yo",
+          "reminders": "Rapèl",
+          "remindersNone": "Pa gen rapèl ki pwograme pou reyinyon sa a.",
+          "reminderSkipped": "twò ta pou voye l",
+          "meetingId": "ID reyinyon an",
+          "meetingCode": "Kòd envitasyon",
+          "done": "Fini",
+          "skipped": {
+            "emailRequired": "Pa envite — pa gen adrès imèl",
+            "emailInvalid": "Pa envite — adrès sa a pa itilizab",
+            "tooMany": "Pa envite — twòp envite pou yon sèl reyinyon",
+            "isHost": "Ou la deja — se ou menm ki òganizatè a",
+            "alreadyIn": "Li deja nan reyinyon sa a",
+            "unavailable": "Nou pa t ka envite l"
+          }
+        },
         "buckets": {
           "live": "K ap fèt kounye a",
           "upcoming": "K ap vini",
@@ -4585,6 +4608,7 @@
             "zone": "Konfime zòn lè a",
             "duration": "Konbyen tan?",
             "details": "Tit ak ajanda",
+            "guests": "Kiyès k ap vini?",
             "review": "Tcheke"
           },
           "timeHint": "Lè a jan l ap li kote reyinyon an ap fèt la.",
@@ -4595,6 +4619,18 @@
           "durationRange": "Chwazi ant {{min}} ak {{max}} minit.",
           "agendaField": "Ajanda (opsyonèl)",
           "inviteLater": "Ou ka envite moun lè reyinyon an fin kreye.",
+          "guestsHint": "Tout moun isit la resevwa envitasyon an ak rapèl yo. Yo pa bezwen yon kont PulseSoc.",
+          "guestsNone": "Poko gen envite. Ou ka ajoute yo kounye a oswa envite moun pita.",
+          "guestsNoneShort": "Pèsonn poko",
+          "guestName": "Non konplè (opsyonèl)",
+          "guestEmail": "Adrès imèl",
+          "addGuest": "Ajoute yon envite",
+          "updateGuest": "Mete envite a ajou",
+          "editGuest": "Modifye {{name}}",
+          "removeGuest": "Retire {{name}}",
+          "remove": "Retire",
+          "guestEmailInvalid": "Mete yon adrès imèl pou nou ka voye envitasyon an.",
+          "guestDuplicate": "Adrès sa a deja nan lis la.",
           "back": "Retounen",
           "next": "Kontinye"
         }

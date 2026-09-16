@@ -41,18 +41,28 @@ jest.mock("../api", () => ({
   }))
 }));
 
-import { ScheduleDraft, ScheduleWizard } from "../ScheduleWizard";
+import { NEW_MEETING_STEPS, ScheduleDraft, ScheduleWizard } from "../ScheduleWizard";
 import { dayKey, todayIn } from "../calendar";
 import { longDateLabel } from "../calendarLabels";
 
 const NEXT = "premium:privateOffice.meetings.wizard.next";
 const SCHEDULE = "premium:privateOffice.meetings.schedule";
 
+/**
+ * Presses needed to get from the first step to Review.
+ *
+ * Derived, not written down. This was `5` until a Guests step was inserted,
+ * at which point every walk stopped one short of Review — and the failure read
+ * as "the Schedule button has disappeared", which is a long way from "the
+ * wizard grew a step".
+ */
+const STEPS_TO_REVIEW = NEW_MEETING_STEPS.length - 1;
+
 /** Walk from the date step to review, taking every default on the way. */
 function walkToReview() {
   // A day that certainly exists in the grid: today, which the month opens on.
   fireEvent.press(screen.getByLabelText(longDateLabel(todayIn())));
-  for (let step = 0; step < 5; step += 1) {
+  for (let step = 0; step < STEPS_TO_REVIEW; step += 1) {
     fireEvent.press(screen.getByLabelText(NEXT));
   }
 }
@@ -161,9 +171,9 @@ describe("the date step gates the rest", () => {
   it("will not advance until a day has been chosen", async () => {
     const submitted: ScheduleDraft[] = [];
     await renderWizard((draft) => submitted.push(draft));
-    // No date pressed. Next is disabled, so five presses go nowhere and the
+    // No date pressed. Next is disabled, so the presses go nowhere and the
     // Schedule button never appears.
-    for (let step = 0; step < 5; step += 1) {
+    for (let step = 0; step < STEPS_TO_REVIEW; step += 1) {
       fireEvent.press(screen.getByLabelText(NEXT));
     }
     expect(screen.queryByLabelText(SCHEDULE)).toBeNull();
