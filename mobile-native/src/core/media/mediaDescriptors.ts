@@ -12,8 +12,12 @@
 
 import type { CanonicalMediaRecord } from "../../media/mediaContract";
 import type { MediaDescriptor } from "./mediaIdentity";
+import { resolveReelAudioPolicy } from "../attachedMusicAudioPolicy";
+import type { PulseReelAudio } from "../../api/reels";
 
 type WithMedia = { media?: CanonicalMediaRecord[] | null };
+
+type WithAudio = WithMedia & { audio?: PulseReelAudio | null };
 
 /**
  * The record a card paints first.
@@ -30,6 +34,38 @@ export function primaryMediaOf(item: WithMedia | null | undefined): MediaDescrip
 
 export function primaryMediaList(items: readonly (WithMedia | null | undefined)[]): (MediaDescriptor | null)[] {
   return items.map((item) => primaryMediaOf(item));
+}
+
+/**
+ * A reel's painted media, carrying the track that plays over it (§29).
+ *
+ * Reels are the one surface where the visible asset is not the whole of what
+ * has to be ready: the attached music is a second network fetch, and a reel
+ * whose video is warm but whose track is cold still opens with silence over
+ * moving picture. "It is useless for video to start instantly if music starts
+ * 800ms later."
+ *
+ * The track is folded onto the descriptor rather than passed as a second array
+ * because the planner walks one window; a parallel array would have to stay
+ * index-aligned with it through every filter, and would eventually not.
+ *
+ * `resolveReelAudioPolicy` is reused rather than reading `attached_audio_url`
+ * directly so that the prewarm and the player agree on what "has music" means.
+ * It already resolves baked-in audio to no track at all -- and prewarming a
+ * track for a reel that will never play one is pure waste.
+ */
+export function reelPrefetchMediaOf(reel: WithAudio | null | undefined): MediaDescriptor | null {
+  const record = primaryMediaOf(reel);
+  if (!record) return null;
+  const policy = resolveReelAudioPolicy(reel?.audio);
+  if (!policy.hasAttachedMusic || !policy.musicUrl) return record;
+  return { ...record, attached_audio_url: policy.musicUrl };
+}
+
+export function reelPrefetchMediaList(
+  reels: readonly (WithAudio | null | undefined)[]
+): (MediaDescriptor | null)[] {
+  return reels.map((reel) => reelPrefetchMediaOf(reel));
 }
 
 /**

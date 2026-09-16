@@ -73,7 +73,12 @@ const ESTIMATED_BYTES: Record<MediaRendition, number> = {
   full: 1200 * 1024,
   // A manifest is a few KB of text; the segments it points at are the player's
   // budget, not ours, and counting them here would double-book them.
-  manifest: 8 * 1024
+  manifest: 8 * 1024,
+  // Unlike the image renditions this is not a guess: the attached-music warm
+  // fetches a capped byte range, so the estimate IS the cap
+  // (AUDIO_PREFETCH_BYTE_CAP). Charging it against the same ceiling is what
+  // keeps §29 from spending outside the 48MB budget.
+  audio: 256 * 1024
 };
 
 export type MediaPrefetchCacheOptions = {

@@ -24,7 +24,7 @@ import { MediaPrefetchCache, sharedMediaPrefetchCache } from "./mediaPrefetchCac
 import type { MediaCacheEvent } from "./mediaPrefetchCache";
 import { createNetworkEstimator, observeWarmDuration } from "./mediaViewportSignals";
 import type { NetworkEstimator } from "./mediaViewportSignals";
-import { imageWarmTargets, videoWarmPlan, warmImageUrl, warmVideoPlan } from "./mediaWarm";
+import { audioWarmPlan, imageWarmTargets, videoWarmPlan, warmImageUrl, warmVideoPlan } from "./mediaWarm";
 import { identityFromCacheKey } from "./mediaIdentity";
 
 export type MediaPrefetcherOptions = {
@@ -115,6 +115,25 @@ export class MediaPrefetcher {
               key: target.key,
               rendition: "manifest",
               sourceUrl: videoPlan.url,
+              state: result.ok ? "warm" : "failed",
+              bytes: result.bytes
+            });
+            return;
+          }
+
+          // §29. Attached music rides the same queue, the same cancellation
+          // signal and the same cache as everything else, so a blur that drops
+          // a reel's video warm drops its track with it. A separate audio
+          // prewarmer would have needed its own copy of all three (§20).
+          if (target.rendition === "audio") {
+            const audioPlan = audioWarmPlan(target.media);
+            if (audioPlan.kind === "none") return;
+            const result = await this.warmVideo(audioPlan, signal);
+            if (signal.cancelled) return;
+            this.cache.remember({
+              key: target.key,
+              rendition: "audio",
+              sourceUrl: audioPlan.url,
               state: result.ok ? "warm" : "failed",
               bytes: result.bytes
             });

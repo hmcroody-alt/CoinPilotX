@@ -40,6 +40,14 @@ export type MediaEventName =
    * reliability one.
    */
   | "MEDIA_DOWNLOAD_URL_REFRESHED"
+  /**
+   * An attached music track was started or re-aligned against its video's
+   * clock (§13). Carries `driftMs`, signed, so a systematic lead -- the
+   * signature of a track that keeps running through rebuffers -- is
+   * distinguishable from ordinary scheduling jitter around zero. Without the
+   * sign, both look like the same small positive number.
+   */
+  | "MEDIA_AUDIO_RESYNC"
   | "MEDIA_CACHE_HIT"
   | "MEDIA_CACHE_MISS"
   | "MEDIA_CACHE_EVICTED"
@@ -80,6 +88,13 @@ export type MediaEvent = {
   bytes?: number;
   durationMs?: number;
   attempt?: number;
+  /**
+   * Signed milliseconds the attached audio sat away from its video's position.
+   * Positive means the audio ran ahead of the picture. Separate from
+   * `durationMs` because that field is a non-negative elapsed time and cannot
+   * carry the direction, which is the diagnostically useful half.
+   */
+  driftMs?: number;
   reason?: MediaFailureReason;
 };
 

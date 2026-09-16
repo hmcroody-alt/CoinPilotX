@@ -97,7 +97,18 @@ export function resolveAttachedMusicPolicy(source?: AttachedMusicSource | null):
 
 export function reelAudioToMusicSource(audio?: PulseReelAudio | null): AttachedMusicSource {
   return {
-    musicUrl: audio?.attached_audio_url || "",
+    // §10: baked-in music is already in the video's own track, so attaching a
+    // second player would mix the song over itself -- audibly doubled and
+    // slightly out of phase.
+    //
+    // The serializer blanks `attached_audio_url` for baked-in audio today, so
+    // this looks redundant. It is not: the guarantee is written as a comment on
+    // `audio_baked_in` and enforced nowhere, which means one serializer change,
+    // one older row, or one other code path that forgets reintroduces double
+    // audio with nothing to catch it. Reading the flag the type already
+    // declares costs a line and makes the client independent of the server
+    // remembering.
+    musicUrl: audio?.audio_baked_in ? "" : audio?.attached_audio_url || "",
     startSeconds: audio?.audio_start_time ?? 0,
     volume: audio?.audio_volume,
     isLooping: true
