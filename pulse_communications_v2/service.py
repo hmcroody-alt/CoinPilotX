@@ -3285,25 +3285,53 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
             (max_id, now, now, now, conversation_id, int(user_id)),
         )
         if _read_receipts_allowed(cur, user_id, conversation_id):
-            # ORDER BY is load-bearing, not cosmetic: the loop below takes a row
-            # lock per receipt, and two concurrent requests from the same user
-            # target the identical (message_id, user_id) keys. Without a fixed
-            # order Postgres is free to hand back the same set in two different
-            # orders and the two transactions deadlock on the unique index.
-            cur.execute("SELECT id FROM comm_v2_messages WHERE conversation_id=? AND id<=? AND sender_user_id!=? AND COALESCE(deleted_at,'')='' ORDER BY id ASC", (conversation_id, max_id, int(user_id)))
-            for row in cur.fetchall():
-                cur.execute(
-                    """
-                    INSERT OR IGNORE INTO comm_v2_read_receipts
-                    (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (int(row["id"]), conversation_id, int(user_id), now, now, now, now, now),
-                )
-                cur.execute(
-                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), seen_at=?, read_at=?, updated_at=? WHERE message_id=? AND user_id=?",
-                    (now, now, now, now, int(row["id"]), int(user_id)),
-                )
+            # ORDER BY is load-bearing, not cosmetic: the INSERT takes a row lock
+            # per receipt, and two concurrent requests from the same user target
+            # the identical (message_id, user_id) keys. Without a fixed order
+            # Postgres is free to hand back the same set in two different orders
+            # and the two transactions deadlock on the unique index.
+            #
+            # Both statements are also bounded to rows that still need writing.
+            # The per-row loop this replaced re-stamped every message from
+            # everyone else, from id 1, on every read event -- two statements per
+            # message, so a 10k-message conversation held ~20k row locks for the
+            # length of the transaction. Ordering alone stops a cycle forming;
+            # holding almost no locks is what keeps the window short.
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO comm_v2_read_receipts
+                (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
+                SELECT m.id, ?, ?, ?, ?, ?, ?, ?
+                FROM comm_v2_messages m
+                WHERE m.conversation_id=? AND m.id<=? AND m.sender_user_id!=? AND COALESCE(m.deleted_at,'')=''
+                  AND NOT EXISTS (
+                      SELECT 1 FROM comm_v2_read_receipts r
+                      WHERE r.message_id=m.id AND r.user_id=?
+                  )
+                ORDER BY m.id ASC
+                """,
+                (conversation_id, int(user_id), now, now, now, now, now, conversation_id, max_id, int(user_id), int(user_id)),
+            )
+            # Anti-joining on the receipt row, rather than bounding the scan by
+            # comm_v2_participants.last_read_message_id, is deliberate. A
+            # watermark skips rows permanently: _read_receipts_allowed gates only
+            # this block and not the watermark update above, and ids come from a
+            # sequence that can commit out of order, so a message can become
+            # visible below a watermark that has already passed it. A missing
+            # receipt row is self-healing; a passed watermark is not.
+            #
+            # read_at therefore records the first read rather than the most
+            # recent. Every consumer of these columns tests them for emptiness
+            # and none reads the timestamp back, so that is not observable --
+            # and refreshing them would put the O(N) write back.
+            cur.execute(
+                """
+                UPDATE comm_v2_read_receipts
+                SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), seen_at=?, read_at=?, updated_at=?
+                WHERE user_id=? AND conversation_id=? AND message_id<=? AND COALESCE(read_at,'')=''
+                """,
+                (now, now, now, now, int(user_id), conversation_id, max_id),
+            )
         if commit:
             conn.commit()
             if max_id:
