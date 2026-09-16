@@ -64,14 +64,60 @@ export type VideoTimelineState = {
   isBuffering: boolean;
 };
 
-/** What the attached music is doing right now. */
+/**
+ * What the attached music is doing right now.
+ *
+ * `positionMillis` is where the track was when the player last reported, which
+ * is NOT the same instant the video reported. See `sampledAtMillis`.
+ */
 export type MusicTimelineState = {
   isLoaded: boolean;
   positionMillis: number;
   isPlaying: boolean;
   /** Track length, when known. Required to wrap a looping track correctly. */
   durationMillis?: number | null;
+  /**
+   * Wall-clock time at which the player reported `positionMillis`.
+   *
+   * The two clocks are sampled by different callbacks at different rates: the
+   * video's status arrives on its own interval and we act on it immediately,
+   * while the music's position is whatever its last callback left behind. Both
+   * numbers are honest; subtracting them without accounting for the gap is not.
+   *
+   * Leaving this out manufactures drift exactly equal to the sampling gap, and
+   * because that gap is larger than MUSIC_DRIFT_TOLERANCE_MS the deadband can
+   * never absorb it: every tick reads as drift, every tick seeks, and the seek
+   * republishes a position one tick old, which produces the same reading again.
+   * Measured on device, that pinned drift at exactly one video tick and seeked
+   * the track four times a second -- continuously audible, and self-sustaining.
+   *
+   * Optional because a caller that cannot timestamp its samples is better off
+   * comparing raw positions than inventing a timestamp; projection is skipped
+   * when this or `nowMillis` is absent.
+   */
+  sampledAtMillis?: number | null;
 };
+
+/**
+ * Where the track actually is *now*, given a reading taken `now - sampledAt`
+ * milliseconds ago.
+ *
+ * A playing track advances in real time, so the correction for a stale reading
+ * is the elapsed wall time. A paused one has not moved, which is why the
+ * projection is gated on `isPlaying` rather than applied unconditionally --
+ * projecting a paused track would invent forward motion and seek against it.
+ *
+ * The projection is clamped to non-negative elapsed time so a clock that jumps
+ * backwards (NTP, or a caller passing a stale `nowMillis`) cannot rewind the
+ * track's estimated position and trigger a correction in the wrong direction.
+ */
+export function projectedMusicPosition(music: MusicTimelineState, nowMillis?: number | null): number {
+  const position = Math.max(0, Number(music.positionMillis) || 0);
+  const sampledAt = Number(music.sampledAtMillis) || 0;
+  const now = Number(nowMillis) || 0;
+  if (!music.isPlaying || !sampledAt || !now) return position;
+  return position + Math.max(0, now - sampledAt);
+}
 
 /**
  * The single instruction a surface must carry out this tick.
@@ -127,10 +173,14 @@ export function expectedMusicPosition(
 export function musicDriftMillis(
   video: VideoTimelineState,
   music: MusicTimelineState,
-  policy: Pick<AttachedMusicPolicy, "musicStartMs" | "isLooping">
+  policy: Pick<AttachedMusicPolicy, "musicStartMs" | "isLooping">,
+  nowMillis?: number | null
 ): number {
   const expected = expectedMusicPosition(video.positionMillis, policy, music.durationMillis);
-  return Math.round((Number(music.positionMillis) || 0) - expected);
+  // Both sides of this subtraction have to refer to the same instant. The video
+  // side does by construction -- we are called from its status callback -- so
+  // it is the music reading that has to be carried forward to meet it.
+  return Math.round(projectedMusicPosition(music, nowMillis) - expected);
 }
 
 /**
@@ -146,7 +196,13 @@ export function planMusicCorrection(
   video: VideoTimelineState,
   music: MusicTimelineState,
   policy: AttachedMusicPolicy,
-  toleranceMillis: number = MUSIC_DRIFT_TOLERANCE_MS
+  toleranceMillis: number = MUSIC_DRIFT_TOLERANCE_MS,
+  /**
+   * The instant the video reading was taken. Passed rather than read from
+   * `Date.now()` so this stays pure and a test can state the sampling gap it
+   * means to exercise instead of racing the real clock.
+   */
+  nowMillis?: number | null
 ): MusicCorrection {
   // Nothing to align against. Acting on an unloaded player's position -- which
   // reads 0 -- would seek the music to the creator's start offset every tick
@@ -163,7 +219,7 @@ export function planMusicCorrection(
     return music.isPlaying ? { action: "pause", reason: "video_paused" } : { action: "none" };
   }
 
-  const drift = musicDriftMillis(video, music, policy);
+  const drift = musicDriftMillis(video, music, policy, nowMillis);
   const target = expectedMusicPosition(video.positionMillis, policy, music.durationMillis);
 
   // Starting or resuming: always land on the computed position rather than

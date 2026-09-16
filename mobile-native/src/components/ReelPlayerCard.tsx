@@ -6,7 +6,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "rea
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { resolveReelAudioPolicy } from "../core/attachedMusicAudioPolicy";
-import { planMusicCorrection } from "../core/attachedMusicTimeline";
+import { MUSIC_DRIFT_TOLERANCE_MS, planMusicCorrection } from "../core/attachedMusicTimeline";
 import type { MusicTimelineState } from "../core/attachedMusicTimeline";
 import { trackMediaEvent } from "../media/mediaTelemetry";
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
@@ -247,6 +247,12 @@ export function ReelPlayerCard({
       {
         isLooping: musicPolicy.isLooping,
         positionMillis: musicPolicy.musicStartMs,
+        // Match the video's own 250ms status interval. The projection in
+        // `planMusicCorrection` makes correctness independent of this number,
+        // but the projection's error grows with the sampling gap, so there is
+        // no reason to leave the track reporting at the 500ms default while the
+        // picture reports twice as often.
+        progressUpdateIntervalMillis: 250,
         // Deliberately silent on load. Audibility is decided by the correction
         // loop below, against the video's clock.
         shouldPlay: false,
@@ -257,14 +263,18 @@ export function ReelPlayerCard({
       if (cancelled) return created.sound.unloadAsync().catch(() => undefined);
       attachedSoundRef.current = created.sound;
       created.sound.setOnPlaybackStatusUpdate((status) => {
+        // The timestamp is taken here, at the moment the reading is true, and
+        // not where it is consumed -- by then it is already old, which is the
+        // entire problem this records.
         musicStatusRef.current = status.isLoaded
           ? {
               isLoaded: true,
               positionMillis: status.positionMillis || 0,
               isPlaying: Boolean(status.isPlaying),
-              durationMillis: status.durationMillis ?? null
+              durationMillis: status.durationMillis ?? null,
+              sampledAtMillis: Date.now()
             }
-          : { isLoaded: false, positionMillis: 0, isPlaying: false, durationMillis: null };
+          : { isLoaded: false, positionMillis: 0, isPlaying: false, durationMillis: null, sampledAtMillis: Date.now() };
       });
       return undefined;
     }).catch(() => undefined);
@@ -373,7 +383,13 @@ export function ReelPlayerCard({
         isBuffering: Boolean(status.isBuffering)
       },
       musicState,
-      musicPolicy
+      musicPolicy,
+      MUSIC_DRIFT_TOLERANCE_MS,
+      // The video reading is current as of right now; the music reading is as
+      // old as its own callback interval. Handing over the instant lets the
+      // planner age the music sample up to this one instead of treating a
+      // sampling gap as drift.
+      Date.now()
     );
     if (plan.action === "none") return;
     correctingMusic.current = true;

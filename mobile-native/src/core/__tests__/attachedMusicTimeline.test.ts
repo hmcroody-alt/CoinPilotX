@@ -166,6 +166,77 @@ describe("keeping the track with the picture", () => {
       .toEqual({ action: "none" });
   });
 
+  it("does not read a stale music sample as drift", () => {
+    // MEASURED, not imagined. An instrumented Release build on the simulator
+    // emitted MEDIA_AUDIO_RESYNC on every one of the video's 250ms ticks with
+    // drift pinned at exactly -250 -- one tick, never growing, never settling.
+    //
+    // That is the signature of comparing two clocks sampled at different
+    // instants. The video reading is current; the music reading is whatever its
+    // own callback last left behind. The seek issued to "fix" it republished a
+    // position one tick old, which produced the identical reading next tick, so
+    // the loop sustained itself and the track was seeked four times a second
+    // for the life of the reel.
+    //
+    // The numbers below are that capture: video at 3000ms, a music sample taken
+    // 250ms ago that read 2750ms. Projected forward it is 3000ms -- aligned.
+    const sampled = planMusicCorrection(
+      video({ positionMillis: 3000 }),
+      music({ positionMillis: 2750, sampledAtMillis: 1_000_000 }),
+      withMusic,
+      MUSIC_DRIFT_TOLERANCE_MS,
+      1_000_250
+    );
+    expect(sampled).toEqual({ action: "none" });
+  });
+
+  it("still corrects real drift when the sample is fresh", () => {
+    // The projection must not become a blanket excuse. With no elapsed time
+    // between the two readings there is nothing to carry forward, so a track
+    // that genuinely sits a second behind the picture is still corrected.
+    expect(
+      planMusicCorrection(
+        video({ positionMillis: 5000 }),
+        music({ positionMillis: 4000, sampledAtMillis: 1_000_000 }),
+        withMusic,
+        MUSIC_DRIFT_TOLERANCE_MS,
+        1_000_000
+      )
+    ).toEqual({ action: "resync", seekToMillis: 5000, driftMillis: -1000 });
+  });
+
+  it("does not carry a paused track forward", () => {
+    // A paused track has not moved since it was sampled, so ageing it would
+    // invent motion. This is the branch that keeps a resume from landing on a
+    // position the track never reached: the `play` plan below seeks to where
+    // the video says, and its reported drift is the true gap.
+    expect(
+      planMusicCorrection(
+        video({ positionMillis: 8000 }),
+        music({ positionMillis: 2000, isPlaying: false, sampledAtMillis: 1_000_000 }),
+        withMusic,
+        MUSIC_DRIFT_TOLERANCE_MS,
+        1_006_000
+      )
+    ).toEqual({ action: "play", seekToMillis: 8000, driftMillis: -6000 });
+  });
+
+  it("ignores a clock that runs backwards rather than rewinding the track", () => {
+    // `nowMillis` earlier than the sample means the wall clock moved, not the
+    // track. Subtracting would report drift in the wrong direction and seek the
+    // music backwards -- audibly repeating a fraction of the song for a reason
+    // that has nothing to do with playback.
+    expect(
+      planMusicCorrection(
+        video({ positionMillis: 5000 }),
+        music({ positionMillis: 5000, sampledAtMillis: 1_000_000 }),
+        withMusic,
+        MUSIC_DRIFT_TOLERANCE_MS,
+        999_000
+      )
+    ).toEqual({ action: "none" });
+  });
+
   it("does not issue a pause to a track that is already paused", () => {
     // Re-issuing pause every tick is how a surface ends up fighting its own
     // effect loop; "none" is what lets the caller treat the plan as idempotent.
