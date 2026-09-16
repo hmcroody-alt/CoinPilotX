@@ -17,7 +17,7 @@ import { ChatWallpaperId, DEFAULT_CHAT_WALLPAPER, isChatWallpaperId } from "../t
  * Precedence, which is the whole point:
  *
  *   1. the viewer's explicit choice, once known (cache, then server)
- *   2. the PulseSoc Cosmic default
+ *   2. the PulseSoc Graphite default
  *
  * A choice is therefore never overwritten — the default only fills the gap
  * where there is no choice, or where we do not know it yet.
@@ -101,7 +101,7 @@ export async function forgetConversationWallpaper(userId: number, conversationId
 /**
  * Resolve the wallpaper for a conversation.
  *
- * Returns the Cosmic default synchronously on the very first render, which is
+ * Returns the Graphite default synchronously on the very first render, which is
  * what guarantees there is no frame of black, white, or flat blue before a
  * background exists. It is then replaced — once — if this viewer turns out to
  * have chosen something else.

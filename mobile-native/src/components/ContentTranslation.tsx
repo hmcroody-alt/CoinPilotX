@@ -11,6 +11,7 @@ import {
   updateTranslationPreference
 } from "../api/translation";
 import { useTimeZonePreference } from "../core/TimeZoneContext";
+import { chatGraphite } from "../theme/chatGraphite";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -325,19 +326,32 @@ const styles = createThemedStyles(() => ({
     alignItems: "center",
     gap: 6
   },
+  // `controlsMode="compact"` has exactly one call site — the chat bubble in
+  // ChatScreen — so these two rules are conversation-scoped even though the rest
+  // of this component is shared with Reels, Marketplace and the feed.
+  //
+  // The fill moves to the graphite bubble-inset token because the old cyan wash
+  // was tuned against a near-black bubble: on the new `#505761` incoming bubble
+  // it composites to a field where `colors.muted` measures 4.04:1, and the label
+  // is 10px, so 4.5:1 is the bar. Against the inset token `secondaryText`
+  // measures 6.28:1.
+  //
+  // The cyan edge stays. It is the established brand language for a control, and
+  // no value in the graphite palette gives this pill a 3:1 boundary; what
+  // identifies it is its own visible "Translate" label, not its outline.
   compactControl: {
     minHeight: 28,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: "rgba(110,223,246,0.24)",
-    backgroundColor: "rgba(110,223,246,0.05)",
+    backgroundColor: chatGraphite.insetSurface,
     paddingHorizontal: 8,
     flexDirection: "row",
     alignItems: "center",
     gap: 4
   },
   compactControlText: {
-    color: colors.muted,
+    color: chatGraphite.secondaryText,
     fontSize: 10,
     fontWeight: "800"
   },
