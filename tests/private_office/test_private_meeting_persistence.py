@@ -324,6 +324,14 @@ def test_the_non_fatal_blocks_run_inside_a_savepoint(cur, monkeypatch):
     names = {s.split()[1] for s in savepoints}
     assert "PM_PLAN_REMINDERS" in names
     assert "PM_ANNOUNCE" in names
+    # The audit row is bookkeeping about the booking, so it must never be able
+    # to cost the booking. `audit.record` catches its own exception and returns
+    # False, which reads as best-effort and was not: on PostgreSQL the failed
+    # INSERT had already aborted the transaction and db.py had already rolled
+    # the connection back, so the meeting was gone before `record` reached its
+    # `except`. Verified against production's own 18.6 engine by dropping
+    # `private_audit_events` and booking anyway.
+    assert "PM_AUDIT" in names
 
 
 class PoisonableCursor:
@@ -472,3 +480,110 @@ def test_no_fixture_in_this_directory_keys_users_on_an_invented_id():
             f"{name} declares users.id, which production does not have. A test "
             f"holding that column cannot see code that asks for it — which is "
             f"exactly how the `OR id=?` lookup shipped and lost two meetings.")
+
+
+# ---------------------------------------------------------------------------
+# The general rule, rather than one more instance of it
+# ---------------------------------------------------------------------------
+
+#: ``_nonfatal`` is built out of exactly the pattern it exists to make safe —
+#: it probes with ``SELECT 1`` and unwinds with ``ROLLBACK TO SAVEPOINT``, both
+#: inside ``try``. ``sweep_meetings`` catches only ``PrivateMeetingRejected``,
+#: which application logic raises over a healthy connection rather than a
+#: failed statement. Anything else added here needs a reason in writing.
+_SAVEPOINT_EXEMPT = {"_nonfatal", "sweep_meetings"}
+
+
+def _swallowing_db_blocks(path):
+    """Every try/except that runs SQL and does not re-raise, with its status.
+
+    Yields ``(function_name, lineno, protected)`` where ``protected`` means the
+    block is lexically inside a ``with _nonfatal(...)``.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+
+    protected = set()
+
+    def mark(node, guarded):
+        for child in ast.iter_child_nodes(node):
+            is_guard = guarded
+            if isinstance(child, ast.With):
+                is_guard = guarded or any(
+                    isinstance(item.context_expr, ast.Call)
+                    and isinstance(item.context_expr.func, ast.Name)
+                    and item.context_expr.func.id == "_nonfatal"
+                    for item in child.items)
+            if is_guard:
+                protected.add(id(child))
+            mark(child, is_guard)
+
+    mark(tree, False)
+
+    owner = {}
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for line in range(node.lineno, (node.end_lineno or node.lineno) + 1):
+                # Innermost definition wins for nested helpers.
+                if line not in owner or node.lineno > owner[line][1]:
+                    owner[line] = (node.name, node.lineno)
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Try):
+            continue
+        runs_sql = any(
+            isinstance(call, ast.Call)
+            and isinstance(call.func, ast.Attribute)
+            and call.func.attr in {"execute", "executemany", "record",
+                                   "record_denied"}
+            for statement in node.body
+            for call in ast.walk(statement))
+        if not runs_sql:
+            continue
+        swallows = any(
+            not any(isinstance(n, ast.Raise) for n in ast.walk(handler))
+            for handler in node.handlers)
+        if not swallows:
+            continue
+        name = owner.get(node.lineno, ("<module>", 0))[0]
+        yield name, node.lineno, id(node) in protected
+
+
+def test_no_swallowed_database_failure_escapes_a_savepoint():
+    """The rule the audit write broke, enforced against the whole module.
+
+    Catching an exception around ``cur.execute`` looks like graceful
+    degradation and is not one on PostgreSQL: the failed statement has already
+    aborted the transaction, so by the time the ``except`` runs ``db.py`` has
+    rolled the *connection* back and taken the caller's uncommitted work with
+    it. The block then returns its polite fallback — ``0``, ``False``, ``None``
+    — to a caller whose meeting no longer exists, and ``create_meeting`` builds
+    a ``201`` out of the dict it still holds in memory.
+
+    Three call sites were found this way rather than one: the audit row, the
+    ``blocked_users`` probe, and the ``users`` lookup that decides whether an
+    invited address belongs to a member. Only the last was reachable in the
+    harness run that exposed it, which is the argument for testing the shape
+    instead of hunting instances — the other two were one schema difference
+    away from costing somebody the same booking.
+
+    Structural on purpose. SQLite does not poison a transaction, so every one
+    of these blocks behaves impeccably in this suite whether or not it is
+    savepointed, and a behavioural test would have stayed green through the
+    entire defect.
+    """
+    module = pathlib.Path(meetings.__file__)
+    blocks = list(_swallowing_db_blocks(module))
+
+    assert len(blocks) >= 5, (
+        f"expected to find this module's swallowing DB blocks, found "
+        f"{len(blocks)} — if the parse broke, this test passes vacuously")
+
+    unguarded = [
+        (name, line) for name, line, ok in blocks
+        if not ok and name not in _SAVEPOINT_EXEMPT]
+
+    assert not unguarded, (
+        "these blocks swallow a database failure without a savepoint, so on "
+        "PostgreSQL they discard the caller's transaction and then report "
+        "success: "
+        + ", ".join(f"{name}() line {line}" for name, line in unguarded))

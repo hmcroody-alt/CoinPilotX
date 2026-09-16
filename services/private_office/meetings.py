@@ -487,15 +487,19 @@ def _add_missing_columns(cur) -> None:
         for column, definition in columns:
             if column in present:
                 continue
-            try:
+            # The web process and a worker can ensure at the same instant;
+            # losing that race means the column now exists, which is the
+            # outcome we wanted. Anything else surfaces at query time.
+            #
+            # The savepoint is what makes losing that race survivable. Catching
+            # the error is not enough on PostgreSQL: the failed ALTER has
+            # already aborted the transaction this is borrowing, so an
+            # unguarded `except: pass` here would hand the request back a
+            # connection that db.py had to roll all the way back — costing the
+            # caller the booking they were in the middle of making.
+            with _nonfatal(cur, f"column_{column}"):
                 cur.execute(
                     f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
-            except Exception:
-                # The web process and a worker can ensure at the same instant;
-                # losing that race means the column now exists, which is the
-                # outcome we wanted. Anything else surfaces at query time.
-                LOGGER.exception(
-                    "PM_COLUMN_ADD_FAILED table=%s column=%s", table, column)
 
 
 def _migrate_invite_identity(cur) -> None:
@@ -869,7 +873,13 @@ def _blocked(cur, user_a: int, user_b: int) -> bool:
             return True
     except Exception as exc:  # pragma: no cover - schema-absent environments
         LOGGER.warning("PRIVATE_MEETING_BLOCK_CHECK_COMM_FAILED error=%s", exc)
-    try:
+    # Savepointed because the whole point of this second probe is that the
+    # table may not be there. Absent on PostgreSQL, the failed SELECT aborts
+    # the caller's transaction, and `return False` then reads as "not blocked"
+    # on a connection db.py has already rolled back — the invite is allowed
+    # and the meeting it belonged to is gone.
+    blocked = False
+    with _nonfatal(cur, "block_probe"):
         cur.execute(
             """SELECT 1 FROM blocked_users
             WHERE (blocker_user_id=? AND blocked_user_id=?)
@@ -877,17 +887,32 @@ def _blocked(cur, user_a: int, user_b: int) -> bool:
             LIMIT 1""",
             (a, b, b, a),
         )
-        return cur.fetchone() is not None
-    except Exception:
-        return False
+        blocked = cur.fetchone() is not None
+    return blocked
 
 
 def _audit(cur, *, actor: int, owner: int, action: str, meeting_id: int,
            outcome: str = audit.OUTCOME_OK, count: int = 0) -> None:
-    audit.record(
-        cur, actor_user_id=actor, owner_user_id=owner, action=action,
-        object_type="PRIVATE_MEETING", object_id=f"MEETING:{int(meeting_id)}",
-        purpose="user_request", outcome=outcome, result_count=count)
+    """Record what happened, without being able to undo what happened.
+
+    ``audit.record`` catches its own exception and returns ``False``, which
+    reads as "best-effort". On PostgreSQL that was not true: the statement had
+    already poisoned the transaction, ``services/db.py`` had already rolled the
+    *connection* back to keep it usable, and the meeting row was gone before
+    ``record`` reached its ``except``. It then returned ``False`` to a caller
+    that never checks, ``create_meeting`` built its response from the dict it
+    still held in memory, and the route answered ``201`` over an empty table.
+
+    So the swallow needs the same savepoint every other side-write here gets.
+    Every audit call in this module goes through this one function, which is
+    the only reason a single wrap is enough — keep it that way and call
+    ``_audit``, not ``audit.record``, for anything meeting-shaped.
+    """
+    with _nonfatal(cur, "audit"):
+        audit.record(
+            cur, actor_user_id=actor, owner_user_id=owner, action=action,
+            object_type="PRIVATE_MEETING", object_id=f"MEETING:{int(meeting_id)}",
+            purpose="user_request", outcome=outcome, result_count=count)
 
 
 # ---------------------------------------------------------------------------
@@ -2080,13 +2105,18 @@ def _resolve_member_by_email(cur, email: str) -> int:
     """
     if not email:
         return 0
-    try:
+    # Falling back to "not a member" is the safe answer — the address is still
+    # invited, just as an outside guest. Getting there without a savepoint was
+    # not safe: this lookup reaches outside the Private Office into `users`,
+    # and any failure there aborts the transaction the booking is being
+    # written in. The verification harness caught exactly that, and the 404 it
+    # produced said "Meeting not found" about a meeting that had been inserted
+    # a few statements earlier.
+    row: dict = {}
+    with _nonfatal(cur, "invite_email_resolve"):
         cur.execute(
             "SELECT user_id FROM users WHERE LOWER(email)=? LIMIT 1", (email,))
         row = _row(cur.fetchone())
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PM_INVITE_EMAIL_RESOLVE_FAILED")
-        return 0
     return int(row.get("user_id") or 0)
 
 
