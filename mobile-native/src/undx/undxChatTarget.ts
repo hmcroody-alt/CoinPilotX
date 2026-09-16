@@ -76,35 +76,83 @@ export type UndxBackNavigation = {
   navigate(screen: string, params?: object): void;
 };
 
+/** Where Back lands when the stack has nothing to offer. */
+export type ChatBackFloor = { screen: "Tabs"; params: { screen: "Dashboard" | "Messenger" } };
+
 /**
- * Back, from the UNDX chat, guaranteed to land somewhere.
+ * The floor for the UNDX conversation.
+ *
+ * UNDX earns the dashboard because of how it is entered: the PulseAI tab
+ * *replaces* itself with Chat, so an untouched stack legitimately holds nothing
+ * beneath it, and the member who opened UNDX from the tab was on the dashboard
+ * side of the app. There is no conversation list standing behind UNDX to return
+ * to — it is a tab, not an item in the recents the way a person is.
+ */
+export const UNDX_BACK_FLOOR: ChatBackFloor = { screen: "Tabs", params: { screen: "Dashboard" } };
+
+/**
+ * The floor for a conversation with a person, a group, or a room.
+ *
+ * This is the half that was wrong, and it was wrong because one rule written
+ * for UNDX was running for every conversation in the app. Reproduced on device:
+ * cold-launch `pulsesoc://pulse/messages/6` — the same `navigate` a tapped
+ * message notification performs — press the `‹`, and the app lands on Mission
+ * Control. A screen the member never asked for, from a thread they opened
+ * deliberately, while the button's own accessibility label was promising "Back
+ * to conversations".
+ *
+ * The messages list is not a guess here in the way the dashboard is. A
+ * conversation is an item *in* that list, so going up from it is structurally
+ * true no matter which conversation it was; that keeps the "Back always does
+ * something" guarantee without inventing a destination to satisfy it.
+ */
+export const CONVERSATION_BACK_FLOOR: ChatBackFloor = { screen: "Tabs", params: { screen: "Messenger" } };
+
+/**
+ * Which floor a conversation gets.
+ *
+ * Keyed on the conversation id rather than on a boolean the caller hands in,
+ * because the id is the thing that is actually true about the screen and a flag
+ * is something a second call site can get wrong. `PULSE_AI_CONVERSATION_ID` is
+ * a sentinel, and negative, so it can never collide with a real row id — which
+ * is what makes it safe to branch on at all.
+ */
+export function chatBackFloor(conversationId: number): ChatBackFloor {
+  return conversationId === PULSE_AI_CONVERSATION_ID ? UNDX_BACK_FLOOR : CONVERSATION_BACK_FLOOR;
+}
+
+/**
+ * Back, from a chat, guaranteed to land somewhere.
  *
  * Three tiers, strictly ordered. The real stack first, because it knows about
- * screens the member visited in between and the recorded origin does not. The
+ * screens the member visited in between and no recorded fallback does. The
  * recorded `undxReturn` second, for the cases where the stack cannot answer —
- * a deep link, a restored session, a future caller that resets. The dashboard
- * last: the tab entry replaces itself with Chat, so an untouched stack can
- * legitimately hold nothing beneath it, and landing on the dashboard is not a
- * guess about where the member wanted to be — it is the guarantee that Back
- * always does something, so UNDX can never become a screen you have to kill
- * the app to leave.
+ * a deep link, a restored session, a future caller that resets. A floor last,
+ * so Back can never be a no-op and a chat can never become a screen you have to
+ * kill the app to leave.
+ *
+ * Only the floor varies, and it varies by conversation rather than by caller:
+ * see `chatBackFloor`. The first two tiers are deliberately identical for every
+ * conversation — a live stack entry beneath you is the best answer that exists,
+ * and it does not become a worse answer because of who you are talking to.
  *
  * This lives here rather than inline in ChatScreen so the rendered navigation
  * regression test exercises the exact rule the screen runs.
  */
-export function goBackFromUndxChat(
+export function goBackFromChat(
   navigation: UndxBackNavigation,
-  undxReturn?: UndxReturnTarget
+  options: { conversationId: number; undxReturn?: UndxReturnTarget }
 ): void {
   if (navigation.canGoBack()) {
     navigation.goBack();
     return;
   }
-  if (undxReturn) {
-    navigation.navigate(undxReturn.screen, undxReturn.params);
+  if (options.undxReturn) {
+    navigation.navigate(options.undxReturn.screen, options.undxReturn.params);
     return;
   }
-  navigation.navigate("Tabs", { screen: "Dashboard" });
+  const floor = chatBackFloor(options.conversationId);
+  navigation.navigate(floor.screen, floor.params);
 }
 
 /** The asset screen a member drilled in from, or null if they did not. */
