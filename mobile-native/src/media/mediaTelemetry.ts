@@ -102,8 +102,15 @@ export type MediaTelemetrySink = (event: MediaEvent) => void;
 
 const defaultSink: MediaTelemetrySink = (event) => {
   if (typeof __DEV__ !== "undefined" && __DEV__) {
+    // `driftMs` is printed because it is the only field on the event that is a
+    // measurement rather than a label, and it is the whole reason
+    // MEDIA_AUDIO_RESYNC exists (§13). Omitting it made the dev sink report
+    // that a resync happened while withholding the number that says whether it
+    // was ordinary jitter or a track running away from the picture -- which is
+    // the question anyone reading this line is asking. It stays undefined for
+    // every other event, so nothing else gains a column.
     // eslint-disable-next-line no-console
-    console.log("[media]", event.name, event.key ?? "", event.reason ?? "");
+    console.log("[media]", event.name, event.key ?? "", event.reason ?? "", event.driftMs ?? "");
   }
 };
 
