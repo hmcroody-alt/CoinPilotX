@@ -372,3 +372,32 @@ describe("action order (Stage 39)", () => {
     expect([...MEDIA_ACTION_ORDER]).toEqual(["react", "reply", "forward", "share", "save"]);
   });
 });
+
+/**
+ * Progress has to reach the caller, or the surface has nothing honest to render.
+ *
+ * The downloader has emitted progress to a listener set since it was written, and
+ * every one of these actions simply never passed a listener through — so on
+ * device an 8.6 MB save showed the word "Saving" and nothing else for minutes,
+ * which is indistinguishable from a hang and was in fact mistaken for one. The
+ * gap was wiring, not mechanism, so what is pinned here is the wiring.
+ */
+describe("transfer progress reaches the caller", () => {
+  const onProgress = jest.fn();
+
+  it("forwards a progress listener when saving to the library", async () => {
+    mockDownloadMedia.mockResolvedValue({
+      key: "id:9", fileUri: "file:///cache/9.mp4", bytes: 10, mimeType: "video/mp4", createdAt: 0, lastAccessAt: 0
+    } as never);
+    await saveMediaToGallery({ url: "https://cdn.pulsesoc.com/m/9.mp4", mediaId: 9, kind: "video" }, { onProgress });
+    expect(mockDownloadMedia).toHaveBeenCalledWith(expect.objectContaining({ onProgress }));
+  });
+
+  it("forwards a progress listener when opening a document", async () => {
+    mockDownloadMedia.mockResolvedValue({
+      key: "id:44", fileUri: "file:///cache/44.pdf", bytes: 10, mimeType: "application/pdf", createdAt: 0, lastAccessAt: 0
+    } as never);
+    await openDocument({ url: "https://cdn.pulsesoc.com/m/44.pdf", mediaId: 44, kind: "file" }, { onProgress });
+    expect(mockDownloadMedia).toHaveBeenCalledWith(expect.objectContaining({ onProgress }));
+  });
+});

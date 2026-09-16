@@ -181,6 +181,25 @@ export const nativeMediaViewerIntegrationTargets = [
   "Creator Studio"
 ];
 
+/**
+ * Turn transfer progress into something honest to put on screen.
+ *
+ * The downloader reports `fraction: null` when the server sent no
+ * `Content-Length`, and the temptation is to render that as 0% and let it jump.
+ * A percentage is a promise about how much is left; inventing one when the total
+ * is genuinely unknown is the same class of lie as a black frame standing in for
+ * a loading frame. So an unknown total gets megabytes — which still moves, still
+ * proves the transfer is alive, and claims nothing it cannot support.
+ */
+export function savingMessageFor(progress: { bytesWritten: number; fraction: number | null }): string {
+  if (progress.fraction !== null) {
+    return `Saving to your library… ${Math.round(progress.fraction * 100)}%`;
+  }
+  const megabytes = progress.bytesWritten / (1024 * 1024);
+  if (megabytes < 0.1) return "Saving to your library…";
+  return `Saving to your library… ${megabytes.toFixed(1)} MB`;
+}
+
 export function NativeMediaViewer({
   visible,
   items,
@@ -619,7 +638,13 @@ export function NativeMediaViewer({
     setSavingToGallery(true);
     setActionStatus("Saving to your library…");
     try {
-      const result = await saveMediaToGallery(actionTargetFor(item));
+      const result = await saveMediaToGallery(actionTargetFor(item), {
+        // Conversation video is the untranscoded camera original, and the origin
+        // is not fast: an 8.6 MB save measured minutes, not seconds. Without this
+        // the only thing on screen for the whole of that is the word "Saving",
+        // which is indistinguishable from a hang — and was mistaken for one.
+        onProgress: (progress) => setActionStatus(savingMessageFor(progress))
+      });
       setActionStatus(
         result.status === "saved"
           ? result.limited

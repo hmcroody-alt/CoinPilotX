@@ -127,6 +127,30 @@ const MAX_CONCURRENT_DOWNLOADS = 3;
 const MAX_ATTEMPTS = 3;
 const BASE_BACKOFF_MS = 600;
 
+/**
+ * How long a transfer may deliver nothing at all before we stop believing in it.
+ *
+ * There was no such bound, and the absence was observed rather than theorised.
+ * Saving an 8.6 MB conversation video on device: the origin (`pulsesoc.com` on
+ * Railway, `69.46.46.14`) streamed 8,624,766 bytes, stopped, and held the socket
+ * open — `ESTABLISHED`, zero further bytes, eight and a half minutes, no FIN, no
+ * error. `downloadAsync()` cannot resolve a response body the server never
+ * finishes, so the promise never settled and the viewer sat on "Saving to your
+ * library…" indefinitely. That is the infinite spinner this mission forbids, and
+ * no amount of retry logic helps when the first attempt never ends.
+ *
+ * The threshold measures silence, not slowness. The same origin was delivering
+ * in the 2–65 KiB/s range while it was healthy, which still produces progress
+ * callbacks every few seconds; thirty seconds of *nothing* is a dead transfer,
+ * not a slow one. Deliberately generous for that reason — a slow connection must
+ * never be killed by this.
+ *
+ * A stall raises `timeout`, which is already retryable and already resumable, so
+ * the recovery is to pause (capturing the byte offset), back off, and continue
+ * from 8.6 MB rather than from zero.
+ */
+const STALL_TIMEOUT_MS = 30_000;
+
 /** Reasons where trying again is resilience rather than a loop. */
 const RETRYABLE = new Set<MediaFailureReason>(["network", "timeout", "unavailable", "unknown"]);
 
@@ -265,18 +289,28 @@ async function performDownload(
       await ensureRoomFor(Number(request.expectedBytes) || 0);
 
       const resumeState = await readResumeState(key);
+      // Every byte written refreshes the deadline, so the watchdog measures the
+      // gap between deliveries rather than the length of the transfer. A large
+      // file on a slow link is not a stall.
+      let lastProgressAt = Date.now();
       const resumable = createDownloadResumable(
         currentUrl,
         partial,
         { headers: request.headers },
-        (progress: DownloadProgressData) => emitProgress(task, key, progress),
+        (progress: DownloadProgressData) => {
+          lastProgressAt = Date.now();
+          emitProgress(task, key, progress);
+        },
         resumeState?.resumeData
       );
       task.resumable = resumable;
 
-      const result = resumeState?.resumeData
-        ? await resumable.resumeAsync()
-        : await resumable.downloadAsync();
+      const transfer = resumeState?.resumeData ? resumable.resumeAsync() : resumable.downloadAsync();
+      // The race abandons this promise when the watchdog wins; without a handler
+      // its eventual rejection surfaces as an unhandled rejection unrelated to
+      // anything the user did.
+      transfer.catch(() => undefined);
+      const result = await withStallWatchdog(transfer, () => lastProgressAt);
 
       if (task.cancelled) throw new MediaDownloadError("cancelled", "Download cancelled.");
       if (!result) throw new MediaDownloadError("cancelled", "Download cancelled.");
@@ -337,6 +371,16 @@ async function performDownload(
           ? "no_disk_space"
           : mediaFailureReason(error);
 
+      // A stalled transfer is still holding a socket and, in the case that
+      // produced this code, 8.6 MB of perfectly good bytes. Pausing releases the
+      // first and yields the resume token for the second, so the next attempt
+      // continues from the offset instead of asking the same slow origin for the
+      // whole file again.
+      if (lastReason === "timeout" && task.resumable) {
+        const paused = await task.resumable.pauseAsync().catch(() => null);
+        if (paused) await persistResumeState(key, paused);
+      }
+
       const canRetry = attempt < MAX_ATTEMPTS && RETRYABLE.has(lastReason) && !task.cancelled;
       if (!canRetry) break;
 
@@ -356,6 +400,37 @@ async function performDownload(
     reason: lastReason
   });
   throw new MediaDownloadError(lastReason, downloadMessageFor(lastReason));
+}
+
+/**
+ * Reject if the transfer goes quiet for `STALL_TIMEOUT_MS`, leaving it otherwise
+ * untouched.
+ *
+ * Written as a self-rescheduling timer rather than a single `setTimeout` so that
+ * the deadline slides forward with each delivery: one timer armed for the whole
+ * transfer would cap the total duration, which would punish a large file on a
+ * slow link — the opposite of the intent.
+ */
+async function withStallWatchdog<T>(transfer: Promise<T>, lastProgressAt: () => number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_resolve, reject) => {
+    const tick = () => {
+      const idleMs = Date.now() - lastProgressAt();
+      if (idleMs >= STALL_TIMEOUT_MS) {
+        reject(new MediaDownloadError("timeout", "The media server stopped sending data."));
+        return;
+      }
+      // Bytes arrived while we were asleep, so the deadline moved. Re-arm for
+      // whatever is left of it rather than firing early.
+      timer = setTimeout(tick, STALL_TIMEOUT_MS - idleMs);
+    };
+    timer = setTimeout(tick, STALL_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([transfer, stalled]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function emitProgress(task: ActiveTask, key: string, progress: DownloadProgressData) {
