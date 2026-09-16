@@ -154,6 +154,92 @@ class AttachmentPayloadIsSingleAndComplete(unittest.TestCase):
         payload = service._attachment_payload({"id": 6, "media_type": "voice", "waveform_json": "{not json"})
         self.assertEqual(payload["waveform"], [])
 
+    def test_foundation_media_gets_the_poster_its_processing_job_already_made(self):
+        """Every image and video in a thread shipped with no poster.
+
+        `_attach_foundation_media` stored a literal empty string for
+        `thumbnail_url` on every row it ever inserted, while the foundation's
+        processing job was generating a thumbnail and storing its key -- checked
+        against production conversation 6, where all seven image/video rows have
+        a `thumbnail_key` and all seven have an empty `thumbnail_url`.
+
+        The cost is paid in the gallery, not the bubble. The tapped item carries
+        the bitmap the thread already decoded, so it opens instantly; its
+        neighbours have nothing to show while a multi-hundred-kilobyte original
+        downloads, so swiping lands on black. Black is never the loading state.
+        """
+        payload = service._attachment_payload({
+            "id": 601,
+            "media_upload_id": 87,
+            "media_type": "video",
+            "storage_provider": "messenger_media_foundation",
+            "url": "/api/messages/media/87/download",
+        })
+        self.assertEqual(payload["thumbnail_url"], "/api/messages/media/87/thumbnail")
+
+    def test_the_derived_poster_is_keyed_on_the_foundation_id_not_the_row_id(self):
+        """`id` and `media_upload_id` are autoincrements from different tables
+        whose ranges overlap. The thumbnail route is keyed on the foundation id
+        and on nothing else, so deriving it from the transport row id would
+        serve somebody else's attachment -- the same id-space collision that
+        `resolveCanonicalMessengerMediaId` exists to prevent on the client."""
+        payload = service._attachment_payload({
+            "id": 601,
+            "media_upload_id": 87,
+            "media_type": "image",
+            "storage_provider": "messenger_media_foundation",
+        })
+        self.assertNotIn("/601/", payload["thumbnail_url"])
+        self.assertEqual(payload["thumbnail_url"], "/api/messages/media/87/thumbnail")
+
+    def test_a_stored_poster_is_never_overwritten_by_the_derived_one(self):
+        """Derivation is a repair for rows written with an empty string, not a
+        policy. A row that knows its own poster keeps it."""
+        payload = service._attachment_payload({
+            "id": 601,
+            "media_upload_id": 87,
+            "media_type": "image",
+            "storage_provider": "messenger_media_foundation",
+            "thumbnail_url": "https://cdn.example/real-poster.jpg",
+        })
+        self.assertEqual(payload["thumbnail_url"], "https://cdn.example/real-poster.jpg")
+
+    def test_only_foundation_backed_media_gets_a_derived_poster(self):
+        """The route only answers for foundation attachments. Inventing the URL
+        for a Mux- or R2-backed row would hand the client a link that 404s in
+        place of an empty string it already handles."""
+        payload = service._attachment_payload({
+            "id": 12,
+            "media_upload_id": 34,
+            "media_type": "video",
+            "storage_provider": "mux",
+        })
+        self.assertEqual(payload["thumbnail_url"], "")
+
+    def test_voice_and_documents_get_no_derived_poster(self):
+        """Neither has a thumbnail route behind it, and neither renders one."""
+        for media_type in ("voice", "file", "audio"):
+            payload = service._attachment_payload({
+                "id": 607,
+                "media_upload_id": 92,
+                "media_type": media_type,
+                "storage_provider": "messenger_media_foundation",
+            })
+            self.assertEqual(payload["thumbnail_url"], "", media_type)
+
+    def test_a_derived_poster_never_becomes_the_thing_the_player_plays(self):
+        """`thumbnail_url` is the last fallback in the `url` chain. Deriving it
+        before `url` is computed would make a poster the media for any row whose
+        own URL is missing -- a still image silently standing in for a video."""
+        payload = service._attachment_payload({
+            "id": 601,
+            "media_upload_id": 87,
+            "media_type": "video",
+            "storage_provider": "messenger_media_foundation",
+        })
+        self.assertEqual(payload["url"], "")
+        self.assertEqual(payload["thumbnail_url"], "/api/messages/media/87/thumbnail")
+
 
 class KeptOpenConnection:
     """A `sqlite3.Connection` whose `close()` is a no-op.

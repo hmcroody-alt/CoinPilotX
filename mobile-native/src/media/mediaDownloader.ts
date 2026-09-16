@@ -92,6 +92,24 @@ export type MediaDownloadRequest = {
   /** From the canonical record's `size_bytes`, used to reserve disk up front. */
   expectedBytes?: number;
   headers?: Record<string, string>;
+  /**
+   * Mint a replacement access URL for the SAME media, used exactly once when the
+   * server rejects the transfer with 401/403 (§8).
+   *
+   * A messenger access URL carries its credential in the query string and lives
+   * for fifteen minutes, because the native image loader cannot send an
+   * Authorization header. A viewer that has been open longer than that is still
+   * showing a decoded bitmap, so "Save to Photos" and "Share" reach this module
+   * with a URL that renders fine and downloads as 403. Reporting that as "You do
+   * not have access to this media" is both wrong and unactionable — the user
+   * plainly has access, they are looking at the picture.
+   *
+   * Refresh is bounded to one attempt per download and is NOT a retry loop: a
+   * genuine authorization failure returns the same 403 the second time and is
+   * then reported honestly. The hook resolves media identity only; it must never
+   * touch session state, for the same reason `/access` never answers 401.
+   */
+  refreshUrl?: () => Promise<string>;
   onProgress?: (progress: MediaDownloadProgress) => void;
 };
 
@@ -227,12 +245,16 @@ async function performDownload(
 ): Promise<MediaCacheEntry> {
   const startedAt = Date.now();
   const kind = request.kind || "file";
-  const destination = cacheFileUriFor(key, extensionFor(url, request.mimeType));
+  const destination = cacheFileUriFor(key, extensionFor(url, request.mimeType, kind));
   const partial = `${destination}.part`;
 
   trackMediaEvent({ name: "MEDIA_DOWNLOAD_STARTED", key, kind, surface: request.surface });
 
   let lastReason: MediaFailureReason = "unknown";
+  // One refresh for the whole transfer, not one per attempt. A credential that
+  // is still rejected after being re-minted is not a stale credential.
+  let refreshSpent = false;
+  let currentUrl = url;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
     if (task.cancelled) throw new MediaDownloadError("cancelled", "Download cancelled.");
@@ -244,7 +266,7 @@ async function performDownload(
 
       const resumeState = await readResumeState(key);
       const resumable = createDownloadResumable(
-        url,
+        currentUrl,
         partial,
         { headers: request.headers },
         (progress: DownloadProgressData) => emitProgress(task, key, progress),
@@ -263,6 +285,25 @@ async function performDownload(
       if (status >= 400) {
         // An error body was just written to `.part`. It is not media.
         await deleteAsync(partial, { idempotent: true }).catch(() => undefined);
+        if ((status === 401 || status === 403) && request.refreshUrl && !refreshSpent) {
+          refreshSpent = true;
+          const fresh = String((await request.refreshUrl().catch(() => "")) || "").trim();
+          if (fresh && fresh !== currentUrl) {
+            // Drop any persisted offset too: it was negotiated against a URL the
+            // server has now rejected, and resuming into a fresh grant would
+            // splice a new response onto bytes from the old one.
+            await AsyncStorage.removeItem(`${RESUME_PREFIX}${key}`).catch(() => undefined);
+            currentUrl = fresh;
+            trackMediaEvent({
+              name: "MEDIA_DOWNLOAD_URL_REFRESHED",
+              key,
+              kind,
+              surface: request.surface,
+              attempt
+            });
+            continue;
+          }
+        }
         throw new MediaDownloadError(statusReason(status), `Media request failed (${status}).`);
       }
 
@@ -387,13 +428,41 @@ export function downloadMessageFor(reason: MediaFailureReason): string {
   }
 }
 
-function extensionFor(url: string, mimeType?: string): string {
+/**
+ * Name the cached file, MIME type first, URL suffix second, kind last.
+ *
+ * The third fallback is not decoration. The photo library write routes on the
+ * extension rather than on the bytes, so a file with none is rejected even when
+ * it is a perfectly valid JPEG — the user is told their photo could not be saved
+ * while looking at it. The first two sources can both come up empty
+ * on a real request: a signed access URL's path ends in `/download`, and a
+ * producer that has no MIME type to give simply has none. `kind` is always
+ * known, so this always produces something Photos will accept.
+ *
+ * Guessing `.jpg` for a PNG is deliberately tolerable here: iOS decodes the
+ * actual data and the extension only decides image-versus-movie routing, so the
+ * wrong still-image extension saves correctly while no extension does not.
+ */
+function extensionFor(url: string, mimeType?: string, kind?: MediaDownloadKind): string {
   const fromMime = mimeType ? MIME_EXTENSIONS[mimeType.split(";")[0].trim().toLowerCase()] : undefined;
   if (fromMime) return fromMime;
   const path = url.split("#")[0].split("?")[0];
   const match = /\.([A-Za-z0-9]{1,5})$/.exec(path);
-  return match ? `.${match[1].toLowerCase()}` : "";
+  if (match) return `.${match[1].toLowerCase()}`;
+  return kind ? KIND_EXTENSIONS[kind] || "" : "";
 }
+
+/**
+ * Last-resort extensions. `file` stays empty on purpose — a document of unknown
+ * type is not saveable to Photos anyway, and inventing a suffix for it would
+ * mislabel the file in the share sheet.
+ */
+const KIND_EXTENSIONS: Record<MediaDownloadKind, string> = {
+  image: ".jpg",
+  video: ".mp4",
+  audio: ".m4a",
+  file: ""
+};
 
 const MIME_EXTENSIONS: Record<string, string> = {
   "image/jpeg": ".jpg",

@@ -246,7 +246,18 @@ export function useConversationMediaGallery(
         { mediaUploadId: item.mediaUploadId, attachmentId: item.attachmentId },
         item.url
       );
-      if (!canonical.id) continue;
+      if (!canonical.id) {
+        // Unreachable while the URL matched the protected pattern -- that match
+        // is itself where the id comes from. Recorded rather than skipped
+        // anyway: `continue` here would leave the key absent from `resolved`
+        // forever, which the viewer renders as a permanent spinner over a black
+        // frame and reports nowhere. An item we cannot name is unavailable, and
+        // saying so is the only honest end state.
+        setResolved((current) => current[item.key]
+          ? current
+          : { ...current, [item.key]: { url: "", thumbnailUrl: "", unavailable: true } });
+        continue;
+      }
       // `grant…` not `resolve…`: this is the call that carries the one bounded
       // recovery (expired grant -> re-mint and retry once; wrong id -> try a
       // proven alternate). The gallery is where expiry is MOST likely, because

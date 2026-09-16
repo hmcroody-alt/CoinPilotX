@@ -2391,6 +2391,17 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
         raw_type = str(media.get("media_type") or "file").lower()
         media_type = "image" if raw_type == "photo" else "voice" if raw_type == "voice" else raw_type
         download_url = f"/api/messages/media/{int(foundation_id)}/download"
+        # The processing job has normally already produced a poster by the time
+        # the message referencing the attachment is sent, and this row is the
+        # only place the conversation read path looks for one. Storing "" here
+        # -- which is what this did -- is what left every photo and video in a
+        # thread posterless. Conditional on the key, so "no preview yet" stays a
+        # distinguishable state rather than becoming a URL that 404s.
+        thumbnail_url = (
+            f"/api/messages/media/{int(foundation_id)}/thumbnail"
+            if str(media.get("thumbnail_key") or "")
+            else ""
+        )
         duration_seconds = max(0.0, float(media.get("duration_ms") or 0) / 1000.0)
         attachment_public_id = _public_id("att")
         now = _now()
@@ -2412,7 +2423,7 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
                 download_url,
                 "",
                 download_url if media_type in {"video", "voice", "audio"} else "",
-                "",
+                thumbnail_url,
                 media.get("mime_type") or "",
                 int(media.get("size_bytes") or 0),
                 int(media.get("size_bytes") or 0),
@@ -2441,7 +2452,7 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
             "url": download_url,
             "cdn_url": "",
             "playback_url": download_url if media_type in {"video", "voice", "audio"} else "",
-            "thumbnail_url": "",
+            "thumbnail_url": thumbnail_url,
             "mime_type": media.get("mime_type") or "",
             "file_size": int(media.get("size_bytes") or 0),
             "file_size_bytes": int(media.get("size_bytes") or 0),
@@ -2531,6 +2542,37 @@ def _attachment_payload(row: dict) -> dict:
         waveform = json.loads(row.get("waveform_json") or "[]")
     except Exception:
         waveform = []
+    # Recover the poster for foundation-backed media.
+    #
+    # `_attach_foundation_media` wrote `thumbnail_url=''` for every attachment it
+    # ever inserted, so in production every image and video in a conversation
+    # arrives with no poster even though the processing job generated one and
+    # stored its key -- verified against conversation 6, where all seven
+    # image/video rows have a `thumbnail_key` and all seven ship an empty
+    # `thumbnail_url`. The consequence is the gallery's, not the bubble's: the
+    # tapped item carries the bitmap the thread already decoded, but its
+    # neighbours have nothing to show while their full-resolution asset
+    # downloads, so swiping lands on black. Black is never the loading state.
+    #
+    # Derived rather than joined because it is a pure function of the foundation
+    # id -- the same id this row already carries -- and because adding
+    # `message_attachments` to the media-history JOIN would make every
+    # conversation read depend on a table that the comm_v2 read path does not
+    # otherwise touch. The route answers 404 when no preview exists yet, which
+    # every client already renders as "no poster", so the not-yet-processed case
+    # degrades to exactly the behaviour this replaces.
+    #
+    # Deliberately computed AFTER `url`: `thumbnail_url` is the last fallback in
+    # that chain, and a poster must never become the thing the player is asked
+    # to play.
+    if (
+        not thumbnail_url
+        and str(row.get("storage_provider") or "") == "messenger_media_foundation"
+        and media_type in {"image", "photo", "video"}
+    ):
+        foundation_id = int(row.get("media_upload_id") or 0)
+        if foundation_id > 0:
+            thumbnail_url = f"/api/messages/media/{foundation_id}/thumbnail"
     return {
         "id": int(row.get("id") or row.get("media_upload_id") or 0),
         "attachment_id": int(row.get("id") or 0),

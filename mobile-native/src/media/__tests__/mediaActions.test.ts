@@ -21,6 +21,12 @@ jest.mock("expo-sharing", () => ({
   isAvailableAsync: jest.fn(),
   shareAsync: jest.fn()
 }));
+jest.mock("expo-file-system/legacy", () => ({
+  cacheDirectory: "file:///cache/",
+  makeDirectoryAsync: jest.fn(async () => undefined),
+  copyAsync: jest.fn(async () => undefined),
+  deleteAsync: jest.fn(async () => undefined)
+}));
 jest.mock("../../sharing/nativeShare", () => ({ sharePulseObject: jest.fn() }));
 jest.mock("../mediaDownloader", () => {
   // `MediaDownloadError` must keep its real identity: `saveMediaToGallery`
@@ -33,6 +39,7 @@ import { MediaDownloadError, downloadMedia } from "../mediaDownloader";
 import { sharePulseObject } from "../../sharing/nativeShare";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import { MEDIA_ACTION_ORDER, openDocument, saveMediaToGallery, shareMedia } from "../mediaActions";
 
 const mockDownloadMedia = downloadMedia as jest.MockedFunction<typeof downloadMedia>;
@@ -43,6 +50,11 @@ const mockMediaLibrary = MediaLibrary as unknown as {
   saveToLibraryAsync: jest.Mock;
 };
 const mockSharing = Sharing as unknown as { isAvailableAsync: jest.Mock; shareAsync: jest.Mock };
+const mockFileSystem = FileSystem as unknown as {
+  makeDirectoryAsync: jest.Mock;
+  copyAsync: jest.Mock;
+  deleteAsync: jest.Mock;
+};
 
 const PHOTO = { url: "https://cdn.pulsesoc.com/m/7.jpg", mediaId: 7, kind: "image" as const, surface: "messenger" };
 
@@ -99,6 +111,64 @@ describe("saveMediaToGallery", () => {
     expect((result as { message: string }).message).toMatch(/Settings/);
   });
 
+  /**
+   * Photos decides image-versus-movie from the file name and rejects a file with
+   * no extension at all — even a valid JPEG. The download engine names its files
+   * now, but entries cached before that fix are still sitting on disk unnamed,
+   * and a user whose photo will not save does not care which release wrote it.
+   */
+  describe("an extensionless cached file", () => {
+    const UNNAMED = "file:///cache/pulsesoc-media/anon/cm58uqq";
+
+    beforeEach(() => {
+      mockDownloadMedia.mockResolvedValue({
+        key: "id:87",
+        fileUri: UNNAMED,
+        bytes: 803426,
+        mimeType: "image/jpeg",
+        createdAt: Date.now(),
+        lastAccessAt: Date.now()
+      });
+    });
+
+    it("is copied to a name Photos accepts before the write", async () => {
+      await expect(saveMediaToGallery({ ...PHOTO, mimeType: "image/jpeg" })).resolves.toEqual({
+        status: "saved",
+        limited: false
+      });
+      expect(mockFileSystem.copyAsync).toHaveBeenCalledWith({ from: UNNAMED, to: expect.stringMatching(/\.jpg$/) });
+      expect(mockMediaLibrary.saveToLibraryAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/));
+    });
+
+    it("falls back to the kind when the MIME type is missing too", async () => {
+      await expect(saveMediaToGallery({ ...PHOTO, kind: "video", mimeType: undefined })).resolves.toMatchObject({
+        status: "saved"
+      });
+      expect(mockMediaLibrary.saveToLibraryAsync).toHaveBeenCalledWith(expect.stringMatching(/\.mp4$/));
+    });
+
+    it("deletes the copy afterwards — the cache still owns the real bytes", async () => {
+      await saveMediaToGallery({ ...PHOTO, mimeType: "image/jpeg" });
+      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
+    });
+
+    it("deletes the copy even when the write fails", async () => {
+      // Otherwise every failed save leaks a full-size duplicate into the cache,
+      // and the failure users hit most is the one that fills their disk.
+      mockFileSystem.deleteAsync.mockClear();
+      mockMediaLibrary.saveToLibraryAsync.mockRejectedValue(new Error("write failed"));
+      await expect(saveMediaToGallery({ ...PHOTO, mimeType: "image/jpeg" })).resolves.toMatchObject({
+        status: "failed"
+      });
+      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
+    });
+  });
+
+  it("copies nothing when the cached file already has an extension", async () => {
+    await saveMediaToGallery(PHOTO);
+    expect(mockFileSystem.copyAsync).not.toHaveBeenCalled();
+  });
+
   it("does not report saved when the library write itself throws", async () => {
     mockMediaLibrary.saveToLibraryAsync.mockRejectedValue(new Error("disk full"));
     const result = await saveMediaToGallery(PHOTO);
@@ -144,6 +214,62 @@ describe("shareMedia", () => {
   it("falls back to the link when the platform has no share sheet for files", async () => {
     mockSharing.isAvailableAsync.mockResolvedValue(false);
     await expect(shareMedia(PHOTO)).resolves.toEqual({ status: "shared", mode: "link" });
+  });
+
+  it("can re-mint an expired access URL, exactly as Save can", async () => {
+    // Share is reached whenever the user taps, which can be long after the
+    // fifteen-minute grant that painted the picture. Without the hook, sharing a
+    // photo that is on screen degrades to sharing a link the recipient cannot
+    // open — a silent downgrade that looks like it worked.
+    const refreshUrl = jest.fn(async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh");
+    await shareMedia({ ...PHOTO, refreshUrl });
+    expect(mockDownloadMedia).toHaveBeenCalledWith(expect.objectContaining({ refreshUrl }));
+  });
+
+  describe("an extensionless cached file", () => {
+    const UNNAMED = "file:///cache/pulsesoc-media/anon/cm58uqq";
+
+    beforeEach(() => {
+      mockDownloadMedia.mockResolvedValue({
+        key: "id:87",
+        fileUri: UNNAMED,
+        bytes: 803426,
+        mimeType: "image/jpeg",
+        createdAt: Date.now(),
+        lastAccessAt: Date.now()
+      });
+    });
+
+    it("is shared under a name the recipient can open", async () => {
+      // Observed on device: the sheet showed "cm58uqq — File · 803 KB" and
+      // offered only Copy/Print/Save to Files. Declaring `mimeType` and `UTI`
+      // does not rescue it; iOS types a file URL by its extension.
+      await expect(shareMedia(PHOTO)).resolves.toEqual({ status: "shared", mode: "file" });
+      expect(mockSharing.shareAsync).toHaveBeenCalledWith(
+        expect.stringMatching(/\.jpg$/),
+        expect.objectContaining({ mimeType: "image/jpeg" })
+      );
+    });
+
+    it("deletes the shared copy once the sheet closes", async () => {
+      await shareMedia(PHOTO);
+      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
+    });
+
+    it("deletes it even when the share is dismissed or fails", async () => {
+      mockSharing.shareAsync.mockRejectedValue(new Error("dismissed"));
+      await shareMedia({ ...PHOTO, sourceUrl: "https://pulsesoc.com/p/9" });
+      expect(mockFileSystem.deleteAsync).toHaveBeenCalledWith(expect.stringMatching(/\.jpg$/), { idempotent: true });
+    });
+  });
+
+  it("copies nothing when the cached file already has an extension", async () => {
+    await shareMedia(PHOTO);
+    expect(mockFileSystem.copyAsync).not.toHaveBeenCalled();
+    expect(mockSharing.shareAsync).toHaveBeenCalledWith(
+      "file:///cache/pulsesoc-media/u1/abc.jpg",
+      expect.anything()
+    );
   });
 });
 

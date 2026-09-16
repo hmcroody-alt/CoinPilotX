@@ -37,6 +37,7 @@
  * inherits it instead of re-deciding it, and the regression test has something
  * to assert against.
  */
+import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 
@@ -60,6 +61,17 @@ export type MediaActionTarget = {
   description?: string;
   author?: string;
   thumbnailUrl?: string;
+  /**
+   * Re-mint `url` when the server rejects the transfer as unauthorized.
+   *
+   * Save and Share differ from rendering in one way that matters: rendering
+   * happens the instant the grant is issued, and these happen whenever the user
+   * decides to tap. A messenger access URL is a fifteen-minute credential, so a
+   * viewer left open past that renders a perfectly good decoded image and then
+   * fails to save it. Passed straight through to `downloadMedia`, which spends it
+   * at most once.
+   */
+  refreshUrl?: () => Promise<string>;
 };
 
 export type MediaSaveResult =
@@ -105,7 +117,8 @@ export async function saveMediaToGallery(target: MediaActionTarget): Promise<Med
       mimeType: target.mimeType,
       kind,
       surface: target.surface,
-      expectedBytes: target.expectedBytes
+      expectedBytes: target.expectedBytes,
+      refreshUrl: target.refreshUrl
     });
     fileUri = entry.fileUri;
   } catch (error) {
@@ -130,8 +143,10 @@ export async function saveMediaToGallery(target: MediaActionTarget): Promise<Med
     };
   }
 
+  let saveUri = fileUri;
   try {
-    await MediaLibrary.saveToLibraryAsync(fileUri);
+    saveUri = await namedCopyOf(fileUri, kind, target.mimeType);
+    await MediaLibrary.saveToLibraryAsync(saveUri);
   } catch (error) {
     const reason = mediaFailureReason(error);
     trackMediaEvent({ name: "MEDIA_SAVE_FAILED", kind, surface: target.surface, reason });
@@ -140,6 +155,13 @@ export async function saveMediaToGallery(target: MediaActionTarget): Promise<Med
       reason,
       message: "PulseSoc could not save this to your library. Check available storage and try again."
     };
+  } finally {
+    // The copy exists only to give Photos a filename it will accept. The cache
+    // still owns the real bytes, so keeping it would double the disk cost of
+    // every save for no benefit.
+    if (saveUri !== fileUri) {
+      await FileSystem.deleteAsync(saveUri, { idempotent: true }).catch(() => undefined);
+    }
   }
 
   trackMediaEvent({ name: "MEDIA_SAVE_SUCCEEDED", kind, surface: target.surface });
@@ -160,6 +182,56 @@ async function requestSavePermission(): Promise<{ allowed: boolean; limited: boo
     canAskAgain: response.canAskAgain !== false
   };
 }
+
+/**
+ * iOS routes on the extension, not on the bytes — for both consumers.
+ *
+ * The photo library write decides image-versus-movie from the file name and
+ * refuses a file with no extension at all, even a valid JPEG. The share sheet is
+ * the same story with a different symptom: an extensionless file is offered as
+ * an untyped document, so the recipient gets `cm58uqq` they cannot open and the
+ * sheet drops every image-aware target. Declaring `mimeType` and `UTI` does not
+ * rescue it; the file name wins.
+ *
+ * The download engine names its files now, but this is the boundary that
+ * actually has the constraint, and it has to hold for two cases the engine
+ * cannot reach: entries already sitting in the cache from before that fix, and
+ * any future producer that resolves a file some other way.
+ *
+ * Returns the original URI unchanged when it already has an extension, so the
+ * common path copies nothing. The basename stays the cache digest rather than
+ * becoming the media's title — a shared filename is visible to the recipient,
+ * and a chat photo's title is not ours to disclose.
+ */
+async function namedCopyOf(fileUri: string, kind: MediaDownloadKind, mimeType?: string): Promise<string> {
+  const name = fileUri.split("/").pop() || "";
+  if (/\.[A-Za-z0-9]{1,5}$/.test(name)) return fileUri;
+
+  const extension = SAVE_EXTENSIONS[mimeType ? mimeType.split(";")[0].trim().toLowerCase() : ""]
+    || (kind === "video" ? ".mp4" : ".jpg");
+  const directory = `${FileSystem.cacheDirectory || ""}pulsesoc-save/`;
+  await FileSystem.makeDirectoryAsync(directory, { intermediates: true }).catch(() => undefined);
+  const target = `${directory}${name || `media-${Date.now()}`}${extension}`;
+  await FileSystem.deleteAsync(target, { idempotent: true }).catch(() => undefined);
+  await FileSystem.copyAsync({ from: fileUri, to: target });
+  return target;
+}
+
+/**
+ * Only the types Photos accepts. Anything else falls back on `kind`, because a
+ * wrong still-image extension saves correctly — iOS decodes the real data — and
+ * no extension does not.
+ */
+const SAVE_EXTENSIONS: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/png": ".png",
+  "image/gif": ".gif",
+  "image/heic": ".heic",
+  "image/heif": ".heif",
+  "video/mp4": ".mp4",
+  "video/quicktime": ".mov"
+};
 
 /**
  * Share the actual file through the OS share sheet, falling back to the
@@ -185,6 +257,8 @@ export async function shareMedia(
   if (!options.preferLink) {
     const shareable = await Sharing.isAvailableAsync().catch(() => false);
     if (shareable) {
+      let shareUri = "";
+      let sourceUri = "";
       try {
         const entry = await downloadMedia({
           url: target.url,
@@ -192,9 +266,15 @@ export async function shareMedia(
           mimeType: target.mimeType,
           kind,
           surface: target.surface,
-          expectedBytes: target.expectedBytes
+          expectedBytes: target.expectedBytes,
+          // Share is reached whenever the user taps, which can be long after the
+          // fifteen-minute access URL that painted the picture was minted. Without
+          // this, sharing a photo that is on screen degrades to sharing a link.
+          refreshUrl: target.refreshUrl
         });
-        await Sharing.shareAsync(entry.fileUri, {
+        sourceUri = entry.fileUri;
+        shareUri = await namedCopyOf(entry.fileUri, kind, entry.mimeType || target.mimeType);
+        await Sharing.shareAsync(shareUri, {
           mimeType: entry.mimeType || target.mimeType,
           UTI: utiFor(kind, entry.mimeType || target.mimeType),
           dialogTitle: target.title || "Share media"
@@ -204,6 +284,12 @@ export async function shareMedia(
         // Fall through to the link. A share sheet the user dismissed and a
         // download that failed are indistinguishable here, and in both cases
         // offering the link is better than reporting an error.
+      } finally {
+        // `shareAsync` resolves once the sheet closes, so by here the OS is done
+        // reading the file. The cache still owns the real bytes.
+        if (shareUri && shareUri !== sourceUri) {
+          await FileSystem.deleteAsync(shareUri, { idempotent: true }).catch(() => undefined);
+        }
       }
     }
   }
@@ -256,7 +342,8 @@ export async function openDocument(target: MediaActionTarget): Promise<MediaOpen
       mimeType: target.mimeType,
       kind: "file",
       surface: target.surface,
-      expectedBytes: target.expectedBytes
+      expectedBytes: target.expectedBytes,
+      refreshUrl: target.refreshUrl
     });
     fileUri = entry.fileUri;
     mimeType = entry.mimeType || target.mimeType;
