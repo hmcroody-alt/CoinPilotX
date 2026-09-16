@@ -1,5 +1,6 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AccessibilityInfo, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -33,6 +34,13 @@ import {
 } from "../pulseCommand/domain";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import {
+  messengerBackgroundGradient,
+  messengerBackgroundOpacity,
+  messengerBadgeTone,
+  messengerPresenceDotColor,
+  messengerTheme
+} from "../theme/messengerTheme";
 import { createThemedStyles } from "../theme/themedStyles";
 import { messagesVisualRefreshEnabled } from "../spatial/flags";
 
@@ -178,6 +186,9 @@ export function MessengerScreen() {
   if (authState.status !== "signedIn") {
     return (
       <LogiNexusScreenShell>
+        {/* The signed-out branch gets the field too — a dark flash on the way to
+            the signed-in page is still a dark flash. */}
+        <NeonDuskField />
         <View style={styles.permissionPage}>
           <LogiNexusStatePanel state="permission" title="Sign in to open Messenger" body="Pulse Command uses your existing PulseSoc identity and conversations.">
             <Pressable accessibilityRole="button" style={styles.retryButton} onPress={() => requestReauthentication("/pulse/messages")}><Text style={styles.retryText}>Sign in</Text></Pressable>
@@ -189,12 +200,13 @@ export function MessengerScreen() {
 
   return (
     <LogiNexusScreenShell>
+      <NeonDuskField />
       <FlatList
         ref={listRef}
         data={filteredConversations}
         keyExtractor={(item) => `chat-${item.id}`}
         contentContainerStyle={[styles.list, { paddingTop: Math.max(insets.top + 4, 36) }, dock.contentPadding]}
-        refreshControl={<RefreshControl refreshing={refreshing} tintColor={colors.accent} onRefresh={() => load({ refresh: true })} />}
+        refreshControl={<RefreshControl refreshing={refreshing} tintColor={messengerTheme.tealAccent} onRefresh={() => load({ refresh: true })} />}
         initialNumToRender={10}
         maxToRenderPerBatch={8}
         windowSize={7}
@@ -212,7 +224,7 @@ export function MessengerScreen() {
                     accessibilityLabel="Search conversations"
                     style={styles.searchInput}
                     placeholder="Search conversations"
-                    placeholderTextColor={colors.muted}
+                    placeholderTextColor={messengerTheme.tertiaryText}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     autoCapitalize="none"
@@ -237,7 +249,7 @@ export function MessengerScreen() {
                 const title = conversationDisplayTitle(item);
                 return (
                   <Pressable key={`active-${item.id}`} accessibilityRole="button" accessibilityLabel={`Open ${title}, active now`} style={styles.presenceItem} onPress={() => navigation.navigate("Chat", { conversationId: item.id, title, avatarUrl: item.avatar_url, presence: item.presence })}>
-                    <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active size={50} tone={item.trust_state === "founder" ? "intelligence" : "default"} />
+                    <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active size={50} tone={item.trust_state === "founder" ? "intelligence" : "default"} signalColor={messengerPresenceDotColor(item.presence)} />
                     <Text style={styles.presenceName} numberOfLines={1}>{title}</Text>
                   </Pressable>
                 );
@@ -317,10 +329,17 @@ function QuickAction({ icon, title, subtitle, primary, accent, onPress }: { icon
   );
 }
 
+/**
+ * New Chat is teal, Create Group is blue, Start Room is violet.
+ *
+ * Create Group was `#73f27d` — a green, and the only green on the screen that
+ * was not presence. Greens that do not mean "online" are exactly what makes the
+ * ONLINE dot stop reading as a status.
+ */
 function quickActionAccentColor(accent: QuickActionAccent) {
-  if (accent === "group") return "#73f27d";
-  if (accent === "room") return "#a77cff";
-  return "#3eeed1";
+  if (accent === "group") return messengerTheme.blueAccent;
+  if (accent === "room") return messengerTheme.violetAccent;
+  return messengerTheme.tealAccent;
 }
 
 function ConversationRow({ item, navigation }: { item: MessengerConversation; navigation: NativeStackNavigationProp<RootStackParamList> }) {
@@ -348,7 +367,7 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
         navigation.navigate("Chat", { conversationId: item.id, title, avatarUrl: item.avatar_url, presence: item.presence });
       }}
     >
-      <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active={active} tone={item.trust_state === "founder" || item.trust_state === "intelligence" ? "intelligence" : "default"} size={48} />
+      <PulseCommandAvatar label={title} imageUrl={item.avatar_url} active={active} tone={item.trust_state === "founder" || item.trust_state === "intelligence" ? "intelligence" : "default"} size={48} signalColor={messengerPresenceDotColor(item.presence)} />
       <View style={styles.rowBody}>
         <View style={styles.rowTop}>
           <Text style={styles.title} numberOfLines={1}>{title}</Text>
@@ -356,7 +375,21 @@ function ConversationRow({ item, navigation }: { item: MessengerConversation; na
         </View>
         <Text style={[styles.muted, unread && styles.unreadPreview]} numberOfLines={1}>{conversationPreview(item)}</Text>
         <View style={styles.rowSignals}>
-          {conversationSignalBadges(item).map((badge) => <Text key={badge} style={styles.signalPill}>{badge}</Text>)}
+          {/* Each badge is toned by what it says. One shared pill style used to
+              paint all of them the presence green, so OFFLINE, AI, ROOM, DIRECT
+              and VERIFIED all arrived green and green stopped meaning online. */}
+          {conversationSignalBadges(item).map((badge) => {
+            const tone = messengerBadgeTone(badge);
+            return (
+              <Text
+                key={badge}
+                testID={`messenger-badge-${badge}`}
+                style={[styles.signalPill, { backgroundColor: tone.background, borderColor: tone.border, color: tone.text }]}
+              >
+                {badge}
+              </Text>
+            );
+          })}
         </View>
       </View>
       {Number(item.unread_count || 0) > 0 ? <View style={styles.badge}><Text style={styles.badgeText}>{item.unread_count}</Text></View> : null}
@@ -372,6 +405,34 @@ function conversationMatchesFilter(item: MessengerConversation, filter: Conversa
   if (filter === "rooms") return type === "room";
   if (filter === "ai") return ["ai", "intelligence", "undx"].includes(type);
   return Number(item.unread_count || 0) > 0;
+}
+
+/**
+ * The Neon Dusk field.
+ *
+ * `PulseBackground` is the app's single shared backdrop, mounted once at the
+ * root and pinned there by `navigation/__tests__/backgroundSurfaces.test.ts`.
+ * Lightening *it* would lighten all fifteen tabs, so Messenger lifts its own
+ * page instead — the same opt-in shape `Screen`'s `surface="business"` prop uses
+ * for the commerce screens.
+ *
+ * It is a translucent veil rather than an opaque fill, which is the whole point
+ * of the 0.93: the shared mesh and its nodes still read faintly through the
+ * gradient, so the page gets lighter without going flat. One gradient for the
+ * screen, drawn once and never animated — a backdrop inside `renderItem` would
+ * be built and torn down per conversation in a virtualized list.
+ */
+function NeonDuskField() {
+  return (
+    <LinearGradient
+      testID="messenger-neon-dusk-field"
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      colors={messengerBackgroundGradient}
+      style={[StyleSheet.absoluteFill, { opacity: messengerBackgroundOpacity }]}
+    />
+  );
 }
 
 function withDefaultUndxAiConversation(items: MessengerConversation[]) {
@@ -417,52 +478,63 @@ const styles = createThemedStyles(() => ({
   permissionPage: { flex: 1, justifyContent: "center", padding: 16 },
   list: { gap: 4, padding: 8 },
   headerStack: { gap: 6 },
-  presenceRailShell: { backgroundColor: "rgba(11,24,34,0.78)", borderColor: "rgba(97,216,255,0.18)", borderRadius: 15, borderWidth: 1 },
+  // The story/status rail sits one step above a conversation card so the avatars
+  // stay the brightest thing in it.
+  presenceRailShell: { backgroundColor: messengerTheme.surfaceElevated, borderColor: messengerTheme.border, borderRadius: 15, borderWidth: 1 },
   presenceRail: { gap: 10, paddingHorizontal: 10, paddingVertical: 7 },
-  addPresenceAvatar: { alignItems: "center", borderColor: "rgba(61,223,255,0.72)", borderRadius: 25, borderStyle: "dashed", borderWidth: 1, height: 50, justifyContent: "center", width: 50 },
-  addPresenceText: { color: "#3bdfff", fontSize: 24, fontWeight: "900" },
+  addPresenceAvatar: { alignItems: "center", borderColor: messengerTheme.tealBorder, borderRadius: 25, borderStyle: "dashed", borderWidth: 1, height: 50, justifyContent: "center", width: 50 },
+  addPresenceText: { color: messengerTheme.tealAccent, fontSize: 24, fontWeight: "900" },
   presenceItem: { alignItems: "center", gap: 3, width: 58 },
-  presenceName: { color: colors.muted, fontSize: 10, maxWidth: 58 },
-  quickActions: { backgroundColor: "rgba(6,16,28,0.88)", borderColor: "rgba(97,216,255,0.22)", flexDirection: "row", gap: 6, padding: 5 },
-  quickAction: { alignItems: "center", borderColor: colors.border, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: "row", gap: 6, minHeight: 56, padding: 6 },
-  quickActionPrimary: { backgroundColor: "rgba(77,228,196,0.86)", borderColor: "rgba(132,255,228,0.96)", shadowColor: colors.accent, shadowOpacity: 0.34, shadowRadius: 12 },
-  quickActionIcon: { alignItems: "center", backgroundColor: "rgba(97,233,246,0.08)", borderColor: "rgba(97,233,246,0.22)", borderRadius: 9, borderWidth: 1, height: 30, justifyContent: "center", width: 30 },
-  quickActionIconText: { color: colors.accentStrong, fontSize: 16, fontWeight: "900" },
+  presenceName: { color: messengerTheme.tertiaryText, fontSize: 10, maxWidth: 58 },
+  quickActions: { backgroundColor: messengerTheme.surfaceElevated, borderColor: messengerTheme.border, flexDirection: "row", gap: 6, padding: 5 },
+  quickAction: { alignItems: "center", borderColor: messengerTheme.border, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, flex: 1, flexDirection: "row", gap: 6, minHeight: 56, padding: 6 },
+  quickActionPrimary: { backgroundColor: messengerTheme.tealAccent, borderColor: messengerTheme.tealAccent },
+  quickActionIcon: { alignItems: "center", borderRadius: 9, borderWidth: 1, height: 30, justifyContent: "center", width: 30 },
+  quickActionIconText: { fontSize: 16, fontWeight: "900" },
   quickActionCopy: { flex: 1, minWidth: 0 },
-  quickActionTitle: { color: colors.text, fontSize: 11, fontWeight: "900" },
-  quickActionPrimaryText: { color: "#061410" },
-  quickActionSubtitle: { color: colors.muted, fontSize: 9, marginTop: 1 },
-  quickActionPrimarySubtitle: { color: "rgba(6,20,16,0.68)" },
-  sectionLabel: { color: "#b7c5d8", fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
-  row: { alignItems: "center", backgroundColor: "rgba(9,20,36,0.94)", borderColor: "rgba(105,218,240,0.16)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9, shadowColor: "#61d8ff", shadowOpacity: 0.08, shadowRadius: 8 },
-  rowPressed: { backgroundColor: "rgba(105,218,240,0.06)", borderColor: "rgba(105,218,240,0.25)" },
-  pinnedRow: { borderColor: "rgba(77,228,196,0.56)", shadowColor: colors.accent, shadowOpacity: 0.1, shadowRadius: 10 },
+  quickActionTitle: { color: messengerTheme.primaryText, fontSize: 11, fontWeight: "900" },
+  quickActionPrimaryText: { color: messengerTheme.onAccentText },
+  quickActionSubtitle: { color: messengerTheme.secondaryText, fontSize: 9, marginTop: 1 },
+  quickActionPrimarySubtitle: { color: "rgba(6, 32, 28, 0.72)" },
+  sectionLabel: { color: messengerTheme.tertiaryText, fontSize: 11, fontWeight: "800", letterSpacing: 0.7, textTransform: "uppercase" },
+  /**
+   * A conversation card. Separation is carried by the fill and a hairline-soft
+   * border, not by a glow: the old row stacked a `#61d8ff` shadow at radius 8 on
+   * every row, and an offscreen-rendered shadow per row in a virtualized list is
+   * the single most expensive thing this screen could do while scrolling.
+   */
+  row: { alignItems: "center", backgroundColor: messengerTheme.surface, borderColor: messengerTheme.border, borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9 },
+  rowPressed: { backgroundColor: messengerTheme.surfacePressed, borderColor: messengerTheme.borderStrong },
+  // Pinned reads through its border and its own teal PINNED pill — no shadow.
+  pinnedRow: { borderColor: messengerTheme.tealBorder },
   rowBody: { flex: 1, gap: 2, minWidth: 0 },
   rowTop: { alignItems: "center", flexDirection: "row", gap: 6 },
   rowSignals: { flexDirection: "row", flexWrap: "wrap", gap: 4 },
-  title: { color: colors.text, flex: 1, fontSize: 14, fontWeight: "900" },
-  muted: { color: "#a9b7c9", fontSize: 12, lineHeight: 16 },
-  time: { color: colors.muted, fontSize: 10 },
-  signalPill: { backgroundColor: "rgba(63,240,160,0.11)", borderColor: "rgba(63,240,160,0.22)", borderRadius: logiNexus.radius.capsule, borderWidth: StyleSheet.hairlineWidth, color: "#94f6b1", fontSize: 9, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, textTransform: "uppercase" },
-  badge: { alignItems: "center", backgroundColor: "#3bdfff", borderRadius: 12, minHeight: 23, minWidth: 23, paddingHorizontal: 6, paddingVertical: 2, shadowColor: "#3bdfff", shadowOpacity: 0.38, shadowRadius: 8 },
-  badgeText: { color: "#08110f", fontSize: 11, fontWeight: "900" },
-  skeletonAvatar: { backgroundColor: "rgba(105,218,240,0.12)", borderRadius: 24, height: 48, width: 48 },
+  title: { color: messengerTheme.primaryText, flex: 1, fontSize: 14, fontWeight: "900" },
+  muted: { color: messengerTheme.secondaryText, fontSize: 12, lineHeight: 16 },
+  time: { color: messengerTheme.tertiaryText, fontSize: 10 },
+  // Colour comes from `messengerBadgeTone` at the call site; these three are the
+  // neutral fallback so an untoned pill is gray rather than accidentally green.
+  signalPill: { backgroundColor: messengerTheme.offlineSoft, borderColor: messengerTheme.offlineBorder, borderRadius: logiNexus.radius.capsule, borderWidth: StyleSheet.hairlineWidth, color: messengerTheme.offline, fontSize: 9, fontWeight: "800", paddingHorizontal: 6, paddingVertical: 2, textTransform: "uppercase" },
+  badge: { alignItems: "center", backgroundColor: messengerTheme.tealAccent, borderRadius: 12, minHeight: 23, minWidth: 23, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeText: { color: messengerTheme.onAccentText, fontSize: 11, fontWeight: "900" },
+  skeletonAvatar: { backgroundColor: "rgba(148, 182, 228, 0.16)", borderRadius: 24, height: 48, width: 48 },
   skeletonBody: { flex: 1, gap: 7 },
-  skeletonLine: { backgroundColor: "rgba(180,211,223,0.12)", borderRadius: 6, height: 10, width: "62%" },
+  skeletonLine: { backgroundColor: "rgba(148, 182, 228, 0.14)", borderRadius: 6, height: 10, width: "62%" },
   skeletonLineTitle: { height: 13, width: "46%" },
   skeletonList: { gap: 6 },
-  skeletonRow: { alignItems: "center", backgroundColor: "rgba(9,20,36,0.72)", borderColor: "rgba(105,218,240,0.1)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9 },
+  skeletonRow: { alignItems: "center", backgroundColor: messengerTheme.surface, borderColor: messengerTheme.border, borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 9, minHeight: 64, padding: 9 },
   error: { color: colors.warning, fontSize: 12 },
-  retryButton: { alignSelf: "center", backgroundColor: colors.signalDim, borderColor: colors.accent, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 14, paddingVertical: 9 },
-  retryText: { color: colors.accent, fontSize: 12, fontWeight: "900" },
+  retryButton: { alignSelf: "center", backgroundColor: messengerTheme.tealSoft, borderColor: messengerTheme.tealBorder, borderRadius: 10, borderWidth: 1, marginTop: 8, paddingHorizontal: 14, paddingVertical: 9 },
+  retryText: { color: messengerTheme.tealAccent, fontSize: 12, fontWeight: "900" },
   // ---- Messages visual refresh (only rendered when the flag is ON) --------
-  screenTitle: { color: colors.text, fontSize: 22, fontWeight: "900", letterSpacing: 0.3 },
-  searchShell: { alignItems: "center", backgroundColor: "rgba(11,24,34,0.78)", borderColor: "rgba(97,216,255,0.18)", borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 8, minHeight: 40, paddingHorizontal: 12 },
-  searchIcon: { color: colors.muted, fontSize: 15, fontWeight: "800" },
-  searchInput: { color: colors.text, flex: 1, fontSize: 13, paddingVertical: 8 },
-  searchClear: { color: colors.muted, fontSize: 13, fontWeight: "900", padding: 4 },
-  unreadPreview: { color: colors.text, fontWeight: "700" },
-  composeFab: { alignItems: "center", backgroundColor: "rgba(77,228,196,0.92)", borderColor: "rgba(132,255,228,0.96)", borderRadius: 27, borderWidth: 1, height: 54, justifyContent: "center", position: "absolute", right: 16, shadowColor: colors.accent, shadowOpacity: 0.34, shadowRadius: 12, width: 54 },
-  composeFabPressed: { backgroundColor: "rgba(77,228,196,0.78)" },
-  composeFabText: { color: "#061410", fontSize: 20, fontWeight: "900" }
+  screenTitle: { color: messengerTheme.primaryText, fontSize: 22, fontWeight: "900", letterSpacing: 0.3 },
+  searchShell: { alignItems: "center", backgroundColor: messengerTheme.surfaceRecessed, borderColor: messengerTheme.border, borderRadius: 13, borderWidth: 1, flexDirection: "row", gap: 8, minHeight: 40, paddingHorizontal: 12 },
+  searchIcon: { color: messengerTheme.tertiaryText, fontSize: 15, fontWeight: "800" },
+  searchInput: { color: messengerTheme.primaryText, flex: 1, fontSize: 13, paddingVertical: 8 },
+  searchClear: { color: messengerTheme.tertiaryText, fontSize: 13, fontWeight: "900", padding: 4 },
+  unreadPreview: { color: messengerTheme.primaryText, fontWeight: "700" },
+  composeFab: { alignItems: "center", backgroundColor: messengerTheme.tealAccent, borderColor: messengerTheme.tealAccent, borderRadius: 27, borderWidth: 1, height: 54, justifyContent: "center", position: "absolute", right: 16, shadowColor: messengerTheme.tealAccent, shadowOpacity: 0.3, shadowRadius: 12, width: 54 },
+  composeFabPressed: { backgroundColor: messengerTheme.tealBorder },
+  composeFabText: { color: messengerTheme.onAccentText, fontSize: 20, fontWeight: "900" }
 }));

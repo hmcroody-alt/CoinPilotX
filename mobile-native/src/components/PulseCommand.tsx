@@ -2,6 +2,7 @@ import { ReactNode, useEffect, useRef } from "react";
 import { AccessibilityInfo, Animated, Easing, Image, Platform, Pressable, ScrollView, StyleProp, StyleSheet, Text, TextInput, View, ViewStyle, useWindowDimensions } from "react-native";
 import { colors } from "../theme/colors";
 import { logiNexus, LogiNexusTone, toneColor } from "../theme/logiNexus";
+import { messengerTheme } from "../theme/messengerTheme";
 import { createThemedStyles } from "../theme/themedStyles";
 
 export function PulseCommandPanel({ children, style, tone = "default" }: { children: ReactNode; style?: StyleProp<ViewStyle>; tone?: LogiNexusTone }) {
@@ -110,12 +111,25 @@ export function PulseCommandSegmentRail({
   );
 }
 
-export function PulseCommandAvatar({ label, imageUrl, active, tone = "default", size = 48 }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone; size?: number }) {
+/**
+ * `signalColor` separates "who is this" from "are they available".
+ *
+ * `tone` is an identity colour — it tints the ring and the initials so a founder
+ * or the assistant is recognisable at a glance. The dot is a different claim
+ * entirely, and it used to be painted `toneColor(tone)` as well, which meant an
+ * online founder got a *violet* availability dot and everyone else got the same
+ * teal as the PINNED and DIRECT badges. Presence was the one thing on the row
+ * that could not be read from its own colour.
+ *
+ * Passing `signalColor` overrides the dot only. Callers that do not pass it keep
+ * the previous behaviour exactly, so this is additive for `ChatScreen`.
+ */
+export function PulseCommandAvatar({ label, imageUrl, active, tone = "default", size = 48, signalColor }: { label?: string; imageUrl?: string; active?: boolean; tone?: LogiNexusTone; size?: number; signalColor?: string }) {
   const color = toneColor(tone);
   return (
     <View style={[styles.avatar, { borderColor: active ? color : colors.border, borderRadius: size / 2, height: size, width: size }]}>
       {imageUrl ? <Image accessibilityIgnoresInvertColors source={{ uri: imageUrl }} style={[styles.avatarImage, { borderRadius: size / 2 }]} resizeMode="cover" /> : <Text style={[styles.avatarText, { color }]}>{initials(label)}</Text>}
-      {active ? <View style={[styles.avatarSignal, { backgroundColor: color }]} /> : null}
+      {active ? <View style={[styles.avatarSignal, { backgroundColor: signalColor || color }]} /> : null}
     </View>
   );
 }
@@ -355,18 +369,25 @@ const styles = createThemedStyles(() => ({
     minHeight: 36,
     paddingHorizontal: logiNexus.spacing.md
   },
+  // The segment rail has exactly one caller — Messenger — so it takes the Neon
+  // Dusk tokens directly rather than growing a style prop for a single consumer.
+  // `PulseCommandPanel` below is the opposite case (Chat, Groups and the control
+  // centre all render it), which is why that one is left alone and Messenger
+  // overrides it through the `style` prop it already accepts.
   segmentActive: {
-    backgroundColor: colors.signalDim,
-    borderColor: colors.accent
+    backgroundColor: messengerTheme.tealSoft,
+    borderColor: messengerTheme.tealBorder
   },
   segmentCount: {
-    color: colors.accent,
+    color: messengerTheme.tealAccent,
     fontSize: 11,
     fontWeight: "900"
   },
   segmentRail: {
-    backgroundColor: colors.glass,
-    borderColor: colors.border,
+    // Recessed on purpose: the filter bar is chrome, and chrome brighter than
+    // the conversations it filters reads as the subject of the screen.
+    backgroundColor: messengerTheme.surfaceRecessed,
+    borderColor: messengerTheme.border,
     borderRadius: logiNexus.radius.large,
     borderWidth: 1,
     flexGrow: 0
@@ -378,10 +399,10 @@ const styles = createThemedStyles(() => ({
   },
   segmentText: {
     ...logiNexus.typography.button,
-    color: colors.muted
+    color: messengerTheme.tertiaryText
   },
   segmentTextActive: {
-    color: colors.text
+    color: messengerTheme.primaryText
   },
   statusDot: {
     borderRadius: 5,
