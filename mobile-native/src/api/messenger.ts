@@ -97,6 +97,17 @@ export type MessengerMessage = {
   type?: string;
   message_type?: string;
   media_url?: string;
+  /**
+   * The downloadable file, when the server distinguishes it from `media_url`.
+   *
+   * For a Mux-backed video `media_url` is the playback source — an HLS manifest,
+   * which is a playlist and not a movie. Save to Photos and Share need the
+   * progressive original, so the server sends both and this carries the second
+   * one through the normalizer rather than letting each consumer re-derive it
+   * from the URL's shape. Empty on attachments where the two are one resource,
+   * and on payloads from a server that predates the split.
+   */
+  download_url?: string;
   thumbnail_url?: string;
   file_size?: number;
   /**
@@ -1472,6 +1483,12 @@ export function normalizeMessages(items: MessengerMessage[], fallbackConversatio
         reactions: normalizeReactionCounts(item.reactions),
         viewer_reaction: safeText(item.viewer_reaction) || safeText((item as MessengerMessage & { my_reaction?: string }).my_reaction),
         media_url: safeText(item.media_url) || attachmentValue(item, "url") || attachmentValue(item, "cdn_url") || attachmentValue(item, "playback_url"),
+        // NOT falling back to `media_url`: an absent download URL has to stay
+        // distinguishable from one that equals the playback URL, because the
+        // consumers treat them differently. Empty means "the server did not
+        // separate these", which the viewer answers by using `url` — copying
+        // `media_url` in here would instead assert that a manifest is a file.
+        download_url: safeText(item.download_url) || attachmentValue(item, "download_url"),
         thumbnail_url: safeText(item.thumbnail_url) || attachmentValue(item, "thumbnail_url"),
         reply_preview: messageText(item.reply_preview),
         sender_display_name: safeText(item.sender_display_name),

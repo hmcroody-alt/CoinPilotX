@@ -10,7 +10,7 @@
  * Each test names the §37 mutation it is here to kill.
  */
 
-import { fireEvent, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 import { State } from "react-native-gesture-handler";
 
 const mockPauseAsync = jest.fn().mockResolvedValue(undefined);
@@ -54,6 +54,7 @@ jest.mock("../../media/nativeMediaUpload", () => ({
   pollNativeMediaProcessing: jest.fn().mockResolvedValue({ processing_status: "ready" })
 }));
 
+import { saveMediaToGallery, shareMedia } from "../../media/mediaActions";
 import { NativeMediaViewer, NativeMediaViewerItem, SWIPE_COMMIT_DISTANCE } from "../NativeMediaViewer";
 
 function photo(position: number): NativeMediaViewerItem {
@@ -219,5 +220,80 @@ describe("media that is gone", () => {
       <NativeMediaViewer visible items={collection} index={11} onIndexChange={jest.fn()} totalCount={43} swipeToNavigate onClose={jest.fn()} />
     );
     expect(tree.getByTestId("native-media-viewer-position").props.children).toBe("Photo from Maria Cherie, 12 of 43");
+  });
+});
+
+describe("what Save and Share are pointed at", () => {
+  /**
+   * A streamed video's playback source is not a file.
+   *
+   * Under Mux's signed playback policy `url` is `.../vod.m3u8?token=<jwt>` — a
+   * few hundred bytes of text naming segments. That is exactly what makes the
+   * viewer start on a first segment instead of a full transfer, and it is also
+   * the reason it cannot be the thing Save to Photos downloads: the transfer
+   * *succeeds*, a `.m3u8` lands in the cache, and the photo-library write
+   * refuses it. The user is told their library rejected a video that is playing
+   * on their screen, and nothing errors anywhere near the cause.
+   */
+  const streamed: NativeMediaViewerItem = {
+    id: 601,
+    kind: "video",
+    url: "https://stream.mux.com/pb601.m3u8?token=eyJhbGciOi.abc.def",
+    downloadUrl: "https://pulsesoc.com/api/messages/media/87/download?mt=grant",
+    mimeType: "video/mp4",
+    subtitle: "Video from Roody Cherie, 1 of 1"
+  };
+
+  function openOn(item: NativeMediaViewerItem) {
+    return render(
+      <NativeMediaViewer visible items={[item]} index={0} onIndexChange={jest.fn()} totalCount={1} onClose={jest.fn()} />
+    );
+  }
+
+  beforeEach(() => {
+    (saveMediaToGallery as jest.Mock).mockClear();
+    (shareMedia as jest.Mock).mockClear();
+  });
+
+  /** MUTATION: `url: current.downloadUrl || current.url` -> `url: current.url`. */
+  it("saves the file, not the playlist", async () => {
+    const tree = openOn(streamed);
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-save-to-photos"));
+    });
+    expect((saveMediaToGallery as jest.Mock).mock.calls[0][0].url).toBe(streamed.downloadUrl);
+  });
+
+  it("shares the file, not the playlist", async () => {
+    const tree = openOn(streamed);
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect((shareMedia as jest.Mock).mock.calls[0][0].url).toBe(streamed.downloadUrl);
+  });
+
+  /**
+   * The player still gets the manifest. Splitting the two fields is only worth
+   * anything if the fast path survives it — a fix that routed playback through
+   * the progressive file too would pass the two tests above and silently undo
+   * §9/§21.
+   */
+  it("still plays the manifest", () => {
+    const tree = openOn(streamed);
+    expect(tree.getByTestId("viewer-video").props.source.uri).toBe(streamed.url);
+  });
+
+  /**
+   * MUTATION: make `downloadUrl` required, or drop the `|| current.url`.
+   *
+   * Every producer except conversation video has one URL that is both. They
+   * must keep working untouched rather than silently losing Save.
+   */
+  it("falls back to url for producers that have only one", async () => {
+    const tree = openOn({ id: 5, kind: "image", url: "https://cdn.example/photo.jpg", subtitle: "Photo 1 of 1" });
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-save-to-photos"));
+    });
+    expect((saveMediaToGallery as jest.Mock).mock.calls[0][0].url).toBe("https://cdn.example/photo.jpg");
   });
 });

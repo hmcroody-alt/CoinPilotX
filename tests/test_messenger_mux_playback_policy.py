@@ -388,6 +388,123 @@ class TheReadPathMintsATokenRatherThanReadingOne(unittest.TestCase):
         self.assertEqual(payload["playback_url"], BARE_HLS)
 
 
+class ThePlaybackSourceIsNotTheDownloadableFile(unittest.TestCase):
+    """``url`` is what a player streams; ``download_url`` is what Save writes.
+
+    For a ready signed video those are two different resources, and the wire has
+    to say so. A manifest is a few hundred bytes of text naming segments -- hand
+    it to a downloader and the transfer *succeeds*, a ``.m3u8`` lands in the
+    cache, and the photo-library write is the thing that refuses it. The user is
+    told their library rejected a video that is playing on their screen, and
+    nothing raises anywhere near the cause.
+
+    This is not new with signed playback. ``url`` has been overwritten with
+    ``playback_url`` for Mux-backed video since long before messenger used Mux
+    at all, so the legacy ``chat_media_uploads`` path has had exactly this bug;
+    the signed policy is what would have extended it to every conversation
+    video.
+    """
+
+    def _row(self, **overrides):
+        row = {
+            "id": COMM_V2_ID,
+            "media_upload_id": ATTACHMENT_ID,
+            "media_type": "video",
+            "storage_provider": "messenger_media_foundation",
+            "url": PROGRESSIVE,
+            "cdn_url": "",
+            "playback_url": BARE_HLS,
+            "mux_playback_id": "vod601",
+            "mux_status": "ready",
+            "mux_playback_policy": "public",
+        }
+        row.update(overrides)
+        return row
+
+    def test_a_streamed_video_still_reports_the_file_it_was_uploaded_as(self):
+        payload = comm_v2._attachment_payload(self._row())
+
+        # The two disagree, which is the entire point of the field.
+        self.assertEqual(payload["url"], BARE_HLS)
+        self.assertEqual(payload["download_url"], PROGRESSIVE)
+
+    def test_a_photo_reports_the_same_url_for_both(self):
+        """The control. Images have one resource and must keep working.
+
+        A `download_url` that were only ever populated for video would make
+        every client special-case it, which is how the field would rot.
+        """
+        payload = comm_v2._attachment_payload(
+            self._row(media_type="image", playback_url="", mux_playback_id="", mux_status="")
+        )
+
+        self.assertEqual(payload["url"], PROGRESSIVE)
+        self.assertEqual(payload["download_url"], PROGRESSIVE)
+
+    def test_a_manifest_is_refused_rather_than_offered_as_a_file(self):
+        """Empty beats wrong.
+
+        A client reading "" falls back to ``url`` and fails where the failure
+        can be reported. A client handed a playlist saves a playlist.
+        """
+        payload = comm_v2._attachment_payload(self._row(url=BARE_HLS, cdn_url=""))
+
+        self.assertEqual(payload["download_url"], "")
+
+    def test_a_signed_manifest_is_recognised_through_its_token(self):
+        """The trap. A signed manifest is ``.m3u8?token=<jwt>``.
+
+        Anything testing the whole URL rather than its path stops recognising a
+        manifest at exactly the moment messenger starts signing them -- so this
+        asserts the signed form specifically, not just the bare one above.
+        """
+        payload = comm_v2._attachment_payload(self._row(url=SIGNED_TOKEN_URL, cdn_url=""))
+
+        self.assertEqual(payload["download_url"], "")
+
+    def test_the_cdn_url_is_used_when_the_row_only_streams(self):
+        payload = comm_v2._attachment_payload(self._row(url=BARE_HLS, cdn_url=PROGRESSIVE))
+
+        self.assertEqual(payload["download_url"], PROGRESSIVE)
+
+    def test_the_predicate_names_both_of_muxs_playlist_formats(self):
+        """DASH is asserted directly because no row can currently produce one.
+
+        Mux hands messenger an ``.m3u8`` today, so a payload-level test cannot
+        reach the ``.mpd`` branch -- and an unreachable branch is one nobody
+        would notice being deleted. Pinning it here keeps it honest: this is a
+        pure predicate, `.mpd` is unambiguously within the question it answers,
+        and the day DASH is switched on the alternative is Save to Photos
+        silently writing a playlist again.
+
+        The negatives matter as much as the positives. A predicate that answered
+        "yes" too often would strip the download URL off perfectly good files
+        and break Save for video that never went near Mux.
+        """
+        for manifest in (
+            "https://stream.mux.com/vod601.m3u8",
+            "https://stream.mux.com/vod601.m3u8?token=abc.def.ghi",
+            "https://stream.mux.com/vod601.mpd",
+            "https://stream.mux.com/vod601.mpd?token=abc.def.ghi",
+            "https://stream.mux.com/VOD601.M3U8",
+        ):
+            with self.subTest(manifest=manifest):
+                self.assertTrue(comm_v2._is_adaptive_manifest(manifest))
+
+        for file_url in (
+            PROGRESSIVE,
+            "https://cdn.example/clip.mp4",
+            # The false positive in the other direction: a query parameter that
+            # happens to end in a playlist name. A check against the whole URL
+            # calls this a manifest and refuses to let the user save an mp4.
+            "https://cdn.example/clip.mp4?next=intro.m3u8",
+            "",
+            None,
+        ):
+            with self.subTest(file_url=file_url):
+                self.assertFalse(comm_v2._is_adaptive_manifest(file_url))
+
+
 class ThePolicyIsRecordedInTheSchema(unittest.TestCase):
     def test_a_fresh_install_has_the_column(self):
         """`ensure_schema` adds it to existing tables; `models` must create it too.

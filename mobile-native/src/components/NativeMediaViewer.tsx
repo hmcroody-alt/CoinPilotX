@@ -41,6 +41,24 @@ export type NativeMediaViewerItem = {
    */
   mimeType?: string;
   url: string;
+  /**
+   * The saveable/shareable file, when it is not the same resource as `url`.
+   *
+   * `url` is the PLAYBACK source. For a Mux-backed video that is an HLS
+   * manifest: a text playlist, streamed a segment at a time, which is exactly
+   * what makes the viewer start fast (§9/§21 — first frame from the manifest
+   * plus one segment, never a full download). It is also not a movie file.
+   * Save to Photos and Share go through `downloadMedia`, so pointing them at
+   * `url` writes a `.m3u8` to disk, the transfer succeeds, and the photo-library
+   * write refuses it — the user is told their library rejected a video they are
+   * watching.
+   *
+   * So the two are separate fields rather than one field that means different
+   * things depending on the item. Absent — which is every producer that has a
+   * single downloadable URL, i.e. all of them except conversation video —
+   * actions fall back to `url` and behave exactly as before.
+   */
+  downloadUrl?: string;
   thumbnailUrl?: string;
   title?: string;
   subtitle?: string;
@@ -508,7 +526,11 @@ export function NativeMediaViewer({
 
   function actionTargetFor(current: NativeMediaViewerItem): MediaActionTarget {
     return {
-      url: current.url,
+      // Save, Share and open-document all download this. `downloadUrl` first
+      // because for a streamed video `url` is a playlist, not the file — see
+      // the field's own note. Falling back to `url` keeps every producer that
+      // has only one URL working unchanged.
+      url: current.downloadUrl || current.url,
       mediaId: current.cacheIdentity || null,
       kind: (current.kind === "file" ? "file" : current.kind) as MediaActionTarget["kind"],
       // `mimeType` first: producers that carry a `media` record set both, and

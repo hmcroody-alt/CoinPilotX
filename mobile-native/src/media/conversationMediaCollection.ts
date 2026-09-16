@@ -38,7 +38,18 @@ export type ConversationMediaItem = {
   mediaUploadId: number;
   messageId: number;
   kind: ConversationMediaKind;
+  /** Playback source. For a Mux-backed video this is an HLS manifest, not a file. */
   url: string;
+  /**
+   * The downloadable original, which for video is a different resource to `url`.
+   *
+   * The server sends both because they genuinely differ: `url` is what the
+   * player streams, `download_url` is the progressive, membership-checked file
+   * that Save to Photos and Share need. Empty from a server that predates the
+   * split, and from any row whose only URL is a manifest — in both cases the
+   * viewer falls back to `url` rather than inventing one.
+   */
+  downloadUrl: string;
   thumbnailUrl: string;
   mimeType: string;
   width: number;
@@ -104,6 +115,7 @@ export function normalizeConversationMediaItem(raw: Record<string, unknown> | nu
     messageId,
     kind,
     url: text(raw.url),
+    downloadUrl: text(raw.download_url),
     thumbnailUrl: text(raw.thumbnail_url),
     mimeType: text(raw.mime_type),
     width: num(raw.width),

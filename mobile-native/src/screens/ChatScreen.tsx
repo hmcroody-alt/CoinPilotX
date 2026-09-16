@@ -2361,6 +2361,9 @@ function MessageMedia({ message }: { message: MessengerMessage }) {
       mediaUploadId: Number(message.media_upload_id || 0),
       kind: type === "video" ? "video" : "image",
       url: mediaUrl,
+      // Carried separately because for a streamed video `mediaUrl` is a
+      // playlist, and Save to Photos needs the file.
+      downloadUrl: String(message.download_url || ""),
       thumbnailUrl,
       mimeType: String(message.mime_type || ""),
       width: mediaAccess.meta.width,

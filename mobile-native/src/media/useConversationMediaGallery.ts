@@ -295,6 +295,14 @@ export function gallerySeedFromMessage(input: {
   mediaUploadId?: number;
   kind: "image" | "video";
   url: string;
+  /**
+   * The bubble's downloadable file, when the wire distinguished it from `url`.
+   *
+   * Optional because a seed is only ever what the bubble already knew, and the
+   * bubble may have been rendered from an older payload. Empty means the host
+   * falls back to `url` for Save and Share — the behaviour before the split.
+   */
+  downloadUrl?: string;
   thumbnailUrl?: string;
   mimeType?: string;
   width?: number;
@@ -311,6 +319,7 @@ export function gallerySeedFromMessage(input: {
     messageId: input.messageId,
     kind: input.kind,
     url: input.url,
+    downloadUrl: input.downloadUrl || "",
     thumbnailUrl: input.thumbnailUrl || "",
     mimeType: input.mimeType || "",
     width: input.width || 0,
