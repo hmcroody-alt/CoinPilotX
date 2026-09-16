@@ -27,6 +27,19 @@ export type NativeMediaViewerItem = {
   cacheIdentity?: string | null;
   media?: PulseMedia;
   kind?: "image" | "video" | "file";
+  /**
+   * The wire MIME type, for producers that have one without a `media` record.
+   *
+   * This is not cosmetic. It is the only input that gives the cached file an
+   * extension: the download engine derives one from the MIME type, falling back
+   * to the URL's own suffix, and a Messenger access URL ends in `/download`. An
+   * item that arrives here without a MIME type is therefore written to disk with
+   * no extension at all, which renders and shares fine but which the photo
+   * library write rejects outright — Photos routes on the extension, not on the
+   * bytes. The user sees "could not save this to your library" for a photo that
+   * is sitting decoded on their screen.
+   */
+  mimeType?: string;
   url: string;
   thumbnailUrl?: string;
   title?: string;
@@ -43,6 +56,14 @@ export type NativeMediaViewerItem = {
    * its selected soundtrack.
    */
   musicPolicy?: AttachedMusicPolicy;
+  /**
+   * Mint a fresh access URL for this exact item, for Save and Share (§8).
+   *
+   * Only producers whose URLs are time-limited credentials set this — Messenger
+   * does, feed media does not. Absent, Save and Share behave as before: one
+   * attempt against `url`, and an authorization failure is reported as one.
+   */
+  refreshUrl?: () => Promise<string>;
 };
 
 /** Horizontal travel, in points, that commits a swipe to the next/previous item. */
@@ -490,14 +511,17 @@ export function NativeMediaViewer({
       url: current.url,
       mediaId: current.cacheIdentity || null,
       kind: (current.kind === "file" ? "file" : current.kind) as MediaActionTarget["kind"],
-      mimeType: current.media?.mime_type,
+      // `mimeType` first: producers that carry a `media` record set both, and
+      // producers that do not (Messenger) can only set this one.
+      mimeType: current.mimeType || current.media?.mime_type,
       expectedBytes: Number(current.media?.file_size || 0) || undefined,
       surface,
       sourceUrl: current.sourceUrl,
       title: current.title || title,
       description: current.subtitle,
       author: current.author?.display_name || current.author?.name || current.author?.username,
-      thumbnailUrl: current.thumbnailUrl || (current.kind === "image" ? current.url : undefined)
+      thumbnailUrl: current.thumbnailUrl || (current.kind === "image" ? current.url : undefined),
+      refreshUrl: current.refreshUrl
     };
   }
 

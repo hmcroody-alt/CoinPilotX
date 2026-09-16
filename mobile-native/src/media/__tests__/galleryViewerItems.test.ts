@@ -152,4 +152,13 @@ describe("an unloadable URL never displaces a loadable one", () => {
     const [viewerItem] = galleryViewerItems([item()], {}, labels);
     expect(viewerItem.cacheIdentity).toBe("media_upload:87");
   });
+
+  it("carries the MIME type forward, which is what names the file on disk", () => {
+    // The access URL's path ends in `/download`, so the MIME type is the only
+    // thing left that can give the cached file an extension — and Photos routes
+    // on the extension, not on the bytes. Dropping it here is why "Save to
+    // Photos" failed on a photo the user was looking at.
+    const [viewerItem] = galleryViewerItems([item({ mimeType: "image/jpeg" })], {}, labels);
+    expect(viewerItem.mimeType).toBe("image/jpeg");
+  });
 });

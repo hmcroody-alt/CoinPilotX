@@ -19,7 +19,12 @@ import { useTranslation } from "../i18n";
 
 import { isLoadableMediaUrl } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
-import { messengerMediaCacheIdentity } from "./messengerMediaAccess";
+import {
+  grantMessengerMediaAccess,
+  invalidateMessengerMediaAccess,
+  messengerMediaCacheIdentity,
+  resolveCanonicalMessengerMediaId
+} from "./messengerMediaAccess";
 import { ConversationMediaItem } from "./conversationMediaCollection";
 import { ConversationMediaGalleryState } from "./useConversationMediaGallery";
 
@@ -39,6 +44,34 @@ function preferLoadable(...candidates: Array<string | null | undefined>): string
     if (String(candidate || "").trim()) return String(candidate).trim();
   }
   return "";
+}
+
+/**
+ * Mint a replacement access URL for one item, on demand (§8).
+ *
+ * Save to Photos and Share are the two actions that can happen arbitrarily long
+ * after the grant that painted the picture. A messenger access URL is a
+ * fifteen-minute credential, so a viewer left open past that shows a decoded
+ * image and then refuses to save it — reported to the user as "You do not have
+ * access to this media", about a photo they are looking at.
+ *
+ * The cached grant is dropped FIRST. Without that, the access module answers
+ * from its own cache and hands back the same expired URL, which is a refresh
+ * that refreshes nothing. Returns "" when the item has no resolvable foundation
+ * id, which the downloader reads as "no refresh available" and reports the
+ * original failure honestly rather than inventing a second one.
+ */
+function refreshAccessUrlFor(item: ConversationMediaItem): () => Promise<string> {
+  return async () => {
+    const canonical = resolveCanonicalMessengerMediaId(
+      { mediaUploadId: item.mediaUploadId, attachmentId: item.attachmentId },
+      item.url
+    );
+    if (!canonical.id) return "";
+    invalidateMessengerMediaAccess(canonical.id);
+    const grant = await grantMessengerMediaAccess(canonical);
+    return grant.url || "";
+  };
 }
 
 type GalleryHandle = Pick<ConversationMediaGalleryState, "open">;
@@ -102,6 +135,12 @@ export function galleryViewerItems(
         attachmentId: item.attachmentId
       }),
       kind: item.kind,
+      // Carried so Save and Share can give the cached file an extension. The
+      // access URL's path ends in `/download`, so the MIME type is the only
+      // thing that can name the file `.jpg`, and Photos routes on the extension
+      // rather than on the bytes: without this, saving a photo the user is
+      // looking at fails with "could not save this to your library".
+      mimeType: item.mimeType,
       // Never let an unloadable candidate displace a loadable one.
       //
       // This read `grant?.url || item.url`, which is the bug that made every
@@ -126,7 +165,11 @@ export function galleryViewerItems(
       // the accessibility requirement ("Photo from Maria Cherie, 12 of 43") and
       // the visible counter are the same string rather than two that can drift.
       subtitle: unavailable ? `${label} — ${labels.unavailable}` : label,
-      alt: label
+      alt: label,
+      // Save and Share go through the downloader, which spends this at most once
+      // on a 401/403. Rendering never needs it — the resolve effect above already
+      // holds a fresh grant by the time a frame is painted.
+      refreshUrl: refreshAccessUrlFor(item)
     };
   });
 }

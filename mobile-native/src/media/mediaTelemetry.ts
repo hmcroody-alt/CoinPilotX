@@ -32,6 +32,14 @@ export type MediaEventName =
   | "MEDIA_DOWNLOAD_STARTED"
   | "MEDIA_DOWNLOAD_SUCCEEDED"
   | "MEDIA_DOWNLOAD_FAILED"
+  /**
+   * A 401/403 was answered by minting a fresh access URL for the same media
+   * rather than by failing (§8). Recorded separately from a retry because the
+   * cause is credential lifetime, not transport: a rise here means grants are
+   * expiring inside normal viewing sessions, which is a TTL question, not a
+   * reliability one.
+   */
+  | "MEDIA_DOWNLOAD_URL_REFRESHED"
   | "MEDIA_CACHE_HIT"
   | "MEDIA_CACHE_MISS"
   | "MEDIA_CACHE_EVICTED"

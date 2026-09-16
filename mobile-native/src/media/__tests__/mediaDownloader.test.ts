@@ -15,6 +15,8 @@ const mockDisk = { free: Number.MAX_SAFE_INTEGER };
 type ScriptedResponse = { status: number; bytes: number } | Error;
 const mockResponses: ScriptedResponse[] = [];
 const mockCreateCalls: string[] = [];
+/** The URL each transfer was actually pointed at, in order. */
+const mockCreateUrls: string[] = [];
 
 jest.mock("expo-file-system/legacy", () => ({
   cacheDirectory: "file:///cache/",
@@ -35,6 +37,7 @@ jest.mock("expo-file-system/legacy", () => ({
   getFreeDiskStorageAsync: jest.fn(async () => mockDisk.free),
   createDownloadResumable: jest.fn((url: string, destination: string) => {
     mockCreateCalls.push(destination);
+    mockCreateUrls.push(url);
     const run = async () => {
       const next = mockResponses.shift();
       if (!next) throw new Error("No scripted download response");
@@ -59,6 +62,7 @@ beforeEach(async () => {
   mockFiles.clear();
   mockResponses.length = 0;
   mockCreateCalls.length = 0;
+  mockCreateUrls.length = 0;
   mockDisk.free = Number.MAX_SAFE_INTEGER;
   await AsyncStorage.clear();
   __resetMediaCacheMemory();
@@ -145,6 +149,140 @@ describe("bounded retry", () => {
     );
     await expect(downloadMedia(IMAGE)).rejects.toMatchObject({ reason: "network" });
     expect(mockCreateCalls).toHaveLength(3);
+  });
+});
+
+/**
+ * §8: an access URL is a fifteen-minute credential, and Save/Share happen
+ * whenever the user taps. A 403 on a file the viewer is currently displaying is
+ * an expired grant, not a missing permission, and telling the user they lack
+ * access to a photo they are looking at is the wrong answer to the wrong
+ * question.
+ */
+describe("expired access URL (§8)", () => {
+  const PROTECTED = {
+    url: "https://pulsesoc.com/api/messages/media/601/download?mt=stale",
+    mediaId: "media_upload:87",
+    mimeType: "image/jpeg" as const
+  };
+
+  it("re-mints the URL once on a 403 and completes the transfer", async () => {
+    mockResponses.push({ status: 403, bytes: 40 }, { status: 200, bytes: 4096 });
+    const refreshUrl = jest.fn(async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh");
+
+    const entry = await downloadMedia({ ...PROTECTED, refreshUrl });
+
+    expect(entry.bytes).toBe(4096);
+    expect(refreshUrl).toHaveBeenCalledTimes(1);
+    expect(mockCreateUrls).toEqual([
+      "https://pulsesoc.com/api/messages/media/601/download?mt=stale",
+      "https://pulsesoc.com/api/messages/media/601/download?mt=fresh"
+    ]);
+  });
+
+  it("does the same for a 401, which media routes must never answer with", async () => {
+    // The server deliberately never answers media with 401 — that would trip
+    // session recovery — but a proxy or an origin can, and the download path
+    // must not treat "your credential lapsed" differently depending on which
+    // number a middlebox chose for it.
+    mockResponses.push({ status: 401, bytes: 40 }, { status: 200, bytes: 2048 });
+    const refreshUrl = jest.fn(async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh");
+
+    await expect(downloadMedia({ ...PROTECTED, refreshUrl })).resolves.toMatchObject({ bytes: 2048 });
+    expect(refreshUrl).toHaveBeenCalledTimes(1);
+  });
+
+  it("spends the refresh at most once — a second 403 is a real denial", async () => {
+    mockResponses.push({ status: 403, bytes: 40 }, { status: 403, bytes: 40 }, { status: 200, bytes: 4096 });
+    const refreshUrl = jest.fn(async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh");
+
+    await expect(downloadMedia({ ...PROTECTED, refreshUrl })).rejects.toMatchObject({ reason: "forbidden" });
+    expect(refreshUrl).toHaveBeenCalledTimes(1);
+    expect(mockCreateUrls).toHaveLength(2);
+  });
+
+  it("reports the original failure when the refresh cannot produce a URL", async () => {
+    // An item with no resolvable foundation id. Returning "" must surface the
+    // 403 the server actually sent, not a fabricated second failure mode.
+    mockResponses.push({ status: 403, bytes: 40 });
+    const refreshUrl = jest.fn(async () => "");
+
+    await expect(downloadMedia({ ...PROTECTED, refreshUrl })).rejects.toMatchObject({ reason: "forbidden" });
+    expect(mockCreateUrls).toHaveLength(1);
+  });
+
+  it("reports the original failure when the refresh itself throws", async () => {
+    mockResponses.push({ status: 403, bytes: 40 });
+    const refreshUrl = jest.fn(async () => {
+      throw new Error("grant endpoint unreachable");
+    });
+
+    await expect(downloadMedia({ ...PROTECTED, refreshUrl })).rejects.toMatchObject({ reason: "forbidden" });
+  });
+
+  it("does not refresh a 404 — the media is gone, not the credential", async () => {
+    mockResponses.push({ status: 404, bytes: 40 });
+    const refreshUrl = jest.fn(async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh");
+
+    await expect(downloadMedia({ ...PROTECTED, refreshUrl })).rejects.toMatchObject({ reason: "not_found" });
+    expect(refreshUrl).not.toHaveBeenCalled();
+  });
+
+  it("keys the cache on media identity, never on the signed URL (§7)", async () => {
+    // The whole point of refreshing: the entry written under the stale URL's
+    // transfer must be findable by the item whose URL has since rotated.
+    mockResponses.push({ status: 403, bytes: 40 }, { status: 200, bytes: 4096 });
+    await downloadMedia({
+      ...PROTECTED,
+      refreshUrl: async () => "https://pulsesoc.com/api/messages/media/601/download?mt=fresh"
+    });
+
+    await downloadMedia({ ...PROTECTED, url: "https://pulsesoc.com/api/messages/media/601/download?mt=rotated_again" });
+    expect(mockCreateUrls).toHaveLength(2);
+  });
+});
+
+/**
+ * The cached file's *name* is load-bearing, and only for one consumer: the photo
+ * library write routes on the extension rather than on the bytes and refuses a
+ * file that has none. A Messenger access URL's path ends in `/download`, so when
+ * the MIME type is also missing there is nothing left to derive a name from —
+ * which is how a valid JPEG ends up unsaveable.
+ */
+describe("cache file naming", () => {
+  const UNNAMED = {
+    url: "https://pulsesoc.com/api/messages/media/601/download?mt=abc",
+    mediaId: "media_upload:87"
+  };
+
+  it("names an extensionless transfer from the media kind", async () => {
+    mockResponses.push({ status: 200, bytes: 4096 });
+    await expect(downloadMedia({ ...UNNAMED, kind: "image" })).resolves.toMatchObject({
+      fileUri: expect.stringMatching(/\.jpg$/)
+    });
+  });
+
+  it("names a video .mp4 rather than leaving Photos to guess", async () => {
+    mockResponses.push({ status: 200, bytes: 4096 });
+    await expect(downloadMedia({ ...UNNAMED, kind: "video" })).resolves.toMatchObject({
+      fileUri: expect.stringMatching(/\.mp4$/)
+    });
+  });
+
+  it("still prefers the MIME type when there is one", async () => {
+    // The kind fallback is a floor, not a replacement: a PNG must stay a PNG.
+    mockResponses.push({ status: 200, bytes: 4096 });
+    await expect(downloadMedia({ ...UNNAMED, kind: "image", mimeType: "image/png" })).resolves.toMatchObject({
+      fileUri: expect.stringMatching(/\.png$/)
+    });
+  });
+
+  it("leaves a document unnamed rather than mislabelling it", async () => {
+    // A document of unknown type cannot go to Photos anyway, and inventing a
+    // suffix would misrepresent it in the share sheet.
+    mockResponses.push({ status: 200, bytes: 4096 });
+    const entry = await downloadMedia({ ...UNNAMED, kind: "file" });
+    expect(entry.fileUri).not.toMatch(/\.[A-Za-z0-9]{1,5}$/);
   });
 });
 
