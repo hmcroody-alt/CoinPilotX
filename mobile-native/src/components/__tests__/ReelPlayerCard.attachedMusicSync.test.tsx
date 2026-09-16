@@ -82,6 +82,7 @@ jest.mock("../ContentTranslation", () => {
 });
 
 import { resetSavedStoreForTests } from "../../social/savedStore";
+import { MUSIC_DRIFT_TOLERANCE_MS, MUSIC_STATUS_INTERVAL_MS } from "../../core/attachedMusicTimeline";
 import { ReelPlayerCard } from "../ReelPlayerCard";
 
 const REEL_ID = 733;
@@ -175,6 +176,25 @@ describe("attached music starts with the picture", () => {
     expect(mockCreateAsync).toHaveBeenCalledTimes(1);
     expect(mockCreateAsync.mock.calls[0][0]).toEqual({ uri: TRACK_URL });
     expect(mockCreateAsync.mock.calls[0][1]).toMatchObject({ shouldPlay: false });
+  });
+
+  it("asks both players to report on the same grid the deadband is sized for", async () => {
+    render(<ReelPlayerCard {...cardProps(true)} />);
+    await act(async () => undefined);
+
+    // Every drift reading this card takes is the difference between these two
+    // callbacks, so the interval IS the resolution of the measurement. Left on
+    // expo-av's 500ms default the track would be measured on a coarser grid than
+    // the video and "corrected" on the difference between the two grids -- which
+    // is what a physical iPhone recorded as 126 seeks in 195 seconds of a track
+    // that never actually left the picture.
+    expect(mockCreateAsync.mock.calls[0][1]).toMatchObject({
+      progressUpdateIntervalMillis: MUSIC_STATUS_INTERVAL_MS
+    });
+    expect(videoProps.progressUpdateIntervalMillis).toBe(MUSIC_STATUS_INTERVAL_MS);
+    expect(mockCreateAsync.mock.calls[0][1].progressUpdateIntervalMillis).toBe(
+      videoProps.progressUpdateIntervalMillis
+    );
   });
 
   it("starts the track at the position the video has already reached", async () => {
@@ -282,23 +302,32 @@ describe("attached music starts with the picture", () => {
       await videoTick({ positionMillis: 0, isPlaying: true });
       mockSound.setStatusAsync.mockClear();
 
-      // The track reports 2750ms. 250ms later the video reports 3000ms. Those
-      // are the same instant seen twice, not a 250ms error.
+      // The track reports its position, and `GAP` milliseconds later the video
+      // reports its own. Those are the same instant seen twice, not an error of
+      // GAP -- which is the entire thing the timestamp exists to express.
       //
-      // Run it for eight ticks rather than one. A single tick no longer
-      // distinguishes anything: the persistence rule declines every first
-      // reading, so a card that had stopped timestamping would pass a one-tick
-      // assertion while still being wrong. The stale-sample defect produces a
-      // CONSTANT -250 -- persistent, same-side, and therefore exactly the shape
-      // the persistence rule is built to let through. Only a sustained run
-      // separates "the gap was accounted for" from "the gap was confirmed and
-      // seeked at half the old rate".
+      // GAP is deliberately WIDER THAN THE DEADBAND, and that is not an
+      // exaggeration for effect. The deadband is now sized above one reporting
+      // step, so a one-step gap is swallowed whether or not the card timestamps
+      // anything, and a test built on one step proves nothing. The gaps that can
+      // still be misread are the ones wider than the deadband -- a track left on
+      // expo-av's 500ms default, or a busy JS thread bunching callbacks, both of
+      // which put real distance between the two samples.
+      //
+      // Run it for eight ticks rather than one. A single tick distinguishes
+      // nothing: the persistence rule declines every first reading, so a card
+      // that had stopped timestamping would pass a one-tick assertion while
+      // still being wrong. The stale-sample defect produces a CONSTANT -GAP --
+      // persistent, same-side, and therefore exactly the shape the persistence
+      // rule is built to let through. Only a sustained run separates "the gap
+      // was accounted for" from "the gap was confirmed and seeked".
+      const GAP = MUSIC_DRIFT_TOLERANCE_MS + MUSIC_STATUS_INTERVAL_MS;
       for (let tick = 0; tick < 8; tick += 1) {
-        const musicAt = 1_000_000 + tick * 250;
+        const musicAt = 1_000_000 + tick * MUSIC_STATUS_INTERVAL_MS;
         nowSpy.mockReturnValue(musicAt);
-        musicTick({ positionMillis: 2750 + tick * 250, isPlaying: true });
-        nowSpy.mockReturnValue(musicAt + 250);
-        await videoTick({ positionMillis: 3000 + tick * 250, isPlaying: true });
+        musicTick({ positionMillis: 3000 - GAP + tick * MUSIC_STATUS_INTERVAL_MS, isPlaying: true });
+        nowSpy.mockReturnValue(musicAt + GAP);
+        await videoTick({ positionMillis: 3000 + tick * MUSIC_STATUS_INTERVAL_MS, isPlaying: true });
       }
 
       expect(mockSound.setStatusAsync).not.toHaveBeenCalled();

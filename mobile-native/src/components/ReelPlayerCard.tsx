@@ -6,7 +6,7 @@ import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "rea
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { resolveReelAudioPolicy } from "../core/attachedMusicAudioPolicy";
-import { MUSIC_DRIFT_TOLERANCE_MS, planMusicCorrection } from "../core/attachedMusicTimeline";
+import { MUSIC_DRIFT_TOLERANCE_MS, MUSIC_STATUS_INTERVAL_MS, planMusicCorrection } from "../core/attachedMusicTimeline";
 import type { MusicTimelineState } from "../core/attachedMusicTimeline";
 import { trackMediaEvent } from "../media/mediaTelemetry";
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
@@ -256,12 +256,13 @@ export function ReelPlayerCard({
       {
         isLooping: musicPolicy.isLooping,
         positionMillis: musicPolicy.musicStartMs,
-        // Match the video's own 250ms status interval. The projection in
-        // `planMusicCorrection` makes correctness independent of this number,
-        // but the projection's error grows with the sampling gap, so there is
-        // no reason to leave the track reporting at the 500ms default while the
-        // picture reports twice as often.
-        progressUpdateIntervalMillis: 250,
+        // The SAME grid the video reports on, and the same one the deadband is
+        // derived from. Correctness is not independent of this number: it is
+        // the resolution of every drift reading the loop takes, which is why it
+        // comes from the timeline module rather than being written here. A
+        // track left on the 500ms default would be measured against a deadband
+        // sized for 250ms and would be "corrected" on the difference.
+        progressUpdateIntervalMillis: MUSIC_STATUS_INTERVAL_MS,
         // Deliberately silent on load. Audibility is decided by the correction
         // loop below, against the video's clock.
         shouldPlay: false,
@@ -477,7 +478,7 @@ export function ReelPlayerCard({
           shouldPlay={false}
           isLooping
           isMuted={muted || musicPolicy.muteOriginalAudio}
-          progressUpdateIntervalMillis={250}
+          progressUpdateIntervalMillis={MUSIC_STATUS_INTERVAL_MS}
           usePoster={Boolean(poster)}
           posterSource={poster ? { uri: poster } : undefined}
           onPlaybackStatusUpdate={(status) => {

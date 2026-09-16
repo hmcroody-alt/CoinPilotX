@@ -39,6 +39,17 @@
 import type { AttachedMusicPolicy } from "./attachedMusicAudioPolicy";
 
 /**
+ * How often both players are asked to report their position.
+ *
+ * Exported because it is not a tuning knob, it is the RESOLUTION OF EVERY
+ * MEASUREMENT IN THIS FILE, and the deadband below is derived from it. The card
+ * configures both the video and the sound with this same number; letting the two
+ * report on different grids, or letting this drift away from the tolerance, is
+ * what produced the defect described under `MUSIC_DRIFT_TOLERANCE_MS`.
+ */
+export const MUSIC_STATUS_INTERVAL_MS = 250;
+
+/**
  * How far the music may drift from the video before it is worth correcting.
  *
  * This is a deadband, not a target. Correcting drift means seeking the music,
@@ -46,14 +57,42 @@ import type { AttachedMusicPolicy } from "./attachedMusicAudioPolicy";
  * track repeating. Below this threshold the correction is more noticeable than
  * the error it fixes, so the right move is to leave it alone.
  *
- * 120ms is chosen for music-under-motion, not for lip-sync. Speech tolerates far
- * less (broadcast practice keeps audio within roughly -125ms to +45ms of video),
- * but a soundtrack has no articulation to disagree with, and the perceptual cue
- * is the beat landing against the cut. Tightening this to lip-sync numbers would
- * buy no audible improvement and would make the player seek on every ordinary
- * scheduling jitter.
+ * IT MUST EXCEED ONE REPORTING INTERVAL, AND THAT IS NOT A STYLE PREFERENCE.
+ *
+ * This was 120ms, chosen on perceptual grounds for music-under-motion. The
+ * reasoning was sound and the number was unusable, because it is finer than the
+ * measurement it thresholds. Both players report `positionMillis` on a
+ * MUSIC_STATUS_INTERVAL_MS grid, so the two readings are never taken at the same
+ * instant and the difference between them is dominated by which side of the grid
+ * each callback happened to land on.
+ *
+ * MEASURED on a physical iPhone 16 Pro, 796 ticks over 195 seconds:
+ *
+ *   - `videoPosition - musicPosition` took exactly two values, 0 and 250. It
+ *     NEVER exceeded one step. The track did not depart from the picture once.
+ *   - The computed drift was identically `age - 250` on all 365 of the 369
+ *     phase-250 ticks, and identically `age` on 338 of the 341 phase-0 ticks --
+ *     where `age` is how long before the video's callback the music's callback
+ *     happened to land. The number was a property of callback scheduling, not of
+ *     the audio.
+ *   - Against a 120ms deadband that produced 126 seeks in 195 seconds. Every one
+ *     was real by the loop's own arithmetic and every one was chasing the grid.
+ *
+ * So the floor on what can be resolved here is one interval, and a threshold
+ * below the floor does not buy tighter sync -- it buys corrections. Nothing
+ * genuine lives in the band between the old number and this one either: a stall
+ * is handled by pausing (§39), a resume and a start by the `play` branch, and a
+ * scrub or a loop wrap is seconds out, not milliseconds.
+ *
+ * The margin over one interval absorbs the few ticks where the two callbacks
+ * straddled a step and read 251 or 249 rather than 250.
+ *
+ * If sync tighter than this is ever genuinely required, the lever is a finer
+ * reporting grid -- lower MUSIC_STATUS_INTERVAL_MS, and pay for it in callback
+ * volume across every mounted card -- not a tighter threshold on a measurement
+ * that cannot see the difference.
  */
-export const MUSIC_DRIFT_TOLERANCE_MS = 120;
+export const MUSIC_DRIFT_TOLERANCE_MS = MUSIC_STATUS_INTERVAL_MS + 150;
 
 /** What the video is doing right now, as reported by the player. */
 export type VideoTimelineState = {

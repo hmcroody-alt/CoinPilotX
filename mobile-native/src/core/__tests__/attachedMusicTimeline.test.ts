@@ -16,6 +16,7 @@
 
 import {
   MUSIC_DRIFT_TOLERANCE_MS,
+  MUSIC_STATUS_INTERVAL_MS,
   expectedMusicPosition,
   musicDriftMillis,
   planMusicCorrection
@@ -92,6 +93,57 @@ const withPrevious = (position: number, previous: number | null) =>
     null,
     previous
   );
+
+/**
+ * The deadband against the grid the drift is measured on.
+ *
+ * MEASURED on a physical iPhone 16 Pro over 195 seconds: `videoPosition -
+ * musicPosition` took exactly two values, 0 and 250, and never once exceeded a
+ * single reporting step. The track did not leave the picture. Yet a 120ms
+ * deadband produced 126 seeks in those 195 seconds, because every one of them
+ * was reading the phase between two callbacks on a 250ms grid, not a track that
+ * was out.
+ *
+ * So these are not tests of a tuning preference. A threshold below one reporting
+ * interval cannot distinguish "the track is out" from "the two callbacks landed
+ * in different frames", and a loop built on that difference will seek forever.
+ */
+describe("the deadband against the grid it is measured on", () => {
+  it("cannot be tightened below the resolution that feeds it", () => {
+    expect(MUSIC_DRIFT_TOLERANCE_MS).toBeGreaterThan(MUSIC_STATUS_INTERVAL_MS);
+  });
+
+  it("does not chase a drift of one reporting step, however persistent", () => {
+    // A whole step apart, on the same side, on both ticks -- so the persistence
+    // rule is satisfied and the deadband is the only thing left to decline it.
+    // This is the exact reading the device produced 126 times.
+    const step = MUSIC_STATUS_INTERVAL_MS;
+    const first = withPrevious(5000 - step, null);
+    const second = confirmedBy(
+      first,
+      video({ positionMillis: 5000 }),
+      music({ positionMillis: 5000 - step })
+    );
+
+    expect(first.action).toBe("none");
+    expect(second.action).toBe("none");
+  });
+
+  it("still corrects a gap that is larger than the grid could explain", () => {
+    // Two steps out is not quantisation phase; no callback ordering produces it.
+    const gap = MUSIC_STATUS_INTERVAL_MS * 4;
+    // Starting cold, so the first reading is the one that gets confirmed rather
+    // than one that already acted -- a tick that seeks clears the history.
+    const first = withPrevious(5000 - gap, null);
+    const second = confirmedBy(
+      first,
+      video({ positionMillis: 5000 }),
+      music({ positionMillis: 5000 - gap })
+    );
+
+    expect(second).toEqual({ action: "resync", seekToMillis: 5000, driftMillis: -gap });
+  });
+});
 
 describe("where the track should be", () => {
   it("advances with the video from the creator's chosen in-point", () => {
