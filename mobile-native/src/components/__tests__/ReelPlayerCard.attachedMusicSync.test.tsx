@@ -211,6 +211,25 @@ describe("attached music starts with the picture", () => {
     );
   });
 
+  it("does not send a position when starting a track that is already in place", async () => {
+    // MEASURED ON DEVICE: a start does not report `isPlaying` immediately, so
+    // this path runs on every tick until it does. Re-sending `positionMillis`
+    // restarts the player's start-up sequence, so the track never reaches
+    // playing and the reel stays silent -- 7.2 seconds of it, in the capture
+    // that found this. Omitting the key is the fix, so the assertion is about
+    // the key's ABSENCE and not merely about its value.
+    render(<ReelPlayerCard {...cardProps(true)} />);
+    await act(async () => undefined);
+    musicTick({ positionMillis: 3000 - MUSIC_STATUS_INTERVAL_MS, isPlaying: false });
+
+    await videoTick({ positionMillis: 3000, isPlaying: true });
+
+    expect(mockSound.setStatusAsync).toHaveBeenCalled();
+    const sent = mockSound.setStatusAsync.mock.calls[0][0];
+    expect(sent.shouldPlay).toBe(true);
+    expect("positionMillis" in sent).toBe(false);
+  });
+
   it("pauses the track when the video stalls, rather than letting it run ahead", async () => {
     render(<ReelPlayerCard {...cardProps(true)} />);
     await act(async () => undefined);

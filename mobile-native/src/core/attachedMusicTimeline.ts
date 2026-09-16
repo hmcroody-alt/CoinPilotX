@@ -179,7 +179,29 @@ export type MusicCorrection =
    */
   | { action: "none"; driftMillis?: number }
   | { action: "pause"; reason: "video_stalled" | "video_paused" }
-  | { action: "play"; seekToMillis: number; driftMillis: number }
+  /**
+   * Start the track, because the video is playing and the track is not.
+   *
+   * `seekToMillis` is null when the track is ALREADY within the deadband of
+   * where it belongs: start it where it stands rather than moving it first.
+   *
+   * MEASURED ON DEVICE, and not a micro-optimisation. `isPlaying` does not turn
+   * true the instant a start is issued -- the player has to decode before it
+   * reports playing -- so this branch runs again on the next tick, and used to
+   * re-issue the seek. A capture caught the consequence: 30 consecutive `play`
+   * ticks over 7.2 SECONDS in which the music position on every tick was
+   * exactly the seek issued on the tick before, never once the track's own
+   * clock. Each seek restarted the start-up it was waiting to complete, so the
+   * correction sustained the silence it was trying to end. Two other rounds on
+   * the same reel started on a single `play`, which is what makes this a
+   * livelock rather than a constant cost: it bites when the decode is slow.
+   *
+   * 29 of those 30 seeks were moving a track that was already inside the
+   * deadband. So the rule is the same one every other correction obeys -- do
+   * not move the track for a difference this small -- and the `play` branch
+   * being exempt from it was the defect.
+   */
+  | { action: "play"; seekToMillis: number | null; driftMillis: number }
   | { action: "resync"; seekToMillis: number; driftMillis: number };
 
 /**
@@ -257,8 +279,10 @@ export function musicDriftMillis(
  * So a correction requires two consecutive readings that are both past the
  * deadband AND on the same side of it. Against that capture this rule issues
  * zero of the 190 seeks, while leaving every genuine transition untouched: the
- * start and resume cases are handled by the `play` branch, which is not gated
- * on the deadband at all.
+ * start and resume cases are handled by the `play` branch, which decides
+ * whether to MOVE the track on the same deadband but does not wait for a second
+ * reading to confirm it -- a start is not noise, and delaying it would be
+ * audible as a late entry rather than as a seek.
  *
  * The cost is one tick of delay -- 250ms -- before a genuine drift is repaired.
  * That is the right trade: the correction is an audible seek, so paying a tick
@@ -328,11 +352,19 @@ export function planMusicCorrection(
   const drift = musicDriftMillis(video, music, policy, nowMillis);
   const target = expectedMusicPosition(video.positionMillis, policy, music.durationMillis);
 
-  // Starting or resuming: always land on the computed position rather than
-  // wherever the track happened to be left. This is the branch that makes
-  // "resume after a stall" and "resume after a user pause" identical, and it is
-  // why there is no separate seek handler.
-  if (!music.isPlaying) return { action: "play", seekToMillis: target, driftMillis: drift };
+  // Starting or resuming. Land on the computed position when the track is
+  // genuinely somewhere else -- this is the branch that makes "resume after a
+  // stall" and "resume after a user pause" identical, and it is why there is no
+  // separate seek handler. But a track already within the deadband is started
+  // where it stands: see the `play` member of MusicCorrection for the capture
+  // that made re-seeking it a livelock rather than a redundancy.
+  if (!music.isPlaying) {
+    return {
+      action: "play",
+      seekToMillis: Math.abs(drift) <= toleranceMillis ? null : target,
+      driftMillis: drift
+    };
+  }
 
   if (driftIsWorthCorrecting(drift, previousDriftMillis, toleranceMillis)) {
     return { action: "resync", seekToMillis: target, driftMillis: drift };

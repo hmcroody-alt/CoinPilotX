@@ -419,8 +419,14 @@ export function ReelPlayerCard({
         // setStatusAsync applies position and play state in one call, so the
         // track cannot be briefly audible at the wrong position the way a
         // separate seek-then-play would allow.
+        //
+        // A null seek means the track is already within the deadband of where
+        // it belongs, so the position is OMITTED rather than sent as its current
+        // value: re-sending a position restarts the player's start-up sequence,
+        // and doing that every tick while waiting for `isPlaying` is what held a
+        // reel silent for 7.2 seconds on device.
         await sound.setStatusAsync({
-          positionMillis: plan.seekToMillis,
+          ...(plan.seekToMillis === null ? {} : { positionMillis: plan.seekToMillis }),
           shouldPlay: true,
           isMuted: muted,
           volume: musicPolicy.musicVolume

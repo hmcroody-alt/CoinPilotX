@@ -196,6 +196,48 @@ describe("keeping the track with the picture", () => {
       .toEqual({ action: "play", seekToMillis: 4000, driftMillis: -4000 });
   });
 
+  it("starts a track that is already in place without moving it first", () => {
+    // MEASURED ON DEVICE. `isPlaying` lags the start, so this branch runs again
+    // on the next tick; re-sending a position restarts the player's start-up,
+    // which is what held a reel silent for 7.2 seconds. A track already inside
+    // the deadband is started where it stands.
+    const plan = planMusicCorrection(
+      video({ positionMillis: 5000 }),
+      music({ isPlaying: false, positionMillis: 5000 - MUSIC_STATUS_INTERVAL_MS }),
+      withMusic
+    );
+    expect(plan).toEqual({
+      action: "play",
+      seekToMillis: null,
+      driftMillis: -MUSIC_STATUS_INTERVAL_MS
+    });
+  });
+
+  it("does not re-seek on any tick of a start that has not reported playing yet", () => {
+    // The livelock, as the device produced it: 30 consecutive `play` ticks in
+    // which the music position was always the seek issued on the tick before.
+    // Here the track is stuck at its start position while the video advances a
+    // quarter second per tick, which is exactly the losing shape -- so every
+    // tick until the gap outgrows the deadband must start without moving it.
+    const seeks = [];
+    for (let tick = 0; tick < 8; tick += 1) {
+      const plan = planMusicCorrection(
+        video({ positionMillis: 5000 + tick * MUSIC_STATUS_INTERVAL_MS }),
+        music({ isPlaying: false, positionMillis: 5000 }),
+        withMusic
+      );
+      expect(plan.action).toBe("play");
+      seeks.push(plan.action === "play" ? plan.seekToMillis : "wrong branch");
+    }
+    // Null while the gap is explainable by the reporting grid, a real position
+    // once it is not -- the deadband governs the start exactly as it governs
+    // every other correction.
+    const moved = seeks.filter((seek) => seek !== null);
+    expect(seeks.slice(0, 2)).toEqual([null, null]);
+    expect(moved.length).toBeGreaterThan(0);
+    expect(moved.every((seek) => typeof seek === "number")).toBe(true);
+  });
+
   it("pauses the music when the video stalls to rebuffer", () => {
     // §39. Letting it run is what makes every stall permanently increase drift,
     // and makes a frozen frame over continuing music read as a broken video.
