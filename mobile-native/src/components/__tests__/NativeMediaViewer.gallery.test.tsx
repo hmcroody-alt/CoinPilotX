@@ -74,7 +74,8 @@ import {
   NativeMediaViewer,
   NativeMediaViewerItem,
   SWIPE_COMMIT_DISTANCE,
-  savingMessageFor
+  savingMessageFor,
+  sharingMessageFor
 } from "../NativeMediaViewer";
 
 function photo(position: number): NativeMediaViewerItem {
@@ -593,5 +594,188 @@ describe("what the save message claims", () => {
     const early = savingMessageFor({ bytesWritten: 1_048_576, fraction: null });
     const later = savingMessageFor({ bytesWritten: 6_291_456, fraction: null });
     expect(early).not.toBe(later);
+  });
+});
+
+/**
+ * Share reaches the same downloader down the same path, so it inherits the same
+ * wait — and until now it inherited none of the honesty.
+ *
+ * `shareItem` set no status at all and then awaited a full download before the
+ * share sheet could open. Measured on the simulator against conversation video
+ * 10 of 10, the origin delivered at 15–30 KiB/s; a share of that file is minutes
+ * of a screen on which nothing whatsoever indicates the tap registered. Save had
+ * at least the word "Saving". These tests exist so that Share cannot regress to
+ * silence while Save's tests stay green.
+ */
+describe("what the share message claims", () => {
+  it("shows a percentage only when the total is actually known", () => {
+    expect(sharingMessageFor({ bytesWritten: 5_000_000, fraction: 0.5 })).toBe("Preparing to share… 50%");
+  });
+
+  it("falls back to megabytes rather than inventing a denominator", () => {
+    const message = sharingMessageFor({ bytesWritten: 8_624_766, fraction: null });
+    expect(message).toContain("8.2 MB");
+    expect(message).not.toContain("%");
+  });
+
+  it("says something other than nothing, which is what Share used to say", () => {
+    expect(sharingMessageFor({ bytesWritten: 0, fraction: null })).toBe("Preparing to share…");
+  });
+
+  /**
+   * The two verbs must not collapse into one string. A refactor that routed both
+   * actions through a single hardcoded lead would pass every assertion above.
+   */
+  it("does not describe a share as a save", () => {
+    const shared = sharingMessageFor({ bytesWritten: 5_000_000, fraction: 0.5 });
+    expect(shared).not.toContain("library");
+    expect(shared).not.toBe(savingMessageFor({ bytesWritten: 5_000_000, fraction: 0.5 }));
+  });
+});
+
+describe("share tells the user something is happening", () => {
+  const video: NativeMediaViewerItem = {
+    id: 9100,
+    kind: "video",
+    url: "https://cdn.example/clip.mp4",
+    subtitle: "Video from Roody Cherie, 10 of 10"
+  };
+
+  function openOnVideo() {
+    return render(
+      <NativeMediaViewer visible items={[video]} index={0} onIndexChange={jest.fn()} totalCount={1} onClose={jest.fn()} />
+    );
+  }
+
+  beforeEach(() => {
+    (shareMedia as jest.Mock).mockClear();
+    (shareMedia as jest.Mock).mockResolvedValue({ status: "shared" });
+  });
+
+  /** MUTATION: drop `onProgress` from the `shareMedia` options object. */
+  it("forwards a progress listener so the transfer can report itself", async () => {
+    const tree = openOnVideo();
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect((shareMedia as jest.Mock).mock.calls[0][1]).toEqual(
+      expect.objectContaining({ onProgress: expect.any(Function) })
+    );
+  });
+
+  /** MUTATION: delete the `setActionStatus("Preparing to share…")` line. */
+  it("puts a message on screen before the bytes are asked for", async () => {
+    let release: (value: { status: string }) => void = () => undefined;
+    (shareMedia as jest.Mock).mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    const tree = openOnVideo();
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect(tree.getByTestId("native-media-viewer-action-status").props.children).toBe("Preparing to share…");
+    await act(async () => {
+      release({ status: "shared" });
+    });
+  });
+
+  /**
+   * The listener has to be wired to the *status*, not merely accepted and
+   * dropped. A `shareItem` that passed `onProgress: () => undefined` would
+   * satisfy the forwarding test above and still show a frozen line.
+   */
+  it("renders what the transfer reports, not just the opening line", async () => {
+    let release: (value: { status: string }) => void = () => undefined;
+    (shareMedia as jest.Mock).mockImplementation((_target: unknown, options: any) => {
+      options.onProgress({ bytesWritten: 4_194_304, fraction: 0.25 });
+      return new Promise((resolve) => { release = resolve; });
+    });
+    const tree = openOnVideo();
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect(tree.getByTestId("native-media-viewer-action-status").props.children).toBe("Preparing to share… 25%");
+    await act(async () => {
+      release({ status: "shared" });
+    });
+  });
+
+  /**
+   * And it must stop claiming a percentage once the sheet is up. A status line
+   * left reading "Preparing to share… 100%" over an open share sheet describes
+   * work that is already finished.
+   */
+  it("clears the transfer message once the share succeeds", async () => {
+    const tree = openOnVideo();
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect(tree.queryByTestId("native-media-viewer-action-status")).toBeNull();
+  });
+
+  /** A failure still has to be reported — clearing must not swallow it. */
+  it("keeps a failure message on screen", async () => {
+    (shareMedia as jest.Mock).mockResolvedValue({ status: "failed", message: "PulseSoc could not open the share sheet." });
+    const tree = openOnVideo();
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect(tree.getByTestId("native-media-viewer-action-status").props.children).toBe(
+      "PulseSoc could not open the share sheet."
+    );
+  });
+
+  /**
+   * MUTATION: remove `disabled={sharing}`. Two taps on a transfer that takes
+   * minutes is not a contrived scenario — it is exactly what a user does when
+   * the first tap appears to have done nothing.
+   */
+  it("disables the button while the first transfer is still running", async () => {
+    let release: (value: { status: string }) => void = () => undefined;
+    (shareMedia as jest.Mock).mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    const tree = openOnVideo();
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    await act(async () => {
+      fireEvent.press(tree.getByTestId("native-media-viewer-share"));
+    });
+    expect(shareMedia as jest.Mock).toHaveBeenCalledTimes(1);
+    expect(tree.getByTestId("native-media-viewer-share").props.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: true })
+    );
+    await act(async () => {
+      release({ status: "shared" });
+    });
+  });
+
+  /**
+   * MUTATION: remove the `if (sharingRef.current) return;` guard.
+   *
+   * Deliberately bypasses the responder system by invoking `onPress` directly,
+   * because the `disabled` prop already stops a *tap* and would therefore make
+   * any guard look tested when it is not — which is how the first attempt at
+   * this test let a mutation survive. Two synchronous entries is also the one
+   * case a state flag genuinely cannot catch: `sharing` is still `false` on the
+   * second, because React has not re-rendered in between.
+   */
+  it("refuses a second entry that arrives before React re-renders", async () => {
+    let release: (value: { status: string }) => void = () => undefined;
+    (shareMedia as jest.Mock).mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    const tree = openOnVideo();
+    // `getByTestId` returns the host View that `Pressable` renders, and that
+    // View carries responder handlers rather than `onPress` — so the composite
+    // is the only place the handler itself can be reached.
+    const button = tree.UNSAFE_getAllByProps({ testID: "native-media-viewer-share" }).find(
+      (node: { props: { onPress?: unknown } }) => typeof node.props.onPress === "function"
+    );
+    const press = button!.props.onPress as () => void;
+    await act(async () => {
+      press();
+      press();
+    });
+    expect(shareMedia as jest.Mock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      release({ status: "shared" });
+    });
   });
 });

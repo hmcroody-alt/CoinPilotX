@@ -190,14 +190,39 @@ export const nativeMediaViewerIntegrationTargets = [
  * is genuinely unknown is the same class of lie as a black frame standing in for
  * a loading frame. So an unknown total gets megabytes — which still moves, still
  * proves the transfer is alive, and claims nothing it cannot support.
+ *
+ * `lead` is a parameter rather than a constant because Save is not the only
+ * action that has to fetch the whole file first. Share downloads exactly the
+ * same bytes through exactly the same path, so it earns the same rule; what
+ * differs is only the sentence around the number.
  */
-export function savingMessageFor(progress: { bytesWritten: number; fraction: number | null }): string {
+export function transferMessageFor(
+  lead: string,
+  progress: { bytesWritten: number; fraction: number | null }
+): string {
   if (progress.fraction !== null) {
-    return `Saving to your library… ${Math.round(progress.fraction * 100)}%`;
+    return `${lead} ${Math.round(progress.fraction * 100)}%`;
   }
   const megabytes = progress.bytesWritten / (1024 * 1024);
-  if (megabytes < 0.1) return "Saving to your library…";
-  return `Saving to your library… ${megabytes.toFixed(1)} MB`;
+  if (megabytes < 0.1) return lead;
+  return `${lead} ${megabytes.toFixed(1)} MB`;
+}
+
+export function savingMessageFor(progress: { bytesWritten: number; fraction: number | null }): string {
+  return transferMessageFor("Saving to your library…", progress);
+}
+
+/**
+ * Share had no progress surface at all, which was worse than Save's.
+ *
+ * Save at least printed the word "Saving". `shareItem` set no status whatsoever
+ * and then awaited a full download before the share sheet could open — measured
+ * on device against a conversation video the origin serves at tens of KiB/s,
+ * that is minutes of a screen that looks like the tap did nothing. Same defect
+ * class as §19's infinite spinner, reached by a different button.
+ */
+export function sharingMessageFor(progress: { bytesWritten: number; fraction: number | null }): string {
+  return transferMessageFor("Preparing to share…", progress);
 }
 
 export function NativeMediaViewer({
@@ -250,6 +275,9 @@ export function NativeMediaViewer({
    */
   const [actionStatus, setActionStatus] = useState("");
   const [savingToGallery, setSavingToGallery] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  /** Drives the re-entry guard; `sharing` only drives what the button looks like. */
+  const sharingRef = useRef(false);
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
   const videoPlayingRef = useRef(false);
@@ -621,10 +649,40 @@ export function NativeMediaViewer({
       onShare(item);
       return;
     }
+    // Save has had a guard like this since it was written; Share never did, and
+    // once Share can take minutes the omission stops being theoretical. A second
+    // entry joins the same in-flight transfer (`downloadMedia` dedupes by cache
+    // key) and then both callbacks write `actionStatus`, so the line flickers
+    // between two verbs describing one download.
+    //
+    // A ref rather than the state flag, and the difference is not pedantic: the
+    // mutation battery could not kill a `if (sharing) return` because `sharing`
+    // is still `false` on any second entry that happens before React re-renders.
+    // The `disabled` prop was doing all the work and the guard was decoration.
+    // The ref is written synchronously, so it guards the case the prop cannot.
+    if (sharingRef.current) return;
+    sharingRef.current = true;
+    setSharing(true);
     // Shares the real file by default and degrades to the canonical link when
     // the file cannot be produced — see `shareMedia`.
-    const result = await shareMedia(actionTargetFor(item), { preferLink: shareAsLink });
-    if (result.status === "failed") setActionStatus(result.message);
+    if (!shareAsLink) setActionStatus("Preparing to share…");
+    try {
+      const result = await shareMedia(actionTargetFor(item), {
+        preferLink: shareAsLink,
+        // The file leg of `shareMedia` downloads the whole asset before the
+        // sheet can open. Without this the user gets a motionless screen for the
+        // whole of it and no way to tell a slow transfer from a dead one.
+        onProgress: (progress) => setActionStatus(sharingMessageFor(progress))
+      });
+      if (result.status === "failed") setActionStatus(result.message);
+      // The sheet is up (or the link was shared): the transfer message has
+      // outlived its subject and would otherwise sit there claiming a percentage
+      // for something that already finished.
+      else setActionStatus("");
+    } finally {
+      sharingRef.current = false;
+      setSharing(false);
+    }
   }
 
   /**
@@ -870,8 +928,16 @@ export function NativeMediaViewer({
                 <Text style={styles.actionText}>{savingToGallery ? "Saving" : "Save to Photos"}</Text>
               </Pressable>
             ) : null}
-            <Pressable testID="native-media-viewer-share" accessibilityRole="button" accessibilityLabel="Share media" style={styles.actionButton} onPress={shareItem}>
-              <Text style={styles.actionText}>Share</Text>
+            <Pressable
+              testID="native-media-viewer-share"
+              accessibilityRole="button"
+              accessibilityLabel="Share media"
+              accessibilityState={{ disabled: sharing, busy: sharing }}
+              style={[styles.actionButton, sharing && styles.disabled]}
+              disabled={sharing}
+              onPress={shareItem}
+            >
+              <Text style={styles.actionText}>{sharing ? "Preparing" : "Share"}</Text>
             </Pressable>
           </View>
         </View>
