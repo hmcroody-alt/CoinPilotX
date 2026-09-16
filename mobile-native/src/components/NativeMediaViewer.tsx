@@ -201,6 +201,25 @@ export function NativeMediaViewer({
 }: Props) {
   const [internalIndex, setInternalIndex] = useState(initialIndex);
   const [failed, setFailed] = useState(false);
+  /**
+   * "No first frame yet", which is NOT "failed" — the distinction this whole
+   * surface turns on.
+   *
+   * These were one flag, and the conflation shipped: the first-frame watchdog set
+   * `failed`, line 640's `&& !failed` then unmounted the `<Video>`, and with it
+   * the poster it was displaying. On device that read as the viewer opening on a
+   * visible frame and replacing it with a black "Media unavailable" card fifteen
+   * seconds later — while the transfer was demonstrably still running (282x200,
+   * zero 4xx/5xx, CoreMedia reporting 1335 kbps). The user was told their video
+   * was gone, about a video that was arriving.
+   *
+   * So: `failed` means something REPORTED a failure (`onError`, `status.error`).
+   * `slow` means nobody has reported anything and the deadline passed. One is a
+   * verdict and the other is the absence of one, and only the verdict may take
+   * content off the screen.
+   */
+  const [slow, setSlow] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [buffering, setBuffering] = useState(false);
   const [checking, setChecking] = useState(false);
   const [processingMessage, setProcessingMessage] = useState("");
@@ -409,6 +428,7 @@ export function NativeMediaViewer({
   if (loadStateKey !== identityKey) {
     setLoadStateKey(identityKey);
     setFailed(false);
+    setSlow(false);
     loadedOnceRef.current = false;
   }
 
@@ -427,6 +447,16 @@ export function NativeMediaViewer({
    * unrecognised codec, a 302 to somewhere unreachable, a DNS hole. Bounded to
    * "has never reported a loaded status", so a buffering stall on a video that
    * already played is untouched.
+   *
+   * What it may NOT do is conclude. Fifteen seconds without a first frame is a
+   * real thing to say to the user and a useless thing to decide on their behalf:
+   * a non-faststart MP4 with its moov atom at the end legitimately exceeds this,
+   * and the deadline passing tells us nothing about whether the bytes are still
+   * coming. So the watchdog sets `slow` — which puts a sentence over the poster
+   * and leaves the player running — and never `failed`, which is reserved for
+   * something that actually reported a failure. It also clears itself: the
+   * loaded branch below sets `slow` false, so a video that arrives at 20s heals
+   * the surface with no user action at all.
    */
   const watchdogUrl = kind === "video" ? item?.url || "" : "";
   useEffect(() => {
@@ -434,11 +464,11 @@ export function NativeMediaViewer({
     const timer = setTimeout(() => {
       if (!loadedOnceRef.current) {
         console.warn(`[NativeMediaViewer] no first frame in ${FIRST_FRAME_TIMEOUT_MS}ms: ${watchdogUrl.slice(0, 120)}`);
-        setFailed(true);
+        setSlow(true);
       }
     }, FIRST_FRAME_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [visible, watchdogUrl, loadStateKey]);
+  }, [visible, watchdogUrl, loadStateKey, reloadNonce]);
 
   if (!item) return null;
 
@@ -454,6 +484,26 @@ export function NativeMediaViewer({
     if (clamped === index) return;
     if (!controlled) setInternalIndex(clamped);
     onIndexChange?.(clamped);
+  }
+
+  /**
+   * Re-attempt a source that REPORTED a failure. Offered for `failed` only.
+   *
+   * Bumping the nonce remounts the player, which is the only way to make
+   * expo-av attempt a source it has already rejected. That is safe here and
+   * would not be for `slow`: a remount abandons whatever has been transferred,
+   * so offering it on a video that is merely taking its time would throw away
+   * progress to restart the same download — §4's "no throwing away already-loaded
+   * media", performed by the button meant to help.
+   *
+   * The nonce is also in the watchdog's deps, so a retry gets a fresh deadline
+   * rather than inheriting an already-expired one.
+   */
+  function retryLoad() {
+    loadedOnceRef.current = false;
+    setFailed(false);
+    setSlow(false);
+    setReloadNonce((value) => value + 1);
   }
 
   /** How far a photo at this zoom can be dragged before it shows empty space. */
@@ -637,8 +687,20 @@ export function NativeMediaViewer({
                   </TapGestureHandler>
                 </Animated.View>
               </PinchGestureHandler>
-            ) : kind === "video" && item.url && !failed ? (
+            ) : kind === "video" && item.url ? (
+              // `&& !failed` used to guard this line, and it is what made the
+              // fullscreen viewer go black on a video that was still arriving.
+              // Unmounting the player also unmounts `posterSource` — the one
+              // bitmap already decoded from the thread — so the surface that was
+              // showing the user their own content replaced it with a black card
+              // (§3/§4). The condition is now about whether there is anything to
+              // play at all; whether it is going badly is said OVER the poster,
+              // by the overlay below. Keeping the player mounted is also what
+              // makes the `setFailed(false)` recovery branch reachable: a
+              // re-minted grant can heal the surface in place instead of needing
+              // the user to back out and tap again.
               <Video
+                key={`${loadStateKey}:${reloadNonce}`}
                 ref={videoRef}
                 source={{ uri: item.url }}
                 style={styles.video}
@@ -666,7 +728,11 @@ export function NativeMediaViewer({
                   }
                   // Genuine recovery — a later successful load clears an earlier
                   // failure, so a re-minted grant can heal the surface in place.
+                  // `slow` clears here too, and that is the whole point of it
+                  // being a separate flag: a video whose first frame arrives at
+                  // twenty seconds takes its own notice down.
                   setFailed(false);
+                  setSlow(false);
                   loadedOnceRef.current = true;
                   setBuffering(Boolean(status.isBuffering));
                   // Keep the attached-music track in lockstep with the video's
@@ -691,7 +757,44 @@ export function NativeMediaViewer({
 
         {onLike && kind === "image" ? <LikeBurst ref={likeBurstRef} /> : null}
 
-        {buffering ? (
+        {/*
+          * The condition is said OVER the media, never instead of it.
+          *
+          * This overlay is the half of the watchdog fix that makes the other half
+          * safe to do. Because the player and its poster stay mounted, something
+          * still has to tell the user why nothing is moving — and the scrim is
+          * deliberately translucent so the frame they already saw in the thread is
+          * visible underneath the sentence about it. "BLACK IS NEVER THE LOADING
+          * STATE" is satisfied by showing the poster, not by staying silent.
+          *
+          * The two cases get different affordances because they are different
+          * facts. `slow` offers no button: the bytes are still coming, and the
+          * only "retry" available would discard a partial transfer to start it
+          * again, which is the §4 violation dressed up as a fix. `failed` offers
+          * Retry, because a reported failure means there is nothing to discard.
+          */}
+        {item.url && (failed || slow) ? (
+          <View style={styles.conditionOverlay} pointerEvents="box-none" testID="native-media-viewer-condition">
+            <View style={styles.conditionPanel} testID="native-media-viewer-condition-panel">
+              {slow && !failed ? <ActivityIndicator color={colors.accent} /> : null}
+              <Text style={styles.stateTitle} testID="native-media-viewer-condition-title">
+                {failed ? "Media unavailable" : "Still loading"}
+              </Text>
+              <Text style={styles.stateText}>
+                {failed
+                  ? "This media could not be loaded. Your copy in the conversation is unchanged."
+                  : "This is taking longer than usual. It will appear as soon as enough of it arrives."}
+              </Text>
+              {failed ? (
+                <Pressable style={styles.stateButton} testID="native-media-viewer-retry" onPress={retryLoad}>
+                  <Text style={styles.stateButtonText}>Try again</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
+        {buffering && !slow && !failed ? (
           <View style={styles.buffering}>
             <ActivityIndicator color={colors.accent} />
           </View>
@@ -883,6 +986,31 @@ const styles = createThemedStyles(() => ({
   closeText: {
     color: colors.text,
     fontWeight: "900"
+  },
+  // Translucent on purpose, and the whole fix depends on it. An opaque scrim
+  // here would reintroduce the black screen with better copy on it -- the poster
+  // underneath is the content the user already saw in the thread, and it has to
+  // stay visible while we explain what is happening to it.
+  conditionOverlay: {
+    alignItems: "center",
+    bottom: 0,
+    justifyContent: "center",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 9
+  },
+  conditionPanel: {
+    alignItems: "center",
+    backgroundColor: "rgba(8,15,28,0.78)",
+    borderColor: "rgba(255,255,255,0.14)",
+    borderRadius: 14,
+    borderWidth: 1,
+    marginHorizontal: 32,
+    maxWidth: 420,
+    paddingHorizontal: 22,
+    paddingVertical: 18
   },
   disabled: {
     opacity: 0.4
