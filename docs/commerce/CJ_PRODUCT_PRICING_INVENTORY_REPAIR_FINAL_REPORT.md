@@ -397,12 +397,17 @@ before the run, which is the brief's decision 8 held.
 | command | result |
 |---|---|
 | `pytest tests/dropshipping/test_dropship_stock_repair.py -q` | **30 passed** in 0.19s |
-| every `tests/dropshipping/test_*.py`, one file per process (19 files) | **730 passed, 0 failed** |
+| every `tests/dropshipping/test_*.py`, one file per process (19 files) | **710 passed, 0 failed** |
 | `scripts/protection/run_protection_suite.py` | **673 checks across 44 suites passed**, exit 0 |
 
 `tests/dropshipping/` files bind `DATABASE_URL` to a tempfile at import, before
 `services.db` computes `IS_POSTGRES`, so they cannot share a pytest process; the
 sweep runs one file per process for that reason.
+
+An earlier draft of this table said 730. That number was never printed by any
+run — it was an arithmetic slip in a hand-written summary. The sweep was re-done
+per file, recording both collected and passed counts, and the two agree on every
+one of the 19 files, so the 710 is not hiding a skip or a deselection.
 
 Two fixture defects were found and fixed while getting the suite green, both in
 the test file rather than the module: `upsert_variant` takes `options` as a list
