@@ -42,7 +42,13 @@ import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 
 import { sharePulseObject, type PulseShareMetadata } from "../sharing/nativeShare";
-import { downloadMedia, downloadMessageFor, MediaDownloadError, type MediaDownloadKind } from "./mediaDownloader";
+import {
+  downloadMedia,
+  downloadMessageFor,
+  MediaDownloadError,
+  type MediaDownloadKind,
+  type MediaDownloadProgress
+} from "./mediaDownloader";
 import { mediaFailureReason, trackMediaEvent, type MediaFailureReason } from "./mediaTelemetry";
 
 export const MEDIA_ACTION_ORDER = ["react", "reply", "forward", "share", "save"] as const;
@@ -74,6 +80,26 @@ export type MediaActionTarget = {
   refreshUrl?: () => Promise<string>;
 };
 
+/**
+ * Options shared by the two actions that have to fetch bytes before they can act.
+ *
+ * `onProgress` exists because of a measured failure, not a hunch. Saving a 8.6 MB
+ * conversation video on device sat on the words "Saving to your library…" for
+ * over four minutes: the origin serves the untranscoded camera original (`ftyp`
+ * brand `qt  `, `mdat` first and `moov` at the end) and delivered it at between
+ * 2 and 65 KiB/s. Nothing was broken and nothing was stuck — the transfer was
+ * simply large and the origin slow — but the surface had no way to say so, which
+ * is the thing this mission forbids: a spinner with no end and no evidence.
+ *
+ * The downloader has emitted progress to a listener set since it was written;
+ * only the two public actions never passed one through. So this is a wiring gap,
+ * not a new mechanism, and deliberately optional — a caller that does not care
+ * gets exactly the behaviour it had before.
+ */
+export type MediaTransferOptions = {
+  onProgress?: (progress: MediaDownloadProgress) => void;
+};
+
 export type MediaSaveResult =
   | { status: "saved"; limited: boolean }
   | { status: "permission_denied"; message: string }
@@ -100,7 +126,10 @@ const SAVEABLE_KINDS = new Set<MediaDownloadKind>(["image", "video"]);
  * by a failure, which reads to the user as "PulseSoc took my photo access and
  * then broke". Fetch, then ask, then write.
  */
-export async function saveMediaToGallery(target: MediaActionTarget): Promise<MediaSaveResult> {
+export async function saveMediaToGallery(
+  target: MediaActionTarget,
+  options: MediaTransferOptions = {}
+): Promise<MediaSaveResult> {
   const kind = target.kind || "file";
   if (!SAVEABLE_KINDS.has(kind)) {
     return {
@@ -120,7 +149,8 @@ export async function saveMediaToGallery(target: MediaActionTarget): Promise<Med
       expectedBytes: target.expectedBytes,
       // The user asked for this specific file by tapping Save, Share or Open.
       retention: "explicit",
-      refreshUrl: target.refreshUrl
+      refreshUrl: target.refreshUrl,
+      onProgress: options.onProgress
     });
     fileUri = entry.fileUri;
   } catch (error) {
@@ -252,7 +282,7 @@ const SAVE_EXTENSIONS: Record<string, string> = {
  */
 export async function shareMedia(
   target: MediaActionTarget,
-  options: { preferLink?: boolean; shareKind?: PulseShareMetadata["kind"] } = {}
+  options: { preferLink?: boolean; shareKind?: PulseShareMetadata["kind"] } & MediaTransferOptions = {}
 ): Promise<MediaShareResult> {
   const kind = target.kind || "file";
 
@@ -274,7 +304,8 @@ export async function shareMedia(
           // Share is reached whenever the user taps, which can be long after the
           // fifteen-minute access URL that painted the picture was minted. Without
           // this, sharing a photo that is on screen degrades to sharing a link.
-          refreshUrl: target.refreshUrl
+          refreshUrl: target.refreshUrl,
+          onProgress: options.onProgress
         });
         sourceUri = entry.fileUri;
         shareUri = await namedCopyOf(entry.fileUri, kind, entry.mimeType || target.mimeType);
@@ -331,7 +362,10 @@ export async function shareMedia(
  * the retry/backoff and the on-disk cache already live. Opening the same
  * attachment twice costs one download.
  */
-export async function openDocument(target: MediaActionTarget): Promise<MediaOpenResult> {
+export async function openDocument(
+  target: MediaActionTarget,
+  options: MediaTransferOptions = {}
+): Promise<MediaOpenResult> {
   const available = await Sharing.isAvailableAsync().catch(() => false);
   if (!available) {
     return { status: "unsupported", message: "This device cannot open documents from PulseSoc." };
@@ -349,7 +383,8 @@ export async function openDocument(target: MediaActionTarget): Promise<MediaOpen
       expectedBytes: target.expectedBytes,
       // The user asked for this specific file by tapping Save, Share or Open.
       retention: "explicit",
-      refreshUrl: target.refreshUrl
+      refreshUrl: target.refreshUrl,
+      onProgress: options.onProgress
     });
     fileUri = entry.fileUri;
     mimeType = entry.mimeType || target.mimeType;

@@ -69,7 +69,13 @@ jest.mock("../../media/nativeMediaUpload", () => ({
 }));
 
 import { saveMediaToGallery, shareMedia } from "../../media/mediaActions";
-import { FIRST_FRAME_TIMEOUT_MS, NativeMediaViewer, NativeMediaViewerItem, SWIPE_COMMIT_DISTANCE } from "../NativeMediaViewer";
+import {
+  FIRST_FRAME_TIMEOUT_MS,
+  NativeMediaViewer,
+  NativeMediaViewerItem,
+  SWIPE_COMMIT_DISTANCE,
+  savingMessageFor
+} from "../NativeMediaViewer";
 
 function photo(position: number): NativeMediaViewerItem {
   return {
@@ -556,5 +562,36 @@ describe("a video that is slow rather than broken", () => {
 
     expect(tree.queryByTestId("native-media-viewer-condition")).toBeNull();
     expect(tree.getByTestId("native-media-viewer-image").props.source.uri).toBe(neighbour.url);
+  });
+});
+
+/**
+ * What the save message may and may not claim.
+ *
+ * A percentage is a statement about how much is left. The downloader reports
+ * `fraction: null` when the server sent no `Content-Length` — and the conversation
+ * media origin does exactly that — so rendering that as "0%" would be inventing a
+ * denominator nobody has. It is the same category of error as showing black for
+ * "not loaded yet": substituting a confident wrong answer for an honest unknown.
+ */
+describe("what the save message claims", () => {
+  it("shows a percentage only when the total is actually known", () => {
+    expect(savingMessageFor({ bytesWritten: 5_000_000, fraction: 0.5 })).toBe("Saving to your library… 50%");
+  });
+
+  it("falls back to megabytes rather than inventing a denominator", () => {
+    const message = savingMessageFor({ bytesWritten: 8_624_766, fraction: null });
+    expect(message).toContain("8.2 MB");
+    expect(message).not.toContain("%");
+  });
+
+  it("does not open with a meaningless 0.0 MB before anything has arrived", () => {
+    expect(savingMessageFor({ bytesWritten: 0, fraction: null })).toBe("Saving to your library…");
+  });
+
+  it("still moves when the total is unknown, which is the whole point", () => {
+    const early = savingMessageFor({ bytesWritten: 1_048_576, fraction: null });
+    const later = savingMessageFor({ bytesWritten: 6_291_456, fraction: null });
+    expect(early).not.toBe(later);
   });
 });
