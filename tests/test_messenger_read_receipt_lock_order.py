@@ -22,25 +22,39 @@ the other leaves:
     is pure statement sequencing, so it IS observable on SQLite.
 
 Ordering stops a cycle from forming. It does not shorten the window in which
-one can, and that window was the other half of the incident: `mark_read`
-re-stamped every message from everyone else in the conversation, from id 1, on
-every read event -- two statements per message, so a 10k-message conversation
-held ~20k row locks for the length of the transaction. It is now two set-based
-statements, each bounded to rows that still need writing, so re-reading an
-already-read conversation takes no receipt row locks at all.
+one can, and that window was the other half of the incident. Both paths used to
+walk their range one message at a time:
 
-That rewrite changes what is observable here, so two of the guards below moved:
+  * `mark_read` re-stamped every message from everyone else in the conversation,
+    from id 1, on every read event -- two statements per message, so a
+    10k-message conversation held ~20k row locks for the length of the
+    transaction.
+  * `list_messages` re-stamped every incoming message on the page on every
+    fetch. That one is page-bounded rather than O(N), but `delivered_at` was
+    already set on all of those rows, so the only column it changed was
+    `updated_at`, which nothing reads. It took a row lock per message on the
+    page to write nothing observable.
 
-  * `mark_read` no longer binds one id per INSERT. Its ordering lives entirely
-    in the SQL, which is what `test_mark_read_query_pins_the_order_in_sql`
-    already covered -- the behavioural check that used to sit beside it would
-    now read `conversation_id` out of the first bind slot and pass on anything.
-    It is replaced by a check that `mark_read` emits no per-row receipt INSERT.
-  * `list_messages`' delivery loop is still per-row and still page-bounded, so
-    its ordering guard is unchanged and still behavioural.
+Each is now two set-based statements bounded to rows that still need writing,
+so re-reading an already-read conversation takes no receipt row locks at all.
+
+That rewrite changes what is observable here, so the guards below moved with it.
+Neither path binds one id per INSERT any more, which takes away the thing the
+original behavioural assertions read:
+
+  * Ordering now lives entirely in the SQL, so it is checked against the
+    statement text (`ORDER BY m.id ASC`) for both paths. On `mark_read` that was
+    always the only meaningful check -- SQLite returns a scan in rowid order, so
+    a behavioural assertion there passed with or without the fix.
+  * The behavioural checks are replaced by ones that assert the per-row INSERT
+    is *gone*, since a recorder reading bind slot 0 would now find
+    `conversation_id` there and pass on anything.
+  * One thing stays behavioural: `list_messages` must still call `mark_read`
+    (which walks from id 1) *before* its page statement (the newest ~40 ids).
+    That is pure statement sequencing, so it is observable on SQLite.
 
 The volume guards are the load-bearing addition: a correctness-only test passes
-against the old per-row loop and proves nothing about it.
+against the old per-row loops and proves nothing about them.
 """
 
 import os
@@ -128,6 +142,13 @@ def _row_ids(log):
     return [value for kind, value in log if kind == "row"]
 
 
+def _insert_owner(sql: str) -> str:
+    """Which path emitted a set-based receipt INSERT. `mark_read` stamps seen_at
+    and read_at; the delivery statement in `list_messages` only stamps
+    delivered_at, because delivery is recorded even with receipts switched off."""
+    return "mark_read" if "read_at" in sql else "page"
+
+
 class ReadReceiptLockOrderTest(unittest.TestCase):
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
@@ -205,48 +226,68 @@ class ReadReceiptLockOrderTest(unittest.TestCase):
         insert = insert[: insert.index('"""')]
         self.assertIn("ORDER BY m.id ASC", insert)
 
-    def test_list_messages_first_locks_each_receipt_in_ascending_order(self):
+    def test_list_messages_emits_no_per_row_receipt_insert(self):
         result = service.list_messages(VIEWER, CONVERSATION, {"limit": 40})
         self.assertTrue(result.get("ok"), result)
-        self.assertTrue(self.log, "list_messages wrote no receipts; the fixture is not exercising the loop")
-        order = _first_acquisition_order(_row_ids(self.log))
-        self.assertTrue(order, "list_messages emitted no per-row receipt INSERT to order-check")
+        self.assertTrue(self.log, "list_messages wrote no receipts; the fixture is not exercising it")
         self.assertEqual(
-            order,
-            sorted(order),
-            "list_messages locked a high message id before a lower one it also needs, "
-            "which is the inverted order that deadlocks against a concurrent /read",
+            _row_ids(self.log),
+            [],
+            "list_messages is binding message ids one INSERT at a time again -- that is "
+            "a row lock per message on the page on every fetch",
         )
 
-    def test_list_messages_and_mark_read_agree_on_order(self):
-        """Both request paths must walk the shared keys the same way, or the pair
-        of them can still form a cycle even though each is internally ascending.
+    def test_list_messages_query_pins_the_order_in_sql(self):
+        """Same Postgres guard as mark_read's, for the delivery statement."""
+        source = _function_source("list_messages")
+        insert = source[source.index("INSERT OR IGNORE INTO comm_v2_read_receipts") :]
+        insert = insert[: insert.index('"""')]
+        self.assertIn("ORDER BY m.id ASC", insert)
 
-        They express it differently now -- list_messages still binds one id per
-        INSERT, mark_read carries its order inside one statement -- so agreement
-        is checked against the only thing the two forms share: the direction.
-        A comparison of id sequences would be empty on the mark_read side and
-        would therefore hold no matter which way its ORDER BY pointed.
+    def test_relisting_an_already_read_conversation_takes_no_receipt_row_locks(self):
+        """The delivery loop's whole cost was invisible: `delivered_at` was already
+        set on every page row, so it re-locked them to rewrite `updated_at`, which
+        no query in the codebase reads."""
+        service.list_messages(VIEWER, CONVERSATION, {"limit": 40})
+        self.conn.commit()
+        before = self.conn.total_changes
+        service.list_messages(VIEWER, CONVERSATION, {"limit": 40})
+        self.conn.commit()
+        written = self.conn.total_changes - before
+        self.assertEqual(
+            written,
+            1,
+            "a second fetch of an unchanged conversation must write only the participants "
+            f"watermark row; it wrote {written}",
+        )
+
+    def test_list_messages_runs_mark_read_before_its_own_page_statement(self):
+        """The one guard here that is still behavioural, and the one SQLite can
+        actually see: mark_read walks from id 1, the page statement covers the
+        newest ~40 ids. Running the page first takes a lock on id 60 before id 1,
+        inverting the first-acquisition order a concurrent /read uses.
         """
         service.list_messages(VIEWER, CONVERSATION, {"limit": 40})
-        from_list = _first_acquisition_order(_row_ids(self.log))
-        self.assertTrue(from_list, "list_messages emitted no per-row receipt INSERT")
-        self.assertEqual(from_list, sorted(from_list))
-
-        self.log.clear()
-        del self.writes[:]
-        service.mark_read(VIEWER, CONVERSATION)
-        self.assertEqual(_row_ids(self.log), [])
-        set_inserts = [sql for sql in self.writes if RECEIPT_SET_INSERT_RE.search(sql)]
-        self.assertEqual(len(set_inserts), 1, self.writes)
-        direction = re.search(r"ORDER\s+BY\s+m\.id\s+(ASC|DESC)", set_inserts[0], re.I)
-        self.assertIsNotNone(direction, set_inserts[0])
+        kinds = [_insert_owner(sql) for sql in self.writes if RECEIPT_SET_INSERT_RE.search(sql)]
         self.assertEqual(
-            direction.group(1).upper(),
-            "ASC",
-            "mark_read orders its receipt INSERT the opposite way from list_messages' "
-            "loop, so the two can still lock the shared rows in opposing orders",
+            kinds,
+            ["mark_read", "page"],
+            "list_messages must stamp the whole conversation before the page it fetched",
         )
+
+    def test_both_receipt_inserts_order_the_same_way(self):
+        """Each statement being internally ascending is not enough -- the pair of
+        them has to agree, or two requests can still lock the shared rows in
+        opposing orders. Direction is what the two forms have in common."""
+        service.list_messages(VIEWER, CONVERSATION, {"limit": 40})
+        inserts = [sql for sql in self.writes if RECEIPT_SET_INSERT_RE.search(sql)]
+        self.assertEqual(len(inserts), 2, inserts)
+        directions = []
+        for sql in inserts:
+            match = re.search(r"ORDER\s+BY\s+m\.id\s+(ASC|DESC)", sql, re.I)
+            self.assertIsNotNone(match, sql)
+            directions.append(match.group(1).upper())
+        self.assertEqual(directions, ["ASC", "ASC"], inserts)
 
     def test_order_check_rejects_a_descending_sequence(self):
         """Positive control: the assertions above can actually fail."""

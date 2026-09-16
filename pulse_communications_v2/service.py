@@ -3061,18 +3061,46 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
                 for message in raw_messages
                 if int(message.get("sender_user_id") or 0) != int(user_id)
             )
-            for message_id in incoming_ids:
+            if incoming_ids:
+                # Placeholders are generated from the id count, never interpolated
+                # from a value; the ids themselves are still bound.
+                placeholders = ",".join("?" for _ in incoming_ids)
+                # This exists for the case mark_read above cannot cover: delivery
+                # is recorded even when the user has read receipts switched off,
+                # which is the whole reason a "Delivered" tick outlives a "Read"
+                # one. When receipts are on, mark_read has already written these
+                # rows and the anti-join here matches nothing.
+                #
+                # The loop this replaced re-stamped every incoming message on the
+                # page on every fetch. delivered_at was already set on all of
+                # them, so the only column that changed was updated_at, which
+                # nothing reads -- re-opening a conversation took a row lock per
+                # message on the page to write nothing observable.
                 cur.execute(
-                    """
+                    f"""
                     INSERT OR IGNORE INTO comm_v2_read_receipts
                     (message_id, conversation_id, user_id, delivered_at, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    SELECT m.id, ?, ?, ?, ?, ?
+                    FROM comm_v2_messages m
+                    WHERE m.conversation_id=? AND m.id IN ({placeholders})
+                      AND NOT EXISTS (
+                          SELECT 1 FROM comm_v2_read_receipts r
+                          WHERE r.message_id=m.id AND r.user_id=?
+                      )
+                    ORDER BY m.id ASC
                     """,
-                    (message_id, conversation_id, int(user_id), now, now, now),
+                    (conversation_id, int(user_id), now, now, now, conversation_id, *incoming_ids, int(user_id)),
                 )
+                # Only reachable for a receipt that exists with no delivered_at.
+                # Both writers stamp it at insert, so today this matches no rows
+                # and takes no locks; it is kept as the repair path rather than
+                # deleted, because "no row can have an empty delivered_at" is a
+                # whole-codebase invariant that a third writer could break.
                 cur.execute(
-                    "UPDATE comm_v2_read_receipts SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), updated_at=? WHERE message_id=? AND user_id=?",
-                    (now, now, message_id, int(user_id)),
+                    f"UPDATE comm_v2_read_receipts SET delivered_at=?, updated_at=? "
+                    f"WHERE user_id=? AND conversation_id=? AND message_id IN ({placeholders}) "
+                    f"AND COALESCE(delivered_at,'')=''",
+                    (now, now, int(user_id), conversation_id, *incoming_ids),
                 )
             conn.commit()
             read_state_committed = True
