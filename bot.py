@@ -50687,13 +50687,39 @@ def api_pulse_live_mux_webhook():
                 # this transaction -- and on Postgres a single failed statement
                 # poisons the rest of it, so live-replay reconciliation above
                 # would be lost too and Mux would retry the event forever.
+                #
+                # The flip is additionally suppressed for rows whose playback id
+                # was minted under Mux's `signed` policy -- which is every video
+                # messenger ingests, because a conversation is private. The bare
+                # HLS URL `mux_live_service.playback_url` returns is a 403 for
+                # those assets, and a 403 manifest paints black exactly like a
+                # 404 one. `_attachment_payload` mints a tokenised manifest URL
+                # per request instead, behind the membership check; this column
+                # therefore has to keep holding the progressive URL, which is
+                # what it means for playback to degrade to slow and never to
+                # broken. Empty policy means public, which is what every row
+                # written before messenger started requesting signed playback is.
                 if table_exists(cur, "comm_v2_attachments"):
+                    # The column guard is the same defence as the table guard one
+                    # level down: `mux_playback_policy` is added by comm_v2's
+                    # `ensure_schema` in the web process, and this webhook can be
+                    # served by a container that has not run it yet. Naming a
+                    # missing column on Postgres aborts the transaction, which
+                    # would lose the live-replay reconciliation above and leave
+                    # Mux retrying the event forever. Without the column nothing
+                    # is signed yet, so the unconditional flip is still correct.
+                    if "mux_playback_policy" in table_columns(cur, "comm_v2_attachments"):
+                        policy_gate = " AND COALESCE(mux_playback_policy,'')<>'signed'"
+                    else:
+                        policy_gate = ""
                     cur.execute(
-                        """
+                        f"""
                         UPDATE comm_v2_attachments
                         SET mux_status=?,
                             mux_playback_id=COALESCE(NULLIF(?, ''), mux_playback_id),
-                            playback_url=CASE WHEN ?='ready' AND ?<>'' THEN ? ELSE playback_url END
+                            playback_url=CASE
+                                WHEN ?='ready' AND ?<>''{policy_gate} THEN ?
+                                ELSE playback_url END
                         WHERE mux_asset_id=? AND COALESCE(mux_asset_id,'')<>''
                         """,
                         (status, playback_id, status, playback_url, playback_url, mux_asset_id),

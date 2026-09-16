@@ -638,6 +638,12 @@ def _ensure_columns(bot, cur, conn) -> None:
         ("mux_asset_id", "TEXT"),
         ("mux_playback_id", "TEXT"),
         ("mux_status", "TEXT"),
+        # Which of Mux's two playback policies this row's playback id was minted
+        # under. Not derivable at read time: a signed id served without a token
+        # is a 403, and a public id is watchable by anyone who has ever seen the
+        # URL. Empty means "public", which is what every row written before
+        # messenger started requesting signed playback actually is.
+        ("mux_playback_policy", "TEXT"),
         ("scan_status", "TEXT DEFAULT 'approved'"),
         ("created_at", "TEXT"),
     ], conn=conn)
@@ -2549,6 +2555,7 @@ def _attachment_payload(row: dict) -> dict:
     """
     media_type = str(row.get("media_type") or "file").lower()
     mux_playback_id = row.get("mux_playback_id") or ""
+    mux_playback_policy = str(row.get("mux_playback_policy") or "").strip().lower()
     playback_url = row.get("playback_url") or ""
     if mux_playback_id and not playback_url:
         try:
@@ -2557,6 +2564,41 @@ def _attachment_payload(row: dict) -> dict:
             playback_url = media_service.mux_playback_urls(mux_playback_id).get("hls_url") or ""
         except Exception:
             playback_url = ""
+    # Messenger videos are ingested under Mux's `signed` playback policy, because
+    # a conversation is private and a public playback id is an unguessable URL
+    # rather than an access check. The consequence is that the bare HLS URL is a
+    # 403 -- so for these rows the manifest URL cannot be a stored column, it has
+    # to be minted per request, behind the membership check that got us here.
+    #
+    # Three things this must not do, in order of how badly they would show up:
+    #
+    #   * serve a bare `stream.mux.com` URL. It 403s, and a 403 manifest paints
+    #     black with no error, which is the exact failure the media mission
+    #     exists to remove. This block is the single place that is enforced, on
+    #     purpose: the branch above can derive a bare URL from the playback id,
+    #     the webhook could store one, and a caller could hand one in. Gating
+    #     each of those separately would be three guards, two of which no test
+    #     could distinguish from this one -- so they would rot unnoticed. Every
+    #     row that any of them can reach reaches here, because they all require
+    #     the same `mux_playback_id` this block keys on.
+    #   * sign before `ready`. Mux issues the playback id at asset-creation time,
+    #     minutes before a manifest exists, and a token on a 404 is still a 404.
+    #   * fail to broken when signing is unavailable. No keys, or a key that no
+    #     longer parses, means fall back to the progressive download URL: slow,
+    #     membership-checked, and it works.
+    if mux_playback_policy == "signed" and mux_playback_id:
+        signed_hls = ""
+        if str(row.get("mux_status") or "").strip().lower() == "ready":
+            try:
+                from services import mux_live_service
+
+                signed_hls = mux_live_service.signed_playback_url(mux_playback_id) or ""
+            except Exception:
+                signed_hls = ""
+        if signed_hls:
+            playback_url = signed_hls
+        elif "stream.mux.com" in playback_url and "token=" not in playback_url:
+            playback_url = row.get("url") or ""
     cdn_url = row.get("cdn_url") or row.get("valid_url") or row.get("media_url") or row.get("public_url") or row.get("url") or ""
     thumbnail_url = row.get("thumbnail_url") or row.get("poster_url") or ""
     if media_type == "video" and playback_url:
@@ -2622,6 +2664,7 @@ def _attachment_payload(row: dict) -> dict:
         "mux_asset_id": row.get("mux_asset_id") or "",
         "mux_playback_id": mux_playback_id,
         "mux_status": row.get("mux_status") or "",
+        "mux_playback_policy": mux_playback_policy,
         "created_at": row.get("created_at") or row.get("message_created_at") or "",
         "sender_user_id": int(row.get("sender_user_id") or row.get("uploader_user_id") or 0),
         "sender_display_name": row.get("sender_display_name") or "Pulse member",

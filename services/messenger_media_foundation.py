@@ -1575,6 +1575,27 @@ MUX_INGEST_URL_TTL_SECONDS = max(900, min(int(os.getenv("MESSENGER_MUX_INGEST_UR
 # progressive URL, which works.
 MUX_INGEST_MAX_WAIT_SECONDS = 24 * 3600
 
+# A conversation video is private, so its Mux playback id must be one that is
+# useless without a token. Every other asset-creation call site in this repo asks
+# for `public`, and correctly so -- a reel or a livestream replay is content whose
+# point is to be reachable. Messenger is the exception: a public playback id is an
+# unguessable URL, not an access check, and it outlives the conversation, the
+# membership, and the block list. The rest of the messenger media path re-checks
+# conversation membership on every single request; adaptive streaming is not worth
+# making video the one attachment type that does not.
+MUX_INGEST_PLAYBACK_POLICY = "signed"
+
+
+def _mux_signed_playback_configured() -> bool:
+    """Whether a viewer token can actually be minted for a signed playback id.
+
+    Asked before creating the asset, not after. `mux_live_service.signed_playback_url`
+    returns "" when the keys are absent, and the read path then falls back to the
+    progressive URL -- so an asset created without signing configured is an encode
+    billed for a rendition no viewer will ever be served.
+    """
+    return bool(os.getenv("MUX_SIGNING_KEY_ID", "").strip() and os.getenv("MUX_SIGNING_PRIVATE_KEY", "").strip())
+
 # Derived, never hand-listed. The enqueued set and the consumed set drifting
 # apart is the original defect this whole pipeline was written to fix: the
 # worker did not recognise the three messenger types, so its dispatcher retired
@@ -1608,6 +1629,30 @@ def _table_exists(cur: Any, table: str) -> bool:
         else:
             cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
         return bool(cur.fetchone())
+    except Exception:
+        return False
+
+
+def _column_exists(cur: Any, table: str, column: str) -> bool:
+    """Same question as `_table_exists`, one level down, and for the same reason.
+
+    `mux_playback_policy` is added by `comm_v2`'s `ensure_schema`, which runs in
+    the web process at route registration. This runs in `media_worker`. On the
+    deploy that introduces the column the worker can reach a video before the
+    web process has added it, and on Postgres selecting a missing column aborts
+    the transaction -- losing the thumbnail and duration this job already wrote.
+    Missing column therefore degrades to "policy unrecorded", which the read path
+    treats as public: slow progressive playback rather than a 403.
+    """
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=%s AND column_name=%s",
+                (table, column),
+            )
+            return bool(cur.fetchone())
+        cur.execute(f"PRAGMA table_info({table})")
+        return any(str(r[1]) == column for r in (cur.fetchall() or []))
     except Exception:
         return False
 
@@ -1680,11 +1725,13 @@ def _ingest_mux_asset(cur: Any, row: Any) -> dict[str, Any]:
     if not _table_exists(cur, "comm_v2_attachments"):
         return {"status": "skipped", "reason": "comm_v2_absent"}
 
+    policy_column = _column_exists(cur, "comm_v2_attachments", "mux_playback_policy")
     cur.execute(
-        "SELECT id, COALESCE(mux_asset_id,''), COALESCE(mux_playback_id,'') FROM comm_v2_attachments WHERE media_upload_id=?",
+        "SELECT id, COALESCE(mux_asset_id,''), COALESCE(mux_playback_id,''), %s FROM comm_v2_attachments WHERE media_upload_id=?"
+        % ("COALESCE(mux_playback_policy,'')" if policy_column else "''"),
         (attachment_id,),
     )
-    targets = [(int(r[0]), str(r[1] or ""), str(r[2] or "")) for r in (cur.fetchall() or [])]
+    targets = [(int(r[0]), str(r[1] or ""), str(r[2] or ""), str(r[3] or "")) for r in (cur.fetchall() or [])]
     # The upload finished but the message has not been sent yet, so the row this
     # job writes into does not exist. Deferring reschedules; failing would spend
     # an attempt on a race with the user's own send.
@@ -1701,13 +1748,32 @@ def _ingest_mux_asset(cur: Any, row: Any) -> dict[str, Any]:
     # same `media_upload_id`. It is the same bytes and therefore the same Mux
     # asset: copying the ids across costs nothing, while creating a second asset
     # would bill a second encode for a file Mux has already transcoded.
-    existing = next(((t[1], t[2]) for t in targets if t[1]), None)
+    existing = next(((t[1], t[2], t[3]) for t in targets if t[1]), None)
     if existing:
-        cur.execute(
-            "UPDATE comm_v2_attachments SET mux_asset_id=?, mux_playback_id=? WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''",
-            (existing[0], existing[1], attachment_id),
-        )
+        # The policy travels with the ids. A forwarded copy that inherited a
+        # signed playback id but not the record of it being signed would be
+        # served unsigned, which Mux answers with a 403 -- a black player on a
+        # video the sender can watch fine in the original conversation.
+        if policy_column:
+            cur.execute(
+                "UPDATE comm_v2_attachments SET mux_asset_id=?, mux_playback_id=?, mux_playback_policy=? WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''",
+                (existing[0], existing[1], existing[2], attachment_id),
+            )
+        else:
+            cur.execute(
+                "UPDATE comm_v2_attachments SET mux_asset_id=?, mux_playback_id=? WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''",
+                (existing[0], existing[1], attachment_id),
+            )
         return {"status": "processed", "reason": "reused_existing_asset", "updates": {}}
+
+    # Refuse to hand Mux a private video we could not then hand back to the
+    # viewer. Without signing keys the read path falls back to the progressive
+    # URL, so creating the asset anyway would bill an encode for a rendition
+    # nobody can ever be shown -- and requesting `public` instead to "make it
+    # work" is exactly the exposure this policy exists to prevent. Skipping
+    # leaves the video on the progressive path it is on today.
+    if not _mux_signed_playback_configured():
+        return {"status": "skipped", "reason": "signed_playback_unavailable"}
 
     source = _mux_ingest_source_url(row)
     if not source:
@@ -1718,7 +1784,9 @@ def _ingest_mux_asset(cur: Any, row: Any) -> dict[str, Any]:
     except Exception:
         return {"status": "skipped", "reason": "media_service_unavailable"}
 
-    result = media_service.create_mux_asset_from_url(source, media_id=attachment_id) or {}
+    result = media_service.create_mux_asset_from_url(
+        source, media_id=attachment_id, playback_policy=MUX_INGEST_PLAYBACK_POLICY
+    ) or {}
     if not result.get("ok"):
         error_type = str(result.get("error_type") or "")
         # Settled, not deferred. Absent credentials and rejected credentials are
@@ -1745,20 +1813,36 @@ def _ingest_mux_asset(cur: Any, row: Any) -> dict[str, Any]:
 
     asset_id = str(result.get("asset_id") or "")
     playback_id = str(result.get("playback_id") or "")
-    cur.execute(
-        """
-        UPDATE comm_v2_attachments
-        SET mux_asset_id=?, mux_playback_id=?, mux_status=?
-        WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''
-        """,
-        (asset_id, playback_id, str(result.get("status") or "preparing"), attachment_id),
-    )
+    # Read back off Mux's response rather than assumed from the request: if Mux
+    # ever hands back a public id for a signed ask, the row must say so, because
+    # the read path would otherwise append a token to a public URL and the
+    # exposure would be invisible in the database.
+    playback_policy = str(result.get("playback_policy") or MUX_INGEST_PLAYBACK_POLICY)
+    if policy_column:
+        cur.execute(
+            """
+            UPDATE comm_v2_attachments
+            SET mux_asset_id=?, mux_playback_id=?, mux_status=?, mux_playback_policy=?
+            WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''
+            """,
+            (asset_id, playback_id, str(result.get("status") or "preparing"), playback_policy, attachment_id),
+        )
+    else:
+        cur.execute(
+            """
+            UPDATE comm_v2_attachments
+            SET mux_asset_id=?, mux_playback_id=?, mux_status=?
+            WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''
+            """,
+            (asset_id, playback_id, str(result.get("status") or "preparing"), attachment_id),
+        )
     logging.info(
-        "MESSENGER_MUX_INGEST_CREATED attachment_id=%s mux_asset_id=%s mux_playback_id=%s mux_status=%s",
+        "MESSENGER_MUX_INGEST_CREATED attachment_id=%s mux_asset_id=%s mux_playback_id=%s mux_status=%s mux_playback_policy=%s",
         attachment_id,
         asset_id,
         playback_id,
         result.get("status"),
+        playback_policy,
     )
     return {"status": "processed", "reason": "asset_created", "updates": {}}
 

@@ -43,7 +43,8 @@ PROGRESSIVE = "/api/messages/media/87/download"
 ASSET = "asset-601"
 
 
-def _database(tmp_path, *, asset_id=ASSET, playback_url=PROGRESSIVE, mux_status="preparing"):
+def _database(tmp_path, *, asset_id=ASSET, playback_url=PROGRESSIVE, mux_status="preparing",
+              policy="", policy_column=True):
     path = str(tmp_path / "reconcile.sqlite3")
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -117,6 +118,12 @@ def _database(tmp_path, *, asset_id=ASSET, playback_url=PROGRESSIVE, mux_status=
                 'asset-600', '', 'preparing', '2026-09-14T00:00:00')
         """
     )
+    # Added rather than declared inline so `policy_column=False` can reproduce the
+    # deploy window where `media_worker` sees the table before the web process has
+    # run comm_v2's `ensure_schema` and added the column.
+    if policy_column:
+        conn.execute("ALTER TABLE comm_v2_attachments ADD COLUMN mux_playback_policy TEXT")
+        conn.execute("UPDATE comm_v2_attachments SET mux_playback_policy=? WHERE id=601", (policy,))
     conn.commit()
     conn.close()
     return path
@@ -198,6 +205,69 @@ class TestReadyIsTheOnlyThingThatFlipsPlayback:
         _deliver(monkeypatch, path)
 
         assert _attachment(path)["playback_url"] == first
+
+
+class TestASignedAssetIsNeverGivenABareManifestUrl:
+    """The second gate on the flip, and it is a privacy gate rather than a timing one.
+
+    Messenger ingests under Mux's ``signed`` playback policy, because a
+    conversation is private and a public playback id is an unguessable URL rather
+    than an access check. The bare HLS URL is therefore a 403 for these assets --
+    and a 403 manifest paints black exactly like the 404 one the ``ready`` gate
+    above exists to prevent. So ``playback_url`` must keep holding the progressive
+    URL for signed rows, and ``_attachment_payload`` mints a tokenised manifest
+    per request behind the membership check.
+
+    The failure this pins is the tempting one: someone reads the ``ready`` gate,
+    concludes the URL is safe to store once Mux says ready, and drops the policy
+    condition. Nothing goes red -- the column fills in with a plausible HLS URL --
+    and every signed conversation video turns black.
+    """
+
+    def test_a_ready_signed_asset_keeps_the_progressive_url(self, tmp_path, monkeypatch):
+        path = _database(tmp_path, policy="signed")
+        _deliver(monkeypatch, path)
+
+        row = _attachment(path)
+        # Readiness is still recorded: the read path needs it to know a manifest
+        # now exists and a token is worth minting.
+        assert row["mux_status"] == "ready"
+        assert row["mux_playback_id"] == "vod601"
+        assert row["playback_url"] == PROGRESSIVE
+        assert "stream.mux.com" not in row["playback_url"]
+
+    def test_a_ready_public_asset_still_flips(self, tmp_path, monkeypatch):
+        # The gate must be narrow. Rows that came from `chat_media_uploads` are
+        # public-policy and their behaviour is unchanged.
+        path = _database(tmp_path, policy="public")
+        _deliver(monkeypatch, path)
+
+        assert _attachment(path)["playback_url"] == "https://stream.mux.com/vod601.m3u8"
+
+    def test_a_row_with_no_recorded_policy_still_flips(self, tmp_path, monkeypatch):
+        # Empty means public, which is what every row written before messenger
+        # started requesting signed playback actually is.
+        path = _database(tmp_path, policy="")
+        _deliver(monkeypatch, path)
+
+        assert _attachment(path)["playback_url"] == "https://stream.mux.com/vod601.m3u8"
+
+    def test_the_column_being_absent_does_not_abort_the_transaction(self, tmp_path, monkeypatch):
+        # `mux_playback_policy` is added by comm_v2's `ensure_schema` in the web
+        # process; this webhook can be served by a container that has not run it.
+        # Naming a missing column on Postgres aborts the transaction and loses the
+        # live-replay reconciliation above -- the same hazard as the missing table,
+        # one level down. Nothing is signed yet in that window, so the
+        # unconditional flip is still the right answer.
+        path = _database(tmp_path, policy_column=False)
+        _deliver(monkeypatch, path)
+
+        row = _attachment(path)
+        assert row["playback_url"] == "https://stream.mux.com/vod601.m3u8"
+        conn = sqlite3.connect(path)
+        events = conn.execute("SELECT COUNT(*) FROM pulse_live_events").fetchone()[0]
+        conn.close()
+        assert events == 1
 
 
 class TestTheGuardAroundAMissingTable:

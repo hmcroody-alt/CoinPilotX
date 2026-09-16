@@ -52,7 +52,7 @@ CREATE TABLE comm_v2_attachments (
     conversation_id INTEGER, media_upload_id INTEGER, media_type TEXT,
     storage_provider TEXT, url TEXT, playback_url TEXT, thumbnail_url TEXT,
     mime_type TEXT, mux_asset_id TEXT, mux_playback_id TEXT, mux_status TEXT,
-    created_at TEXT
+    mux_playback_policy TEXT, created_at TEXT
 );
 """
 
@@ -70,6 +70,12 @@ class _FakeClient:
 
 class MuxIngestHarness(unittest.TestCase):
     def setUp(self):
+        # Signing keys present, because that is what production has and because
+        # their absence is a documented refusal to ingest rather than a fallback
+        # to public playback. The refusal has its own test.
+        self._signing_env = {k: os.environ.get(k) for k in ("MUX_SIGNING_KEY_ID", "MUX_SIGNING_PRIVATE_KEY")}
+        os.environ["MUX_SIGNING_KEY_ID"] = "test-key-id"
+        os.environ["MUX_SIGNING_PRIVATE_KEY"] = "test-private-key"
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
         self.cur = self.conn.cursor()
@@ -103,6 +109,7 @@ class MuxIngestHarness(unittest.TestCase):
             "status": "preparing",
             "status_code": 201,
             "error_type": "",
+            "playback_policy": "signed",
         }
         media_service.create_mux_asset_from_url = self._record_mux
 
@@ -110,6 +117,11 @@ class MuxIngestHarness(unittest.TestCase):
         media_storage.object_client = self._real_object_client
         self.media_service.create_mux_asset_from_url = self._real_create
         self.conn.close()
+        for key, value in self._signing_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def _record_mux(self, input_url, **kwargs):
         self.mux_calls.append({"input_url": input_url, **kwargs})
@@ -131,16 +143,16 @@ class MuxIngestHarness(unittest.TestCase):
         )
         self.conn.commit()
 
-    def _comm_v2_row(self, row_id=COMM_V2_ID, *, asset_id="", playback_id="", mux_status="", media_upload_id=ATTACHMENT_ID):
+    def _comm_v2_row(self, row_id=COMM_V2_ID, *, asset_id="", playback_id="", mux_status="", media_upload_id=ATTACHMENT_ID, policy=""):
         self.cur.execute(
             """
             INSERT INTO comm_v2_attachments
                 (id, message_id, conversation_id, media_upload_id, media_type,
                  storage_provider, url, playback_url, mux_asset_id, mux_playback_id,
-                 mux_status, created_at)
-            VALUES (?, 1728, 6, ?, 'video', 'messenger_media_foundation', ?, ?, ?, ?, ?, ?)
+                 mux_status, mux_playback_policy, created_at)
+            VALUES (?, 1728, 6, ?, 'video', 'messenger_media_foundation', ?, ?, ?, ?, ?, ?, ?)
             """,
-            (row_id, media_upload_id, PROGRESSIVE, PROGRESSIVE, asset_id, playback_id, mux_status, foundation.now_iso()),
+            (row_id, media_upload_id, PROGRESSIVE, PROGRESSIVE, asset_id, playback_id, mux_status, policy, foundation.now_iso()),
         )
         self.conn.commit()
 
