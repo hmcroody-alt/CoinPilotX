@@ -2467,6 +2467,31 @@ def _attach_foundation_media(cur, user_id: int, conversation_id: int, message_id
             "UPDATE message_attachments SET message_id=?, upload_status='attached', updated_at=? WHERE id=?",
             (int(message_id), now, int(foundation_id)),
         )
+        # Hand the video to Mux, which is how every other video on PulseSoc is
+        # delivered and the one thing this path has never done -- the three Mux
+        # columns above are inserted empty, so a conversation video is served as
+        # a progressive byte range while a reel of the same file streams
+        # adaptively.
+        #
+        # Queued here rather than at upload-finish because the ingest writes
+        # into the row created immediately above; enqueued any earlier it would
+        # race the user's own send. Asynchronous on purpose: `create_mux_asset`
+        # is an outbound HTTP call that inspects the source before it returns,
+        # and sending a message must not wait on Mux -- nor fail if Mux is down.
+        #
+        # Gated on `raw_type`, the foundation's own vocabulary, and not on
+        # `media_type` above -- that one has already been translated for the
+        # wire (`photo` becomes `image`). The two agree on "video" today purely
+        # by coincidence, and `process_attachment` checks the foundation
+        # spelling, so reading the translated name here would make the two ends
+        # of this job disagree the moment the translation gains a case.
+        if raw_type == "video":
+            try:
+                from services import messenger_media_foundation as _foundation
+
+                _foundation.enqueue_mux_ingest(cur, int(foundation_id))
+            except Exception as exc:
+                logging.warning("COMM_V2_MUX_INGEST_QUEUE_SKIPPED attachment_id=%s error=%s", foundation_id, str(exc)[:200])
         out.append(_attachment_payload(attachment_row))
     return out
 

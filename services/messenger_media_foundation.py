@@ -1538,11 +1538,50 @@ def complete_upload(cur: Any, conn: Any, user: dict[str, Any], payload: dict[str
     return ok_response(_attachment_payload(cur, attachment_id, user_id, include_url=False))
 
 
-PROCESSING_JOB_TYPES = {
-    "messenger_photo_thumbnail",
-    "messenger_video_metadata_thumbnail",
-    "messenger_voice_waveform",
-}
+# Handing a conversation video to Mux, which is the delivery platform every
+# other PulseSoc video already goes through and the one thing the foundation
+# upload path never did. `_attach_foundation_media` writes '' into all three
+# Mux columns, so a messenger video is the only video on the product served as
+# a progressive byte range off the download route.
+#
+# It is a job type of its OWN rather than another step inside
+# `messenger_video_metadata_thumbnail`. The two failures are not alike: Mux
+# being unreachable must not burn the thumbnail job's three attempts, because
+# the poster is the §3/§4 safety net -- it is what the viewer paints instead of
+# black while anything else is still resolving -- and it matters considerably
+# more than adaptive streaming does. Separate types means a Mux outage costs
+# adaptive playback and nothing else.
+MUX_INGEST_JOB_TYPE = "messenger_video_mux_ingest"
+
+# Mux fetches the source itself, on its own schedule, and a large upload can sit
+# in its queue for a while before the download starts. `SIGNED_URL_TTL_SECONDS`
+# is fifteen minutes because it is a *viewer's* credential; reusing it here
+# would mean a long queue produces an expired URL and a permanently errored
+# asset. Widening the shared constant to fix that would instead hand every
+# viewer a two-hour credential, so this is a clock of its own -- the same split
+# `agora_cloud_recording_service` already makes for the same reason.
+MUX_INGEST_URL_TTL_SECONDS = max(900, min(int(os.getenv("MESSENGER_MUX_INGEST_URL_TTL_SECONDS", "7200")), 21600))
+
+# How long this job may keep waiting before it stops waiting.
+#
+# The worker's messenger handler has exactly two outcomes: `deferred` puts the
+# job back without spending its error budget, and everything else retires it.
+# That makes deferral the only way to survive a transient Mux outage -- and an
+# unbounded deferral is a job that polls every two minutes for the life of the
+# row. `_replay_wait_expired` bounds the identical hazard on the replay poller
+# by asking how long ago the thing being waited for happened; this is the same
+# question asked of the attachment. A video uploaded and never sent, or one
+# whose ingest never succeeded, stops asking after a day and keeps its
+# progressive URL, which works.
+MUX_INGEST_MAX_WAIT_SECONDS = 24 * 3600
+
+# Derived, never hand-listed. The enqueued set and the consumed set drifting
+# apart is the original defect this whole pipeline was written to fix: the
+# worker did not recognise the three messenger types, so its dispatcher retired
+# every one of them as *done* and no attachment ever got a preview. Computing
+# the consumed set from the produced one makes that class of bug unstateable
+# rather than merely tested for.
+PROCESSING_JOB_TYPES = set(PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.values()) | {MUX_INGEST_JOB_TYPE}
 
 THUMBNAIL_MAX_EDGE = 480
 THUMBNAIL_MIME = "image/jpeg"
@@ -1552,6 +1591,207 @@ THUMBNAIL_MIME = "image/jpeg"
 # provider name while the direct-upload path records how the URL will be built.
 # Anything outside this set is on local disk and is served by the download route.
 REMOTE_OBJECT_STRATEGIES = {"r2", "s3", "signed"}
+
+
+def _table_exists(cur: Any, table: str) -> bool:
+    """Whether a table is really there, asked before touching it rather than after.
+
+    `comm_v2` registers inside `except Exception`, so a deployment where that
+    pack failed to import has no `comm_v2_attachments` at all. Wrapping the
+    write in `try/except` would not be enough on Postgres: the failed statement
+    aborts the surrounding transaction, taking the thumbnail and duration this
+    job had already written down with it.
+    """
+    try:
+        if db_service.IS_POSTGRES:
+            cur.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name=%s", (table,))
+        else:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,))
+        return bool(cur.fetchone())
+    except Exception:
+        return False
+
+
+def _mux_ingest_source_url(row: Any) -> str:
+    """A URL Mux can fetch the original from, valid long enough for it to try.
+
+    Deliberately a presigned object URL and not `mux_source_url_for_key`. That
+    helper resolves a *public* R2 base, which is right for a reel or a live
+    replay and wrong for a conversation: messenger media is private, guarded by
+    a membership check on every request, and publishing it at a public base URL
+    to make streaming work would trade a slow video for a leaked one. Presigning
+    keeps the object private and the credential bounded -- the same trade
+    `agora_cloud_recording_service` makes for private recordings.
+
+    Returns "" when the bytes live on local disk, because there is nothing for a
+    remote service to fetch. That is a permanent fact about the attachment, and
+    the caller reports it as such rather than retrying.
+    """
+    storage_key = str(_row_get(row, "storage_key", "") or "")
+    strategy = str(_row_get(row, "signed_url_strategy", "") or "")
+    if not storage_key or strategy not in REMOTE_OBJECT_STRATEGIES:
+        return ""
+    try:
+        client = media_storage.object_client()
+        if not client:
+            return ""
+        return client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": _storage_bucket(), "Key": storage_key},
+            ExpiresIn=MUX_INGEST_URL_TTL_SECONDS,
+        )
+    except Exception as exc:
+        logging.warning("MESSENGER_MUX_INGEST_PRESIGN_FAILED attachment_id=%s error=%s", _row_get(row, "id", ""), str(exc)[:200])
+        return ""
+
+
+def _mux_ingest_wait_expired(row: Any) -> bool:
+    """Whether this attachment is too old to still be waiting on an ingest.
+
+    Fails open -- an unparseable timestamp reports "not expired" -- because the
+    only writer of these columns is `now_iso()`, so a parse failure would be a
+    bug in this function rather than a property of the data, and answering
+    "expired" to it would silently switch the whole ingest off.
+    """
+    stamp = str(_row_get(row, "created_at", "") or "")
+    if not stamp:
+        return False
+    try:
+        parsed = datetime.fromisoformat(stamp.replace("Z", "").strip())
+    except Exception:
+        return False
+    return (datetime.utcnow() - parsed).total_seconds() > MUX_INGEST_MAX_WAIT_SECONDS
+
+
+def _ingest_mux_asset(cur: Any, row: Any) -> dict[str, Any]:
+    """Create the Mux asset a messenger video has never had, and record its ids.
+
+    `mux_status` is written as whatever Mux reports, which at creation is
+    `preparing` -- never `ready`, and `playback_url` is not touched at all. Mux
+    hands out a playback id the moment the asset is created, long before a
+    manifest exists behind it, so writing the HLS URL here would point the
+    player at a `.m3u8` that 404s. A 404 manifest paints black and raises
+    nothing, which is precisely the failure mode this mission exists to remove.
+    The webhook flips `playback_url` when the asset is genuinely ready; until
+    then the progressive download URL keeps working and the video stays merely
+    unaccelerated.
+    """
+    attachment_id = int(_row_get(row, "id", 0) or 0)
+    if not _table_exists(cur, "comm_v2_attachments"):
+        return {"status": "skipped", "reason": "comm_v2_absent"}
+
+    cur.execute(
+        "SELECT id, COALESCE(mux_asset_id,''), COALESCE(mux_playback_id,'') FROM comm_v2_attachments WHERE media_upload_id=?",
+        (attachment_id,),
+    )
+    targets = [(int(r[0]), str(r[1] or ""), str(r[2] or "")) for r in (cur.fetchall() or [])]
+    # The upload finished but the message has not been sent yet, so the row this
+    # job writes into does not exist. Deferring reschedules; failing would spend
+    # an attempt on a race with the user's own send.
+    if not targets:
+        if _mux_ingest_wait_expired(row):
+            return {"status": "skipped", "reason": "never_attached"}
+        return {"status": "deferred", "reason": "attachment_not_attached_yet"}
+
+    pending = [t for t in targets if not t[1]]
+    if not pending:
+        return {"status": "processed", "reason": "already_ingested", "updates": {}}
+
+    # Forwarding a video makes a second `comm_v2_attachments` row against the
+    # same `media_upload_id`. It is the same bytes and therefore the same Mux
+    # asset: copying the ids across costs nothing, while creating a second asset
+    # would bill a second encode for a file Mux has already transcoded.
+    existing = next(((t[1], t[2]) for t in targets if t[1]), None)
+    if existing:
+        cur.execute(
+            "UPDATE comm_v2_attachments SET mux_asset_id=?, mux_playback_id=? WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''",
+            (existing[0], existing[1], attachment_id),
+        )
+        return {"status": "processed", "reason": "reused_existing_asset", "updates": {}}
+
+    source = _mux_ingest_source_url(row)
+    if not source:
+        return {"status": "skipped", "reason": "no_remote_object"}
+
+    try:
+        from services import media_service
+    except Exception:
+        return {"status": "skipped", "reason": "media_service_unavailable"}
+
+    result = media_service.create_mux_asset_from_url(source, media_id=attachment_id) or {}
+    if not result.get("ok"):
+        error_type = str(result.get("error_type") or "")
+        # Settled, not deferred. Absent credentials and rejected credentials are
+        # both facts about the deployment: no amount of retrying turns an
+        # environment that does not use Mux into one that does, and polling it
+        # every two minutes for a day would cost a job row per video to learn
+        # nothing.
+        if error_type in {"not_configured", "missing_public_https_input", "unauthorized"}:
+            return {"status": "skipped", "reason": error_type}
+        # Everything else -- Mux unreachable, a 5xx, a presigned URL that timed
+        # out in its queue -- is worth another go. It must NOT raise:
+        # `MessengerMediaError` is caught by the worker and retires the job as
+        # done, so one bad minute would cost this video adaptive playback
+        # permanently.
+        if _mux_ingest_wait_expired(row):
+            return {"status": "skipped", "reason": "mux_unreachable_gave_up"}
+        logging.warning(
+            "MESSENGER_MUX_INGEST_RETRY attachment_id=%s error_type=%s status_code=%s",
+            attachment_id,
+            error_type,
+            result.get("status_code"),
+        )
+        return {"status": "deferred", "reason": error_type or "mux_unavailable"}
+
+    asset_id = str(result.get("asset_id") or "")
+    playback_id = str(result.get("playback_id") or "")
+    cur.execute(
+        """
+        UPDATE comm_v2_attachments
+        SET mux_asset_id=?, mux_playback_id=?, mux_status=?
+        WHERE media_upload_id=? AND COALESCE(mux_asset_id,'')=''
+        """,
+        (asset_id, playback_id, str(result.get("status") or "preparing"), attachment_id),
+    )
+    logging.info(
+        "MESSENGER_MUX_INGEST_CREATED attachment_id=%s mux_asset_id=%s mux_playback_id=%s mux_status=%s",
+        attachment_id,
+        asset_id,
+        playback_id,
+        result.get("status"),
+    )
+    return {"status": "processed", "reason": "asset_created", "updates": {}}
+
+
+def enqueue_mux_ingest(cur: Any, attachment_id: int) -> None:
+    """Queue the Mux ingest for one attachment, once.
+
+    Called from the attach path rather than from `_enqueue_processing_jobs`,
+    because those jobs are queued when the *upload* finishes and this one needs
+    the `comm_v2_attachments` row that only exists once the message is sent. The
+    duplicate guard is on the job rather than in the handler: two jobs claimed
+    concurrently would both read an empty `mux_asset_id` and both create an
+    asset, which is a billed encode either way.
+    """
+    if not attachment_id:
+        return
+    try:
+        cur.execute(
+            "SELECT 1 FROM pulse_jobs WHERE target_type='message_attachment' AND target_id=? AND job_type=? LIMIT 1",
+            (int(attachment_id), MUX_INGEST_JOB_TYPE),
+        )
+        if cur.fetchone():
+            return
+        stamp = now_iso()
+        cur.execute(
+            """
+            INSERT INTO pulse_jobs (job_type, target_type, target_id, status, attempts, max_attempts, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (MUX_INGEST_JOB_TYPE, "message_attachment", int(attachment_id), "pending", 0, 3, stamp, stamp),
+        )
+    except Exception as exc:
+        logging.warning("MESSENGER_MUX_INGEST_QUEUE_SKIPPED attachment_id=%s error=%s", attachment_id, str(exc)[:200])
 
 
 def process_attachment(cur: Any, attachment_id: int, job_type: str) -> dict[str, Any]:
@@ -1586,6 +1826,17 @@ def process_attachment(cur: Any, attachment_id: int, job_type: str) -> dict[str,
         return {"status": "deferred", "reason": "upload_incomplete"}
 
     media_type = str(_row_get(row, "media_type", "") or "")
+
+    # Handled before the local-bytes gate below, and that placement is the
+    # point: Mux downloads the original from object storage itself, so this job
+    # needs a presigned URL and not a file on this host's disk. Behind the gate
+    # it would return `bytes_unavailable` on every worker that does not happen
+    # to hold a local copy -- which, once uploads go to R2, is all of them.
+    if job_type == MUX_INGEST_JOB_TYPE:
+        if media_type != "video":
+            return {"status": "skipped", "reason": "no_mux_ingest_for_type"}
+        return _ingest_mux_asset(cur, row)
+
     source = _local_source_for(row)
     if not source:
         return {"status": "deferred", "reason": "bytes_unavailable"}

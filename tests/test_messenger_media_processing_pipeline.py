@@ -351,11 +351,47 @@ class TheWorkerActuallyConsumesTheseJobs(unittest.TestCase):
         self.assertNotIn("_complete_job", deferral_block)
 
     def test_the_enqueued_types_and_the_consumed_types_are_the_same_set(self):
-        """The two lists drifting apart is the original bug, restated."""
+        """The two lists drifting apart is the original bug, restated.
+
+        The Mux ingest is the one job type not in the per-media-type map,
+        because that map allows a media type exactly one job and video already
+        spends it on the thumbnail. It is enqueued from the attach path instead
+        — it needs the ``comm_v2_attachments`` row, which only exists once the
+        message is sent — so it is named here explicitly and nowhere else.
+        """
         self.assertEqual(
-            set(foundation.PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.values()),
+            set(foundation.PROCESSING_JOB_TYPE_BY_MEDIA_TYPE.values()) | {foundation.MUX_INGEST_JOB_TYPE},
             foundation.PROCESSING_JOB_TYPES,
         )
+
+    def test_the_consumed_set_is_derived_rather_than_copied(self):
+        """A hand-written second list is how the two sets drifted in the first place.
+
+        Asserting equality above only catches the drift after someone writes it;
+        computing ``PROCESSING_JOB_TYPES`` from the map makes a type that is
+        enqueued but not consumed impossible to express.
+        """
+        source = Path(foundation.__file__).read_text(encoding="utf-8")
+        declaration = source.split("PROCESSING_JOB_TYPES = ")[1].split("\n")[0]
+        self.assertIn("PROCESSING_JOB_TYPE_BY_MEDIA_TYPE", declaration)
+        self.assertNotIn('"messenger_photo_thumbnail"', declaration)
+
+    def test_the_mux_ingest_is_queued_where_the_row_it_writes_into_exists(self):
+        """Queued from the attach path, not from the upload-finish path.
+
+        ``_enqueue_processing_jobs`` runs when the *upload* completes, which can
+        be long before the message is sent. The ingest writes into
+        ``comm_v2_attachments``, a row that does not exist until the attach. A
+        job queued at upload-finish would spend its life deferring against a
+        race with the user's own send.
+        """
+        comm_v2 = (Path(foundation.__file__).resolve().parent.parent / "pulse_communications_v2" / "service.py").read_text(encoding="utf-8")
+        attach = comm_v2.split("def _attach_foundation_media(")[1].split("\ndef ")[0]
+        self.assertIn("enqueue_mux_ingest", attach)
+
+        source = Path(foundation.__file__).read_text(encoding="utf-8")
+        enqueue = source.split("def _enqueue_processing_jobs(")[1].split("\ndef ")[0]
+        self.assertNotIn("MUX_INGEST_JOB_TYPE", enqueue)
 
     def test_both_the_attach_path_and_the_sweep_enqueue_from_that_one_table(self):
         """A second copy of the map is how the two sets drift apart again.
