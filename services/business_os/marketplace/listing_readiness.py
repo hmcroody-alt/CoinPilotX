@@ -104,6 +104,18 @@ LOW_STOCK = "LOW_STOCK"
 #: merchant-authored draft can, and the submit route has always refused it.
 MISSING_DESCRIPTION = "MISSING_DESCRIPTION"
 
+# Codes that only a supplier-sourced listing can be in. Spelled to match
+# ``drafts.py`` for the same reason as the block above, and reachable here only
+# through :func:`_supplier_problems`, which *delegates* to that evaluator rather
+# than restating it -- so these names are carried, never re-derived.
+NO_VARIANTS_SELECTED = "NO_VARIANTS_SELECTED"
+VARIANT_PRICE_SPREAD = "VARIANT_PRICE_SPREAD"
+PRICE_ABOVE_CHECKOUT_LIMIT = "PRICE_ABOVE_CHECKOUT_LIMIT"
+NEGATIVE_MARGIN = "NEGATIVE_MARGIN"
+SUPPLIER_DISCONNECTED = "SUPPLIER_DISCONNECTED"
+PROVIDER_PRODUCT_UNAVAILABLE = "PROVIDER_PRODUCT_UNAVAILABLE"
+SUPPLIER_VARIANT_UNBOUND = "SUPPLIER_VARIANT_UNBOUND"
+
 #: Media kinds that can stand as a listing's cover. A video is media but it is
 #: not a cover: the still frame a buyer sees in a grid comes from an image, and
 #: a video-only listing renders as the black placeholder ``NO_VALID_MEDIA``
@@ -318,7 +330,112 @@ def _stock_codes(listing: dict) -> list:
     return []
 
 
-def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
+def _supplier_facts(supplier: Any) -> Optional[tuple]:
+    """``(source, priced)`` for a supplier-sourced listing, or ``None``.
+
+    ``supplier`` is ``{"source": <marketplace_product_sources row>, "variants":
+    [<marketplace_listing_variants rows>]}`` -- the two reads the caller has
+    already done. Raw rows, deliberately: the projection into the shape the
+    supplier evaluator wants is built here, once, from that evaluator's own
+    helpers, so a caller cannot get it subtly wrong in four places.
+
+    ``None`` when there is no source row, which is the merchant-authored case and
+    the whole of this module's original scope.
+    """
+    if not isinstance(supplier, dict):
+        return None
+    source = supplier.get("source")
+    if not isinstance(source, dict) or not source:
+        return None
+    rows = [r for r in (supplier.get("variants") or []) if isinstance(r, dict)]
+
+    # Imported here rather than at module scope. The supplier package reaches
+    # transitively into the CJ gateway and its connection store, and this module
+    # is imported by the monolith on every seller listing payload; a merchant
+    # store with no supplier products should not pay for that graph, and an
+    # import failure inside it must not take the Store screen down with it.
+    from services.business_os.suppliers import drafts as _drafts
+    from services.business_os.suppliers import pricing as _pricing
+    from services import marketplace_variants as _variants
+
+    priced = [{
+        "provider_variant_id": row.get("provider_variant_id"),
+        "stock_quantity": row.get("stock_quantity"),
+        "retail_cents": _drafts._retail_of(row),
+        "availability": _variants.availability(row),
+        # Shipping is not known on this surface -- it is a parameter of the
+        # merchant's publish request. `basis` with no freight understates the
+        # cost, so this can only ever report a margin that is negative before
+        # shipping is even added. Never a blocker the publish gate would not
+        # also raise; at worst one it raises later.
+        "margin_state": _pricing.margin_state(
+            _drafts._retail_of(row), _pricing.basis(row.get("cost_cents"), None)[1]),
+    } for row in rows]
+    return source, priced
+
+
+def _supplier_problems(listing: dict, facts: tuple) -> list:
+    """The publish gate's own answer, asked rather than forecast.
+
+    Calls ``drafts._validate`` -- the function that actually refuses the publish
+    -- so the Store screen and the publish button cannot name different problems.
+    That divergence is not hypothetical: in production 31 priced CJ drafts read
+    "Price required" here while the gate was satisfied about price and refusing
+    on ``UNKNOWN_INVENTORY`` and ``SUPPLIER_VARIANT_UNBOUND``. The merchant was
+    offered "Add price" for a price that was not missing, and no way at all to
+    reach the two faults that were real.
+
+    Media is taken from ``drafts._media_of`` and not from the route's
+    ``marketplace_product_media`` rows, because that is the list
+    ``drafts._publish_core`` itself passes in. The two stores genuinely disagree
+    -- ``_cover_of`` exists to reconcile them for readers -- so handing the gate
+    the *other* store's answer here would forecast a verdict it will not reach,
+    which is the whole failure mode being removed. This module's own
+    :func:`_has_cover` still runs over the rows and the cover column, so both
+    readings must be satisfied and a disagreement is shown to the merchant
+    rather than resolved in publication's favour.
+    """
+    from services.business_os.suppliers import drafts as _drafts
+
+    source, priced = facts
+    verdict = _drafts._validate(listing, priced, source, _drafts._media_of(listing))
+    return list(verdict.get("problems") or [])
+
+
+def _supplier_stock_codes(facts: tuple) -> list:
+    """Stock, as a warning, for the variant this listing would actually sell.
+
+    Mirrors ``drafts._publish_core``: the number a buyer's ledger receives is
+    ``_sellable_units`` of the *offered* variant, not a count of variants and not
+    a sum across the catalogue. Reporting anything else here would put a stock
+    figure on the Store row that publication then contradicts.
+
+    ``UNKNOWN_INVENTORY`` is not emitted: for a supplier listing it arrives from
+    :func:`_supplier_problems` as a blocker, because for these listings it really
+    does block -- the publish gate refuses on it. Emitting it again as a warning
+    would have the same fault counted twice in "N things left".
+    """
+    from services.business_os.suppliers import drafts as _drafts
+    from services import marketplace_variants as _variants
+
+    source, priced = facts
+    if not priced:
+        return []
+    offered = _drafts._offered(priced, source)
+    if not offered:
+        return []
+    if all(v.get("availability") == _variants.UNKNOWN for v in offered):
+        return []
+    units = _drafts._sellable_units(offered[0])
+    if units <= 0:
+        return [OUT_OF_STOCK]
+    if units <= LOW_STOCK_THRESHOLD:
+        return [LOW_STOCK]
+    return []
+
+
+def evaluate(listing: dict, *, media: Optional[list] = None,
+             supplier: Any = None) -> dict:
     """The one verdict. ``listing`` is a ``marketplace_listings`` row.
 
     ``media`` is the listing's attached media rows when the caller already has
@@ -331,9 +448,18 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
     Some warnings still prevent *checkout* — an out-of-stock listing is a normal
     thing to have published — which is why the two booleans are separate and why
     both are computed here rather than by whoever renders them.
+
+    ``supplier`` is ``{"source": ..., "variants": [...]}`` when the listing came
+    from a supplier import and the caller has those rows. Given it, price and
+    stock are drawn from the variants and from the publish gate that will
+    actually decide, instead of from ``price_label`` and ``quantity`` — two
+    columns a supplier draft does not fill until the moment it publishes, so
+    reading them was asking an unpublished listing why it was not published.
+    Omitted, every previous verdict is unchanged.
     """
     blockers = []
     warnings = []
+    facts = _supplier_facts(supplier)
 
     if not _text(listing.get("title")):
         blockers.append(MISSING_TITLE)
@@ -345,16 +471,28 @@ def evaluate(listing: dict, *, media: Optional[list] = None) -> dict:
     if not _has_cover(listing, media):
         blockers.append(NO_VALID_MEDIA)
 
-    if not _has_price(listing.get("price_label")):
+    if facts is None and not _has_price(listing.get("price_label")):
         blockers.append(MISSING_PRICE)
 
     if _restricted(listing):
         blockers.append(RESTRICTED_PRODUCT)
 
-    # Stock never blocks publication. A merchant restocking a live listing is
-    # the ordinary case, and unpublishing it under them would lose the listing's
-    # ranking and reviews over a temporary fact.
-    warnings.extend(_stock_codes(listing))
+    if facts is not None:
+        # Every remaining fault, from the evaluator that owns the refusal. Its
+        # answer is carried whole and de-duplicated against what is already
+        # here -- the two agree on title, category, media and policy by design,
+        # and a code appearing twice would be counted twice in "N things left".
+        for code in _supplier_problems(listing, facts):
+            if code not in blockers:
+                blockers.append(code)
+
+    # Stock never blocks publication for a merchant-authored listing. A merchant
+    # restocking a live listing is the ordinary case, and unpublishing it under
+    # them would lose the listing's ranking and reviews over a temporary fact.
+    # For a supplier listing the same fact can be a blocker, and it arrives above
+    # as one, because there the publish gate genuinely refuses it.
+    warnings.extend(_supplier_stock_codes(facts) if facts is not None
+                    else _stock_codes(listing))
 
     publishable = not blockers
     checkout_ready = publishable and not any(
@@ -434,6 +572,17 @@ FIXES = {
     OUT_OF_STOCK: "Restock",
     LOW_STOCK: "Running low",
     UNKNOWN_INVENTORY: "Set stock count",
+    # Supplier codes. Without these a supplier listing renders its real fault as
+    # "Review this listing", which is how a merchant came to be shown "Add price"
+    # for the only fault they could not have caused and no words at all for the
+    # two they could answer.
+    NO_VARIANTS_SELECTED: "Choose variants",
+    VARIANT_PRICE_SPREAD: "Use one price",
+    PRICE_ABOVE_CHECKOUT_LIMIT: "Lower price",
+    NEGATIVE_MARGIN: "Raise price",
+    SUPPLIER_DISCONNECTED: "Reconnect supplier",
+    PROVIDER_PRODUCT_UNAVAILABLE: "Supplier removed product",
+    SUPPLIER_VARIANT_UNBOUND: "Choose which variant sells",
 }
 
 #: Which section of the edit workspace fixes each code, so a blocker on the
@@ -449,6 +598,13 @@ SECTIONS = {
     OUT_OF_STOCK: "inventory",
     LOW_STOCK: "inventory",
     UNKNOWN_INVENTORY: "inventory",
+    NO_VARIANTS_SELECTED: "variants",
+    VARIANT_PRICE_SPREAD: "pricing",
+    PRICE_ABOVE_CHECKOUT_LIMIT: "pricing",
+    NEGATIVE_MARGIN: "pricing",
+    SUPPLIER_DISCONNECTED: "supplier",
+    PROVIDER_PRODUCT_UNAVAILABLE: "supplier",
+    SUPPLIER_VARIANT_UNBOUND: "variants",
 }
 
 

@@ -166,11 +166,15 @@ def _authoritative(business_id, store_id, actor_user_id, connection_id, provider
       the draft's provenance record.
     * **variants** — attempted only when the product payload carried none, since
       CJ returns them inline on some endpoint versions and not others.
-    * **inventory** — best-effort. A failed inventory read leaves each variant
-      at whatever the catalogue said and does *not* mark anything out of stock.
-      This is the asymmetry that matters: an inventory outage must not empty a
-      merchant's shelf, because an empty shelf looks like a normal bad day and
-      nobody pages anyone about it.
+    * **inventory** — best-effort about the shelf, not about the record. A failed
+      inventory read leaves each variant at whatever the catalogue said and does
+      *not* mark anything out of stock. This is the asymmetry that matters: an
+      inventory outage must not empty a merchant's shelf, because an empty shelf
+      looks like a normal bad day and nobody pages anyone about it. But the
+      reason now comes back as the third return value and gets written down —
+      see :func:`_apply_inventory` for what silence cost here.
+
+    Returns ``(product, snapshot_id, inventory_error)``.
     """
     try:
         product_read = gateway.read(
@@ -197,17 +201,70 @@ def _authoritative(business_id, store_id, actor_user_id, connection_id, provider
             # is a truthful description of what we know.
             pass
 
-    try:
-        inventory_read = gateway.read(
-            "inventory", business_id=business_id, store_id=store_id,
-            actor_user_id=actor_user_id, connection_id=connection_id,
-            params={"pid": external_product_id}, context=context, adapter=adapter)
-        readings = normalize.inventory(provider, inventory_read.get("data"))
-        product["variants"] = normalize.apply_inventory(product["variants"], readings)
-    except (SupplierError, normalize.NormalizationError):
-        pass
+    inventory_error = _apply_inventory(
+        product, business_id, store_id, actor_user_id, connection_id, provider,
+        external_product_id, context=context, adapter=adapter)
 
-    return product, product_read.get("snapshot_id")
+    return product, product_read.get("snapshot_id"), inventory_error
+
+
+#: How many times to re-ask for inventory after the gateway's own single-flight
+#: lease turns us away, and how long to wait when the 429 advises nothing. Only
+#: ``request_in_progress`` is retried: it is the one failure that is ours rather
+#: than the provider's, and the one guaranteed to clear on its own.
+_LEASE_RETRIES = 3
+_LEASE_PAUSE_SECONDS = 2.0
+
+
+def _apply_inventory(product, business_id, store_id, actor_user_id, connection_id,
+                     provider, external_product_id, *, context=None, adapter=None):
+    """Attach stock to ``product["variants"]``. Returns the failure code, or ``None``.
+
+    Still best-effort about the *shelf* — a failure here leaves each variant at
+    whatever the catalogue said and marks nothing out of stock, because an
+    inventory outage must not empty a merchant's store. What is no longer
+    best-effort is the *record*: the caller receives the reason and writes it to
+    ``marketplace_product_sources``, so a listing that imported without stock can
+    be found by asking, instead of only by noticing.
+
+    That distinction is the whole defect this function was extracted to fix. The
+    code here used to be a bare ``except … pass``, and the failure it swallowed
+    most often was not CJ being down. It was ``gateway._cached_read`` refusing
+    *us*: inventory is cached for ten seconds behind a cross-process lease, a
+    multi-item import touches the same product more than once inside that window,
+    and the second pass is turned away with ``request_in_progress``. In
+    production that silently voided stock for 683 of 719 variants — every one of
+    which CJ could and still can count precisely.
+
+    So a lease collision is now waited out rather than absorbed. Retrying is
+    cheap and does not spend provider quota: the winning caller populates the
+    same cache entry, so the retry is normally served from it.
+    """
+    last = None
+    for attempt in range(_LEASE_RETRIES + 1):
+        try:
+            inventory_read = gateway.read(
+                "inventory", business_id=business_id, store_id=store_id,
+                actor_user_id=actor_user_id, connection_id=connection_id,
+                params={"pid": external_product_id}, context=context, adapter=adapter)
+            readings = normalize.inventory(provider, inventory_read.get("data"))
+        except SupplierError as exc:
+            last = getattr(exc, "code", None) or "inventory_read_failed"
+            if last != "request_in_progress" or attempt == _LEASE_RETRIES:
+                return last
+            pause = getattr(exc, "retry_after", None)
+            time.sleep(min(float(pause) if pause else _LEASE_PAUSE_SECONDS, 5.0))
+            continue
+        except normalize.NormalizationError:
+            return "inventory_unreadable"
+        if not readings:
+            # The read succeeded and described nothing this product's variants
+            # match. Not an outage, and not a silence worth nothing: it is how a
+            # normalizer seam presents, and this integration has had three.
+            return "inventory_empty"
+        product["variants"] = normalize.apply_inventory(product["variants"], readings)
+        return None
+    return last
 
 
 def _validate(product, selection):
@@ -469,7 +526,7 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
     with nothing behind it, which is the answer the tell is supposed to be able
     to give.
     """
-    product, snapshot_id = _authoritative(
+    product, snapshot_id, inventory_error = _authoritative(
         business_id, store_id, actor_user_id, connection_id, provider,
         external_product_id, context=context, adapter=adapter)
     chosen = _validate(product, selection)
@@ -518,7 +575,14 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
         supplier_cost_currency=product.get("currency"),
         inventory_source=provider,
         inventory_reference=external_product_id,
-        sync_state=supplier_schema.SYNC_SYNCED,
+        # STALE, not SYNCED, when the inventory read did not land. The row is
+        # linked and its catalogue facts are current; what is missing is a stock
+        # confirmation, and that is exactly what STALE means. Recording SYNCED
+        # regardless is what made the defect invisible: every production source
+        # row claimed a completed sync while 683 of 719 variants sat at UNKNOWN.
+        sync_state=(supplier_schema.SYNC_STALE if inventory_error
+                    else supplier_schema.SYNC_SYNCED),
+        last_sync_error=inventory_error,
     )
 
     payload = {

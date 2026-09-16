@@ -54983,6 +54983,61 @@ def pulse_marketplace_media_rows_for_listings(cur, listing_ids):
     return media_by_listing
 
 
+def pulse_marketplace_supplier_facts_for_listings(cur, listing_ids):
+    """Supplier provenance and variants per listing, for the readiness verdict.
+
+    ``{listing_id: {"source": <marketplace_product_sources row>, "variants":
+    [<marketplace_listing_variants rows>]}}``, and no entry at all for a listing
+    with no source row -- which is what tells `listing_readiness` to stay in its
+    merchant-authored mode.
+
+    Batched for the same reason the media loader is: the seller Store screen
+    lists up to a few hundred rows in one request, and a per-row pair of queries
+    there is the shape that emptied the connection pool once already.
+
+    Why the verdict needs these at all: a supplier draft's price lives in
+    ``marketplace_listing_variants.price_cents`` and its stock in that table's
+    ``stock_state``. ``marketplace_listings.price_label`` and ``quantity`` are
+    written by ``drafts.publish``, so an unpublished draft has neither, and a
+    verdict reading only those columns told 31 correctly-priced products in
+    production that they had no price.
+    """
+    safe_ids = [int(item_id or 0) for item_id in listing_ids if int(item_id or 0)]
+    if not safe_ids:
+        return {}
+    from services import marketplace_variants as _variants
+
+    placeholders = ",".join(["?"] * len(safe_ids))
+    facts = {}
+    try:
+        cur.execute(
+            f"SELECT * FROM {_variants.SOURCE_TABLE} WHERE listing_id IN ({placeholders})",
+            safe_ids)
+        for row in cur.fetchall():
+            item = dict(row)
+            facts[int(item.get("listing_id") or 0)] = {"source": item, "variants": []}
+        if facts:
+            # Bound as integers: both columns are declared INTEGER, and Postgres
+            # -- unlike SQLite -- refuses the comparison against a text literal.
+            owned = [int(listing_id) for listing_id in facts]
+            marks = ",".join(["?"] * len(owned))
+            cur.execute(
+                f"SELECT * FROM {_variants.VARIANT_TABLE} WHERE listing_id IN ({marks}) "
+                f"ORDER BY position ASC, id ASC", owned)
+            for row in cur.fetchall():
+                item = dict(row)
+                bucket = facts.get(int(item.get("listing_id") or 0))
+                if bucket is not None:
+                    bucket["variants"].append(item)
+    except Exception:
+        # A store with no supplier tables yet is not a broken Store screen. The
+        # verdict falls back to its merchant-authored reading, which is what
+        # every listing got before this function existed.
+        app.logger.warning("supplier readiness facts unavailable", exc_info=True)
+        return {}
+    return facts
+
+
 def pulse_marketplace_media_payload(row):
     media_type = (row.get("media_type") or "image").lower()
     media_url = pulse_media_url(row.get("media_url") or "")
@@ -55253,15 +55308,18 @@ def api_pulse_marketplace_seller_listings():
     )
     rows = [dict(row) for row in cur.fetchall()]
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [row.get("id") for row in rows])
+    supplier_by_listing = pulse_marketplace_supplier_facts_for_listings(
+        cur, [row.get("id") for row in rows])
     items = []
     for row in rows:
         media_rows = media_by_listing.get(int(row.get("id") or 0), [])
-        items.append(pulse_marketplace_seller_listing_payload(row, media_rows))
+        items.append(pulse_marketplace_seller_listing_payload(
+            row, media_rows, supplier=supplier_by_listing.get(int(row.get("id") or 0))))
     conn.close()
     return jsonify({"ok": True, "items": items, "limit": limit})
 
 
-def pulse_marketplace_seller_listing_payload(row, media_rows):
+def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
     """A listing as its own merchant sees it: the public payload plus the verdicts.
 
     Every seller-facing route that hands back a listing goes through here, and
@@ -55277,6 +55335,14 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
     has to see the NULL that separates "no stock tracked" from "none left".
     Losing exactly that distinction is what the phone's own derivation did.
 
+    `supplier` is this listing's entry from
+    `pulse_marketplace_supplier_facts_for_listings`, when the caller has a
+    cursor to load it with. Without it a supplier-imported draft is judged on
+    `price_label` and `quantity`, which `drafts.publish` writes and an
+    unpublished draft therefore has neither of -- so the verdict says "Add
+    price" about a product whose every variant is priced. Passing None is not a
+    compatibility shim: a merchant-authored listing genuinely has no such row.
+
     Not folded into `pulse_marketplace_listing_payload` because that serializer
     also feeds the buyer endpoints, and what a product still needs before it can
     go live is the merchant's own business -- SS27. Every caller of this function
@@ -55288,7 +55354,7 @@ def pulse_marketplace_seller_listing_payload(row, media_rows):
     from services.business_os.marketplace import listing_review as _review
 
     payload = pulse_marketplace_listing_payload(row, media_rows)
-    verdict = _readiness.evaluate(row, media=media_rows)
+    verdict = _readiness.evaluate(row, media=media_rows, supplier=supplier)
     payload["readiness"] = verdict
     # What a BULK action would do to this row, decided by the same function the
     # batch route decides with. SS34's preview -- "Publish 14 - 4 blocked" -- is
@@ -55356,8 +55422,10 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
     if not listing:
         return {}
     media_by_listing = pulse_marketplace_media_rows_for_listings(cur, [listing.get("id")])
+    supplier_by_listing = pulse_marketplace_supplier_facts_for_listings(cur, [listing.get("id")])
     return pulse_marketplace_seller_listing_payload(
-        listing, media_by_listing.get(int(listing.get("id") or 0), [])
+        listing, media_by_listing.get(int(listing.get("id") or 0), []),
+        supplier=supplier_by_listing.get(int(listing.get("id") or 0))
     )
 
 
@@ -56417,7 +56485,8 @@ def _marketplace_batch_decide(cur, normalized, user_id):
             owned.values(), normalized["payload"], costs, currents)
 
     decided = _batch.evaluate_rows(
-        owned.values(), normalized["action"], media_by_listing, plans)
+        owned.values(), normalized["action"], media_by_listing, plans,
+        pulse_marketplace_supplier_facts_for_listings(cur, list(owned)))
     blocks = {int(row["id"]): block for row, block in decided}
     return owned, blocks, plans
 
@@ -96114,7 +96183,9 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
     # disagreed, and the row's answer was the optimistic one.
     from services.business_os.marketplace import listing_readiness as _readiness
     _media = pulse_marketplace_media_rows_for_listings(cur, [listing_id])
-    verdict = _readiness.evaluate(listing, media=_media.get(int(listing_id), []))
+    _supplier = pulse_marketplace_supplier_facts_for_listings(cur, [listing_id])
+    verdict = _readiness.evaluate(listing, media=_media.get(int(listing_id), []),
+                                  supplier=_supplier.get(int(listing_id)))
     # Two ways through, because this route serves two journeys. `publishable`
     # is the first submission; `resubmittable` is the answer to a rejection.
     #
