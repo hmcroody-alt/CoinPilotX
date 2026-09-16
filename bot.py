@@ -50665,6 +50665,39 @@ def api_pulse_live_mux_webhook():
                     """,
                     (status, playback_id, playback_url, processing_status, now, mux_asset_id),
                 )
+                # Messenger attachments are the fourth table that can hold a Mux
+                # asset id, and the only one this webhook never told. Without
+                # this branch an ingested conversation video would sit at the
+                # status it was created with forever: `comm_v2_attachments` has
+                # carried `mux_asset_id`/`mux_playback_id`/`mux_status` since it
+                # was introduced, but nothing ever advanced them.
+                #
+                # `playback_url` is flipped to HLS ONLY on `ready`, and that
+                # gate is the whole safety property here. `_attachment_payload`
+                # serves `playback_url` as a video's `url`, so writing the HLS
+                # URL any earlier would point the player at a manifest Mux has
+                # not finished producing -- turning a merely slow video into a
+                # black one, which is the exact failure this work exists to
+                # remove. On `errored` the column is left untouched on purpose:
+                # the progressive download URL is still a working source, and a
+                # failed transcode must degrade to slow, never to broken.
+                #
+                # Guarded by `table_exists` because a deployment where the
+                # comm_v2 route pack failed to register would otherwise abort
+                # this transaction -- and on Postgres a single failed statement
+                # poisons the rest of it, so live-replay reconciliation above
+                # would be lost too and Mux would retry the event forever.
+                if table_exists(cur, "comm_v2_attachments"):
+                    cur.execute(
+                        """
+                        UPDATE comm_v2_attachments
+                        SET mux_status=?,
+                            mux_playback_id=COALESCE(NULLIF(?, ''), mux_playback_id),
+                            playback_url=CASE WHEN ?='ready' AND ?<>'' THEN ? ELSE playback_url END
+                        WHERE mux_asset_id=? AND COALESCE(mux_asset_id,'')<>''
+                        """,
+                        (status, playback_id, status, playback_url, playback_url, mux_asset_id),
+                    )
                 if status == "ready":
                     # Mux has already told us how long the video really is -- the
                     # duration was parsed above and, until now, spent only on live
