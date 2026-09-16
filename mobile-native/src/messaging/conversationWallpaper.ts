@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getConversationControlCenter } from "../api/messenger";
 import { ChatWallpaperId, DEFAULT_CHAT_WALLPAPER, isChatWallpaperId } from "../theme/chatWallpaper";
 
@@ -23,7 +23,25 @@ import { ChatWallpaperId, DEFAULT_CHAT_WALLPAPER, isChatWallpaperId } from "../t
  * where there is no choice, or where we do not know it yet.
  */
 
-const CACHE_PREFIX = "pulsesoc.native.messenger.wallpaper.v1";
+/**
+ * The default's id is part of the key, which matters when the product default
+ * changes again.
+ *
+ * The server sends a value for every conversation — `_merge_control_settings`
+ * layers the stored row over its defaults, so "no choice" arrives as the
+ * default rather than as nothing. The client therefore cannot tell a real
+ * choice from a gap-filler, and caches both. That is harmless until the default
+ * changes: entries written under the old default would then out-rank the new
+ * one, and a conversation nobody customised would paint the new default, swap
+ * to the stale cached one, then swap back when the server answered. Two visible
+ * changes of background on open, for the majority of conversations.
+ *
+ * Keying on the default orphans those entries instead, so the new default
+ * paints in the first frame and stays. Someone with a real choice takes one
+ * re-confirmation from the server the first time they open a thread after such
+ * a release, and is cached again after it.
+ */
+const CACHE_PREFIX = `pulsesoc.native.messenger.wallpaper.v1.${DEFAULT_CHAT_WALLPAPER}`;
 
 /**
  * Per viewer, not just per conversation. Two accounts on one device must not
@@ -65,6 +83,22 @@ export async function rememberConversationWallpaper(userId: number, conversation
 }
 
 /**
+ * Forget a cached choice, for when the server reports there is no longer one.
+ *
+ * Without this, a choice made here and then cleared somewhere else — the web
+ * control centre, another device — would survive indefinitely: the cache paints
+ * it, the server's "no choice" answer does not displace it, and nothing else
+ * ever writes the key.
+ */
+export async function forgetConversationWallpaper(userId: number, conversationId: number): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(cacheKey(userId, conversationId));
+  } catch {
+    // Same reasoning as above.
+  }
+}
+
+/**
  * Resolve the wallpaper for a conversation.
  *
  * Returns the Cosmic default synchronously on the very first render, which is
@@ -81,24 +115,40 @@ export async function rememberConversationWallpaper(userId: number, conversation
  */
 export function useConversationWallpaper(userId: number, conversationId: number, enabled = true) {
   const [wallpaper, setWallpaper] = useState<ChatWallpaperId>(DEFAULT_CHAT_WALLPAPER);
+  /**
+   * Set once the viewer picks a wallpaper in the control centre during this
+   * visit. Both reads below started before that pick and so describe the state
+   * it replaced; applying either afterwards would revert the background under
+   * the person who just changed it.
+   */
+  const picked = useRef(false);
 
   useEffect(() => {
     if (!userId || !conversationId) return;
     let live = true;
     const key = cacheKey(userId, conversationId);
+    picked.current = false;
 
     (async () => {
       const cached = await readCachedConversationWallpaper(userId, conversationId);
-      if (live && cached) setWallpaper(cached);
+      if (live && !picked.current && cached) setWallpaper(cached);
       if (!enabled || refreshed.has(key)) return;
       refreshed.add(key);
       try {
         const data = await getConversationControlCenter(conversationId);
         const value = data.settings?.appearance?.wallpaper;
-        // An unset or unrecognised value is the "no choice made" case, and the
-        // default already on screen is the right answer for it. Only a value we
-        // recognise displaces it.
-        if (!isChatWallpaperId(value)) return;
+        if (picked.current) return;
+        // The server has now answered, and its answer is authoritative for the
+        // preference. Anything it sends that this build cannot draw — the
+        // "default" sentinel, an empty value, an id from a later release — means
+        // there is no choice to honour, so the default is what belongs on screen
+        // and a cached choice has to be dropped rather than left to out-rank it.
+        // Doing nothing here would strand a choice that was cleared elsewhere.
+        if (!isChatWallpaperId(value)) {
+          await forgetConversationWallpaper(userId, conversationId);
+          if (live) setWallpaper(DEFAULT_CHAT_WALLPAPER);
+          return;
+        }
         await rememberConversationWallpaper(userId, conversationId, value);
         if (live) setWallpaper(value);
       } catch {
@@ -115,6 +165,7 @@ export function useConversationWallpaper(userId: number, conversationId: number,
 
   const applyWallpaper = useCallback((value: unknown) => {
     if (!isChatWallpaperId(value)) return;
+    picked.current = true;
     setWallpaper(value);
     void rememberConversationWallpaper(userId, conversationId, value);
   }, [conversationId, userId]);
