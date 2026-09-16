@@ -292,8 +292,22 @@ def get_mux_asset(asset_id):
     return {**result, "asset": asset, "asset_id": asset.get("id") or asset_id, "playback_id": playback_id, "mux_status": asset.get("status") or ""}
 
 
-def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
-    """Create a public Mux playback asset from an already durable media URL."""
+def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0, playback_policy="public"):
+    """Create a Mux playback asset from an already durable media URL.
+
+    ``playback_policy`` defaults to ``"public"`` because that is what every
+    caller of this function has always got, and reels/live/replay are content
+    whose whole purpose is to be reachable by a bare URL. Messenger is the one
+    caller that passes ``"signed"``: a conversation video is private, and a
+    public playback id is an unguessable URL rather than an access check --
+    anyone it leaks to can watch it forever, with no membership test and no
+    expiry. That is a weaker guarantee than the rest of the messenger media
+    path, which re-checks conversation membership on every single request.
+
+    Anything other than the two policies Mux defines falls back to ``"public"``
+    rather than being forwarded, so a typo in a caller cannot turn into a 400
+    from Mux at asset-creation time -- i.e. into a video that never ingests.
+    """
     log_mux_diagnostics_once()
     input_url = normalize_url(input_url)
     auth_header = _mux_auth_header()
@@ -360,9 +374,12 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
             "source": source_check,
             "message": "Mux cannot download the video source URL. Configure MUX_SOURCE_BASE_URL or R2_MUX_SOURCE_BASE_URL to a public R2 source.",
         }
+    requested_policy = str(playback_policy or "public").strip().lower()
+    if requested_policy not in {"public", "signed"}:
+        requested_policy = "public"
     payload = {
         "input": input_url,
-        "playback_policy": ["public"],
+        "playback_policy": [requested_policy],
         "mp4_support": "standard",
     }
     request = Request(
@@ -417,13 +434,22 @@ def create_mux_asset_from_url(input_url, *, trace_id="", media_id=0):
     asset = data.get("data") or {}
     playback_ids = asset.get("playback_ids") or []
     playback_id = ""
+    playback_id_policy = ""
+    # Prefer the policy we actually asked for rather than a hardcoded "public".
+    # An asset can carry more than one playback id, and picking the wrong one is
+    # not a cosmetic error: a signed id served unsigned is a 403, and a public id
+    # recorded as signed gets a pointless token appended. The policy is read back
+    # off Mux's response instead of echoing the request so that the column the
+    # caller stores describes the id it was handed, not the one it hoped for.
     for item in playback_ids:
-        if item.get("policy") == "public" or not playback_id:
+        if item.get("policy") == requested_policy or not playback_id:
             playback_id = item.get("id") or ""
+            playback_id_policy = str(item.get("policy") or "")
     result = {
         "ok": bool(asset.get("id") and playback_id),
         "asset_id": asset.get("id") or "",
         "playback_id": playback_id,
+        "playback_policy": playback_id_policy or requested_policy,
         "status": asset.get("status") or "created",
         "status_code": response_status,
         "error_type": "" if asset.get("id") and playback_id else "missing_playback_id",
