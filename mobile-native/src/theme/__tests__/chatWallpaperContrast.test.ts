@@ -1,3 +1,5 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import { colors } from "../colors";
 import {
   CHAT_WALLPAPER_IDS,
@@ -88,6 +90,13 @@ function wallpaperExtremes(spec: ChatWallpaperSpec): { darkest: Rgb; lightest: R
 /** The bubble fills and text colours as `ChatScreen` declares them. */
 const INCOMING_BUBBLE = "rgba(12,24,43,0.88)";
 const OUTGOING_BUBBLE = "rgba(37,83,158,0.82)";
+/**
+ * The 1px outlines on those same fills. They are not decoration: over the
+ * default's field the incoming fill and the field are within 1% of each other,
+ * so the border is the only thing that makes an incoming bubble a bubble.
+ */
+const INCOMING_BORDER = "rgba(105,218,240,0.28)";
+const OUTGOING_BORDER = "rgba(93,174,255,0.58)";
 
 const TEXT_CLASSES = [
   // Every one of these is drawn inside a bubble, so each is audited against
@@ -157,7 +166,7 @@ describe("chat wallpaper contrast", () => {
     }
   });
 
-  it("keeps both bubbles reading as bubbles against the default's field", () => {
+  it("keeps both bubble fills reading as shapes at the field's brightest extreme", () => {
     // A translucent bubble over a field can vanish in two opposite ways, and
     // the first draft of the spec hit one of them: it was bright enough that
     // the 0.82-alpha outgoing fill sat at 1.13:1 against the background — the
@@ -169,6 +178,12 @@ describe("chat wallpaper contrast", () => {
     // why the two numbers come out level (1.452 and 1.450) — that balance is
     // the optimum, not a coincidence. For reference the inherited wallpapers
     // reach as low as 1.03 here.
+    //
+    // Read the scope narrowly. `lightest` is the synthetic over-count defined
+    // above — every shape stacked on the brightest stop, which no pixel gets —
+    // so this balances the fills at the one field brightness that bounds the
+    // rest. It is *not* a statement about a typical point on screen, and the
+    // incoming fill does not survive there; see the next test.
     const { lightest } = wallpaperExtremes(resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER));
     const incoming = contrast(lightest, over(lightest, parse(INCOMING_BUBBLE)));
     const outgoing = contrast(lightest, over(lightest, parse(OUTGOING_BUBBLE)));
@@ -180,6 +195,66 @@ describe("chat wallpaper contrast", () => {
     const field = relativeLuminance(lightest);
     expect(relativeLuminance(over(lightest, parse(INCOMING_BUBBLE)))).toBeLessThan(field);
     expect(relativeLuminance(over(lightest, parse(OUTGOING_BUBBLE)))).toBeGreaterThan(field);
+  });
+
+  it("separates the incoming bubble with its border, because its fill cannot", () => {
+    // Measured off a device capture of a real thread, then reproduced here: at
+    // the field brightnesses that actually occur, the incoming fill is not a
+    // shape at all.
+    //
+    //   field                        L        incoming-sep  outgoing-sep
+    //   lightest (synthetic)      0.0392         1.452          1.450
+    //   one orb                   0.0153         1.094          1.858
+    //   bare gradient             0.0085         1.008          2.014
+    //   scrimmed edge             0.0037         1.085          2.128
+    //
+    // Most of the screen is bare gradient, and 1.008:1 is nothing — the 0.88
+    // fill and the field it sits on are the same colour to the eye. That is not
+    // a defect, because the bubble is outlined; but it does mean the *border*
+    // is load-bearing for §5/§6 and the fill is not. Nothing above would notice
+    // the border being dropped or dimmed, since the test before this one keeps
+    // passing at 1.452 whatever the border does. This is that missing guard.
+    const spec = resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER);
+    const stops = spec.gradient.map(parse).sort((a, b) => relativeLuminance(a) - relativeLuminance(b));
+    const brightest = stops[stops.length - 1];
+    const strongestShape = [...spec.shapes].sort((a, b) => parse(b.color).a - parse(a.color).a)[0];
+    const strongestScrim = [...spec.scrim.map(parse)].sort((a, b) => b.a - a.a)[0];
+
+    // The field as it is actually composited, at the three places a bubble lands.
+    const realFields = [
+      brightest,
+      over(brightest, parse(strongestShape.color)),
+      over(stops[0], strongestScrim)
+    ];
+
+    for (const field of realFields) {
+      // The premise: the fill really has stopped separating. If a future spec
+      // change makes the fill do the work again this fails loudly and should be
+      // rewritten rather than relaxed — it is here to keep the comment honest.
+      expect(contrast(field, over(field, parse(INCOMING_BUBBLE)))).toBeLessThan(1.15);
+
+      // The border is what draws the bubble, so it carries the floor. 1.8:1 is
+      // below the ~1.97 the current colour reaches on bare gradient, which is
+      // the tightest of the three.
+      expect(contrast(field, over(field, parse(INCOMING_BORDER)))).toBeGreaterThanOrEqual(1.8);
+
+      // Outgoing separates on fill alone everywhere, which is why it needs no
+      // equivalent rescue. Asserted so the two do not silently swap roles.
+      expect(contrast(field, over(field, parse(OUTGOING_BUBBLE)))).toBeGreaterThanOrEqual(1.8);
+      expect(contrast(field, over(field, parse(OUTGOING_BORDER)))).toBeGreaterThanOrEqual(1.8);
+    }
+  });
+
+  it("audits the bubble colours ChatScreen actually declares", () => {
+    // Everything above reasons about four literals that live in another file.
+    // Copies drift, and a drifted copy turns this whole suite into a test of
+    // itself — it would keep passing while the screen shipped a bubble nobody
+    // had ever measured. So read the screen and require the literals to still
+    // be there. Whitespace-insensitive because prettier owns the formatting.
+    const source = readFileSync(join(__dirname, "..", "..", "screens", "ChatScreen.tsx"), "utf8").replace(/\s+/g, "");
+    for (const color of [INCOMING_BUBBLE, OUTGOING_BUBBLE, INCOMING_BORDER, OUTGOING_BORDER]) {
+      expect(source).toContain(color.replace(/\s+/g, ""));
+    }
   });
 
   it("keeps the default subtle — no layer is loud", () => {
