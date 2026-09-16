@@ -154,6 +154,35 @@ export function isLoadableMediaUrl(value: string | null | undefined): boolean {
   return /^(https?:|data:|file:)/i.test(String(value || "").trim());
 }
 
+/**
+ * Is this a streaming playlist rather than a file that can be saved or shared?
+ *
+ * A player and a downloader want different things from the same item, and
+ * conflating them is silent. An HLS manifest is a few hundred bytes of text
+ * naming segments; hand it to `downloadMedia` and the transfer *succeeds*, the
+ * cache gets a `.m3u8`, and Photos rejects the write — reported to the user as
+ * "could not save this to your library" about a video that is playing on their
+ * screen. Nothing errors anywhere near the cause.
+ *
+ * The query string is stripped before the test, on purpose. A Mux manifest
+ * under the signed playback policy is `.../vod.m3u8?token=<jwt>`, so a check
+ * against the whole URL would stop recognising manifests exactly when messenger
+ * started using them. DASH is named alongside HLS because it is one Mux
+ * configuration away and fails identically.
+ *
+ * The mirror of `_is_adaptive_manifest` in `pulse_communications_v2/service.py`.
+ * The server already separates the two URLs on the wire; this is the client's
+ * floor under that, for producers and older payloads that do not.
+ */
+export function isAdaptiveManifest(value: string | null | undefined): boolean {
+  const path = String(value || "")
+    .split("?")[0]
+    .split("#")[0]
+    .trim()
+    .toLowerCase();
+  return path.endsWith(".m3u8") || path.endsWith(".mpd");
+}
+
 function normalizeApiBaseUrl(value: string) {
   const url = String(value || "").trim().replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(url)) return "https://pulsesoc.com";

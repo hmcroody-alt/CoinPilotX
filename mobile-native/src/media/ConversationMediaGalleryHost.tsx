@@ -17,7 +17,7 @@
 import { createContext, useContext, useMemo } from "react";
 import { useTranslation } from "../i18n";
 
-import { isLoadableMediaUrl } from "../api/config";
+import { absoluteApiUrl, isAdaptiveManifest, isLoadableMediaUrl } from "../api/config";
 import { NativeMediaViewer, NativeMediaViewerItem } from "../components/NativeMediaViewer";
 import {
   grantMessengerMediaAccess,
@@ -119,6 +119,28 @@ export function galleryViewerItems(
     const grant = resolved[item.key];
     const unavailable = Boolean(grant?.unavailable);
     const label = item.kind === "video" ? labels.video(item, position) : labels.photo(item, position);
+    // A streamed video's playback source and its downloadable file are two
+    // different resources, so they are resolved separately here and never
+    // allowed to swap places.
+    //
+    // PLAYBACK prefers the manifest. Everywhere else in this function the grant
+    // wins, because it is the freshest credential — but a grant is a progressive
+    // download of the whole file, and preferring it over an adaptive manifest
+    // throws away the only mechanism that lets a video start on a first segment
+    // instead of a complete transfer (§9/§21). The manifest is already a signed,
+    // membership-gated URL by the time the server hands it over, so nothing is
+    // given up by preferring it.
+    //
+    // DOWNLOAD must never be a manifest. `preferLoadable` alone would happily
+    // return one, and the failure is silent: the transfer succeeds, a playlist
+    // lands in the cache, and Photos rejects the write. Empty is the honest
+    // answer when no file URL exists, and the viewer falls back to `url`.
+    const manifest = isAdaptiveManifest(item.url) ? item.url : "";
+    const downloadCandidate = preferLoadable(
+      grant?.url,
+      absoluteApiUrl(item.downloadUrl),
+      absoluteApiUrl(item.url)
+    );
     return {
       // The viewer's `id` becomes the playback-coordinator owner id, so it has
       // to separate two items. Messenger's row ids come from several tables and
@@ -154,7 +176,8 @@ export function galleryViewerItems(
       // Order still prefers the grant: it is the freshest credential and the
       // only one that can be re-minted when it expires. `isLoadableMediaUrl` is
       // the floor under that preference, not a replacement for it.
-      url: unavailable ? "" : preferLoadable(grant?.url, item.url),
+      url: unavailable ? "" : manifest || preferLoadable(grant?.url, item.url),
+      downloadUrl: unavailable || isAdaptiveManifest(downloadCandidate) ? "" : downloadCandidate,
       // Poster order is INVERTED on purpose. The seed's thumbnail is the exact
       // bitmap already decoded in the thread, so preferring it means the viewer
       // opens on a picture instead of re-fetching an equivalent URL that differs

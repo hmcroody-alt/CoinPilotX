@@ -43,6 +43,7 @@ function item(attachmentId: number, messageId = attachmentId * 10, overrides: Pa
     messageId,
     kind: "image",
     url: `https://cdn.example/${attachmentId}.jpg`,
+    downloadUrl: `https://cdn.example/${attachmentId}.jpg`,
     thumbnailUrl: "",
     mimeType: "image/jpeg",
     width: 1600,
@@ -102,6 +103,37 @@ describe("identity", () => {
     const normalized = normalizeConversationMediaItem({ id: 77, media_upload_id: 4242, message_id: 3, media_type: "image" });
     expect(normalized?.attachmentId).toBe(77);
     expect(normalized?.mediaUploadId).toBe(4242);
+  });
+
+  it("keeps the downloadable file separate from the playback source", () => {
+    // For a Mux-backed video the server sends two different resources: `url`
+    // is the HLS manifest the player streams, `download_url` is the
+    // progressive original Save to Photos needs. Dropping the second here is
+    // invisible — the gallery falls back to `url`, the download of a playlist
+    // succeeds, and the photo library is what reports the failure.
+    const normalized = normalizeConversationMediaItem({
+      id: 601,
+      media_upload_id: 87,
+      message_id: 1728,
+      media_type: "video",
+      url: "https://stream.mux.com/vod601.m3u8?token=eyJ.abc.def",
+      download_url: "/api/messages/media/87/download"
+    });
+    expect(normalized?.url).toBe("https://stream.mux.com/vod601.m3u8?token=eyJ.abc.def");
+    expect(normalized?.downloadUrl).toBe("/api/messages/media/87/download");
+  });
+
+  it("leaves the downloadable file empty rather than copying the playback source", () => {
+    // Absent has to stay distinguishable from "same as url". Copying `url` in
+    // would assert that a manifest is a file, which is the exact claim the
+    // field exists to stop anyone making.
+    const normalized = normalizeConversationMediaItem({
+      id: 601,
+      message_id: 1728,
+      media_type: "video",
+      url: "https://stream.mux.com/vod601.m3u8"
+    });
+    expect(normalized?.downloadUrl).toBe("");
   });
 });
 

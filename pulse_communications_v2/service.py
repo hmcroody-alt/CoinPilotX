@@ -2539,6 +2539,22 @@ def _prepare_attachment_media(cur, media: dict, media_id: int) -> dict:
     return out
 
 
+def _is_adaptive_manifest(value: Any) -> bool:
+    """Is this URL a streaming playlist rather than a file you can save?
+
+    Deliberately a shape test on the path, ignoring the query string: a signed
+    Mux manifest is ``.../vod.m3u8?token=...``, so anything that inspected the
+    whole URL would stop recognising a manifest the moment it was signed --
+    which is exactly the case that matters.
+
+    Both of Mux's playlist formats are named. HLS is what messenger serves
+    today; DASH is one configuration change away, and a downloader handed an
+    ``.mpd`` fails the same way for the same reason.
+    """
+    path = str(value or "").split("?", 1)[0].split("#", 1)[0].strip().lower()
+    return path.endswith(".m3u8") or path.endswith(".mpd")
+
+
 def _attachment_payload(row: dict) -> dict:
     """The one canonical attachment payload for every comm_v2 read/write path.
 
@@ -2605,6 +2621,29 @@ def _attachment_payload(row: dict) -> dict:
         url = playback_url
     else:
         url = row.get("url") or cdn_url or playback_url or thumbnail_url or ""
+    # The downloadable file, kept as a separate field from the playback source.
+    #
+    # `url` is what a PLAYER is pointed at, and for a Mux-backed video that is an
+    # HLS manifest -- a text playlist naming segments, not a movie. Save to
+    # Photos and Share hand `url` to a downloader, so a client with no other
+    # field to read would write a `.m3u8` into the photo library and report a
+    # failure about a video the user is watching. The two really are different
+    # resources and the wire has to say so, rather than leaving every client to
+    # re-derive it from the URL's shape.
+    #
+    # `row["url"]` is the right source because that column is written with the
+    # durable original for every path that reaches here -- foundation rows store
+    # `/api/messages/media/<id>/download`, which is progressive, membership
+    # checked, and the same bytes that were uploaded.
+    #
+    # A manifest is refused rather than passed through: an empty `download_url`
+    # makes a client fall back to `url` and fail honestly, which is strictly
+    # better than silently saving a playlist as if it were the video.
+    download_url = ""
+    for candidate in (row.get("url") or "", cdn_url):
+        if candidate and not _is_adaptive_manifest(candidate):
+            download_url = candidate
+            break
     try:
         waveform = json.loads(row.get("waveform_json") or "[]")
     except Exception:
@@ -2648,6 +2687,7 @@ def _attachment_payload(row: dict) -> dict:
         "message_id": int(row.get("message_id") or 0),
         "media_type": row.get("media_type") or "file",
         "url": url,
+        "download_url": download_url,
         "cdn_url": cdn_url,
         "playback_url": playback_url,
         "thumbnail_url": thumbnail_url,

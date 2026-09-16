@@ -162,3 +162,105 @@ describe("an unloadable URL never displaces a loadable one", () => {
     expect(viewerItem.mimeType).toBe("image/jpeg");
   });
 });
+
+/**
+ * The second half of the same chooser: which URL is the FILE.
+ *
+ * Everything above is about what the player is pointed at. Once conversation
+ * video started playing back through Mux, `item.url` stopped being a file at
+ * all — it is an HLS manifest, a text playlist naming segments. That is the
+ * point of it (§9/§21: first frame from the manifest plus one segment, never a
+ * full download), and it is also why Save to Photos and Share cannot use it.
+ *
+ * The failure mode is what makes this worth testing rather than reasoning
+ * about: handing a manifest to the downloader does not raise. The transfer
+ * succeeds, the cache gets a `.m3u8`, and Photos rejects the write — so the
+ * user is told their library refused a video they are watching, and the only
+ * error surfaces four layers from the cause.
+ */
+describe("playback source and downloadable file are chosen separately", () => {
+  const grant = {
+    url: "https://pulsesoc.com/api/messages/media/87/download?mt=grant",
+    thumbnailUrl: "",
+    unavailable: false
+  };
+
+  it("plays the manifest even though the grant is loadable", () => {
+    // Everywhere else in this function the grant wins, because it is the
+    // freshest credential. Here it must not: a grant is a progressive transfer
+    // of the whole file, so preferring it over the manifest throws away the
+    // only mechanism that starts a video on one segment. The manifest is
+    // already signed and membership-gated by the time the server sends it, so
+    // nothing is given up.
+    const seed = item({ url: "https://stream.mux.com/pb601.m3u8?token=eyJ.abc.def" });
+    const [viewerItem] = galleryViewerItems([seed], { [seed.key]: grant }, labels);
+    expect(viewerItem.url).toBe("https://stream.mux.com/pb601.m3u8?token=eyJ.abc.def");
+  });
+
+  it("downloads the grant, never the manifest", () => {
+    const seed = item({ url: "https://stream.mux.com/pb601.m3u8?token=eyJ.abc.def" });
+    const [viewerItem] = galleryViewerItems([seed], { [seed.key]: grant }, labels);
+    expect(viewerItem.downloadUrl).toBe(grant.url);
+  });
+
+  it("recognises a manifest whose token hides the extension behind a query string", () => {
+    // The trap this is here for. A signed manifest is `.m3u8?token=<jwt>`, so
+    // any check against the whole URL — `endsWith(".m3u8")` on the raw string —
+    // stops recognising manifests at exactly the moment messenger starts using
+    // them, and does it silently. Asserted through the unsigned/signed pair so
+    // the test cannot pass by accident.
+    const unsigned = item({ url: "https://stream.mux.com/pb601.m3u8" });
+    const signed = item({ url: "https://stream.mux.com/pb601.m3u8?token=eyJ.abc.def" });
+    expect(galleryViewerItems([unsigned], { [unsigned.key]: grant }, labels)[0].url).toBe(unsigned.url);
+    expect(galleryViewerItems([signed], { [signed.key]: grant }, labels)[0].url).toBe(signed.url);
+  });
+
+  it("still prefers the grant for playback when the item is not a stream", () => {
+    // The control. Without this, "the seed always wins for video" would pass
+    // every test above while reintroducing the site-relative-grant bug for the
+    // progressive path that most conversation video is still served over.
+    const seed = item();
+    const [viewerItem] = galleryViewerItems([seed], { [seed.key]: grant }, labels);
+    expect(viewerItem.url).toBe(grant.url);
+  });
+
+  it("falls back to the wire's download URL, absolutized, when no grant has resolved", () => {
+    // A relative URL is the original black-screen bug in a different costume:
+    // the native downloader has no origin to resolve it against and fails
+    // without a useful error.
+    const seed = item({
+      url: "https://stream.mux.com/pb601.m3u8?token=eyJ.abc.def",
+      downloadUrl: "/api/messages/media/87/download"
+    });
+    const [viewerItem] = galleryViewerItems([seed], {}, labels);
+    expect(viewerItem.downloadUrl).toBe("https://pulsesoc.com/api/messages/media/87/download");
+  });
+
+  it("reports no file at all rather than offering the playlist as one", () => {
+    // Empty is honest: the viewer falls back to `url` and the download fails
+    // where it can be reported. Returning the manifest would instead assert
+    // that a playlist is a movie, which is the silent failure.
+    const seed = item({ url: "https://stream.mux.com/pb601.m3u8?token=eyJ.abc.def", downloadUrl: "" });
+    const [viewerItem] = galleryViewerItems([seed], {}, labels);
+    expect(viewerItem.downloadUrl).toBe("");
+  });
+
+  it("offers no file for an item the server says is gone", () => {
+    const seed = item({ downloadUrl: "/api/messages/media/87/download" });
+    const [viewerItem] = galleryViewerItems(
+      [seed],
+      { [seed.key]: { url: "", thumbnailUrl: "", unavailable: true } },
+      labels
+    );
+    expect(viewerItem.downloadUrl).toBe("");
+  });
+
+  it("leaves a photo's single URL as both", () => {
+    // Images have one resource. The split must not make Save depend on a field
+    // the server only sends for video.
+    const seed = item({ kind: "image", url: "https://cdn.example/601.jpg", downloadUrl: "" });
+    const [viewerItem] = galleryViewerItems([seed], {}, labels);
+    expect(viewerItem.url).toBe("https://cdn.example/601.jpg");
+    expect(viewerItem.downloadUrl).toBe("https://cdn.example/601.jpg");
+  });
+});
