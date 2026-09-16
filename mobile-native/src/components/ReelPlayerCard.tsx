@@ -1,10 +1,14 @@
 import { Audio, ResizeMode, Video } from "expo-av";
+import type { AVPlaybackStatusSuccess } from "expo-av";
 import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { PulseReel, reelIsPlayable, reelPosterUrl, reelVideoUrl, reelWebUrl } from "../api/reels";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
 import { resolveReelAudioPolicy } from "../core/attachedMusicAudioPolicy";
+import { MUSIC_DRIFT_TOLERANCE_MS, MUSIC_STATUS_INTERVAL_MS, planMusicCorrection } from "../core/attachedMusicTimeline";
+import type { MusicTimelineState } from "../core/attachedMusicTimeline";
+import { trackMediaEvent } from "../media/mediaTelemetry";
 import { refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { LikeBurst, LikeBurstHandle, MuteGlyphPulse, MuteGlyphPulseHandle } from "../media/MediaGestureFeedback";
 import { useTapMuteLike } from "../media/useTapMuteLike";
@@ -102,6 +106,19 @@ export function ReelPlayerCard({
 }: ReelPlayerCardProps) {
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
+  /** Last status the attached track reported; the input side of the correction loop. */
+  const musicStatusRef = useRef<MusicTimelineState | null>(null);
+  /** Serialises corrections so a slow seek cannot overlap the next tick's. */
+  const correctingMusic = useRef(false);
+  /**
+   * The drift the previous tick measured, so a one-tick quantisation spike can
+   * be told from a track that is really out.
+   *
+   * Per-card, not per-module: two Reels are mounted at once during a swipe, and
+   * a shared history would let one card's reading confirm the other card's
+   * spike and seek a track it has never looked at.
+   */
+  const previousDriftRef = useRef<number | null>(null);
   const likeBurstRef = useRef<LikeBurstHandle>(null);
   const muteGlyphRef = useRef<MuteGlyphPulseHandle>(null);
   const refreshAttempted = useRef(false);
@@ -212,39 +229,130 @@ export function ReelPlayerCard({
     return () => { releaseMediaPlayback(playbackOwnerId).catch(() => undefined); };
   }, [active, muted, onViewable, playbackOwnerId, reel, drivesPlayback]);
 
+  /**
+   * Load the attached track as soon as the card exists, not when it wins playback.
+   *
+   * This effect used to be gated on `ownsPlayback`, which is set from the
+   * resolution of an asynchronous claim. That ordering is the reason music
+   * arrived after picture: the claim resolved, `playAsync()` started the video
+   * immediately, and only the *re-render* caused by `setOwnsPlayback(true)` ran
+   * this effect -- which then began a cold network fetch of the track. Video
+   * start and music start were separated by a React commit plus a whole asset
+   * download.
+   *
+   * Loading here with `shouldPlay: false` separates being ready from being
+   * audible, so by the time the claim resolves the track is already decoded and
+   * starting it is a local operation. The bound on how many tracks this loads is
+   * the list's own render window (FlatList `windowSize`), which is why there is
+   * no second scheduler here: the card that exists is the card worth warming,
+   * and the neighbours the window keeps mounted are exactly the N+1/N-1 the
+   * prefetch policy would have chosen anyway.
+   */
   useEffect(() => {
+    if (!drivesPlayback || !musicPolicy.hasAttachedMusic || !musicPolicy.musicUrl) return;
     let cancelled = false;
-    async function syncAttachedAudio() {
-      if (!drivesPlayback || !active || !ownsPlayback || !musicPolicy.hasAttachedMusic) {
-        const existing = attachedSoundRef.current;
-        attachedSoundRef.current = null;
-        if (existing) await existing.unloadAsync().catch(() => undefined);
-        return;
+    Audio.Sound.createAsync(
+      { uri: musicPolicy.musicUrl },
+      {
+        isLooping: musicPolicy.isLooping,
+        positionMillis: musicPolicy.musicStartMs,
+        // The SAME grid the video reports on, and the same one the deadband is
+        // derived from. Correctness is not independent of this number: it is
+        // the resolution of every drift reading the loop takes, which is why it
+        // comes from the timeline module rather than being written here. A
+        // track left on the 500ms default would be measured against a deadband
+        // sized for 250ms and would be "corrected" on the difference.
+        progressUpdateIntervalMillis: MUSIC_STATUS_INTERVAL_MS,
+        // Deliberately silent on load. Audibility is decided by the correction
+        // loop below, against the video's clock.
+        shouldPlay: false,
+        volume: musicPolicy.musicVolume,
+        isMuted: muted
       }
-      if (!attachedSoundRef.current) {
-        const created = await Audio.Sound.createAsync(
-          { uri: musicPolicy.musicUrl! },
-          { isLooping: musicPolicy.isLooping, positionMillis: musicPolicy.musicStartMs, shouldPlay: ownsPlayback && !muted, volume: musicPolicy.musicVolume }
-        );
-        if (cancelled) return created.sound.unloadAsync();
-        attachedSoundRef.current = created.sound;
-      } else {
-        await attachedSoundRef.current.setStatusAsync({ shouldPlay: ownsPlayback && !muted, isMuted: muted });
+    ).then((created) => {
+      if (cancelled) return created.sound.unloadAsync().catch(() => undefined);
+      attachedSoundRef.current = created.sound;
+      created.sound.setOnPlaybackStatusUpdate((status) => {
+        // The timestamp is taken here, at the moment the reading is true, and
+        // not where it is consumed -- by then it is already old, which is the
+        // entire problem this records.
+        musicStatusRef.current = status.isLoaded
+          ? {
+              isLoaded: true,
+              positionMillis: status.positionMillis || 0,
+              isPlaying: Boolean(status.isPlaying),
+              durationMillis: status.durationMillis ?? null,
+              sampledAtMillis: Date.now()
+            }
+          : { isLoaded: false, positionMillis: 0, isPlaying: false, durationMillis: null, sampledAtMillis: Date.now() };
+      });
+      return undefined;
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      const existing = attachedSoundRef.current;
+      attachedSoundRef.current = null;
+      musicStatusRef.current = null;
+      if (existing) {
+        existing.setOnPlaybackStatusUpdate(null);
+        existing.unloadAsync().catch(() => undefined);
       }
-    }
-    syncAttachedAudio().catch(() => undefined);
-    return () => { cancelled = true; };
-  }, [active, musicPolicy, muted, ownsPlayback, drivesPlayback]);
+    };
+    // Depends on the track's VALUES, not on the policy object's identity.
+    // `musicPolicy` is memoized on `reel.audio`, so any refetch or pagination
+    // that rebuilds the reel objects yields an equal-but-new policy -- and
+    // keying the effect on the object would tear down a playing track and
+    // re-download the identical file, silencing the reel for a network round
+    // trip in the middle of playback. The effect should re-run when the music
+    // changes, which is what these values say and the object does not.
+    //
+    // `muted` is deliberately NOT a dependency. It is read above only as the
+    // sound's initial `isMuted`; every later change is applied by the
+    // correction loop's `setStatusAsync` and by the pause effect below. Listing
+    // it here would make muting a reel unload the track and unmuting it
+    // re-download the same file -- turning a local toggle into a network round
+    // trip, on the one control the user expects to be instant.
+  }, [
+    drivesPlayback,
+    musicPolicy.musicUrl,
+    musicPolicy.isLooping,
+    musicPolicy.musicStartMs,
+    musicPolicy.musicVolume
+  ]);
 
-  useEffect(() => () => {
-    attachedSoundRef.current?.unloadAsync().catch(() => undefined);
-    attachedSoundRef.current = null;
-  }, [musicPolicy.musicUrl]);
+  /**
+   * Silence the track the instant this card stops being entitled to be heard.
+   *
+   * The `active` edge is already handled by the ownership effect above, and
+   * losing `ownsPlayback` is handled by the coordinator's own `pause` callback.
+   * The edge this one exists for is MUTE: an active, still-playing reel that
+   * the user mutes takes the `else if (active)` branch above, which pauses the
+   * video's audio but says nothing about the attached track.
+   *
+   * Without this, the only thing that would stop the music is the correction
+   * loop -- and that runs on the video's status callback, so the track stays
+   * audible until the next tick. §11 says an explicit mute outranks autoplay,
+   * and "outranks it within about 250ms" is not what that means. Tapping mute
+   * has to be silent immediately.
+   *
+   * The other two conditions are kept in the guard even though they are covered
+   * elsewhere: they make this effect's postcondition -- not entitled implies
+   * not audible -- true on its own terms rather than true by coincidence of
+   * what some other effect happens to do.
+   */
+  useEffect(() => {
+    if (active && ownsPlayback && !muted) return;
+    attachedSoundRef.current?.pauseAsync().catch(() => undefined);
+  }, [active, ownsPlayback, muted]);
 
   useEffect(() => {
     if (!drivesPlayback || !active || !ownsPlayback) return;
     videoRef.current?.playAsync().catch(() => undefined);
-    attachedSoundRef.current?.setStatusAsync({ shouldPlay: !muted, isMuted: muted }).catch(() => undefined);
+    // The attached track is deliberately NOT started here. Starting it from an
+    // ownership effect is what this mission removed: it sets `shouldPlay` with
+    // no position, so the track begins wherever it was left rather than where
+    // the picture is. Resuming it is the correction loop's job, which runs off
+    // the video's next status tick and knows the position to land on.
   }, [active, muted, ownsPlayback, drivesPlayback]);
 
   const { onPress: handleTap } = useTapMuteLike({
@@ -260,6 +368,83 @@ export function ReelPlayerCard({
     onSingleTapFeedback: () => muteGlyphRef.current?.trigger(!muted),
     onLikeFeedback: (x, y) => likeBurstRef.current?.trigger(x, y)
   });
+
+  /**
+   * Put the track where the video says it should be.
+   *
+   * Called from the video's own status callback so the video is literally the
+   * clock: there is no interval, and no second timebase that could disagree
+   * with the picture. Every transition the mission asks about -- start, seek,
+   * pause, resume, rebuffer, loop -- arrives here as nothing more than a new
+   * video position, which is why none of them has its own handler.
+   */
+  async function applyMusicCorrection(status: AVPlaybackStatusSuccess) {
+    const sound = attachedSoundRef.current;
+    const musicState = musicStatusRef.current;
+    if (!sound || !musicState || correctingMusic.current) return;
+    const plan = planMusicCorrection(
+      {
+        isLoaded: true,
+        positionMillis: status.positionMillis || 0,
+        // A card that does not own playback is not allowed to be audible, so it
+        // is reported as not playing regardless of what the video element is
+        // doing. This is what keeps a muted or superseded reel silent.
+        isPlaying: Boolean(status.isPlaying) && ownsPlayback && !muted,
+        isBuffering: Boolean(status.isBuffering)
+      },
+      musicState,
+      musicPolicy,
+      MUSIC_DRIFT_TOLERANCE_MS,
+      // The video reading is current as of right now; the music reading is as
+      // old as its own callback interval. Handing over the instant lets the
+      // planner age the music sample up to this one instead of treating a
+      // sampling gap as drift.
+      Date.now(),
+      previousDriftRef.current
+    );
+    // Recorded on EVERY tick, not just corrected ones. The persistence rule
+    // needs the immediately preceding reading, and the readings that matter
+    // most are the uncorrected ones -- a spike is, by definition, a tick on
+    // which nothing was done. Anything that actuates the track clears the
+    // history instead: the track has just been moved, so the previous reading
+    // describes a position that no longer exists, and letting it confirm the
+    // next one would seek on every tick again.
+    previousDriftRef.current = plan.action === "none" ? plan.driftMillis ?? null : null;
+    if (plan.action === "none") return;
+    correctingMusic.current = true;
+    try {
+      if (plan.action === "pause") {
+        await sound.pauseAsync();
+      } else {
+        // setStatusAsync applies position and play state in one call, so the
+        // track cannot be briefly audible at the wrong position the way a
+        // separate seek-then-play would allow.
+        //
+        // A null seek means the track is already within the deadband of where
+        // it belongs, so the position is OMITTED rather than sent as its current
+        // value: re-sending a position restarts the player's start-up sequence,
+        // and doing that every tick while waiting for `isPlaying` is what held a
+        // reel silent for 7.2 seconds on device.
+        await sound.setStatusAsync({
+          ...(plan.seekToMillis === null ? {} : { positionMillis: plan.seekToMillis }),
+          shouldPlay: true,
+          isMuted: muted,
+          volume: musicPolicy.musicVolume
+        });
+        trackMediaEvent({
+          name: "MEDIA_AUDIO_RESYNC",
+          kind: "audio",
+          surface: "reels",
+          driftMs: plan.driftMillis
+        });
+      }
+    } catch {
+      // A correction that fails is not worth surfacing: the next status tick
+      // recomputes from scratch, so a transient failure self-heals.
+    } finally {
+      correctingMusic.current = false;
+    }
+  }
 
   async function recoverPlaybackUrl() {
     if (!media || refreshingUrl || refreshAttempted.current) {
@@ -299,7 +484,7 @@ export function ReelPlayerCard({
           shouldPlay={false}
           isLooping
           isMuted={muted || musicPolicy.muteOriginalAudio}
-          progressUpdateIntervalMillis={250}
+          progressUpdateIntervalMillis={MUSIC_STATUS_INTERVAL_MS}
           usePoster={Boolean(poster)}
           posterSource={poster ? { uri: poster } : undefined}
           onPlaybackStatusUpdate={(status) => {
@@ -310,6 +495,7 @@ export function ReelPlayerCard({
             }
             setBuffering(Boolean(status.isBuffering));
             if (status.durationMillis) setProgress(Math.min(1, status.positionMillis / status.durationMillis));
+            applyMusicCorrection(status).catch(() => undefined);
           }}
           onError={() => recoverPlaybackUrl().catch(() => undefined)}
         />

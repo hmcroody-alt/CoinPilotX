@@ -40,6 +40,14 @@ export type MediaEventName =
    * reliability one.
    */
   | "MEDIA_DOWNLOAD_URL_REFRESHED"
+  /**
+   * An attached music track was started or re-aligned against its video's
+   * clock (§13). Carries `driftMs`, signed, so a systematic lead -- the
+   * signature of a track that keeps running through rebuffers -- is
+   * distinguishable from ordinary scheduling jitter around zero. Without the
+   * sign, both look like the same small positive number.
+   */
+  | "MEDIA_AUDIO_RESYNC"
   | "MEDIA_CACHE_HIT"
   | "MEDIA_CACHE_MISS"
   | "MEDIA_CACHE_EVICTED"
@@ -80,6 +88,13 @@ export type MediaEvent = {
   bytes?: number;
   durationMs?: number;
   attempt?: number;
+  /**
+   * Signed milliseconds the attached audio sat away from its video's position.
+   * Positive means the audio ran ahead of the picture. Separate from
+   * `durationMs` because that field is a non-negative elapsed time and cannot
+   * carry the direction, which is the diagnostically useful half.
+   */
+  driftMs?: number;
   reason?: MediaFailureReason;
 };
 
@@ -87,8 +102,15 @@ export type MediaTelemetrySink = (event: MediaEvent) => void;
 
 const defaultSink: MediaTelemetrySink = (event) => {
   if (typeof __DEV__ !== "undefined" && __DEV__) {
+    // `driftMs` is printed because it is the only field on the event that is a
+    // measurement rather than a label, and it is the whole reason
+    // MEDIA_AUDIO_RESYNC exists (§13). Omitting it made the dev sink report
+    // that a resync happened while withholding the number that says whether it
+    // was ordinary jitter or a track running away from the picture -- which is
+    // the question anyone reading this line is asking. It stays undefined for
+    // every other event, so nothing else gains a column.
     // eslint-disable-next-line no-console
-    console.log("[media]", event.name, event.key ?? "", event.reason ?? "");
+    console.log("[media]", event.name, event.key ?? "", event.reason ?? "", event.driftMs ?? "");
   }
 };
 

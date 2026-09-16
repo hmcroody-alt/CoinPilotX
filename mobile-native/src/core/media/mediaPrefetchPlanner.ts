@@ -223,6 +223,29 @@ export function planMediaPrefetch(input: PrefetchPlanInput): PrefetchPlan {
     // whole plan for it.
     if (!isMediaReady(media)) continue;
 
+    // §29. The attached track is warmed in the same band as the picture it
+    // plays over, and only in that band: a reel three ahead has a poster and
+    // nothing else, so fetching its music would be paying for a second stream
+    // on a bet the poster rule already declined to make.
+    //
+    // It is keyed on its OWN identity, not on `identity#audio`. A trending
+    // sound is attached to many reels, and keying it under each reel would
+    // fetch the same bytes once per reel and then evict something still needed
+    // to hold the duplicates.
+    const attachedAudioUrl = String(media.attached_audio_url || "").trim();
+    if (attachedAudioUrl) {
+      const audioMedia: MediaDescriptor = { media_url: attachedAudioUrl, type: "audio" };
+      const audioIdentity = mediaIdentityOf(audioMedia);
+      if (audioIdentity) {
+        const audioKey = mediaCacheKey(audioIdentity, "audio");
+        keep.add(audioKey);
+        warm.push({ key: audioKey, index, priority, rendition: "audio", media: audioMedia, video: false });
+        // Pinned with the active reel's own media: the track is not a nice-to-
+        // have for the reel on screen, it is half of its audio.
+        if (distance === 0) pin.push(audioKey);
+      }
+    }
+
     if (video) {
       if (!policy.warmVideo) continue;
       const manifestKey = mediaCacheKey(identity, "manifest");

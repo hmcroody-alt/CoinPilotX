@@ -31,7 +31,7 @@
  * in a parallel map) means one bounded LRU governs total memory across every
  * size of every asset -- see mediaPrefetchCache.
  */
-export type MediaRendition = "thumb" | "feed" | "full" | "poster" | "manifest";
+export type MediaRendition = "thumb" | "feed" | "full" | "poster" | "manifest" | "audio";
 
 export type MediaIdentity = string;
 
@@ -48,6 +48,17 @@ export type MediaDescriptor = {
   cdn_url?: string | null;
   /** Last resort. The messenger serializer emits this and nothing else. */
   url?: string | null;
+  /**
+   * The music mixed over this item at playback time, when it is a separate
+   * asset rather than baked into the video (§29).
+   *
+   * It lives on the descriptor rather than in a parallel array so the planner
+   * cannot drift out of index-alignment with the media it belongs to. It is
+   * NOT part of `mediaIdentityOf` -- the track has its own identity, derived
+   * from its own URL, which is what makes a trending sound attached to fifty
+   * reels warm once rather than fifty times.
+   */
+  attached_audio_url?: string | null;
   thumbnail_url?: string | null;
   poster_url?: string | null;
   mux_thumbnail_url?: string | null;
