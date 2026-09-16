@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { colors } from "../colors";
+import { chatGraphite } from "../chatGraphite";
 import {
   CHAT_WALLPAPER_IDS,
   ChatWallpaperSpec,
@@ -11,17 +11,27 @@ import {
 /**
  * The contrast audit for the conversation wallpaper.
  *
- * A wallpaper is the one change that can quietly break every text class at
- * once, and it does it by degrees rather than by breaking — nothing throws, the
- * screenshot looks fine on a desk, and the person reading a timestamp outdoors
- * cannot. So the property under test is not "the numbers are pretty" but the
- * narrower, checkable one:
+ * This file used to ask a different question, and the question changed because
+ * the design did. The bubbles were translucent, so the wallpaper leaked into
+ * every timestamp and the property worth testing was erosion: *putting the
+ * wallpaper behind a bubble must not make the text in that bubble harder to
+ * read than the flat theme background did.*
  *
- *   putting the wallpaper behind a bubble must not make the text in that
- *   bubble harder to read than the flat theme background did.
+ * Graphite bubbles are opaque. So that entire mechanism is gone, and the
+ * honest thing to test is the new premise rather than a comparison that is now
+ * arithmetically guaranteed to come out at 1.000. Two properties replace it:
  *
- * That isolates the wallpaper's own contribution. The absolute AA floor is
- * asserted too, but the regression guard is the comparison.
+ *   1. the fills really are opaque, so no wallpaper can reach the text at all
+ *      (this is what lets `chatGraphiteContrast.test.ts` audit text against
+ *      flat surfaces and be correct about the whole screen);
+ *   2. a bubble still has to read as a shape against every one of the eleven
+ *      fields it can be drawn on, since that is the one thing the wallpaper can
+ *      still take away.
+ *
+ * The bubble colours are imported from `chatGraphite` rather than copied. The
+ * previous version of this file pinned four literals by hand and had to add a
+ * separate test to catch them drifting out of sync with the screen; importing
+ * the source of truth removes the failure mode instead of guarding it.
  */
 
 type Rgb = { r: number; g: number; b: number };
@@ -87,187 +97,136 @@ function wallpaperExtremes(spec: ChatWallpaperSpec): { darkest: Rgb; lightest: R
   return { darkest, lightest };
 }
 
-/** The bubble fills and text colours as `ChatScreen` declares them. */
-const INCOMING_BUBBLE = "rgba(12,24,43,0.88)";
-const OUTGOING_BUBBLE = "rgba(37,83,158,0.82)";
-/**
- * The 1px outlines on those same fills. They are not decoration: over the
- * default's field the incoming fill and the field are within 1% of each other,
- * so the border is the only thing that makes an incoming bubble a bubble.
- */
-const INCOMING_BORDER = "rgba(105,218,240,0.28)";
-const OUTGOING_BORDER = "rgba(93,174,255,0.58)";
-
-const TEXT_CLASSES = [
-  // Every one of these is drawn inside a bubble, so each is audited against
-  // both fills. `body` also covers translated text and media captions;
-  // `muted` covers timestamps, reply previews, reaction counts, the forwarded
-  // label and system notes, which all use `colors.muted`.
-  { name: "body", color: colors.text, floor: 4.5 },
-  { name: "muted", color: colors.muted, floor: 3 }
-] as const;
-
 const BUBBLES = [
-  { name: "incoming", fill: INCOMING_BUBBLE },
-  { name: "outgoing", fill: OUTGOING_BUBBLE }
+  { name: "incoming", fill: chatGraphite.incomingSurface, border: chatGraphite.incomingBorder },
+  { name: "outgoing", fill: chatGraphite.outgoingSurface, border: chatGraphite.outgoingBorder }
 ] as const;
 
-/** What the text reads against today, with no wallpaper involved at all. */
-function flatBaseline(bubbleFill: string, textColor: string): number {
-  const bubble = over(parse(colors.background), parse(bubbleFill));
-  return contrast(bubble, parse(textColor));
+function bothExtremes(id: (typeof CHAT_WALLPAPER_IDS)[number]): Rgb[] {
+  const { darkest, lightest } = wallpaperExtremes(resolveChatWallpaper(id));
+  return [darkest, lightest];
 }
 
 describe("chat wallpaper contrast", () => {
-  it("defaults to PulseSoc Cosmic", () => {
+  it("defaults to PulseSoc Graphite", () => {
     expect(resolveChatWallpaper(undefined).id).toBe(DEFAULT_CHAT_WALLPAPER);
+    // The id is a wire value shared with the server's allowed set and with
+    // every stored `appearance.wallpaper` row, so it stays `pulsesoc_cosmic`
+    // even though the spec it names is now graphite. See `chatWallpaper.ts`.
     expect(DEFAULT_CHAT_WALLPAPER).toBe("pulsesoc_cosmic");
   });
 
-  it.each(CHAT_WALLPAPER_IDS)("keeps every text class readable over %s", (id) => {
-    const spec = resolveChatWallpaper(id);
-    const extremes = wallpaperExtremes(spec);
+  /**
+   * The acceptance criterion that the mockup's artwork is not in the product.
+   *
+   * The approved direction supplied colour, not imagery. So the default is the
+   * only spec in the file with nothing in it but a gradient, and that emptiness
+   * is the design — a planet, an arc or a star field reappearing here would be
+   * the single most likely way for this change to be quietly undone.
+   */
+  it("draws the default as a flat graphite field and nothing else", () => {
+    const spec = resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER);
+    expect(spec.shapes).toEqual([]);
+    expect(spec.stars).toBe(0);
+    for (const stop of spec.scrim) expect(parse(stop).a).toBe(0);
+    expect(spec.gradient).toEqual([chatGraphite.canvasTop, chatGraphite.canvasBottom]);
+    expect(spec.base).toBe(chatGraphite.canvasTop);
+  });
 
+  /**
+   * The property that makes the rest of the palette auditable against flat
+   * colours: the wallpaper cannot reach the text.
+   *
+   * Asserted as an identity rather than as a ratio, because a ratio would let a
+   * 0.99-alpha fill through while reading as "basically opaque". If a bubble
+   * ever goes translucent again this fails, and the erosion reasoning this file
+   * used to carry has to come back with it.
+   */
+  it.each(CHAT_WALLPAPER_IDS)("cannot reach the text inside a bubble over %s", (id) => {
     for (const bubble of BUBBLES) {
-      for (const extreme of [extremes.darkest, extremes.lightest]) {
-        const composited = over(extreme, parse(bubble.fill));
-        for (const text of TEXT_CLASSES) {
-          const ratio = contrast(composited, parse(text.color));
-          expect(ratio).toBeGreaterThanOrEqual(text.floor);
-
-          // The regression guard. A wallpaper is allowed to change the number
-          // a little — the bubbles are translucent, so it must — but it is not
-          // allowed to eat a meaningful part of the margin the flat background
-          // gave us.
-          //
-          // 0.82 is the band the ten inherited wallpapers already occupy: the
-          // loudest of them erodes the worst case by 14.7%. So this floor does
-          // guard against a new wallpaper being worse than anything already
-          // shipped; it is not a rubber stamp. The default is held to a tighter
-          // bar below, since that is what this change actually promises.
-          const baseline = flatBaseline(bubble.fill, text.color);
-          expect(ratio).toBeGreaterThanOrEqual(baseline * 0.82);
-        }
+      const fill = parse(bubble.fill);
+      expect(fill.a).toBe(1);
+      for (const field of bothExtremes(id)) {
+        expect(over(field, fill)).toEqual({ r: fill.r, g: fill.g, b: fill.b });
       }
     }
   });
 
-  it("erodes less of the flat baseline than any inherited wallpaper", () => {
-    // The default is the one nobody chose, so it carries the stricter bar.
-    // Measured: 0.875 of baseline, against 0.853 for the loudest inherited one.
-    const extremes = wallpaperExtremes(resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER));
-    for (const bubble of BUBBLES) {
-      for (const extreme of [extremes.darkest, extremes.lightest]) {
-        for (const text of TEXT_CLASSES) {
-          const ratio = contrast(over(extreme, parse(bubble.fill)), parse(text.color));
-          expect(ratio).toBeGreaterThanOrEqual(flatBaseline(bubble.fill, text.color) * 0.87);
-        }
+  /**
+   * What the wallpaper *can* still take away: the bubble's outline as a shape.
+   *
+   * Both fills are now lighter than every field they can land on, which is the
+   * opposite of the old navy design — there, incoming read darker than the
+   * field and outgoing lighter, and they were held apart in both directions.
+   * Graphite puts both above the canvas, so the direction is asserted too: if
+   * one of them ever crossed under a field, it would be competing with the
+   * wallpaper instead of sitting on it.
+   *
+   * 1.30 is the floor. Measured worst case across all eleven wallpapers is
+   * 1.353 (outgoing, over `alien_city` at its synthetic brightest); the default
+   * sits at 1.402 outgoing and 1.432 incoming.
+   */
+  it.each(CHAT_WALLPAPER_IDS)("keeps both bubbles reading as shapes over %s", (id) => {
+    for (const field of bothExtremes(id)) {
+      for (const bubble of BUBBLES) {
+        const fill = parse(bubble.fill);
+        expect(contrast(field, fill)).toBeGreaterThanOrEqual(1.3);
+        expect(relativeLuminance(fill)).toBeGreaterThan(relativeLuminance(field));
       }
     }
   });
 
-  it("keeps both bubble fills reading as shapes at the field's brightest extreme", () => {
-    // A translucent bubble over a field can vanish in two opposite ways, and
-    // the first draft of the spec hit one of them: it was bright enough that
-    // the 0.82-alpha outgoing fill sat at 1.13:1 against the background — the
-    // text was still legible, but the bubble had stopped being a shape. Darken
-    // the field instead and the 0.88-alpha incoming fill goes the same way.
-    //
-    // So the property is a floor under the *worse* of the two separations. The
-    // spec's layer intensities were chosen by maximising exactly this, which is
-    // why the two numbers come out level (1.452 and 1.450) — that balance is
-    // the optimum, not a coincidence. For reference the inherited wallpapers
-    // reach as low as 1.03 here.
-    //
-    // Read the scope narrowly. `lightest` is the synthetic over-count defined
-    // above — every shape stacked on the brightest stop, which no pixel gets —
-    // so this balances the fills at the one field brightness that bounds the
-    // rest. It is *not* a statement about a typical point on screen, and the
-    // incoming fill does not survive there; see the next test.
-    const { lightest } = wallpaperExtremes(resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER));
-    const incoming = contrast(lightest, over(lightest, parse(INCOMING_BUBBLE)));
-    const outgoing = contrast(lightest, over(lightest, parse(OUTGOING_BUBBLE)));
-    expect(Math.min(incoming, outgoing)).toBeGreaterThanOrEqual(1.4);
-    // And they must separate in opposite directions: incoming reads darker
-    // than the field it sits on, outgoing lighter. If both went the same way
-    // one of them would be competing with the wallpaper rather than sitting
-    // on it.
-    const field = relativeLuminance(lightest);
-    expect(relativeLuminance(over(lightest, parse(INCOMING_BUBBLE)))).toBeLessThan(field);
-    expect(relativeLuminance(over(lightest, parse(OUTGOING_BUBBLE)))).toBeGreaterThan(field);
-  });
-
-  it("separates the incoming bubble with its border, because its fill cannot", () => {
-    // Measured off a device capture of a real thread, then reproduced here: at
-    // the field brightnesses that actually occur, the incoming fill is not a
-    // shape at all.
-    //
-    //   field                        L        incoming-sep  outgoing-sep
-    //   lightest (synthetic)      0.0392         1.452          1.450
-    //   one orb                   0.0153         1.094          1.858
-    //   bare gradient             0.0085         1.008          2.014
-    //   scrimmed edge             0.0037         1.085          2.128
-    //
-    // Most of the screen is bare gradient, and 1.008:1 is nothing — the 0.88
-    // fill and the field it sits on are the same colour to the eye. That is not
-    // a defect, because the bubble is outlined; but it does mean the *border*
-    // is load-bearing for §5/§6 and the fill is not. Nothing above would notice
-    // the border being dropped or dimmed, since the test before this one keeps
-    // passing at 1.452 whatever the border does. This is that missing guard.
-    const spec = resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER);
-    const stops = spec.gradient.map(parse).sort((a, b) => relativeLuminance(a) - relativeLuminance(b));
-    const brightest = stops[stops.length - 1];
-    const strongestShape = [...spec.shapes].sort((a, b) => parse(b.color).a - parse(a.color).a)[0];
-    const strongestScrim = [...spec.scrim.map(parse)].sort((a, b) => b.a - a.a)[0];
-
-    // The field as it is actually composited, at the three places a bubble lands.
-    const realFields = [
-      brightest,
-      over(brightest, parse(strongestShape.color)),
-      over(stops[0], strongestScrim)
-    ];
-
-    for (const field of realFields) {
-      // The premise: the fill really has stopped separating. If a future spec
-      // change makes the fill do the work again this fails loudly and should be
-      // rewritten rather than relaxed — it is here to keep the comment honest.
-      expect(contrast(field, over(field, parse(INCOMING_BUBBLE)))).toBeLessThan(1.15);
-
-      // The border is what draws the bubble, so it carries the floor. 1.8:1 is
-      // below the ~1.97 the current colour reaches on bare gradient, which is
-      // the tightest of the three.
-      expect(contrast(field, over(field, parse(INCOMING_BORDER)))).toBeGreaterThanOrEqual(1.8);
-
-      // Outgoing separates on fill alone everywhere, which is why it needs no
-      // equivalent rescue. Asserted so the two do not silently swap roles.
-      expect(contrast(field, over(field, parse(OUTGOING_BUBBLE)))).toBeGreaterThanOrEqual(1.8);
-      expect(contrast(field, over(field, parse(OUTGOING_BORDER)))).toBeGreaterThanOrEqual(1.8);
+  /**
+   * And the borders, which finish the edge the fill already draws.
+   *
+   * Note the asymmetry, because it is a real and reported one. The outgoing
+   * border is a solid `#4D8FE9` and clears 3:1 everywhere, so the blue bubble's
+   * boundary satisfies WCAG 1.4.11 on its own. The incoming border is the
+   * approved `rgba(214,222,232,0.20)` and reaches only 2.08–4.29 depending on
+   * the field — under 3:1 on the graphite default. That is shipped as specified:
+   * a message bubble is content rather than a control, and it is additionally
+   * separated by fill, by which edge of the screen it hangs off, by its squared
+   * corner and by the sender label above it. The floor here is therefore 2.0,
+   * which is what the design actually delivers, not a bar it clears with room.
+   */
+  it.each(CHAT_WALLPAPER_IDS)("keeps both bubble borders drawing an edge over %s", (id) => {
+    for (const field of bothExtremes(id)) {
+      for (const bubble of BUBBLES) {
+        const edge = over(parse(bubble.fill), parse(bubble.border));
+        expect(contrast(field, edge)).toBeGreaterThanOrEqual(2);
+      }
     }
   });
 
-  it("audits the bubble colours ChatScreen actually declares", () => {
-    // Everything above reasons about four literals that live in another file.
-    // Copies drift, and a drifted copy turns this whole suite into a test of
-    // itself — it would keep passing while the screen shipped a bubble nobody
-    // had ever measured. So read the screen and require the literals to still
-    // be there. Whitespace-insensitive because prettier owns the formatting.
-    const source = readFileSync(join(__dirname, "..", "..", "screens", "ChatScreen.tsx"), "utf8").replace(/\s+/g, "");
-    for (const color of [INCOMING_BUBBLE, OUTGOING_BUBBLE, INCOMING_BORDER, OUTGOING_BORDER]) {
-      expect(source).toContain(color.replace(/\s+/g, ""));
-    }
+  it("keeps the default no brighter than the loudest wallpaper anyone already chose", () => {
+    // Graphite is a middle grey, so it is legitimately brighter than eight of
+    // the ten inherited navy fields — the old ceiling of 0.045 encoded "the
+    // default must be nearly the darkest", which was a property of the navy
+    // design and not a requirement. What still holds, and is worth holding, is
+    // that the field nobody picked is not the brightest thing in the set.
+    const inherited = CHAT_WALLPAPER_IDS.filter((id) => id !== DEFAULT_CHAT_WALLPAPER);
+    const loudest = Math.max(
+      ...inherited.map((id) => relativeLuminance(wallpaperExtremes(resolveChatWallpaper(id)).lightest))
+    );
+    const mine = relativeLuminance(wallpaperExtremes(resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER)).lightest);
+    expect(mine).toBeLessThanOrEqual(loudest);
+    // An absolute ceiling as well, so the whole set cannot drift up together.
+    expect(mine).toBeLessThan(0.06);
   });
 
-  it("keeps the default subtle — no layer is loud", () => {
-    const spec = resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER);
-    // "Subtle, not loud" as a number: the strongest shape is a 12% wash.
-    // Anything much above this starts reading as a graphic rather than depth.
-    for (const shape of spec.shapes) expect(parse(shape.color).a).toBeLessThanOrEqual(0.14);
-    // And the whole field must stay dark enough to be a dark-mode background.
-    // 0.045 puts the ceiling below the two loudest inherited wallpapers
-    // (0.046 and 0.054), so the default cannot be the brightest of the set —
-    // which is precisely what the first draft of the spec was, at 0.071.
-    const { lightest } = wallpaperExtremes(spec);
-    expect(relativeLuminance(lightest)).toBeLessThan(0.045);
+  it("keeps the default subtle if a layer is ever added back to it", () => {
+    // Vacuous today, and kept for the same reason a seatbelt is kept in a
+    // parked car. The default has no shapes at all now, so the cap guards the
+    // edit that reintroduces one: "subtle, not loud" as a number is a 14%
+    // wash, above which a layer reads as a graphic rather than as depth.
+    //
+    // Scoped to the default on purpose. The inherited wallpapers go up to 0.22
+    // because they are *meant* to be graphics — someone picked them — and
+    // holding them to the default's restraint would be re-designing ten
+    // wallpapers nobody asked us to touch.
+    for (const shape of resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER).shapes) {
+      expect(parse(shape.color).a).toBeLessThanOrEqual(0.14);
+    }
   });
 
   it("paints an opaque base for every wallpaper", () => {
@@ -277,5 +236,16 @@ describe("chat wallpaper contrast", () => {
     for (const id of CHAT_WALLPAPER_IDS) {
       expect(parse(resolveChatWallpaper(id).base).a).toBe(1);
     }
+  });
+
+  it("draws the canvas from the wallpaper, not from the screen", () => {
+    // The wallpaper's opaque `base` is the first paint layer in `ChatScreen`,
+    // ahead of the header and the list, which is why the canvas tokens live in
+    // the wallpaper spec rather than in a `backgroundColor` on the root view.
+    // A root fill would paint over the wallpaper and make the whole gradient
+    // dead code, so the root must stay transparent.
+    const source = readFileSync(join(__dirname, "..", "..", "screens", "ChatScreen.tsx"), "utf8").replace(/\s+/g, "");
+    expect(source).toContain('root:{backgroundColor:"transparent"');
+    expect(source).toContain("<ChatWallpaperwallpaper={wallpaper}");
   });
 });
