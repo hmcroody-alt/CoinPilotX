@@ -168,7 +168,7 @@ def api_private_meetings_create():
     invite_user_ids = _user_ids(body.get("invite_user_ids"))
 
     def work(cur):
-        return po_meetings.create_meeting(
+        meeting = po_meetings.create_meeting(
             cur,
             owner_user_id=user["user_id"],
             title=str(body.get("title") or ""),
@@ -182,6 +182,16 @@ def api_private_meetings_create():
             invitees=invitees,
             invite_user_ids=invite_user_ids,
         )
+        # §19 again, for the other way in. A member invited while the meeting
+        # is being booked is as much a contact as one invited afterwards, and
+        # this is the only route that reaches them — the invite route below
+        # never sees them. Same call, same "it cannot fail an invite" rule.
+        invited = ((meeting or {}).get("invite_result") or {}).get("invited")
+        if invited:
+            po_meeting_contacts.record_invitees(
+                cur, owner_user_id=user["user_id"], user_ids=invited,
+                actor_user_id=user["user_id"])
+        return meeting
 
     meeting, err = _run(work, log_tag="PRIVATE_MEETINGS_CREATE_FAILED",
                         fail_message="We could not create the meeting just now.")

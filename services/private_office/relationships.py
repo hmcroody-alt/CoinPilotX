@@ -675,19 +675,40 @@ def add_person(
 #: table instead would have been inventing a rank for a category that has none.
 PROVENANCE_MEETING_INVITEE = "PRIVATE_MEETING_INVITEE"
 
-#: Stored on the person, not treated as identity: adding it to
-#: ``IDENTITY_FACT_TYPES`` would change what every directory read fetches.
-FACT_EMAIL = "email"
+#: An invitee's address is written as :data:`FACT_EMAIL` — the directory's own
+#: email fact, declared once at the top of this module — so someone invited to
+#: a meeting is a contact like any other: findable by address, editable from
+#: the contact screen, and resolvable onto the person already there.
+#:
+#: There used to be a second ``FACT_EMAIL = "email"`` here, written on a
+#: lineage where the directory had no email fact to collide with. Landing it
+#: beside the contacts work rebound the module global: the tuples at the top
+#: had already captured ``"contact_email"``, while every function body reads
+#: the name at call time and so saw ``"email"``. Writes went to one fact type,
+#: reads to the other, and every contact's email came back blank. Neither side
+#: was wrong by itself, which is why it passed both sets of tests — it is
+#: precisely the collision the comment above :data:`FACT_NAME` warns about.
 
 
 def _invitee_external_ref(*, user_id: int = 0, email: str = "") -> str:
     """The identity a meeting invitee is linked by — never their name.
 
-    A member is ``pmu:<user_id>``. Someone invited by address is
-    ``pme:<sha256 of the normalized address>``, hashed for two reasons: the
-    graph's ``external_ref`` is identifier-shaped and an address is not
-    (``@`` is not in the permitted character class), and a person's email is
-    not something to leave sitting in a join key.
+    A member is :func:`external_ref_for` — the directory's own
+    ``pulsesoc:user:<id>`` — because an account has exactly one identity here
+    and a meeting is not a reason to invent a second. This said ``pmu:<id>``
+    once, and the result was the failure the comment on
+    :data:`EXTERNAL_REF_SCHEME` predicts: the host invited a member, the
+    invite path filed them under ``pulsesoc:user:7703`` and this path under
+    ``pmu:7703``, and the directory listed one person twice — the second copy
+    unlinked, unnamed, and reporting ``pulsesoc_user_id`` 0, so no read that
+    went looking for the member could see it.
+
+    Someone invited by address is ``pme:<sha256 of the normalized address>``,
+    hashed for two reasons: the graph's ``external_ref`` is identifier-shaped
+    and an address is not (``@`` is not in the permitted character class), and
+    a person's email is not something to leave sitting in a join key. That
+    scheme is this path's own, because an outside guest has no account to be
+    keyed by; it stops being used the moment there is a ``user_id``.
 
     A name is never part of this. Two advisors called "John Smith" are two
     people, and an identity derived from a name would quietly merge them — or
@@ -696,7 +717,7 @@ def _invitee_external_ref(*, user_id: int = 0, email: str = "") -> str:
     invite still stands on its own.
     """
     if int(user_id or 0) > 0:
-        return f"pmu:{int(user_id)}"
+        return external_ref_for(user_id)
     address = str(email or "").strip().lower()
     if not address:
         return ""
@@ -756,7 +777,10 @@ def link_meeting_invitee(
         )
 
     remember(FACT_NAME, " ".join(str(name or "").split())[:MAX_NAME_CHARS])
-    remember(FACT_EMAIL, str(email or "").strip().lower()[:MAX_NAME_CHARS])
+    # Normalised the directory's way, not this path's way. The same address
+    # typed into the contact editor and into the guest list has to reduce to
+    # the same string, or the resolver files one person under two records.
+    remember(FACT_EMAIL, normalize_email(email)[:MAX_NAME_CHARS])
 
     return {
         "node_id": node_id,

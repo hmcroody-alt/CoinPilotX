@@ -1411,6 +1411,15 @@ def _link_relationships(cur, *, owner: int, meeting: dict,
     Nothing is sent to anyone. Linking is the host's own record of who they
     deal with, so notifying the invitee here would be telling them they had
     been filed.
+
+    **Outside guests only.** An invitee who has an account is filed by
+    ``meeting_contacts.record_invitees``, which can read that account and so
+    gives the contact their real name, their profile photo and a source of
+    MEETING_INVITEE. This path has only what the host typed, which for a
+    member is usually nothing at all. When both ran, the member got one
+    correct entry or one blank one depending purely on which wrote first —
+    and for a while, two entries under two different keys. One person, one
+    authority: accounts there, addresses here.
     """
     if not candidates:
         return
@@ -1418,12 +1427,14 @@ def _link_relationships(cur, *, owner: int, meeting: dict,
         from services.private_office import relationships
 
         for candidate in candidates:
+            if int(candidate.get("user_id") or 0) > 0:
+                continue
             try:
                 relationships.link_meeting_invitee(
                     cur, owner_user_id=owner,
                     name=candidate.get("name") or "",
                     email=candidate.get("email") or "",
-                    invitee_user_id=int(candidate.get("user_id") or 0),
+                    invitee_user_id=0,
                     meeting_ref=str(meeting.get("public_id") or ""),
                     actor_user_id=owner)
             except Exception:  # noqa: BLE001
