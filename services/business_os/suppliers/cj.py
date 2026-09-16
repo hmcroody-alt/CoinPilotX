@@ -553,6 +553,32 @@ class CJAdapter:
 
     @staticmethod
     def _warehouse_stock(data, *, variant):
+        """One warehouse row, with `state` answering "did anyone count this".
+
+        `state` used to demand `verifiedWarehouse == 1` before it would say
+        IN_STOCK, on the reading that "only verified units are sellable". That
+        reading is not what the field means and it made the importer unusable:
+        `verifiedWarehouse` separates stock CJ has audited in its own warehouse
+        (1) from stock the supplier reports at the factory (2), and CJ sells
+        both -- `product/listV2` takes `verifiedWarehouse` as an optional
+        *filter* whose omitted value is "all", so unverified products are in the
+        catalogue a merchant browses by default.
+
+        Measured, not argued: all 29 `supplier_snapshots` rows of kind
+        `inventory` in production carry `verifiedWarehouse: 2` on every variant
+        warehouse, with real counts beside them (11,830 units on one). Every one
+        of them read UNKNOWN, so every variant of every imported product read
+        UNKNOWN, so `drafts._validate` returned UNKNOWN_INVENTORY and refused to
+        publish all 22 supplier listings this store has ever imported. A rule
+        that rejects 100% of a provider's catalogue is not a safety property.
+
+        UNKNOWN is for a warehouse nobody counted -- `total` absent or
+        unreadable. A count CJ has not audited is still a count, and the
+        distinction survives in `verified` for any reader that wants to say
+        something about lead time. What must not happen, and still does not, is
+        a missing count becoming zero: `total is None` stays UNKNOWN and only an
+        explicit 0 is OUT_OF_STOCK.
+        """
         data = _dict(data)
         total = _number(data.get("totalInventory" if variant else "totalInventoryNum"))
         verified = data.get("verifiedWarehouse") if type(data.get("verifiedWarehouse")) is int and data.get("verifiedWarehouse") in (1, 2) else None
@@ -560,7 +586,7 @@ class CJAdapter:
             "total": total, "cj": _number(data.get("cjInventory" if variant else "cjInventoryNum")),
             "factory": _number(data.get("factoryInventory" if variant else "factoryInventoryNum")),
             "verified": verified,
-            "state": "OUT_OF_STOCK" if total == 0 else "IN_STOCK" if total is not None and total > 0 and verified == 1 else "UNKNOWN",
+            "state": "OUT_OF_STOCK" if total == 0 else "IN_STOCK" if total is not None and total > 0 else "UNKNOWN",
             "subwarehouses": [{"stock_id": _text(_dict(s).get("stockId"), 200), "cj": _number(s.get("inventory")), "factory": _number(s.get("factoryInventory"))} for s in _list(data.get("stock") or [])]}
 
     def get_inventory(self, pid, vid=None):

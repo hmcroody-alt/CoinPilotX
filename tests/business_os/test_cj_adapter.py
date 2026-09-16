@@ -420,9 +420,14 @@ def test_a_successful_inventory_read_actually_reaches_the_variants():
     contract -- so nothing failed and nothing logged: staging reported
     `inventory_fresh: True` beside every variant reading UNKNOWN forever.
 
-    The counting is the other half. CJ calls a warehouse verified or not, and
-    only verified units are sellable; adding the unverified ones would turn the
-    three sellable pieces below into 903 and hide LOW_STOCK entirely.
+    The counting is the other half, and the reading of `verifiedWarehouse` it
+    used to encode was wrong. It said "only verified units are sellable", so
+    the nine hundred unverified pieces below counted for nothing and a variant
+    stocked only at the factory read UNKNOWN. CJ sells factory stock -- see
+    `_warehouse_stock` for the production evidence that every real warehouse row
+    comes back `verifiedWarehouse: 2`, which made that reading refuse the entire
+    catalogue. Counted is counted; `verified` still carries the distinction for
+    anyone who wants to say something about lead time.
     """
     def house(total, verified, country="US"):
         return {"countryCode": country, "areaId": 1, "totalInventory": total,
@@ -432,17 +437,20 @@ def test_a_successful_inventory_read_actually_reaches_the_variants():
         variant(), variant(vid="2002", variantKey="blue-small"),
         variant(vid="2003", variantKey="green-small"),
         variant(vid="2004", variantKey="black-small", inventoryNum=50),
-        variant(vid="2005", variantKey="white-small")])
+        variant(vid="2005", variantKey="white-small"),
+        variant(vid="2006", variantKey="grey-small")])
     stock = {"variantInventories": [
-        # Three sellable units beside nine hundred unverified ones.
+        # Three pieces in a CJ warehouse beside nine hundred at the factory.
         {"pid": PID, "vid": VID, "inventory": [house(3, 1), house(900, 2, "CN")]},
         # Every warehouse zeroed: the one negative claim worth making.
         {"pid": PID, "vid": "2002", "inventory": [house(0, 1), house(0, 1, "CN")]},
-        # Unverified only. Never sellable, and never a confirmed sell-out either.
+        # Factory only. Orderable, and the case that used to read UNKNOWN.
         {"pid": PID, "vid": "2003", "inventory": [house(900, 2)]},
-        # One warehouse empty, one unverified. The tempting read is sold out,
-        # and it is wrong: nothing here has confirmed the variant unavailable.
-        {"pid": PID, "vid": "2005", "inventory": [house(0, 1), house(900, 2, "CN")]}]}
+        # One warehouse empty, one holding stock. The tempting read is sold out,
+        # and it is wrong: the other warehouse has nine hundred.
+        {"pid": PID, "vid": "2005", "inventory": [house(0, 1), house(900, 2, "CN")]},
+        # Counted and nearly gone. LOW_STOCK still has to survive the change.
+        {"pid": PID, "vid": "2006", "inventory": [house(2, 2)]}]}
     adapter, _, _, _ = make_adapter(Response(detail), Response(stock))
 
     product = normalize.product("cj", adapter.get_product(PID))
@@ -451,10 +459,11 @@ def test_a_successful_inventory_read_actually_reaches_the_variants():
 
     assert readings, "a successful inventory read must not normalize to no readings at all"
     by_id = {v["external_variant_id"]: v for v in applied}
-    assert (by_id[VID]["stock_state"], by_id[VID]["stock_quantity"]) == ("LOW_STOCK", 3)
+    assert (by_id[VID]["stock_state"], by_id[VID]["stock_quantity"]) == ("IN_STOCK", 903)
     assert (by_id["2002"]["stock_state"], by_id["2002"]["stock_quantity"]) == ("OUT_OF_STOCK", 0)
-    assert (by_id["2003"]["stock_state"], by_id["2003"]["stock_quantity"]) == ("UNKNOWN", None)
-    assert (by_id["2005"]["stock_state"], by_id["2005"]["stock_quantity"]) == ("UNKNOWN", None)
+    assert (by_id["2003"]["stock_state"], by_id["2003"]["stock_quantity"]) == ("IN_STOCK", 900)
+    assert (by_id["2005"]["stock_state"], by_id["2005"]["stock_quantity"]) == ("IN_STOCK", 900)
+    assert (by_id["2006"]["stock_state"], by_id["2006"]["stock_quantity"]) == ("LOW_STOCK", 2)
     # Omitted by the read, so it keeps the catalogue's fifty rather than
     # becoming out of stock -- `apply_inventory`'s partial-read contract.
     assert (by_id["2004"]["stock_state"], by_id["2004"]["stock_quantity"]) == ("IN_STOCK", 50)
