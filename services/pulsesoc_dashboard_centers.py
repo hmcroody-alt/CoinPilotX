@@ -819,7 +819,12 @@ def admin_decision(conn: Any, admin: dict[str, Any], request_id: int, action: st
     target_email = ""
     if _table_exists(cur, "users"):
         try:
-            cur.execute("SELECT email FROM users WHERE user_id=? OR id=? LIMIT 1", (target_user_id, target_user_id))
+            # `users` is keyed on user_id and has no `id` column, so the older
+            # `user_id=? OR id=?` form raised UndefinedColumn on PostgreSQL
+            # before reading a row. The except below then left target_email
+            # empty, which silently retired the same-address half of the
+            # self-review guard on the next line.
+            cur.execute("SELECT email FROM users WHERE user_id=? LIMIT 1", (target_user_id,))
             target_email = str(_row_dict(cur.fetchone()).get("email") or "").strip().lower()
         except Exception:
             target_email = ""

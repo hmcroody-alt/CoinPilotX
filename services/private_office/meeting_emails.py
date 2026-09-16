@@ -187,10 +187,32 @@ def compose(kind: str, *, meeting: dict, is_host: bool = False) -> tuple[str, st
 
 
 def _recipient_email(cur, user_id: int) -> str:
+    """This member's address, by the one column that identifies a user.
+
+    ``users`` is keyed on ``user_id`` and has no ``id`` (``bot.py``'s
+    ``CREATE TABLE users`` declares ``user_id INTEGER PRIMARY KEY``). The
+    query used to say ``WHERE user_id=? OR id=?``, meaning to be tolerant of
+    either name, and on PostgreSQL that is not tolerance — an unknown column
+    is a hard ``UndefinedColumn`` before a single row is considered, so this
+    lookup could only ever fail in production.
+
+    It failed quietly, and that was the expensive part. The ``except`` below
+    turned the error into "no address", but the statement had already aborted
+    the surrounding transaction, so ``services/db.py`` rolled the connection
+    back to keep it usable — taking the caller's meeting, its host
+    participant, its audit row and its planned reminders with it. Everything
+    after this line then ran against an empty transaction and succeeded, so
+    ``create_meeting`` returned a fully-formed meeting and the route answered
+    ``201`` for a booking that no longer existed.
+
+    The savepoint in ``meetings._nonfatal`` now contains that blast radius, but
+    the reason it never had to is here: ask for the column the table actually
+    has.
+    """
     try:
         cur.execute(
-            "SELECT email FROM users WHERE user_id=? OR id=? LIMIT 1",
-            (int(user_id), int(user_id)))
+            "SELECT email FROM users WHERE user_id=? LIMIT 1",
+            (int(user_id),))
         row = pm._row(cur.fetchone())
     except Exception:  # noqa: BLE001
         LOGGER.exception("PM_EMAIL_RECIPIENT_LOOKUP_FAILED user=%s", user_id)
@@ -200,12 +222,18 @@ def _recipient_email(cur, user_id: int) -> str:
 
 def enqueue(cur, *, kind: str, meeting: dict, user_id: int,
             send_after: str = "", idempotency_key: str = "",
-            metadata: dict | None = None) -> dict:
-    """Put one meeting email in the shared outbox for one person."""
-    to_email = _recipient_email(cur, int(user_id))
+            metadata: dict | None = None, to_email: str = "") -> dict:
+    """Put one meeting email in the shared outbox for one person.
+
+    ``to_email`` addresses someone who has no account — a guest invited by
+    address. Passing it skips the ``users`` lookup, which would have nothing to
+    find; ``user_id`` is then ``0`` and the outbox row simply belongs to no
+    member, which is true.
+    """
+    to_email = str(to_email or "").strip() or _recipient_email(cur, int(user_id))
     if not to_email:
         return {"ok": False, "status": "no_email"}
-    is_host = int(user_id) == int(meeting.get("owner_user_id") or 0)
+    is_host = bool(user_id) and int(user_id) == int(meeting.get("owner_user_id") or 0)
     subject, text, html = compose(kind, meeting=meeting, is_host=is_host)
     payload = dict(metadata or {})
     payload.update({
@@ -223,10 +251,21 @@ def enqueue(cur, *, kind: str, meeting: dict, user_id: int,
         send_after=send_after)
 
 
-def announce(cur, *, kind: str, meeting: dict, user_ids=None) -> int:
-    """Send one immediate meeting email to each person, separately."""
+def announce(cur, *, kind: str, meeting: dict, user_ids=None,
+             contacts=None) -> int:
+    """Send one immediate meeting email to each person, separately.
+
+    ``contacts`` are ``{"email": ..., "name": ...}`` guests with no account.
+    They are mailed exactly like members — same composition, same outbox, same
+    provider — because "has a PulseSoc login" is not a reason to be told less
+    about a meeting you were invited to.
+
+    Separately, because one failed address must not cost everyone else their
+    notice: each send is its own try, and the count returned is of the ones
+    that actually reached the outbox.
+    """
     meeting_id = int(meeting.get("id") or 0)
-    if user_ids is None:
+    if user_ids is None and contacts is None:
         from services.private_office import meeting_reminders
 
         user_ids = meeting_reminders.recipients(cur, meeting_id)
@@ -239,6 +278,20 @@ def announce(cur, *, kind: str, meeting: dict, user_ids=None) -> int:
                 idempotency_key=f"pm-{kind.lower()}:{meeting_id}:{int(user_id)}:{version}")
         except Exception:  # noqa: BLE001
             LOGGER.exception("PM_EMAIL_ENQUEUE_FAILED kind=%s meeting=%s",
+                             kind, meeting_id)
+            continue
+        if result.get("ok"):
+            sent += 1
+    for contact in contacts or []:
+        address = str((contact or {}).get("email") or "").strip().lower()
+        if not address:
+            continue
+        try:
+            result = enqueue(
+                cur, kind=kind, meeting=meeting, user_id=0, to_email=address,
+                idempotency_key=f"pm-{kind.lower()}:{meeting_id}:{address}:{version}")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("PM_EMAIL_GUEST_ENQUEUE_FAILED kind=%s meeting=%s",
                              kind, meeting_id)
             continue
         if result.get("ok"):
