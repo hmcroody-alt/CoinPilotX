@@ -256,6 +256,45 @@ describe("attached music starts with the picture", () => {
     expect(mockSound.pauseAsync).toHaveBeenCalled();
   });
 
+  it("timestamps the track's position so a stale reading is not read as drift", async () => {
+    // The card is the half that knows WHEN each reading was taken, and it is
+    // the only half that can know: the planner is handed two numbers and has no
+    // way to tell that one of them is a quarter-second old.
+    //
+    // This is the wiring the measurement caught. An instrumented Release build
+    // seeked the track four times a second forever, because the video's status
+    // arrives on its own interval and the music's position is whatever the
+    // sound's slower callback last left behind -- a gap wider than the deadband,
+    // so every tick read as drift and every correction republished a reading one
+    // tick old.
+    //
+    // Every other test in this file ticks both clocks inside the same
+    // millisecond, which is exactly the condition under which the bug is
+    // invisible. So this one moves the clock between them: that is the whole
+    // point, and without it a mutation that deletes the card's timestamp
+    // survives the entire suite.
+    const nowSpy = jest.spyOn(Date, "now");
+    try {
+      nowSpy.mockReturnValue(1_000_000);
+      render(<ReelPlayerCard {...cardProps(true)} />);
+      await act(async () => undefined);
+      musicTick({ positionMillis: 0, isPlaying: false });
+      await videoTick({ positionMillis: 0, isPlaying: true });
+      mockSound.setStatusAsync.mockClear();
+
+      // The track reports 2750ms. 250ms later the video reports 3000ms. Those
+      // are the same instant seen twice, not a 250ms error.
+      nowSpy.mockReturnValue(1_000_000);
+      musicTick({ positionMillis: 2750, isPlaying: true });
+      nowSpy.mockReturnValue(1_000_250);
+      await videoTick({ positionMillis: 3000, isPlaying: true });
+
+      expect(mockSound.setStatusAsync).not.toHaveBeenCalled();
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
   it("does not make a muted reel's track audible", async () => {
     render(<ReelPlayerCard {...cardProps(true, true)} />);
     await act(async () => undefined);
