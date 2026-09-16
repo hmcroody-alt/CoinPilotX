@@ -18,10 +18,18 @@ const theme = {
   reduceTransparency: false
 };
 
-jest.mock("../../theme/ThemeContext", () => ({ useTheme: () => theme }));
+/**
+ * Doubles as a render counter. `useTheme` is the first thing the render body
+ * does, ahead of every early return, so one call is one execution of the body —
+ * which is the only way to tell a `memo` bail-out from a re-render that happens
+ * to produce an identical tree.
+ */
+const mockRenders = jest.fn(() => theme);
+
+jest.mock("../../theme/ThemeContext", () => ({ useTheme: () => mockRenders() }));
 
 import { ChatWallpaper } from "../ChatWallpaper";
-import { DEFAULT_CHAT_WALLPAPER, resolveChatWallpaper } from "../../theme/chatWallpaper";
+import { CHAT_WALLPAPER_IDS, DEFAULT_CHAT_WALLPAPER, resolveChatWallpaper } from "../../theme/chatWallpaper";
 
 type Node = { props: Record<string, any>; children?: unknown };
 
@@ -55,6 +63,7 @@ function gradients(screen: ReturnType<typeof render>) {
 beforeEach(() => {
   theme.galacticBackground = { enabled: true, intensity: 1, variant: "dark" };
   theme.reduceTransparency = false;
+  mockRenders.mockClear();
 });
 
 describe("ChatWallpaper", () => {
@@ -146,13 +155,85 @@ describe("ChatWallpaper", () => {
     });
   });
 
-  it("re-renders nothing when the wallpaper prop is unchanged", () => {
-    // `memo` over a string prop is what keeps composer keystrokes and arriving
-    // messages from touching the background at all. Same element identity on
-    // re-render is the observable consequence.
-    const screen = render(<ChatWallpaper wallpaper="pulsesoc_cosmic" />);
-    const before = screen.toJSON();
-    screen.update(<ChatWallpaper wallpaper="pulsesoc_cosmic" />);
-    expect(screen.toJSON()).toEqual(before);
+  describe("cost", () => {
+    /**
+     * These are the mission's performance requirements, and they are asserted
+     * here rather than measured on a device because the property in question is
+     * discrete: either the background re-renders while you scroll and type, or
+     * it does not. A frame-rate sample can only ever show that it was cheap
+     * enough on one machine on one run; a render count settles it.
+     */
+    it("does not re-render when the parent re-renders with the same wallpaper", () => {
+      // The chat screen re-renders on every composer keystroke, every arriving
+      // message, and every scroll-driven state change. If any of those reached
+      // the background, the wallpaper would be re-composited hundreds of times
+      // in a normal conversation. `memo` over two primitive props is what stops
+      // it — and only a render count can tell that bail-out apart from a
+      // re-render that happens to produce an identical tree.
+      const screen = render(<ChatWallpaper wallpaper="pulsesoc_cosmic" />);
+      expect(mockRenders).toHaveBeenCalledTimes(1);
+
+      for (let keystroke = 0; keystroke < 25; keystroke += 1) {
+        screen.update(<ChatWallpaper wallpaper="pulsesoc_cosmic" />);
+      }
+
+      // Still one: the twenty-five re-renders never reached the background.
+      expect(mockRenders).toHaveBeenCalledTimes(1);
+    });
+
+    it("does re-render when the viewer actually changes wallpaper", () => {
+      // The positive control for the test above. Without it, "the render count
+      // stayed at one" would also hold for a component that never updates at
+      // all, which would be a broken wallpaper rather than a cheap one.
+      const screen = render(<ChatWallpaper wallpaper="pulsesoc_cosmic" />);
+      expect(mockRenders).toHaveBeenCalledTimes(1);
+      screen.update(<ChatWallpaper wallpaper="minimal_black" />);
+      expect(mockRenders).toHaveBeenCalledTimes(2);
+    });
+
+    it("schedules no timers, so there is no continuous animation", () => {
+      jest.useFakeTimers();
+      try {
+        render(<ChatWallpaper wallpaper="pulsesoc_cosmic" />);
+        // "One optimized static background layer, no continuous animation."
+        // A single pending timer here would mean the background wakes the JS
+        // thread for the whole time a conversation is open.
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("costs a static view count in the same range as the wallpapers it joins", () => {
+      // Counting host views is the honest way to size the default: the number is
+      // identical on every machine and every run, unlike a frame rate.
+      //
+      // The default is in fact the *dearest* of the built-ins — 32 views against
+      // the 24 of `deep_space`, which it replaced — so the useful question is
+      // not "is it cheap in the abstract" but "is it in the same class as what
+      // people already had". A few views more than the next-dearest is; an order
+      // of magnitude would not be.
+      //
+      // None of this is per-message or per-frame work. The test above is what
+      // establishes that the subtree renders once and is only composited after.
+      const count = (id: string) =>
+        render(<ChatWallpaper wallpaper={id} />).UNSAFE_root.findAll(
+          (node: { type: unknown }) => typeof node.type === "string"
+        ).length;
+
+      const cosmic = count(DEFAULT_CHAT_WALLPAPER);
+      // Deliberately excludes the default itself: a max over *every* id would
+      // include Cosmic, and "Cosmic is at most the dearest of all of them"
+      // is true no matter how expensive Cosmic gets.
+      const dearestOther = Math.max(
+        ...CHAT_WALLPAPER_IDS.filter((id) => id !== DEFAULT_CHAT_WALLPAPER).map(count)
+      );
+
+      expect(cosmic).toBeLessThanOrEqual(dearestOther + 8);
+      // A loose ceiling too, to catch a redesign that starts costing hundreds of
+      // views — without pinning the exact figure, which would turn every visual
+      // tweak into a failing test.
+      expect(cosmic).toBeLessThan(64);
+    });
   });
 });
