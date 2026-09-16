@@ -654,11 +654,17 @@ export function mediaKind(media: PulseMedia) {
 
 /**
  * Renderability for a feed post's media, kind-aware. Still images must clear the
- * strict `hasRenderableImage` gate (drawable URL, server-available, real
- * dimensions) so a failed/skipped Insight image -- which the serializer still
- * hands back with a populated `media_url` and zeroed dimensions -- never reserves
- * a media box. Video/live keep the URL gate: a clip legitimately renders from a
- * poster while its playback asset is still processing and carries no image dims.
+ * stricter `hasRenderableImage` gate -- a drawable URL that the server has not
+ * marked unavailable -- so a failed/skipped Insight image, which the serializer
+ * still hands back with a populated `media_url`, never reserves a media box.
+ * Video/live keep the plain URL gate: a clip legitimately renders from a poster
+ * while its playback asset is still processing.
+ *
+ * That image gate used to also demand real dimensions, and this comment used to
+ * say so. It was the wrong proxy: `chat_media_uploads.width/height` are nullable
+ * and nothing on the upload path ever filled them, so healthy user photos were
+ * filtered out here and their posts rendered with no picture at all. Availability
+ * is the signal; size is a layout detail with a 4:5 fallback.
  */
 export function feedRenderableMedia(list: readonly PulseMedia[] | null | undefined): PulseMedia[] {
   return (list || []).filter((media) =>

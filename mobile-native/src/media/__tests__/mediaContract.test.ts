@@ -78,8 +78,50 @@ describe("hasRenderableImage", () => {
     ).toBe(false);
   });
 
-  it("rejects a url-bearing image with zero dimensions and no aspect ratio", () => {
-    expect(hasRenderableImage({ media_url: "https://cdn.example/a.png", width: 0, height: 0 })).toBe(false);
+  // This case used to assert `false`, and that assertion is what kept the ghost
+  // post shipping: it is the exact signature of production post 2409 -- and of
+  // 12 of the 13 images ever attached to a pulse post, i.e. every user-uploaded
+  // one. `chat_media_uploads.width/height` are nullable and the pulse upload
+  // path never filled them, so a perfectly healthy R2 image (is_available=1,
+  // processing_status=ready, verification_status=verified, real bytes behind a
+  // real CDN URL) arrives 0x0. Rejecting it dropped the media array, collapsed
+  // MediaStrip to null, and rendered the post as author + actions + comments
+  // with no picture -- while the profile grid, which reads thumbnail_url into a
+  // fixed square and asks no dimension question, showed it fine.
+  it("accepts an available image that simply never had its dimensions recorded", () => {
+    expect(hasRenderableImage({ media_url: "https://cdn.example/a.png", width: 0, height: 0 })).toBe(true);
+  });
+
+  // The production record, field for field, as the detail endpoint serializes it.
+  it("accepts the real post-2409 signature", () => {
+    expect(
+      hasRenderableImage({
+        id: 739,
+        media_type: "image",
+        media_url: "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/x.jpg",
+        valid_url: "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/x.jpg",
+        thumbnail_url: "https://cdn.coinpilotx.app/pulse_media/1/2026/09/16/x-cover-.jpg",
+        width: 0,
+        height: 0,
+        aspect_ratio: 0,
+        processing_status: "ready",
+        is_available: true
+      })
+    ).toBe(true);
+  });
+
+  // Losing a size must not cost the protection the dimension check was standing
+  // in for: a row the server has marked gone stays unrenderable regardless.
+  it("still rejects unavailable media that also lacks dimensions", () => {
+    expect(
+      hasRenderableImage({ media_url: "https://cdn.example/gone.png", valid_url: "", is_available: false })
+    ).toBe(false);
+  });
+
+  it("still rejects media in a terminal processing state", () => {
+    expect(
+      hasRenderableImage({ media_url: "https://cdn.example/x.png", width: 800, height: 600, processing_status: "failed" })
+    ).toBe(false);
   });
 
   it("rejects when there is no drawable url at all", () => {

@@ -118,27 +118,33 @@ export function hasRenderableMediaUrl(media: CanonicalMediaRecord | null | undef
  *
  * A media row can carry a URL and still be unrenderable *as an image*. The feed
  * serializer sets `media_url` to the source path unconditionally -- even when the
- * upload or the Insight image generation failed -- and only blanks `valid_url`
- * (via `is_available === false`). A failed row therefore looks renderable to the
- * URL gate (`media_url` is non-empty) while carrying `width: 0`, `height: 0` and
- * no aspect ratio. Mounting an <Image> around it reserves a 4:5 box for a picture
+ * upload or the Insight image generation failed -- so a dead row still satisfies
+ * the URL gate. Mounting an <Image> around it reserves a 4:5 box for a picture
  * that never arrives, then leans on onError to clean up -- a visible flash of the
  * exact blank rectangle the invariant forbids, and a permanent one if the broken
- * URL 200s.
+ * URL 200s. So this gate needs a signal the URL gate does not have.
  *
- * An image is renderable only when it has a drawable URL, is not server-marked
- * unavailable, and carries positive dimensions (or a positive aspect ratio) to
- * size the box from. Height is never computed from zero/undefined dimensions:
- * no dimensions means no container.
+ * Dimensions are NOT that signal, though they were used as one. `width`/`height`
+ * are nullable on `chat_media_uploads` and the pulse upload path never recorded
+ * them, so in production 12 of 13 attached images -- every user-uploaded one --
+ * arrived `0x0` while being `is_available=1`, `processing_status=ready` and
+ * backed by real bytes at a real CDN URL. Gating on dimensions failed those
+ * posts closed: the detail screen dropped the media array, `MediaStrip`
+ * returned null, and the post rendered as author + actions + comments with no
+ * picture. That is the ghost post, and it is the opposite of this gate's
+ * purpose -- it hid content that was actually there.
+ *
+ * The real discriminator is availability, which only the server can know and
+ * which it already sends: `resolve_media` emits `valid_url: source if available
+ * else ""` alongside `is_available`, so a row whose bytes are gone is marked,
+ * not inferred. `isMediaUnavailable` is that check (plus terminal processing
+ * states), so defer to it and let a missing size stay a layout question --
+ * `clampedMediaAspect` already falls back to 4:5 for exactly this case.
  */
 export function hasRenderableImage(media: CanonicalMediaRecord | null | undefined) {
   if (!media) return false;
-  if (media.is_available === false) return false;
-  if (!hasRenderableMediaUrl(media)) return false;
-  const width = Number(media.width || 0);
-  const height = Number(media.height || 0);
-  const aspect = Number(media.aspect_ratio || 0);
-  return (width > 0 && height > 0) || (Number.isFinite(aspect) && aspect > 0);
+  if (isMediaUnavailable(media)) return false;
+  return hasRenderableMediaUrl(media);
 }
 
 /**
