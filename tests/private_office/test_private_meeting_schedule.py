@@ -833,9 +833,16 @@ def test_added_columns_and_the_create_statement_agree():
     ADDED_COLUMNS only: the reverse. Both halves are silent until a query
     touches the missing column on the wrong kind of database.
     """
+    ddl_for = {
+        meetings.MEETINGS_TABLE: meetings.MEETINGS_TABLE_DDL,
+        meetings.INVITES_TABLE: meetings.INVITES_TABLE_DDL,
+    }
     for table, column, _definition in meetings.ADDED_COLUMNS:
-        ddl = {meetings.MEETINGS_TABLE: meetings.MEETINGS_TABLE_DDL}[table]
-        assert f"{column} " in ddl, f"{table}.{column} missing from its CREATE"
+        assert table in ddl_for, (
+            f"{table} has ALTERs but no CREATE here; a new table added to "
+            f"ADDED_COLUMNS must be registered above or it goes unchecked")
+        assert f"{column} " in ddl_for[table], (
+            f"{table}.{column} missing from its CREATE")
 
 
 if __name__ == "__main__":

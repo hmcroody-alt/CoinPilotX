@@ -80,6 +80,39 @@ def _body() -> dict:
     return data if isinstance(data, dict) else {}
 
 
+#: A request naming more than this is not a meeting, and refusing it here keeps
+#: the model from having to defend itself against a list the size of a mailbox.
+MAX_BODY_INVITEES = 60
+
+
+def _user_ids(raw: object) -> list[int]:
+    if not isinstance(raw, list):
+        return []
+    return [int(v) for v in raw[:MAX_BODY_INVITEES] if str(v).strip().isdigit()]
+
+
+def _invitees(body: dict) -> list[dict]:
+    """The ``{name, email}`` guests from a request body.
+
+    Shape only: kept, trimmed, and handed on. Whether an address is usable,
+    whether it belongs to a member already, and whether it is a duplicate are
+    all decided by the model, which is the only place that can answer them
+    consistently for both this route and the invite route.
+    """
+    raw = body.get("invitees")
+    if not isinstance(raw, list):
+        return []
+    out: list[dict] = []
+    for item in raw[:MAX_BODY_INVITEES]:
+        if not isinstance(item, dict):
+            continue
+        out.append({
+            "name": str(item.get("name") or item.get("full_name") or "")[:200],
+            "email": str(item.get("email") or "")[:320],
+        })
+    return out
+
+
 def _run(work, *, log_tag: str, fail_message: str):
     """Execute ``work(cur)`` through the shared commit-on-success cursor and
     translate the two failure families:
@@ -130,6 +163,8 @@ def api_private_meetings_create():
     if refusal:
         return refusal
     body = _body()
+    invitees = _invitees(body)
+    invite_user_ids = _user_ids(body.get("invite_user_ids"))
 
     def work(cur):
         return po_meetings.create_meeting(
@@ -143,6 +178,8 @@ def api_private_meetings_create():
             idempotency_key=str(body.get("idempotency_key") or ""),
             waiting_room_enabled=bool(body.get("waiting_room_enabled", True)),
             instant=bool(body.get("instant")),
+            invitees=invitees,
+            invite_user_ids=invite_user_ids,
         )
 
     meeting, err = _run(work, log_tag="PRIVATE_MEETINGS_CREATE_FAILED",
@@ -447,14 +484,14 @@ def api_private_meetings_invite(meeting_ref: str):
     if refusal:
         return refusal
     body = _body()
-    raw_ids = body.get("user_ids")
-    user_ids = [int(v) for v in raw_ids if str(v).strip().isdigit()] \
-        if isinstance(raw_ids, list) else []
+    user_ids = _user_ids(body.get("user_ids"))
+    invitees = _invitees(body)
 
     def work(cur):
         return po_meetings.invite_users(
             cur, actor_user_id=user["user_id"], meeting_ref=meeting_ref,
-            user_ids=user_ids, message=str(body.get("message") or ""))
+            user_ids=user_ids, invitees=invitees,
+            message=str(body.get("message") or ""))
 
     result, err = _run(work, log_tag="PRIVATE_MEETINGS_INVITE_FAILED",
                        fail_message="We could not send those invites just now.")

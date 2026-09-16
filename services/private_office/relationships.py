@@ -35,6 +35,7 @@ may later persist one, but preparing it asserts nothing and writes nothing.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from services.private_office import audit
@@ -133,6 +134,107 @@ def add_person(
         "role": clean_role,
         "domain": node["domain"],
         "sensitivity": node["sensitivity"],
+    }
+
+
+#: The source label a person-from-a-meeting carries, recorded on every fact
+#: this path writes. It is a ``ProvenanceRef.source_type``, not a new
+#: ``PROVENANCE_TYPES`` member, and the distinction is deliberate: provenance
+#: *type* answers "why should anyone believe this" and its ordering decides
+#: contradictions, so the honest type here is ``USER_ASSERTED`` — a host typed
+#: a name and an address. "Came from a meeting invitation" is *where* it came
+#: from, which is what a provenance ref is for, and putting it in the strength
+#: table instead would have been inventing a rank for a category that has none.
+PROVENANCE_MEETING_INVITEE = "PRIVATE_MEETING_INVITEE"
+
+#: Stored on the person, not treated as identity: adding it to
+#: ``IDENTITY_FACT_TYPES`` would change what every directory read fetches.
+FACT_EMAIL = "email"
+
+
+def _invitee_external_ref(*, user_id: int = 0, email: str = "") -> str:
+    """The identity a meeting invitee is linked by — never their name.
+
+    A member is ``pmu:<user_id>``. Someone invited by address is
+    ``pme:<sha256 of the normalized address>``, hashed for two reasons: the
+    graph's ``external_ref`` is identifier-shaped and an address is not
+    (``@`` is not in the permitted character class), and a person's email is
+    not something to leave sitting in a join key.
+
+    A name is never part of this. Two advisors called "John Smith" are two
+    people, and an identity derived from a name would quietly merge them — or
+    worse, attach one member's notes to a stranger who happens to be a
+    namesake. No identifier, no link: the caller gets nothing back and the
+    invite still stands on its own.
+    """
+    if int(user_id or 0) > 0:
+        return f"pmu:{int(user_id)}"
+    address = str(email or "").strip().lower()
+    if not address:
+        return ""
+    return "pme:" + hashlib.sha256(address.encode("utf-8")).hexdigest()[:40]
+
+
+def link_meeting_invitee(
+    cur,
+    *,
+    owner_user_id: int,
+    name: str = "",
+    email: str = "",
+    invitee_user_id: int = 0,
+    meeting_ref: str = "",
+    domain: object = None,
+    sensitivity: object = None,
+    actor_user_id: int | None = None,
+) -> dict[str, Any]:
+    """Link this meeting invitee to a person, creating the person if new.
+
+    Unlike :func:`add_person`, this is idempotent: it is keyed on
+    ``_invitee_external_ref``, so inviting the same person to a second meeting
+    adds to the person you already have rather than making a second one. That
+    is safe here precisely *because* the key is an account or an address. The
+    reason ``add_person`` refuses to dedupe is that it only has a name to go on.
+
+    Writes nothing the member did not supply, notifies nobody, and returns
+    ``{}`` when there is no identity to key on.
+    """
+    owner = int(owner_user_id or 0)
+    if owner <= 0:
+        raise PrivateRelationshipRejected("owner_user_id is required")
+    ref = _invitee_external_ref(user_id=invitee_user_id, email=email)
+    if not ref:
+        return {}
+
+    node = graph_mod.upsert_node(
+        cur, owner_user_id=owner, node_type=model.NODE_PERSON,
+        external_ref=ref, sensitivity=sensitivity, domain=domain,
+        actor_user_id=actor_user_id or owner, purpose="user_request",
+    )
+    node_id = int(node["node_id"])
+    source = facts_mod.ProvenanceRef(
+        source_type=PROVENANCE_MEETING_INVITEE,
+        source_id=str(meeting_ref or "")[:64])
+
+    def remember(fact_type: str, value: str) -> None:
+        if not value:
+            return
+        facts_mod.record_fact(
+            cur, owner_user_id=owner, subject_type=facts_mod.SUBJECT_NODE,
+            subject_id=str(node_id), fact_type=fact_type, value=value,
+            value_type=model.VALUE_STRING,
+            provenance_type=model.PROVENANCE_USER_ASSERTED,
+            provenance=source, domain=domain, sensitivity=sensitivity,
+            actor_user_id=actor_user_id or owner, purpose="user_request",
+        )
+
+    remember(FACT_NAME, " ".join(str(name or "").split())[:MAX_NAME_CHARS])
+    remember(FACT_EMAIL, str(email or "").strip().lower()[:MAX_NAME_CHARS])
+
+    return {
+        "node_id": node_id,
+        "ref": evidence.format_ref("node", node_id),
+        "status": node["status"],
+        "external_ref": ref,
     }
 
 

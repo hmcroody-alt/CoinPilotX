@@ -38,12 +38,16 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pulse_communications_v2 import service as comm_service
+from services import auth_service
+from services import db as db_service
 from services import pulsesoc_communications_engine as call_engine
 from services.private_office import audit
 from services.private_office import schema
@@ -300,17 +304,28 @@ CREATE TABLE IF NOT EXISTS {PARTICIPANTS_TABLE} (
 )
 """
 
+# ``invitee_key`` is the identity, not ``invitee_user_id``. A meeting can be
+# sent to a member (who has an account) or to someone's email address (who may
+# not), and those two have to be one list with one rule for "already invited" —
+# otherwise the same person invited both ways is two rows, gets two emails, and
+# is counted twice. The key is ``u:<user_id>`` or ``e:<normalized email>``; see
+# ``invite_identity``. There is deliberately no table-level
+# ``UNIQUE(meeting_id, invitee_user_id)`` any more: every external invitee
+# carries ``invitee_user_id = 0``, so that constraint would allow exactly one
+# of them per meeting. Uniqueness is the index on the key instead.
 INVITES_TABLE_DDL = f"""
 CREATE TABLE IF NOT EXISTS {INVITES_TABLE} (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     meeting_id INTEGER NOT NULL,
     inviter_user_id INTEGER NOT NULL,
-    invitee_user_id INTEGER NOT NULL,
+    invitee_user_id INTEGER NOT NULL DEFAULT 0,
+    invitee_key TEXT NOT NULL DEFAULT '',
+    invitee_email TEXT NOT NULL DEFAULT '',
+    invitee_name TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT '{INVITE_PENDING}',
     message TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
-    responded_at TEXT NOT NULL DEFAULT '',
-    UNIQUE(meeting_id, invitee_user_id)
+    responded_at TEXT NOT NULL DEFAULT ''
 )
 """
 
@@ -441,7 +456,18 @@ ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     (MEETINGS_TABLE, "agenda", "TEXT NOT NULL DEFAULT ''"),
     (MEETINGS_TABLE, "idempotency_key", "TEXT NOT NULL DEFAULT ''"),
     (MEETINGS_TABLE, "duration_minutes", "INTEGER NOT NULL DEFAULT 0"),
+    (INVITES_TABLE, "invitee_key", "TEXT NOT NULL DEFAULT ''"),
+    (INVITES_TABLE, "invitee_email", "TEXT NOT NULL DEFAULT ''"),
+    (INVITES_TABLE, "invitee_name", "TEXT NOT NULL DEFAULT ''"),
 )
+
+#: The old identity constraint, by the name PostgreSQL gave it. Every external
+#: invitee stores ``invitee_user_id = 0``, so leaving this in place would cap a
+#: meeting at one external guest and raise an integrity error on the second.
+#: SQLite cannot drop a table constraint at all, which is survivable: a fresh
+#: database is built from the DDL above, which no longer declares it.
+_DROPPED_INVITE_CONSTRAINT = (
+    "private_meeting_invites_meeting_id_invitee_user_id_key")
 
 
 def _add_missing_columns(cur) -> None:
@@ -472,6 +498,48 @@ def _add_missing_columns(cur) -> None:
                     "PM_COLUMN_ADD_FAILED table=%s column=%s", table, column)
 
 
+def _migrate_invite_identity(cur) -> None:
+    """Move an already-deployed invites table onto ``invitee_key``.
+
+    Three steps, in this order and only this order: give the existing rows a
+    key, retire the constraint that assumed identity was the user id, then make
+    the key unique. Creating the index first would fail on a table whose rows
+    all still carry the empty-string default.
+
+    Each step runs inside a savepoint. This function executes inside whatever
+    transaction the request already opened, and a DDL statement that fails on
+    PostgreSQL aborts that transaction — which, unsavepointed, is how a booking
+    got rolled out from under its own ``201``. Schema upkeep must not be able
+    to cost a caller their meeting.
+    """
+    try:
+        present = schema.table_columns(cur, INVITES_TABLE, refresh=True)
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_INVITE_IDENTITY_INTROSPECT_FAILED")
+        return
+    if "invitee_key" not in present:
+        # The ALTER did not land. Do not build an index on a column that is
+        # not there; the next ensure will try again.
+        LOGGER.warning("PM_INVITE_IDENTITY_COLUMN_MISSING")
+        return
+
+    with _nonfatal(cur, "invite_backfill"):
+        cur.execute(
+            f"UPDATE {INVITES_TABLE} SET invitee_key = 'u:' || invitee_user_id "
+            f"WHERE invitee_key = '' AND invitee_user_id > 0")
+
+    if db_service.IS_POSTGRES:
+        with _nonfatal(cur, "invite_constraint"):
+            cur.execute(
+                f"ALTER TABLE {INVITES_TABLE} "
+                f"DROP CONSTRAINT IF EXISTS {_DROPPED_INVITE_CONSTRAINT}")
+
+    with _nonfatal(cur, "invite_identity_index"):
+        cur.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_pm_invites_identity "
+            f"ON {INVITES_TABLE} (meeting_id, invitee_key)")
+
+
 def ensure_meetings_schema(cur, *, force: bool = False) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY and not force:
@@ -484,6 +552,7 @@ def ensure_meetings_schema(cur, *, force: bool = False) -> None:
     cur.execute(MEETING_ARTIFACT_TABLE_DDL)
     cur.execute(REMINDERS_TABLE_DDL)
     _add_missing_columns(cur)
+    _migrate_invite_identity(cur)
     for ddl in INDEX_DDL:
         cur.execute(ddl)
     # A meeting rides a communication_calls row, so this schema is not ready
@@ -1068,7 +1137,9 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
                    waiting_room_enabled: bool = True,
                    instant: bool = False, timezone_name: str = "",
                    agenda: str = "", idempotency_key: str = "",
-                   reminder_offsets: object = None) -> dict:
+                   reminder_offsets: object = None,
+                   invitees: list[dict] | None = None,
+                   invite_user_ids: list[int] | None = None) -> dict:
     _require_enabled()
     ensure_meetings_schema(cur)
     owner = int(owner_user_id or 0)
@@ -1139,7 +1210,86 @@ def create_meeting(cur, *, owner_user_id: int, title: str = "",
         return start_meeting(cur, actor_user_id=owner, meeting_ref=public_id)
     _plan_reminders(cur, int(meeting["id"]), reminder_offsets)
     _announce(cur, meeting, "CONFIRMATION")
-    return _project_meeting(cur, meeting, viewer_user_id=owner)
+    # Invitees named while booking are invited as part of booking. The wizard
+    # collects them on the way to the confirm button, so requiring a second
+    # request would mean a meeting could exist with nobody on it because the
+    # app was closed in between — the host having been told they were invited.
+    invite_result = {"invited": [], "invited_contacts": [], "skipped": []}
+    if invitees or invite_user_ids:
+        invite_result = invite_users(
+            cur, actor_user_id=owner, meeting_ref=public_id,
+            user_ids=invite_user_ids, invitees=invitees)
+        meeting = _require_meeting(cur, public_id)
+    projected = _project_meeting(cur, meeting, viewer_user_id=owner)
+    projected["invite_result"] = invite_result
+    return projected
+
+
+@contextmanager
+def _nonfatal(cur, label: str):
+    """Run a best-effort block without letting it take the meeting with it.
+
+    The three helpers below all promise the same thing — a mail or reminder
+    problem degrades a meeting, it does not cancel one — and on PostgreSQL
+    that promise was false, in the most confusing way available.
+
+    A failed statement there poisons the whole transaction, so ``services/db.py``
+    rolls the *connection* back to keep it usable. That is the right call when
+    nobody has claimed the recovery, and it is catastrophic here: by the time
+    ``meeting_emails`` swallowed its own exception and returned "no address",
+    the meeting row, its host participant, its audit row and its three planned
+    reminders had already been discarded. Nothing raised. ``create_meeting``
+    went on to build its response from the meeting dict it still held in
+    memory, the route answered ``201`` with a complete meeting object, and the
+    database contained nothing. Production's sequences recorded it exactly:
+    ``private_meetings_id_seq`` had issued ids 3 and 4 that no row was using,
+    and ``private_meeting_reminders_id_seq`` stood at 6 over an empty table —
+    two bookings and their six reminders, written and then erased.
+
+    A savepoint is what makes the swallow honest. ``db.py`` deliberately does
+    not roll the connection back while one is open, leaving recovery to
+    whoever opened it, so the damage is bounded to this block and the meeting
+    survives.
+
+    The health probe is the part that is easy to leave out. These blocks catch
+    their own errors several frames down, so an exception reaching this
+    ``contextmanager`` is the uncommon case — a clean exit proves nothing
+    about the transaction. Asking it directly is the only way to find a
+    failure that was already absorbed.
+    """
+    name = f"pm_{label}"
+    try:
+        cur.execute(f"SAVEPOINT {name}")
+    except Exception:  # noqa: BLE001
+        # No savepoint means no protection, but a reminder is still not worth
+        # a booking: run the block rather than refuse the meeting.
+        LOGGER.warning("PM_NONFATAL_NO_SAVEPOINT block=%s", label)
+        yield
+        return
+
+    try:
+        yield
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_NONFATAL_RAISED block=%s", label)
+
+    healthy = True
+    try:
+        cur.execute("SELECT 1")
+        cur.fetchone()
+    except Exception:  # noqa: BLE001
+        healthy = False
+
+    if not healthy:
+        LOGGER.error("PM_NONFATAL_UNWOUND block=%s", label)
+        try:
+            cur.execute(f"ROLLBACK TO SAVEPOINT {name}")
+        except Exception:  # noqa: BLE001
+            LOGGER.exception("PM_NONFATAL_UNWIND_FAILED block=%s", label)
+            return
+    try:
+        cur.execute(f"RELEASE SAVEPOINT {name}")
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_NONFATAL_RELEASE_FAILED block=%s", label)
 
 
 def _plan_reminders(cur, meeting_id: int, offsets: object = None) -> None:
@@ -1150,7 +1300,7 @@ def _plan_reminders(cur, meeting_id: int, offsets: object = None) -> None:
     meeting, not a failed booking — refusing the schedule because the mail
     plan hiccuped would be the tail wagging the dog.
     """
-    try:
+    with _nonfatal(cur, "plan_reminders"):
         from services.private_office import meeting_emails, meeting_reminders
 
         meeting_reminders.plan_reminders(
@@ -1159,32 +1309,58 @@ def _plan_reminders(cur, meeting_id: int, offsets: object = None) -> None:
         # the step that makes the plan survive a deploy, a restart, or nine
         # years of nothing happening.
         meeting_emails.enqueue_reminders(cur, meeting_id=int(meeting_id))
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PM_REMINDER_PLAN_FAILED meeting=%s", meeting_id)
 
 
 def _drop_reminders(cur, meeting_id: int, *, reason: str,
                     user_id: int = 0, before_version: int = 0) -> None:
-    try:
+    with _nonfatal(cur, "drop_reminders"):
         from services.private_office import meeting_reminders
 
         meeting_reminders.cancel_reminders(
             cur, meeting_id=int(meeting_id), user_id=int(user_id or 0),
             before_version=int(before_version or 0), reason=reason)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PM_REMINDER_CANCEL_FAILED meeting=%s", meeting_id)
 
 
-def _announce(cur, meeting: dict, kind: str, *, user_ids=None) -> None:
+def _link_relationships(cur, *, owner: int, meeting: dict,
+                        candidates: list[dict]) -> None:
+    """Remember who the host is meeting, in Relationship Intelligence.
+
+    Best-effort and savepointed, for the same reason the emails are: the
+    graph is downstream of the booking, and a person-linking failure must not
+    be able to unbook a meeting that is already committed.
+
+    Nothing is sent to anyone. Linking is the host's own record of who they
+    deal with, so notifying the invitee here would be telling them they had
+    been filed.
+    """
+    if not candidates:
+        return
+    with _nonfatal(cur, "link_people"):
+        from services.private_office import relationships
+
+        for candidate in candidates:
+            try:
+                relationships.link_meeting_invitee(
+                    cur, owner_user_id=owner,
+                    name=candidate.get("name") or "",
+                    email=candidate.get("email") or "",
+                    invitee_user_id=int(candidate.get("user_id") or 0),
+                    meeting_ref=str(meeting.get("public_id") or ""),
+                    actor_user_id=owner)
+            except Exception:  # noqa: BLE001
+                # One unlinkable invitee must not cost the others their link.
+                LOGGER.exception("PM_RELATIONSHIP_LINK_FAILED meeting=%s",
+                                 meeting.get("public_id"))
+
+
+def _announce(cur, meeting: dict, kind: str, *, user_ids=None,
+              contacts=None) -> None:
     """Mail the people on a meeting, one message each. Never fatal."""
-    try:
+    with _nonfatal(cur, "announce"):
         from services.private_office import meeting_emails
 
         meeting_emails.announce(cur, kind=kind, meeting=meeting,
-                                user_ids=user_ids)
-    except Exception:  # noqa: BLE001
-        LOGGER.exception("PM_ANNOUNCE_FAILED kind=%s meeting=%s",
-                         kind, meeting.get("id"))
+                                user_ids=user_ids, contacts=contacts)
 
 
 def start_meeting(cur, *, actor_user_id: int, meeting_ref: object) -> dict:
@@ -1762,8 +1938,180 @@ def rotate_code(cur, *, actor_user_id: int, meeting_ref: object) -> dict:
 # Invites
 # ---------------------------------------------------------------------------
 
+#: An address longer than this is not a typo, it is an attack on a column.
+MAX_INVITE_EMAIL = 254          # RFC 5321 limit on a forward path
+MAX_INVITE_NAME = 120
+MAX_INVITES_PER_CALL = 50
+
+_EMAIL_SHAPE = re.compile(r"^[^@\s]+@[^@\s.]+\.[^@\s]+$")
+
+
+def normalize_invite_email(value: object) -> str:
+    """Fold an address to the one spelling we store and compare.
+
+    Delegates to ``auth_service.normalize_email`` — the same trim-and-lowercase
+    an account is registered under — so that a guest invited by address and the
+    member who owns that address resolve to the same identity rather than to
+    two people who happen to share an inbox.
+
+    It does not do provider-specific folding. Stripping dots or ``+tags`` is
+    correct at Gmail and wrong nearly everywhere else, and a rule that silently
+    merges two genuinely different addresses is worse than one that keeps a
+    duplicate: the duplicate is visible and fixable, the merge sends someone
+    else's meeting to the wrong person.
+    """
+    return auth_service.normalize_email(str(value or ""))[:MAX_INVITE_EMAIL]
+
+
+def looks_like_email(value: object) -> bool:
+    return bool(_EMAIL_SHAPE.match(normalize_invite_email(value)))
+
+
+def invite_identity(*, user_id: int = 0, email: object = "") -> str:
+    """The one key an invitee is unique by.
+
+    ``u:<user_id>`` for a member, ``e:<address>`` for someone who was invited
+    by email. Namespaced so the two spaces cannot collide, and so a row can be
+    read back without having to guess which kind it is.
+    """
+    if int(user_id or 0) > 0:
+        return f"u:{int(user_id)}"
+    address = normalize_invite_email(email)
+    return f"e:{address}" if address else ""
+
+
+def _resolve_member_by_email(cur, email: str) -> int:
+    """The account that owns this address, if one does.
+
+    An invitee typed as an address who turns out to be a member is invited as
+    that member: they get the in-app invite, the block checks apply, and they
+    are not also listed as an outside guest. Identity is the account, and the
+    address is only how the host happened to reach for it.
+    """
+    if not email:
+        return 0
+    try:
+        cur.execute(
+            "SELECT user_id FROM users WHERE LOWER(email)=? LIMIT 1", (email,))
+        row = _row(cur.fetchone())
+    except Exception:  # noqa: BLE001
+        LOGGER.exception("PM_INVITE_EMAIL_RESOLVE_FAILED")
+        return 0
+    return int(row.get("user_id") or 0)
+
+
+def _plan_invitees(cur, *, user_ids, invitees, owner: int) -> tuple[list, list]:
+    """Turn a mixed request into one deduplicated list of candidates.
+
+    Both spellings — a list of member ids and a list of ``{name, email}`` —
+    reduce to the same record, so everything downstream treats them alike. An
+    address belonging to an existing account is resolved to that account here
+    rather than later, which is what stops one person being invited twice
+    because the host typed their address the second time.
+
+    Returns ``(candidates, skipped)``; candidates preserve request order.
+    """
+    candidates: list[dict] = []
+    skipped: list[dict] = []
+    seen: set[str] = set()
+
+    def offer(*, user_id: int = 0, email: str = "", name: str = "") -> None:
+        key = invite_identity(user_id=user_id, email=email)
+        if not key or key in seen:
+            return
+        seen.add(key)
+        candidates.append({
+            "user_id": int(user_id or 0), "email": email,
+            "name": _clip(name, MAX_INVITE_NAME), "key": key,
+        })
+
+    for raw in list(user_ids or []):
+        try:
+            member = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if member > 0:
+            offer(user_id=member)
+
+    for raw in list(invitees or []):
+        if not isinstance(raw, dict):
+            continue
+        email = normalize_invite_email(raw.get("email"))
+        name = str(raw.get("name") or raw.get("full_name") or "")
+        if not email:
+            skipped.append({"email": "", "name": _clip(name, MAX_INVITE_NAME),
+                            "reason": "email_required"})
+            continue
+        if not looks_like_email(email):
+            skipped.append({"email": email, "name": _clip(name, MAX_INVITE_NAME),
+                            "reason": "email_invalid"})
+            continue
+        member = _resolve_member_by_email(cur, email)
+        if member > 0:
+            # They already have an account. Invite the account, and keep the
+            # typed name only as a label — it never overrides their own.
+            offer(user_id=member, name=name)
+        else:
+            offer(email=email, name=name)
+
+    if len(candidates) > MAX_INVITES_PER_CALL:
+        for extra in candidates[MAX_INVITES_PER_CALL:]:
+            skipped.append({"user_id": extra["user_id"], "email": extra["email"],
+                            "reason": "too_many"})
+        candidates = candidates[:MAX_INVITES_PER_CALL]
+
+    kept: list[dict] = []
+    for candidate in candidates:
+        if candidate["user_id"] and candidate["user_id"] == owner:
+            skipped.append({"user_id": owner, "reason": "is_host"})
+            continue
+        kept.append(candidate)
+    return kept, skipped
+
+
+def _upsert_invite(cur, *, meeting_id: int, actor: int, candidate: dict,
+                   message: str) -> None:
+    """One invite row per identity per meeting, re-offered rather than doubled."""
+    cur.execute(
+        f"SELECT id FROM {INVITES_TABLE} "
+        f"WHERE meeting_id=? AND invitee_key=? LIMIT 1",
+        (meeting_id, candidate["key"]))
+    invite = _row(cur.fetchone())
+    if invite:
+        cur.execute(
+            f"UPDATE {INVITES_TABLE} SET status=?, inviter_user_id=?, "
+            f"message=?, invitee_name=?, responded_at='' WHERE id=?",
+            (INVITE_PENDING, actor, message, candidate["name"],
+             int(invite["id"])))
+        return
+    cur.execute(
+        f"""INSERT INTO {INVITES_TABLE}
+        (meeting_id, inviter_user_id, invitee_user_id, invitee_key,
+         invitee_email, invitee_name, status, message, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (meeting_id, actor, candidate["user_id"], candidate["key"],
+         candidate["email"], candidate["name"], INVITE_PENDING, message,
+         _now_iso()))
+
+
 def invite_users(cur, *, actor_user_id: int, meeting_ref: object,
-                 user_ids: list[int], message: str = "") -> dict:
+                 user_ids: list[int] | None = None,
+                 invitees: list[dict] | None = None,
+                 message: str = "") -> dict:
+    """Invite members, outside guests, or both, in one call.
+
+    ``user_ids`` invites accounts. ``invitees`` invites people by
+    ``{"name": ..., "email": ...}`` and is how someone without a PulseSoc
+    account is asked to a meeting. They are not two features: both become the
+    same invite row under the same ``invitee_key``, so "already invited" means
+    the same thing however the host typed it.
+
+    An outside guest gets an invite row and an email, and deliberately does
+    **not** get a participant row. Participation is keyed on ``user_id`` and
+    they have none; a placeholder would put a row that identifies nobody into
+    the table the waiting room, the capacity check and the roster all read.
+    They become a participant when they have an account and join.
+    """
     _require_enabled()
     ensure_meetings_schema(cur)
     meeting = _require_meeting(cur, meeting_ref)
@@ -1775,67 +2123,58 @@ def invite_users(cur, *, actor_user_id: int, meeting_ref: object,
     meeting_id = int(meeting["id"])
     owner = int(meeting["owner_user_id"])
     clean_message = _clip(message, 280)
+
+    candidates, skipped = _plan_invitees(
+        cur, user_ids=user_ids, invitees=invitees, owner=owner)
+
     invited: list[int] = []
-    skipped: list[dict] = []
-    seen: set[int] = set()
-    for raw in list(user_ids or [])[:50]:
-        try:
-            invitee = int(raw)
-        except (TypeError, ValueError):
+    invited_contacts: list[dict] = []
+    for candidate in candidates:
+        invitee = candidate["user_id"]
+        if invitee:
+            if _blocked(cur, actor, invitee) or _blocked(cur, owner, invitee):
+                # Blocked either way, against either the inviter or the meeting
+                # owner: silently skipped with a neutral reason — the inviter
+                # does not learn which system or which direction.
+                skipped.append({"user_id": invitee, "reason": "unavailable"})
+                continue
+            existing = _participant_row(cur, meeting_id, invitee)
+            if existing and existing.get("state") in {P_REMOVED, P_BLOCKED}:
+                skipped.append({"user_id": invitee, "reason": "unavailable"})
+                continue
+            if existing and existing.get("state") in ADMITTED_STATES:
+                skipped.append({"user_id": invitee, "reason": "already_in"})
+                continue
+            _upsert_invite(cur, meeting_id=meeting_id, actor=actor,
+                           candidate=candidate, message=clean_message)
+            if not existing:
+                _insert_participant(
+                    cur, meeting_id=meeting_id, user_id=invitee,
+                    role=ROLE_PARTICIPANT, state=P_INVITED, invited_by=actor)
+            invited.append(invitee)
             continue
-        if invitee <= 0 or invitee in seen:
-            continue
-        seen.add(invitee)
-        if invitee == owner:
-            skipped.append({"user_id": invitee, "reason": "is_host"})
-            continue
-        if _blocked(cur, actor, invitee) or _blocked(cur, owner, invitee):
-            # Blocked either way, against either the inviter or the meeting
-            # owner: silently skipped with a neutral reason — the inviter does
-            # not learn which system or which direction.
-            skipped.append({"user_id": invitee, "reason": "unavailable"})
-            continue
-        existing = _participant_row(cur, meeting_id, invitee)
-        if existing and existing.get("state") in {P_REMOVED, P_BLOCKED}:
-            skipped.append({"user_id": invitee, "reason": "unavailable"})
-            continue
-        if existing and existing.get("state") in ADMITTED_STATES:
-            skipped.append({"user_id": invitee, "reason": "already_in"})
-            continue
-        now = _now_iso()
-        cur.execute(
-            f"SELECT id, status FROM {INVITES_TABLE} "
-            f"WHERE meeting_id=? AND invitee_user_id=? LIMIT 1",
-            (meeting_id, invitee))
-        invite = _row(cur.fetchone())
-        if invite:
-            cur.execute(
-                f"UPDATE {INVITES_TABLE} SET status=?, inviter_user_id=?, "
-                f"message=?, responded_at='' WHERE id=?",
-                (INVITE_PENDING, actor, clean_message, int(invite["id"])))
-        else:
-            cur.execute(
-                f"""INSERT INTO {INVITES_TABLE}
-                (meeting_id, inviter_user_id, invitee_user_id, status, message,
-                 created_at)
-                VALUES (?, ?, ?, ?, ?, ?)""",
-                (meeting_id, actor, invitee, INVITE_PENDING, clean_message, now))
-        if not existing:
-            _insert_participant(
-                cur, meeting_id=meeting_id, user_id=invitee,
-                role=ROLE_PARTICIPANT, state=P_INVITED, invited_by=actor)
-        invited.append(invitee)
-    if invited:
+
+        _upsert_invite(cur, meeting_id=meeting_id, actor=actor,
+                       candidate=candidate, message=clean_message)
+        invited_contacts.append(
+            {"email": candidate["email"], "name": candidate["name"]})
+
+    if invited or invited_contacts:
         # Someone invited late still gets the reminders that have not gone yet;
         # planning is keyed on the recipient, so this adds rows for the new
         # people and leaves everyone else's plan exactly as it was.
         _plan_reminders(cur, meeting_id)
         # Only the new people. Re-confirming everyone else every time someone
         # else is added is how a meeting turns into a mailing list.
-        _announce(cur, meeting, "CONFIRMATION", user_ids=invited)
+        _announce(cur, meeting, "CONFIRMATION", user_ids=invited,
+                  contacts=invited_contacts)
+        _link_relationships(cur, owner=owner, meeting=meeting,
+                            candidates=candidates)
     _audit(cur, actor=actor, owner=owner, action=audit.ACTION_MEETING_INVITE,
-           meeting_id=meeting_id, count=len(invited))
-    return {"invited": invited, "skipped": skipped}
+           meeting_id=meeting_id,
+           count=len(invited) + len(invited_contacts))
+    return {"invited": invited, "invited_contacts": invited_contacts,
+            "skipped": skipped}
 
 
 def respond_invite(cur, *, user_id: int, meeting_ref: object,
@@ -1845,10 +2184,22 @@ def respond_invite(cur, *, user_id: int, meeting_ref: object,
     meeting = _require_meeting(cur, meeting_ref)
     invitee = int(user_id or 0)
     meeting_id = int(meeting["id"])
+    if invitee <= 0:
+        # Zero is now a value the table actually holds: every outside guest is
+        # stored with ``invitee_user_id = 0`` because they have no account. A
+        # caller arriving without an identity would otherwise match the first
+        # such row and answer a stranger's invitation for them. This lookup was
+        # only ever safe because no row could hold zero.
+        raise PrivateMeetingRejected(
+            "No pending invite.", status=404, code="no_invite")
+    # Keyed on identity, with the old column as a fallback so an invite whose
+    # backfill did not land is still answerable. The ``> 0`` is what keeps that
+    # fallback from re-opening the hole the guard above just closed.
     cur.execute(
-        f"SELECT * FROM {INVITES_TABLE} "
-        f"WHERE meeting_id=? AND invitee_user_id=? LIMIT 1",
-        (meeting_id, invitee))
+        f"SELECT * FROM {INVITES_TABLE} WHERE meeting_id=? AND "
+        f"(invitee_key=? OR (invitee_user_id=? AND invitee_user_id > 0)) "
+        f"LIMIT 1",
+        (meeting_id, invite_identity(user_id=invitee), invitee))
     invite = _row(cur.fetchone())
     if not invite or invite.get("status") != INVITE_PENDING:
         raise PrivateMeetingRejected(

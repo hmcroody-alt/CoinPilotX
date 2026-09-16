@@ -64,8 +64,14 @@ def cur(monkeypatch):
     cursor.execute(
         "CREATE TABLE comm_v2_blocks (id INTEGER PRIMARY KEY, "
         "blocker_user_id INT, blocked_user_id INT, status TEXT)")
+    # The canonical shape, copied from bot.py's `CREATE TABLE users`: the key
+    # is `user_id` and there is no `id`. This fixture used to declare one, and
+    # that single invented column is why the suite could not see the defect
+    # that lost two real bookings in production — the recipient lookup asked
+    # for `id`, every test had one, and PostgreSQL did not.
     cursor.execute(
-        "CREATE TABLE users (id INTEGER PRIMARY KEY, user_id INT, email TEXT)")
+        "CREATE TABLE users (user_id INTEGER PRIMARY KEY, username TEXT, "
+        "display_name TEXT, email TEXT)")
     for user_id, email in ((HOST, "host@example.com"), (GUEST, "guest@example.com"),
                            (STRANGER, "stranger@example.com")):
         cursor.execute("INSERT INTO users (user_id, email) VALUES (?, ?)",
