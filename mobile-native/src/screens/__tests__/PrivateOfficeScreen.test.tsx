@@ -220,7 +220,25 @@ describe("PrivateOfficeScreen", () => {
     expect(queryByText("premium:privateOffice.features.privateMeetings.label")).toBeNull();
   });
 
-  it("renders a capability it has never heard of rather than dropping it", async () => {
+  // This pair replaces a case that asserted the opposite — that an unknown id
+  // renders as its raw string rather than vanishing. That was the better rule
+  // while the client and the server agreed on what existed. Once the Office was
+  // narrowed they stop agreeing on exactly the window that matters: a mobile
+  // build ships on its own train, so a narrowed client stands in front of an
+  // un-narrowed server during rollout, and in front of a rolled-back one after.
+  // Run against production, that rendered ten rows, seven of them retired, each
+  // titled with a machine id over an `Open` that went nowhere. A ghost feature
+  // is not a gentler failure than a dropped row.
+  it("drops an available capability this build has no screen for", async () => {
+    mockGetOverview.mockResolvedValue(
+      overview({ available: [child(), child({ feature_id: "some_future_thing" })] })
+    );
+    const { getByText, queryByText } = await renderScreen();
+    await waitFor(() => getByText("premium:privateOffice.features.relationshipIntelligence.label"));
+    expect(queryByText("some_future_thing")).toBeNull();
+  });
+
+  it("drops an unavailable row this build cannot name, section and all", async () => {
     mockGetOverview.mockResolvedValue(
       overview({
         available: [],
@@ -229,8 +247,11 @@ describe("PrivateOfficeScreen", () => {
         ]
       })
     );
-    const { getByText } = await renderScreen();
-    await waitFor(() => getByText("some_future_thing"));
+    const { queryByText } = await renderScreen();
+    await waitFor(() => expect(queryByText("some_future_thing")).toBeNull());
+    // The heading goes with its only row. A "not yet" section with nothing
+    // under it is a promise with no subject.
+    expect(queryByText("premium:privateOffice.sections.notYet")).toBeNull();
   });
 
   it("opens Relationship Intelligence when the server says the child opens", async () => {
@@ -250,27 +271,26 @@ describe("PrivateOfficeScreen", () => {
     expect(navigation.navigate).not.toHaveBeenCalled();
   });
 
-  it("keeps provider-required, not-built and switched-off as three distinct reasons", async () => {
+  // The three reasons are the subject, not the ids. The ids that used to carry
+  // them here were all withdrawn, and the two that survive are the only ones
+  // this build can name — so the third reason gets its own render rather than a
+  // third id. The vocabulary is still the server's, and the screen must still
+  // keep the three apart.
+  it.each([
+    ["PROVIDER_REQUIRED", "NOT_IMPLEMENTED"],
+    ["NOT_IMPLEMENTED", "NOT_IMPLEMENTED"],
+    ["TEMPORARILY_DISABLED", "FEATURE_DISABLED"]
+  ])("renders %s as its own reason", async (reason, availability) => {
     mockGetOverview.mockResolvedValue(
       overview({
         available: [],
         unavailable: [
-          // The three reasons are the subject, not the ids. The ids that used to
-          // carry them here were all withdrawn, so they move to the surviving
-          // children plus one the client has never heard of — which is also the
-          // honest shape of PROVIDER_REQUIRED now that breach monitoring, the
-          // feature that word was written for, is gone. The vocabulary is still
-          // the server's, and the screen must still keep the three apart.
-          child({ feature_id: "some_future_thing", reason: "PROVIDER_REQUIRED", availability: "NOT_IMPLEMENTED", opens: false }),
-          child({ feature_id: "relationship_intelligence", reason: "NOT_IMPLEMENTED", availability: "NOT_IMPLEMENTED", opens: false }),
-          child({ feature_id: "private_meetings", reason: "TEMPORARILY_DISABLED", availability: "FEATURE_DISABLED", opens: false })
+          child({ feature_id: "relationship_intelligence", reason, availability, opens: false })
         ]
       })
     );
     const { getByText } = await renderScreen();
-    await waitFor(() => getByText("premium:privateOffice.reason.PROVIDER_REQUIRED"));
-    expect(getByText("premium:privateOffice.reason.NOT_IMPLEMENTED")).toBeTruthy();
-    expect(getByText("premium:privateOffice.reason.TEMPORARILY_DISABLED")).toBeTruthy();
+    await waitFor(() => getByText(`premium:privateOffice.reason.${reason}`));
   });
 
   it("asks the member to upgrade only when the server says so, naming the tier it sent", async () => {

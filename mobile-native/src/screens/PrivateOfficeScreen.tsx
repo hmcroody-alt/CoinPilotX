@@ -14,17 +14,21 @@
  * a local list of the capabilities and light them up by tier. It would also be
  * a second authority on what exists, and the first time a capability ships or
  * is killed the two would disagree — with the client winning, because the
- * client is what the member sees. So the list itself comes down the wire. The
- * only local table is `COPY_KEYS`, which maps a feature id to a translation
- * key, and an id missing from it still renders (as its raw id) rather than
- * silently vanishing from the list.
+ * client is what the member sees. So the list itself comes down the wire.
  *
  * The Office was reduced from eleven capabilities to two children plus the
  * security row, and this design is what made that a server-side edit instead of
  * a client release: the withdrawn ids simply stopped arriving. The local tables
- * below were pruned to match, but pruning them changed nothing a member can
- * see — which is the point of the arrangement, and the reason to keep resisting
- * the shorter local-list version of this screen.
+ * below were pruned to match, and that is the reason to keep resisting the
+ * shorter local-list version of this screen.
+ *
+ * ## The one thing this screen does decide
+ *
+ * Which capabilities this *binary* can draw. That is not a second opinion about
+ * entitlement; it is the only question the server cannot answer, because the
+ * server does not know which build is asking. See `cards`/`closed` below for
+ * why a row the client cannot name or open is dropped rather than rendered
+ * inert.
  *
  * ## Why "not built" and "needs a provider" are different rows
  *
@@ -178,6 +182,36 @@ function PrivateOfficeBody({ navigation }: Props) {
   );
 
   const office = overview.office;
+
+  /**
+   * The rows this build can actually draw.
+   *
+   * The office is server-authoritative, and that is right: entitlement and
+   * feature flags are the server's to decide, and the client must not hold a
+   * second opinion about who may see what. But "which capabilities exist in
+   * this build" is a different question from "which may this member see", and
+   * the client is the only authority on the first one.
+   *
+   * Filtering here is what keeps a narrowed client honest in front of a server
+   * that has not been narrowed yet. A mobile build ships on its own train: it
+   * can reach production days before the backend does, and it has to survive a
+   * backend rollback afterwards. Without this, that window renders every
+   * retired capability as a card labelled with its raw feature id — because
+   * the strings were deleted in the same change — above an `Open` that goes
+   * nowhere. Drawn-but-inert is not a gentler failure than a broken link; it is
+   * precisely the ghost feature the narrowing was meant to remove. This is not
+   * hypothetical: it is what the simulator showed against production, ten rows
+   * with seven of them retired.
+   *
+   * The two lists are filtered on different tables because they answer
+   * different questions. An available row is tappable, so the test is
+   * `DESTINATIONS` — having a name for something is not evidence of having
+   * built it. An unavailable row is inert and only has to be nameable, so the
+   * test is `COPY_KEYS`.
+   */
+  const cards = office.available.filter((child) => DESTINATIONS[child.featureId]);
+  const closed = office.unavailable.filter((child) => COPY_KEYS[child.featureId]);
+
   const label = (featureId: string, part: "label" | "hint") => {
     const stem = COPY_KEYS[featureId];
     if (!stem) return part === "label" ? featureId : "";
@@ -245,10 +279,10 @@ function PrivateOfficeBody({ navigation }: Props) {
           say "nothing needs your attention" is not a neutral leftover, it is a
           standing reassurance nobody computed. */}
 
-      {office.available.length ? (
+      {cards.length ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.available")}</Text>
-          {office.available.map((child) => (
+          {cards.map((child) => (
             <Pressable
               key={child.featureId}
               style={styles.rowOpen}
@@ -272,10 +306,10 @@ function PrivateOfficeBody({ navigation }: Props) {
         </View>
       ) : null}
 
-      {office.unavailable.length ? (
+      {closed.length ? (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t("premium:privateOffice.sections.notYet")}</Text>
-          {office.unavailable.map((child) => (
+          {closed.map((child) => (
             <View
               key={child.featureId}
               style={styles.rowClosed}

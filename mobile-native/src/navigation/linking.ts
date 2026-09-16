@@ -32,6 +32,35 @@ function settingsDeepLink(path: string) {
   return { routes: [{ name: entry.route, params: entry.params }] };
 }
 
+/**
+ * The Private Office paths that no longer lead anywhere.
+ *
+ * Private Office was narrowed to Relationship Intelligence, Private Meetings
+ * and Office Security. The capabilities that left took their screens with them,
+ * but their links did not stop existing: they are in agent answers, in old
+ * notifications, in whatever a member saved. Left unclaimed, those paths
+ * resolve to `undefined` and React Navigation drops the tap entirely — the app
+ * reads as broken rather than as having retired a feature. It also covers
+ * paths from *future* builds, which is the same problem pointed the other way.
+ *
+ * The office itself is the honest destination: the room still exists, the thing
+ * they were linked to does not.
+ *
+ * The live segments are listed rather than read off `config.screens` because
+ * this has to keep working for a segment whose screen was deleted — asking the
+ * config would make every unknown path resolve to "not in config", which is
+ * true of the retired ones and of nothing else useful.
+ */
+const LIVE_OFFICE_SEGMENTS = new Set(["security", "people", "meetings"]);
+
+function retiredOfficeDeepLink(path: string) {
+  const match = /^\/?pulse\/private-office\/(.+?)\/?$/i.exec(path.split("?")[0]);
+  if (!match) return null;
+  const head = match[1].split("/")[0].toLowerCase();
+  if (LIVE_OFFICE_SEGMENTS.has(head)) return null;
+  return { routes: [{ name: "PrivateOffice" as const }] };
+}
+
 export const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ["pulsesoc://", "https://pulsesoc.com"],
   getStateFromPath(path, options) {
@@ -39,6 +68,9 @@ export const linking: LinkingOptions<RootStackParamList> = {
     const normalizedPath = canonical.relative;
     const settingsRoute = settingsDeepLink(canonical.path) || settingsDeepLink(normalizedPath);
     if (settingsRoute) return settingsRoute;
+    const retiredOffice =
+      retiredOfficeDeepLink(canonical.path) || retiredOfficeDeepLink(normalizedPath);
+    if (retiredOffice) return retiredOffice;
     if (canonical.path === "/pulse/profile/edit") {
       return { routes: [{ name: "ProfileEdit" }] };
     }
@@ -348,18 +380,20 @@ export const linking: LinkingOptions<RootStackParamList> = {
       // publishes, so a deep link and an agent answer name the same destination
       // rather than two spellings of it.
       //
-      // Only the three surfaces the Office still contains are claimed. Nine
-      // paths were withdrawn with their features, and one of them mattered more
+      // The hub and the three surfaces the Office still contains are claimed.
+      // Nine paths were withdrawn with their features, and one of them mattered more
       // than the rest: `PrivateOperations` was a `:view` wildcard under
       // `pulse/private-office/`, so it swallowed every unmatched child path.
       // Leaving it would have meant every retired link — facts, shield,
       // concierge, a path that never existed — still resolving to a screen,
       // which is the one outcome worse than not resolving at all. With it gone,
-      // an old link falls through to the app's unmatched-link handling and the
-      // member lands somewhere real instead of on a permanently empty view.
+      // those paths are caught by `retiredOfficeDeepLink` above and land on the
+      // office itself; keep `LIVE_OFFICE_SEGMENTS` in step with the leaves
+      // below, or a live segment starts resolving to its own parent.
       PrivateOffice: "pulse/private-office",
       PrivateOfficeSecurity: "pulse/private-office/security",
       PrivatePeople: "pulse/private-office/people",
+      PrivateMeetings: "pulse/private-office/meetings",
       AccountCenter: {
         path: "pulse/settings/:section",
         parse: {
