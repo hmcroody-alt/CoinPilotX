@@ -509,8 +509,19 @@ def test_mismatching_provider_product_or_variant_ids_fail_closed():
 
 
 @pytest.mark.parametrize("total,verified,state", [(5, 1, "IN_STOCK"), (0, 1, "OUT_OF_STOCK"),
-    (None, 1, "UNKNOWN"), (5, 2, "UNKNOWN"), (5, None, "UNKNOWN"), (True, 1, "UNKNOWN")])
-def test_inventory_never_fabricates_verified_stock(total, verified, state):
+    (None, 1, "UNKNOWN"), (5, 2, "IN_STOCK"), (5, None, "IN_STOCK"), (True, 1, "UNKNOWN")])
+def test_inventory_never_fabricates_a_count(total, verified, state):
+    """What decides the state is whether anyone counted, not who did the counting.
+
+    `verifiedWarehouse` used to gate IN_STOCK, which is what made `(5, 2)` and
+    `(5, None)` read UNKNOWN -- see `_warehouse_stock` for why that reading
+    refused CJ's entire catalogue. It is gone, and the cases worth keeping are
+    the ones about the count itself: `None` is nobody counted, and `True` is a
+    bool that `_number` refuses rather than silently reading as one unit.
+
+    Neither may become stock, and neither may become a confirmed sell-out --
+    only an explicit 0 is OUT_OF_STOCK.
+    """
     fixture = {"variantInventories": [{"pid": PID, "vid": VID, "inventory": [
         {"countryCode": "US", "areaId": 1, "totalInventory": total, "cjInventory": 2,
          "factoryInventory": 3, "verifiedWarehouse": verified}]}]}
@@ -529,7 +540,9 @@ def test_inventory_warehouses_are_separate_and_variant_mismatch_rejected():
     adapter, _, _, _ = make_adapter(Response(fixture), Response(fixture))
     rows = adapter.get_inventory(PID, VID)["variants"][0]["warehouses"]
     assert [row["total"] for row in rows] == [3, 9]
-    assert [row["state"] for row in rows] == ["IN_STOCK", "UNKNOWN"]
+    # Both counted, so both sellable. The point here is that the two warehouses
+    # stay separate rows rather than being summed into one.
+    assert [row["state"] for row in rows] == ["IN_STOCK", "IN_STOCK"]
     with pytest.raises(SupplierError):
         adapter.get_inventory(PID, "2002")
 

@@ -1201,9 +1201,12 @@ def _stocked_origin(pid, vid, *, connection_id, business_id, store_id, actor_use
     from productProEnSet and eligible origins from inventory." Quoting from a
     country that holds none of the stock prices a shipment that will not happen.
 
-    Only a warehouse CJ has verified is eligible -- `_warehouse_stock` reports
-    IN_STOCK solely for `verifiedWarehouse == 1` with a positive total, and
-    everything else is UNKNOWN, which is not stock.
+    A warehouse is eligible when someone counted stock in it -- `_warehouse_stock`
+    reports IN_STOCK for a positive total, and a warehouse nobody counted is
+    UNKNOWN, which is not stock. It deliberately does not ask `verifiedWarehouse`:
+    that field says whether CJ audited the count, not whether the units ship, and
+    requiring it meant every real CJ warehouse (all of which report 2) was
+    ineligible and this raised `supplier_origin_unknown` for every order.
     """
     from . import gateway
     result = gateway.read("inventory", business_id=business_id, store_id=store_id,
