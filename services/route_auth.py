@@ -159,15 +159,17 @@ REFUSAL_GATES: dict[str, str] = {
     "_require_user": AUTH_USER,
     # The Private Office `(user, refusal)` family. Same contract as
     # `_require_user`, one per surface because each also applies that surface's
-    # tier gate and, for most of them, the second lock: `_entry` in the eight
-    # shield/records/documents/facts modules, plus the operations, security and
-    # concierge variants.
+    # tier gate and, for most of them, the second lock.
+    #
+    # `_operations_entry` and `_operator_entry` were dropped with the surfaces
+    # that defined them — the operations and concierge route packs are retired
+    # (`RETIRED_FEATURE_IDS`), and their routes left the baseline with them, so
+    # there is nothing to reclassify. The two that remain still guard live
+    # surfaces.
     #
     # These were not guessed. See `_GATE_SHAPE_SCAN` on how the set was found.
     "_entry": AUTH_USER,
-    "_operations_entry": AUTH_USER,
     "_security_entry": AUTH_USER,
-    "_operator_entry": AUTH_USER,
     # --- the same shape, defined in bot.py --------------------------------
     #
     # The first pass at the scan below covered `services/` and
@@ -536,12 +538,12 @@ def undefined_gate_helpers(root: str | None = None) -> list[str]:
     name still defines something turns that into a failure.
 
     **Why a source scan and not `hasattr(bot, name)`.** That was the first
-    version, and on a healthy checkout it reported five false positives:
-    `_entry`, `_operations_entry`, `_operator_entry`, `_require_user` and
-    `_security_entry` are module-private to the blueprints that define them and
-    never become attributes of `bot`. A guard that fails on a clean tree gets an
-    allowlist bolted onto it, and the allowlist is exactly the five entries most
-    worth watching — the private ones, whose renames nothing else would notice.
+    version, and on a healthy checkout it reported false positives: `_entry`,
+    `_require_user` and `_security_entry` are module-private to the blueprints
+    that define them and never become attributes of `bot`. A guard that fails on
+    a clean tree gets an allowlist bolted onto it, and the allowlist is exactly
+    the entries most worth watching — the private ones, whose renames nothing
+    else would notice.
     So the question had to change to one that is answerable for every entry in
     the vocabulary rather than only the public half.
 

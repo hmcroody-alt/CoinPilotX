@@ -66,6 +66,7 @@ from services.private_office import facts as po_facts
 from services.private_office import graph as po_graph
 from services.private_office import model as po_model
 from services.private_office import relationships as po_relationships
+from services.route_auth import auth_required
 
 #: What a person write can be refused with. All three are ``ValueError``
 #: subclasses raised deliberately with a member-safe message.
@@ -230,6 +231,7 @@ def api_private_office_relationships_directory():
 
 @private_office_relationships_blueprint.route(
     "/api/private-office/relationships/lookup", methods=["GET"])
+@auth_required
 def api_private_office_relationships_lookup():
     """Whose account is ``@handle``? The confirmation step before a link.
 
@@ -345,6 +347,7 @@ def _save(user, body: dict, *, node_id, created: bool):
 
 @private_office_relationships_blueprint.route(
     "/api/private-office/relationships/<int:node_id>", methods=["PATCH"])
+@auth_required
 def api_private_office_relationships_edit(node_id: int):
     """Edit one person. Only the fields the body mentions.
 
@@ -363,6 +366,7 @@ def api_private_office_relationships_edit(node_id: int):
 
 @private_office_relationships_blueprint.route(
     "/api/private-office/relationships/<int:node_id>", methods=["DELETE"])
+@auth_required
 def api_private_office_relationships_remove(node_id: int):
     """Remove a person from the directory. Archives; cascades into nothing.
 
@@ -394,6 +398,7 @@ def api_private_office_relationships_remove(node_id: int):
 
 @private_office_relationships_blueprint.route(
     "/api/private-office/relationships/<int:node_id>/favorite", methods=["POST"])
+@auth_required
 def api_private_office_relationships_favorite(node_id: int):
     user, refusal = _entry()
     if refusal:
