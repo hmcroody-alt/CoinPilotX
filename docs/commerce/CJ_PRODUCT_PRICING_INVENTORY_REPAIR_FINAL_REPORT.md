@@ -393,6 +393,55 @@ Queried separately from the tool that did the work:
 **Nothing was auto-published.** The listing-status distribution is unchanged from
 before the run, which is the brief's decision 8 held.
 
+### 8.1 Deployment evidence
+
+`main` was fast-forwarded to the gated SHA and pushed as a pinned ref
+(`git push origin 66fef8ee:refs/heads/main`) rather than as the moving `main`
+branch, so what was gated and what shipped are provably the same object.
+
+| | |
+|---|---|
+| Deployed commit | `66fef8ee0f5fce2933e40d1d04b8311f0e4e79b1` (read back from Railway's `activeDeployments[].meta.commitHash`) |
+| Deployment | `f4884354-8f33-4753-a67d-a0fbce7be151` · `SUCCESS` · 2026-09-16 16:12:31 −07:00 |
+| Instance | `RUNNING` |
+| Smoke | `GET /` 200 · `GET /health` 200 · `POST /api/mobile/auth/refresh` 401 (correctly refusing, not erroring) |
+
+### 8.2 The verdict as production now computes it
+
+Run through production's own assembly — `pulse_marketplace_supplier_facts_for_listings`
+feeding `listing_readiness.evaluate`, not a reimplementation — against all 34
+supplier-backed listings on the deployed code:
+
+| blocker | listings |
+|---|---|
+| `MISSING_PRICE` | **0** |
+| `SUPPLIER_VARIANT_UNBOUND` | 28 |
+| `VARIANT_PRICE_SPREAD` | 4 (19, 31, 32, 39) |
+| `UNKNOWN_INVENTORY` | 3 (31, 34, 37) |
+
+`MISSING_PRICE` is gone from production entirely, which is the "Price required"
+symptom the brief opened with. The three `UNKNOWN_INVENTORY` listings are exactly
+the three unresolvable provider ids of §13, and the 28 unbound are the merchant
+choice of §3.3 — both expected, neither a regression.
+
+`VARIANT_PRICE_SPREAD` is **not** a survival of the old bug. It is a different
+and correct blocker: those four listings have variants that disagree on price,
+which is a decision the merchant owns, not a value the importer may invent
+(decision 3). It was previously invisible because `MISSING_PRICE` fired first.
+
+### 8.3 Device rollout
+
+Both devices were rebuilt from the deployed commit and launched clean:
+P3r7or (iPhone 16 Pro, `F45E640F…`) and the iPhone 17 Pro Max simulator
+(`E859950D…`). The simulator was screenshotted after launch to confirm it
+renders its feed rather than crash-looping.
+
+**These builds carry no new app code.** `git diff f4a5f2f1 66fef8ee -- mobile-native/`
+is empty — this repair is entirely backend, so the JS bundle is identical to the
+one already shipping. The devices were updated to put them on the deployed
+lineage, not because the fix lives in them; what changed for a merchant looking
+at the Store screen is the server's answer, not the client that renders it.
+
 ## 9. Tests
 
 | command | result |
