@@ -1,0 +1,113 @@
+# Phases 21–24 — the pre-push gate
+
+Candidate lineage: four commits on production `60a4f544`, built in an isolated
+detached worktree so nothing in the shared checkout could drift underneath the
+result.
+
+## What the gate actually ran
+
+| gate | result |
+|---|---|
+| `python -m compileall` over the repo | 0 syntax errors |
+| `import bot` | 2114 routes registered, `DB_INIT_COMPLETE_ONCE` |
+| `scripts/protection/run_protection_suite.py` | **exit 0** — 673 checks across 44 suites, 45 protection checks |
+| `scripts/realtime_audio_change_gate.py --base 60a4f544 --head HEAD` | no protected path changed (146 files inspected) |
+| `npm run verify` (tsc + i18n + jest) | 432 suites / 7349 tests, exit 0 |
+| `npx expo export --platform ios` | 11.9 MB bundle, zero resolution errors |
+| backend suite, 615 files, one process each | 582 green / 33 red |
+
+## The 33 red files are production main's, not this branch's
+
+Counting failures tells you nothing here, because the candidate *deletes* ten
+test files with the features they covered — a smaller red count could mean a
+fix or could mean the evidence was removed. So both sides were swept the same
+way, one pytest process per file (several directories in this repo cannot share
+one: they set a temp `DATABASE_URL` at import and leak tables into each other's
+`setUp`), and the failure **sets** were differed rather than the counts.
+
+```
+head  615 files   33 failing
+base  625 files   35 failing
+
+NEW failures on HEAD (regressions):   (none)
+FIXED on HEAD:  tests/private_office/test_private_observability.py
+                tests/undx_agent/test_transport_wiring.py
+```
+
+Head's failure set is a strict subset of base's. Every one of the 33 is red on
+`origin/main` right now and is outside this reconciliation's scope.
+
+Two failures seen during the directory-level runs were **not** real and are
+recorded so the next reader does not chase them: `test_private_evidence_review`
+(head) and `test_private_observability` (base) each fail only when the whole
+`tests/private_office/` directory shares one process, and each passes alone on
+both sides. Different test, same shape, opposite lineage — which is the tell
+that the directory is the problem and not the branch.
+
+## Anti-vacuity (Phase 22)
+
+A green test proves nothing until it has been seen to go red. Each behaviour
+this reconciliation actually adds was broken on purpose and the tree restored
+byte-for-byte afterwards (`git status` empty, re-run green).
+
+| behaviour | mutation | tests killed |
+|---|---|---|
+| media grants absolutised at their authority | `absoluteApiUrl(...)` → `String(... \|\| "")` | 3 |
+| retired engines stay unreachable | live `office.py` imports retired `shield` | 2 |
+| route-auth vocabulary names real functions | *none needed* — it caught the real defect | 1 |
+| new routes declare their auth | *none needed* — it caught 4 real routes | 1 |
+
+The last two were not simulated. They failed on the honest tree, named the
+cause, and went green only after the cause was fixed — which is a stronger
+result than a mutation, because the failure was not arranged.
+
+`test_retired_engines_stay_unreachable.py` additionally carries its own proof:
+`test_the_live_engines_really_are_reachable` fails if the import walker ever
+stops resolving imports, which is the one way the guard could pass for the worst
+possible reason.
+
+## Two gate failures, and why neither was silenced
+
+**`test_the_vocabulary_still_names_real_functions`.** The route-auth vocabulary
+still listed `_operations_entry` and `_operator_entry`. The Private Office
+withdrawal deleted the operations and concierge route packs, which were their
+only definitions. This is the failure the baseline structurally cannot catch:
+a detector that has gone blind reads exactly like a tree where nothing changed.
+Fixed by removing the two names, after confirming their routes left the baseline
+with their surfaces — so there was nothing left to reclassify.
+
+**`test_new_routes_must_declare_their_auth`.** Four Relationship Intelligence
+routes (`lookup`, `edit`, `remove`, `favorite`) were new since the baseline.
+They already gate through `_entry`, but the check is default-deny on purpose: a
+gate found in the body cannot distinguish a route that has a check from one that
+forgot it. Declared with `@auth_required`, matching the sibling meetings pack.
+
+Neither was fixed by editing a baseline or weakening an assertion.
+
+## Phases 15–17 — nothing to do, verified rather than assumed
+
+* **Schema.** No `CREATE TABLE`, `ALTER TABLE`, `CREATE INDEX` or `DROP` added
+  anywhere in `bot.py` or `services/`. The only DDL in the diff is inside a new
+  test's fixture. **No forward migration is required by this release.**
+* **Config/env.** No new `os.getenv`/`os.environ` in product code — both added
+  lines are in a test module. `.env.example` untouched. The only config delta is
+  `config/route_auth_baseline.json`, regenerated by the withdrawal.
+* **Dependencies.** `package.json`, `package-lock.json`, `patches/`, `app.json`,
+  `eas.json`, `ios/`, `android/` and `modules/` are **byte-identical** to
+  production. The mobile change is pure TypeScript, so the native build inputs
+  are unchanged and the existing iOS project compiles identically.
+
+## Phase 20 — no test was deleted to get green
+
+Twelve test files are removed. Every one maps to a feature in
+`RETIRED_FEATURE_IDS` or a module in `RETIRED_ENGINE_MODULES`: capital
+projection, capital UNDX capability, operations, briefings, concierge,
+conversations, documents, facts capability, records UNDX spec, shield,
+structured records, and the web views for those surfaces. Two files are added in
+their place — `test_private_contacts.py` (+808) covering the retained
+Relationship Intelligence, and `test_retired_engines_stay_unreachable.py` (+241)
+pinning the withdrawal so it cannot silently reverse.
+
+The surviving route set was read off the live url_map rather than inferred:
+Meetings, Relationships, Security and the office shell. That is exactly the
+retained set the product decision names, and nothing else.

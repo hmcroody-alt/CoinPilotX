@@ -1,0 +1,625 @@
+FAIL|tests/business_os/test_advertising_assistant.py|7 failed, 1 passed in 0.20s
+FAIL|tests/business_os/test_advertising_notifications.py|2 failed, 4 passed in 0.12s
+FAIL|tests/business_os/test_advertising_slice1.py|7 failed, 4 passed in 0.20s
+FAIL|tests/business_os/test_advertising_slice2_api.py|5 failed, 3 passed in 0.32s
+FAIL|tests/business_os/test_advertising_slice3_api.py|12 failed, 1 passed in 0.56s
+FAIL|tests/business_os/test_advertising_slice4_api.py|14 failed, 1 passed in 0.50s
+FAIL|tests/business_os/test_advertising_slice5_api.py|14 failed, 1 passed in 0.62s
+FAIL|tests/business_os/test_advertising_slice6_api.py|18 failed, 1 passed in 0.84s
+FAIL|tests/business_os/test_advertising_wallet_read.py|4 failed, 6 passed in 1.00s
+FAIL|tests/business_os/test_cj_request_boundary.py|1 failed, 5 passed in 27.29s
+FAIL|tests/business_os/test_cj_shop_binding.py|2 failed, 15 passed in 4.93s
+FAIL|tests/business_os/test_confirmation_conformance.py|7 failed, 27 passed in 0.96s
+FAIL|tests/business_os_finance/test_db_introspection.py|1 failed, 10 passed in 0.07s
+FAIL|tests/crypto_premium/test_premium_trial_lock.py|1 failed, 12 passed in 0.11s
+FAIL|tests/marketplace/test_seller_listing_readiness_route.py|3 failed, 13 passed in 2.61s
+FAIL|tests/private_office/test_private_observability.py|1 failed in 0.86s
+FAIL|tests/sentinel/test_mission3_identity.py|1 failed, 58 passed in 0.34s
+FAIL|tests/test_pulse_ads_os.py|1 failed, 15 passed in 2.80s
+FAIL|tests/test_pulse_new_user_profile_flow.py|1 failed, 6 passed in 0.35s
+FAIL|tests/test_pulse_settings_routes.py|6 failed, 38 passed in 0.37s
+FAIL|tests/test_web_native_parity.py|1 failed, 2 passed in 19.49s
+FAIL|tests/undx_agent/test_authorization_surface.py|8 failed in 0.33s
+FAIL|tests/undx_agent/test_content_graph_intelligence_pack.py|1 failed, 5 passed, 16 subtests passed in 0.24s
+FAIL|tests/undx_agent/test_deferred_focus_veto.py|1 failed, 5 passed in 0.41s
+FAIL|tests/undx_agent/test_knowledge_map.py|3 failed, 34 passed in 6.76s
+FAIL|tests/undx_agent/test_knowledge_map_grounding.py|12 failed, 9 passed, 327 subtests passed in 0.28s
+FAIL|tests/undx_agent/test_run_health.py|1 failed, 24 passed in 0.62s
+FAIL|tests/undx_agent/test_saved_post_write_pack.py|3 failed, 2 passed in 0.33s
+FAIL|tests/undx_agent/test_transport_wiring.py|1 failed, 15 passed, 15 subtests passed in 0.68s
+FAIL|tests/undx_brain/test_bounded_policy_profiles.py|3 failed, 28 passed, 30 subtests passed in 4.74s
+FAIL|tests/undx_brain/test_knowledge.py|4 failed, 33 passed, 31 subtests passed in 3.17s
+FAIL|tests/undx_brain/test_selection.py|6 failed, 30 passed, 1181 subtests passed in 4.32s
+FAIL|tests/undx_training/test_knowledge_corpus_retrieval.py|1 failed, 21 passed in 3.08s
+FAIL|tests/web_parity/test_design_tokens.py|1 failed, 64 passed in 0.13s
+FAIL|tests/web_surface/test_seller_store_presence_newchat.py|1 failed, 16 passed in 2.14s
+OK|tests/admin_auth/test_gateway_contract.py|29 passed in 0.05s
+OK|tests/admin_auth/test_pre_auth_gateway.py|25 passed in 6.33s
+OK|tests/briefings/test_coingecko_client.py|65 passed in 2.42s
+OK|tests/briefings/test_pulse_briefings.py|127 passed, 39 subtests passed in 7.09s
+OK|tests/business_os/test_ad_account_guardrails.py|18 passed in 0.12s
+OK|tests/business_os/test_ad_delivery_schema_bootstrap.py|3 passed in 0.07s
+OK|tests/business_os/test_ads_intelligence_api.py|22 passed in 0.09s
+OK|tests/business_os/test_ads_intelligence_attribution.py|40 passed in 0.17s
+OK|tests/business_os/test_ads_intelligence_context.py|28 passed in 0.04s
+OK|tests/business_os/test_ads_intelligence_decisions.py|20 passed in 0.07s
+OK|tests/business_os/test_ads_intelligence_diagnostics.py|32 passed in 0.12s
+OK|tests/business_os/test_ads_intelligence_events.py|35 passed in 0.08s
+OK|tests/business_os/test_ads_intelligence_health.py|20 passed in 0.52s
+OK|tests/business_os/test_ads_intelligence_interest.py|24 passed in 0.11s
+OK|tests/business_os/test_ads_intelligence_pacing.py|32 passed in 0.09s
+OK|tests/business_os/test_ads_intelligence_performance.py|28 passed in 0.29s
+OK|tests/business_os/test_ads_intelligence_ranking.py|29 passed in 0.06s
+OK|tests/business_os/test_advertising_admin.py|6 passed in 0.44s
+OK|tests/business_os/test_advertising_billing.py|14 passed in 0.22s
+OK|tests/business_os/test_advertising_feed_integration.py|5 passed in 6.46s
+OK|tests/business_os/test_advertising_reporting.py|9 passed in 0.12s
+OK|tests/business_os/test_advertising_slice2_routes.py|6 passed in 7.80s
+OK|tests/business_os/test_advertising_slice3_routes.py|6 passed in 6.74s
+OK|tests/business_os/test_advertising_slice4_routes.py|8 passed in 7.18s
+OK|tests/business_os/test_advertising_slice5_routes.py|9 passed in 7.78s
+OK|tests/business_os/test_advertising_slice6_routes.py|10 passed in 6.35s
+OK|tests/business_os/test_advertising_slice7_api.py|11 passed in 1.46s
+OK|tests/business_os/test_advertising_slice7_delivery.py|20 passed in 2.49s
+OK|tests/business_os/test_advertising_slice7_migration.py|7 passed in 0.06s
+OK|tests/business_os/test_advertising_slice7_routes.py|10 passed in 5.76s
+OK|tests/business_os/test_advertising_stage2_api.py|5 passed in 1.73s
+OK|tests/business_os/test_app_review_convergence.py|8 passed in 0.23s
+OK|tests/business_os/test_attr_api.py|9 passed in 0.11s
+OK|tests/business_os/test_attr_engine.py|9 passed in 0.17s
+OK|tests/business_os/test_attr_schema.py|9 passed in 0.08s
+OK|tests/business_os/test_badge_domain_scoping.py|14 passed in 1.16s
+OK|tests/business_os/test_business_api.py|9 passed in 0.61s
+OK|tests/business_os/test_business_core.py|9 passed in 0.76s
+OK|tests/business_os/test_capture_atomicity.py|15 passed in 7.65s
+OK|tests/business_os/test_cj_adapter.py|74 passed in 0.17s
+OK|tests/business_os/test_cj_connections.py|65 passed in 4.93s
+OK|tests/business_os/test_cj_fulfillment.py|80 passed in 19.41s
+OK|tests/business_os/test_cj_gateway.py|21 passed in 4.11s
+OK|tests/business_os/test_cj_policy_gates.py|18 passed in 0.06s
+OK|tests/business_os/test_cj_quota.py|45 passed in 3.71s
+OK|tests/business_os/test_cj_routes.py|37 passed in 4.18s
+OK|tests/business_os/test_cj_store_session_authority.py|23 passed in 5.11s
+OK|tests/business_os/test_cj_transport.py|11 passed in 0.13s
+OK|tests/business_os/test_cj_vault.py|23 passed in 0.18s
+OK|tests/business_os/test_cj_webhooks.py|21 passed in 2.45s
+OK|tests/business_os/test_cj_worker.py|24 passed in 5.82s
+OK|tests/business_os/test_commerce_console_page.py|4 passed in 0.06s
+OK|tests/business_os/test_commerce_gateway.py|5 passed in 0.15s
+OK|tests/business_os/test_commerce_links_core.py|4 passed in 0.22s
+OK|tests/business_os/test_confirmations.py|5 passed in 0.11s
+OK|tests/business_os/test_creator_api.py|9 passed in 0.09s
+OK|tests/business_os/test_creator_engine.py|9 passed in 0.15s
+OK|tests/business_os/test_creator_schema.py|7 passed in 0.07s
+OK|tests/business_os/test_crypto_alerts.py|8 passed in 0.15s
+OK|tests/business_os/test_crypto_api.py|8 passed in 1.57s
+OK|tests/business_os/test_crypto_engine.py|9 passed in 1.75s
+OK|tests/business_os/test_crypto_market.py|5 passed in 0.12s
+OK|tests/business_os/test_crypto_schema.py|8 passed in 1.08s
+OK|tests/business_os/test_entitlement_account_hold.py|11 passed in 0.21s
+OK|tests/business_os/test_entitlement_effective_access.py|11 passed in 0.06s
+OK|tests/business_os/test_entitlement_identity_effects.py|11 passed in 0.12s
+OK|tests/business_os/test_entitlements.py|27 passed in 1.46s
+OK|tests/business_os/test_events_api.py|7 passed in 1.05s
+OK|tests/business_os/test_events_core.py|20 passed in 1.51s
+OK|tests/business_os/test_iap_api.py|8 passed in 0.73s
+OK|tests/business_os/test_iap_apple.py|16 passed in 0.38s
+OK|tests/business_os/test_iap_google.py|8 passed in 0.16s
+OK|tests/business_os/test_insights_api.py|8 passed in 0.19s
+OK|tests/business_os/test_insights_core.py|9 passed in 0.21s
+OK|tests/business_os/test_inventory_api.py|2 passed in 0.10s
+OK|tests/business_os/test_inventory_core.py|4 passed in 0.24s
+OK|tests/business_os/test_l10n_api.py|9 passed in 0.10s
+OK|tests/business_os/test_l10n_engine.py|12 passed in 0.14s
+OK|tests/business_os/test_l10n_schema.py|6 passed in 0.05s
+OK|tests/business_os/test_ledger_account_history.py|11 passed in 0.19s
+OK|tests/business_os/test_ledger_and_webhook_inbox.py|6 passed in 0.24s
+OK|tests/business_os/test_ledger_concurrency_portability.py|8 passed in 0.14s
+OK|tests/business_os/test_listing_batch.py|133 passed in 0.18s
+OK|tests/business_os/test_listing_drafts_api.py|2 passed in 0.09s
+OK|tests/business_os/test_listing_drafts_core.py|8 passed in 0.28s
+OK|tests/business_os/test_listing_readiness.py|53 passed in 0.11s
+OK|tests/business_os/test_listing_review_authority.py|75 passed in 0.17s
+OK|tests/business_os/test_marketplace_admin.py|6 passed in 0.30s
+OK|tests/business_os/test_marketplace_api.py|7 passed in 0.28s
+OK|tests/business_os/test_marketplace_assistant.py|17 passed in 1.30s
+OK|tests/business_os/test_marketplace_core.py|9 passed in 0.50s
+OK|tests/business_os/test_marketplace_money_read.py|14 passed in 1.73s
+OK|tests/business_os/test_marketplace_money_routes.py|10 passed in 6.19s
+OK|tests/business_os/test_marketplace_policy.py|5 passed in 0.06s
+OK|tests/business_os/test_merchant_api.py|9 passed in 0.51s
+OK|tests/business_os/test_merchant_engine.py|9 passed in 0.56s
+OK|tests/business_os/test_merchant_schema.py|10 passed in 0.09s
+OK|tests/business_os/test_messages_api.py|10 passed in 0.15s
+OK|tests/business_os/test_messages_core.py|12 passed in 0.18s
+OK|tests/business_os/test_offers_api.py|4 passed in 0.20s
+OK|tests/business_os/test_offers_core.py|11 passed in 0.36s
+OK|tests/business_os/test_orders_api.py|10 passed in 0.27s
+OK|tests/business_os/test_orders_core.py|10 passed in 0.28s
+OK|tests/business_os/test_paid_pro_projection.py|13 passed in 0.12s
+OK|tests/business_os/test_perf_api.py|10 passed in 0.41s
+OK|tests/business_os/test_perf_engine.py|13 passed in 1.20s
+OK|tests/business_os/test_perf_schema.py|8 passed in 0.35s
+OK|tests/business_os/test_premium_canonical.py|16 passed in 1.11s
+OK|tests/business_os/test_premium_crypto_access.py|14 passed in 0.66s
+OK|tests/business_os/test_premium_expiry_enforcement.py|9 passed in 0.71s
+OK|tests/business_os/test_premium_legacy_subscription_history.py|13 passed in 0.15s
+OK|tests/business_os/test_premium_owner_lifetime.py|22 passed in 1.58s
+OK|tests/business_os/test_premium_status_center.py|29 passed in 0.76s
+OK|tests/business_os/test_premium_usage_summary.py|6 passed in 1.10s
+OK|tests/business_os/test_premium_visibility_effective_override.py|6 passed in 0.11s
+OK|tests/business_os/test_progress_os.py|47 passed in 6.20s
+OK|tests/business_os/test_rec_api.py|8 passed in 0.21s
+OK|tests/business_os/test_rec_engine.py|10 passed in 0.18s
+OK|tests/business_os/test_rec_schema.py|9 passed in 0.08s
+OK|tests/business_os/test_refund_idempotency.py|14 passed in 1.84s
+OK|tests/business_os/test_reports_api.py|2 passed in 1.21s
+OK|tests/business_os/test_reports_core.py|4 passed in 1.25s
+OK|tests/business_os/test_reputation_core.py|3 passed in 0.45s
+OK|tests/business_os/test_results.py|3 passed in 0.04s
+OK|tests/business_os/test_returns_api.py|3 passed in 1.54s
+OK|tests/business_os/test_returns_core.py|5 passed in 1.66s
+OK|tests/business_os/test_review_inspection.py|29 passed in 0.15s
+OK|tests/business_os/test_review_supplier_sync.py|16 passed in 0.14s
+OK|tests/business_os/test_review_zombie_backfill.py|16 passed in 1.36s
+OK|tests/business_os/test_savepoint_recovery.py|19 passed in 0.12s
+OK|tests/business_os/test_seller_analytics.py|32 passed in 1.49s
+OK|tests/business_os/test_seller_dashboard_api.py|2 passed in 0.62s
+OK|tests/business_os/test_seller_dashboard_core.py|4 passed in 0.26s
+OK|tests/business_os/test_seller_profile.py|19 passed in 0.29s
+OK|tests/business_os/test_store_api.py|11 passed in 0.28s
+OK|tests/business_os/test_store_core.py|14 passed in 0.33s
+OK|tests/business_os/test_store_policies_api.py|3 passed in 0.08s
+OK|tests/business_os/test_store_policies_core.py|8 passed in 0.15s
+OK|tests/business_os/test_store_seller_eligibility.py|19 passed in 0.50s
+OK|tests/business_os/test_storefront_versions_api.py|2 passed in 0.10s
+OK|tests/business_os/test_storefront_versions_core.py|5 passed in 0.18s
+OK|tests/business_os/test_stripe_ledger_handler.py|7 passed in 0.17s
+OK|tests/business_os/test_stripe_refund_delta.py|20 passed in 0.51s
+OK|tests/business_os/test_subscription_exactly_once.py|2 passed in 0.16s
+OK|tests/business_os/test_undx_api.py|11 passed in 0.14s
+OK|tests/business_os/test_undx_engine.py|15 passed in 0.28s
+OK|tests/business_os/test_undx_marketplace_workflow.py|8 passed in 0.58s
+OK|tests/business_os/test_undx_schema.py|7 passed in 0.11s
+OK|tests/business_os/test_verification_api.py|4 passed in 0.15s
+OK|tests/business_os/test_verification_core.py|8 passed in 0.24s
+OK|tests/business_os_finance/test_ad_wallet_hardening.py|21 passed in 0.41s
+OK|tests/business_os_finance/test_connect_accounts.py|9 passed in 0.11s
+OK|tests/business_os_finance/test_finance_routes.py|9 passed in 6.38s
+OK|tests/business_os_finance/test_incidents.py|13 passed in 0.59s
+OK|tests/business_os_finance/test_reconciliation.py|13 passed in 1.33s
+OK|tests/business_os_finance/test_rewards_engine.py|27 passed in 1.65s
+OK|tests/business_os_finance/test_rewards_routes.py|14 passed in 6.25s
+OK|tests/business_os_finance/test_seller_payout_routes.py|13 passed in 6.28s
+OK|tests/business_os_finance/test_seller_payouts.py|25 passed in 0.85s
+OK|tests/business_os_finance/test_sql_engine_portability.py|7 passed in 0.13s
+OK|tests/community/test_groups_rooms_activation.py|6 passed in 0.09s
+OK|tests/crypto_premium/test_advanced_alert_engine.py|23 passed in 0.77s
+OK|tests/crypto_premium/test_cross_account_isolation.py|3 passed in 0.14s
+OK|tests/crypto_premium/test_crypto_premium_gate.py|14 passed in 0.08s
+OK|tests/crypto_premium/test_market_observations.py|10 passed in 0.07s
+OK|tests/crypto_premium/test_market_pulse.py|25 passed in 0.20s
+OK|tests/crypto_premium/test_portfolio_intelligence.py|16 passed in 0.14s
+OK|tests/crypto_premium/test_premium_delivery_stop.py|7 passed in 0.13s
+OK|tests/crypto_premium/test_premium_expiry_crypto_lock.py|12 passed, 69 subtests passed in 1.24s
+OK|tests/crypto_premium/test_undx_crypto_tools.py|21 passed in 0.09s
+OK|tests/dropshipping/test_dropship_attention_state.py|27 passed in 1.61s
+OK|tests/dropshipping/test_dropship_autopublish.py|33 passed in 1.57s
+OK|tests/dropshipping/test_dropship_draft_publish.py|72 passed in 5.47s
+OK|tests/dropshipping/test_dropship_import_audit.py|50 passed in 0.87s
+OK|tests/dropshipping/test_dropship_import_pipeline.py|43 passed in 0.82s
+OK|tests/dropshipping/test_dropship_landed_cost.py|53 passed in 0.64s
+OK|tests/dropshipping/test_dropship_pricing.py|55 passed in 0.06s
+OK|tests/dropshipping/test_dropship_reprice_audit.py|25 passed in 0.68s
+OK|tests/dropshipping/test_dropship_revision_apply.py|18 passed in 0.55s
+OK|tests/dropshipping/test_dropship_revisions.py|30 passed in 0.06s
+OK|tests/dropshipping/test_merchant_scope.py|20 passed in 0.15s
+OK|tests/dropshipping/test_publish_problem_copy.py|11 passed in 0.07s
+OK|tests/dropshipping/test_revision_attention_copy.py|9 passed in 0.04s
+OK|tests/dropshipping/test_scope_route.py|7 passed in 1.33s
+OK|tests/dropshipping/test_store_policy_route.py|24 passed in 1.58s
+OK|tests/dropshipping/test_supplier_normalization.py|118 passed in 0.07s
+OK|tests/dropshipping/test_supplier_obligation_copy.py|27 passed in 0.08s
+OK|tests/dropshipping/test_supplier_obligations.py|58 passed in 2.51s
+OK|tests/marketplace/test_admin_review_batch_route.py|38 passed in 6.37s
+OK|tests/marketplace/test_admin_review_detail_page.py|15 passed in 2.94s
+OK|tests/marketplace/test_admin_review_queue_page.py|43 passed in 4.74s
+OK|tests/marketplace/test_cash_settlement.py|7 passed in 4.36s
+OK|tests/marketplace/test_commercial_operations.py|5 passed in 1.60s
+OK|tests/marketplace/test_goods_policy.py|4 passed in 0.02s
+OK|tests/marketplace/test_listing_rereview_reset.py|10 passed in 2.71s
+OK|tests/marketplace/test_marketplace_approval_visibility.py|20 passed in 3.26s
+OK|tests/marketplace/test_marketplace_moderation_reachability.py|7 passed in 4.11s
+OK|tests/marketplace/test_payment_error_classification.py|7 passed in 0.06s
+OK|tests/marketplace/test_post_settlement_finance.py|6 passed in 4.61s
+OK|tests/marketplace/test_product_media_attach.py|12 passed in 5.29s
+OK|tests/marketplace/test_quote_authority.py|2 passed in 0.03s
+OK|tests/marketplace/test_reservation_lifecycle.py|33 passed in 0.11s
+OK|tests/marketplace/test_reservation_schema_bootstrap.py|26 passed in 0.13s
+OK|tests/marketplace/test_reservation_settlement.py|39 passed in 0.12s
+OK|tests/marketplace/test_reservation_sweep_schema_contract.py|4 passed in 0.11s
+OK|tests/marketplace/test_reservation_sweep_worker_wiring.py|54 passed in 0.15s
+OK|tests/marketplace/test_reservation_sweeper.py|44 passed in 0.20s
+OK|tests/marketplace/test_reservation_webhook_wiring.py|12 passed in 0.31s
+OK|tests/marketplace/test_review_mutation_guards.py|20 passed in 5.61s
+OK|tests/marketplace/test_review_pipeline_end_to_end.py|11 passed in 4.03s
+OK|tests/marketplace/test_seller_listing_batch_category_route.py|36 passed in 4.50s
+OK|tests/marketplace/test_seller_listing_batch_price_route.py|26 passed in 4.33s
+OK|tests/marketplace/test_seller_listing_batch_route.py|20 passed in 3.47s
+OK|tests/marketplace/test_seller_listing_edit.py|47 passed in 8.27s
+OK|tests/marketplace/test_seller_review_verdict.py|28 passed in 2.83s
+OK|tests/marketplace/test_supplier_checkout_gate.py|59 passed in 0.11s
+OK|tests/marketplace/test_supplier_checkout_wiring.py|20 passed in 5.95s
+OK|tests/marketplace/test_supplier_ledger_authority.py|28 passed in 0.49s
+OK|tests/marketplace/test_supplier_variants.py|57 passed in 0.10s
+OK|tests/pages/test_page_journeys.py|33 passed, 78 subtests passed in 0.32s
+OK|tests/pages/test_page_os.py|213 passed, 236 subtests passed in 1.30s
+OK|tests/presence/test_messenger_integration.py|no tests ran in 0.07s
+OK|tests/presence/test_platform_surfaces.py|no tests ran in 6.17s
+OK|tests/presence/test_presence_core.py|no tests ran in 0.03s
+OK|tests/presence/test_schema_ddl_once.py|5 passed in 0.04s
+OK|tests/private_office/test_capital_graph.py|1 passed in 0.09s
+OK|tests/private_office/test_capital_overview.py|1 passed in 0.23s
+OK|tests/private_office/test_capital_projection_routes.py|1 passed in 0.92s
+OK|tests/private_office/test_capital_undx_capability.py|1 passed in 0.13s
+OK|tests/private_office/test_cash_flow.py|1 passed in 0.19s
+OK|tests/private_office/test_entitlement_routes.py|12 passed in 0.34s
+OK|tests/private_office/test_evidence_availability.py|28 passed, 31 subtests passed in 0.07s
+OK|tests/private_office/test_integrity.py|1 passed in 0.12s
+OK|tests/private_office/test_obligation_projection.py|1 passed in 0.09s
+OK|tests/private_office/test_office_security.py|41 passed in 4.77s
+OK|tests/private_office/test_operations_routes.py|1 passed in 0.89s
+OK|tests/private_office/test_owner_office_membership.py|18 passed in 0.70s
+OK|tests/private_office/test_portfolio_projection.py|1 passed in 0.16s
+OK|tests/private_office/test_private_briefings.py|1 passed in 0.62s
+OK|tests/private_office/test_private_concierge.py|1 passed in 0.65s
+OK|tests/private_office/test_private_conflict_lifecycle.py|1 passed in 0.06s
+OK|tests/private_office/test_private_conversations.py|30 passed in 0.77s
+OK|tests/private_office/test_private_conversations_routes.py|36 passed in 1.30s
+OK|tests/private_office/test_private_documents.py|1 passed in 0.71s
+OK|tests/private_office/test_private_evidence_review.py|1 passed in 0.06s
+OK|tests/private_office/test_private_fact_ledger.py|1 passed in 0.05s
+OK|tests/private_office/test_private_facts_capability.py|1 passed in 0.51s
+OK|tests/private_office/test_private_facts_kill_switch.py|12 passed in 0.03s
+OK|tests/private_office/test_private_feature_undx_reads.py|1 passed in 0.19s
+OK|tests/private_office/test_private_foundation.py|1 passed in 0.04s
+OK|tests/private_office/test_private_meeting_reminders.py|39 passed in 33.31s
+OK|tests/private_office/test_private_meeting_schedule.py|63 passed in 0.23s
+OK|tests/private_office/test_private_meetings.py|43 passed in 0.22s
+OK|tests/private_office/test_private_meetings_routes.py|1 passed in 1.12s
+OK|tests/private_office/test_private_office_routes.py|1 passed in 0.68s
+OK|tests/private_office/test_private_office_surface.py|1 passed in 0.05s
+OK|tests/private_office/test_private_office_web_surface.py|4 passed in 3.59s
+OK|tests/private_office/test_private_office_wire_contract.py|4 passed in 0.03s
+OK|tests/private_office/test_private_operations.py|1 passed in 0.08s
+OK|tests/private_office/test_private_record_links.py|1 passed in 0.10s
+OK|tests/private_office/test_private_records.py|1 passed in 0.09s
+OK|tests/private_office/test_private_records_undx_spec.py|1 passed in 0.14s
+OK|tests/private_office/test_private_relationships.py|1 passed in 0.75s
+OK|tests/private_office/test_private_retrieval.py|1 passed in 0.07s
+OK|tests/private_office/test_private_shield.py|1 passed in 0.72s
+OK|tests/private_office/test_private_substrate.py|1 passed in 0.09s
+OK|tests/private_office/test_private_write_boundary.py|6 passed in 18.97s
+OK|tests/private_office/test_record_templates.py|1 passed in 0.05s
+OK|tests/private_office/test_structured_record_routes.py|1 passed in 1.53s
+OK|tests/private_office/test_structured_record_schema.py|1 passed in 0.07s
+OK|tests/private_office/test_structured_record_store.py|1 passed in 0.12s
+OK|tests/private_office/test_tier_resolver.py|34 passed in 0.17s
+OK|tests/protection/test_admin_action_accountability.py|9 passed in 6.15s
+OK|tests/protection/test_agora_cloud_recording.py|4 passed in 0.04s
+OK|tests/protection/test_agora_direct_live_contract.py|10 passed in 0.11s
+OK|tests/protection/test_agora_mux_bridge.py|4 passed in 0.09s
+OK|tests/protection/test_agora_replay_mux_contract.py|8 passed in 0.09s
+OK|tests/protection/test_agora_rtc_provider_contract.py|4 passed in 0.34s
+OK|tests/protection/test_agora_token_generation.py|9 passed in 0.28s
+OK|tests/protection/test_backend_registry_verification.py|9 passed in 34.36s
+OK|tests/protection/test_backup_and_secret_integrity.py|12 passed in 0.09s
+OK|tests/protection/test_client_address_trust.py|29 passed in 0.13s
+OK|tests/protection/test_core_platform_contract.py|no tests ran in 0.07s
+OK|tests/protection/test_csrf_contract.py|16 passed in 2.89s
+OK|tests/protection/test_environment_contract.py|10 passed in 15.32s
+OK|tests/protection/test_ios_build_version_contract.py|4 passed in 0.03s
+OK|tests/protection/test_live_audience_continuity.py|9 passed in 0.33s
+OK|tests/protection/test_live_end_nonblocking.py|7 passed in 0.11s
+OK|tests/protection/test_live_feature_preservation.py|7 passed in 0.04s
+OK|tests/protection/test_live_guest_authorization.py|27 passed in 0.54s
+OK|tests/protection/test_live_moderation_authority.py|14 passed in 0.20s
+OK|tests/protection/test_live_recording_archive.py|10 passed in 0.07s
+OK|tests/protection/test_live_replay_auto_publish.py|16 passed in 0.35s
+OK|tests/protection/test_live_social_distribution.py|3 passed in 0.09s
+OK|tests/protection/test_media_playback_contract.py|no tests ran in 0.06s
+OK|tests/protection/test_native_background_parity_gate.py|33 passed in 0.20s
+OK|tests/protection/test_native_layout_parity_gate.py|30 passed in 0.06s
+OK|tests/protection/test_native_theme_parity_gate.py|41 passed in 0.08s
+OK|tests/protection/test_operations_metric_truthfulness.py|15 passed in 5.97s
+OK|tests/protection/test_protection_suite_integrity.py|7 passed in 1.92s
+OK|tests/protection/test_r2_cors_probe.py|11 passed in 0.05s
+OK|tests/protection/test_rate_limit_rollout.py|14 passed in 11.63s
+OK|tests/protection/test_realtime_audio_architecture.py|19 passed in 0.47s
+OK|tests/protection/test_realtime_audio_gate_coverage.py|14 passed, 27 subtests passed in 3.17s
+OK|tests/protection/test_realtime_audio_gate_file_list_mode.py|13 passed, 7 subtests passed in 4.84s
+OK|tests/protection/test_route_auth.py|8 passed in 7.12s
+OK|tests/protection/test_route_contract_gate.py|17 passed in 0.05s
+OK|tests/protection/test_schema_declaration_integrity.py|2 passed in 0.20s
+OK|tests/protection/test_signing_key_separation.py|22 passed in 0.18s
+OK|tests/protection/test_undx_kernel_guard.py|13 passed in 0.13s
+OK|tests/protection/test_undx_router_credentials.py|9 passed in 0.18s
+OK|tests/protection/test_web_app_promotion.py|12 passed in 2.77s
+OK|tests/protection/test_web_build_freshness_gate.py|15 passed in 0.08s
+OK|tests/protection/test_web_service_worker.py|23 passed in 3.00s
+OK|tests/protection/test_web_spa_shell.py|12 passed in 1.14s
+OK|tests/protection/test_web_token_authority_gate.py|45 passed in 0.09s
+OK|tests/pulse_ads/test_ads_worker.py|17 passed in 0.06s
+OK|tests/pulse_ads/test_adsets_and_detail.py|15 passed in 0.06s
+OK|tests/pulse_ads/test_apple_iap_credits.py|31 passed in 0.16s
+OK|tests/pulse_ads/test_apple_server_api.py|10 passed in 0.10s
+OK|tests/pulse_ads/test_audiences_library_policy.py|27 passed in 0.16s
+OK|tests/pulse_ads/test_campaign_activation.py|8 passed in 0.09s
+OK|tests/pulse_ads/test_economy_metrics_ad_scope.py|7 passed in 0.04s
+OK|tests/pulse_ads/test_promote_existing_content.py|15 passed in 0.07s
+OK|tests/pulse_ads/test_reports_insights_wallet.py|28 passed in 0.13s
+OK|tests/pulse_ads/test_wallet_funding_reversal.py|8 passed in 0.06s
+OK|tests/pulse_ads/test_wallet_spend_drawdown.py|9 passed in 0.05s
+OK|tests/pulse_ads/test_web_portal_absent_states.py|14 passed in 0.05s
+OK|tests/sentinel/test_adversarial.py|18 passed in 0.14s
+OK|tests/sentinel/test_ai_boundaries.py|18 passed in 0.67s
+OK|tests/sentinel/test_authority_and_risk.py|14 passed in 0.05s
+OK|tests/sentinel/test_bootstrap.py|12 passed in 0.04s
+OK|tests/sentinel/test_bucket_sweep.py|14 passed in 0.06s
+OK|tests/sentinel/test_constitution_and_classification.py|9 passed in 0.03s
+OK|tests/sentinel/test_ethical_regression.py|9 passed in 0.16s
+OK|tests/sentinel/test_events_and_evidence.py|11 passed in 0.05s
+OK|tests/sentinel/test_gate_registry.py|16 passed in 0.31s
+OK|tests/sentinel/test_incidents_and_correlation.py|16 passed in 0.08s
+OK|tests/sentinel/test_mission2_core.py|33 passed in 0.28s
+OK|tests/sentinel/test_mission4_external.py|56 passed in 0.30s
+OK|tests/sentinel/test_mission5_financial.py|221 passed in 0.52s
+OK|tests/sentinel/test_platform_models.py|24 passed in 0.17s
+OK|tests/sentinel/test_rate_limit.py|32 passed in 2.33s
+OK|tests/sentinel/test_request_bridge.py|53 passed in 0.15s
+OK|tests/sentinel/test_runbooks_and_killswitches.py|14 passed in 0.07s
+OK|tests/sentinel/test_runtime.py|4 passed in 0.06s
+OK|tests/sentinel/test_tenant_isolation.py|20 passed in 0.14s
+OK|tests/sentinel_integration/test_object_authorization.py|22 passed in 3.06s
+OK|tests/sentinel_integration/test_rate_guard_routes.py|17 passed in 3.43s
+OK|tests/sentinel_integration/test_request_bridge_hook.py|11 passed in 2.51s
+OK|tests/staging/test_cj_postgres.py|32 skipped in 0.08s
+OK|tests/test_agora_private_mux_input.py|5 passed in 0.09s
+OK|tests/test_app_intent_fallback_router.py|18 passed, 28 subtests passed in 0.86s
+OK|tests/test_app_links.py|58 passed in 0.06s
+OK|tests/test_app_review_device_and_referral.py|24 passed in 5.83s
+OK|tests/test_app_review_qa_account_visibility.py|13 passed in 3.90s
+OK|tests/test_app_review_qa_visibility_and_appeals.py|9 passed in 0.08s
+OK|tests/test_app_review_rooms_groups_messages.py|17 passed in 4.99s
+OK|tests/test_app_review_support_password.py|19 passed in 4.22s
+OK|tests/test_assistant_response_routing.py|41 passed, 785 subtests passed in 11.38s
+OK|tests/test_automated_posts_text_only.py|14 passed in 0.16s
+OK|tests/test_call_acceptance_sync.py|10 passed in 2.16s
+OK|tests/test_call_multi_guest.py|22 passed in 44.02s
+OK|tests/test_call_two_sided_hangup.py|6 passed in 2.00s
+OK|tests/test_command_center_ai_routing.py|56 passed, 2231 subtests passed in 0.46s
+OK|tests/test_connect_payout_onboarding.py|23 passed in 0.05s
+OK|tests/test_content_translation.py|13 passed in 0.17s
+OK|tests/test_crypto_alert_advanced_rules.py|35 passed in 0.35s
+OK|tests/test_crypto_alert_conditions.py|43 passed in 0.04s
+OK|tests/test_crypto_alert_edge_trigger.py|20 passed in 0.85s
+OK|tests/test_crypto_alert_native_push.py|3 passed in 0.24s
+OK|tests/test_crypto_alert_options.py|20 passed in 0.18s
+OK|tests/test_crypto_alert_persistence.py|20 passed in 1.80s
+OK|tests/test_crypto_alert_portfolio_rules.py|19 passed in 0.43s
+OK|tests/test_crypto_alert_watchlist_rules.py|20 passed in 0.64s
+OK|tests/test_crypto_intelligence_acceptance.py|6 passed in 0.41s
+OK|tests/test_dev_database_isolation.py|5 passed in 0.03s
+OK|tests/test_email_outbox_deferred_send.py|15 passed in 2.47s
+OK|tests/test_emoji_unicode_roundtrip.py|8 passed in 2.12s
+OK|tests/test_failed_login_alert_dispatch.py|6 passed in 3.08s
+OK|tests/test_https_redirect_host_header.py|8 passed, 20 subtests passed in 1.91s
+OK|tests/test_init_db_survives_unmintable_user_id.py|8 passed in 2.11s
+OK|tests/test_live_participants.py|55 passed in 0.06s
+OK|tests/test_live_replay_playback_manifest.py|3 passed in 0.04s
+OK|tests/test_live_replay_worker.py|10 passed in 2.24s
+OK|tests/test_live_unlock_threshold.py|30 passed in 0.12s
+OK|tests/test_market_intelligence.py|25 passed in 0.06s
+OK|tests/test_market_observations.py|24 passed in 0.16s
+OK|tests/test_marketplace_buy_now_checkout_contract.py|4 passed in 0.14s
+OK|tests/test_marketplace_buy_now_quantity.py|16 passed in 2.37s
+OK|tests/test_marketplace_cart_lifecycle.py|11 passed in 0.13s
+OK|tests/test_marketplace_cash_payment_pause.py|6 passed in 0.12s
+OK|tests/test_marketplace_delivery_lane.py|17 passed in 2.49s
+OK|tests/test_marketplace_fulfillment.py|83 passed in 0.21s
+OK|tests/test_marketplace_listing_lifecycle.py|4 passed in 0.03s
+OK|tests/test_marketplace_listing_types.py|19 passed, 16 subtests passed in 2.85s
+OK|tests/test_marketplace_minimum_charge.py|18 passed in 0.06s
+OK|tests/test_marketplace_native_payment_sheet.py|13 passed in 0.34s
+OK|tests/test_marketplace_order_lane.py|20 passed in 3.12s
+OK|tests/test_marketplace_price_label_parity.py|18 passed in 0.05s
+OK|tests/test_marketplace_store_identity.py|7 passed in 0.06s
+OK|tests/test_marketplace_stripe_response.py|2 passed in 0.02s
+OK|tests/test_measured_duration_wiring.py|21 passed in 1.96s
+OK|tests/test_measured_video_duration_enforcement.py|40 passed in 0.41s
+OK|tests/test_media_upload_sessions.py|11 passed in 0.11s
+OK|tests/test_media_worker_availability_reconcile.py|15 passed in 1.89s
+OK|tests/test_media_worker_playback_backlog.py|17 passed in 2.07s
+OK|tests/test_message_notification_single_delivery.py|4 passed in 5.89s
+OK|tests/test_messenger_document_attachment_identity.py|6 passed, 5 subtests passed in 0.12s
+OK|tests/test_messenger_idempotency_index_health.py|25 passed in 0.09s
+OK|tests/test_messenger_media_auth_isolation.py|34 passed in 7.47s
+OK|tests/test_messenger_media_document_attachments.py|18 passed in 0.11s
+OK|tests/test_messenger_media_gallery.py|43 passed in 0.21s
+OK|tests/test_messenger_media_processing_pipeline.py|42 passed, 2 subtests passed in 3.95s
+OK|tests/test_messenger_media_type_resolution.py|13 passed in 0.09s
+OK|tests/test_messenger_resumable_upload.py|37 passed, 4 subtests passed in 0.33s
+OK|tests/test_messenger_send_idempotency.py|20 passed in 0.08s
+OK|tests/test_messenger_voice_message_contract.py|4 passed in 0.15s
+OK|tests/test_mobile_auth_login_error_codes.py|10 passed in 4.57s
+OK|tests/test_music_catalog_connection_release.py|5 passed in 0.03s
+OK|tests/test_native_app_links.py|4 passed in 0.03s
+OK|tests/test_notification_email_app_links.py|31 passed in 0.10s
+OK|tests/test_notification_email_dedupe.py|3 passed in 0.12s
+OK|tests/test_notification_job_atomic_claim.py|3 passed in 0.11s
+OK|tests/test_notification_system_links.py|35 passed in 0.29s
+OK|tests/test_premium_blue_check_gate.py|20 passed in 0.09s
+OK|tests/test_premium_portfolio.py|24 passed in 0.40s
+OK|tests/test_premium_purchase_options.py|10 passed in 0.03s
+OK|tests/test_presence_service.py|18 passed in 0.04s
+OK|tests/test_profile_image_upload_validation.py|7 passed, 3 subtests passed in 1.06s
+OK|tests/test_pulse_ads_analytics.py|6 passed in 0.04s
+OK|tests/test_pulse_advertiser_portal_accounts.py|10 passed in 0.04s
+OK|tests/test_pulse_advertiser_portal_activation.py|41 passed in 0.20s
+OK|tests/test_pulse_ai_provider_reconciliation.py|60 passed, 47 subtests passed in 0.35s
+OK|tests/test_pulse_ai_web_search_spend.py|11 passed in 0.17s
+OK|tests/test_pulse_automated_account_identity.py|3 passed in 0.16s
+OK|tests/test_pulse_comment_pagination.py|19 passed in 0.16s
+OK|tests/test_pulse_friend_suggestions_sql.py|7 passed in 45.37s
+OK|tests/test_pulse_id_public_privacy.py|3 passed in 29.02s
+OK|tests/test_pulse_id_service.py|8 passed in 0.04s
+OK|tests/test_pulse_insight_identity_media.py|28 passed in 0.21s
+OK|tests/test_pulse_insight_image_pipeline.py|24 passed in 0.25s
+OK|tests/test_pulse_post_save_wiring.py|34 passed in 6.79s
+OK|tests/test_pulse_region_preferences.py|5 passed in 0.06s
+OK|tests/test_pulse_repost_routes.py|14 passed in 3.21s
+OK|tests/test_pulse_repost_toggle.py|25 passed in 0.33s
+OK|tests/test_pulse_saved_collections_and_media.py|75 passed, 39 subtests passed in 9.01s
+OK|tests/test_pulse_status_media_batching.py|9 passed in 1.39s
+OK|tests/test_pulsesoc_platform_manifest_enrichment.py|4 passed in 54.96s
+OK|tests/test_push_subscription_installation_dedupe.py|8 passed in 0.18s
+OK|tests/test_qa_account_classifier.py|30 passed, 8 subtests passed in 5.42s
+OK|tests/test_reel_takedown_read_path.py|5 passed in 3.16s
+OK|tests/test_replay_lifecycle.py|29 passed in 3.03s
+OK|tests/test_resource_page_app_ctas.py|16 passed in 4.09s
+OK|tests/test_scam_shield_routing.py|37 passed, 15 subtests passed in 0.24s
+OK|tests/test_schema_ddl_once.py|16 passed in 0.37s
+OK|tests/test_seller_lifecycle.py|87 passed in 0.28s
+OK|tests/test_seller_money_read.py|25 passed in 0.45s
+OK|tests/test_seller_money_routes.py|9 passed in 10.75s
+OK|tests/test_share_link_app_intent.py|13 passed in 3.40s
+OK|tests/test_sports_edge_routing.py|22 passed, 8 subtests passed in 19.68s
+OK|tests/test_sql_placeholder_translation.py|14 passed in 26.12s
+OK|tests/test_sql_reserved_identifiers.py|6 passed in 10.64s
+OK|tests/test_staging_boot_secret_hygiene.py|3 passed in 6.76s
+OK|tests/test_stored_video_policy.py|48 passed in 0.17s
+OK|tests/test_storekit_configuration_matches_catalog.py|6 passed in 0.05s
+OK|tests/test_stripe_webhook_verification.py|21 passed in 0.15s
+OK|tests/test_sync_upload_duration_measurement.py|18 passed in 1.44s
+OK|tests/test_telegram_text_routing.py|53 passed in 7.62s
+OK|tests/test_translation_spend.py|12 passed in 0.69s
+OK|tests/test_undx_benchmark.py|37 passed, 51 subtests passed in 0.23s
+OK|tests/test_undx_call_domain.py|25 passed, 102 subtests passed in 0.20s
+OK|tests/test_undx_call_guard.py|23 passed in 0.27s
+OK|tests/test_undx_canary.py|24 passed, 15 subtests passed in 0.17s
+OK|tests/test_undx_capabilities.py|38 passed, 32 subtests passed in 0.16s
+OK|tests/test_undx_config_drift.py|46 passed, 8 subtests passed in 49.23s
+OK|tests/test_undx_cost_budget.py|81 passed, 5 subtests passed in 2.60s
+OK|tests/test_undx_eval_corpus.py|24 passed, 111 subtests passed in 0.07s
+OK|tests/test_undx_fabric_health.py|23 passed, 22 subtests passed in 0.17s
+OK|tests/test_undx_model_audit.py|27 passed, 24 subtests passed in 0.42s
+OK|tests/test_undx_platform_knowledge.py|7 passed in 0.05s
+OK|tests/test_undx_privacy_ceiling.py|29 passed in 0.19s
+OK|tests/test_undx_promotion_contract.py|5 passed, 10 subtests passed in 0.16s
+OK|tests/test_undx_provider_health.py|45 passed, 142 subtests passed in 12.28s
+OK|tests/test_undx_router_multi_provider.py|98 passed, 21 subtests passed in 0.43s
+OK|tests/test_undx_routing_evidence.py|34 passed, 45 subtests passed in 0.15s
+OK|tests/test_undx_shadow.py|59 passed, 51 subtests passed in 0.20s
+OK|tests/test_users_schema_columns_sql.py|8 passed in 48.50s
+OK|tests/test_voip_pushkit_delivery.py|40 passed in 1.10s
+OK|tests/test_watchlists_activation.py|39 passed in 1.35s
+OK|tests/test_website_app_link_ctas.py|13 passed in 1.32s
+OK|tests/undx_agent/test_action_surface_expansion.py|37 passed, 38 subtests passed in 0.33s
+OK|tests/undx_agent/test_adversarial.py|32 passed, 175 subtests passed in 1.07s
+OK|tests/undx_agent/test_agent_runs.py|32 passed in 0.77s
+OK|tests/undx_agent/test_argument_resolution.py|28 passed, 993 subtests passed in 2.38s
+OK|tests/undx_agent/test_audit_durability.py|11 passed in 0.43s
+OK|tests/undx_agent/test_availability_diagnosis.py|8 passed in 0.34s
+OK|tests/undx_agent/test_brain_runtime_activation.py|9 passed in 0.48s
+OK|tests/undx_agent/test_capability_lifecycle.py|11 passed in 0.19s
+OK|tests/undx_agent/test_capability_planner.py|48 passed, 338 subtests passed in 0.95s
+OK|tests/undx_agent/test_capability_withdrawal_message.py|6 passed in 0.53s
+OK|tests/undx_agent/test_company_identity.py|14 passed in 0.18s
+OK|tests/undx_agent/test_confirm_path.py|14 passed in 0.81s
+OK|tests/undx_agent/test_confirm_trace.py|27 passed in 0.99s
+OK|tests/undx_agent/test_confirmation_resume.py|14 passed in 0.74s
+OK|tests/undx_agent/test_continuation.py|84 passed, 165 subtests passed in 1.40s
+OK|tests/undx_agent/test_cross_domain.py|28 passed, 18 subtests passed in 0.14s
+OK|tests/undx_agent/test_crypto_alert_pack.py|35 passed, 26 subtests passed in 0.90s
+OK|tests/undx_agent/test_crypto_intelligence_pack.py|17 passed, 4 subtests passed in 0.15s
+OK|tests/undx_agent/test_dead_approval_says_which.py|27 passed in 1.14s
+OK|tests/undx_agent/test_domain_reasoning.py|41 passed, 10 subtests passed in 0.07s
+OK|tests/undx_agent/test_embedding_diagnostic.py|24 passed in 0.08s
+OK|tests/undx_agent/test_embedding_wire_contract.py|35 passed in 0.19s
+OK|tests/undx_agent/test_end_to_end.py|28 passed, 12 subtests passed in 0.85s
+OK|tests/undx_agent/test_execution_narration_guard.py|19 passed, 71 subtests passed in 4.35s
+OK|tests/undx_agent/test_fact_policy.py|5 passed in 0.14s
+OK|tests/undx_agent/test_feed_intelligence_pack.py|12 passed in 0.15s
+OK|tests/undx_agent/test_feed_reaction_write_pack.py|3 passed in 0.16s
+OK|tests/undx_agent/test_intent_routing.py|14 passed, 97 subtests passed in 0.33s
+OK|tests/undx_agent/test_investor_and_injection.py|9 passed in 0.11s
+OK|tests/undx_agent/test_market_context_bridge.py|49 passed in 0.54s
+OK|tests/undx_agent/test_messenger_read_pack.py|11 passed in 0.10s
+OK|tests/undx_agent/test_one_definition_of_success.py|17 passed, 111 subtests passed in 1.29s
+OK|tests/undx_agent/test_personal_intelligence_pack.py|17 passed, 21 subtests passed in 0.42s
+OK|tests/undx_agent/test_point_of_no_return.py|21 passed, 4 subtests passed in 0.62s
+OK|tests/undx_agent/test_question_framed_writes.py|16 passed, 14 subtests passed in 13.52s
+OK|tests/undx_agent/test_question_shape.py|30 passed, 297 subtests passed in 1.33s
+OK|tests/undx_agent/test_queue_edge.py|16 passed in 0.54s
+OK|tests/undx_agent/test_receipt_names_subject.py|14 passed in 0.14s
+OK|tests/undx_agent/test_response_intelligence.py|117 passed, 1620 subtests passed in 2.49s
+OK|tests/undx_agent/test_review_hardening.py|60 passed, 175 subtests passed in 0.85s
+OK|tests/undx_agent/test_run_execution.py|8 passed, 40 subtests passed in 0.40s
+OK|tests/undx_agent/test_run_lifecycle.py|27 passed, 32 subtests passed in 0.63s
+OK|tests/undx_agent/test_run_retrieval.py|11 passed, 20 subtests passed in 0.39s
+OK|tests/undx_agent/test_run_status.py|17 passed, 29 subtests passed in 0.15s
+OK|tests/undx_agent/test_safety_precedence.py|7 passed, 27 subtests passed in 0.13s
+OK|tests/undx_agent/test_saved_content_pack.py|3 passed in 0.27s
+OK|tests/undx_agent/test_self_knowledge.py|7 passed in 0.14s
+OK|tests/undx_agent/test_semantic_authority_attack.py|17 passed, 211 subtests passed in 2.57s
+OK|tests/undx_agent/test_semantic_retrieval.py|51 passed, 12 subtests passed in 4.35s
+OK|tests/undx_agent/test_service_api_completion.py|95 passed, 137 subtests passed in 1.67s
+OK|tests/undx_agent/test_social_relationship_pack.py|4 passed in 0.05s
+OK|tests/undx_agent/test_social_relationship_write_pack.py|5 passed in 0.34s
+OK|tests/undx_agent/test_spent_approval.py|11 passed in 0.55s
+OK|tests/undx_agent/test_stage6_action_pack.py|28 passed, 46 subtests passed in 1.02s
+OK|tests/undx_agent/test_worker_dispatch.py|14 passed in 0.17s
+OK|tests/undx_agent/test_worker_substrate.py|28 passed, 9 subtests passed in 1.98s
+OK|tests/undx_brain/test_attention.py|80 passed, 5 subtests passed in 0.20s
+OK|tests/undx_brain/test_bounds.py|46 passed, 63 subtests passed in 0.20s
+OK|tests/undx_brain/test_calibration.py|49 passed, 86 subtests passed in 0.27s
+OK|tests/undx_brain/test_config.py|33 passed, 309 subtests passed in 0.06s
+OK|tests/undx_brain/test_corpus.py|26 passed, 6145 subtests passed in 5.43s
+OK|tests/undx_brain/test_envelope.py|52 passed, 152 subtests passed in 0.14s
+OK|tests/undx_brain/test_evidence.py|50 passed, 398 subtests passed in 0.22s
+OK|tests/undx_brain/test_execution.py|38 passed, 40 subtests passed in 0.06s
+OK|tests/undx_brain/test_facts.py|43 passed, 66 subtests passed in 0.08s
+OK|tests/undx_brain/test_foundation.py|60 passed, 416 subtests passed in 4.11s
+OK|tests/undx_brain/test_goals.py|48 passed in 0.62s
+OK|tests/undx_brain/test_learning.py|52 passed, 48 subtests passed in 0.25s
+OK|tests/undx_brain/test_memory.py|40 passed, 38 subtests passed in 0.08s
+OK|tests/undx_brain/test_military_owner_memory.py|7 passed, 3 subtests passed in 0.48s
+OK|tests/undx_brain/test_prediction.py|26 passed, 195 subtests passed in 0.15s
+OK|tests/undx_brain/test_prompt_boundary_seam.py|18 passed, 5 subtests passed in 0.20s
+OK|tests/undx_brain/test_pulse_ai_save_memory.py|6 passed, 9 subtests passed in 0.38s
+OK|tests/undx_brain/test_rollout.py|45 passed, 44 subtests passed in 1.26s
+OK|tests/undx_brain/test_truth.py|18 passed, 56 subtests passed in 0.05s
+OK|tests/undx_brain/test_workspace.py|65 passed, 42 subtests passed in 0.10s
+OK|tests/web_parity/test_aasa_claims.py|27 passed in 0.06s
+OK|tests/web_parity/test_admin_analytics_escaping.py|11 passed in 2.02s
+OK|tests/web_parity/test_admin_page_escaping.py|12 passed in 2.46s
+OK|tests/web_parity/test_credential_resolution.py|16 passed in 2.03s
+OK|tests/web_parity/test_dashboard_legacy_aliases.py|11 passed in 2.37s
+OK|tests/web_parity/test_deep_link_sampling.py|26 passed in 2.34s
+OK|tests/web_parity/test_events_have_no_source.py|8 passed in 2.13s
+OK|tests/web_parity/test_marketplace_listing_links.py|13 passed in 2.19s
+OK|tests/web_parity/test_marketplace_price_label_rendering.py|11 passed in 2.31s
+OK|tests/web_parity/test_marketplace_reviewer_signal_not_buyer_facing.py|10 passed in 2.17s
+OK|tests/web_parity/test_private_office_views.py|6 passed in 2.04s
+OK|tests/web_parity/test_route_hit_log.py|18 passed, 5 subtests passed in 0.07s
+OK|tests/web_parity/test_session_sweep.py|28 passed in 1.55s
+OK|tests/web_parity/test_suite_database_isolation.py|2 passed in 2.34s
+OK|tests/web_surface/test_activity_feed.py|17 passed in 4.29s
+OK|tests/web_surface/test_dashboard_module_links.py|15 passed in 2.07s
+OK|tests/web_surface/test_intelligence_subsystem_links.py|15 passed in 2.06s
+OK|tests/web_surface/test_messenger_bubble_body.py|5 passed in 0.02s
+OK|tests/web_surface/test_open_a_thing_redirects.py|13 passed in 2.08s
+OK|tests/web_surface/test_probe_report.py|8 passed in 0.11s
+OK|tests/web_surface/test_pulse_web_surface.py|12 passed in 2.40s
+OK|tests/web_surface/test_shell_nav_parity.py|11 passed in 2.26s
+OK|tests/web_surface/test_undx_action_center_page.py|10 passed in 4.03s
