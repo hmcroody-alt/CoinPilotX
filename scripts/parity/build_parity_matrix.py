@@ -42,6 +42,9 @@ HTML_HELPERS = {
 
 FLASK_PARAM = re.compile(r"<[^>]+>")
 
+#: `<any("a","b"):name>` — a parameter that only accepts the names it lists.
+ANY_CONVERTER = re.compile(r'<any\(([^)]*)\):[^>]+>')
+
 
 def run(script: str) -> object:
     result = subprocess.run(
@@ -63,7 +66,27 @@ def normalize_native(path: str) -> list[str]:
 
 
 def normalize_web(rule: str) -> list[str]:
-    return ["*" if FLASK_PARAM.fullmatch(seg) else seg for seg in segments(rule)]
+    """Flask rule -> segments, where a parameter becomes what it can accept.
+
+    A bare `<name>` becomes `*`, but `<any("people"):section>` becomes the set
+    `{"people"}`, because that is what the rule answers. Collapsing it to `*`
+    was wrong in the direction that matters: `/pulse/private-office/<any(
+    "people"):section>` would then claim to answer
+    `/pulse/private-office/meetings`, and every native destination under a
+    constrained parameter scored PARITY whether the site served it or not. The
+    whole point of the matrix is to find the paths that 404.
+    """
+    out: list[str | frozenset[str]] = []
+    for seg in segments(rule):
+        listed = ANY_CONVERTER.fullmatch(seg)
+        if listed:
+            out.append(frozenset(
+                value.strip().strip('"\'') for value in listed.group(1).split(",")))
+        elif FLASK_PARAM.fullmatch(seg):
+            out.append("*")
+        else:
+            out.append(seg)
+    return out
 
 
 def matches(native: list[str], web: list[str]) -> bool:
@@ -75,7 +98,17 @@ def matches(native: list[str], web: list[str]) -> bool:
     """
     if len(native) != len(web):
         return False
-    return all(n == "*" or w == "*" or n == w for n, w in zip(native, web))
+    for n, w in zip(native, web):
+        if isinstance(w, frozenset):
+            # A native wildcard against a closed list: the native path can be
+            # anything, so some value it produces is outside the list. Treated
+            # as a match anyway — the alternative is flagging every parametric
+            # native route over a constrained rule, which is noise, not signal.
+            if n != "*" and n not in w:
+                return False
+        elif not (n == "*" or w == "*" or n == w):
+            return False
+    return True
 
 
 def classify(web_rows: list[dict]) -> str:
