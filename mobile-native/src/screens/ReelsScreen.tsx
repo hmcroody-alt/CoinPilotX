@@ -60,7 +60,7 @@ import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { classifyReelMedia } from "../reels/reelMediaKind";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { configureReelsAudioSession } from "../core/reelsAudioSession";
-import { primaryMediaList } from "../core/media/mediaDescriptors";
+import { reelPrefetchMediaList } from "../core/media/mediaDescriptors";
 import { useMediaPrefetch, usePagerDirection } from "../core/media/useMediaPrefetch";
 import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
@@ -225,7 +225,11 @@ export function ReelsScreen({ route, navigation }: Props) {
    * ready, since the user is about to close it and keep going. Prefetching is
    * not playing (§23), so the two conditions are allowed to differ.
    */
-  const reelMedia = useMemo(() => primaryMediaList(reels), [reels]);
+  // §29. Not `primaryMediaList`: a reel's attached track is a second fetch, and
+  // warming the picture without it just moves the wait from the video to the
+  // music. The adapter folds the track onto the descriptor so the one planner
+  // schedules both in the same band.
+  const reelMedia = useMemo(() => reelPrefetchMediaList(reels), [reels]);
   const swipeDirection = usePagerDirection(activeIndex);
   useMediaPrefetch({
     surface: "reels",

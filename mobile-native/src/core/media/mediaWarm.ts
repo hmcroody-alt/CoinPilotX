@@ -39,6 +39,35 @@ export const VIDEO_PREFETCH_BYTE_CAP = 512 * 1024;
 /** Manifests are text. Anything past this is a malformed or hostile response. */
 export const MANIFEST_BYTE_CAP = 64 * 1024;
 
+/**
+ * 256KB of attached music — roughly the first fifteen seconds at typical AAC
+ * bitrates, which comfortably outlasts a reel's opening.
+ *
+ * Half the video cap because the job is different. The video warm is buying a
+ * first frame; the audio warm is buying the *first moment*, and the rest of the
+ * track streams in behind the picture that is already playing. Matching the
+ * video cap would double a reel's speculative cost to remove a stall that the
+ * player's own buffering already covers.
+ */
+export const AUDIO_PREFETCH_BYTE_CAP = 256 * 1024;
+
+/**
+ * Decide what an attached-music warm may fetch.
+ *
+ * Separate from `videoWarmPlan` because the two refuse for different reasons:
+ * a video with no manifest is not ready, whereas a track is a single
+ * progressive file and either has a URL or does not. Folding them together
+ * would mean relaxing `isVideoMedia`, and that guard is what stops the feed
+ * from byte-range-fetching images.
+ */
+export function audioWarmPlan(media: MediaDescriptor): VideoWarmPlan {
+  const raw = String(media.media_url || media.url || "").trim();
+  if (!raw) return { kind: "none", reason: "no_url" };
+  const url = absoluteApiUrl(raw);
+  if (!url) return { kind: "none", reason: "no_url" };
+  return { kind: "progressive", url, maxBytes: AUDIO_PREFETCH_BYTE_CAP };
+}
+
 export type VideoWarmPlan =
   | { kind: "hls"; url: string; maxBytes: number }
   | { kind: "progressive"; url: string; maxBytes: number }
