@@ -198,7 +198,16 @@ describe("PostCard blank-media collapse", () => {
     expect(getAllByText("Automated insight, image failed").length).toBeGreaterThan(0);
   });
 
-  it("renders no media for an image carrying a url but zero dimensions and no aspect", () => {
+  // The inverse of the case above, and the one that mattered in production. The
+  // test directly above it is a genuinely dead row -- is_available:false, blank
+  // valid_url -- and must stay collapsed. This one is alive and merely unsized,
+  // which is what every user-uploaded pulse image looks like: the upload path
+  // never wrote width/height, so 12 of 13 attached images are 0x0 with real
+  // bytes behind them. Collapsing those is what produced the ghost post, where
+  // the profile grid showed the picture and the detail screen showed an empty
+  // shell. Being unsized is a layout question (clampedMediaAspect answers it
+  // with 4:5), never an existence question.
+  it("renders media for a live image that simply never had its dimensions recorded", () => {
     const { queryByTestId } = render(
       <PostCard
         post={basePost({
@@ -206,7 +215,7 @@ describe("PostCard blank-media collapse", () => {
         })}
       />
     );
-    expect(queryByTestId("home-feed-media-42-0")).toBeNull();
+    expect(queryByTestId("home-feed-media-42-0")).not.toBeNull();
   });
 
   it("renders media when the only usable url is a gate-honored field the resolver used to ignore", () => {

@@ -994,13 +994,48 @@ def _public(row):
 
 
 def _image_dimensions(path):
+    """Read an uploaded image's pixel size, or return (None, None).
+
+    The two ways this returns nothing are not the same thing, and collapsing
+    them into one silent `except Exception` cost four months of metadata.
+    Pillow was never listed in requirements.txt, so `from PIL import Image`
+    raised ImportError on every production deploy and every caller read that as
+    "unreadable image". The result was total and invisible: 318 of 318 uploaded
+    images -- every avatar, cover, status, marketplace photo and pulse post
+    picture written since 2026-05-19 -- stored width/height NULL, while the 67
+    images that carry dimensions all came from the automated pipeline, which
+    passes its own and never calls this function.
+
+    A missing width is not cosmetic. `hasRenderableImage` once treated a zero
+    dimension as evidence of a dead upload, so a healthy photo was dropped from
+    the post detail screen entirely -- the ghost post. That gate now keys on
+    server-marked availability instead, but the size is still wanted for layout,
+    so this failure must be loud enough to notice the next time the dependency
+    slips rather than showing up months later as a rendering bug.
+    """
     try:
         from PIL import Image
-
+    except Exception as exc:
+        # A deploy defect, not a property of the file: no image will ever get a
+        # size until the dependency is back. Error, not warning.
+        logging.error(
+            "MEDIA_IMAGE_DIMENSIONS_UNAVAILABLE error_type=%s detail=%s",
+            type(exc).__name__,
+            str(exc)[:200],
+        )
+        return None, None
+    try:
         with Image.open(path) as img:
             width, height = img.size
             return int(width or 0), int(height or 0)
-    except Exception:
+    except Exception as exc:
+        # This one is about the bytes -- truncated, or a format Pillow declines.
+        # Expected occasionally, so it does not deserve an error.
+        logging.warning(
+            "MEDIA_IMAGE_DIMENSIONS_UNREADABLE error_type=%s path_suffix=%s",
+            type(exc).__name__,
+            str(path)[-60:],
+        )
         return None, None
 
 
@@ -1111,6 +1146,19 @@ def save_upload(user_id, file_storage, context_type="private_chat", context_id="
     width = height = None
     if media_type in {"image", "gif"}:
         width, height = _image_dimensions(path)
+        # Tied to the trace so "did this upload get a size" is answerable per
+        # upload rather than only in aggregate. The silent version of this step
+        # failed for every image for four months without leaving a mark.
+        logging.info(
+            "PULSE_MEDIA_DIMENSIONS trace_id=%s user_id=%s context_type=%s media_type=%s width=%s height=%s measured=%s",
+            upload_trace,
+            int(user_id),
+            context_type,
+            media_type,
+            width,
+            height,
+            bool(width and height),
+        )
     url = storage.get("media_url") or _public_url_for_path(path)
     cdn_url = storage.get("media_url") if str(storage.get("media_url") or "").startswith("https://") else cdn_url_for_key(storage.get("storage_key") or stored)
     verification_status = "verified" if storage.get("durable_uploaded") or media_storage.provider() == "local" else "failed"
