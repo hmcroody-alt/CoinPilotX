@@ -580,13 +580,14 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setUsingCachedMessages(false);
       setStatusMessage("");
       await cacheMessages(conversationId, nextMessages);
-      if (!assistantConversation) await markConversationSeen(conversationId).catch(() => undefined);
+      if (!assistantConversation) await markConversationSeen(conversationId, nextMessages).catch(() => undefined);
       setTyping(typingSummary(data.presence));
       if (!assistantConversation) setPeerPresence(peerPresenceFrom(data.presence, selfUserId));
     } catch (loadError) {
       const cached = await loadCachedMessages(conversationId);
       if (cached.length) {
         setMessages(cached);
+        if (!assistantConversation) void markConversationSeen(conversationId, cached).catch(() => undefined);
         setUsingCachedMessages(true);
         setError("");
         setStatusMessage(t("messaging:chat.showingCached"));
@@ -683,7 +684,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           cacheMessages(conversationId, merged).catch(() => undefined);
           return merged;
         });
-        await markConversationSeen(conversationId).catch(() => undefined);
+        await markConversationSeen(conversationId, data.messages).catch(() => undefined);
       }
       setTyping(typingSummary(data.presence));
       setPeerPresence(peerPresenceFrom(data.presence, selfUserId));

@@ -1196,7 +1196,11 @@ def read_state(conversation_ref):
     user, denied = _require_user()
     if denied:
         return denied
-    return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref))
+    payload = request.get_json(silent=True) or {}
+    through = payload.get("through_message_id")
+    if through is not None and (type(through) is not int or through < 0):
+        return _json({"ok": False, "http_status": 400})
+    return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref, through_message_id=through))
 
 
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/pin")
@@ -1818,3 +1822,21 @@ def notification_preview():
 
 def register(app) -> None:
     app.register_blueprint(comm_v2_blueprint)
+
+
+@comm_v2_blueprint.post(f"{API_PREFIX}/notifications/reconcile")
+def reconcile_message_notifications():
+    user, denied = _require_user()
+    if denied:
+        return denied
+    from .notification_reconciliation import reconcile
+    payload = request.get_json(silent=True) or {}
+    entries = payload.get("entries")
+    if not isinstance(entries, list) or len(entries) > 100:
+        return _json({"ok": False, "http_status": 400})
+    conn, cur = service._open_db()
+    try:
+        result = reconcile(cur, int(user["user_id"]), entries)
+    finally:
+        conn.close()
+    return _json({"ok": True, "recipientUserId": int(user["user_id"]), "dismiss": result})

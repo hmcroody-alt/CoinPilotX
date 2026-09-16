@@ -1970,6 +1970,11 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 push_metadata = {
                     "conversation_id": int(conversation_id),
                     "conversationId": int(conversation_id),
+                    "schemaVersion": 1,
+                    "notificationType": "message",
+                    "messageNamespace": "comm_v2",
+                    "recipientUserId": int(recipient_id),
+                    "sentAt": message.get("created_at") or _now(),
                     "message_id": message_id,
                     "messageId": message_id,
                     "sender_id": int(user_id),
@@ -3055,7 +3060,8 @@ def list_messages(user_id: int, conversation_ref: int | str, filters: dict | Non
             # uses and closing a deadlock cycle on comm_v2_read_receipts. Calling
             # mark_read first keeps this transaction's first-acquisition order
             # ascending; the loop then only re-touches rows it already holds.
-            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False)
+            mark_read(user_id, conversation_id, existing_conn=(conn, cur), commit=False,
+                      through_message_id=max((int(m.get("id") or 0) for m in raw_messages), default=0))
             incoming_ids = sorted(
                 int(message.get("id") or 0)
                 for message in raw_messages
@@ -3294,7 +3300,7 @@ def search_people(user_id: int, query: str = "", filters: dict | None = None) ->
         conn.close()
 
 
-def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True) -> dict:
+def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, commit: bool = True, through_message_id: int | None = None) -> dict:
     disabled = _disabled("mark_read")
     if disabled:
         return disabled
@@ -3305,12 +3311,15 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
         if access != "ok":
             return _err("Conversation not found." if access == "missing" else "You do not have access to this conversation.", 404 if access == "missing" else 403)
         conversation_id = int(conversation["id"])
-        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')=''", (conversation_id,))
+        cur.execute("SELECT COALESCE(MAX(id),0) AS max_id FROM comm_v2_messages WHERE conversation_id=? AND COALESCE(deleted_at,'')='' AND (? IS NULL OR id<=?)", (conversation_id, through_message_id, through_message_id))
         max_id = int(_row(cur.fetchone()).get("max_id") or 0)
         now = _now()
         cur.execute(
-            "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
-            (max_id, now, now, now, conversation_id, int(user_id)),
+            """UPDATE comm_v2_participants SET last_read_message_id=MAX(COALESCE(last_read_message_id,0),?), last_read_at=?,
+            unread_count=(SELECT COUNT(*) FROM comm_v2_messages m WHERE m.conversation_id=? AND m.sender_user_id!=?
+              AND m.id>MAX(COALESCE(comm_v2_participants.last_read_message_id,0),?) AND COALESCE(m.deleted_at,'')=''),
+            last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?""",
+            (max_id, now, conversation_id, int(user_id), max_id, now, now, conversation_id, int(user_id)),
         )
         if _read_receipts_allowed(cur, user_id, conversation_id):
             # ORDER BY is load-bearing, not cosmetic: the INSERT takes a row lock
