@@ -30,6 +30,28 @@ from services import private_office_routes as po_http
 from services import pulsesoc_communications_engine as call_engine
 from services.private_office import meeting_contacts as po_meeting_contacts
 from services.private_office import meetings as po_meetings
+# Imported for its import side effect, not for this module's use: importing it
+# runs its module-scope `install()`, which registers `validate_queued_reminder`
+# with `email_send_guard` for the `private_meeting_reminder` email type.
+#
+# It has to happen here, at module scope, because of *which process* asks. The
+# only caller of `email_send_guard.may_send` is the outbox processor in
+# `notification_service`, and the process that runs it is `email_worker`, whose
+# entire import surface is `import bot`. `meetings.py` does reach
+# `meeting_reminders`, but lazily — the import sits inside `_plan_reminders`'s
+# body — so it fires in the *web* process on the first booking and never in the
+# worker at all. Verified rather than reasoned: `import bot` in a fresh
+# interpreter left `email_send_guard.registered_types()` empty and
+# `services.private_office.meeting_reminders` absent from `sys.modules`.
+#
+# An unregistered email_type is allowed through: `may_send` returns
+# `(True, "")` when it finds no validator. So the veto did not fail loudly, it
+# simply never ran, and a reminder for a meeting that had since been cancelled
+# or moved would still be delivered — the reminder row is correctly marked
+# CANCELLED, and the queued email, already written with a future
+# `next_retry_at`, does not consult it. `install()` documents itself as safe to
+# call repeatedly, so importing here costs nothing where it already ran.
+from services.private_office import meeting_reminders as _po_meeting_reminders  # noqa: F401
 # Declarative only — it adds no check. `_entry()` below is what actually
 # refuses. The stamp exists so the route-auth gate can tell a route that
 # forgot its gate from one that never needed it; the older routes in this
