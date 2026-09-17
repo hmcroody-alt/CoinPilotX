@@ -1,3 +1,4 @@
+import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 import { BottomTabNavigationProp, createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useNavigation } from "@react-navigation/native";
@@ -292,8 +293,7 @@ export function AppNavigator() {
    * beside it, so it is the one place the total does not double-count.
    */
   const refreshBadges = useCallback(async () => {
-    const next = await refreshUnreadCounts();
-    await Notifications.setBadgeCountAsync(next.totalCount).catch(() => undefined);
+    await reconcileMessageNotifications();
   }, []);
 
   useEffect(() => {
@@ -301,9 +301,10 @@ export function AppNavigator() {
     const refreshBadgeSync = () => refreshBadges();
     const unregisterNotifications = registerSyncInvalidation("notifications", refreshBadgeSync);
     const unregisterActivity = registerSyncInvalidation("activity", refreshBadgeSync);
+    const unregisterMessages = registerSyncInvalidation("messenger", refreshBadgeSync);
     const stopSync = startNativeEventSync({
       fullResyncOnStart: true,
-      subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
+      subsystems: ["messenger", "activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
     });
     // The shared bell store (every seller header + Activity read from this one
     // source). Opt-in so importing the store never triggers network; wired once
@@ -319,12 +320,13 @@ export function AppNavigator() {
     return () => {
       unregisterNotifications();
       unregisterActivity();
+      unregisterMessages();
       stopSync();
       stopUnreadSync();
       appState.remove();
       received.remove();
     };
-  }, [refreshBadges]);
+  }, [refreshBadges, authState.user]);
 
   useEffect(() => {
     // The drawer and header identity are fetched once, so without the

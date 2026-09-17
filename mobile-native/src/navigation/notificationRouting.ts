@@ -3,6 +3,7 @@ import { createNavigationContainerRef } from "@react-navigation/native";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
 import { RootStackParamList } from "./types";
+import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
@@ -87,6 +88,10 @@ export function setupNotificationResponseRouting(options: NotificationResponseRo
       return;
     }
     routeNotificationTarget(target).catch(() => undefined);
+    // A tap is a read transition only after the chat screen records it. Running
+    // the idempotent reconciler here handles an already-read message while the
+    // routed screen finishes its own durable receipt.
+    void reconcileMessageNotifications();
   };
   const subscription = Notifications.addNotificationResponseReceivedListener(handleResponse);
   if (options.includeLastResponse !== false) {
