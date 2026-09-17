@@ -75,6 +75,104 @@ def test_stripe_charge_cumulative_refund_applies_only_delta():
         conn.close()
     assert total == 6000
 
+def _dispute(dispute_id, payment_intent, *, amount=10000, status="needs_response"):
+    """A Stripe Dispute as the webhook receives it.
+
+    Deliberately carries no `metadata`: Stripe does not copy the charge's metadata
+    onto a Dispute, so the seller transaction ids the refund path reads are simply
+    absent here. A fixture that supplied them would prove nothing.
+    """
+    return {"id": dispute_id, "object": "dispute", "payment_intent": payment_intent,
+            "charge": f"ch_{dispute_id}", "amount": amount, "status": status, "metadata": {}}
+
+
+def test_a_chargeback_freezes_the_payout_before_it_can_be_transferred():
+    # The failure this guards is a transfer of the seller's earnings on money
+    # Stripe is in the middle of taking back. A disputed settlement used to keep
+    # no blocker at all, so nothing in the state machine stood between a
+    # chargeback and `paid`.
+    import bot
+    ledger.ensure_schema(); settlement.ensure_schema()
+    settlement.settle_paid_transaction(_tx(6), payout_ready=True, provider_payment_id="pi_6")
+    settlement.mark_delivered(6, actor="carrier", idempotency_key="delivery:6")
+    future = datetime.now(timezone.utc) + timedelta(days=3)
+    # Positive control on an identical, undisputed twin. `evaluate_eligibility`
+    # transitions rather than merely reporting, so it cannot be run against the
+    # subject first — but without it, "not eligible" below would be satisfied by
+    # a settlement that was never going to be eligible for some other reason.
+    settlement.settle_paid_transaction(_tx(61), payout_ready=True, provider_payment_id="pi_61")
+    settlement.mark_delivered(61, actor="carrier", idempotency_key="delivery:61")
+    assert settlement.evaluate_eligibility(61, now=future)["eligible"]
+
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_6", "pi_6"), "charge.dispute.created", "evt_6")
+    frozen = settlement.get_settlement(6)
+    assert frozen["payout_state"] == "disputed"
+    assert frozen["blocker_code"] == "dispute"
+    assert not settlement.evaluate_eligibility(6, now=future)["eligible"]
+    try:
+        settlement.transition_payout(6, "eligible", actor="scheduler", reason="window elapsed",
+                                     idempotency_key="force:6")
+        assert False, "a disputed settlement reached eligible"
+    except settlement.SettlementError:
+        pass
+    # Stripe redelivers. The second copy must not raise or double-transition.
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_6", "pi_6"), "charge.dispute.created", "evt_6")
+    assert settlement.get_settlement(6)["payout_state"] == "disputed"
+
+
+def test_a_won_dispute_releases_to_the_state_the_hold_interrupted():
+    # Releasing every won dispute to `pending_fulfillment` would demand a second
+    # delivery confirmation, and `mark_delivered` would dedupe it away on the
+    # original idempotency key — stranding the seller's money permanently. The
+    # state the hold interrupted is recovered from the immutable event log.
+    import bot
+    ledger.ensure_schema(); settlement.ensure_schema()
+    settlement.settle_paid_transaction(_tx(7), payout_ready=True, provider_payment_id="pi_7")
+    settlement.mark_delivered(7, actor="carrier", idempotency_key="delivery:7")
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_7", "pi_7"), "charge.dispute.created", "evt_7")
+    assert settlement.get_settlement(7)["payout_state"] == "disputed"
+
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_7", "pi_7", status="won"),
+                                        "charge.dispute.closed", "evt_7b")
+    released = settlement.get_settlement(7)
+    assert released["payout_state"] == "protection_hold"
+    assert not released["blocker_code"]
+    future = datetime.now(timezone.utc) + timedelta(days=3)
+    assert settlement.evaluate_eligibility(7, now=future)["eligible"]
+
+
+def test_a_lost_dispute_reverses_the_seller_ledger_rather_than_releasing_it():
+    # Losing is not the opposite of holding. The money has left the platform
+    # balance for good, so the seller's earnings have to be reversed — releasing
+    # the hold would pay out money PulseSoc no longer has.
+    import bot
+    ledger.ensure_schema(); settlement.ensure_schema()
+    settlement.settle_paid_transaction(_tx(8), payout_ready=True, provider_payment_id="pi_8")
+    settlement.mark_delivered(8, actor="carrier", idempotency_key="delivery:8")
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_8", "pi_8"), "charge.dispute.created", "evt_8")
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_8", "pi_8", status="lost"),
+                                        "charge.dispute.closed", "evt_8b")
+    lost = settlement.get_settlement(8)
+    assert lost["seller_reversed_minor"] == 9000
+    assert lost["net_seller_earnings_minor"] == 0
+    assert lost["net_platform_fee_minor"] == 0
+    assert lost["payout_state"] == "reversed"
+    assert not settlement.evaluate_eligibility(8)["eligible"]
+
+
+def test_a_dispute_on_a_cart_charge_freezes_every_seller_on_it():
+    # One cart checkout is one payment intent and one settlement per seller line.
+    # A chargeback takes back the whole charge, so a handler that stopped at the
+    # first row would leave the rest transferable.
+    import bot
+    ledger.ensure_schema(); settlement.ensure_schema()
+    for tx_id in (9, 10):
+        settlement.settle_paid_transaction(_tx(tx_id), payout_ready=True, provider_payment_id="pi_cart")
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_cart", "pi_cart", amount=20000),
+                                        "charge.dispute.created", "evt_cart")
+    assert [settlement.get_settlement(t)["payout_state"] for t in (9, 10)] == ["disputed", "disputed"]
+
+
 def test_onboarding_hold_release_and_versioned_eligibility():
     ledger.ensure_schema(); settlement.ensure_schema()
     assert settlement.settle_paid_transaction(_tx(5), payout_ready=False)["payout_state"] == "pending_onboarding"

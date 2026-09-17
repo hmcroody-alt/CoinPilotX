@@ -256,6 +256,45 @@ def test_the_payment_pause_is_untouched():
 # Owner-facing configuration
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Chargebacks
+# --------------------------------------------------------------------------
+
+def test_the_dispute_branch_places_a_settlement_hold(bot_source):
+    """A chargeback must reach the settlement service, not just a status string.
+
+    The behaviour is proved in ``test_post_settlement_finance.py``. What this
+    catches is the branch going quiet again: before the hold existed, the webhook
+    wrote ``seller_transactions.status='dispute_opened'`` and nothing else, so
+    ``transition_payout`` was free to take a disputed order through ``eligible``
+    and ``scheduled`` to ``paid`` while Stripe was taking the money back.
+    """
+    assert "pulse_apply_marketplace_dispute(obj, event_type, event_id)" in bot_source
+    applier = bot_source.split("def pulse_apply_marketplace_dispute", 1)[1].split("\ndef ", 1)[0]
+    assert "place_hold(" in applier and "disputed=True" in applier
+
+
+def test_a_dispute_is_matched_by_payment_intent_and_not_by_metadata_alone(bot_source):
+    """Stripe does not copy a charge's metadata onto its Dispute.
+
+    This is why the original handler was inert: it read
+    ``metadata["seller_transaction_id"]`` off a Dispute object, which is always
+    empty, so no marketplace row was ever touched by a chargeback. The payment
+    intent is the only identifier both object shapes carry.
+    """
+    resolver = bot_source.split("def pulse_marketplace_reversal_transaction_ids", 1)[1].split("\ndef ", 1)[0]
+    assert "settlements_for_payment" in resolver
+    assert 'obj.get("payment_intent")' in resolver
+
+
+def test_the_dispute_events_are_declared_required_for_the_webhook_endpoint():
+    """`closed` matters as much as `created`: it is what lifts the hold."""
+    audit = (REPO_ROOT / "scripts" / "stripe_webhook_recovery_audit.py").read_text(encoding="utf-8")
+    required = audit.split("REQUIRED_EVENTS", 1)[1].split("\n}", 1)[0]
+    for event in ("charge.dispute.created", "charge.dispute.closed", "account.updated"):
+        assert f'"{event}"' in required, event
+
+
 def test_the_canceled_event_is_declared_required_for_the_webhook_endpoint():
     """The handler is inert unless the Stripe endpoint subscribes to the event.
 

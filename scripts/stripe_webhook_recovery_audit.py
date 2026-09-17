@@ -47,6 +47,17 @@ REQUIRED_EVENTS = {
     # leaves the handler inert and every abandoned sheet strands its hold.
     "payment_intent.canceled",
     "charge.refunded",
+    # A chargeback is the one reversal that arrives while PulseSoc is still
+    # holding the seller's earnings. `created` places the payout hold; `closed`
+    # either releases it or reverses the ledger, so an endpoint subscribed to
+    # only the first would freeze every disputed seller permanently. `updated`
+    # carries the status changes in between.
+    "charge.dispute.created",
+    "charge.dispute.updated",
+    "charge.dispute.closed",
+    # Connect verification. Until this arrives, a seller who has finished Stripe
+    # onboarding still reads as `pending_onboarding` here and cannot be paid.
+    "account.updated",
     "payout.paid",
     "payout.failed",
 }
