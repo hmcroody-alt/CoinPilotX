@@ -55851,6 +55851,76 @@ def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
     return outcomes
 
 
+def pulse_apply_marketplace_fraud_warning(obj, event_id=""):
+    """Freeze a payout on Stripe's warning, before the chargeback arrives.
+
+    An early fraud warning is the issuer telling Stripe the card was used
+    fraudulently, days ahead of the dispute that usually follows. It is the only
+    signal that arrives while the money is still recoverable: by the time
+    `charge.dispute.created` lands, a settlement that cleared its protection
+    window has already been transferred, and PulseSoc eats the loss because the
+    funds are in the seller's Stripe balance and on the way to their bank.
+
+    Held rather than reversed — a warning is not an outcome. The hold lifts when
+    a dispute closes in PulseSoc's favour, or by an owner decision if none ever
+    opens.
+    """
+    obj = dict(obj or {})
+    tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
+    if not tx_ids:
+        return []
+    from services import marketplace_settlement_service as settlements
+    warning_id = str(obj.get("id") or event_id or "efw")
+    held = []
+    for tx_id in tx_ids:
+        if not settlements.get_settlement(tx_id):
+            continue
+        try:
+            held.append(settlements.place_hold(
+                tx_id, actor="stripe_webhook", reason_code="fraud_warning",
+                idempotency_key=f"fraud_warning:{warning_id}:{tx_id}"))
+        except settlements.SettlementError:
+            # Already held, already paid, or otherwise refused by the state
+            # machine. A redelivery must not raise.
+            logging.info("MARKETPLACE_FRAUD_WARNING_SKIPPED tx_id=%s warning_id=%s", tx_id, warning_id)
+    return held
+
+
+def pulse_disconnect_seller_payout_account(connected_account_id, event_id=""):
+    """Stop routing money to a Connect account the seller has disconnected.
+
+    `account.application.deauthorized` is the seller revoking PulseSoc's access.
+    Stripe sends no `account.updated` alongside it, so `charges_enabled` and
+    `payouts_enabled` stay 1 in our copy forever: `seller_destination_account_id`
+    keeps reporting the account as a valid transfer destination, new sales keep
+    opening `payout_ready`, and every transfer to it fails at the provider with
+    nothing explaining why.
+
+    The connected account id arrives as the event's `account` field, not inside
+    `data.object` — that object is the deauthorized Application.
+    """
+    account = str(connected_account_id or "").strip()
+    if not account:
+        return 0
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    try:
+        cursor = conn.execute(
+            "UPDATE seller_payout_accounts SET onboarding_status='disconnected', "
+            "payouts_enabled=0, charges_enabled=0, last_checked_at=?, updated_at=? "
+            "WHERE connected_account_id=?", (now, now, account))
+        conn.commit()
+        changed = int(getattr(cursor, "rowcount", 0) or 0)
+    finally:
+        conn.close()
+    if changed:
+        # Re-onboarding is the seller's move, not ours; settlements already past
+        # `pending_onboarding` stay where they are and need an owner decision.
+        logging.warning("MARKETPLACE_CONNECT_DEAUTHORIZED account=%s rows=%s event_id=%s",
+                        account, changed, event_id)
+    return changed
+
+
 def pulse_emit_comms_safety_event(
     cur,
     user_id,
@@ -108815,6 +108885,26 @@ def stripe_webhook():
                 # A chargeback that does not place its hold is money about to be
                 # transferred to a seller who is losing it. Never silent.
                 logging.exception("MARKETPLACE_DISPUTE_HOLD_FAILED event_id=%s type=%s", event_id, event_type)
+
+    if event_type == "radar.early_fraud_warning.created":
+        # Its own branch rather than the set above: that block opens a connection
+        # and runs every charge through the ad-wallet reversal path, and a fraud
+        # warning is neither a refund nor a charge object.
+        try:
+            pulse_apply_marketplace_fraud_warning(event["data"]["object"], event_id)
+        except Exception:
+            # The warning is the last point at which the money is still
+            # recoverable. Never silent.
+            logging.exception("MARKETPLACE_FRAUD_WARNING_FAILED event_id=%s", event_id)
+    elif event_type == "account.application.deauthorized":
+        # `data.object` here is the deauthorized Application, not the account;
+        # the connected account id is the event's own `account` field.
+        try:
+            pulse_disconnect_seller_payout_account(event.get("account") or "", event_id)
+        except Exception:
+            # Leaving the account marked payable means every transfer to it
+            # fails at the provider with nothing explaining why.
+            logging.exception("MARKETPLACE_CONNECT_DEAUTHORIZE_FAILED event_id=%s", event_id)
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     creator_economy_service.update_webhook_event(event_id, "processed")
