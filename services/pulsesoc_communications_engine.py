@@ -834,7 +834,6 @@ def _serialize_call(cur: Any, call: dict[str, Any], user_id: int = 0, include_to
         "participants": participants,
         "participant": me,
         "agora": agora_config_status(),
-        "agora": agora_config_status(),
     }
     if include_token and user_id:
         payload["join"] = _generate_rtc_token(

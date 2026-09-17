@@ -223,5 +223,38 @@ class CallErrorCatalogTest(unittest.TestCase):
                     )
 
 
+class EngineDictHygieneTest(unittest.TestCase):
+    """A second silent-fault audit of the same module, for the same reason.
+
+    Python accepts a duplicate key in a dict literal without a warning: the last
+    wins and any earlier value is evaluated and thrown away. `_serialize_call`
+    carried `"agora": agora_config_status()` twice, so every call serialization —
+    which is every status poll — called it an extra time and discarded the
+    result. Harmless in effect, invisible in review, and indistinguishable from
+    an intentional override; the reason to pin it is that the *next* one might
+    shadow a key that matters.
+    """
+
+    def test_no_dict_literal_repeats_a_key(self):
+        tree, _ = _module()
+        offenders = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            seen = set()
+            for key in node.keys:
+                if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+                    continue
+                if key.value in seen:
+                    offenders.append((getattr(node, "lineno", 0), key.value))
+                seen.add(key.value)
+        self.assertEqual(
+            offenders,
+            [],
+            "duplicate keys (line, key) — the earlier value is computed and "
+            "discarded: %s" % offenders,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
