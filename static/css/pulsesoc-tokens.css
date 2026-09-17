@@ -40,16 +40,16 @@
      Source: mobile-native/src/theme/colors.ts
      --------------------------------------------------------------------- */
   --pulse-palette-background:     #050910;
-  --pulse-palette-surface:        #0b141c;
-  --pulse-palette-surface-raised: #111f2a;
+  --pulse-palette-surface:        #303843;
+  --pulse-palette-surface-raised: #363D46;
   --pulse-palette-text:           #f4f7fb;
   --pulse-palette-muted:          #9aa8b7;
   --pulse-palette-accent:         #32e6b3;
   --pulse-palette-accent-strong:  #61d8ff;
   --pulse-palette-warning:        #f3c461;
-  --pulse-palette-danger:         #ff5f7e;
-  --pulse-palette-border:         #203746;
-  --pulse-palette-intelligence:   #9f7cff;
+  --pulse-palette-danger:         #ff7f97;
+  --pulse-palette-border:         #425065;
+  --pulse-palette-intelligence:   #b297ff;
   --pulse-palette-creator:        #42e7d4;
   --pulse-palette-economy:        #f6c85d;
   --pulse-palette-safety:         #3ff0a0;
@@ -57,8 +57,8 @@
   --pulse-palette-disabled:       #51606c;
   --pulse-palette-focus:          #8df7ff;
 
-  --pulse-palette-glass:          rgba(11, 24, 34, 0.82);
-  --pulse-palette-glass-strong:   rgba(15, 36, 50, 0.94);
+  --pulse-palette-glass:          rgba(48, 56, 67, 0.82);
+  --pulse-palette-glass-strong:   rgba(54, 61, 70, 0.94);
   --pulse-palette-signal-dim:     rgba(50, 230, 179, 0.12);
   --pulse-palette-signal-soft:    rgba(97, 216, 255, 0.12);
   --pulse-palette-danger-soft:    rgba(255, 95, 126, 0.14);
