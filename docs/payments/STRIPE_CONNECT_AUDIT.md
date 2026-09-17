@@ -12,11 +12,11 @@ Connect onboarding route gated on PulseSoc approval, a versioned fee policy, an
 immutable double-entry ledger, a settlement state machine with a protection
 window, and a payout scheduler.
 
-Three things are genuinely missing or wrong, and they are the real work:
+Four things are genuinely missing or wrong, and they are the real work:
 
-1. **Connect is not enabled on the Stripe account at all.** Every Connect API
-   call fails today. The code already anticipates this exact failure with a
-   dedicated `CONNECT_PLATFORM_NOT_ENABLED` code.
+1. **There is no test-mode Stripe key.** The deployment has exactly one
+   `STRIPE_SECRET_KEY` and it is a live key. Every stage of this mission that
+   requires test-mode verification is blocked until a test key is provisioned.
 2. **There is no platform→connected-account `Transfer` step.** The payout engine
    jumps straight to `stripe.Payout.create` on the connected account, which under
    separate charges and transfers would draw on an empty balance.
@@ -27,18 +27,63 @@ Three things are genuinely missing or wrong, and they are the real work:
    still reach `eligible` and pay the seller. This is the one finding that is a
    latent money-loss bug rather than an unbuilt feature.
 
-## 1. Stripe account state (observed in the live Dashboard)
+## 1. Stripe account state
+
+Verified 2026-09-17 by read-only API probe against the live key
+(`stripe.Account.retrieve()` plus four deliberately-invalid calls that cannot
+create anything).
 
 | Item | State |
 | --- | --- |
-| Connect | **Not set up.** `/connect/onboarding` shows "Continue setup"; `/connect/accounts/overview` redirects back to it. |
-| Connected accounts | **Zero.** The accounts list does not exist yet. |
-| Platform capabilities | Active: Payments, Payouts, ACH Direct Debit, Afterpay Clearpay, Amazon Pay, Bancontact, BLIK, Canadian PAD, Cash App Pay, EPS, Klarna, Link, MB WAY, Pix. Paused: Cartes Bancaires. |
-| Open task | **"Provide an external account" — Past due.** This is PulseSoc's *own* bank account. Owner-only. Capabilities are at risk while it is outstanding. |
+| Platform account | `acct_1TTVo7FP8qvvGWBI`, `type: standard`, `controller: {"type":"account"}`, country `US` |
+| `charges_enabled` / `payouts_enabled` | `true` / `true` |
+| Platform `requirements` | `null` — no currently_due, past_due or eventually_due |
+| **Connect** | **Enabled.** See below. |
+| Connected accounts | **Zero.** `Account.list()` returns an empty page — it does not error. |
+| Platform capabilities | `active`: acss_debit, afterpay_clearpay, amazon_pay, bancontact, blik, card_payments, cashapp, eps, klarna, link, mb_way, pix, **transfers**, us_bank_account_ach. `pending`: cartes_bancaires. |
+| API version | `2026-04-22.dahlia` (account default; nothing pinned in code) |
 
-Because Connect has never been enabled, **nothing in the Connect code path has
-ever executed successfully against Stripe.** All existing Connect tests are
-monkeypatched unit tests, not integration tests.
+### Connect is enabled — the Dashboard is misleading
+
+Every Connect URL (`/connect`, `/connect/accounts/overview`,
+`/settings/connect`, and their `/test/` equivalents) redirects to
+`/connect/onboarding`, which renders a "Power your platform with Connect ·
+Continue setup" splash. That splash is the **setup-guide surface**, not a gate.
+It persists until the first connected account exists.
+
+The API says otherwise. Four probes, each crafted so it cannot create anything:
+
+| Call | Result |
+| --- | --- |
+| `Account.create(type="express", country="ZZ")` | `InvalidRequestError`, `param=country` — "Country 'ZZ' is unknown" |
+| `Account.retrieve("acct_000…")` | `PermissionError` — no access / does not exist |
+| `AccountLink.create(account="acct_000…")` | `InvalidRequestError` — "No such account" |
+| `Transfer.create(destination="acct_000…")` | `InvalidRequestError` — "No such destination" |
+| `Payout.create(stripe_account="acct_000…")` | `PermissionError` — no access / does not exist |
+
+All five reach **parameter validation**. None returns the platform gate
+(`"signed up for Connect"` / `"only Stripe Connect platforms"`) that
+`payment_provider._PLATFORM_MARKERS` watches for. A non-platform account fails
+that gate *before* validating params. So `Account.create`, `AccountLink.create`,
+`Transfer.create` and `Payout.create` are all live-callable today.
+
+**Correction:** an earlier draft of this audit stated Connect was never enabled,
+inferred from the Dashboard redirects alone. That inference was wrong. The
+`CONNECT_PLATFORM_NOT_ENABLED` code in `payment_provider.py` is defensive cover
+for a state the account is not in.
+
+What remains true: **no Connect code path has ever executed successfully against
+Stripe**, because there are zero connected accounts. Every existing Connect test
+is a monkeypatched unit test, not an integration test. Enablement is no longer
+the blocker; the absence of a test-mode key is.
+
+### The Dashboard "Action required" banner
+
+The banner reads "We need some information for your account. Provide it to keep
+capabilities enabled." The API reports `requirements: null` on the platform
+account, so this is **not** an account-level requirement — most likely the
+`cartes_bancaires_payments` capability sitting at `pending`. Owner-only either
+way; see §11.
 
 ## 2. SDK and client versions
 
@@ -315,9 +360,25 @@ Used in code but **not declared** in `.env.example`: `STRIPE_WEBHOOK_SECRETS`.
 `provider_status()` (payment_provider.py:34) derives mode from the key prefix
 (`sk_live_` / `sk_test_`) and reports only booleans — no key material. Good.
 
-**No live/test key separation exists.** There is one `STRIPE_SECRET_KEY`. Stage
-11 requires proving a test-mode client cannot invoke live money operations; that
-isolation is not implemented.
+**No live/test key separation exists, and no test key exists at all.** Verified
+2026-09-17 against the deployed Railway service `CoinPilotX` (names and key
+*prefix class* only — no values read or logged):
+
+| Variable | Class |
+| --- | --- |
+| `STRIPE_SECRET_KEY` | **live** secret |
+| `STRIPE_PUBLISHABLE_KEY` | **live** publishable |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | **live** publishable |
+| `STRIPE_WEBHOOK_SECRET` | set |
+| `STRIPE_*_PRICE_ID` (4) | set |
+
+`STRIPE_CONNECT_CLIENT_ID` and `STRIPE_WEBHOOK_SECRETS` are **not set** on the
+service despite being read by code.
+
+This is the mission's hard blocker. The brief requires test mode first and
+forbids live money movement without owner authorization, but the only key
+available *is* the live key. Stage 11 (isolation) and Stage 13 (test-mode E2E)
+cannot start until a `sk_test_…` key is provisioned. Owner action — see §11.
 
 ## 10. Other gaps
 
@@ -333,21 +394,26 @@ isolation is not implemented.
 
 ## 11. Decisions required from the owner
 
-These block Stages 1, 4, 5, 13 and 14. None can be answered by reading the code.
+These block Stages 11, 13 and 14. None can be answered by reading the code.
 
-1. **Provide the platform's external (bank) account** to clear the past-due task.
-   Owner-only — PulseSoc's own banking details.
-2. **Complete Connect platform enablement**, including the business profile and
-   any Stripe agreement acceptance. Owner-only attestations.
-3. **Confirm the platform commission.** Is `PROPOSED_PLATFORM_FEE_BPS = 500` (5%
-   of merchandise net after seller discount) the real number? And does it
-   supersede the legacy 10%/15% `platform_fee_rules`?
+1. **Provision a test-mode Stripe key.** *Blocking.* Create a restricted or
+   secret `sk_test_…` key and set it on the Railway service under a distinct
+   name (`STRIPE_SECRET_KEY_TEST`). Without it, nothing in this mission can be
+   verified anywhere except against live money. Owner-only — key creation.
+2. **Clear the Dashboard "Action required" banner.** The platform account's API
+   `requirements` are `null`, so this is most likely the `pending`
+   `cartes_bancaires_payments` capability. Owner-only to confirm and resolve.
+3. ~~**Confirm the platform commission.**~~ **Answered 2026-09-17:** 5%
+   (`PROPOSED_PLATFORM_FEE_BPS = 500`) is the real number, wired as the single
+   fee source, with the three owner gates left **unset** so the effective rate
+   stays 0% until the owner flips them. Legacy 10%/15% `platform_fee_rules` is
+   to be retired.
 4. **Who absorbs Stripe processing fees** — PulseSoc or the seller? Recommended
    default is PulseSoc, but it must be stated in the seller agreement before the
    disclosure gate can be set.
-5. **Approve the architecture change** from destination charges to platform
-   charge + explicit transfer. This changes live money movement on a working
-   payment path.
+5. ~~**Approve the architecture change**~~ **Approved 2026-09-17:** platform
+   charge + explicit `stripe.Transfer`, dropping `transfer_data` and
+   `application_fee_amount` from `create_checkout_session`.
 6. **Confirm the launch jurisdiction.** The code implies US-only
    (`MARKETPLACE_SHIPPING_COUNTRIES=US`). Confirm before claiming broader
    seller availability to Stripe.
