@@ -122,9 +122,13 @@ class SellerListingReadinessRouteTestCase(_ReadinessRouteBase):
     # -- the verdict is on the wire -------------------------------------------
 
     def test_a_ready_listing_carries_the_verdict(self):
+        # `resubmittable` answers a rejection, so a healthy listing reports False.
+        # It is asserted here rather than ignored because this is an exact-dict
+        # comparison on purpose: the route must hand the client the whole verdict
+        # the evaluator produced, not a subset it chose.
         item = self.seller_item(self.insert_listing())
         self.assertEqual(item["readiness"], {
-            "publishable": True, "checkout_ready": True,
+            "publishable": True, "resubmittable": False, "checkout_ready": True,
             "blockers": [], "warnings": [],
             "summary": "Ready to publish", "fixes": [], "notes": []})
 
@@ -206,8 +210,12 @@ class SellerListingReadinessRouteTestCase(_ReadinessRouteBase):
     def test_the_verdict_carries_no_money_or_supplier_facts(self):
         item = self.seller_item(self.insert_listing(quantity=0, price_label=""))
         verdict = item["readiness"]
-        self.assertEqual(set(verdict), {"publishable", "checkout_ready", "blockers",
-                                        "warnings", "summary", "fixes", "notes"})
+        # Deliberately an exact set, not a subset: this is the guard that a money
+        # or supplier fact cannot appear on a seller-facing payload, and a subset
+        # check would let a new key through silently. Adding a key here is meant
+        # to be a decision, which is why `resubmittable` had to be added by hand.
+        self.assertEqual(set(verdict), {"publishable", "resubmittable", "checkout_ready",
+                                        "blockers", "warnings", "summary", "fixes", "notes"})
         flat = repr(verdict).lower()
         for word in ("cost", "margin", "supplier", "token", "openid", "connection", "cents"):
             self.assertNotIn(word, flat, f"{word!r} has no business in a readiness verdict")
@@ -226,8 +234,8 @@ class SellerListingReadinessRouteTestCase(_ReadinessRouteBase):
         for item in items:
             self.assertIn("readiness", item, f"listing {item.get('id')} has no verdict")
             self.assertEqual(set(item["readiness"]),
-                             {"publishable", "checkout_ready", "blockers",
-                              "warnings", "summary", "fixes", "notes"})
+                             {"publishable", "resubmittable", "checkout_ready",
+                              "blockers", "warnings", "summary", "fixes", "notes"})
 
     # -- what a bulk action would do, decided here rather than on the phone ----
 
