@@ -42,7 +42,12 @@ jest.mock("../../components/ProfileHeader", () => {
   const { Text } = require("react-native");
   return { ProfileHeader: ({ profile }: { profile: { display_name?: string } }) => <Text>{profile?.display_name || ""}</Text> };
 });
-jest.mock("../../components/GalacticAtmosphere", () => ({ GalacticAtmosphere: () => null }));
+// Profile paints itself with `ProfileCanvas` now, not with the decorative
+// atmosphere. The mock this replaced named a component the screen no longer
+// renders, so it stubbed nothing and quietly implied the old layer was still
+// there. Stubbed for the original reason: these files assert behaviour, and the
+// canvas has its own assertions in `ProfileScreen.graphite.test.tsx`.
+jest.mock("../../components/ProfileCanvas", () => ({ ProfileCanvas: () => null }));
 jest.mock("../../components/Screen", () => ({
   LogiNexusScreenShell: ({ children }: { children: React.ReactNode }) => children,
   LogiNexusStatePanel: ({ title }: { title: string }) => title

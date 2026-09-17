@@ -16,6 +16,25 @@
  * below are the whole reason the screen reads as premium rather than as a
  * gaming HUD: borders sit at ~0.30–0.45, fills at ~0.10–0.18, and only the
  * primary action and the avatar ring are allowed to be genuinely bright.
+ *
+ * ## What this module is no longer allowed to own: surfaces
+ *
+ * It used to carry `panel: rgba(9, 20, 38, 0.72)`, `panelRaised` and a blue
+ * `hairline`, and those three were the mechanical cause of the flat, cloudy
+ * Profile. A translucent navy panel laid over a near-black canvas composites to
+ * something a fraction lighter than the canvas, so a card did not read as a
+ * card; stacking several of them read as haze. Fixing it by picking a heavier
+ * alpha would have been the same mistake with a bigger number — translucency
+ * over a dark canvas is a *smoke* effect, and the requirement was depth.
+ *
+ * Profile surfaces are therefore opaque steps on a shared ramp now, resolved per
+ * theme by `theme/profileGraphite.ts`. The three tokens are gone rather than
+ * deprecated: leaving them would have left the cloudy look one import away.
+ *
+ * What stays here is the accent system — hues, alpha fills for *state*, gradient
+ * ramps, radii and the tap-target floor. The division is by role: a fill that
+ * says "this control is selected" is an accent and lives here; a fill that says
+ * "this is a card" is a surface and does not.
  */
 
 export const profileNeon = {
@@ -55,12 +74,6 @@ export const profileNeon = {
   /** Halo behind the avatar ring and the primary action. */
   glow: "rgba(61, 139, 255, 0.45)",
   glowCyan: "rgba(97, 216, 255, 0.38)",
-
-  /** Dark translucent panel — the glass every profile card sits on. */
-  panel: "rgba(9, 20, 38, 0.72)",
-  panelRaised: "rgba(14, 30, 54, 0.88)",
-  /** Hairline that separates segments inside a glass panel. */
-  hairline: "rgba(120, 170, 255, 0.16)",
 
   /**
    * Gradient ramps. `as const` so they satisfy LinearGradient's tuple type.

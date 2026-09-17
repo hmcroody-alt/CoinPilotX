@@ -31,8 +31,26 @@ jest.mock("../../theme/logiNexusMotion", () => ({
 }));
 
 import { PulseProfile } from "../../api/profile";
+import { colors } from "../../theme/colors";
+import { profileSurface } from "../../theme/profileGraphite";
 import { profileNeon } from "../../theme/profileNeon";
 import { ProfileHeader } from "../ProfileHeader";
+
+/**
+ * The middle stop of the *generated* cover, read from the token rather than
+ * written out as a hex.
+ *
+ * These assertions used to pin the literal `#050910f2` — the near-black canvas
+ * this surface no longer uses. Pinning the literal made them fail the moment
+ * Profile moved onto the graphite ramp, which is correct behaviour for a value
+ * test and the wrong thing for what these three cases are actually about: they
+ * ask *when* the field is drawn at full strength, not what colour full strength
+ * happens to be. Naming the token keeps them about the timing and lets the ramp
+ * be retuned without three unrelated red tests.
+ *
+ * The colour itself is pinned once, literally, in `profileGraphite.test.ts`.
+ */
+const FIELD_AT_FULL_STRENGTH = profileSurface(colors).coverFieldMid;
 
 function baseProfile(overrides: Partial<PulseProfile> = {}): PulseProfile {
   return {
@@ -304,8 +322,8 @@ describe("cover fallback", () => {
       expect(Math.max(...dark.filter((a) => a < 1))).toBeLessThanOrEqual(0.45);
     });
 
-    it("keeps the black middle stop when the field IS the cover", () => {
-      expect(heroFills(withoutCover())).toContain("#050910f2");
+    it("keeps the near-opaque canvas middle stop when the field IS the cover", () => {
+      expect(heroFills(withoutCover())).toContain(FIELD_AT_FULL_STRENGTH);
     });
 
     it("drops the lit limb to framing strength and out of the subject's way", () => {
@@ -341,18 +359,18 @@ describe("cover fallback", () => {
     // failure, cancellation and still-in-flight with one invariant.
     it("keeps the field at full strength until the picture actually arrives", () => {
       const tree = render(<ProfileHeader profile={baseProfile({ cover_url: "https://cdn/c.jpg" })} owner />);
-      expect(heroFills(tree)).toContain("#050910f2");
+      expect(heroFills(tree)).toContain(FIELD_AT_FULL_STRENGTH);
       expect(StyleSheet.flatten(tree.getByTestId("profile-generated-cover").props.style))
         .toMatchObject({ borderColor: profileNeon.borderStrong, top: 196 });
       fireEvent(tree.getByTestId("profile-cover-image"), "load");
-      expect(heroFills(tree)).not.toContain("#050910f2");
+      expect(heroFills(tree)).not.toContain(FIELD_AT_FULL_STRENGTH);
     });
 
     it("takes the field back when the cover is swapped for one that has not loaded", () => {
       const tree = withCover();
-      expect(heroFills(tree)).not.toContain("#050910f2");
+      expect(heroFills(tree)).not.toContain(FIELD_AT_FULL_STRENGTH);
       tree.rerender(<ProfileHeader profile={baseProfile({ cover_url: "https://cdn/next.jpg" })} owner />);
-      expect(heroFills(tree)).toContain("#050910f2");
+      expect(heroFills(tree)).toContain(FIELD_AT_FULL_STRENGTH);
     });
 
     it("does not dim the photo itself instead of fixing the overlay", () => {

@@ -7,6 +7,21 @@
  * screen consumes directly. Nothing here mutates `colors` or `PulseBackground`,
  * so no other surface changes.
  *
+ * ## The shared steps now come from `graphite.ts`
+ *
+ * Six of the values below — chrome, both canvas stops, the sunken step and the
+ * two text weights — were promoted into `theme/graphite.ts` when the Profile
+ * surface adopted the same system. They are re-exported through this object by
+ * reference, not re-typed, so the two screens cannot drift: retuning the canvas
+ * in one place moves both, which is the whole point of the promotion. The values
+ * are byte-identical to what this file shipped with, and
+ * `__tests__/chatGraphiteContrast.test.ts` pins every one of them literally, so
+ * the refactor is proven to be a refactor.
+ *
+ * Everything still declared inline here is conversation-only: the bubbles, their
+ * borders, the reply inset, the sender accent, the control fill and the shadow.
+ * A Profile change must not be able to move a chat bubble.
+ *
  * ## The hierarchy, as luminance
  *
  * Header and footer are the darkest anchored surfaces, the canvas is a middle
@@ -35,16 +50,18 @@
  * baseline unchanged.
  */
 
+import { graphite } from "./graphite";
+
 export const chatGraphite = {
   /**
    * Header, footer and both safe areas. The darkest thing on screen — a chrome
    * container that out-brightens its own content reads as the subject.
    */
-  headerSurface: "#292E36",
+  headerSurface: graphite.chrome,
 
   /** The conversation canvas, top to bottom. A single restrained vertical run. */
-  canvasTop: "#3A4049",
-  canvasBottom: "#343A42",
+  canvasTop: graphite.canvasTop,
+  canvasBottom: graphite.canvasBottom,
 
   /** Incoming/recipient bubbles. One visible step lighter than the canvas. */
   incomingSurface: "#505761",
@@ -55,7 +72,7 @@ export const chatGraphite = {
   outgoingBorder: "#4D8FE9",
 
   /** The composer field, one step under the footer it sits in. */
-  composerSurface: "#20262E",
+  composerSurface: graphite.sunken,
 
   /**
    * An inset inside a bubble: reply previews and quoted content. Translucent
@@ -64,15 +81,15 @@ export const chatGraphite = {
    */
   insetSurface: "rgba(20, 25, 32, 0.30)",
 
-  primaryText: "#F7F8FA",
+  primaryText: graphite.primaryText,
   /** Timestamps, delivery labels, previews. See the deviation note above. */
-  secondaryText: "#C8D0DB",
+  secondaryText: graphite.secondaryText,
 
   /** Sender names and the reply rail. See the deviation note above. */
   senderAccent: "#7BDFFF",
 
   /** Header/canvas separation, control edges. Quiet by design. */
-  quietDivider: "rgba(230, 236, 245, 0.16)",
+  quietDivider: graphite.quietDivider,
 
   /** Icon-button fill in the header and the composer. */
   controlSurface: "#323842",

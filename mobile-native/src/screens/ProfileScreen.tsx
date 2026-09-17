@@ -22,7 +22,7 @@ import { useBriefingsTile } from "../profile/useBriefingsTile";
 import { usePremiumTile } from "../profile/usePremiumTile";
 import { trackPremium } from "../payments/premiumAnalytics";
 import { useAuth } from "../session/auth";
-import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
+import { ProfileCanvas } from "../components/ProfileCanvas";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { invalidateNativeSync } from "../core/eventSync";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -30,6 +30,7 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { colors } from "../theme/colors";
+import { profileSurface } from "../theme/profileGraphite";
 import { profileNeon } from "../theme/profileNeon";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -581,7 +582,18 @@ export function ProfileScreen({ route, navigation }: Props) {
   if (!profile) {
     const state = errorState || profileErrorState(new Error("Profile could not load."));
     return (
-      <LogiNexusScreenShell>
+      // `bottomDock={false}` plus `dock.contentPadding`, not the shell's default.
+      //
+      // The shell's own `bottomDock` reserves `Math.max(insets.bottom, 12)` — the
+      // safe area and nothing else — but the floating dock is the safe area *plus*
+      // its own 118pt of height. `LogiNexusStatePanel` is `flex: 1`, so on a
+      // docked Profile its lower edge, its border and the "Try again" button's
+      // breathing room all ran underneath the dock. Turning the shell's padding
+      // off and applying the dock's own derived value instead gives exactly the
+      // number the loaded screen's list uses — one source for the clearance,
+      // computed from the dock's real height and this device's inset rather than
+      // hardcoded for one phone.
+      <LogiNexusScreenShell bottomDock={false} contentStyle={dock.contentPadding}>
         <LogiNexusStatePanel state="error" title={state.title} body={state.body}>
         {state.retryable ? (
           <Pressable style={styles.retryButton} onPress={() => load("refresh").catch(() => undefined)}>
@@ -595,7 +607,14 @@ export function ProfileScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.root}>
-      <GalacticAtmosphere variant="profile" scrollY={scrollY} testID="profile-galactic-atmosphere" />
+      {/* `ProfileCanvas`, not `<GalacticAtmosphere variant="profile">`. The
+          atmosphere is the layer the design review rejected: a near-black
+          gradient under 23 stars, two drifting nebulae, a planet, a galaxy smear
+          and a closing scrim, which is the cloudy appearance itself rather than a
+          tint on top of it. `scrollY` is no longer passed because there is nothing
+          left to parallax — see `components/ProfileCanvas.tsx`. Every other
+          variant of the atmosphere is untouched. */}
+      <ProfileCanvas />
       <Animated.FlatList
       ref={listRef}
       style={styles.list}
@@ -727,7 +746,11 @@ function ProfileSkeleton() {
       accessibilityLabel="Loading profile"
       testID="profile-skeleton"
     >
-      <GalacticAtmosphere variant="profile" />
+      {/* The same canvas the loaded screen draws, so the first frame and the
+          second are the same colour. The skeleton's content is top-anchored and
+          ends ~400pt down, so it reserves no dock clearance — there is nothing
+          near the bottom of the screen to trap. */}
+      <ProfileCanvas testID="profile-skeleton-canvas" />
       <View style={styles.skeletonBody}>
         <View style={styles.skeletonAvatar} />
         <View style={styles.skeletonName} />
@@ -744,9 +767,20 @@ function ProfileSkeleton() {
 }
 
 function TabButton({ label, value, active, onPress }: { label: string; value: TabKey; active: TabKey; onPress: (value: TabKey) => void }) {
+  const selected = active === value;
   return (
-    <Pressable style={[styles.tab, active === value ? styles.tabActive : undefined]} onPress={() => onPress(value)}>
-      <Text style={[styles.tabText, active === value ? styles.tabTextActive : undefined]}>{label}</Text>
+    // `role="tab"` plus `selected`, because the strip's own visuals carry the
+    // selection and VoiceOver could not see any of them. Without the state a
+    // screen-reader user hears three identical buttons and has no way to know
+    // which list they are already looking at — which is the same failure as
+    // conveying state by colour alone, one modality over.
+    <Pressable
+      accessibilityRole="tab"
+      accessibilityState={{ selected }}
+      style={[styles.tab, selected ? styles.tabActive : undefined]}
+      onPress={() => onPress(value)}
+    >
+      <Text style={[styles.tabText, selected ? styles.tabTextActive : undefined]}>{label}</Text>
     </Pressable>
   );
 }
@@ -778,28 +812,38 @@ function AboutPanel({ profile, owner, onVerification, onSafety, onSellerStore }:
   );
 }
 
-const styles = createThemedStyles(() => ({
+const styles = createThemedStyles(() => {
+  // Same memoised resolver the header uses, so the screen and its header cannot
+  // disagree about what the canvas is. See `theme/profileGraphite.ts`.
+  const surface = profileSurface(colors);
+  return {
   root: { backgroundColor: "transparent", flex: 1 },
   skeletonBody: { paddingHorizontal: 18, paddingTop: 96 },
-  skeletonAvatar: { backgroundColor: profileNeon.panelRaised, borderColor: profileNeon.border, borderRadius: 56, borderWidth: 1, height: 112, width: 112 },
-  skeletonName: { backgroundColor: profileNeon.panelRaised, borderRadius: 8, height: 26, marginTop: 16, width: "58%" },
-  skeletonHandle: { backgroundColor: profileNeon.panel, borderRadius: 6, height: 14, marginTop: 10, width: "36%" },
-  skeletonStats: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, height: 74, marginTop: 22 },
+  // The skeleton is the first frame of the screen, so its blocks have to be the
+  // real surfaces: a skeleton painted in a colour the loaded screen never uses
+  // produces a visible recolour the moment data arrives.
+  skeletonAvatar: { backgroundColor: surface.raisedStrong, borderColor: surface.border, borderRadius: 56, borderWidth: 1, height: 112, width: 112 },
+  skeletonName: { backgroundColor: surface.raisedStrong, borderRadius: 8, height: 26, marginTop: 16, width: "58%" },
+  skeletonHandle: { backgroundColor: surface.raised, borderRadius: 6, height: 14, marginTop: 10, width: "36%" },
+  skeletonStats: { backgroundColor: surface.raised, borderColor: surface.border, borderRadius: profileNeon.radius.panel, borderWidth: 1, height: 74, marginTop: 22 },
   skeletonActions: { flexDirection: "row", gap: 8, marginTop: 16 },
-  skeletonAction: { backgroundColor: profileNeon.panel, borderColor: profileNeon.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
+  skeletonAction: { backgroundColor: surface.raised, borderColor: surface.border, borderRadius: profileNeon.radius.action, borderWidth: 1, flex: 1, height: 48 },
+  // Still an accent fill, and deliberately so: this is a transient result banner
+  // ("Message sent"), which is state, and state is what the accent system is
+  // for. It is not a card, so it does not take a surface step.
   actionMessage: {
     backgroundColor: profileNeon.fillSoft,
     borderColor: profileNeon.border,
     borderRadius: profileNeon.radius.action,
     borderWidth: 1,
-    color: colors.text,
+    color: surface.primaryText,
     fontSize: 13,
     marginBottom: 10,
     padding: 10
   },
   about: {
-    backgroundColor: profileNeon.panel,
-    borderColor: profileNeon.hairline,
+    backgroundColor: surface.raised,
+    borderColor: surface.border,
     borderRadius: profileNeon.radius.card,
     borderWidth: 1,
     gap: 8,
@@ -807,17 +851,17 @@ const styles = createThemedStyles(() => ({
     padding: 16
   },
   aboutBody: {
-    color: colors.text,
+    color: surface.primaryText,
     fontSize: 15,
     lineHeight: 22
   },
   aboutMeta: {
-    color: colors.muted,
+    color: surface.secondaryText,
     fontSize: 13,
     lineHeight: 19
   },
   aboutTitle: {
-    color: colors.text,
+    color: surface.primaryText,
     fontSize: 18,
     fontWeight: "900"
   },
@@ -829,7 +873,7 @@ const styles = createThemedStyles(() => ({
     padding: 24
   },
   centerText: {
-    color: colors.muted,
+    color: surface.secondaryText,
     marginTop: 10,
     textAlign: "center"
   },
@@ -841,15 +885,25 @@ const styles = createThemedStyles(() => ({
     paddingTop: 4
   },
   gridRow: { gap: 2, paddingHorizontal: 2 },
-  gridTile: { aspectRatio: 1, backgroundColor: colors.surface, flex: 1, marginBottom: 2, maxWidth: "33.333%", overflow: "hidden" },
+  // The placeholder behind a grid image while it decodes. `raised`, not
+  // `colors.surface`: on the graphite ramp the palette's `surface` is the old
+  // near-black, so every not-yet-loaded tile was a black hole in the grid.
+  gridTile: { aspectRatio: 1, backgroundColor: surface.raised, flex: 1, marginBottom: 2, maxWidth: "33.333%", overflow: "hidden" },
   gridImage: { height: "100%", width: "100%" },
-  textTile: { alignItems: "center", backgroundColor: "#0D2030", flex: 1, justifyContent: "center", padding: 10 },
-  textTileCopy: { color: colors.text, fontSize: 13, fontWeight: "800", lineHeight: 17, textAlign: "center" },
+  /*
+   * `textTile` / `textTileCopy` used to live here, carrying a hardcoded `#0D2030`
+   * — a navy that belonged to no palette and survived every theme switch. They
+   * are deleted rather than retoned: nothing renders them. The text-post cell has
+   * been drawn by `ContentCover kind="text"` since covers were centralized, so
+   * recolouring these two would have been a token reference to a style no frame
+   * ever composites, and a test asserting the new colour would have passed while
+   * proving nothing about the screen.
+   */
   tileSignals: { alignItems: "center", flexDirection: "row", gap: 4, left: 7, position: "absolute", right: 7, top: 7 },
   duration: { color: "#fff", fontSize: 10, fontWeight: "900", marginLeft: "auto", textShadowColor: "#000", textShadowRadius: 4 },
-  loadingMore: { color: colors.muted, padding: 16, textAlign: "center" },
+  loadingMore: { color: surface.secondaryText, padding: 16, textAlign: "center" },
   empty: {
-    color: colors.muted,
+    color: surface.secondaryText,
     padding: 20,
     textAlign: "center"
   },
@@ -859,7 +913,7 @@ const styles = createThemedStyles(() => ({
     marginBottom: 10
   },
   errorTitle: {
-    color: colors.text,
+    color: surface.primaryText,
     fontSize: 20,
     fontWeight: "900"
   },
@@ -875,6 +929,11 @@ const styles = createThemedStyles(() => ({
     fontSize: 13,
     marginBottom: 10
   },
+  // No `shadowColor`/`shadowOpacity: 1`/`shadowRadius: 14`. That was a 14pt halo
+  // at full opacity around the one button on an otherwise empty error screen —
+  // the largest glow in the Profile tree, on the element a user only ever sees
+  // when something has already gone wrong. The solid electric fill is louder
+  // than the canvas by a wide margin and needs no help being found.
   retryButton: {
     alignItems: "center",
     backgroundColor: profileNeon.electric,
@@ -882,11 +941,7 @@ const styles = createThemedStyles(() => ({
     justifyContent: "center",
     marginTop: 16,
     minHeight: profileNeon.tapTarget,
-    paddingHorizontal: 18,
-    shadowColor: profileNeon.glow,
-    shadowOffset: { height: 0, width: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 14
+    paddingHorizontal: 18
   },
   retryButtonText: {
     color: "#04101f",
@@ -894,24 +949,25 @@ const styles = createThemedStyles(() => ({
   },
   tab: {
     alignItems: "center",
-    backgroundColor: profileNeon.panel,
-    borderColor: profileNeon.hairline,
+    backgroundColor: surface.raised,
+    borderColor: surface.border,
     borderRadius: profileNeon.radius.action,
     borderWidth: 1,
     flex: 1,
     minHeight: profileNeon.tapTarget,
     justifyContent: "center"
   },
+  // Selected is stated three ways and none of them is a glow: an accent fill, a
+  // brighter accent border, and the cyan label below. Three because the brief
+  // forbids conveying state by colour alone — the border weight and the fill step
+  // both survive greyscale and a colour deficiency.
   tabActive: {
     backgroundColor: profileNeon.fillMedium,
     borderColor: profileNeon.borderStrong,
-    shadowColor: profileNeon.glow,
-    shadowOffset: { height: 0, width: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 12
+    borderWidth: 2
   },
   tabText: {
-    color: colors.muted,
+    color: surface.secondaryText,
     fontSize: 13,
     fontWeight: "900"
   },
@@ -947,4 +1003,5 @@ const styles = createThemedStyles(() => ({
     color: profileNeon.cyan,
     fontWeight: "900"
   }
-}));
+  };
+});
