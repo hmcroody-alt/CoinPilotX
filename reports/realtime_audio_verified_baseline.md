@@ -493,3 +493,107 @@ draining call mappings **before** tokens, and both backlogs drain during the sam
 but the ordering is not structurally guaranteed. It is recorded here rather than fixed,
 because fixing it means restructuring both listeners and the brief this work ran under
 forbids a broad rewrite.
+
+---
+
+## 14. Addendum — 2026-09-17 answered call reports "ended" while staying connected, build 27
+
+### 14.1 The failure
+
+Reported against build 26, from a **locked** device: answering an incoming call showed
+**"PulseSoc Audio ended"** on the CallKit lock-screen UI with the controls dimmed, while
+the call in fact remained connected and audible.
+
+Both halves of that sentence were true simultaneously, which is what makes it worth
+recording. This is not a call that failed; it is a call that succeeded while the system UI
+said otherwise. The user's only evidence is a screen that contradicts the audio in their ear.
+
+### 14.2 Cause
+
+One absent field in the accept request body.
+
+Accepting moves the call off the `ringing` edge. `_voip_stop_ringing` hooks that edge and
+fans an `answered_elsewhere` VoIP cancel to every device belonging to the answering user —
+deliberately, and including the actor, because a participant row is per *user*, not per
+device: once the actor's row flips to `joined` the ringing query can no longer see them,
+while their other handsets are still holding a full-screen CallKit UI for a call somebody
+has already taken. The documented way out is that the answering *device* is excluded from
+that fan-out, via `_answering_device_ids(payload)` reading the accept body.
+
+`api/calls.ts` sent `{"source": "native"}`. It named no device. So the exclusion set was
+empty, the cancel came back to the phone that had just answered, `AppDelegate`'s
+`cancel_call` branch called `endCall(withUUID:reason:)` on the UUID it was connected on,
+and CallKit tore the UI down as `answeredElsewhere` — while the media session, which builds
+25/26 had made join directly from the `/accept` response, carried on underneath.
+
+This was invisible before build 26 for a reason worth stating: the callee never reached
+media at all, so there was no live call for the self-cancel to contradict. Fixing answering
+is what made this observable.
+
+### 14.3 The second cause, found before shipping the first fix
+
+Adding the field alone would have been a no-op on precisely the reported path.
+
+The installation id is stored via `expo-secure-store`, which defaults to
+`kSecAttrAccessibleWhenUnlocked` (`SecureStoreOptions.swift:8`). That item is **unreadable
+while the screen is locked** — and a locked screen is the only condition under which this
+bug was reported, because it is when VoIP calls are answered. The body would have carried
+no id, the exclusion set would still have been empty, and the fix would have appeared to
+change nothing. `session/sessionStore.ts` had already reached this conclusion for the access
+token, which is the sole reason an authenticated `/accept` works from the lock screen at all.
+
+Widening the accessibility *without* also fixing the read would have been worse than
+leaving the bug. `searchKeyChain` returns `nil` only for `errSecItemNotFound` and **throws**
+for every other status, so the previous `.catch(() => "")` collapsed "the keychain refused
+me" into "no id is stored" and minted a replacement. That was survivable only because the
+item could not be written while locked. Once it can be, that mint **overwrites the real
+installation id** — and the backend suppresses the incoming-call alert push for exactly
+those device ids holding an active VoIP token, so the device would begin receiving CallKit
+*and* a duplicate banner for every call, permanently. The read/write change therefore had
+to land in the same commit as the widening, not after it.
+
+### 14.4 Build identity
+
+| | Build 26 | Build 27 |
+|---|---|---|
+| `CFBundleVersion` | 26 | **27** |
+| `CFBundleShortVersionString` | 1.0.2 | 1.0.2 |
+| Bundle id | `com.pulsesoc.app` | `com.pulsesoc.app` |
+| Commit | `0ba74903` | **`f25df471`** |
+| Carries | VoIP backlog replay (answering works) | answering device names itself (UI stops lying) |
+
+`MARKETING_VERSION` unchanged: 1.0.2 is the open train. Build number pinned across
+`ios/PulseSoc/Info.plist`, `app.json` and both `CURRENT_PROJECT_VERSION` entries in
+`project.pbxproj` — `tests/protection/test_ios_build_version_contract.py`, 8 passed.
+
+### 14.5 Automated verification at this code state
+
+Full detail, including the mutation table, is in the build-27 section of
+`reports/realtime_audio_change_declaration.md`. Summary:
+
+- `npm test` — **456 suites / 7880 tests passed**
+- `npm run typecheck`, `npm run i18n:validate` — exit 0
+- `test:realtime-audio-critical` 191 passed · `test:realtime-audio` 377 passed ·
+  `test:realtime-audio-architecture` 22 passed
+- backend: `test_realtime_audio_architecture` 19 · `test_agora_token_generation` 9 ·
+  `test_agora_rtc_provider_contract` 4 · `test_voip_pushkit_delivery` 49 ·
+  `test_ios_aps_environment_contract` 5 · `test_ios_push_bundle_identity` 4 ·
+  `test_call_accept_race` 4 · `test_call_acceptance_sync` 10 ·
+  `test_call_two_sided_hangup` 6 · `test_call_multi_guest` 22 ·
+  `test_environment_contract` 10 · `test_realtime_audio_gate_coverage` 14
+- **new**: `tests/test_call_answered_elsewhere_self_cancel.py` — 9 passed
+- audio change gate, `0ba74903..f25df471` — **exit 0, declaration accepted**
+
+**Eleven mutations** were applied and reverted to confirm each assertion fails against the
+broken code, including reverting `acceptCall` to the exact body production shipped.
+
+### 14.6 What is still owed
+
+Unchanged from §13.5, with one addition that is specific to this fix and cannot be
+automated: every assertion above tests the *mechanism*, and **none of them can observe the
+system call UI**. The CallKit presentation is the only place this bug was ever visible.
+
+On a **locked** P3r7or, app backgrounded and again force-quit: answer, confirm speech is
+audible in both directions, and **confirm the CallKit UI stays up for the duration of the
+call rather than reporting it ended**. Until that is recorded here, this section attests
+code state and automated coverage only.
