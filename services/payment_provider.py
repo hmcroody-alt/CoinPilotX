@@ -261,7 +261,35 @@ def create_checkout_session(
     }
 
 
+# A destination charge settles the seller's cut at charge time, which removes the
+# window in which a chargeback, a fraud warning or a refund can still freeze or
+# reverse the seller's money. `tests/marketplace/test_charge_model_authority.py`
+# walks the AST of the repository to prove no charge site names these keys — but
+# an opaque `**kwargs` splat is the one shape that walk cannot see through, so
+# this call refuses them at runtime instead.
+DESTINATION_CHARGE_KEYS = frozenset({
+    "transfer_data",
+    "application_fee_amount",
+    "application_fee",
+    "on_behalf_of",
+})
+
+
 def create_payment_intent(**kwargs) -> dict[str, Any]:
+    # Checked before `_stripe_ready` on purpose. Without a configured key this
+    # function returns a soft "not configured" dict, so a check placed after that
+    # gate would never fire on a developer machine or in CI - the first time
+    # anyone saw it would be production.
+    forbidden = sorted(DESTINATION_CHARGE_KEYS.intersection(kwargs))
+    if forbidden:
+        raise ValueError(
+            "refusing to create a destination charge: "
+            + ", ".join(forbidden)
+            + ". PulseSoc uses separate charges and transfers so the platform holds "
+            "the money until the settlement clears its protection window; settling "
+            "the seller's cut at charge time makes every freeze, hold and reversal "
+            "path unenforceable for this payment."
+        )
     if not _stripe_ready():
         return setup_required("Payment intents are unavailable until Stripe is configured.")
     intent = stripe.PaymentIntent.create(**kwargs)
