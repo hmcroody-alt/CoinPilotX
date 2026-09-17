@@ -406,6 +406,7 @@
       "a11yVoiceProgress": "Fortschritt der Sprachnachricht",
       "a11yVoiceUnavailable": "{{label}}. Sprachnachricht nicht verfügbar.",
       "assistantAlwaysAvailable": "Immer verfügbar · PulseSoc Intelligenz",
+      "assistantConnecting": "Verbindung wird hergestellt · PulseSoc Intelligenz",
       "assistantReconnecting": "Dienst verbindet sich neu",
       "attachCamera": "Kamera",
       "attachCameraDetail": "Jetzt aufnehmen",

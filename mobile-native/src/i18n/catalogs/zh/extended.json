@@ -403,6 +403,7 @@
       "a11yVoiceProgress": "语音消息播放进度",
       "a11yVoiceUnavailable": "{{label}}。语音消息不可用。",
       "assistantAlwaysAvailable": "随时在线 · PulseSoc 智能洞察",
+      "assistantConnecting": "正在连接 · PulseSoc 智能洞察",
       "assistantReconnecting": "服务正在重新连接",
       "attachCamera": "相机",
       "attachCameraDetail": "立即拍摄",

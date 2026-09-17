@@ -15,7 +15,8 @@ jest.mock("expo-linear-gradient", () => {
 const theme = {
   colors: { background: "#050910" },
   galacticBackground: { enabled: true, intensity: 1, variant: "dark" as "dark" | "light" },
-  reduceTransparency: false
+  reduceTransparency: false,
+  highContrast: false
 };
 
 /**
@@ -63,6 +64,7 @@ function gradients(screen: ReturnType<typeof render>) {
 beforeEach(() => {
   theme.galacticBackground = { enabled: true, intensity: 1, variant: "dark" };
   theme.reduceTransparency = false;
+  theme.highContrast = false;
   mockRenders.mockClear();
 });
 
@@ -111,8 +113,85 @@ describe("ChatWallpaper", () => {
   });
 
   describe("accessibility and theme fallbacks", () => {
-    it("drops to a flat opaque fill under Reduce Transparency", () => {
-      theme.reduceTransparency = true;
+    /**
+     * The device-parity regression.
+     *
+     * Reduce Transparency used to take the flat-fill branch, which meant a
+     * phone with the preference on painted `colors.background` (#050910) while
+     * every other device painted the approved graphite canvas. Same commit,
+     * same bundle, same account — a visibly different chat. The preference is
+     * about *layering*, so the opaque half of the wallpaper has to survive it.
+     */
+    describe("Reduce Transparency keeps the canvas and drops only the layering", () => {
+      it("still paints the graphite canvas, not the palette background", () => {
+        theme.reduceTransparency = true;
+        const screen = render(<ChatWallpaper />);
+        const spec = resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER);
+        expect(flatten(root(screen).props.style).backgroundColor).toBe(spec.base);
+        // The exact substitution that caused the parity break.
+        expect(flatten(root(screen).props.style).backgroundColor).not.toBe(theme.colors.background);
+        expect(gradients(screen)[0]).toEqual(spec.gradient);
+      });
+
+      it("drops the alpha layers — no scrim, no shapes, no stars", () => {
+        // `star_tunnel` is the discriminator: it is one of the decorated specs,
+        // so normally it draws a scrim gradient on top of its base gradient and
+        // fills the depth layer. The default cannot show this because it has no
+        // decoration to lose.
+        theme.reduceTransparency = true;
+        const reduced = render(<ChatWallpaper wallpaper="star_tunnel" />);
+        expect(gradients(reduced)).toHaveLength(1); // base gradient only — the scrim is gone
+
+        theme.reduceTransparency = false;
+        const normal = render(<ChatWallpaper wallpaper="star_tunnel" />);
+        expect(gradients(normal)).toHaveLength(2); // gradient + scrim
+
+        const hostViews = (screen: ReturnType<typeof render>) =>
+          screen.UNSAFE_root.findAll((node: { type: unknown }) => typeof node.type === "string").length;
+        expect(hostViews(reduced)).toBeLessThan(hostViews(normal));
+      });
+
+      it("leaves the result fully opaque", () => {
+        // The promise of the mode. Any translucent layer that survived would
+        // let whatever is beneath the wallpaper show through.
+        theme.reduceTransparency = true;
+        const screen = render(<ChatWallpaper wallpaper="star_tunnel" />);
+        for (const node of screen.UNSAFE_root.findAll((n: { type: unknown }) => typeof n.type === "string")) {
+          const style = flatten(node.props.style);
+          if (style.opacity !== undefined) expect(style.opacity === 0 || style.opacity === 1).toBe(true);
+          if (typeof style.backgroundColor === "string") {
+            expect(style.backgroundColor).not.toMatch(/^rgba?\(/);
+          }
+        }
+      });
+
+      it("changes nothing visible for the default wallpaper", () => {
+        // PulseSoc Graphite has no shapes, no stars and a fully transparent
+        // scrim, so there is no layering for the mode to remove. The two trees
+        // are not identical — the scrim node is dropped — but that node painted
+        // nothing, which is what makes "this accessibility branch costs the
+        // user nothing" a checked claim rather than a comment.
+        const spec = resolveChatWallpaper(DEFAULT_CHAT_WALLPAPER);
+        expect(spec.shapes).toHaveLength(0);
+        expect(spec.stars).toBe(0);
+        for (const stop of spec.scrim) expect(stop).toMatch(/,\s*0\)$/);
+
+        const painted = () => {
+          const screen = render(<ChatWallpaper />);
+          return { base: flatten(root(screen).props.style).backgroundColor, gradient: gradients(screen)[0] };
+        };
+        theme.reduceTransparency = false;
+        const normal = painted();
+        theme.reduceTransparency = true;
+        expect(painted()).toEqual(normal);
+      });
+    });
+
+    it("drops to a flat opaque fill under high contrast", () => {
+      // High contrast genuinely does substitute the palette, so the graphite
+      // ramp — which is not audited against HIGH_CONTRAST_DARK — stands down.
+      theme.highContrast = true;
+      theme.reduceTransparency = true; // buildTheme ORs it in; the flat fill must still win
       const screen = render(<ChatWallpaper />);
       expect(gradients(screen)).toHaveLength(0);
       expect(flatten(root(screen).props.style).backgroundColor).toBe(theme.colors.background);
