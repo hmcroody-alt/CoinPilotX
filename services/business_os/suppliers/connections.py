@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 from services import db
 from services.business_os.store import service as store_service
-from services.business_os.suppliers import merchant_scope, schema, vault
+from services.business_os.suppliers import merchant_scope, policy, schema, vault
 from services.business_os.suppliers.errors import SupplierError
 
 STATUSES = frozenset({"CONNECTED", "API_SUSPENDED", "REACTIVATION_REQUIRED",
@@ -153,8 +153,14 @@ def _public(row):
         "access_expires_at", "refresh_expires_at", "quota_state", "last_verified_at",
         "last_sync_at", "created_at", "updated_at")}
     out["credential_present"] = bool(row.get("credential_reference"))
-    out["environment"] = "SANDBOX"
-    out["production_fulfillment_enabled"] = False
+    # Derived, never asserted. This literally read `"SANDBOX"` before, which was
+    # true only because nothing had changed yet: flipping CJ_ENVIRONMENT_MODE
+    # would have left every merchant's badge saying Sandbox over a runtime that
+    # had stopped accepting sandbox orders. A label that cannot be wrong because
+    # it is constant is not a verified label, it is an unverifiable one, and the
+    # direction it fails in is luck rather than design.
+    out["environment"] = policy.fulfillment_environment()
+    out["production_fulfillment_enabled"] = policy.live_fulfillment_path_exists()
     try:
         quota = json.loads(row.get("quota_json") or "{}")
         out["points_info"] = {key: value for key, value in quota.items()

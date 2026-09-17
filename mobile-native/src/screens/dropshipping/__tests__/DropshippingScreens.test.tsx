@@ -177,6 +177,18 @@ function cartItem(over: Partial<ImportCartItem> = {}): ImportCartItem {
   };
 }
 
+/** A priced row distinguishable from the default by title.
+ *
+ * The outcome-reporting tests below used `preview: null` to tell their rows
+ * apart, which also — incidentally — made those rows unpriced. That is now a
+ * blocking state: the footer will not offer "Import & publish" over a row whose
+ * supplier cost it could not read. Naming the row instead keeps each of those
+ * tests asserting what it was written to assert.
+ */
+function pricedPreview(title: string): ImportCartItem["preview"] {
+  return { ...cartItem().preview!, title };
+}
+
 function draft(over: Partial<ImportedDraft> = {}): ImportedDraft {
   return {
     listingId: 77,
@@ -1501,8 +1513,8 @@ describe("ImportCartScreen", () => {
   it("reports every per-item outcome instead of one verdict", async () => {
     const { view } = await renderCart([
       cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null }),
-      cartItem({ itemId: "item-3", externalProductId: "ext-3", preview: null })
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: pricedPreview("Linen Shirt") }),
+      cartItem({ itemId: "item-3", externalProductId: "ext-3", preview: pricedPreview("Canvas Tote") })
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
@@ -1549,7 +1561,7 @@ describe("ImportCartScreen", () => {
   it("says so plainly when the whole run went live", async () => {
     const { view } = await renderCart([
       cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null })
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: pricedPreview("Linen Shirt") })
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
@@ -1635,7 +1647,7 @@ describe("ImportCartScreen", () => {
   it("only points at the store for a product that is actually in it", async () => {
     const { view, nav } = await renderCart([
       cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
-      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: null })
+      cartItem({ itemId: "item-2", externalProductId: "ext-2", preview: pricedPreview("Linen Shirt") })
     ]);
     await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
 
@@ -1772,6 +1784,68 @@ describe("ImportCartScreen", () => {
 
     expect(view.getByText("— cost unknown")).toBeTruthy();
     expect(view.queryByText(/0\.00 cost/)).toBeNull();
+  });
+
+  it("will not offer to publish a row it cannot price", async () => {
+    const { view } = await renderCart([
+      cartItem({ preview: { ...cartItem().preview!, costLowCents: null, costHighCents: null } })
+    ]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    // The defect in one assertion: "Import & publish 1" over a row with no cost
+    // promises a live, priced product. The server then refuses it on
+    // MISSING_PRICE and leaves a draft, so the button was never telling the
+    // truth about what the tap would do.
+    expect(view.queryByText(/Import & publish/)).toBeNull();
+    expect(view.getByText("Resolve pricing issues")).toBeTruthy();
+    expect(
+      view.getByLabelText("Resolve pricing issues on 1 products before importing").props
+        .accessibilityState.disabled
+    ).toBe(true);
+  });
+
+  it("names the unpriced product and says how to get past it", async () => {
+    const { view } = await renderCart([
+      cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
+      cartItem({
+        itemId: "item-2",
+        externalProductId: "ext-2",
+        preview: { ...pricedPreview("Linen Shirt")!, costLowCents: null, costHighCents: null }
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    // Named, not counted. "1 product has no cost" leaves the merchant hunting a
+    // list for which one.
+    // Matched as one string so the title has to be *inside the note*, not merely
+    // somewhere on screen — it is also the row's own label, which would pass a
+    // looser assertion while the note said nothing useful.
+    expect(
+      view.getByText(/couldn't read a supplier cost for Linen Shirt.*Untick it to import the rest/)
+    ).toBeTruthy();
+  });
+
+  it("lets the priced rows through once the unpriced one is unticked", async () => {
+    const { view } = await renderCart([
+      cartItem({ itemId: "item-1", externalProductId: "ext-1" }),
+      cartItem({
+        itemId: "item-2",
+        externalProductId: "ext-2",
+        preview: { ...pricedPreview("Linen Shirt")!, costLowCents: null, costHighCents: null }
+      })
+    ]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    expect(view.getByText("Resolve pricing issues")).toBeTruthy();
+
+    // The positive control. Without it the pair above only proves the button can
+    // be disabled, not that unticking is the way out — which is the whole
+    // instruction the note gives the merchant.
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Linen Shirt, selected for import"));
+    });
+
+    expect(view.getByText("Import & publish 1")).toBeTruthy();
+    expect(view.queryByText("Resolve pricing issues")).toBeNull();
   });
 
   it("promises a re-check rather than importing the stale numbers on screen", async () => {
