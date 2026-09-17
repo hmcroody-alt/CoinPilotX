@@ -52,6 +52,19 @@ const BADGE_CONSUMERS = [
 /** The one module allowed to talk to the counts endpoint. */
 const OWNER = "core/unreadCounts.ts";
 
+/**
+ * The OS app icon is a badge too, and it is written from neither file above —
+ * it is set from the reconciler, which is why it drifted without anything here
+ * noticing. `navigationBadgesFrom().combined` was documented as "what the phone's
+ * app icon wants" and the icon did not use it: it was written from `totalCount`,
+ * notifications + *social* messages, so a seller whose only unread was a
+ * business↔customer order message saw a blank icon.
+ */
+const ICON_BADGE_WRITER = "core/messageNotificationReconciliation.ts";
+
+/** The only other file that touches the icon: it clears, and never derives. */
+const ICON_BADGE_CLEARER = "api/push.ts";
+
 function read(relative: string): string {
   return readFileSync(join(SRC, relative), "utf8");
 }
@@ -102,6 +115,38 @@ describe("one source", () => {
     expect(owner).toMatch(/getNotificationBadgeCounts/);
     // The store is the only place the derivation helpers are read, too.
     expect(importLines(owner).join("\n")).toMatch(/api\/notifications/);
+  });
+
+  /**
+   * The behavioural test below ("folds commerce into the combined figure the app
+   * icon uses") pins what `combined` equals. It cannot pin that the icon is the
+   * thing reading it — and for as long as the icon was written from `totalCount`
+   * that test passed while its own name was false. This is the half that binds
+   * the number to the surface.
+   *
+   * Asserted against the write expression rather than the file, because the
+   * comment beside it names `totalCount` in order to say why it is wrong.
+   */
+  it("writes the app icon from the store's combined scope, not the social total", () => {
+    const source = read(ICON_BADGE_WRITER);
+    const writes = source.match(/setBadgeCountAsync\([^\n]*\)/g) || [];
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatch(/badgeFor\(\s*["']combined["']/);
+    expect(writes[0]).not.toMatch(/totalCount/);
+    expect(importLines(source).join("\n")).toMatch(/unreadCounts/);
+  });
+
+  /**
+   * Logout clears the icon. Zero is zero whichever count feeds it, so this
+   * needed no matching change — but it is the one place a second derivation
+   * could be introduced without touching the writer above.
+   */
+  it("lets the other icon caller clear the badge and never compute one", () => {
+    const writes = read(ICON_BADGE_CLEARER).match(/setBadgeCountAsync\([^)]*\)/g) || [];
+    // Asserted, not just iterated: an empty match list would satisfy a bare
+    // loop and the rule would stop being checked without anyone editing it.
+    expect(writes.length).toBeGreaterThan(0);
+    for (const write of writes) expect(write).toBe("setBadgeCountAsync(0)");
   });
 });
 

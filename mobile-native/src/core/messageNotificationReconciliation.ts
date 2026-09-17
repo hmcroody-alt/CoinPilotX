@@ -1,7 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { pulseApi } from "../api/pulseApi";
 import { getNotificationBadgeCounts } from "../api/notifications";
-import { setUnreadCounts } from "./unreadCounts";
+import { badgeFor, setUnreadCounts } from "./unreadCounts";
 import { outboxScope, pendingMutations } from "./mutations/outbox";
 
 const MESSAGE_TYPES = new Set(["message", "new_message", "chat_message", "private_message", "group_message", "image_message", "video_message", "voice_message", "file_message"]);
@@ -105,7 +105,12 @@ async function run(): Promise<ReconciliationResult> {
         const counts = await getNotificationBadgeCounts();
         if (current()) {
           const snapshot = setUnreadCounts(counts);
-          await Notifications.setBadgeCountAsync(Math.max(0, snapshot.totalCount));
+          // The icon takes the "combined" scope, not `totalCount`: `totalCount`
+          // is notifications + *social* messages, so a business↔customer unread
+          // left the icon blank and nothing brought the seller back to the app.
+          // Read through `badgeFor` so the icon and the in-app combined badge
+          // stay one definition — re-deriving the sum here is how they drift.
+          await Notifications.setBadgeCountAsync(Math.max(0, badgeFor("combined", snapshot).count));
         }
       } catch { result.failures += 1; }
     }
