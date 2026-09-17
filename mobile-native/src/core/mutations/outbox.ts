@@ -82,7 +82,28 @@ const ENVELOPE_VERSION = 1 as const;
  * that is clearly not transient.
  */
 export const QUEUEABLE_OPERATIONS = Object.freeze({
-  "messenger.send": { maxAttempts: 10, ordered: true }
+  "messenger.send": { maxAttempts: 10, ordered: true },
+  /**
+   * "I read this conversation" — queued when the user opens a thread offline.
+   *
+   * It qualifies on the test that matters for this list: replaying it late does
+   * exactly what doing it on time would have done. A read is idempotent (the
+   * server stamps first-read and leaves it alone), it is not a charge or a
+   * broadcast, and arriving forty minutes later is not a lie — the user really
+   * did read it, forty minutes ago.
+   *
+   * It is deliberately NOT ordered. Reads do not form a sequence the way
+   * messages do; two conversations read offline have no relationship, and
+   * making the stream strict would let one unreachable conversation hold back
+   * every other read behind it. Each conversation is its own stream instead.
+   *
+   * It exists because the notification side already acted: opening the thread
+   * dismissed its alerts locally and immediately, which is right and works
+   * offline. Without the queue the server would never learn, so the badge — which
+   * is recomputed from the server — would keep counting messages the user has
+   * read and can no longer see an alert for.
+   */
+  "messenger.markRead": { maxAttempts: 8, ordered: false }
 } as const satisfies Record<string, { maxAttempts: number; ordered: boolean }>);
 
 export type QueueableOperationType = keyof typeof QUEUEABLE_OPERATIONS;

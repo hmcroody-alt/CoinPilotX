@@ -19,10 +19,14 @@ import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } 
 import {
   initUnreadCountSync,
   navigationBadgesFrom,
-  refreshUnreadCounts,
   scopedBadgesEnabled,
   useUnreadCounts
 } from "../core/unreadCounts";
+import {
+  ReconcileTrigger,
+  applyBadgeFromUnreadCounts,
+  reconcileMessageNotifications
+} from "../notifications/messageNotificationReconciler";
 import { AccountCenterScreen } from "../screens/AccountCenterScreen";
 import { AccountHealthAppealsScreen } from "../screens/AccountHealthAppealsScreen";
 import { ActivityInboxScreen } from "../screens/ActivityInboxScreen";
@@ -292,15 +296,40 @@ export function AppNavigator() {
    * beside it, so it is the one place the total does not double-count.
    */
   const refreshBadges = useCallback(async () => {
-    const next = await refreshUnreadCounts();
-    await Notifications.setBadgeCountAsync(next.totalCount).catch(() => undefined);
+    // Delegated so the `loadedAt` guard lives in one place. The bare
+    // `setBadgeCountAsync(next.totalCount)` that used to be here would clear
+    // the badge whenever the count request failed on a cold start, because
+    // `refreshUnreadCounts` swallows its errors and hands back the module's
+    // zero-initialised snapshot.
+    await applyBadgeFromUnreadCounts().catch(() => undefined);
+  }, []);
+
+  /**
+   * Take the read message alerts out of Notification Center, then true up the
+   * badge. Failures are swallowed on purpose: a reconciliation pass that cannot
+   * run leaves Notification Center exactly as it found it, which is the state
+   * the app shipped in for years — it must never be able to break a screen.
+   */
+  const reconcileNotifications = useCallback((trigger: ReconcileTrigger) => {
+    reconcileMessageNotifications({ trigger }).catch(() => undefined);
   }, []);
 
   useEffect(() => {
     refreshBadges().catch(() => undefined);
+    // Cold start: alerts for messages read on another device, or read here and
+    // then killed before a pass ran, are sitting in Notification Center right
+    // now. This is the mandatory reconciliation point — background cleanup is
+    // best-effort, but a foregrounded app has no excuse.
+    reconcileNotifications("cold_start");
     const refreshBadgeSync = () => refreshBadges();
     const unregisterNotifications = registerSyncInvalidation("notifications", refreshBadgeSync);
     const unregisterActivity = registerSyncInvalidation("activity", refreshBadgeSync);
+    // Cross-device read. The realtime layer already publishes a message-read
+    // event into the messages subsystem, so multi-device sync needs no second
+    // push stack — it needs this one line.
+    const unregisterMessenger = registerSyncInvalidation("messenger", () => {
+      reconcileNotifications("remote_read");
+    });
     const stopSync = startNativeEventSync({
       fullResyncOnStart: true,
       subsystems: ["activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
@@ -310,21 +339,53 @@ export function AppNavigator() {
     // here alongside the rest of the app-level sync lifecycle.
     const stopUnreadSync = initUnreadCountSync();
     const appState = AppState.addEventListener("change", (state) => {
-      if (state === "active") refreshBadges().catch(() => undefined);
+      if (state === "active") {
+        refreshBadges().catch(() => undefined);
+        reconcileNotifications("foreground");
+      }
     });
     const received = Notifications.addNotificationReceivedListener(() => {
       invalidateNativeSync(["notifications", "activity"], "notification_received").catch(() => undefined);
       refreshBadges().catch(() => undefined);
+      // A push arriving for a message THIS device has already read is the
+      // read-before-delayed-push race. The alert has landed; reconciling here
+      // is what takes it straight back out. The pass is a no-op when the
+      // message really is unread.
+      reconcileNotifications("foreground");
     });
     return () => {
       unregisterNotifications();
       unregisterActivity();
+      unregisterMessenger();
       stopSync();
       stopUnreadSync();
       appState.remove();
       received.remove();
     };
-  }, [refreshBadges]);
+  }, [refreshBadges, reconcileNotifications]);
+
+  /**
+   * The account changed under a navigator that never remounts.
+   *
+   * The effect above runs once, on mount, and `AppNavigator` stays mounted for
+   * the whole signed-in lifetime — switching accounts does not remount it,
+   * because `signedIn` stays true throughout. So `cold_start` fires for the
+   * first account and nothing fires for the second, which would leave the
+   * incoming account looking at a shade of alerts nobody re-examines until the
+   * next backgrounding.
+   *
+   * Keyed on the user id rather than on `authState`, which is a fresh object on
+   * every construction and would re-run this on every token refresh.
+   *
+   * Signing out is not reachable here (this component unmounts), and a pass
+   * would bail on the signed-out check anyway: the outgoing account's alerts
+   * are not ours to remove once we can no longer ask whether they were read.
+   */
+  const signedInUserId = authState.user?.user_id;
+  useEffect(() => {
+    if (!signedInUserId) return;
+    reconcileNotifications("account_changed");
+  }, [signedInUserId, reconcileNotifications]);
 
   useEffect(() => {
     // The drawer and header identity are fetched once, so without the

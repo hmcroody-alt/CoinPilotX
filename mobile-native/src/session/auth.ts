@@ -18,6 +18,7 @@ import {
 import { shouldRejectTemporaryQaUser } from "./qaTemporaryAccount";
 import { setMediaCacheScope } from "../media/mediaCache";
 import { setOutboxScope } from "../core/mutations/outbox";
+import { setNotificationScope } from "../notifications/messageNotificationReconciler";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
 import { resetCanonicalTier } from "../entitlements/useCanonicalTier";
@@ -74,12 +75,21 @@ function statusForPhase(phase: SessionPhase): AuthStatus {
  * The mutation outbox is scoped here for the same reason and a sharper one: a
  * queue carried across an account switch would not merely expose stale data, it
  * would send the previous user's unsent words from the new user's account.
+ *
+ * The notification reconciler is scoped here on the same argument. It is the
+ * only thing in the app permitted to remove a delivered notification, and its
+ * whole decision rests on "does this alert belong to the account signed in
+ * right now". Scoped from a screen instead, one unvisited screen would be
+ * enough for account A's alerts to be dismissed while B is signed in. Setting
+ * it to null on sign-out makes every reconciliation pass a no-op until someone
+ * signs in, which is the correct behaviour for a handset nobody is using.
  */
 export function stateFor(phase: SessionPhase, user: PulseUser | null = null): AuthState {
   const userId = Number((user as { user_id?: number; id?: number } | null)?.user_id ?? (user as { id?: number } | null)?.id ?? 0);
   const scopeId = phase === "AUTHENTICATED" && userId > 0 ? userId : null;
   setMediaCacheScope(scopeId);
   setOutboxScope(scopeId);
+  setNotificationScope(scopeId);
   return { phase, status: statusForPhase(phase), user };
 }
 

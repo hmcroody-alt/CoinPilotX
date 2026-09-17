@@ -19,6 +19,18 @@ from .models import ensure_schema
 DISABLED_MESSAGE = "Pulse Communications 2.0 is not public yet."
 ALLOWED_CONVERSATION_TYPES = {"direct", "group", "room", "community_channel"}
 ALLOWED_MESSAGE_TYPES = {"text", "image", "gif", "video", "audio", "voice", "file", "media", "system"}
+
+# Version of the message push payload contract (see `push_metadata` in
+# `send_message`). Bump it when a field a client DEPENDS ON changes meaning or
+# goes away — not for additive fields, which older clients simply ignore.
+#
+# 1 is the implicit shape that shipped before this constant existed: it carried
+# `type`/`push_type`, `conversation_id` and `message_id`, but no version, no
+# recipient and no send time. A client that receives a payload with no
+# `schema_version` at all must read it as 1 and must NOT assume the recipient is
+# the signed-in account — v1 cannot say who it was for.
+MESSAGE_PUSH_SCHEMA_VERSION = 2
+
 _SCHEMA_READY = False
 _SCHEMA_LOCK = threading.Lock()
 
@@ -1967,7 +1979,38 @@ def _dispatch_message_side_effects(user_id: int, conversation_id: int, message: 
                 if (message.get("pulse_shield") or {}).get("flagged"):
                     title = "Pulse Shield"
                     body = "A message needs review before you open it."
+                # The contract a device needs to decide, without reading a word of
+                # the message, whether a delivered OS notification is still worth
+                # showing. Every field here is an identifier or a version; nothing
+                # added in this block is content.
+                #
+                # `notification_key` is PulseSoc's LOGICAL name for this alert. It
+                # is NOT the identifier iOS assigns to the delivered request, and
+                # it cannot be used to dismiss anything — only
+                # `getPresentedNotificationsAsync()` knows that, and it is
+                # assigned by the OS after we are out of the picture. The key is
+                # here for correlation and de-duplication, and the client must
+                # keep treating the OS identifier as the only dismissal handle.
+                #
+                # `recipient_user_id` exists so a device that has switched
+                # accounts can tell whose notification it is looking at. Without
+                # it, "is this mine?" is unanswerable and the only safe answer is
+                # "leave it alone", which is how read alerts pile up.
+                #
+                # Both snake_case and camelCase are emitted because the payload is
+                # read by a Python web client and a TypeScript native client that
+                # disagree about casing, and every other field here already does.
                 push_metadata = {
+                    "schema_version": MESSAGE_PUSH_SCHEMA_VERSION,
+                    "schemaVersion": MESSAGE_PUSH_SCHEMA_VERSION,
+                    "notification_type": "message",
+                    "notificationType": "message",
+                    "recipient_user_id": int(recipient_id),
+                    "recipientUserId": int(recipient_id),
+                    "sent_at": str(message.get("created_at") or ""),
+                    "sentAt": str(message.get("created_at") or ""),
+                    "notification_key": f"message:{int(conversation_id)}:{message_id}",
+                    "notificationKey": f"message:{int(conversation_id)}:{message_id}",
                     "conversation_id": int(conversation_id),
                     "conversationId": int(conversation_id),
                     "message_id": message_id,
@@ -3312,54 +3355,89 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
             "UPDATE comm_v2_participants SET last_read_message_id=?, last_read_at=?, unread_count=0, last_seen_at=?, updated_at=? WHERE conversation_id=? AND user_id=?",
             (max_id, now, now, now, conversation_id, int(user_id)),
         )
-        if _read_receipts_allowed(cur, user_id, conversation_id):
-            # ORDER BY is load-bearing, not cosmetic: the INSERT takes a row lock
-            # per receipt, and two concurrent requests from the same user target
-            # the identical (message_id, user_id) keys. Without a fixed order
-            # Postgres is free to hand back the same set in two different orders
-            # and the two transactions deadlock on the unique index.
-            #
-            # Both statements are also bounded to rows that still need writing.
-            # The per-row loop this replaced re-stamped every message from
-            # everyone else, from id 1, on every read event -- two statements per
-            # message, so a 10k-message conversation held ~20k row locks for the
-            # length of the transaction. Ordering alone stops a cycle forming;
-            # holding almost no locks is what keeps the window short.
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO comm_v2_read_receipts
-                (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
-                SELECT m.id, ?, ?, ?, ?, ?, ?, ?
-                FROM comm_v2_messages m
-                WHERE m.conversation_id=? AND m.id<=? AND m.sender_user_id!=? AND COALESCE(m.deleted_at,'')=''
-                  AND NOT EXISTS (
-                      SELECT 1 FROM comm_v2_read_receipts r
-                      WHERE r.message_id=m.id AND r.user_id=?
-                  )
-                ORDER BY m.id ASC
-                """,
-                (conversation_id, int(user_id), now, now, now, now, now, conversation_id, max_id, int(user_id), int(user_id)),
-            )
-            # Anti-joining on the receipt row, rather than bounding the scan by
-            # comm_v2_participants.last_read_message_id, is deliberate. A
-            # watermark skips rows permanently: _read_receipts_allowed gates only
-            # this block and not the watermark update above, and ids come from a
-            # sequence that can commit out of order, so a message can become
-            # visible below a watermark that has already passed it. A missing
-            # receipt row is self-healing; a passed watermark is not.
-            #
-            # read_at therefore records the first read rather than the most
-            # recent. Every consumer of these columns tests them for emptiness
-            # and none reads the timestamp back, so that is not observable --
-            # and refreshing them would put the O(N) write back.
-            cur.execute(
-                """
-                UPDATE comm_v2_read_receipts
-                SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?), seen_at=?, read_at=?, updated_at=?
-                WHERE user_id=? AND conversation_id=? AND message_id<=? AND COALESCE(read_at,'')=''
-                """,
-                (now, now, now, now, int(user_id), conversation_id, max_id),
-            )
+        # The privacy setting governs what the SENDER is shown, not what the
+        # server may know about its own reader. Those two were one branch, so a
+        # member who switched read receipts off produced no read record at all
+        # and "has this user read message N" became permanently unanswerable for
+        # them. That is precisely the question notification reconciliation has to
+        # answer before it removes a delivered alert, and the watermark cannot
+        # answer it (see the note below on out-of-order ids).
+        #
+        # So the branch is split by column. `seen_at` is the sender-visible one --
+        # `_message_payload` and `_message_payloads` render the "Seen" tick from
+        # it and from nothing else -- and stays gated exactly as before.
+        # `read_at` is reader-private: no query in this codebase returns it to
+        # anyone but the user it belongs to, and it is now always written.
+        # Nothing a sender can observe changes.
+        receipts_allowed = _read_receipts_allowed(cur, user_id, conversation_id)
+        seen_stamp = now if receipts_allowed else None
+        # Which rows still need a stamp. With receipts on that includes rows read
+        # while they were off -- those have read_at and no seen_at, and dropping
+        # them here would mean turning receipts back on never produced a "Seen"
+        # tick for anything already read.
+        needs_stamp = (
+            "(COALESCE(read_at,'')='' OR COALESCE(seen_at,'')='')"
+            if receipts_allowed
+            else "COALESCE(read_at,'')=''"
+        )
+        # ORDER BY is load-bearing, not cosmetic: the INSERT takes a row lock
+        # per receipt, and two concurrent requests from the same user target
+        # the identical (message_id, user_id) keys. Without a fixed order
+        # Postgres is free to hand back the same set in two different orders
+        # and the two transactions deadlock on the unique index.
+        #
+        # Both statements are also bounded to rows that still need writing.
+        # The per-row loop this replaced re-stamped every message from
+        # everyone else, from id 1, on every read event -- two statements per
+        # message, so a 10k-message conversation held ~20k row locks for the
+        # length of the transaction. Ordering alone stops a cycle forming;
+        # holding almost no locks is what keeps the window short.
+        cur.execute(
+            """
+            INSERT OR IGNORE INTO comm_v2_read_receipts
+            (message_id, conversation_id, user_id, delivered_at, seen_at, read_at, created_at, updated_at)
+            SELECT m.id, ?, ?, ?, ?, ?, ?, ?
+            FROM comm_v2_messages m
+            WHERE m.conversation_id=? AND m.id<=? AND m.sender_user_id!=? AND COALESCE(m.deleted_at,'')=''
+              AND NOT EXISTS (
+                  SELECT 1 FROM comm_v2_read_receipts r
+                  WHERE r.message_id=m.id AND r.user_id=?
+              )
+            ORDER BY m.id ASC
+            """,
+            (conversation_id, int(user_id), now, seen_stamp, now, now, now, conversation_id, max_id, int(user_id), int(user_id)),
+        )
+        # Anti-joining on the receipt row, rather than bounding the scan by
+        # comm_v2_participants.last_read_message_id, is deliberate. A
+        # watermark skips rows permanently: ids come from a sequence that can
+        # commit out of order, so a message can become visible below a watermark
+        # that has already passed it. A missing receipt row is self-healing; a
+        # passed watermark is not.
+        #
+        # That same property is why `read_at` -- and not
+        # `last_read_message_id` -- is the authority notification reconciliation
+        # asks. Dismissing every alert with `message_id <= last_read_message_id`
+        # would silently erase the notification for a message that is genuinely
+        # unread, and the user would never learn it had arrived.
+        #
+        # read_at records the first read rather than the most recent. Every
+        # consumer of these columns tests them for emptiness and none reads the
+        # timestamp back, so that is not observable -- and refreshing them would
+        # put the O(N) write back. Each column is written once, hence the
+        # COALESCE/NULLIF pattern rather than a bare assignment: with receipts
+        # off `seen_stamp` is NULL, and a bare `seen_at=?` would retract a
+        # "Seen" tick the sender had already been shown.
+        cur.execute(
+            f"""
+            UPDATE comm_v2_read_receipts
+            SET delivered_at=COALESCE(NULLIF(delivered_at,''), ?),
+                seen_at=COALESCE(NULLIF(seen_at,''), ?),
+                read_at=COALESCE(NULLIF(read_at,''), ?),
+                updated_at=?
+            WHERE user_id=? AND conversation_id=? AND message_id<=? AND {needs_stamp}
+            """,
+            (now, seen_stamp, now, now, int(user_id), conversation_id, max_id),
+        )
         if commit:
             conn.commit()
             if max_id:
@@ -3399,6 +3477,149 @@ def mark_read(user_id: int, conversation_ref: int | str, existing_conn=None, com
     finally:
         if own_conn:
             conn.close()
+
+
+#: Largest batch `message_notification_read_state` will answer in one call.
+#: iOS keeps at most 64 delivered notifications per app, and Android's limit is
+#: lower still, so a device asking about more than this is not a device that got
+#: there honestly. Requests above the cap are truncated rather than rejected --
+#: the caller is a background reconciler and a 400 would just leave the alerts up.
+MESSAGE_READ_STATE_BATCH_LIMIT = 200
+
+
+def message_notification_read_state(user_id: int, message_ids: list | tuple | None) -> dict:
+    """Answer, per message id, whether the signed-in user has already read it.
+
+    This exists for one caller: the device reconciler that decides which
+    delivered OS notifications are stale. That makes the failure modes
+    asymmetric and worth stating, because they drove every choice below.
+
+    Saying "read" about an unread message destroys information the user can
+    never recover -- the alert disappears and nothing ever tells them the
+    message arrived. Saying "unread" about a read one leaves a notification up
+    for a few more minutes. So every branch that cannot be decided resolves to
+    UNKNOWN, and the client's contract is that unknown means keep.
+
+    Why `read_at` and not `comm_v2_participants.last_read_message_id`: the
+    watermark is not a sound read test. Ids come from a sequence that can commit
+    out of order, so a message can become visible below a watermark that has
+    already passed it -- see the note in `mark_read`, where the same reasoning
+    made the receipt writer an anti-join. A watermark comparison here would
+    delete exactly the notification for that message.
+
+    Buckets:
+      read      -- a receipt row for this user carries a read_at, or the user
+                   sent the message themselves (you do not need telling about
+                   your own words).
+      unread    -- the message is live, visible to this user, and unread.
+      obsolete  -- the message was deleted, was hidden for this user, or lives
+                   in a conversation this user is no longer an active member
+                   of. Nothing is left to read, so the alert is stale.
+      unknown   -- everything else, including ids with no row at all. A push
+                   can outrun its own message row across a read replica, and an
+                   id that has simply not arrived yet must not be read as an id
+                   that is gone.
+
+    Returns no titles, bodies, sender names or conversation names. The caller
+    already knows the ids; it does not need, and must not be given, a second
+    copy of the content.
+    """
+    disabled = _disabled("message_notification_read_state")
+    if disabled:
+        return disabled
+    requested: list[int] = []
+    seen_ids: set[int] = set()
+    for raw in list(message_ids or [])[:MESSAGE_READ_STATE_BATCH_LIMIT]:
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in seen_ids:
+            seen_ids.add(value)
+            requested.append(value)
+    if not requested:
+        return _ok({"read": [], "unread": [], "obsolete": [], "unknown": [], "schema_version": MESSAGE_PUSH_SCHEMA_VERSION})
+    conn, cur = _open_db()
+    try:
+        placeholders = ",".join("?" for _ in requested)
+        # Placeholders are generated from the id count; the ids themselves are
+        # bound. The participant join is LEFT rather than INNER so that a
+        # message in a conversation the user has left still resolves -- to
+        # `obsolete`, which is the whole point. An INNER join would drop it into
+        # `unknown` and the alert would survive a conversation the user deleted.
+        cur.execute(
+            f"""
+            SELECT m.id AS message_id,
+                   m.conversation_id AS conversation_id,
+                   m.sender_user_id AS sender_user_id,
+                   COALESCE(m.deleted_at,'') AS message_deleted_at,
+                   COALESCE(c.deleted_at,'') AS conversation_deleted_at,
+                   COALESCE(p.membership_state,'') AS membership_state,
+                   COALESCE(p.left_at,'') AS left_at,
+                   COALESCE(r.read_at,'') AS read_at,
+                   COALESCE(d.id,0) AS hidden_for_user
+            FROM comm_v2_messages m
+            LEFT JOIN comm_v2_conversations c ON c.id=m.conversation_id
+            LEFT JOIN comm_v2_participants p ON p.conversation_id=m.conversation_id AND p.user_id=?
+            LEFT JOIN comm_v2_read_receipts r ON r.message_id=m.id AND r.user_id=?
+            LEFT JOIN comm_v2_message_deletions d ON d.message_id=m.id AND d.user_id=?
+            WHERE m.id IN ({placeholders})
+            """,
+            (int(user_id), int(user_id), int(user_id), *requested),
+        )
+        rows = {int(_row(row).get("message_id") or 0): _row(row) for row in cur.fetchall()}
+    except Exception as exc:
+        # A failed lookup is the one case where the honest answer is "I do not
+        # know", for every id. Returning ok-with-empty-buckets would read to the
+        # client as "none of these are read", which is the same visible outcome
+        # and one the client can act on without guessing.
+        logging.info("COMM_V2_READ_STATE_LOOKUP_FAILED user_id=%s error=%s", int(user_id), exc.__class__.__name__)
+        return _ok({
+            "read": [],
+            "unread": [],
+            "obsolete": [],
+            "unknown": requested,
+            "schema_version": MESSAGE_PUSH_SCHEMA_VERSION,
+            "degraded": True,
+        })
+    finally:
+        conn.close()
+    read: list[int] = []
+    unread: list[int] = []
+    obsolete: list[int] = []
+    unknown: list[int] = []
+    for message_id in requested:
+        row = rows.get(message_id)
+        if not row:
+            unknown.append(message_id)
+            continue
+        if row.get("message_deleted_at") or row.get("conversation_deleted_at") or int(row.get("hidden_for_user") or 0):
+            obsolete.append(message_id)
+            continue
+        membership = str(row.get("membership_state") or "")
+        if membership != "active" or row.get("left_at"):
+            obsolete.append(message_id)
+            continue
+        if int(row.get("sender_user_id") or 0) == int(user_id) or row.get("read_at"):
+            read.append(message_id)
+            continue
+        unread.append(message_id)
+    logging.info(
+        "COMM_V2_NOTIFICATION_READ_STATE user_id=%s requested=%s read=%s unread=%s obsolete=%s unknown=%s",
+        int(user_id),
+        len(requested),
+        len(read),
+        len(unread),
+        len(obsolete),
+        len(unknown),
+    )
+    return _ok({
+        "read": read,
+        "unread": unread,
+        "obsolete": obsolete,
+        "unknown": unknown,
+        "schema_version": MESSAGE_PUSH_SCHEMA_VERSION,
+    })
 
 
 def toggle_pin(user_id: int, conversation_ref: int | str) -> dict:

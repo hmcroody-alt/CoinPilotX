@@ -1,6 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { createNavigationContainerRef } from "@react-navigation/native";
 import { profileNavigationParams, profileTargetFromUrl } from "../api/profileTarget";
+import { reconcileMessageNotifications } from "../notifications/messageNotificationReconciler";
 import { dashboardModuleParamsForRoute } from "./dashboardRouting";
 import { RootStackParamList } from "./types";
 
@@ -82,6 +83,18 @@ export function setupNotificationResponseRouting(options: NotificationResponseRo
     if (responseKey === lastNotificationResponseKey && now - lastNotificationResponseAt < 5000) return;
     lastNotificationResponseKey = responseKey;
     lastNotificationResponseAt = now;
+    // Tapping an alert is the OS removing that one notification and nothing
+    // else. The tap usually opens a conversation, which marks it read, which
+    // leaves the OTHER alerts for that same thread sitting in Notification
+    // Center — the pile the user was trying to clear by tapping. Reconciling
+    // here catches them.
+    //
+    // It runs before the routing decision, and regardless of it, because a tap
+    // that cannot be routed yet (navigation not mounted) is still a tap: the
+    // deferred target is opened moments later and the read state is the same
+    // either way. The reconciler is single-flight, so the pass the chat screen
+    // triggers a moment from now joins this one rather than racing it.
+    reconcileMessageNotifications({ trigger: "notification_tapped" }).catch(() => undefined);
     if (options.canRoute && !options.canRoute()) {
       options.onDeferred?.(target || "/pulse/notifications");
       return;

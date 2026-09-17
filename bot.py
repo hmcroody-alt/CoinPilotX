@@ -46365,6 +46365,26 @@ def pulse_send_conversation_message(cur, user, conversation_id, body, message_ty
     }, 200
 
 
+def _message_push_schema_version():
+    """The one source of truth for the message-notification payload version.
+
+    Imported lazily and per-call rather than at module scope because
+    `pulse_communications_v2` is loaded as an optional route pack (see
+    `_load_route_pack`), so a module-scope import here would make a broken
+    comm_v2 take the legacy chat sender down with it. If it cannot be read we
+    return 0, which the client contract reads as "unversioned" — the payload
+    still carries the recipient and the explicit type, and those are what the
+    reconciler actually decides on. Guessing a version number would be worse
+    than admitting we do not know one.
+    """
+    try:
+        from pulse_communications_v2 import service as comm_v2_service
+
+        return int(comm_v2_service.MESSAGE_PUSH_SCHEMA_VERSION)
+    except Exception:
+        return 0
+
+
 def pulse_finalize_message_delivery(result, sender, trace_id=""):
     """Create durable recipient delivery work only after the message transaction commits."""
     delivery = result.pop("_delivery", {}) if isinstance(result, dict) else {}
@@ -46379,6 +46399,7 @@ def pulse_finalize_message_delivery(result, sender, trace_id=""):
     conversation_type = str(delivery.get("conversation_type") or "direct")[:40]
     preview = clean_html(delivery.get("message_preview") or "New message")[:240]
     note_type = "voice_message" if message_type == "voice" else "message"
+    push_schema_version = _message_push_schema_version()
     title = actor_name or ("New voice message" if message_type == "voice" else "New PulseSoc message")
     deep_link = f"/pulse/messages/{conversation_id}"
     mobile_deep_link = f"pulse://pulse/messages-v2?conversation={conversation_id}"
@@ -46391,7 +46412,25 @@ def pulse_finalize_message_delivery(result, sender, trace_id=""):
             continue
         unread_count = max(0, int((recipient or {}).get("unread_count") or 0))
         suppress_push = bool((recipient or {}).get("suppress_push"))
+        # Same message-notification contract the comm_v2 sender emits (see
+        # `MESSAGE_PUSH_SCHEMA_VERSION` in pulse_communications_v2/service.py).
+        # This is the second live message-push emitter, and it already knew the
+        # recipient — it just never said so in the payload. A device holding a
+        # delivered alert from THIS path could therefore not answer "is this
+        # mine?" or "is this a message?" without reading the title, so it had to
+        # leave the alert alone. Declaring the contract here is what stops the
+        # two send paths from behaving differently in Notification Center.
         metadata = {
+            "schema_version": push_schema_version,
+            "schemaVersion": push_schema_version,
+            "notification_type": "message",
+            "notificationType": "message",
+            "recipient_user_id": recipient_id,
+            "recipientUserId": recipient_id,
+            "sent_at": event_timestamp,
+            "sentAt": event_timestamp,
+            "notification_key": f"message:{conversation_id}:{message_id}",
+            "notificationKey": f"message:{conversation_id}:{message_id}",
             "event_type": note_type,
             "entity_type": "conversation",
             "entity_id": str(message_id),

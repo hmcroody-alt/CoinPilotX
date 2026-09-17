@@ -14,6 +14,7 @@ import {
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
 import { drainOutbox, enqueueMutation, registerOutboxHandler } from "../core/mutations/outbox";
+import { reconcileMessageNotifications } from "../notifications/messageNotificationReconciler";
 import { PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
@@ -842,11 +843,32 @@ export async function reactToMessage(messageId: number, reactionType = "pulse") 
   };
 }
 
+/**
+ * A deleted or unsent message must not leave its alert behind.
+ *
+ * This is not a read transition, but it produces the same wrong state: an alert
+ * in Notification Center pointing at something the user can no longer open. The
+ * server classifies a deleted message as `obsolete` rather than `read`, and the
+ * reconciler treats those two differently on purpose -- `obsolete` also covers
+ * "you are not a participant in that conversation", which is what a payload
+ * belonging to a different account looks like. So the reconciler only acts on
+ * `obsolete` when the payload named this account as the recipient. That is why
+ * this call passes no ids: it asks the reconciler to re-examine what is actually
+ * on the shade, rather than asserting from here that a particular alert is gone.
+ *
+ * Runs after the delete, and only if it succeeded. Dismissing first would clear
+ * the alert for a message the server then refused to delete.
+ */
 export async function deleteMessage(messageId: number, scope: "self" | "everyone" = "self") {
-  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
-    method: "DELETE",
-    body: JSON.stringify({ delete_for: scope })
-  });
+  const result = await pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(
+    `${MESSENGER_API}/messages/${messageId}`,
+    {
+      method: "DELETE",
+      body: JSON.stringify({ delete_for: scope })
+    }
+  );
+  await reconcileMessageNotifications({ trigger: "message_removed" }).catch(() => undefined);
+  return result;
 }
 
 export async function reportMessage(messageId: number, reason = "Needs review") {
@@ -863,8 +885,61 @@ export async function pinConversation(conversationId: number, pinned = true) {
   });
 }
 
-export async function markConversationSeen(conversationId: number) {
+const MARK_READ_OUTBOX_TYPE = "messenger.markRead";
+
+registerOutboxHandler(MARK_READ_OUTBOX_TYPE, async (operation) => {
+  const { conversationId } = operation.payload as { conversationId: number };
+  await markConversationSeenOnServer(conversationId);
+});
+
+function markConversationSeenOnServer(conversationId: number) {
   return pulseApi<{ ok: boolean; last_read_message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/read`, { method: "POST" });
+}
+
+/**
+ * Tell the server this conversation has been read, and take its notifications
+ * out of Notification Center.
+ *
+ * ORDER MATTERS, AND IT IS THIS WAY ROUND ON PURPOSE
+ *
+ * The dismissal runs whether or not the server call succeeds, and it runs from
+ * the caller's own knowledge rather than from the response. Opening a thread is
+ * itself the proof: the messages were rendered on a screen the user was looking
+ * at. Gating the dismissal on the network would mean a user who reads their
+ * messages on the train still has to clear the alerts by hand, which is the
+ * complaint this whole change exists to answer.
+ *
+ * The server write is what the BADGE depends on — it is recomputed from the
+ * server's unread counts, never decremented locally — so when the call fails it
+ * is queued rather than dropped. A read that never reaches the server leaves a
+ * badge counting messages whose alerts are already gone, which is the same
+ * confusion in the opposite direction.
+ *
+ * Dismissal is never undone by a later failure. Nothing in this app puts a
+ * notification back.
+ */
+export async function markConversationSeen(conversationId: number) {
+  try {
+    const result = await markConversationSeenOnServer(conversationId);
+    await reconcileMessageNotifications({ trigger: "conversation_opened", conversationId }).catch(() => undefined);
+    return result;
+  } catch (error) {
+    // Local first: the alerts go now, offline, with no server answer needed.
+    await reconcileMessageNotifications({
+      trigger: "conversation_opened",
+      conversationId,
+      localOnly: true
+    }).catch(() => undefined);
+    // One queued read per conversation. The idempotency key collapses repeats,
+    // so a user reopening the same thread six times offline queues one write.
+    await enqueueMutation({
+      type: MARK_READ_OUTBOX_TYPE,
+      idempotencyKey: `markRead:${conversationId}`,
+      stream: `markRead:${conversationId}`,
+      payload: { conversationId }
+    }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function sendTyping(conversationId: number, typing: boolean) {
@@ -941,6 +1016,20 @@ export async function archiveConversation(conversationId: number) {
   });
 }
 
+/**
+ * The inverse transition, and the one place in this file that deliberately does
+ * NOT reconcile.
+ *
+ * Marking a thread unread is not a read event, so there is nothing to dismiss.
+ * It is equally not an instruction to put the alerts back: a delivered
+ * notification that has been removed from Notification Center cannot be
+ * restored, and re-posting a local copy would fabricate an alert the server
+ * never sent, with a fresh timestamp, out of order with everything around it.
+ * The unread state is carried by the badge and by the thread list instead --
+ * `refreshUnreadCounts` is authoritative and will show the count going back up.
+ *
+ * Left un-bound on purpose. Do not "complete the set" by adding a trigger here.
+ */
 export async function markConversationUnread(conversationId: number) {
   return pulseApi<{ ok?: boolean; unread_count?: number; message?: string }>(`${MESSENGER_API}/conversations/${conversationId}/unread`, {
     method: "POST",

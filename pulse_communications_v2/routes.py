@@ -1199,6 +1199,35 @@ def read_state(conversation_ref):
     return _timed_json("read_receipt", lambda: service.mark_read(user["user_id"], conversation_ref))
 
 
+@comm_v2_blueprint.post(f"{API_PREFIX}/notifications/read-state")
+@auth_required
+def message_notification_read_state():
+    """Which of these message ids has the signed-in user already read?
+
+    The device reconciler asks this before removing delivered OS notifications
+    that are no longer worth showing. It is a read-state lookup, not a
+    notification registry: the server has no idea what iOS chose to call each
+    delivered request, and cannot dismiss anything itself.
+
+    Body: {"message_ids": [int, ...]}. Ids the caller owns notifications for;
+    anything else resolves to `unknown`, which the client treats as keep.
+    Response buckets are documented on `service.message_notification_read_state`.
+    """
+    user, denied = _require_user()
+    if denied:
+        return denied
+    payload = request.get_json(silent=True) or {}
+    message_ids = payload.get("message_ids")
+    if message_ids is None:
+        message_ids = payload.get("messageIds")
+    if not isinstance(message_ids, (list, tuple)):
+        message_ids = []
+    return _timed_json(
+        "notification_read_state",
+        lambda: service.message_notification_read_state(user["user_id"], list(message_ids)),
+    )
+
+
 @comm_v2_blueprint.post(f"{API_PREFIX}/conversations/<path:conversation_ref>/pin")
 def pin_conversation(conversation_ref):
     user, denied = _require_user()

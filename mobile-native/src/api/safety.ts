@@ -1,4 +1,5 @@
 import { readJsonCache, writeJsonCache } from "../core/cache";
+import { reconcileMessageNotifications } from "../notifications/messageNotificationReconciler";
 import { pulseApi } from "./pulseApi";
 import { blockPulseUser, listSupportTickets, reportPulseTarget, SupportTicket } from "./support";
 
@@ -108,6 +109,22 @@ export async function createSafetyBlock(input: { blockedUserId?: string; publicP
     traceId: response.trace_id,
     serverAuthoritative: true
   });
+  /**
+   * Blocking someone should not leave their alerts sitting on the lock screen.
+   *
+   * This is the only block path in the app, and it is deliberately generic -- it
+   * blocks by user id OR by public player id, from the Safety Hub rather than
+   * from a thread. So there is no conversation to name here, and this asks the
+   * reconciler to re-examine the shade rather than telling it what to remove.
+   * The server reports a blocked sender's messages as `obsolete`, and the
+   * reconciler only acts on `obsolete` where the payload proved this account was
+   * the recipient, so a block cannot be turned into a lever for clearing
+   * somebody else's notifications.
+   *
+   * Failure is swallowed on purpose: the block itself has already succeeded and
+   * been recorded, and the foreground pass will catch the shade next time.
+   */
+  await reconcileMessageNotifications({ trigger: "sender_blocked" }).catch(() => undefined);
   return { response, record };
 }
 

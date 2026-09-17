@@ -511,43 +511,115 @@ class ReadReceiptWriteVolumeTest(unittest.TestCase):
             "a message that commits out of sequence order must not be skipped forever",
         )
 
-    def test_read_receipts_disabled_writes_nothing(self):
-        conversation_id = self._conversation()
-        self._message(conversation_id)
+    def _disable_receipts(self):
         self.raw.execute(
             "INSERT INTO comm_v2_user_settings (user_id, read_receipts_enabled, updated_at) VALUES (?, 0, ?)",
             (READER, NOW),
         )
         self.conn.commit()
+
+    def test_read_receipts_disabled_records_the_read_but_publishes_nothing(self):
+        """The opt-out is a publishing setting, not a recording one.
+
+        This used to assert that receipts-off wrote no receipt row at all.
+        That conflated two different things: what the SENDER is shown, and what
+        the server knows about its own reader. `seen_at` is the only column any
+        sender-visible payload renders -- `_message_payload` builds the 'Seen'
+        tick from it and nothing else -- so `seen_at` is what the opt-out has
+        to suppress. `read_at` has no cross-user consumer anywhere, and it is
+        the only sound per-message answer to 'has this user read this message?',
+        which is what notification reconciliation needs before it may dismiss a
+        read message's alert. Withholding it punished exactly the people who
+        opted out, by leaving their Notification Center full of stale alerts
+        naming who had messaged them.
+        """
+        conversation_id = self._conversation()
+        message_id = self._message(conversation_id)
+        self._disable_receipts()
         self._mark_read(conversation_id)
-        self.assertEqual(self._receipts(conversation_id), [])
-        self.assertEqual(len(self.cur.receipt_writes()), 0)
+
+        receipts = self._receipts(conversation_id)
+        self.assertEqual([row["message_id"] for row in receipts], [message_id])
+        self.assertTrue(receipts[0]["read_at"], "the reader-private read stamp must be recorded")
+        self.assertTrue(receipts[0]["delivered_at"])
+        self.assertFalse(
+            receipts[0]["seen_at"],
+            "seen_at is the sender-visible column; an opt-out must leave it empty",
+        )
+
+    def test_the_sender_is_shown_nothing_when_receipts_are_disabled(self):
+        """The column assertion above only means something if the payload agrees."""
+        conversation_id = self._conversation()
+        message_id = self._message(conversation_id)
+        self._disable_receipts()
+        self._mark_read(conversation_id)
+
+        # `ensure_schema` owns the comm_v2_* tables only; the payload builder
+        # joins the app-wide `users` table, so the fixture has to supply it.
+        self.raw.execute(
+            "CREATE TABLE IF NOT EXISTS users "
+            "(user_id INTEGER PRIMARY KEY, username TEXT, display_name TEXT, avatar_url TEXT)"
+        )
+        self.raw.execute(
+            "INSERT OR IGNORE INTO users (user_id, username, display_name, avatar_url) VALUES (?, ?, ?, '')",
+            (AUTHOR, "author", "Author"),
+        )
+        self.conn.commit()
+
+        self.raw.execute("SELECT * FROM comm_v2_messages WHERE id=?", (message_id,))
+        row = dict(self.raw.fetchone())
+        payload = service._message_payload(self.raw, row, AUTHOR)
+        self.assertNotEqual(
+            payload.get("delivery_status"),
+            "seen",
+            "recording read_at must not leak a Seen tick to the sender",
+        )
+
+    def test_recording_the_read_still_costs_a_constant_two_statements(self):
+        """Ungating `read_at` must not reintroduce the per-row loop."""
+        conversation_id = self._conversation()
+        for _ in range(200):
+            self._message(conversation_id)
+        self._disable_receipts()
+        self._mark_read(conversation_id)
+        self.assertEqual(len(self.cur.receipt_writes()), 2)
 
     def test_re_enabling_read_receipts_backfills_the_gap(self):
         """Documented, deliberate: the opt-out is not retroactive protection.
 
-        `_read_receipts_allowed` gates only the receipt writes, not the
-        `comm_v2_participants` watermark update, so a user who reads with
-        receipts off still advances their watermark. On re-enabling, the
-        anti-join sees the missing rows and backfills them -- exactly what the
-        per-row loop did. That is preserved here rather than quietly changed:
-        suppressing the backfill is a product decision about whether an opt-out
-        applies retroactively, and it does not belong in a performance fix.
+        With the gate split by column, rows from the quiet period already exist,
+        carrying `read_at` and an empty `seen_at`. Re-enabling therefore has to
+        stamp `seen_at` onto those existing rows -- the anti-join INSERT skips
+        them, so only the UPDATE can reach them. Without that, a user who
+        switched receipts off and back on would leave the sender staring at
+        'Delivered' forever for every message read in between.
+
+        Suppressing the backfill entirely is a product decision about whether an
+        opt-out applies retroactively; it did not belong in the performance fix
+        that wrote this file and it does not belong here either, so the
+        pre-existing behaviour is preserved.
         """
         conversation_id = self._conversation()
         message_id = self._message(conversation_id)
-        self.raw.execute(
-            "INSERT INTO comm_v2_user_settings (user_id, read_receipts_enabled, updated_at) VALUES (?, 0, ?)",
-            (READER, NOW),
-        )
-        self.conn.commit()
+        self._disable_receipts()
         self._mark_read(conversation_id)
-        self.assertEqual(self._receipts(conversation_id), [])
+
+        quiet = self._receipts(conversation_id)[0]
+        self.assertFalse(quiet["seen_at"], "fixture did not establish the quiet period")
+        first_read_at = quiet["read_at"]
 
         self.raw.execute("UPDATE comm_v2_user_settings SET read_receipts_enabled=1 WHERE user_id=?", (READER,))
         self.conn.commit()
         self._mark_read(conversation_id)
-        self.assertEqual([row["message_id"] for row in self._receipts(conversation_id)], [message_id])
+
+        backfilled = self._receipts(conversation_id)
+        self.assertEqual([row["message_id"] for row in backfilled], [message_id])
+        self.assertTrue(backfilled[0]["seen_at"], "re-enabling must backfill the sender-visible stamp")
+        self.assertEqual(
+            backfilled[0]["read_at"],
+            first_read_at,
+            "read_at records the first read; the backfill must not move it",
+        )
 
 
 if __name__ == "__main__":
