@@ -116518,85 +116518,28 @@ def _init_db_impl():
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_reel_audio_reel ON pulse_reel_audio(reel_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_sound_saves_user ON pulse_reel_sound_saves(user_id, created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_pulse_saved_sounds_user ON pulse_saved_sounds(user_id, created_at)")
-    now_seed = datetime.utcnow().isoformat(timespec="seconds")
-    default_sounds = [
-        ("PulseSoc Neon Rise", "CoinPlotXAI", 84, 118, "trending", "energetic", "electronic", ["reels", "video", "neon"]),
-        ("Trust Signal", "PulseSoc Studio", 72, 96, "educational", "focused", "ambient", ["status", "education", "trust"]),
-        ("Creator Glow Loop", "CoinPlotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
-    ]
-    for title, artist, trend, bpm, source, mood, genre, tags in default_sounds:
-        # `INSERT OR IGNORE` is not a de-duplicator on its own: it -- and the
-        # `ON CONFLICT DO NOTHING` that `_translate_sql` turns it into for
-        # Postgres -- suppresses a *constraint* violation, and there is no unique
-        # index on (title, artist). So every `init_db()` inserted three more rows.
-        # `init_db()` runs once per process, not once per deploy, so in production
-        # this had grown to 21,603 copies of these three titles: 99.3% of the
-        # music catalogue, every one of them approved and active, and therefore
-        # search results and trending sounds for real users.
-        #
-        # An explicit existence check rather than a unique index, because two
-        # genuinely different uploads may legitimately share a title and artist;
-        # the constraint that would fix this seeding bug would reject real music.
-        cur.execute(
-            "SELECT id FROM pulse_audio_tracks WHERE title=? AND artist=? "
-            "AND COALESCE(source_provider,'')='original_pulse_sound' LIMIT 1",
-            (title, artist),
-        )
-        seed_exists = bool(cur.fetchone())
-        if not seed_exists:
-            cur.execute(
-                """
-                INSERT OR IGNORE INTO pulse_audio_tracks
-                (title, artist, duration_seconds, waveform_json, bpm, usage_count, trend_score, source_type, safety_status,
-                 source_provider, license_type, commercial_use_allowed, remix_edit_allowed, attribution_required, proof_url,
-                 approved_by_admin, active, mood, genre, tags_json, created_at, updated_at)
-                VALUES (?, ?, 30, ?, ?, 0, ?, ?, 'approved',
-                        'original_pulse_sound', 'PulseSoc original work', 1, 1, 0, ?, 1, 1, ?, ?, ?, ?, ?)
-                """,
-                (
-                    title,
-                    artist,
-                    json.dumps([0.18, 0.45, 0.62, 0.38, 0.72, 0.54, 0.3, 0.66]),
-                    bpm,
-                    trend,
-                    source,
-                    f"internal:{title.lower().replace(' ', '-')}",
-                    mood,
-                    genre,
-                    json.dumps(tags),
-                    now_seed,
-                    now_seed,
-                ),
-            )
-        # The repair UPDATE and the trending-sounds link still run either way:
-        # they are genuinely idempotent (COALESCE/NULLIF backfills, and a UNIQUE
-        # audio_track_id) and they are what keeps an existing seed row correct.
-        cur.execute(
-            """
-            UPDATE pulse_audio_tracks
-            SET source_provider=COALESCE(NULLIF(source_provider,''),'original_pulse_sound'),
-                license_type=COALESCE(NULLIF(license_type,''),'PulseSoc original work'),
-                commercial_use_allowed=1,
-                remix_edit_allowed=1,
-                attribution_required=0,
-                proof_url=COALESCE(NULLIF(proof_url,''),?),
-                approved_by_admin=1,
-                active=1,
-                mood=COALESCE(NULLIF(mood,''),?),
-                genre=COALESCE(NULLIF(genre,''),?),
-                tags_json=COALESCE(NULLIF(tags_json,''),?),
-                updated_at=?
-            WHERE title=? AND artist=?
-            """,
-            (f"internal:{title.lower().replace(' ', '-')}", mood, genre, json.dumps(tags), now_seed, title, artist),
-        )
-        cur.execute("SELECT id FROM pulse_audio_tracks WHERE title=? AND artist=? LIMIT 1", (title, artist))
-        seed_track_id = safe_int((cur.fetchone() or [0])[0], 0)
-        if seed_track_id:
-            cur.execute(
-                "INSERT OR IGNORE INTO pulse_trending_sounds (audio_track_id, trend_score, usage_count, category, updated_at) VALUES (?, ?, 0, ?, ?)",
-                (seed_track_id, trend, source.title(), now_seed),
-            )
+    # There used to be a three-track seed here -- "PulseSoc Neon Rise", "Trust
+    # Signal", "Creator Glow Loop" -- inserted on every `init_db()`. It is gone,
+    # and deliberately not replaced with a fixed idempotent version, for two
+    # reasons that only became visible once production was measured:
+    #
+    # 1. The rows were never playable. The INSERT listed no `audio_url` column at
+    #    all, so all 21,612 of them carried a NULL audio_url while all 148 real
+    #    user uploads carried one. They sat `approved_by_admin=1, active=1` in
+    #    search, in trending sounds and in the Reels audio picker -- a catalogue
+    #    that was 99.3% entries which play nothing when tapped. A seed whose
+    #    fixed form is "exactly three unplayable rows" is not worth keeping.
+    #
+    # 2. The repair UPDATE beside it matched `WHERE title=? AND artist=?` with no
+    #    ownership filter, so any user upload that happened to share a default
+    #    sound's title and artist was force-set `approved_by_admin=1, active=1`
+    #    on every boot -- a moderation bypass reachable by naming a file. No real
+    #    upload currently matches, so it was latent rather than exercised, but it
+    #    is a bypass that the seed's existence is what creates.
+    #
+    # Real music reaches the catalogue through `api_pulse_music_upload`, which
+    # goes through moderation. An empty music library on a fresh install is the
+    # honest state; it is not an error condition and no read path treats it as one.
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_comments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
