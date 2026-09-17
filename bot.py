@@ -87441,17 +87441,13 @@ def pulse_video_hydrate_attached_music(cur, videos):
                     SELECT pcm.content_type, pcm.content_id, pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
                            pcm.license_snapshot_json, pcm.created_at, pcm.audio_start_time, pcm.audio_volume, pcm.original_audio_muted,
                            at.audio_url AS current_audio_url,
-                           at.duration_seconds AS current_duration_seconds
+                           at.duration_seconds AS current_duration_seconds,
+                           at.lifecycle_state, at.removed_at, at.safety_status, at.active, at.approved_by_admin
                     FROM pulse_content_music pcm
                     JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
                     WHERE pcm.content_type=? AND pcm.content_id=?
-                      AND COALESCE(at.safety_status,'approved')='approved'
-                      AND COALESCE(at.active,1)=1
-                      AND COALESCE(at.approved_by_admin,0)=1
                       AND COALESCE(at.commercial_use_allowed,0)=1
                       AND COALESCE(at.remix_edit_allowed,0)=1
-                      AND COALESCE(at.removed_at,'')=''
-                      AND COALESCE(at.audio_url,'')!=''
                     ORDER BY pcm.created_at DESC
                     LIMIT 1
                     """,
@@ -87467,8 +87463,19 @@ def pulse_video_hydrate_attached_music(cur, videos):
                 snapshot = json.loads(music_row.get("license_snapshot_json") or "{}")
             except Exception:
                 snapshot = {}
-            audio_url = pulse_media_url(music_row.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
-            if audio_url:
+            # Mirrors the batch hydration in `services/pulse_feed_engine.py`: the
+            # takedown state no longer removes the row from the JOIN, because a
+            # post that comes back with no `music` reads to the client as "no
+            # attached track", and the client's audio policy answers that by
+            # playing the original camera audio. Silencing a song must not unmute
+            # the creator's video. The licensing predicates still drop the row --
+            # a different question, decided elsewhere, deliberately untouched.
+            music_unavailable = not music_authority.is_servable(music_row) or not (
+                safe_int(music_row.get("active") if music_row.get("active") is not None else 1, 1)
+                and safe_int(music_row.get("approved_by_admin"), 0)
+            )
+            audio_url = "" if music_unavailable else pulse_media_url(music_row.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
+            if audio_url or music_unavailable:
                 def music_text(value, fallback, limit):
                     return str(value or fallback or "").replace("\x00", "").strip()[:limit]
                 duration = int(float(music_row.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0)
@@ -87477,11 +87484,13 @@ def pulse_video_hydrate_attached_music(cur, videos):
                 music = {
                     "audio_id": str(music_row.get("audio_track_id") or snapshot.get("track_id") or ""),
                     "track_id": str(music_row.get("audio_track_id") or snapshot.get("track_id") or ""),
-                    "title": music_text(music_row.get("title") or snapshot.get("title"), "Approved track", 180),
-                    "artist": music_text(music_row.get("artist") or snapshot.get("artist"), "PulseSoc Music", 180),
+                    "title": "" if music_unavailable else music_text(music_row.get("title") or snapshot.get("title"), "Approved track", 180),
+                    "artist": "" if music_unavailable else music_text(music_row.get("artist") or snapshot.get("artist"), "PulseSoc Music", 180),
                     "attached_audio_url": audio_url,
                     "audio_url": audio_url,
                     "preview_url": audio_url,
+                    "audio_unavailable": music_unavailable,
+                    "audio_unavailable_state": music_authority.normalize_state(music_row.get("lifecycle_state")) if music_unavailable else "",
                     "duration_seconds": duration,
                     "audio_duration": duration,
                     "audio_start_time": max(0.0, start_time),
@@ -87502,6 +87511,7 @@ def pulse_video_hydrate_attached_music(cur, videos):
                         "audio_start_time": music["audio_start_time"],
                         "audio_volume": volume,
                         "original_audio_muted": True,
+                        "audio_unavailable": music_unavailable,
                     }
                 )
         hydrated.append(item)
