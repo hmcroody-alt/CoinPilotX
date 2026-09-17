@@ -276,12 +276,26 @@ push that did not land must not roll it back.
 `mobile-native/ios/PulseSoc/PulseSoc.entitlements` contains exactly two keys:
 
 ```text
-aps-environment                        development
+aps-environment                        $(PULSESOC_APS_ENVIRONMENT)
 com.apple.developer.associated-domains applinks:pulsesoc.com
 ```
 
-`aps-environment` is a **hardcoded literal**. See [Unverified](#unverified) — this is
-a known open item, not a resolved one.
+`aps-environment` was a **hardcoded literal** (`development`, shared by Debug and
+Release) until `b3d3c4e2`. It now expands a build setting declared per configuration:
+`development` for Debug, `production` for Release.
+
+Reading this file does not tell you what a build actually received. Under
+`CODE_SIGN_STYLE = Automatic` — what `project.pbxproj` sets — Xcode rewrites
+`aps-environment` from the provisioning profile it selected, so the file is advisory
+there; under manual signing, which is how EAS builds, it is authoritative. The signed
+artefact is the only source that is always right:
+
+```bash
+codesign -d --entitlements :- <path>/PulseSoc.app
+```
+
+See [Unverified](#unverified): the `production` half has never been observed in a
+signed product.
 
 ---
 
@@ -379,11 +393,21 @@ These are open, and nothing in this document should be read as closing them.
    two-writers-reach-the-UPDATE-simultaneously half.
 2. **Call-creation rate limiting.** `/api/calls/start` has authentication but no
    observed per-user rate limit. Not implemented, not tested.
-3. **Environment-aware `aps-environment`.** The entitlement is the hardcoded literal
-   `development` (§7). The backend compensates per-token at send time (§4) but the
-   signing configuration itself is still single-environment.
-4. **Physical iPhone 16 Pro verification.** No lock-screen, terminated-app, Silent
+3. **The `production` entitlement in a signed artefact.** `b3d3c4e2` made
+   `aps-environment` configuration-derived (§7), and a development-signed Release
+   build was confirmed by `codesign` to carry `development`. The `production` half is
+   unproven and cannot be proven here: local automatic signing takes the value from
+   the provisioning profile, so it is only authoritative under the manual signing EAS
+   uses, which needs a distribution profile this machine does not have.
+4. **The dev/prod bundle split.** Both configurations still build `com.pulsesoc.app`.
+   `apns-topic` now derives per device from the recorded `app_bundle`, but
+   `mobile-native/src/api/calls.ts` never reports one, so every row is empty and every
+   device resolves to the deployment-wide topic. Registering
+   `com.pulsesoc.nativeapp.dev` as an explicit App ID with Push enabled needs Apple
+   Developer account access.
+5. **Physical iPhone 16 Pro verification.** No lock-screen, terminated-app, Silent
    Mode, Focus, or Bluetooth-routing verification has been performed on hardware. No
    simulator result substitutes for it.
-5. **Merge and production deployment.** `7d2f0fc8` exists on a local detached HEAD in
-   an isolated worktree. It has not been pushed, merged, or deployed.
+6. ~~**Merge and production deployment.**~~ Closed: `7d2f0fc8` is on `main` and
+   Railway reported `commitHash: b15f4a7a` after the docs commit, so production runs
+   the compare-and-set fix.
