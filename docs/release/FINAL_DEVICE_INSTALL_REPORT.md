@@ -2,6 +2,15 @@
 
 Both targets run a Release build of `7dfeb7ac`.
 
+> **Superseded, and re-done.** Both targets were rebuilt and reinstalled from
+> `cef0b900` as build **28**, so that the two handsets, TestFlight and production
+> all name one commit. The device now runs bundle UUID
+> `B5F66474-5CD1-4EA2-B5B1-3C196453D5D6` as PID 28535, and the simulator runs
+> PID 90884; both report `CFBundleVersion 28` and both still export 86
+> `PulseAppleTranslation` symbols. Everything below about *how* the targets were
+> built and verified still holds — only the commit and the build number moved.
+> See `FINAL_TESTFLIGHT_BUILD_REPORT.md`.
+
 ## P3r7or — iPhone 16 Pro (physical)
 
 | | |
