@@ -4745,5 +4745,44 @@
       "gainers": "Pi gwo monte",
       "losers": "Pi gwo bès"
     }
+  },
+  "translation": {
+    "eyebrow": "Tradiksyon",
+    "translate": "Tradui",
+    "translating": "N ap tradui…",
+    "translateNow": "Tradui kounye a",
+    "translateNowHint": "Tradui mesaj sa a an {{language}}.",
+    "viewOriginal": "Gade orijinal la",
+    "showOriginalHint": "Retounen nan mesaj orijinal la.",
+    "translatedFrom": "Tradui soti nan {{language}}",
+    "translatedLabel": "Tradui",
+    "always": "Toujou",
+    "never": "Jamè",
+    "alwaysTranslate": "Toujou tradui",
+    "alwaysTranslateHint": "Tradui lang sa a otomatikman lè PulseSoc detekte l.",
+    "neverTranslate": "Pa janm tradui",
+    "neverTranslateHint": "Kite lang sa a jan l ye a.",
+    "optionsTitle": "Opsyon lang pou mesaj la",
+    "downloadLanguage": "Telechaje lang lan",
+    "downloadExplainer": "PulseSoc sèvi ak tradiksyon prive Apple ki fèt sou aparèy la. Apple ka telechaje lang ki nesesè a sou iPhone sa a.",
+    "tryAgain": "Eseye ankò",
+    "failure": {
+      "unavailable": "Tradiksyon pa disponib",
+      "unsupportedLanguage": "Nou pa ka tradui lang sa a sou aparèy sa a.",
+      "downloadFailed": "Telechajman lang lan pa t fini.",
+      "offline": "Konekte sou entènèt la pou telechaje lang sa a.",
+      "preferenceNotSaved": "Nou pa t ka anrejistre preferans tradiksyon ou an."
+    },
+    "a11y": {
+      "controls": "Kontwòl tradiksyon. Lang sib: {{language}}.",
+      "translateTo": "Tradui an {{language}}",
+      "showOriginal": "Montre tèks orijinal la",
+      "options": "Opsyon tradiksyon. N ap montre tèks tradui a.",
+      "alwaysTo": "Toujou tradui an {{language}}",
+      "neverTo": "Pa janm tradui an {{language}}",
+      "closeOptions": "Fèmen opsyon tradiksyon yo",
+      "retry": "Eseye tradui ankò",
+      "download": "Telechaje lang {{language}} sou aparèy sa a"
+    }
   }
 }

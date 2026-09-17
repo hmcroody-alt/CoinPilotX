@@ -4778,5 +4778,44 @@
       "gainers": "Größte Gewinner",
       "losers": "Größte Verlierer"
     }
+  },
+  "translation": {
+    "eyebrow": "Übersetzung",
+    "translate": "Übersetzen",
+    "translating": "Wird übersetzt…",
+    "translateNow": "Jetzt übersetzen",
+    "translateNowHint": "Diese Nachricht auf {{language}} übersetzen.",
+    "viewOriginal": "Original anzeigen",
+    "showOriginalHint": "Zeigt wieder die ursprüngliche Nachricht an.",
+    "translatedFrom": "Übersetzt aus {{language}}",
+    "translatedLabel": "Übersetzt",
+    "always": "Immer",
+    "never": "Nie",
+    "alwaysTranslate": "Immer übersetzen",
+    "alwaysTranslateHint": "Übersetzt diese Sprache automatisch, sobald PulseSoc sie erkennt.",
+    "neverTranslate": "Nie übersetzen",
+    "neverTranslateHint": "Behält diese Sprache im Original bei.",
+    "optionsTitle": "Sprachoptionen für Nachrichten",
+    "downloadLanguage": "Sprache laden",
+    "downloadExplainer": "PulseSoc verwendet Apples private Übersetzung auf dem Gerät. Apple lädt die benötigte Sprache möglicherweise auf dieses iPhone.",
+    "tryAgain": "Erneut versuchen",
+    "failure": {
+      "unavailable": "Übersetzung nicht verfügbar",
+      "unsupportedLanguage": "Diese Sprache kann auf diesem Gerät nicht übersetzt werden.",
+      "downloadFailed": "Der Sprachdownload wurde nicht abgeschlossen.",
+      "offline": "Stelle eine Internetverbindung her, um diese Sprache zu laden.",
+      "preferenceNotSaved": "Deine Übersetzungseinstellung konnte nicht gespeichert werden."
+    },
+    "a11y": {
+      "controls": "Übersetzungssteuerung. Zielsprache: {{language}}.",
+      "translateTo": "Auf {{language}} übersetzen",
+      "showOriginal": "Originaltext anzeigen",
+      "options": "Übersetzungsoptionen. Übersetzter Text wird angezeigt.",
+      "alwaysTo": "Immer auf {{language}} übersetzen",
+      "neverTo": "Nie auf {{language}} übersetzen",
+      "closeOptions": "Übersetzungsoptionen schließen",
+      "retry": "Übersetzung erneut versuchen",
+      "download": "Sprache {{language}} auf dieses Gerät laden"
+    }
   }
 }

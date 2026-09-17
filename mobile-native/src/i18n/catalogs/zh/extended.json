@@ -4744,5 +4744,44 @@
       "gainers": "涨幅居前",
       "losers": "跌幅居前"
     }
+  },
+  "translation": {
+    "eyebrow": "翻译",
+    "translate": "翻译",
+    "translating": "正在翻译…",
+    "translateNow": "立即翻译",
+    "translateNowHint": "将这条消息翻译成{{language}}。",
+    "viewOriginal": "查看原文",
+    "showOriginalHint": "返回到原始消息。",
+    "translatedFrom": "由{{language}}翻译",
+    "translatedLabel": "已翻译",
+    "always": "始终",
+    "never": "从不",
+    "alwaysTranslate": "始终翻译",
+    "alwaysTranslateHint": "当 PulseSoc 检测到这种语言时自动翻译。",
+    "neverTranslate": "从不翻译",
+    "neverTranslateHint": "保持这种语言的原始形式。",
+    "optionsTitle": "消息语言选项",
+    "downloadLanguage": "下载语言",
+    "downloadExplainer": "PulseSoc 使用 Apple 的设备端私密翻译。Apple 可能会将所需语言下载到这部 iPhone 上。",
+    "tryAgain": "重试",
+    "failure": {
+      "unavailable": "无法翻译",
+      "unsupportedLanguage": "这台设备无法翻译这种语言。",
+      "downloadFailed": "语言下载未完成。",
+      "offline": "请连接到互联网以下载这种语言。",
+      "preferenceNotSaved": "无法保存你的翻译偏好设置。"
+    },
+    "a11y": {
+      "controls": "翻译控件。目标语言：{{language}}。",
+      "translateTo": "翻译成{{language}}",
+      "showOriginal": "显示原文",
+      "options": "翻译选项。正在显示翻译后的文本。",
+      "alwaysTo": "始终翻译成{{language}}",
+      "neverTo": "从不翻译成{{language}}",
+      "closeOptions": "关闭翻译选项",
+      "retry": "重试翻译",
+      "download": "将{{language}}语言下载到这台设备"
+    }
   }
 }

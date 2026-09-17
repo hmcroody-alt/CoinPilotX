@@ -4778,5 +4778,44 @@
       "gainers": "Top gainers",
       "losers": "Top losers"
     }
+  },
+  "translation": {
+    "eyebrow": "Translation",
+    "translate": "Translate",
+    "translating": "Translating…",
+    "translateNow": "Translate now",
+    "translateNowHint": "Translate this message to {{language}}.",
+    "viewOriginal": "View original",
+    "showOriginalHint": "Return this bubble to the original message.",
+    "translatedFrom": "Translated from {{language}}",
+    "translatedLabel": "Translated",
+    "always": "Always",
+    "never": "Never",
+    "alwaysTranslate": "Always translate",
+    "alwaysTranslateHint": "Automatically translate this language when PulseSoc can detect it.",
+    "neverTranslate": "Never translate",
+    "neverTranslateHint": "Keep this language in its original form.",
+    "optionsTitle": "Message language options",
+    "downloadLanguage": "Download language",
+    "downloadExplainer": "PulseSoc uses Apple's private on-device translation. Apple may download the required language to this iPhone.",
+    "tryAgain": "Try again",
+    "failure": {
+      "unavailable": "Translation unavailable",
+      "unsupportedLanguage": "This language can't be translated on this device.",
+      "downloadFailed": "The language download didn't finish.",
+      "offline": "Connect to the internet to download this language.",
+      "preferenceNotSaved": "Could not save your translation preference."
+    },
+    "a11y": {
+      "controls": "Translation controls. Target language {{language}}.",
+      "translateTo": "Translate to {{language}}",
+      "showOriginal": "Show original text",
+      "options": "Translation options. Showing translated text.",
+      "alwaysTo": "Always translate to {{language}}",
+      "neverTo": "Never translate to {{language}}",
+      "closeOptions": "Close translation options",
+      "retry": "Retry translation",
+      "download": "Download the {{language}} language to this device"
+    }
   }
 }

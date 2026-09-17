@@ -4744,5 +4744,44 @@
       "gainers": "상승률 상위",
       "losers": "하락률 상위"
     }
+  },
+  "translation": {
+    "eyebrow": "번역",
+    "translate": "번역",
+    "translating": "번역 중…",
+    "translateNow": "지금 번역",
+    "translateNowHint": "이 메시지를 {{language}}(으)로 번역합니다.",
+    "viewOriginal": "원문 보기",
+    "showOriginalHint": "원래 메시지로 돌아갑니다.",
+    "translatedFrom": "{{language}}에서 번역됨",
+    "translatedLabel": "번역됨",
+    "always": "항상",
+    "never": "안 함",
+    "alwaysTranslate": "항상 번역",
+    "alwaysTranslateHint": "PulseSoc이 이 언어를 감지하면 자동으로 번역합니다.",
+    "neverTranslate": "번역 안 함",
+    "neverTranslateHint": "이 언어는 원문 그대로 둡니다.",
+    "optionsTitle": "메시지 언어 옵션",
+    "downloadLanguage": "언어 다운로드",
+    "downloadExplainer": "PulseSoc은 Apple의 비공개 온디바이스 번역을 사용합니다. Apple이 필요한 언어를 이 iPhone에 다운로드할 수 있습니다.",
+    "tryAgain": "다시 시도",
+    "failure": {
+      "unavailable": "번역을 사용할 수 없음",
+      "unsupportedLanguage": "이 기기에서는 이 언어를 번역할 수 없습니다.",
+      "downloadFailed": "언어 다운로드가 완료되지 않았습니다.",
+      "offline": "이 언어를 다운로드하려면 인터넷에 연결하세요.",
+      "preferenceNotSaved": "번역 환경설정을 저장하지 못했습니다."
+    },
+    "a11y": {
+      "controls": "번역 컨트롤. 번역할 언어: {{language}}.",
+      "translateTo": "{{language}}(으)로 번역",
+      "showOriginal": "원문 텍스트 보기",
+      "options": "번역 옵션. 번역된 텍스트를 표시 중입니다.",
+      "alwaysTo": "항상 {{language}}(으)로 번역",
+      "neverTo": "{{language}}(으)로 번역 안 함",
+      "closeOptions": "번역 옵션 닫기",
+      "retry": "번역 다시 시도",
+      "download": "{{language}} 언어를 이 기기에 다운로드"
+    }
   }
 }
