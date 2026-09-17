@@ -3,15 +3,20 @@ import { pulseApi } from "../../api/pulseApi";
 import { getNotificationBadgeCounts } from "../../api/notifications";
 import { pendingMutations, outboxScope } from "../mutations/outbox";
 import { cancelMessageReconciliation, parseMessageNotification, reconcileMessageNotifications } from "../messageNotificationReconciliation";
+import { __resetUnreadCounts } from "../unreadCounts";
 jest.mock("expo-notifications", () => ({ getPresentedNotificationsAsync: jest.fn(), dismissNotificationAsync: jest.fn(), setBadgeCountAsync: jest.fn() }));
 jest.mock("../../api/pulseApi", () => ({ pulseApi: jest.fn() }));
-jest.mock("../../api/notifications", () => ({ getNotificationBadgeCounts: jest.fn() }));
-jest.mock("../unreadCounts", () => ({ setUnreadCounts: (c: { total_unread_count: number }) => ({ totalCount: c.total_unread_count }) }));
+// Only the fetch is mocked; the derivation helpers and the unread store are the
+// real ones. A stub returning `{ totalCount }` here used to stand in for the
+// store, which meant the badge assertions could not see what the icon actually
+// counts — the commerce omission below was invisible to this file.
+jest.mock("../../api/notifications", () => ({ ...jest.requireActual("../../api/notifications"), getNotificationBadgeCounts: jest.fn() }));
 jest.mock("../mutations/outbox", () => ({ pendingMutations: jest.fn(), outboxScope: jest.fn() }));
 const data = (messageId = 1, conversationId = 10) => ({ schemaVersion: 1, notificationType: "message", messageNamespace: "comm_v2", recipientUserId: 7, messageId, conversationId });
 const note = (key: string, payload: Record<string, unknown>) => ({ request: { identifier: key, content: { data: payload } } });
 beforeEach(() => {
   jest.clearAllMocks();
+  __resetUnreadCounts();
   cancelMessageReconciliation();
   (outboxScope as jest.Mock).mockReturnValue("u7");
   (pendingMutations as jest.Mock).mockResolvedValue([]);
@@ -72,10 +77,22 @@ it("preserves unknown legacy payloads and verifies identified legacy on server",
   (Notifications.getPresentedNotificationsAsync as jest.Mock).mockResolvedValue([note("legacy", { type: "message", message_id: 1, conversation_id: 10, notification_id: 9 }), note("unknown", { type: "message", message_id: 1, conversation_id: 10 })]);
   expect(await reconcileMessageNotifications()).toMatchObject({ dismissed: 1, preserved: 1 });
 });
+// Commerce absent — the positive control for the case below. An older server
+// omits the key entirely and the icon must read the social total, not NaN.
 it.each([0, 1, 99, 100, 250])("sets authoritative combined badge %i exactly", async count => {
   (getNotificationBadgeCounts as jest.Mock).mockResolvedValue({ total_unread_count: count });
   await reconcileMessageNotifications();
   expect(Notifications.setBadgeCountAsync).toHaveBeenCalledWith(count);
+});
+// The icon is the one badge with nothing beside it, so it is the one badge that
+// must carry commerce. `total_unread_count` is notifications + *social*
+// messages: a seller whose only unread is a business↔customer order message got
+// a blank icon and no reason to reopen the app. The [0, 4] row is the whole
+// defect — it read 0 when the icon was written from `totalCount`.
+it.each([[0, 4], [3, 0], [5, 6], [99, 250]])("adds commerce unreads to the icon badge (%i social + %i commerce)", async (total, commerce) => {
+  (getNotificationBadgeCounts as jest.Mock).mockResolvedValue({ total_unread_count: total, commerce_unread_count: commerce });
+  await reconcileMessageNotifications();
+  expect(Notifications.setBadgeCountAsync).toHaveBeenCalledWith(total + commerce);
 });
 it("bounds batches without truncating a large Notification Center", async () => {
   (Notifications.getPresentedNotificationsAsync as jest.Mock).mockResolvedValue(Array.from({ length: 205 }, (_, i) => note(`os-${i}`, data())));
