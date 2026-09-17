@@ -67,3 +67,11 @@ outputs/.mutate*-original
 # Draft commit messages written to disk because this checkout is shared between
 # sessions and a long `-m` is easier to stage from a file. Scratch, never source.
 .scratch_locks/
+
+# Graphite QA evidence: live signed-in captures (real names, DM contents, faces
+# including a minor, and another user's profile). This repository is PUBLIC, so
+# these must not be tracked. The final reports under docs/mobile/ cite the paths
+# and state that the images are deliberately local and reproducible on request.
+# Removing these lines re-opens a privacy leak, not a documentation gap.
+reports/graphite-chat/
+reports/graphite-profile/
