@@ -55678,23 +55678,48 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_g
         transfer_group=transfer_group, actor="stripe_webhook")
 
 
-def pulse_apply_marketplace_charge_refund(obj):
-    """Allocate Stripe's cumulative charge refund across its Marketplace rows.
+def pulse_marketplace_reversal_transaction_ids(obj):
+    """The seller transactions a refund or dispute event takes money back from.
 
-    Stripe does not provide commercial components. We consume the original
-    immutable settlement snapshot in merchandise, shipping, tax order and use
-    a cumulative provider key, so retries and alternate Stripe event types
-    cannot reverse the same money twice.
+    A Charge carries the ids in its own metadata, because this server put them
+    there at checkout. A Dispute does not: Stripe hands over a Dispute object
+    whose `metadata` is its own and empty, so reading `seller_transaction_id`
+    off it — which is all the webhook used to do — finds nothing and the
+    chargeback silently affects no settlement at all. The payment intent is the
+    one identifier both object shapes carry, and `provider_payment_id` on the
+    settlement is where it was recorded, so that is the fallback.
     """
-    metadata = dict((obj or {}).get("metadata") or {})
-    tx_ids = [safe_int(v, 0) for v in str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "").split(",")]
-    tx_ids = [v for v in tx_ids if v]
-    cumulative_refunded = int((obj or {}).get("amount_refunded") or 0)
-    if not tx_ids or cumulative_refunded <= 0:
+    obj = dict(obj or {})
+    metadata = dict(obj.get("metadata") or {})
+    raw = str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "")
+    tx_ids = [v for v in (safe_int(part, 0) for part in raw.split(",")) if v]
+    if tx_ids:
+        return tx_ids
+    payment_intent = obj.get("payment_intent")
+    if isinstance(payment_intent, dict):
+        payment_intent = payment_intent.get("id")
+    from services import marketplace_settlement_service
+    return [int(row["seller_transaction_id"])
+            for row in marketplace_settlement_service.settlements_for_payment(payment_intent or "")]
+
+
+def pulse_allocate_marketplace_reversal(tx_ids, cumulative_minor, provider_key, actor="stripe_webhook"):
+    """Split one cumulative reversal figure across its Marketplace settlements.
+
+    Stripe reports money coming back as a running total against the charge, never
+    as commercial components, and one charge can back several sellers. We consume
+    each settlement's immutable snapshot in merchandise, shipping, tax order and
+    subtract what has already been reversed, so a $40 refund followed by a
+    cumulative $60 event reverses $20 and not $100.
+
+    Shared by the refund and lost-dispute paths deliberately: a chargeback the
+    platform loses is the same money leaving by a different door, and a second
+    allocator would be free to disagree with this one about where it came from.
+    """
+    tx_ids = [int(v) for v in (tx_ids or []) if int(v or 0)]
+    cumulative_minor = int(cumulative_minor or 0)
+    if not tx_ids or cumulative_minor <= 0:
         return []
-    # ``amount_refunded`` is cumulative on a Charge. Subtract reversals already
-    # recorded for these rows or a $40 refund followed by a cumulative $60
-    # event would incorrectly reverse $100.
     conn = db(); conn.row_factory = sqlite3.Row
     try:
         placeholders = ",".join(["?"] * len(tx_ids))
@@ -55705,10 +55730,9 @@ def pulse_apply_marketplace_charge_refund(obj):
         already_refunded = 0
     finally:
         conn.close()
-    remaining = max(0, cumulative_refunded - already_refunded)
+    remaining = max(0, cumulative_minor - already_refunded)
     if remaining <= 0:
         return []
-    provider_key = f"{(obj or {}).get('id') or 'charge'}:{cumulative_refunded}"
     from services import marketplace_settlement_service
     results = []
     for tx_id in tx_ids:
@@ -55735,8 +55759,96 @@ def pulse_apply_marketplace_charge_refund(obj):
             results.append(marketplace_settlement_service.apply_refund(
                 tx_id, provider_refund_id=f"{provider_key}:{tx_id}",
                 merchandise_refund_minor=merchandise, shipping_refund_minor=shipping,
-                tax_refund_minor=tax, other_refund_minor=other, actor="stripe_webhook"))
+                tax_refund_minor=tax, other_refund_minor=other, actor=actor))
     return results
+
+
+def pulse_apply_marketplace_charge_refund(obj):
+    """Reverse a Marketplace charge's refunded amount on the seller ledger."""
+    obj = dict(obj or {})
+    return pulse_allocate_marketplace_reversal(
+        pulse_marketplace_reversal_transaction_ids(obj),
+        int(obj.get("amount_refunded") or 0),
+        f"{obj.get('id') or 'charge'}:{int(obj.get('amount_refunded') or 0)}")
+
+
+def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
+    """Freeze, release or reverse a Marketplace settlement for a chargeback.
+
+    A disputed order used to move only the `seller_transactions.status` string —
+    and, because a Dispute carries no seller metadata, usually not even that. The
+    settlement kept no `blocker_code`, so `transition_payout` was free to take a
+    chargeback straight through `eligible` and `scheduled` to `paid`: PulseSoc
+    would transfer the seller their earnings on money Stripe was in the middle of
+    taking back, and then lose the dispute with nothing to claw it from.
+
+    Opening a dispute therefore places a real hold. Winning releases it back to
+    the state the hold interrupted. Losing is not a release — the money is gone
+    from the platform balance for good, so it is reversed through the same
+    allocator a refund uses, which is what leaves the seller ledger telling the
+    truth about what PulseSoc still owes.
+    """
+    obj = dict(obj or {})
+    event_type = str(event_type or "")
+    tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
+    if not tx_ids:
+        return []
+    from services import marketplace_settlement_service as settlements
+    dispute_id = str(obj.get("id") or event_id or "dispute")
+    # Stripe's terminal statuses. `warning_closed` is an inquiry that never
+    # became a real dispute, so the money was never at risk.
+    status = str(obj.get("status") or "")
+    outcomes = []
+    for tx_id in tx_ids:
+        settlement = settlements.get_settlement(tx_id)
+        if not settlement:
+            continue
+        try:
+            if event_type == "charge.dispute.created":
+                outcomes.append(settlements.place_hold(
+                    tx_id, actor="stripe_webhook", reason_code="dispute",
+                    idempotency_key=f"dispute:{dispute_id}:{tx_id}", disputed=True))
+            elif event_type == "charge.dispute.closed" and status in {"won", "warning_closed"}:
+                origin = settlements.hold_origin_state(tx_id)
+                if origin not in {"pending_onboarding", "pending_fulfillment", "protection_hold", "eligible"}:
+                    # The seller had already been paid before the chargeback, so
+                    # there is no state to hand the settlement back to. Never
+                    # invent one: this needs the owner, not an automatic
+                    # transition that would relabel a paid order as unpaid.
+                    logging.warning(
+                        "MARKETPLACE_DISPUTE_WON_NEEDS_REVIEW tx_id=%s dispute_id=%s origin_state=%s",
+                        tx_id, dispute_id, origin or "unknown")
+                    continue
+                outcomes.append(settlements.release_hold(
+                    tx_id, to_state=origin, actor="stripe_webhook",
+                    reason=f"dispute {status}", idempotency_key=f"dispute:{dispute_id}:{tx_id}:released"))
+        except settlements.SettlementError:
+            # Already held, already released, or the state machine refused the
+            # move. Idempotent by design — a Stripe redelivery must not raise.
+            logging.info("MARKETPLACE_DISPUTE_TRANSITION_SKIPPED tx_id=%s dispute_id=%s type=%s",
+                         tx_id, dispute_id, event_type)
+    if event_type == "charge.dispute.closed" and status == "lost":
+        # A dispute freezes and then takes its own `amount`, which is the whole
+        # disputed figure rather than a running total across reversals; the
+        # allocator subtracts what has already come back.
+        outcomes.extend(pulse_allocate_marketplace_reversal(
+            tx_ids, int(obj.get("amount") or 0), f"dispute:{dispute_id}"))
+    # The order row the seller and the admin panel read. It kept saying "paid"
+    # through a chargeback, for the same reason the hold never landed.
+    row_status = {"charge.dispute.created": "dispute_opened",
+                  "charge.dispute.updated": "dispute_updated",
+                  "charge.dispute.closed": "dispute_lost" if status == "lost" else "dispute_resolved"}.get(event_type)
+    if row_status:
+        conn = db()
+        try:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            placeholders = ",".join(["?"] * len(tx_ids))
+            conn.execute(f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
+                         tuple([row_status, now] + tx_ids))
+            conn.commit()
+        finally:
+            conn.close()
+    return outcomes
 
 
 def pulse_emit_comms_safety_event(
@@ -108671,6 +108783,16 @@ def stripe_webhook():
         conn.commit(); conn.close()
         if event_type == "charge.refunded":
             pulse_apply_marketplace_charge_refund(obj)
+        elif event_type.startswith("charge.dispute."):
+            # Outside the connection above on purpose: the settlement service and
+            # the ledger open their own, and holding this one across them is how
+            # `ensure_schema(conn)` deadlocks a worker on Postgres.
+            try:
+                pulse_apply_marketplace_dispute(obj, event_type, event_id)
+            except Exception:
+                # A chargeback that does not place its hold is money about to be
+                # transferred to a seller who is losing it. Never silent.
+                logging.exception("MARKETPLACE_DISPUTE_HOLD_FAILED event_id=%s type=%s", event_id, event_type)
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     creator_economy_service.update_webhook_event(event_id, "processed")

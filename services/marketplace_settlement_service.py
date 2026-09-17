@@ -147,6 +147,54 @@ def get_settlement(transaction_id: Any, conn=None) -> dict | None:
         if owned:
             conn.close()
 
+def settlements_for_payment(provider_payment_id: str, conn=None) -> list[dict]:
+    """Every settlement funded by one Stripe payment, oldest first.
+
+    A dispute event does not carry the charge's metadata — Stripe hands over a
+    Dispute object whose own `metadata` is empty — so the seller transaction ids
+    the refund path reads straight off a Charge are simply not there. What a
+    dispute does carry is the payment intent, which is what `provider_payment_id`
+    records, so that is the way back from a chargeback to the sellers it affects.
+
+    A list, not a row: one cart checkout is one payment intent and one settlement
+    per seller line, and a chargeback takes back the whole charge.
+    """
+    reference = str(provider_payment_id or "").strip()
+    if not reference:
+        return []
+    owned = conn is None
+    if owned:
+        ensure_schema(); conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM marketplace_commercial_settlements WHERE provider_payment_id=? "
+            "ORDER BY seller_transaction_id", (reference,)).fetchall()
+    finally:
+        if owned:
+            conn.close()
+    return [dict(row) for row in rows]
+
+
+def hold_origin_state(transaction_id: Any) -> str:
+    """The payout state a settlement was in before its current hold.
+
+    `place_hold` overwrites `payout_state`, so the state the settlement should go
+    back to when a dispute is won survives only in the immutable event log. Read
+    it from there rather than guessing: releasing everything to
+    `pending_fulfillment` would demand a second delivery confirmation that
+    `mark_delivered` would dedupe away, stranding the seller's money forever.
+    """
+    ensure_schema(); conn = db.connect()
+    try:
+        row = conn.execute(
+            "SELECT from_state FROM marketplace_payout_state_events "
+            "WHERE seller_transaction_id=? AND to_state IN ('held','disputed') "
+            "ORDER BY id DESC LIMIT 1", (int(transaction_id),)).fetchone()
+    finally:
+        conn.close()
+    return str(dict(row).get("from_state") or "") if row else ""
+
+
 def settle_paid_transaction(tx: Mapping[str, Any], *, payout_ready: bool,
                             provider_payment_id: str = "", transfer_group: str = "",
                             actor: str = "stripe") -> dict:
