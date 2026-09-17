@@ -54571,6 +54571,19 @@ MUSIC_REFERENCE_TABLES = (
 )
 
 
+class MusicReferenceCountUnavailable(RuntimeError):
+    """A reference count could not be read, so the blast radius is unknown.
+
+    Unknown is not zero. This exists so the difference survives the trip to the
+    owner: the panel has an error state, and showing it is honest where showing
+    "0 attached" next to a failed query is an invitation to purge.
+    """
+
+    def __init__(self, table):
+        super().__init__("Could not count %s references for this track." % table)
+        self.table = table
+
+
 def music_reference_counts(cur, track_id):
     """How much existing content would be affected by removing this track.
 
@@ -54579,19 +54592,23 @@ def music_reference_counts(cur, track_id):
     works around elsewhere -- so each id is compared as text on both sides. A
     count that silently returned 0 because of that would tell the owner a
     takedown was harmless when it was not.
+
+    So a failed count raises `MusicReferenceCountUnavailable` rather than
+    contributing 0 to the total. Swallowing it bought no resilience anyway: on
+    Postgres the failed statement aborts the transaction, and the next table's
+    query raises InFailedSqlTransaction regardless.
     """
     counts = {}
     total = 0
     for table, column, label in MUSIC_REFERENCE_TABLES:
-        value = 0
         try:
             cur.execute(
                 f"SELECT COUNT(*) AS total FROM {table} WHERE CAST({column} AS TEXT)=CAST(? AS TEXT)",
                 (track_id,),
             )
             value = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-        except Exception:
-            value = 0
+        except Exception as exc:
+            raise MusicReferenceCountUnavailable(table) from exc
         counts[label] = value
         total += value
     counts["total"] = total
@@ -55032,19 +55049,27 @@ def api_admin_music_track_impact(track_id):
     if denied:
         return denied
     conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    track = music_track_row(cur, track_id)
-    if not track:
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        track = music_track_row(cur, track_id)
+        if not track:
+            return api_error("Track not found.", 404, error_code="music_track_not_found")
+        try:
+            counts = music_reference_counts(cur, track_id)
+        except MusicReferenceCountUnavailable as exc:
+            # Refusing to answer is the safe answer. This number is the one the
+            # owner reads before an irreversible purge, and a 200 carrying a
+            # fabricated 0 would read as permission to proceed.
+            app.logger.exception("music impact reference count failed for track %s", track_id)
+            return api_error(str(exc), 503, error_code="music_reference_count_unavailable")
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM pulse_music_reports WHERE audio_track_id=? AND status='open'",
+            (track_id,),
+        )
+        open_reports = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+    finally:
         conn.close()
-        return api_error("Track not found.", 404, error_code="music_track_not_found")
-    counts = music_reference_counts(cur, track_id)
-    cur.execute(
-        "SELECT COUNT(*) AS total FROM pulse_music_reports WHERE audio_track_id=? AND status='open'",
-        (track_id,),
-    )
-    open_reports = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-    conn.close()
     state = music_authority.normalize_state(track.get("lifecycle_state"))
     return jsonify({
         "ok": True,
