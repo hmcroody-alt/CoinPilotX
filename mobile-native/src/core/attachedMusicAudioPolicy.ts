@@ -28,6 +28,12 @@ export type AttachedMusicSource = {
   volume?: number | null;
   /** Whether the music track should loop under the visual content. */
   isLooping?: boolean;
+  /**
+   * The server withheld this track's url because the platform owner removed it.
+   * Deliberately distinct from "no music was ever attached" — see
+   * `resolveAttachedMusicPolicy`, where the two answers differ.
+   */
+  audioUnavailable?: boolean;
 };
 
 export type AttachedMusicPolicy = {
@@ -39,6 +45,11 @@ export type AttachedMusicPolicy = {
   musicVolume: number;
   musicStartMs: number;
   isLooping: boolean;
+  /**
+   * Music is attached but cannot be played. Surfaces should say so rather than
+   * showing a track that never starts.
+   */
+  audioUnavailable: boolean;
 };
 
 /**
@@ -73,6 +84,31 @@ function clampVolume(value: unknown): number {
  */
 export function resolveAttachedMusicPolicy(source?: AttachedMusicSource | null): AttachedMusicPolicy {
   const musicUrl = absolutizeMusicUrl(String(source?.musicUrl || "").trim());
+  /**
+   * A removed track and a post that never had music both arrive here with an
+   * empty url, and answering them the same way is wrong in a specific,
+   * user-visible direction: "no music" means play the original audio, so a
+   * takedown would *unmute* every video whose creator chose to silence it. The
+   * server therefore sends `audio_unavailable` alongside the blank url, and this
+   * branch keeps the exclusivity the attachment established — nothing plays, the
+   * original stays silent, and the surface is told to say why.
+   *
+   * It is checked before the empty-url branch on purpose. A purged track has no
+   * url at all, so testing the url first would route the worst case into the
+   * wrong answer.
+   */
+  if (source?.audioUnavailable) {
+    return {
+      mode: ATTACHED_MUSIC_EXCLUSIVE,
+      hasAttachedMusic: false,
+      muteOriginalAudio: true,
+      musicUrl: undefined,
+      musicVolume: DEFAULT_MUSIC_VOLUME,
+      musicStartMs: 0,
+      isLooping: false,
+      audioUnavailable: true
+    };
+  }
   if (!musicUrl) {
     return {
       mode: ORIGINAL_AUDIO,
@@ -81,7 +117,8 @@ export function resolveAttachedMusicPolicy(source?: AttachedMusicSource | null):
       musicUrl: undefined,
       musicVolume: DEFAULT_MUSIC_VOLUME,
       musicStartMs: 0,
-      isLooping: false
+      isLooping: false,
+      audioUnavailable: false
     };
   }
   return {
@@ -91,7 +128,8 @@ export function resolveAttachedMusicPolicy(source?: AttachedMusicSource | null):
     musicUrl,
     musicVolume: clampVolume(source?.volume),
     musicStartMs: Math.max(0, Math.round(Number(source?.startSeconds || 0) * 1000)),
-    isLooping: source?.isLooping !== false
+    isLooping: source?.isLooping !== false,
+    audioUnavailable: false
   };
 }
 
@@ -111,7 +149,8 @@ export function reelAudioToMusicSource(audio?: PulseReelAudio | null): AttachedM
     musicUrl: audio?.audio_baked_in ? "" : audio?.attached_audio_url || "",
     startSeconds: audio?.audio_start_time ?? 0,
     volume: audio?.audio_volume,
-    isLooping: true
+    isLooping: true,
+    audioUnavailable: Boolean(audio?.audio_unavailable)
   };
 }
 
@@ -120,7 +159,8 @@ export function statusMusicToMusicSource(music?: PulseStatusMusic | null): Attac
     musicUrl: music?.attached_audio_url || music?.audio_url || "",
     startSeconds: 0,
     volume: undefined,
-    isLooping: true
+    isLooping: true,
+    audioUnavailable: Boolean(music?.audio_unavailable)
   };
 }
 
@@ -161,7 +201,13 @@ export function postMusicToMusicSource(
   );
   const startSeconds = music?.audio_start_time ?? post?.audio_start_time ?? media?.audio_start_time ?? 0;
   const volume = music?.audio_volume ?? post?.audio_volume ?? media?.audio_volume;
-  return { musicUrl, startSeconds, volume, isLooping: true };
+  // Only the `music` object is consulted for availability. The top-level and
+  // media-record mirrors are denormalised copies written when the track was
+  // attached; they are not re-derived per request, so a takedown does not reach
+  // them. The `music` object is the one the server rebuilds from
+  // `pulse_audio_tracks` on every read, which makes it the only field that can
+  // speak for the track's state now rather than its state at attach time.
+  return { musicUrl, startSeconds, volume, isLooping: true, audioUnavailable: Boolean(music?.audio_unavailable) };
 }
 
 export function resolvePostAudioPolicy(
@@ -185,6 +231,8 @@ export function resolvePostAudioPolicy(
 export type ViewerAudioPlan = {
   /** Silence the video element's own audio track. */
   muteOriginalAudio: boolean;
+  /** Music is attached but removed; show a notice instead of loading anything. */
+  audioUnavailable: boolean;
   /** Whether a separate attached-music track should be loaded and played. */
   shouldPlayMusic: boolean;
   musicUrl?: string;
@@ -197,6 +245,7 @@ export function resolveViewerAudioPlan(policy?: AttachedMusicPolicy | null): Vie
   const hasMusic = Boolean(policy?.hasAttachedMusic && policy?.musicUrl);
   return {
     muteOriginalAudio: Boolean(policy?.muteOriginalAudio),
+    audioUnavailable: Boolean(policy?.audioUnavailable),
     shouldPlayMusic: hasMusic,
     musicUrl: hasMusic ? policy?.musicUrl : undefined,
     musicVolume: policy?.musicVolume ?? DEFAULT_MUSIC_VOLUME,
