@@ -80,3 +80,13 @@ xcrun devicectl device process launch --device "$DEVICE_ID" "$DEVELOPMENT_BUNDLE
 
 echo "Installed and launched $DEVELOPMENT_DISPLAY_NAME ($DEVELOPMENT_BUNDLE_ID)."
 echo "Production bundle $PRODUCTION_BUNDLE_ID was not targeted."
+echo
+echo "NOTE: this build cannot receive a VoIP push, and that is expected."
+echo "  A PushKit token is minted for the bundle id, and the sender addresses devices"
+echo "  as <bundle>.voip derived from APNS_BUNDLE_ID ($PRODUCTION_BUNDLE_ID). A token"
+echo "  from $DEVELOPMENT_BUNDLE_ID therefore draws DeviceTokenNotForTopic, which is"
+echo "  revoked rather than retried - unlike a wrong APNs host, it is not self-healing."
+echo "  So incoming calls will not ring here. Verify ringing on a $PRODUCTION_BUNDLE_ID"
+echo "  build; use this one for everything else. Making this bundle ring would need the"
+echo "  App ID registered with Push and listed in APNS_ALLOWED_BUNDLE_IDS *before* the"
+echo "  first call, not after."

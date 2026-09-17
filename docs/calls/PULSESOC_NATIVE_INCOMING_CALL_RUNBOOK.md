@@ -370,12 +370,26 @@ Carried from the audit. These are open.
    automatic signing takes its value from the provisioning profile, so only the
    `development` half has been proven on hardware. Confirming the `production` half
    needs a distribution profile.
-4. **No dev/prod bundle split.** Both configurations still build
-   `com.pulsesoc.app`; `com.pulsesoc.nativeapp.dev` reaches the native project only
-   through prebuild, which a committed `ios/` directory bypasses. The per-device
-   topic derivation is in place, but `mobile-native/src/api/calls.ts` does not report
-   `app_bundle`, so every stored row is empty and every device resolves to the same
-   topic.
+4. **One bundle id, by decision.** Both configurations build `com.pulsesoc.app`;
+   development and production differ only in `aps-environment`. There is no second
+   push-capable App ID, and none is planned.
+   `tests/protection/test_ios_push_bundle_identity.py` fails if that drifts — notably
+   if `expo prebuild` ever regenerates the project, since `app.config.js` still
+   selects `com.pulsesoc.nativeapp.dev` for the development EAS profiles.
+
+   The per-device topic derivation stays in place as a safety net, though with one
+   bundle it resolves to what the deployment-wide topic always was. It is also inert
+   for a second reason worth knowing before relying on it:
+   `mobile-native/src/api/calls.ts` does not report `app_bundle`, so every stored row
+   is empty.
+
+   **Do not ring-test on a build from
+   `scripts/install_pulsesoc_native_dev_iphone.sh`.** That script builds
+   `com.pulsesoc.nativeapp.dev` so the development app can sit beside the App Store
+   one, which is useful and intended — but such a build cannot receive a VoIP push at
+   all. It draws `DeviceTokenNotForTopic`, which is revoked rather than retried, so
+   the phone goes quiet permanently rather than transiently. The script prints this
+   on every install. Use a `com.pulsesoc.app` build for any call-delivery test.
 5. **No physical-device verification** of lock screen, terminated app, Silent Mode,
    Focus, or Bluetooth routing.
 6. **No sweeper worker.** Stale-call cleanup depends on someone polling
