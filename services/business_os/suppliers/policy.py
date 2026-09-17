@@ -181,7 +181,7 @@ def live_fulfillment_path_exists() -> bool:
     """May this deployment place a real, payable CJ order? No -- and this line is why.
 
     The answer used to be ``False`` because the code did not exist. It now does:
-    ``cj.CJProvider.create_live_fulfillment`` is written, dispatch selects it
+    ``cj.CJAdapter.create_live_fulfillment`` is written, dispatch selects it
     from the intent's own frozen ``isSandbox``, and the whole path is exercised
     by tests that flip this function. What has not happened is the decision.
 

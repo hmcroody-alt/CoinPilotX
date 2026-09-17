@@ -155,7 +155,7 @@ parameter would quietly destroy.
 
 Today three functions refuse unconditionally:
 `policy.require_funding_disabled()`, `fulfillment.fund_fulfillment()`,
-`cj.CJProvider.fund_fulfillment()`. The `funding_state` column exists with a
+`cj.CJAdapter.fund_fulfillment()`. The `funding_state` column exists with a
 `FUNDING_NOT_READY` default and is never written.
 
 CJ's `payType=3` is the only value the current payload builder allows, and it
