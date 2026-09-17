@@ -1,16 +1,40 @@
-import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleProp, StyleSheet, Text, TextStyle, View } from "react-native";
+/**
+ * The Translate affordance, wherever text appears: feed posts, comments, chat
+ * bubbles, marketplace listings, reel captions.
+ *
+ * This component used to call the billable cloud endpoint in `api/translation`
+ * directly, which meant every screen that rendered text was its own
+ * cost-control decision. It now states what it wants and lets
+ * `services/translation` decide who answers: the device cache, Apple's
+ * on-device engine, or the cloud, in that order and only when policy allows.
+ * Nothing above this line knows which one did.
+ *
+ * Two behaviours are worth naming because they are easy to regress.
+ *
+ * The automatic path is not the manual path. "Always translate" calls
+ * `translate({ userInitiated: false })`, and an automatic request is never
+ * allowed to escalate to the billable provider. A user who turns on "Always"
+ * for a language Apple cannot do gets no translation — deliberately — rather
+ * than a bill that scales with how far they scroll.
+ *
+ * A download is a request, not a side effect. `allowDownload` is passed only
+ * from a press on the download control, so no render path can cause Apple to
+ * start pulling a language model onto the device.
+ */
+
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ActivityIndicator, Modal, Pressable, StyleProp, Text, TextStyle, View } from "react-native";
 import {
-  classifyTranslationFailure,
   peekTranslationPreference,
   subscribeTranslationPreference,
   TranslatableContentType,
-  TranslationFailure,
   TranslationPolicy,
-  translatePulseContent,
   updateTranslationPreference
 } from "../api/translation";
 import { useTimeZonePreference } from "../core/TimeZoneContext";
+import { languageDisplayName, useTranslation } from "../i18n";
+import { useContentTranslation } from "../services/translation";
+import type { TranslationFailureCode } from "../services/translation";
 import { chatGraphite } from "../theme/chatGraphite";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -29,6 +53,35 @@ type ContentTranslationProps = {
 const UNKNOWN_LANGUAGE = new Set(["", "auto", "unknown", "und", "undefined", "null"]);
 const NON_ENGLISH_HINTS = /\b(mwen|ou|pa|pou|ak|nan|banm|bonjou|merci|hola|gracias|bonjour|salut|ça|oui|non|por|para|que|não|sim| danke| bitte|안녕|你好|مرحبا|नमस्ते)\b/i;
 const NON_LATIN_OR_ACCENTED = /[^\u0000-\u007f]/;
+
+/**
+ * Failures the user asked for, or that describe the text rather than a fault.
+ *
+ * Rendering "Translation unavailable" after someone dismissed Apple's download
+ * sheet would report their own decision back to them as an error, and
+ * `same_language` means the text is already readable — an error row under text
+ * that needs no translation is noise that teaches people to ignore the row.
+ */
+const SILENT_FAILURES = new Set<TranslationFailureCode>([
+  "same_language",
+  "request_canceled",
+  "download_canceled"
+]);
+
+/**
+ * The five router/native codes that have something specific and useful to say.
+ * Everything else — a tripped breaker, an exhausted budget, a disabled flag, a
+ * provider fault — collapses to the generic label on purpose: those are facts
+ * about the deployment, and Stage 9 forbids putting operator diagnostics in
+ * front of a user. The distinction stays visible in metrics, where it belongs.
+ */
+const FAILURE_MESSAGE_KEY: Partial<Record<TranslationFailureCode, string>> = {
+  unsupported_language_pair: "translation:failure.unsupportedLanguage",
+  unsupported_os_version: "translation:failure.unsupportedLanguage",
+  invalid_language: "translation:failure.unsupportedLanguage",
+  download_failed: "translation:failure.downloadFailed",
+  offline_model_unavailable: "translation:failure.offline"
+};
 
 function normalizeLanguageTag(language: string) {
   return language.trim().replace("_", "-").toLowerCase();
@@ -59,106 +112,88 @@ export function ContentTranslation({
   renderText,
   controlsMode = "inline"
 }: ContentTranslationProps) {
+  const { t } = useTranslation();
   const { locale } = useTimeZonePreference();
   const targetLanguage = useMemo(() => locale.replace("_", "-").toLowerCase(), [locale]);
   const [policy, setPolicy] = useState<TranslationPolicy>("ask");
-  const [translatedText, setTranslatedText] = useState("");
-  const [showTranslated, setShowTranslated] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<TranslationFailure | null>(null);
-  const busyRef = useRef(false);
-  const requestKey = `${contentType}:${contentRef}:${targetLanguage}:${text}`;
-  const activeRequest = useRef(requestKey);
-  activeRequest.current = requestKey;
+  const [preferenceFailed, setPreferenceFailed] = useState(false);
 
-  const requestTranslation = useCallback(
-    async (force = false) => {
-      if (!text.trim() || busyRef.current) return;
-      const expectedKey = requestKey;
-      busyRef.current = true;
-      setBusy(true);
-      setFailure(null);
-      // Bounded backoff: one automatic re-attempt, and only for transient
-      // failures. Permanent failures (unsupported language, moderation, …)
-      // surface immediately with no retry loop.
-      const maxAttempts = 2;
-      try {
-        for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-          try {
-            const result = await translatePulseContent({
-              contentType,
-              contentRef,
-              text,
-              sourceLanguage,
-              targetLanguage,
-              force
-            });
-            if (activeRequest.current !== expectedKey) return;
-            if (result.translated_text) {
-              setTranslatedText(result.translated_text);
-              setShowTranslated(true);
-            } else if (result.reason === "same_language") {
-              setShowTranslated(false);
-            } else if (result.reason === "never_translate") {
-              setShowTranslated(false);
-              setPolicy("never");
-            }
-            return;
-          } catch (requestError) {
-            const classified = classifyTranslationFailure(requestError);
-            if (!classified.retryable || attempt === maxAttempts - 1) {
-              if (activeRequest.current === expectedKey) setFailure(classified);
-              return;
-            }
-            await new Promise(resolve => setTimeout(resolve, 600 * (attempt + 1)));
-            if (activeRequest.current !== expectedKey) return;
-          }
-        }
-      } finally {
-        busyRef.current = false;
-        if (activeRequest.current === expectedKey) setBusy(false);
-      }
-    },
-    [contentRef, contentType, requestKey, sourceLanguage, targetLanguage, text]
-  );
+  const contentId = `${contentType}:${contentRef}`;
+  const {
+    status,
+    translatedText,
+    detectedSourceLanguage,
+    failure,
+    hasTranslation,
+    translate,
+    showOriginal,
+    showTranslation
+  } = useContentTranslation({
+    contentType,
+    contentId,
+    text,
+    sourceLanguage,
+    targetLanguage
+  });
+
+  const busy = status === "translating";
+  const showTranslated = status === "translated";
 
   useEffect(() => {
-    setTranslatedText("");
-    setShowTranslated(false);
-    setFailure(null);
+    setPreferenceFailed(false);
     const applyPreference = (preference: { policy: TranslationPolicy }) => {
-      if (activeRequest.current !== requestKey) return;
       setPolicy(preference.policy);
-      if (preference.policy === "always") requestTranslation(false);
+      // The only automatic request in the app. `userInitiated: false` is what
+      // keeps it off the billable path — see the header.
+      if (preference.policy === "always") void translate({ userInitiated: false });
     };
     const cached = peekTranslationPreference(sourceLanguage, targetLanguage);
     if (cached) applyPreference(cached);
     else setPolicy("ask");
     return subscribeTranslationPreference(sourceLanguage, targetLanguage, applyPreference);
-  }, [requestKey, requestTranslation, sourceLanguage, targetLanguage]);
+  }, [sourceLanguage, targetLanguage, translate]);
 
   const changePolicy = useCallback(
     async (nextPolicy: TranslationPolicy) => {
       const previous = policy;
       setPolicy(nextPolicy);
-      setFailure(null);
-      if (nextPolicy === "never") setShowTranslated(false);
+      setPreferenceFailed(false);
+      if (nextPolicy === "never") showOriginal();
       try {
         const saved = await updateTranslationPreference(sourceLanguage, targetLanguage, nextPolicy);
         setPolicy(saved.policy);
-        if (saved.policy === "always") await requestTranslation(true);
-      } catch (preferenceError) {
+        if (saved.policy === "always") await translate({ userInitiated: false });
+      } catch {
+        // The thrown value is a network or server error and may carry a URL or
+        // a stack. Only the fact that the save failed reaches the screen.
         setPolicy(previous);
-        setFailure({
-          message:
-            preferenceError instanceof Error ? preferenceError.message : "Could not save translation preference.",
-          retryable: false
-        });
+        setPreferenceFailed(true);
       }
     },
-    [policy, requestTranslation, sourceLanguage, targetLanguage]
+    [policy, showOriginal, sourceLanguage, targetLanguage, translate]
   );
+
+  const toggleTranslation = useCallback(() => {
+    if (showTranslated) showOriginal();
+    else if (hasTranslation) showTranslation();
+    else void translate();
+  }, [hasTranslation, showOriginal, showTranslated, showTranslation, translate]);
+
+  const targetName = languageDisplayName(targetLanguage) || targetLanguage;
+  const sourceName = detectedSourceLanguage ? languageDisplayName(detectedSourceLanguage) : "";
+  const translatedLabel = sourceName
+    ? t("translation:translatedFrom", { language: sourceName })
+    : t("translation:translatedLabel");
+
+  const visibleFailure = failure && !SILENT_FAILURES.has(failure.code) ? failure : null;
+  const offerDownload = visibleFailure?.downloadAvailable === true;
+  const offerRetry = visibleFailure?.recoverable === true && !offerDownload;
+  const failureMessage = visibleFailure
+    ? t(FAILURE_MESSAGE_KEY[visibleFailure.code] ?? "translation:failure.unavailable")
+    : preferenceFailed
+      ? t("translation:failure.preferenceNotSaved")
+      : "";
 
   const visibleText = showTranslated && translatedText ? translatedText : text;
   const compact = controlsMode === "compact";
@@ -176,10 +211,14 @@ export function ContentTranslation({
       {rendered}
       {showTranslationAction ? (
         compact ? (
-          <View style={styles.compactRow} accessibilityLabel={`Translation. Target language ${targetLanguage}.`}>
+          <View style={styles.compactRow} accessibilityLabel={t("translation:a11y.controls", { language: targetName })}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={showTranslated ? "Translation options. Showing translated text." : `Translate message to ${targetLanguage}`}
+              accessibilityLabel={
+                showTranslated
+                  ? t("translation:a11y.options")
+                  : t("translation:a11y.translateTo", { language: targetName })
+              }
               disabled={busy}
               onPress={(event) => {
                 event?.stopPropagation?.();
@@ -188,78 +227,109 @@ export function ContentTranslation({
               style={({ pressed }) => [styles.compactControl, pressed && styles.pressed, busy && styles.disabled]}
             >
               {busy ? <ActivityIndicator size="small" color={colors.accent} /> : <Text style={styles.globe}>🌐</Text>}
-              <Text style={styles.compactControlText}>{showTranslated ? "Original / Translate" : "Translate"}</Text>
+              <Text style={styles.compactControlText}>
+                {busy
+                  ? t("translation:translating")
+                  : showTranslated
+                    ? t("translation:viewOriginal")
+                    : t("translation:translate")}
+              </Text>
             </Pressable>
-            {showTranslated ? <Text style={styles.machineLabel}>Translated · {targetLanguage.toUpperCase()}</Text> : null}
+            {showTranslated ? <Text style={styles.machineLabel}>{translatedLabel}</Text> : null}
           </View>
         ) : (
-          <View style={styles.controls} accessibilityLabel={`Translation controls. Target language ${targetLanguage}.`}>
+          <View style={styles.controls} accessibilityLabel={t("translation:a11y.controls", { language: targetName })}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={showTranslated ? "Show original text" : `Translate to ${targetLanguage}`}
+              accessibilityLabel={
+                showTranslated
+                  ? t("translation:a11y.showOriginal")
+                  : t("translation:a11y.translateTo", { language: targetName })
+              }
               disabled={busy}
               onPress={(event) => {
                 event?.stopPropagation?.();
-                if (showTranslated) setShowTranslated(false);
-                else if (translatedText) setShowTranslated(true);
-                else requestTranslation(true);
+                toggleTranslation();
               }}
               style={({ pressed }) => [styles.control, pressed && styles.pressed, busy && styles.disabled]}
             >
               {busy ? <ActivityIndicator size="small" color={colors.accent} /> : null}
-              <Text style={styles.controlText}>{showTranslated ? "Show original" : "Translate"}</Text>
+              <Text style={styles.controlText}>
+                {busy
+                  ? t("translation:translating")
+                  : showTranslated
+                    ? t("translation:viewOriginal")
+                    : t("translation:translate")}
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Always translate to ${targetLanguage}`}
+              accessibilityLabel={t("translation:a11y.alwaysTo", { language: targetName })}
               accessibilityState={{ selected: policy === "always" }}
               onPress={(event) => {
                 event?.stopPropagation?.();
-                changePolicy(policy === "always" ? "ask" : "always");
+                void changePolicy(policy === "always" ? "ask" : "always");
               }}
               style={({ pressed }) => [styles.control, policy === "always" && styles.selected, pressed && styles.pressed]}
             >
-              <Text style={[styles.controlText, policy === "always" && styles.selectedText]}>Always</Text>
+              <Text style={[styles.controlText, policy === "always" && styles.selectedText]}>
+                {t("translation:always")}
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Never translate to ${targetLanguage}`}
+              accessibilityLabel={t("translation:a11y.neverTo", { language: targetName })}
               accessibilityState={{ selected: policy === "never" }}
               onPress={(event) => {
                 event?.stopPropagation?.();
-                changePolicy(policy === "never" ? "ask" : "never");
+                void changePolicy(policy === "never" ? "ask" : "never");
               }}
               style={({ pressed }) => [styles.control, policy === "never" && styles.selected, pressed && styles.pressed]}
             >
-              <Text style={[styles.controlText, policy === "never" && styles.selectedText]}>Never</Text>
+              <Text style={[styles.controlText, policy === "never" && styles.selectedText]}>
+                {t("translation:never")}
+              </Text>
             </Pressable>
-            {showTranslated ? <Text style={styles.machineLabel}>Translated · {targetLanguage.toUpperCase()}</Text> : null}
+            {showTranslated ? <Text style={styles.machineLabel}>{translatedLabel}</Text> : null}
           </View>
         )
       ) : null}
       <Modal animationType="fade" transparent visible={showOptions} onRequestClose={() => setShowOptions(false)}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Close translation options" style={styles.sheetScrim} onPress={() => setShowOptions(false)}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("translation:a11y.closeOptions")}
+          style={styles.sheetScrim}
+          onPress={() => setShowOptions(false)}
+        >
           <Pressable accessibilityRole="menu" style={styles.sheet} onPress={(event) => event?.stopPropagation?.()}>
-            <Text style={styles.sheetEyebrow}>Translation</Text>
-            <Text style={styles.sheetTitle}>Message language options</Text>
+            <Text style={styles.sheetEyebrow}>{t("translation:eyebrow")}</Text>
+            <Text style={styles.sheetTitle}>{t("translation:optionsTitle")}</Text>
             <Pressable
               accessibilityRole="menuitem"
-              accessibilityLabel={showTranslated ? "Show original message" : `Translate message to ${targetLanguage}`}
+              accessibilityLabel={
+                showTranslated
+                  ? t("translation:a11y.showOriginal")
+                  : t("translation:a11y.translateTo", { language: targetName })
+              }
               disabled={busy}
               onPress={() => {
-                if (showTranslated) setShowTranslated(false);
-                else if (translatedText) setShowTranslated(true);
-                else requestTranslation(true);
+                toggleTranslation();
                 setShowOptions(false);
               }}
               style={({ pressed }) => [styles.sheetAction, pressed && styles.pressed]}
             >
-              <Text style={styles.sheetActionTitle}>{showTranslated ? "Show original" : "Translate now"}</Text>
-              <Text style={styles.sheetActionSubtitle}>{showTranslated ? "Return this bubble to the original message." : `Translate this message to ${targetLanguage.toUpperCase()}.`}</Text>
+              <Text style={styles.sheetActionTitle}>
+                {showTranslated ? t("translation:viewOriginal") : t("translation:translateNow")}
+              </Text>
+              <Text style={styles.sheetActionSubtitle}>
+                {showTranslated
+                  ? t("translation:showOriginalHint")
+                  : t("translation:translateNowHint", { language: targetName })}
+              </Text>
             </Pressable>
             <Pressable
               accessibilityRole="menuitem"
-              accessibilityLabel={`Always translate to ${targetLanguage}`}
+              accessibilityLabel={t("translation:a11y.alwaysTo", { language: targetName })}
               accessibilityState={{ selected: policy === "always" }}
               onPress={() => {
                 void changePolicy(policy === "always" ? "ask" : "always");
@@ -267,12 +337,12 @@ export function ContentTranslation({
               }}
               style={({ pressed }) => [styles.sheetAction, policy === "always" && styles.sheetActionSelected, pressed && styles.pressed]}
             >
-              <Text style={styles.sheetActionTitle}>Always translate</Text>
-              <Text style={styles.sheetActionSubtitle}>Automatically translate this language when PulseSoc can detect it.</Text>
+              <Text style={styles.sheetActionTitle}>{t("translation:alwaysTranslate")}</Text>
+              <Text style={styles.sheetActionSubtitle}>{t("translation:alwaysTranslateHint")}</Text>
             </Pressable>
             <Pressable
               accessibilityRole="menuitem"
-              accessibilityLabel={`Never translate to ${targetLanguage}`}
+              accessibilityLabel={t("translation:a11y.neverTo", { language: targetName })}
               accessibilityState={{ selected: policy === "never" }}
               onPress={() => {
                 void changePolicy(policy === "never" ? "ask" : "never");
@@ -280,27 +350,45 @@ export function ContentTranslation({
               }}
               style={({ pressed }) => [styles.sheetAction, policy === "never" && styles.sheetActionSelected, pressed && styles.pressed]}
             >
-              <Text style={styles.sheetActionTitle}>Never translate</Text>
-              <Text style={styles.sheetActionSubtitle}>Keep this language in its original form.</Text>
+              <Text style={styles.sheetActionTitle}>{t("translation:neverTranslate")}</Text>
+              <Text style={styles.sheetActionSubtitle}>{t("translation:neverTranslateHint")}</Text>
             </Pressable>
           </Pressable>
         </Pressable>
       </Modal>
-      {failure ? (
+      {offerDownload ? (
+        <View style={styles.downloadRow} accessibilityLiveRegion="polite">
+          {/* Named before it happens, because the alternative is Apple's own
+              sheet appearing over the feed with no explanation of who asked. */}
+          <Text style={styles.downloadExplainer}>{t("translation:downloadExplainer")}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("translation:a11y.download", { language: targetName })}
+            disabled={busy}
+            onPress={(event) => {
+              event?.stopPropagation?.();
+              void translate({ allowDownload: true });
+            }}
+            style={({ pressed }) => [styles.retryControl, pressed && styles.pressed, busy && styles.disabled]}
+          >
+            <Text style={styles.retryText}>{t("translation:downloadLanguage")}</Text>
+          </Pressable>
+        </View>
+      ) : failureMessage ? (
         <View style={styles.errorRow} accessibilityLiveRegion="polite">
-          <Text style={styles.error}>{failure.message}</Text>
-          {failure.retryable ? (
+          <Text style={styles.error}>{failureMessage}</Text>
+          {offerRetry ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Retry translation"
+              accessibilityLabel={t("translation:a11y.retry")}
               disabled={busy}
               onPress={(event) => {
                 event?.stopPropagation?.();
-                requestTranslation(true);
+                void translate();
               }}
               style={({ pressed }) => [styles.retryControl, pressed && styles.pressed, busy && styles.disabled]}
             >
-              <Text style={styles.retryText}>Retry</Text>
+              <Text style={styles.retryText}>{t("translation:tryAgain")}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -392,6 +480,16 @@ const styles = createThemedStyles(() => ({
     alignItems: "center",
     flexWrap: "wrap",
     gap: 8
+  },
+  downloadRow: {
+    marginTop: 4,
+    gap: 6,
+    alignItems: "flex-start"
+  },
+  downloadExplainer: {
+    color: colors.muted,
+    fontSize: 11,
+    lineHeight: 16
   },
   error: {
     color: colors.danger,

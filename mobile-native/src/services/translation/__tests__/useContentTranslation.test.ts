@@ -133,6 +133,26 @@ describe("useContentTranslation", () => {
     expect(result.current.translatedText).toBe("");
   });
 
+  it("drops a translation when the text is edited under a stable id", async () => {
+    mockTranslateText.mockResolvedValue(success());
+    const { result, rerender } = renderHook(
+      (props: { text: string }) => useContentTranslation({ ...BASE, ...props }),
+      { initialProps: { text: "Hello" } }
+    );
+
+    await act(async () => {
+      await result.current.translate();
+    });
+    expect(result.current.translatedText).toBe("Bonjour");
+
+    rerender({ text: "Hello again" });
+
+    // No call site passes a `contentVersion` yet, so the text digest is the only
+    // thing standing between an edit and a translation of words that are gone.
+    expect(result.current.status).toBe("idle");
+    expect(result.current.translatedText).toBe("");
+  });
+
   it("cancels the in-flight request when the cell is recycled", async () => {
     mockTranslateText.mockReturnValue(deferred().promise);
     const { result, rerender } = renderHook(

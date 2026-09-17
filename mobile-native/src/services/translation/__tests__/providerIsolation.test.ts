@@ -73,13 +73,18 @@ describe("no screen reaches a provider directly", () => {
   });
 
   it("names every remaining caller of the billable client", () => {
-    // `api/translation.ts` defines it; `providers/cloud.ts` is the one
-    // sanctioned consumer. `components/ContentTranslation.tsx` is the
-    // pre-migration seam and is expected to drop off this list when the UI is
-    // moved onto `translateText`.
+    // `api/translation.ts` defines it and `providers/cloud.ts` is the one
+    // sanctioned consumer, reached only after the router has decided the
+    // request may cost money. `services/translation/index.ts` names it in the
+    // comment that explains this rule. No screen appears here, which is the
+    // whole of Stage 1 stated as a list.
+    //
+    // A mention in a comment counts, and should: this is a text scan, so the
+    // only way it stays trustworthy is if naming the symbol anywhere is a
+    // deliberate act. `ContentTranslation.tsx` describes what it no longer
+    // does without naming it, for exactly this reason.
     expect(importersOf("translatePulseContent")).toEqual([
       "api/translation.ts",
-      "components/ContentTranslation.tsx",
       "services/translation/index.ts",
       "services/translation/providers/cloud.ts"
     ]);
