@@ -80,11 +80,11 @@ export const graphite = {
   /** Hairline separation inside a panel, and lit top edges. Quiet by design. */
   quietDivider: "rgba(230, 236, 245, 0.16)",
 
-  /** 8.16:1 on `raised`, 12.6:1 on the canvas. */
+  /** 8.16:1 on `raised`, 9.83:1 on `canvasTop`, 12.85:1 on `chrome`. */
   primaryText: "#F7F8FA",
 
   /**
-   * 5.58:1 on `raised`, 7.0:1 on the canvas.
+   * 5.58:1 on `raised`, 6.72:1 on `canvasTop`, 8.78:1 on `chrome`.
    *
    * Deliberately this value and not the `#B8C0CC` named as a fallback target:
    * the fallback applies only where an equivalent token does not already exist,
