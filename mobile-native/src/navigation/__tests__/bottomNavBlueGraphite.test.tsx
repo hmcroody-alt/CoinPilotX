@@ -220,6 +220,73 @@ describe("bottom navigation — the blue-graphite dock", () => {
     });
   });
 
+  /**
+   * The perimeter deepening.
+   *
+   * This layer shipped late: the token existed and was unit-tested from the
+   * start, but nothing rendered it, so the dock deepened only along the base
+   * ramp's axis and its top and bottom sat flat at core graphite while the
+   * card's did not. The tests below are the ones that would have caught that,
+   * so they assert the layer is *rendered* and where it sits — not just that the
+   * token is well-formed, which `blueGraphite.test.ts` already covers.
+   */
+  describe("the dock deepens at its top and bottom, not only along the base axis", () => {
+    const edgeOf = (screen: ReturnType<typeof render>) =>
+      screen.getByTestId("global-bottom-navigation-material-edge", { includeHiddenElements: true });
+
+    it("renders the nav edge ramp", () => {
+      const edge = edgeOf(mount(themeWith({})).screen);
+      expect(edge.props.colors).toEqual([...BLUE_GRAPHITE_NAV.edge.colors]);
+      expect(edge.props.locations).toEqual([...BLUE_GRAPHITE_NAV.edge.locations]);
+    });
+
+    it("takes no axis, so it runs top-to-bottom across the base's axis", () => {
+      // The base ramp is aimed corner to corner on purpose. This layer must not
+      // be: giving it an axis would align it with the base and leave the dock's
+      // top and bottom exactly as flat as they were before it existed.
+      const edge = edgeOf(mount(themeWith({})).screen);
+      expect(edge.props.start).toBeUndefined();
+      expect(edge.props.end).toBeUndefined();
+    });
+
+    it("only darkens — every stop translucent, so the opaque base still shows", () => {
+      const edge = edgeOf(mount(themeWith({})).screen);
+      for (const stop of edge.props.colors as string[]) {
+        expect(stop).toMatch(/^rgba\(/);
+        const alpha = Number(stop.replace(/^.*,\s*([\d.]+)\)$/, "$1"));
+        // A fully opaque stop would stop being a deepening and start being a
+        // second material, hiding the base ramp it is supposed to modulate.
+        expect(alpha).toBeLessThan(1);
+      }
+    });
+
+    it("paints over the base but still under every tab", () => {
+      const order = panelChildTestIds(mount(themeWith({})).screen);
+      expect(order[0]).toBe("global-bottom-navigation-material");
+      expect(order[1]).toBe("global-bottom-navigation-material-edge");
+      expect(order.indexOf("global-bottom-home")).toBeGreaterThan(1);
+    });
+
+    it("clips itself to the same radius as the base", () => {
+      const style = flatten(edgeOf(mount(themeWith({})).screen).props.style);
+      expect(style.borderRadius).toBe(37);
+      expect(style).toMatchObject(StyleSheet.absoluteFillObject);
+    });
+
+    it("stays out of the hit path", () => {
+      expect(edgeOf(mount(themeWith({})).screen).props.pointerEvents).toBe("none");
+    });
+
+    it("stands down wherever the base does", () => {
+      for (const theme of [themeWith({ highContrast: true }), ...(["black", "white", "light_futuristic"] as ThemeMode[]).map((mode) => themeWith({ mode }))]) {
+        const { screen } = mount(theme);
+        expect(
+          screen.queryByTestId("global-bottom-navigation-material-edge", { includeHiddenElements: true })
+        ).toBeNull();
+      }
+    });
+  });
+
   describe("every other theme keeps the dock it had", () => {
     it("keeps the legacy fill and paints no material under high contrast", () => {
       const { screen } = mount(themeWith({ highContrast: true }));

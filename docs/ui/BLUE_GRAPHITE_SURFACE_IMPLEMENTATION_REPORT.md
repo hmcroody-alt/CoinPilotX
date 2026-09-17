@@ -374,3 +374,82 @@ icons unreadable; layout moved; other themes regressed.
   the `SpatialCreateConsole` family are still near-black. On Home this is invisible
   because the dock and card dominate, but any screen showing the header beside the dock
   will show two different materials.
+
+---
+
+## Addendum — simulator verification, and the defect it found
+
+The sections above were written before the app had been run. It has now been built and
+run on the iPhone 17 Pro Max simulator, and the verification found a real defect that the
+whole green test suite could not see.
+
+### The defect: `BLUE_GRAPHITE_NAV.edge` was never rendered
+
+`blueGraphite.ts` defined an `edge` layer for both surfaces and `blueGraphite.test.ts`
+asserted it was well-formed. The card rendered it, because `GalacticAtmosphere` paints
+both layers. **The dock never did** — `GlobalNavigation` rendered `base` alone.
+
+Nothing caught this. The token was exercised by unit tests, so it did not read as dead
+code; the dock's tests asserted the base ramp and passed. It was only visible in pixels.
+
+The consequence is directional. `base` carries the shared axis, which is mostly
+horizontal, so it can only place navy at the ends of *that* axis. `edge` deliberately
+carries no axis, so `expo-linear-gradient` defaults it to top-to-bottom. Without it the
+dock deepened across its width and its top and bottom edges sat flat at core graphite,
+while the card — which had both layers all along — deepened on all four. The two surfaces
+were not the same material.
+
+### The fix, and the A/B that proves it
+
+A second `LinearGradient` now renders `BLUE_GRAPHITE_NAV.edge` directly above the base,
+`pointerEvents="none"`, clipped to the same 37pt radius, under every tab.
+
+Both builds were made from the same tree — the only difference being the presence of that
+layer — installed in turn, and sampled at the same pixel column through the dock
+(x=420, screenshot 1320×2868):
+
+| y (dock top → bottom) | before | after | delta |
+|---|---|---|---|
+| 2465 | `#303843` | `#2E3846` | −2 R, +3 B |
+| 2500 | `#303843` | `#2F3845` | −1 R, +2 B |
+| 2610 – 2670 (middle) | `#303843` | `#303843` | **0** |
+| 2720 | `#303843` | `#2F3845` | −1 R, +2 B |
+| 2762 | `#303843` | `#2D3847` | −3 R, +4 B |
+
+Before, the dock is flat `#303843` — exactly `surfaceBlueGraphiteNavCore`, with no
+vertical variation anywhere. After, the middle is byte-identical and both edges deepen and
+turn bluer, strongest at the extremes. That is a symmetric perimeter deepening that leaves
+the centre alone, which is what the layer is for.
+
+The bottom-most sample confirms the alpha arithmetic: compositing
+`rgba(38, 56, 84, 0.26)` over `#303843` predicts `#2D3847`, which is what rendered.
+
+### Other surfaces, measured rather than eyeballed
+
+Sampled against the tokens (nearest-token Euclidean distance):
+
+- card centre `#353F49` — d=4 from `surfaceBlueGraphiteCore`
+- card lower-right `#25405F` — d=4 from `surfaceBlueGraphiteEdge`
+- dock centre `#303843` — **d=0** from `surfaceBlueGraphiteNavCore`
+- dock right `#233957` — d=4 from `surfaceBlueGraphiteNavEdge`
+
+The card is lighter than the dock, so the dock anchors, as required. The page background,
+status circles, header and Reels chrome are unchanged. The expanded Create a Signal
+composer sits on its own blue translucent container with no exposed near-black backing, so
+Stage 4 needed no edit — that is now a visual observation, not just a source reading.
+
+### Test-suite gap, closed
+
+Seven tests were added to `bottomNavBlueGraphite.test.tsx` covering the *rendered* layer:
+its ramp, its absent axis, that every stop is translucent, its paint order relative to the
+base and the tabs, its clipping radius, its exclusion from the hit path, and its absence
+under high contrast and the three non-blue themes.
+
+Removing the layer again fails six of the seven. The seventh asserts absence off-gate, so
+it correctly stays green — noted here so a future reader does not mistake it for a
+vacuous test.
+
+### What this does *not* establish
+
+Simulator only. The brief requires a signed physical-device build on an iPhone 16 Pro and
+a 12-screenshot device matrix, and neither has been run. **This is still not a PASS.**
