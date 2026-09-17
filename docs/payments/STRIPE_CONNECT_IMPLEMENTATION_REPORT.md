@@ -191,9 +191,24 @@ because a checkout E2E is only meaningful in test mode and no test key exists.
 
 ## 10. Deployment status
 
-**Nothing deployed.** All nine commits are on local `main` and have not been
-pushed. Deployment is Railway auto-deploy on push to `main`, so pushing is itself
-the deployment action and was left for explicit authorization.
+**Deployed on owner authorization.** The nine commits were rebased onto
+`origin/main` and pushed as `e429a6cf`; Railway auto-deployed all 13 services
+from that commit. Production verified: `pulsesoc.com` returns 200, and
+`/api/stripe/webhook` returns 400 to both an unsigned request and a
+bad-signature request, so signature verification is intact on the live endpoint.
+
+They were **not** pushed as the local `main` branch. Local `main` was a parallel
+lineage 44 commits behind the remote, and carried one commit belonging to another
+session — already on `origin/main` under a different SHA, proven by identical
+`git patch-id`. Only this mission's nine commits were rebased and pushed; the
+shared checkout's 35 uncommitted foreign files were left untouched.
+
+**Deploying this did not enable any money movement.** The three fee gates are
+still unset, so the effective rate stays 0 bps, and `run_once` still has no
+production caller. What went live is the money-*protection* half: the chargeback
+freeze, the fraud-warning hold, the deauthorization guard, and the onboarding
+reconciliation. The chargeback defect described in §3 was live in production
+before this deploy and is now fixed.
 
 ## 11. Owner actions required
 

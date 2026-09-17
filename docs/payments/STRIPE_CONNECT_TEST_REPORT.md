@@ -1,7 +1,11 @@
 # Stripe Connect — Test Report
 
 Date: 2026-09-17
-Commit range: `47428c43` … `78d027fd`
+Commit range as shipped: `7af15bbb` … `e429a6cf` (rebased onto `origin/main`).
+The results below were first produced on the pre-rebase lineage
+(`47428c43` … `78d027fd`) and then **re-run in full** on the rebased commits
+before the push; `git range-diff` reported the nine commits byte-identical
+across the rebase.
 
 This report records what was **executed**, with results. Where something was not
 executed, it says so and why. No test result here is inferred from the existence
@@ -77,9 +81,15 @@ fakes a suite failure.
 ### The 3 failures
 
 `test_seller_listing_readiness_route.py` — pre-existing, from another session's
-in-flight `resubmittable` work on the same shared checkout. Not touched by this
-mission and not caused by it. Confirmed by the fact that no file changed here
-imports or affects that route.
+in-flight `resubmittable` work. Not touched by this mission and not caused by it.
+
+Proven rather than argued: the same three tests
+(`test_a_ready_listing_carries_the_verdict`,
+`test_every_listing_in_the_store_carries_a_verdict`,
+`test_the_verdict_carries_no_money_or_supplier_facts`) fail identically when run
+in a clean worktree checked out at the deploy base `9cbaf759` — i.e. with none of
+this mission's commits applied. They were already failing on `origin/main` before
+the push and this deploy does not introduce them.
 
 ## 4. Adjacent suites
 
