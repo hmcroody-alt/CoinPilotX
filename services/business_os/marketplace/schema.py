@@ -187,6 +187,9 @@ def ensure_schema(conn=None) -> None:
             "fee_policy_version": "TEXT",
             "fee_base": "TEXT",
             "return_policy_version": "TEXT",
+            # When the seller marked the order shipped. Anchors the buyer's return
+            # window; NULL falls back to created_at, never to "no deadline".
+            "delivered_at": "TEXT",
             "listing_policy_version": "TEXT",
             "payout_policy_version": "TEXT",
             "payout_status": "TEXT NOT NULL DEFAULT 'pending_order'",
