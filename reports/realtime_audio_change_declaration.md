@@ -3837,3 +3837,138 @@ Delete the `if (params.direction !== "outgoing")` wrapper and remove
 `markRingSeen(callId)`. No schema change, no contract change, no server-side
 state. The `ERROR_CATALOG` additions are independent and need not be reverted
 with it.
+
+## Answer-joins-media addendum (2026-09-17)
+
+Declares one protected file changed: `mobile-native/src/calls/callKitBridge.ts`,
+category `audio_and_video_call_adapter`.
+
+### Why the change is required
+
+A callee who answered from CallKit accepted the call and then went silent. The
+server log for calls 463 and 464 shows `POST /api/calls/<id>/accept` returning
+200 and then **not one further request from that device** — no `join-token`, no
+`connected`, not even a status poll. The caller meanwhile ran the full sequence
+and reported connected, so the caller's UI read "connected" for a call the
+callee had never entered, and CallKit tore the callee's side down with no audio
+behind it. The user-visible symptom was "the call automatically ends when I
+answer", and the asymmetry — ended on one handset, connected on the other — is
+what identified it as a missing join rather than a teardown.
+
+The cause was a dependency nobody had written down. `/accept` already returns
+Agora join credentials and moves the call to `connecting`, but the answer
+handler discarded that response (`acceptCall(callId).catch(...)`). The only
+thing left that could start a join was `callSessionStore`'s status poll, and
+that poll is gated on `appIsForegrounded()` while iOS suspends its timer anyway.
+Answering from the lock screen leaves the app BACKGROUNDED, which is the entire
+point of the feature — so the one path this feature exists for was the one path
+that could not join. Answering in-app appeared to work only because it is
+foregrounded by construction; the poll was silently doing the work there too.
+
+### Which feature required it
+
+The incoming-call experience (PushKit → CallKit ring on a locked handset). The
+ring itself now works on build 24; this is the next step of the same path —
+answering it. No audio-quality, AVAudioSession, microphone-publication, or
+livestream change was made or authorized.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/calls/callKitBridge.ts` | `audio_and_video_call_adapter` | Added `onAccepted?: (call: PulseCall) => void` to `CallKitCallbacks` and a `PulseCall` type-only import. In `provider.onAnswer`, the accept response is now forwarded (`acceptCall(callId).then((call) => callbacks.onAccepted?.(call))`) instead of discarded, and `callbacks.onAnswered?.(callId)` was moved ahead of the request so a session exists before the response can land. Nothing else in the file changed. |
+
+Supporting non-protected files:
+`mobile-native/src/calls/IncomingCallLayer.tsx` (opens the session from
+`onAnswered` and adopts the accepted record in the new `onAccepted`; the in-app
+accept path mirrors the same two steps in the same order),
+`mobile-native/src/calls/__tests__/calleeAnswerJoinsMedia.test.tsx` (new).
+
+### Why this is not an audio change
+
+The diff contains no `AVAudioSession`, no `Audio.setAudioModeAsync`, no
+`expo-av` call site, no Agora engine creation, no second engine or publication
+path, no lease or ownership call, and no new module-scope singleton. It adds one
+optional callback to an existing type, forwards a promise result that was
+already being awaited, and reorders two statements. The join it enables goes
+through the existing `callSessionStore` → `ensureCallMediaConnected` path, which
+is unchanged; `realtimeAudioEngine`, `useNativeCallRoom` and the ownership
+coordinator are untouched. The file is protected because it is the call adapter,
+not because this hunk is audio — but the declaration is owed regardless.
+
+### Expected behavior change
+
+A callee who answers from CallKit joins the Agora channel using the credentials
+`/accept` already returned, without waiting for a poll. On a locked handset that
+is the difference between audio and silence. Answering in-app is unchanged in
+outcome but now reaches the media room by the same route rather than depending
+on the poll, and a second call answered onto an already-mounted Call screen now
+replaces the session instead of staying pinned to the previous one — which is
+how call 464 was answered into a session still polling the ended call 463 (that
+device POSTed `visibility` for 463 at 07:24:53 and got a 409).
+
+### Regression risk
+
+Low, and the failure mode worth naming is a double join: `onAccepted` adopting a
+snapshot while the poll also adopts one. `adoptCallSnapshot` routes both through
+`ensureCallMediaConnected`, which is idempotent on an already-connected room, and
+the new test pins `joinChannel` to **exactly one** call rather than "at least
+one" so a regression into double-joining fails rather than passes. The second
+risk is ordering: if `onAnswered` did not run first, `adoptCallSnapshot`'s
+`snapshot.sessionActive` guard would skip the join silently. That ordering is now
+load-bearing, is commented as such in both files, and is pinned by a dedicated
+test.
+
+### Tests run
+
+- `src/calls/__tests__/calleeAnswerJoinsMedia.test.tsx` — **4 passed**, new. Runs
+  with `AppState.currentState` forced to `background` and no timer fired, and
+  asserts `getCallStatus` and `requestCallJoinToken` were **never** called.
+  Asserting "no status fetch" is what keeps it honest: a version that joins only
+  because something polled would pass a bare "did it join" check while leaving
+  the defect in place. Includes a positive control (nothing answered → no join).
+- **Mutation-verified**, each reverted afterwards and the files confirmed clean
+  by hash:
+  - Whole fix reverted (`git checkout` both files) → **3 of 4 failed**; the
+    positive control still passed.
+  - Drop `beginCallSession` from `onAnswered`, keeping `onAccepted` → **3
+    failed**, and critically the failure lands on
+    `expect(joinChannel).toHaveBeenCalledTimes(1)` itself, not on the callback's
+    existence — so the test guards the join, not merely the wiring.
+  - Drop `adoptCallSnapshot` from `onAccepted` → **2 failed / 2 passed**, exactly
+    the predicted split: the join assertion fails while the session assertion
+    stays green. Each assertion is independently load-bearing.
+- Full native suite: **455 suites, 7867 tests, all passed.**
+- Full gate battery, all green: `npm run typecheck` (exit 0),
+  `npm run test:realtime-audio-critical` (**191**), `npm run test:realtime-audio`
+  (**377**), `npm run test:realtime-audio-architecture` (**22**),
+  `python3 -m unittest tests.protection.test_realtime_audio_architecture`
+  (**19**), and the Agora token/room pytest set (**50**).
+- Native build verification: satisfied by the real iOS build for TestFlight
+  build 25 rather than by `expo prebuild --no-install`. The prebuild path was
+  exercised for the 2026-09-16 addendum and recorded clean; an actual signed
+  build of the shipping target is the stronger evidence and is being produced
+  anyway.
+
+### Physical validation required
+
+Owed. It cannot be satisfied on the simulator: the simulator can be the caller
+but never the callee (no APNs/PushKit), and it routes audio through the Mac, so
+it cannot produce audible evidence for the checklist. The matrix that must be
+run on P3r7or once build 25 lands is rows 1 and 2 of
+`docs/realtime_audio_release_checklist.md` §4 — answer from the **lock screen**
+and confirm speech is physically audible in **both** directions — plus row 8
+(a subsequent call still acquires audio). Rows 3, 4 and 7's livestream legs are
+not required: no livestream path is touched by this diff.
+
+### Rollback procedure
+
+Restore `acceptCall(callId).catch(() => undefined);` after
+`callbacks.onAnswered?.(callId)` in `provider.onAnswer`, and delete `onAccepted`
+from `CallKitCallbacks` along with the `PulseCall` import. In
+`IncomingCallLayer.tsx`, remove the `onAccepted` handler and the
+`beginCallSession` call in `onAnswered`, and drop the `beginCallSession` /
+`adoptCallSnapshot` pair from the in-app accept path. No schema change, no
+contract change, no server-side state, and no coordination with the backend:
+`/accept` returned join credentials before this change and still does — the
+client was simply throwing them away.
