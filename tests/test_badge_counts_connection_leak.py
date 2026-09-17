@@ -7,7 +7,7 @@
 the top and called `conn.close()` on the last line, with no `try/finally`
 between them. Every `cur.execute` in between can raise -- a missing column is
 the realistic case, since `pulse_badge_counts` reads `target_url`,
-`conversation_type` and `membership_state` across four optional tables that are
+`conversation_type` and `membership_state` across six optional tables that are
 probed with `_table_exists` rather than guaranteed by a migration.
 
 What makes it expensive is where it is called from. `pulse_badge_counts` runs on
@@ -188,9 +188,15 @@ class NotificationSystemBadgeCountsConnectionTests(unittest.TestCase):
     def test_a_failing_ensure_schema_still_returns_the_connection(self):
         """`ensure_schema` runs before the first cursor, and can raise on its own.
 
-        It issues DDL against the connection it is handed, so on Postgres it is
-        the likeliest thing in this function to fail -- and it fails before any
-        query the caller would recognise as theirs.
+        It is `@run_once_per_process`, so the DDL fires on the first call in a
+        worker and is a no-op afterwards -- but the guard caches only successes.
+        A call that raises is never cached, so a schema pass that keeps failing
+        raises again on *every* subsequent push instead of settling down. That
+        is precisely the burst the missing `finally` was worst for: one leaked
+        connection per push, against a pool of 8 + 8 with a 3s timeout.
+
+        It fails before any query the caller would recognise as its own, which
+        is why it gets a case separate from the count below.
         """
         conn = LedgerConnection()
         with patch.object(pns.db_service, "connect", return_value=conn), patch.object(
