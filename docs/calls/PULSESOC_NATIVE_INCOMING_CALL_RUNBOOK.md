@@ -43,6 +43,30 @@ present CallKit.
 A development-signed build talking to a deployment with `APNS_USE_SANDBOX` unset is
 the misconfiguration that produces "rings once, then never again" — see §4.2.
 
+The entitlement is no longer a literal: it expands `$(PULSESOC_APS_ENVIRONMENT)`,
+declared `development` for Debug and `production` for Release. **Do not read the
+checked-in plist to find out what a build actually got.** Under automatic signing
+Xcode rewrites `aps-environment` from the provisioning profile, so the file is
+advisory there; under manual signing (EAS) the file is authoritative. The only
+answer that is always true comes from the artefact:
+
+```bash
+codesign -d --entitlements :- <path>/PulseSoc.app
+```
+
+A local device build is Release *and* development-signed. That combination is
+expressed by overriding the setting on the command line —
+`PULSESOC_APS_ENVIRONMENT=development` — which
+`scripts/install_pulsesoc_native_dev_iphone.sh` passes.
+
+### 1.2.1 Bundle ids and `apns-topic`
+
+`apns-topic` is derived per device from the `app_bundle` recorded at registration,
+falling back to the deployment-wide `voip_topic()`. Before shipping any build on a
+second bundle id, add that id to `APNS_ALLOWED_BUNDLE_IDS` — an undeclared bundle
+falls back to the wrong topic, and `DeviceTokenNotForTopic` revokes the token
+permanently instead of retrying. Ordering matters: configuration first, build second.
+
 ### 1.3 Gates
 
 Run all three before deploying. They must be run against **committed** state; the
@@ -341,11 +365,19 @@ Carried from the audit. These are open.
 1. **No PostgreSQL concurrency proof.** The two-thread accept race test is skipped.
 2. **No call-creation rate limit.** `/api/calls/start` is authenticated but
    unthrottled.
-3. **`aps-environment` is a hardcoded literal** (`development`) in
-   `mobile-native/ios/PulseSoc/PulseSoc.entitlements`. The backend compensates
-   per-token at send time; the signing configuration itself does not.
-4. **No physical-device verification** of lock screen, terminated app, Silent Mode,
+3. **The `production` entitlement has never been observed in a signed artefact.**
+   `aps-environment` is now configuration-derived rather than a literal, but local
+   automatic signing takes its value from the provisioning profile, so only the
+   `development` half has been proven on hardware. Confirming the `production` half
+   needs a distribution profile.
+4. **No dev/prod bundle split.** Both configurations still build
+   `com.pulsesoc.app`; `com.pulsesoc.nativeapp.dev` reaches the native project only
+   through prebuild, which a committed `ios/` directory bypasses. The per-device
+   topic derivation is in place, but `mobile-native/src/api/calls.ts` does not report
+   `app_bundle`, so every stored row is empty and every device resolves to the same
+   topic.
+5. **No physical-device verification** of lock screen, terminated app, Silent Mode,
    Focus, or Bluetooth routing.
-5. **No sweeper worker.** Stale-call cleanup depends on someone polling
+6. **No sweeper worker.** Stale-call cleanup depends on someone polling
    `/api/calls/<id>/status` or `/api/calls/active`. A call whose participants all
    disappear is not swept until an unrelated request happens to sweep it.

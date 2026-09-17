@@ -18,6 +18,17 @@ define it, with Release on `production` and Debug on `development`. A local
 device build is Release *and* development-signed, which is a real combination
 this does not forbid — it is expressed by overriding the setting on the xcodebuild
 command line, which is what `scripts/install_pulsesoc_native_dev_iphone.sh` does.
+
+One measured caveat, recorded so nobody re-derives it from first principles and
+gets it backwards: under `CODE_SIGN_STYLE = Automatic` Xcode overwrites
+`aps-environment` with the value carried by the provisioning profile it picked,
+so on a local device build the entitlements file is advisory and this setting is
+not observable in the signed product. A Release build with no override produced
+an `.xcent` reading `development`, with `ProcessProductPackaging` confirmed to
+have actually re-run. The wiring is authoritative under *manual* signing, which
+is the path EAS takes for preview and store builds — and that path cannot be
+exercised here, because it needs a distribution profile this machine does not
+have. These checks therefore defend the configuration, not a signed artefact.
 """
 
 import plistlib
@@ -104,10 +115,17 @@ class ApsEnvironmentContractTest(unittest.TestCase):
         """MUTATION: drop the override from the local device install script.
 
         That script builds `-configuration Release` and signs with an Apple
-        Development identity. Without the override it would inherit `production`,
-        which a development provisioning profile does not grant, so codesign fails.
-        The override is the only reason a development-signed Release build is still
-        possible, and it was dead code until the entitlement started reading it.
+        Development identity, so it must say which environment it means rather than
+        inheriting Release's `production`.
+
+        It is worth being precise about what this does and does not buy, because the
+        intuitive answer is wrong. Measured on an iPhone 16 Pro build: with
+        `CODE_SIGN_STYLE = Automatic` Xcode rewrites `aps-environment` from the
+        selected provisioning profile, so the entitlements file is advisory and the
+        `.xcent` came out `development` both with and without the override. The
+        override matters under *manual* signing — which is how EAS builds — where the
+        entitlements file is authoritative and a value the profile does not grant is
+        a hard codesign failure.
         """
         script = INSTALL_SCRIPT.read_text(encoding="utf-8")
         self.assertIn("-configuration Release", script)
