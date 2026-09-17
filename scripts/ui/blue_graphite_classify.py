@@ -113,7 +113,51 @@ def read_opaque_exceptions() -> set[str]:
     }
 
 
-def classify(row: dict, protected: set[str], opaque: set[str]) -> tuple[str, str]:
+# A conversation theme or wallpaper the member picked. The ids are persisted
+# server-side as `appearance.wallpaper` and shared with the native catalog in
+# mobile-native/src/theme/chatWallpaper.ts, so `deep_space` and `dark_nebula`
+# are near-black because that is the product, not because nobody restyled them.
+USER_SELECTION_ATTR = re.compile(r"\[data-control-(?:theme|wallpaper)\s*=")
+
+
+def user_selected_line_ranges(path: str) -> set[int]:
+    """Line numbers inside a `[data-control-theme=...]`-scoped block.
+
+    Derived from the stylesheet's own selectors rather than from a list of
+    wallpaper ids, because the two would drift the moment someone ships a new
+    theme -- and the failure would be silent in the safe direction only until
+    the new theme happened to be the one a blind migration flattened.
+
+    The *default* block carries no attribute selector and so is deliberately
+    not matched: a member who has chosen nothing is looking at the platform's
+    own chat chrome, which is exactly what this migration is for.
+    """
+    full = os.path.join(REPO, path)
+    if not os.path.isfile(full):
+        return set()
+    stack: list[str] = []
+    pending: list[str] = []
+    marked: set[int] = set()
+    for lineno, line in enumerate(open(full, encoding="utf-8"), 1):
+        if stack and any(USER_SELECTION_ATTR.search(s) for s in stack):
+            marked.add(lineno)
+        for chunk in re.split(r"([{}])", line):
+            if chunk == "{":
+                stack.append(" ".join(pending))
+                pending = []
+                if any(USER_SELECTION_ATTR.search(s) for s in stack):
+                    marked.add(lineno)
+            elif chunk == "}":
+                if stack:
+                    stack.pop()
+                pending = []
+            else:
+                pending.append(chunk.strip())
+    return marked
+
+
+def classify(row: dict, protected: set[str], opaque: set[str],
+             user_scoped: dict[str, set[int]]) -> tuple[str, str]:
     """Return (bucket, reason). First matching rule wins; order is the policy."""
     path, prop, literal = row["path"], row["property"], row["literal"]
     alpha = float(row["alpha"])
@@ -159,6 +203,20 @@ def classify(row: dict, protected: set[str], opaque: set[str]) -> tuple[str, str
     if alpha < 0.8 and (row["r"], row["g"], row["b"]) == ("0", "0", "0"):
         return "dimming_scrim", f"pure black at alpha {alpha:.2f} acts as a dimmer"
 
+    # Checked after the glyph and shadow rules so that text inside a themed
+    # block still reports as text: the exclusion is about surfaces the member
+    # chose, and a label is not one.
+    if int(row["line"]) in user_scoped.get(path, ()):
+        return "user_content", (
+            "inside a `[data-control-theme]` / `[data-control-wallpaper]` block; "
+            "a conversation background the member picked"
+        )
+    if name == "chatWallpaper.ts":
+        return "user_content", (
+            "the native wallpaper catalog; same ids and same member choice as the "
+            "web `--control-wallpaper` stacks, one of which is named minimal_black"
+        )
+
     if path in opaque:
         return "media_canvas", (
             "immersive or fixed-palette surface already pinned by "
@@ -201,11 +259,17 @@ def main() -> int:
         header = fh.readline().rstrip("\n").split("\t")
         rows = [dict(zip(header, line.rstrip("\n").split("\t"))) for line in fh if line.strip()]
 
+    user_scoped = {
+        path: user_selected_line_ranges(path)
+        for path in {r["path"] for r in rows}
+        if path.endswith(".css")
+    }
+
     counts: Counter[str] = Counter()
     by_file: dict[str, Counter[str]] = defaultdict(Counter)
     out = []
     for row in rows:
-        bucket, reason = classify(row, protected, opaque)
+        bucket, reason = classify(row, protected, opaque, user_scoped)
         counts[bucket] += 1
         by_file[row["path"]][bucket] += 1
         out.append({**row, "bucket": bucket, "reason": reason})
