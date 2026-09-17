@@ -297,10 +297,28 @@ irreversible per device: a token minted under an unaddressed bundle draws
 replaying — correctly, since unlike `BadDeviceToken` it cannot be a host mismatch. A
 wrong host costs one request; a wrong topic costs the handset its ability to ring.
 
-The development install script keeps building `com.pulsesoc.nativeapp.dev` for
-side-by-side installation, which is a real capability unrelated to push. It now prints
-that such a build cannot receive VoIP pushes, so that "it never rings" is not
-mistaken for a CallKit or Agora defect.
+The development install script now builds `com.pulsesoc.app` as well. It had built
+`com.pulsesoc.nativeapp.dev` and refused the production id outright, which kept a
+development build installable beside the App Store one — that was traded away
+knowingly, because a build under any other bundle cannot receive a VoIP push at all,
+and the device used to test calls is the worst possible device to make unringable. The
+install now replaces an App Store or TestFlight build on that handset (an upgrade in
+place; the container survives) and the script warns before building.
+
+Two smaller findings came out of making that change:
+
+* `PULSESOC_DISPLAY_NAME` was referenced by `Info.plist` and defined by no
+  configuration, so `CFBundleDisplayName` expanded to the empty string and iOS
+  backfilled it from `CFBundleName`. Exactly the `aps-environment` failure shape —
+  a plist expanding a build setting nothing declares, silent because an undefined
+  setting is not an error. It only stopped being cosmetic when the two builds started
+  sharing a bundle id, since the display name became the sole on-device distinction.
+  Now declared in both configurations and gated.
+* A development-signed build mints a *sandbox* PushKit token while the deployment
+  addresses the production host, so the first push draws `BadDeviceToken` and relies
+  on §6's one-shot replay to connect. This is expected and self-correcting — one
+  `voip_push_environment_corrected` event per device — but it reads like a dead token
+  to anyone watching the logs, so it is stated in the script output and the runbook.
 
 ---
 

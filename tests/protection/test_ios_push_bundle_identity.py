@@ -84,32 +84,68 @@ class PushBundleIdentityTest(unittest.TestCase):
                 "are revoked on first use, not retried.",
             )
 
-    def test_a_build_under_another_bundle_says_it_cannot_ring(self):
-        """MUTATION: drop the VoIP warning from the development install script.
+    def test_the_install_script_declares_the_consequence_it_carries(self):
+        """MUTATION: drop whichever warning matches the bundle the script builds.
 
-        Conditional by construction: the requirement exists only while the script
-        actually deviates. If it is ever changed to build the deployment bundle, the
-        warning stops being required rather than becoming a stale literal to
-        maintain — so this does not turn into the kind of check that survives its own
-        reason for existing.
+        Branching rather than skipping, because either choice has a consequence the
+        operator cannot see from the command line and would misdiagnose:
+
+        * deployment bundle → the install *replaces* an App Store or TestFlight
+          PulseSoc on that device, since iOS matches on bundle id and treats it as an
+          upgrade. Silent, and only noticed later.
+        * any other bundle → the build cannot receive a VoIP push at all, because its
+          token draws `DeviceTokenNotForTopic` and is revoked rather than retried.
+
+        An earlier version skipped the branch it was not on. That is how a guard ends
+        up green while guarding nothing, so both branches assert here.
         """
         script = INSTALL_SCRIPT.read_text(encoding="utf-8")
         override = re.search(r'PRODUCT_BUNDLE_IDENTIFIER="\$\{?(\w+)\}?"', script)
-        if override is None:
-            self.skipTest("The install script no longer overrides the bundle identifier.")
-
+        self.assertIsNotNone(
+            override, f"{INSTALL_SCRIPT.name} no longer sets PRODUCT_BUNDLE_IDENTIFIER."
+        )
         assigned = re.search(rf'{override.group(1)}="([\w.]+)"', script)
         self.assertIsNotNone(assigned, f"{override.group(1)} is never assigned a literal.")
-        if assigned.group(1) == DEPLOYMENT_BUNDLE_ID:
-            self.skipTest("The install script builds the deployment bundle; no caveat needed.")
+        built = assigned.group(1)
 
-        self.assertRegex(
-            script,
-            r"echo[^\n]*VoIP",
-            f"{INSTALL_SCRIPT.name} installs {assigned.group(1)!r}, which cannot receive a "
-            "VoIP push, without saying so. The operator is left to debug CallKit for a "
-            "phone that was never addressable.",
-        )
+        if built == DEPLOYMENT_BUNDLE_ID:
+            self.assertRegex(
+                script,
+                r"(?i)echo[^\n]*(replaces|overwrit|WARNING)",
+                f"{INSTALL_SCRIPT.name} installs {built!r} over any App Store build on "
+                "the device without warning that it does so.",
+            )
+        else:
+            self.assertRegex(
+                script,
+                r"echo[^\n]*VoIP",
+                f"{INSTALL_SCRIPT.name} installs {built!r}, which cannot receive a VoIP "
+                "push, without saying so. The operator is left to debug CallKit for a "
+                "phone that was never addressable.",
+            )
+
+    def test_the_display_name_is_defined_rather_than_inherited_empty(self):
+        """MUTATION: remove `PULSESOC_DISPLAY_NAME` from either configuration.
+
+        `Info.plist` sets `CFBundleDisplayName` to `$(PULSESOC_DISPLAY_NAME)`, and for
+        as long as this repository has had that line no configuration defined the
+        setting — so it expanded to the empty string, which is not a build error. iOS
+        then falls back to `CFBundleName`, the home screen reads "PulseSoc", and the
+        defect is invisible.
+
+        It stopped being cosmetic when the development install script moved onto the
+        deployment bundle id: two builds now share an identifier, and the display name
+        is the only thing on the device that distinguishes a locally-signed build from
+        the App Store one. A silently empty value collapses that distinction back to
+        nothing.
+        """
+        for name, body in _app_target_configurations().items():
+            self.assertRegex(
+                body,
+                r"PULSESOC_DISPLAY_NAME = [^;]+;",
+                f"{name} does not define PULSESOC_DISPLAY_NAME, so CFBundleDisplayName "
+                "expands to empty and falls back to CFBundleName.",
+            )
 
     def test_the_sender_addresses_the_bundle_the_project_builds(self):
         """Positive control, and the tie that makes the other two mean something.

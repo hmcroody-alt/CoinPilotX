@@ -413,14 +413,22 @@ These are open, and nothing in this document should be read as closing them.
      re-introducing a second bundle without it converts a self-healing misroute into
      permanent token revocation, and re-introduction is the kind of change someone
      makes for unrelated reasons.
-   * `scripts/install_pulsesoc_native_dev_iphone.sh` still builds
-     `com.pulsesoc.nativeapp.dev`, deliberately, so a development build can sit beside
-     the App Store app instead of overwriting it. That capability is unrelated to push
-     and is retained. But a build under that bundle **cannot receive a VoIP push at
-     all** — it draws `DeviceTokenNotForTopic`, which is revoked rather than replayed.
-     The script now says so on every install, because "it never rings" on a dev-bundle
-     build is indistinguishable from the CallKit and Agora defects someone would
-     investigate first. Ring-testing must happen on a `com.pulsesoc.app` build.
+   * `scripts/install_pulsesoc_native_dev_iphone.sh` now builds `com.pulsesoc.app`
+     too. It previously built `com.pulsesoc.nativeapp.dev` so a development build
+     could sit beside the App Store app, and refused the production id outright. That
+     side-by-side property was traded away deliberately: a build under any other
+     bundle cannot receive a VoIP push at all, which is the wrong trade for the device
+     calls are tested on. The install now replaces an App Store or TestFlight PulseSoc
+     on that device — an upgrade in place, so the container survives — and the script
+     warns before building. The display name stays "PulseSoc Native Dev", which is now
+     the only on-device signal separating the two.
+
+     Consequence worth recording because it looks like a fault and is not: the build
+     is development-signed, so its PushKit token is a *sandbox* token while the
+     deployment addresses the production host. The first push draws `BadDeviceToken`,
+     the sender replays once against the other host and persists the correction, and
+     the call connects. One `voip_push_environment_corrected` event per device is the
+     designed path.
 5. **Physical iPhone 16 Pro verification.** No lock-screen, terminated-app, Silent
    Mode, Focus, or Bluetooth-routing verification has been performed on hardware. No
    simulator result substitutes for it.

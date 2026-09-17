@@ -383,13 +383,26 @@ Carried from the audit. These are open.
    `mobile-native/src/api/calls.ts` does not report `app_bundle`, so every stored row
    is empty.
 
-   **Do not ring-test on a build from
-   `scripts/install_pulsesoc_native_dev_iphone.sh`.** That script builds
-   `com.pulsesoc.nativeapp.dev` so the development app can sit beside the App Store
-   one, which is useful and intended — but such a build cannot receive a VoIP push at
-   all. It draws `DeviceTokenNotForTopic`, which is revoked rather than retried, so
-   the phone goes quiet permanently rather than transiently. The script prints this
-   on every install. Use a `com.pulsesoc.app` build for any call-delivery test.
+   **`scripts/install_pulsesoc_native_dev_iphone.sh` builds `com.pulsesoc.app`**, so
+   a build from it is ring-testable. It previously built
+   `com.pulsesoc.nativeapp.dev` to sit beside the App Store app; that separation was
+   dropped because a build under any other bundle cannot receive a VoIP push at all —
+   its token draws `DeviceTokenNotForTopic`, which is revoked rather than retried,
+   which is a poor property for the handset you test calls on.
+
+   Two things follow that will otherwise be misread:
+
+   * **The install replaces any App Store or TestFlight PulseSoc on that device.**
+     iOS matches on bundle id and treats it as an upgrade. The container survives, so
+     it is not a data wipe, but the store build is gone until reinstalled. The script
+     warns before building. On the home screen the local build reads "PulseSoc Native
+     Dev" — that display name is now the only thing distinguishing the two.
+   * **Expect exactly one `voip_push_environment_corrected` event per device.** The
+     build is development-signed, so PushKit mints a *sandbox* token while the
+     deployment addresses the production host. The first push draws
+     `BadDeviceToken`; the sender replays once against the other host, succeeds, and
+     persists the correction. This is the designed path, not a fault. A token that
+     both hosts reject is genuinely dead — that one is not.
 5. **No physical-device verification** of lock screen, terminated app, Silent Mode,
    Focus, or Bluetooth routing.
 6. **No sweeper worker.** Stale-call cleanup depends on someone polling

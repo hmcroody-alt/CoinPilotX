@@ -378,11 +378,19 @@ unlike `BadDeviceToken` it cannot be a host mismatch. A wrong host costs one req
 and then self-heals. A wrong topic costs the handset its ability to ring, and nothing
 retries it.
 
-`scripts/install_pulsesoc_native_dev_iphone.sh` overrides the bundle id so a
-development build can sit beside the App Store app rather than replacing it. That is
-retained — it is a side-by-side install capability, not a push configuration — but a
-build it produces is structurally unable to receive a VoIP push, and the script now
-says so on every install.
+`scripts/install_pulsesoc_native_dev_iphone.sh` builds `com.pulsesoc.app` as well. It
+previously built `com.pulsesoc.nativeapp.dev` for side-by-side installation; that was
+given up because a build under any other bundle cannot receive a VoIP push at all. The
+install therefore replaces an App Store or TestFlight build on that device, and the
+script warns before doing so. `PULSESOC_DISPLAY_NAME` keeps the local build labelled
+"PulseSoc Native Dev", which is the only remaining on-device distinction — and that
+setting was itself undefined in both configurations until now, expanding to an empty
+`CFBundleDisplayName` that iOS silently backfilled from `CFBundleName`.
+
+Such a build is development-signed, so PushKit mints a sandbox token while the
+deployment addresses the production host. §6's one-shot replay is what makes it ring:
+`BadDeviceToken` on the first attempt, accepted on the other host, correction
+persisted. That is the mechanism working, not a misconfiguration.
 
 ---
 
@@ -474,6 +482,7 @@ All names only — no values.
 | --- | --- |
 | `EXPO_PUBLIC_NATIVE_CALLKIT_ENABLED` | Native CallKit kill switch. Default-on, explicit-off. Not declared in `.env.example` — it is an Expo build-time flag, a different contract from the server's runtime `os.getenv` surface. |
 
-Bundle id: `com.pulsesoc.app` for both development and production; the VoIP topic is
-that id with `.voip` appended. `com.pulsesoc.nativeapp.dev` exists only for
-side-by-side local installation and is not push-capable.
+Bundle id: `com.pulsesoc.app` everywhere, including local device builds; the VoIP topic
+is that id with `.voip` appended. `com.pulsesoc.nativeapp.dev` survives only in
+`app.config.js` (prebuild-only, inert) and in Keychain service names, which namespace
+credentials by `__DEV__` and are unrelated to push.
