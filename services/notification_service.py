@@ -1229,8 +1229,14 @@ def create_pulse_notification(
             notification_type = str(metadata.get("type") or note_type or push_type)[:80]
             payload_type = push_type if is_message_like or push_type in {"chat_message", "private_message", "group_message"} else notification_type
             try:
-                badge_counts = pulse_badge_counts(user_id)
-                badge_count = int(badge_counts.get("chat_unread_count") if is_message_like else badge_counts.get("alert_unread_count") or 0)
+                # The icon carries one combined number, not the count for
+                # whichever surface happened to fire. Scoping it here (chat for
+                # a message, alerts otherwise) meant every push overwrote the
+                # client reconciler's combined figure with a smaller one, and
+                # dropped commerce unreads entirely — commerce sends no push of
+                # its own, so its count only ever reaches the icon by riding
+                # along on someone else's.
+                badge_count = pulse_icon_badge_count(pulse_badge_counts(user_id))
             except Exception:
                 badge_count = int(metadata.get("badge") or 0)
             push_metadata = {
@@ -1502,6 +1508,30 @@ def pulse_badge_counts(user_id):
         "count": alert_count,
         "unread_count": alert_count,
     }
+
+
+def pulse_icon_badge_count(counts):
+    """The single number the app icon should carry: alert + chat + commerce.
+
+    Deliberately NOT `total_unread_count`. That key excludes commerce so it
+    keeps agreeing with `totalUnreadCount()` in
+    mobile-native/src/api/notifications.ts, which falls back to alert + chat
+    whenever the key is absent or zero. The icon is a different question: it is
+    the one badge that stands for everything unread, and the client's own
+    reconciler writes `badgeFor("combined", ...)` for it — `totalCount +
+    commerceCount`, mobile-native/src/core/unreadCounts.ts:264. A push that
+    stamped a scoped count instead would undo that reconcile until the next
+    foreground.
+
+    Takes an already-fetched counts dict rather than a user_id so a caller that
+    also needs the individual keys does not pay for a second query.
+    """
+    counts = counts or {}
+    return (
+        int(counts.get("alert_unread_count") or 0)
+        + int(counts.get("chat_unread_count") or 0)
+        + int(counts.get("commerce_unread_count") or 0)
+    )
 
 
 def pulse_unread_count(user_id):
@@ -2086,7 +2116,9 @@ def send_multi_channel_notification(user_id, notification_type, title, body, met
         else:
             category = _pulse_category(_pulse_type_for_alert(notification_type))
             try:
-                badge_count = int((pulse_badge_counts(user_id) or {}).get("alert_unread_count") or 0)
+                # Combined, for the same reason as the delivery path above: the
+                # icon is one number covering alerts, chat and commerce.
+                badge_count = pulse_icon_badge_count(pulse_badge_counts(user_id))
             except Exception:
                 badge_count = int(metadata.get("badge") or 0)
             push_metadata = {
