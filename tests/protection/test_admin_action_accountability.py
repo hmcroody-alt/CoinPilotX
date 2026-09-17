@@ -61,10 +61,16 @@ TREE = ast.parse(SOURCE)
 
 STATE_CHANGING = {"POST", "PUT", "PATCH", "DELETE"}
 
-# Any expression that establishes an admin identity for the request.
+# Any expression that establishes an admin identity for the request, directly or
+# via a helper that is itself verified below. `music_mutation_route` is the shared
+# body of the five owner music lifecycle routes; naming it here rather than
+# inlining a resolver into each route is only safe because
+# `test_the_music_authority_helpers_really_establish_an_identity` pins that it
+# authenticates before it does anything else.
 AUTH = re.compile(
     r"admin_login_required|admin_current_user|require_admin_api|require_admin_page"
     r"|require_admin_password|require_owner|_admin_or_redirect"
+    r"|music_authority_actor\(|music_mutation_route\("
 )
 # Any expression that writes an accountability record, directly or via a helper
 # that is itself verified below.
@@ -84,6 +90,10 @@ def _function(name):
 
 def _source_of(name):
     node = _function(name)
+    return "\n".join(LINES[node.lineno - 1 : node.end_lineno])
+
+
+def _segment(node):
     return "\n".join(LINES[node.lineno - 1 : node.end_lineno])
 
 
@@ -190,6 +200,55 @@ def test_music_moderation_enforces_the_permission_the_registry_declares():
             f"{name}() must enforce the pulse.moderate scope the registry declares "
             "for media.music, not merely check that some admin session exists."
         )
+
+
+def test_the_music_authority_helpers_really_establish_an_identity():
+    """The two names AUTH trusts by indirection have to earn it.
+
+    `music_authority_actor` is the only resolver the owner music routes have, and
+    `music_mutation_route` is the shared body five of them delegate to. Adding
+    both to AUTH means a route passes the authentication check without any admin
+    primitive appearing in its own source, so the trust has to be re-established
+    here or the entry is a hole rather than an indirection.
+
+    The ordering assertion is the part that matters. A resolver called somewhere
+    inside a long function is not the same as one called before the function
+    touches the database: the first thing `music_mutation_route` does must be to
+    find out who is asking, and the second must be to stop if the answer is
+    nobody.
+    """
+    resolver = _source_of("music_authority_actor")
+    assert "admin_current_user()" in resolver, (
+        "music_authority_actor() must resolve the web-admin session leg through "
+        "admin_current_user(), the same primitive every other admin route uses."
+    )
+    assert "require_permission(" in resolver, (
+        "Resolving an identity is not authorization. music_authority_actor() must "
+        "also check the named permission, or every music.* scope collapses into "
+        "'is an admin'."
+    )
+    assert "account_user_id()" in resolver and "admin_user_by_account_user_id" in resolver, (
+        "The native leg must resolve a proven account id through the stored "
+        "admin_users.account_user_id link. Anything the request *sends* choosing "
+        "the identity would let a caller nominate itself."
+    )
+
+    node = _function("music_mutation_route")
+    body = [
+        statement for statement in node.body
+        if not (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant))
+    ]
+    first, second = body[0], body[1]
+    assert isinstance(first, ast.Assign) and "music_authority_actor(" in _segment(first), (
+        "music_mutation_route() must call music_authority_actor() as its first "
+        "statement. A resolver reached only after some other work has already run "
+        "is not what AUTH is being told it is."
+    )
+    assert isinstance(second, ast.If) and "return" in _segment(second), (
+        "The denial from music_authority_actor() must be returned immediately. "
+        "Resolving an actor and then continuing past the refusal authenticates "
+        "nothing."
+    )
 
 
 def test_shared_password_actions_admit_they_cannot_attribute():
