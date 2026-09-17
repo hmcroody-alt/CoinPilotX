@@ -2112,19 +2112,23 @@ def get_notification(user_id: int, notification_id: int) -> dict[str, Any] | Non
 
 
 def badge_counts(user_id: int, chat_unread_count: int = 0) -> dict[str, Any]:
+    # _push_payload() calls this once per outbound notification, so a raise from
+    # ensure_schema or the count leaks a pooled connection per push.
     conn = db_service.connect()
-    ensure_schema(conn)
-    cur = conn.cursor()
-    cur.execute(
-        """
-        SELECT COUNT(*)
-        FROM notifications
-        WHERE recipient_user_id=? AND deleted_at IS NULL AND (read_at IS NULL OR status!='read')
-        """,
-        (int(user_id),),
-    )
-    alert_count = _int((cur.fetchone() or [0])[0])
-    conn.close()
+    try:
+        ensure_schema(conn)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COUNT(*)
+            FROM notifications
+            WHERE recipient_user_id=? AND deleted_at IS NULL AND (read_at IS NULL OR status!='read')
+            """,
+            (int(user_id),),
+        )
+        alert_count = _int((cur.fetchone() or [0])[0])
+    finally:
+        conn.close()
     return {
         "ok": True,
         "alert_unread_count": alert_count,

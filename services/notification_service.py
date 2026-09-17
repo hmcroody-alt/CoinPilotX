@@ -1401,93 +1401,99 @@ def _table_exists(cur, table_name):
 
 
 def pulse_badge_counts(user_id):
+    # Every execute below can raise -- a missing column on any of the optional
+    # tables is enough. The push path calls this per outbound notification and
+    # swallows the exception (notification_service.py:1232), so without the
+    # finally a failure leaks one pooled connection per push, silently.
     conn = user_context.connect()
-    cur = conn.cursor()
-    params = [int(user_id), *_message_notification_params()]
-    cur.execute(
-        f"""
-        SELECT COUNT(*)
-        FROM pulse_notifications
-        WHERE user_id=?
-          AND (is_read=0 OR read_at IS NULL)
-          AND NOT ({_message_notification_where_clause()})
-        """,
-        tuple(params),
-    )
-    alert_count = int(cur.fetchone()[0] or 0)
+    try:
+        cur = conn.cursor()
+        params = [int(user_id), *_message_notification_params()]
+        cur.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM pulse_notifications
+            WHERE user_id=?
+              AND (is_read=0 OR read_at IS NULL)
+              AND NOT ({_message_notification_where_clause()})
+            """,
+            tuple(params),
+        )
+        alert_count = int(cur.fetchone()[0] or 0)
 
-    chat_count = 0
-    commerce_count = 0
-    if _table_exists(cur, "pulse_conversation_participants"):
-        if _table_exists(cur, "pulse_conversations"):
-            # Split by conversation domain. Social Messages lists themselves
-            # already exclude business threads (pulse_conversation_summaries is
-            # called with include_types={"direct"}), so an unscoped badge counts
-            # threads the Messages screen will never render — an unread the user
-            # has no way to clear. Commerce keeps its number; it just carries it
-            # on its own key, for the Commerce Inbox to badge.
-            #
-            # LEFT JOIN, and COALESCE the type: a participant row whose
-            # conversation is missing stays social, which is what it counted as
-            # before this split. Only a row that positively says 'business' moves.
-            cur.execute(
-                """
-                SELECT
-                  COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') <> 'business'
-                                    AND COALESCE(p.unread_count,0) > 0
-                               THEN p.unread_count ELSE 0 END),0),
-                  COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') = 'business'
-                                    AND COALESCE(p.unread_count,0) > 0
-                               THEN p.unread_count ELSE 0 END),0)
-                FROM pulse_conversation_participants p
-                LEFT JOIN pulse_conversations c ON c.id = p.conversation_id
-                WHERE p.user_id=? AND COALESCE(p.left_at,'')=''
-                """,
-                (int(user_id),),
-            )
-            row = cur.fetchone() or (0, 0)
-            chat_count += int(row[0] or 0)
-            commerce_count += int(row[1] or 0)
-        else:
-            # No conversations table means no conversation_type, and commerce
-            # threads only ever live there — so nothing to separate.
+        chat_count = 0
+        commerce_count = 0
+        if _table_exists(cur, "pulse_conversation_participants"):
+            if _table_exists(cur, "pulse_conversations"):
+                # Split by conversation domain. Social Messages lists themselves
+                # already exclude business threads (pulse_conversation_summaries is
+                # called with include_types={"direct"}), so an unscoped badge counts
+                # threads the Messages screen will never render — an unread the user
+                # has no way to clear. Commerce keeps its number; it just carries it
+                # on its own key, for the Commerce Inbox to badge.
+                #
+                # LEFT JOIN, and COALESCE the type: a participant row whose
+                # conversation is missing stays social, which is what it counted as
+                # before this split. Only a row that positively says 'business' moves.
+                cur.execute(
+                    """
+                    SELECT
+                      COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') <> 'business'
+                                        AND COALESCE(p.unread_count,0) > 0
+                                   THEN p.unread_count ELSE 0 END),0),
+                      COALESCE(SUM(CASE WHEN COALESCE(c.conversation_type,'direct') = 'business'
+                                        AND COALESCE(p.unread_count,0) > 0
+                                   THEN p.unread_count ELSE 0 END),0)
+                    FROM pulse_conversation_participants p
+                    LEFT JOIN pulse_conversations c ON c.id = p.conversation_id
+                    WHERE p.user_id=? AND COALESCE(p.left_at,'')=''
+                    """,
+                    (int(user_id),),
+                )
+                row = cur.fetchone() or (0, 0)
+                chat_count += int(row[0] or 0)
+                commerce_count += int(row[1] or 0)
+            else:
+                # No conversations table means no conversation_type, and commerce
+                # threads only ever live there — so nothing to separate.
+                cur.execute(
+                    """
+                    SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
+                    FROM pulse_conversation_participants
+                    WHERE user_id=? AND COALESCE(left_at,'')=''
+                    """,
+                    (int(user_id),),
+                )
+                chat_count += int(cur.fetchone()[0] or 0)
+        # comm_v2_* and the legacy conversations/private_messages pair carry no
+        # commerce: neither has a business_id or a 'business' conversation_type, and
+        # business_os/messages writes exclusively to pulse_conversations. They are
+        # summed whole, deliberately.
+        if _table_exists(cur, "comm_v2_participants"):
             cur.execute(
                 """
                 SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
-                FROM pulse_conversation_participants
-                WHERE user_id=? AND COALESCE(left_at,'')=''
+                FROM comm_v2_participants
+                WHERE user_id=? AND COALESCE(membership_state,'active')='active' AND COALESCE(left_at,'')=''
                 """,
                 (int(user_id),),
             )
             chat_count += int(cur.fetchone()[0] or 0)
-    # comm_v2_* and the legacy conversations/private_messages pair carry no
-    # commerce: neither has a business_id or a 'business' conversation_type, and
-    # business_os/messages writes exclusively to pulse_conversations. They are
-    # summed whole, deliberately.
-    if _table_exists(cur, "comm_v2_participants"):
-        cur.execute(
-            """
-            SELECT COALESCE(SUM(CASE WHEN COALESCE(unread_count,0) > 0 THEN unread_count ELSE 0 END),0)
-            FROM comm_v2_participants
-            WHERE user_id=? AND COALESCE(membership_state,'active')='active' AND COALESCE(left_at,'')=''
-            """,
-            (int(user_id),),
-        )
-        chat_count += int(cur.fetchone()[0] or 0)
-    if _table_exists(cur, "conversations") and _table_exists(cur, "conversation_members") and _table_exists(cur, "private_messages"):
-        cur.execute(
-            """
-            SELECT COUNT(*)
-            FROM private_messages pm
-            JOIN conversation_members cm ON cm.conversation_id=pm.conversation_id AND cm.user_id=?
-            WHERE pm.sender_user_id != ?
-              AND pm.deleted_at IS NULL
-              AND pm.created_at > COALESCE(cm.last_read_at, '')
-            """,
-            (int(user_id), int(user_id)),
-        )
-        chat_count += int(cur.fetchone()[0] or 0)
-    conn.close()
+        if _table_exists(cur, "conversations") and _table_exists(cur, "conversation_members") and _table_exists(cur, "private_messages"):
+            cur.execute(
+                """
+                SELECT COUNT(*)
+                FROM private_messages pm
+                JOIN conversation_members cm ON cm.conversation_id=pm.conversation_id AND cm.user_id=?
+                WHERE pm.sender_user_id != ?
+                  AND pm.deleted_at IS NULL
+                  AND pm.created_at > COALESCE(cm.last_read_at, '')
+                """,
+                (int(user_id), int(user_id)),
+            )
+            chat_count += int(cur.fetchone()[0] or 0)
+    finally:
+        conn.close()
     return {
         "ok": True,
         "alert_unread_count": alert_count,
