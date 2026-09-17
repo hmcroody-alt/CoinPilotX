@@ -57,6 +57,64 @@ The last two were added after discovering the first snapshots were index-derived
 and therefore blind to files that had never been added. Both were built through a
 temporary `GIT_INDEX_FILE` so no working tree was modified.
 
+## The escapes a branch sweep could not see (8 more refs)
+
+A branch-level `git cherry` sweep reported zero unique work on every ref. A
+second sweep over `git rev-list --all --not --remotes` — commits, not branches —
+found 17 that existed nowhere but this disk. A branch sweep cannot see them
+because reachability from a *branch* is not the same as reachability at all: one
+was reachable only from an unpushed tag, three only from local `claude/*`
+branches, two from no ref whatsoever, and ten from a local `main` that had
+diverged from `origin/main` at `41e4b5c1`.
+
+| ref | what it holds |
+|---|---|
+| `archive/final-consolidation-20260917/notif-reconcile-parallel-44cd7655` | `44cd7655`, reachable only from an unpushed local tag. See below. |
+| `archive/final-consolidation-20260917/local-main-parallel-lineage` | local `main` (`9c4af249`) — ten marketplace/Stripe-Connect and payments-docs commits |
+| `archive/final-consolidation-20260917/merge-17f2b7d1-into-head` | `8f163d6a`, a merge commit on no ref |
+| `archive/final-consolidation-20260917/loose-store-readiness-audit` | `6e79e15a`, on no ref |
+| `archive/final-consolidation-20260917/loose-undx-lexical-retrieval` | `7326c7c7`, on no ref |
+| `archive/final-consolidation-20260917/laughing-hypatia-cj-audit-logger` | `cc544b2a` |
+| `archive/final-consolidation-20260917/stupefied-hawking-pg-greatest` | `d4ca0ff4` |
+| `archive/final-consolidation-20260917/tmp-docs27-build27-baseline` | `aa3296fb` |
+
+Also pushed as a tag: `notif-reconcile-parallel-work` → `44cd7655`.
+
+`git rev-list --all --not --remotes` now returns **0**. Every commit object on
+this machine exists on the remote.
+
+### Sixteen of the seventeen were already on `main` under different SHAs
+
+`git cherry -v origin/main <ref>` marks all sixteen `-`: an equivalent patch is
+already upstream. They were re-landed by other sessions under new SHAs, so no
+*work* was ever at risk — only the specific commit objects, which are now
+preserved anyway because preserving them is cheap and being wrong about this
+would not be.
+
+### The seventeenth is a real fork, and is deliberately not in this build
+
+`44cd7655 "fix(notifications): dismiss read message alerts selectively"` shares
+its subject with `440e2af1`, which is on `main`. **They are different patches.**
+This is exactly the trap the mission's safety rules name, and it is the reason
+the per-commit sweep was worth running.
+
+| | `440e2af1` (on `main`, 19:53) | `44cd7655` (fork, 21:08) |
+|---|---|---|
+| size | 15 files, +520 | 17 files, +3090 |
+| client reconciler | `src/core/messageNotificationReconciliation.ts` | `src/notifications/messageNotificationReconciler.ts` |
+| outbox kind | `"messenger.read"`, `ordered: true`, 30 attempts | `"messenger.markRead"`, `ordered: false`, 8 attempts |
+| `session/auth.ts` | `cancelMessageReconciliation()` | `setNotificationScope(scopeId)` |
+
+Cherry-picking it produced four conflicts, and all four are *design* conflicts
+rather than textual ones. Taking both would register two reconcilers and two
+outbox kinds for the same user action; taking the fork means replacing a
+notification path that is already shipping and already verified.
+
+That is a product decision about which design wins, not a consolidation step, so
+it was aborted cleanly — `HEAD` returned to `75ebd772` with a clean tree — and
+left for the owner. The work is preserved twice over and can be landed later
+without this machine.
+
 Also pushed: `feature/apple-on-device-translation` (`5cdec0c6`) and
 `release/final-consolidation-20260917` (`7dfeb7ac`).
 
