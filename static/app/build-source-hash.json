@@ -1,7 +1,7 @@
 {
   "version": 1,
   "algorithm": "sha256",
-  "fingerprint": "243c864cb25ecda09617a8e0d7592203784b974560b9329f0d6345475fce4ebf",
+  "fingerprint": "632fde54ac75a00a15c6b18fd5e813804dbf57391597bd817c98353d0c058cec",
   "file_count": 15,
   "files": {
     "web/index.html": "4fdddfe6e710c9729e02361905bfbcb16aa83b09608061b783ba3c8f87dad0ca",
@@ -14,7 +14,7 @@
     "web/src/styles/base.css": "e81ae6bc19f079fa0d3d656bafddcb5d18d1d0412480c95d02924b38883984c4",
     "web/src/styles/layout.css": "565beef580b339b8f16659fec7d41e5cc5b444cc9068b9b808f698d743a1fd8d",
     "web/src/styles/pulse-background.css": "e5aa8d710d4e1b3c128e438d1761bea2ee30db8a64c9e1c4cd688daa4db4c7c7",
-    "web/src/styles/tokens.css": "3f29601f978c51b9bdfa35b6bcf29d8aa94537ee473c97ed5687d2ecd927b445",
+    "web/src/styles/tokens.css": "2b103960353204ece6aadda56323dad577c593e1318777262836b1b7a76e3d11",
     "web/src/theme/pulseBackground.ts": "699ae7ede0e9757259e5bbc6627e2ee2c28e3f0aa6c3fe9534415ba04cb21154",
     "web/src/theme/themes.ts": "d3afe54241050690e6df343c67fb33f71463d636dafb6dbd9a35b5264a4f2662",
     "web/tsconfig.json": "ce019c9182304a1f5a7c6f23b90fb3b4061091bbea81c182f6a08382149f0bca",
