@@ -3972,3 +3972,28 @@ from `CallKitCallbacks` along with the `PulseCall` import. In
 contract change, no server-side state, and no coordination with the backend:
 `/accept` returned join credentials before this change and still does — the
 client was simply throwing them away.
+
+### Build-number addendum to the above (build 25)
+
+Shipping this fix bumps `CFBundleVersion` 24 → 25, which touches
+`mobile-native/app.json` — a `dependency_watch` path. That category exists
+because a lockfile or config refresh can move the media stack with no code diff
+at all, which is the failure mode with the fewest visible symptoms. That is not
+what happened here, and the distinction is worth stating rather than assuming:
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | One line: `"buildNumber": "24"` → `"25"`. No dependency, plugin, SDK, pod, or native-module change. |
+
+Changed in step with `mobile-native/ios/PulseSoc/Info.plist` (the authoritative
+literal for this bare-workflow target) and
+`mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj`
+(`CURRENT_PROJECT_VERSION`, both configurations), because the three have
+disagreed at ship time before. `tests/protection/test_ios_build_version_contract.py`
+— **8 passed** — keeps them in step. `MARKETING_VERSION` / `CFBundleShortVersionString`
+stay at 1.0.2: the 1.0.1 train closed when it reached Ready for Distribution,
+and 1.0.2 is the open train build 24 already landed in.
+
+No entry in `package.json`, `package-lock.json`, `eas.json`, `ios/Podfile`,
+`ios/Podfile.lock` or the React Native patch set changed, so the media stack is
+byte-identical to the one the test battery above ran against.
