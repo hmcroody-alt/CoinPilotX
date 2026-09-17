@@ -63,6 +63,7 @@
     "expo-sharing": "~14.0.8",
     "expo-status-bar": "~3.0.9",
     "nullthrows": "1.1.1",
+    "pulse-apple-translation": "file:./modules/pulse-apple-translation",
     "pulse-now-playing": "file:./modules/pulse-now-playing",
     "pulse-video-mixer": "file:./modules/pulse-video-mixer",
     "react": "19.1.0",

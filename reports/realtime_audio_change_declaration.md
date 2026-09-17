@@ -4165,3 +4165,121 @@ force-quit: answer, confirm speech is audible in both directions, **and confirm
 the CallKit UI stays up for the duration instead of reporting the call ended.**
 That last clause is the only direct evidence for this fix — every assertion above
 tests the mechanism, and none of them can observe the system call UI.
+
+## Apple on-device translation addendum (2026-09-17)
+
+Declares the `dependency_watch` paths touched by branch
+`feature/apple-on-device-translation` while adding the local Expo module
+`pulse-apple-translation`, which exposes Apple's on-device `Translation`
+framework to the React Native app.
+
+### Why the change is required
+
+Translation is being migrated from Google Cloud Translation v3 to Apple's
+on-device Translation framework, so that message, post and comment text is
+translated on the iPhone instead of being sent to a paid cloud endpoint. Apple
+vends `TranslationSession` only through SwiftUI's `.translationTask` modifier, so
+the capability cannot be reached from JavaScript without a native module. A local
+Expo module has to be declared as a dependency to be autolinked, and that
+declaration lives in `mobile-native/package.json` — a `dependency_watch` path.
+
+### Which feature required it
+
+Text translation only (`docs/translation/APPLE_ON_DEVICE_TRANSLATION_AUDIT.md`).
+No audio, voice-message, radio, livestream, video-call, audio-call, Agora, Mux,
+LiveKit, AVAudioSession, or microphone-ownership behaviour was changed or
+authorized by this work.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/package.json` | `dependency_watch` | One added dependency line: `"pulse-apple-translation": "file:./modules/pulse-apple-translation"`. No change to any published package, version range, script, or Expo plugin. |
+| `mobile-native/package-lock.json` | `dependency_watch` | The three entries npm writes for a `file:` workspace link — the root `dependencies` line, `packages["modules/pulse-apple-translation"]`, and the `packages["node_modules/pulse-apple-translation"]` link record. No registry package, resolved URL, or integrity hash changed. |
+
+Both `must_be_exactly_pinned` entries are untouched and still exactly pinned:
+`react-native-agora` `4.6.2` and `expo-av` `~16.0.8`. Every
+`baseline_versions` value (`expo` `~54.0.36`, `react-native` `^0.81.5`) is
+byte-identical. `mobile-native/app.json`, `mobile-native/eas.json`,
+`mobile-native/ios/Podfile`, `mobile-native/ios/Podfile.lock` and
+`mobile-native/patches/react-native+0.81.5.patch` are **not** modified by this
+change.
+
+### Expected behavior change
+
+None for real-time media. The new pod compiles an additional static framework
+into the binary and weak-links `Translation.framework`. It declares
+`s.platforms = { :ios => '15.1' }`, matching the project floor, so the
+deployment target does not move and no existing pod's build settings change.
+
+The module contains no audio code: it imports `Translation`, `SwiftUI`, `UIKit`,
+`Foundation` and `Combine`. It never references `AVAudioSession`,
+`AVAudioEngine`, `Audio.setAudioModeAsync`, or any Agora/Mux/LiveKit symbol, and
+it publishes no media track.
+
+### Regression risk
+
+Low, and concentrated in linking rather than behaviour.
+
+The material risk is dyld: `Translation.framework` does not exist before
+iOS 18, so a hard link would make the app fail to launch on iOS 15–17. The
+podspec uses `s.weak_frameworks = ['Translation']` for exactly this reason, and
+every use of the framework is behind `@available(iOS 18.0, *)` / `if #available`.
+A build that regressed this would not fail a unit test — it would fail to launch
+on an iOS 17 device, which is why the physical validation below is required on an
+OS below 18 as well.
+
+Secondary risk is Pods regeneration: adding a pod rewrites `Podfile.lock`. That
+file is itself a `dependency_watch` path, so a future `pod install` that changes
+it must be declared separately rather than riding on this addendum.
+
+### Tests run
+
+At the time of this declaration, for the native module itself:
+
+- `scripts/typecheck_apple_translation_swift.sh` — pure Swift type-check
+  (`arm64-apple-ios15.1`) **OK**, and the full bridge type-check against the real
+  prebuilt `ExpoModulesCore.swiftmodule` and the real `iPhoneOS26.5` SDK **OK**.
+  The deployment triple is deliberately the project's 15.1 floor, so an
+  iOS 26-only symbol cannot type-check clean here and then trap on the iOS 18
+  test device.
+- `npx expo-modules-autolinking search -p ios` — resolves
+  `pulse-apple-translation` from `mobile-native/modules/pulse-apple-translation`,
+  confirming the dependency line does what it is being added for.
+
+The full real-time-audio battery has **not** yet been re-run against this branch
+and is owed before merge; it is recorded under "Still owed" below rather than
+claimed here.
+
+### Physical validation required
+
+1. On the physical iPhone 16 Pro (`P3r7or`), place an audio call and a video call
+   after this pod is linked in, and confirm two-way audio is unchanged.
+2. Confirm the app **launches** on an iOS 15–17 device or simulator slice, which
+   is the only check that can catch a non-weak link to `Translation.framework`.
+3. Confirm a livestream still publishes and plays.
+
+### Rollback procedure
+
+Self-contained and does not touch the media stack:
+
+1. Remove the `pulse-apple-translation` line from `mobile-native/package.json`
+   and the three `pulse-apple-translation` entries from
+   `mobile-native/package-lock.json`.
+2. Delete `mobile-native/modules/pulse-apple-translation/`.
+3. `cd mobile-native/ios && pod install` to drop the pod.
+4. Rebuild. Autolinking stops finding the module; the JS side already uses
+   `requireOptionalNativeModule`, so every translation call returns the typed
+   `native_bridge_unavailable` failure and routes to the existing cloud path.
+
+No Agora, Mux, LiveKit, AVAudioSession or microphone code is involved in the
+rollback, and no protected category path is restored by it.
+
+### Still owed
+
+The full battery (`npm run typecheck`, `npm test`,
+`test:realtime-audio-critical`, `test:realtime-audio`,
+`test:realtime-audio-architecture`,
+`tests/protection/test_realtime_audio_architecture.py`) must be run against this
+branch and its results appended here before merge, together with the three
+physical checks above.
