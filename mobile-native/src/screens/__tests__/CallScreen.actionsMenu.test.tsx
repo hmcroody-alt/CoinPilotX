@@ -121,7 +121,7 @@ jest.mock("../../calls/useNativeCallRoom", () => ({
   useNativeCallRoom: () => mockRoom
 }));
 
-import { openCallWebFallback } from "../../api/calls";
+import { markRingSeen, openCallWebFallback } from "../../api/calls";
 import {
   beginCallSession,
   clearCallSession,
@@ -150,7 +150,14 @@ function view(overrides: Partial<any> = {}) {
   };
 }
 
-async function renderCall(callType: "audio" | "video" = "audio") {
+// `paramOverrides` rather than a `direction` argument with a default: a default
+// parameter is applied for an explicitly-passed `undefined`, so there would be no
+// way to render the "route carries no direction at all" case — the one a deep
+// link or a CallKit hand-off actually produces.
+async function renderCall(
+  callType: "audio" | "video" = "audio",
+  paramOverrides: Record<string, any> = { direction: "outgoing" }
+) {
   mockSession.call.call_type = callType;
   const navigation = {
     addListener: jest.fn(() => jest.fn()),
@@ -159,7 +166,7 @@ async function renderCall(callType: "audio" | "video" = "audio") {
     navigate: jest.fn()
   } as any;
   const route = {
-    params: { callId: "call-1", conversationId: 42, callType, direction: "outgoing", title: "Priya Raman" }
+    params: { callId: "call-1", conversationId: 42, callType, title: "Priya Raman", ...paramOverrides }
   } as any;
   const utils = render(<CallScreen route={route} navigation={navigation} />);
   // Flush the mount effects so the responder tree settles before any press.
@@ -180,6 +187,39 @@ beforeEach(() => {
   mockRoom.audioEnabled = true;
   mockRoom.videoEnabled = false;
   mockRoom.speakerEnabled = true;
+});
+
+describe("ring-seen acknowledgement", () => {
+  /**
+   * `mark_ring_seen` is authorised in the backend by participant role:
+   *
+   *     if str(participant.get("role") or "") != "callee":
+   *         return _err("Only the recipient can acknowledge incoming ringing.", 403, "not_callee")
+   *
+   * The caller opens this screen with the same `callId` as the recipient does, so
+   * an unguarded acknowledgement is a 403 on literally every outgoing call. That
+   * is not free: a failure that is always present is a failure nobody can read,
+   * and it is the same request whose *absence* would signal a real ring-seen
+   * defect on the incoming side.
+   */
+  it("does not acknowledge ringing on an outgoing call", async () => {
+    await renderCall("audio", { direction: "outgoing" });
+    expect(markRingSeen).not.toHaveBeenCalled();
+  });
+
+  it("acknowledges ringing on an incoming call", async () => {
+    await renderCall("audio", { direction: "incoming" });
+    expect(markRingSeen).toHaveBeenCalledWith("call-1");
+  });
+
+  it("acknowledges ringing when the direction is unknown", async () => {
+    // Deep links and CallKit hand-offs do not always carry `direction`. The guard
+    // exists to suppress a known-bad request, not to gate a good one: a missed
+    // acknowledgement leaves the backend believing the device never saw the ring,
+    // which is the expensive direction to be wrong in.
+    await renderCall("audio", {});
+    expect(markRingSeen).toHaveBeenCalledWith("call-1");
+  });
 });
 
 describe("call options menu", () => {
