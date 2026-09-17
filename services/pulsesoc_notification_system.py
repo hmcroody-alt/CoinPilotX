@@ -2112,8 +2112,10 @@ def get_notification(user_id: int, notification_id: int) -> dict[str, Any] | Non
 
 
 def badge_counts(user_id: int, chat_unread_count: int = 0) -> dict[str, Any]:
-    # _push_payload() calls this once per outbound notification, so a raise from
-    # ensure_schema or the count leaks a pooled connection per push.
+    # _push_payload() calls this once per outbound notification. ensure_schema is
+    # @run_once_per_process, but the guard caches only successes -- so a schema
+    # pass that keeps failing raises on every push, leaking a connection each
+    # time without the finally.
     conn = db_service.connect()
     try:
         ensure_schema(conn)
