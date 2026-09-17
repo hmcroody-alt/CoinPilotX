@@ -4810,5 +4810,44 @@
       "gainers": "Mayores subidas",
       "losers": "Mayores caídas"
     }
+  },
+  "translation": {
+    "eyebrow": "Traducción",
+    "translate": "Traducir",
+    "translating": "Traduciendo…",
+    "translateNow": "Traducir ahora",
+    "translateNowHint": "Traducir este mensaje al {{language}}.",
+    "viewOriginal": "Ver original",
+    "showOriginalHint": "Vuelve al mensaje original.",
+    "translatedFrom": "Traducido del {{language}}",
+    "translatedLabel": "Traducido",
+    "always": "Siempre",
+    "never": "Nunca",
+    "alwaysTranslate": "Traducir siempre",
+    "alwaysTranslateHint": "Traduce automáticamente este idioma cuando PulseSoc lo detecta.",
+    "neverTranslate": "No traducir nunca",
+    "neverTranslateHint": "Mantiene este idioma en su forma original.",
+    "optionsTitle": "Opciones de idioma del mensaje",
+    "downloadLanguage": "Descargar idioma",
+    "downloadExplainer": "PulseSoc usa la traducción privada en el dispositivo de Apple. Apple puede descargar el idioma necesario en este iPhone.",
+    "tryAgain": "Reintentar",
+    "failure": {
+      "unavailable": "Traducción no disponible",
+      "unsupportedLanguage": "Este idioma no se puede traducir en este dispositivo.",
+      "downloadFailed": "La descarga del idioma no se completó.",
+      "offline": "Conéctate a internet para descargar este idioma.",
+      "preferenceNotSaved": "No se pudo guardar tu preferencia de traducción."
+    },
+    "a11y": {
+      "controls": "Controles de traducción. Idioma de destino: {{language}}.",
+      "translateTo": "Traducir al {{language}}",
+      "showOriginal": "Mostrar el texto original",
+      "options": "Opciones de traducción. Mostrando el texto traducido.",
+      "alwaysTo": "Traducir siempre al {{language}}",
+      "neverTo": "No traducir nunca al {{language}}",
+      "closeOptions": "Cerrar las opciones de traducción",
+      "retry": "Reintentar la traducción",
+      "download": "Descargar el idioma {{language}} en este dispositivo"
+    }
   }
 }

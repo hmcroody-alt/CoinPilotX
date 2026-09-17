@@ -5018,5 +5018,44 @@
       "gainers": "أكبر الرابحين",
       "losers": "أكبر الخاسرين"
     }
+  },
+  "translation": {
+    "eyebrow": "الترجمة",
+    "translate": "ترجمة",
+    "translating": "جارٍ الترجمة…",
+    "translateNow": "ترجم الآن",
+    "translateNowHint": "ترجمة هذه الرسالة إلى {{language}}.",
+    "viewOriginal": "عرض النص الأصلي",
+    "showOriginalHint": "العودة إلى الرسالة الأصلية.",
+    "translatedFrom": "مترجمة من {{language}}",
+    "translatedLabel": "مترجمة",
+    "always": "دائمًا",
+    "never": "أبدًا",
+    "alwaysTranslate": "الترجمة دائمًا",
+    "alwaysTranslateHint": "يترجم هذه اللغة تلقائيًا عندما يتعرف عليها PulseSoc.",
+    "neverTranslate": "عدم الترجمة أبدًا",
+    "neverTranslateHint": "يبقي هذه اللغة كما هي.",
+    "optionsTitle": "خيارات لغة الرسالة",
+    "downloadLanguage": "تنزيل اللغة",
+    "downloadExplainer": "يستخدم PulseSoc ترجمة Apple الخاصة على الجهاز. قد تقوم Apple بتنزيل اللغة المطلوبة على هذا الـ iPhone.",
+    "tryAgain": "إعادة المحاولة",
+    "failure": {
+      "unavailable": "الترجمة غير متاحة",
+      "unsupportedLanguage": "لا يمكن ترجمة هذه اللغة على هذا الجهاز.",
+      "downloadFailed": "لم يكتمل تنزيل اللغة.",
+      "offline": "اتصل بالإنترنت لتنزيل هذه اللغة.",
+      "preferenceNotSaved": "تعذّر حفظ تفضيل الترجمة."
+    },
+    "a11y": {
+      "controls": "عناصر التحكم في الترجمة. اللغة الهدف: {{language}}.",
+      "translateTo": "الترجمة إلى {{language}}",
+      "showOriginal": "عرض النص الأصلي",
+      "options": "خيارات الترجمة. يتم عرض النص المترجم.",
+      "alwaysTo": "الترجمة دائمًا إلى {{language}}",
+      "neverTo": "عدم الترجمة أبدًا إلى {{language}}",
+      "closeOptions": "إغلاق خيارات الترجمة",
+      "retry": "إعادة محاولة الترجمة",
+      "download": "تنزيل لغة {{language}} على هذا الجهاز"
+    }
   }
 }

@@ -4810,5 +4810,44 @@
       "gainers": "Plus fortes hausses",
       "losers": "Plus fortes baisses"
     }
+  },
+  "translation": {
+    "eyebrow": "Traduction",
+    "translate": "Traduire",
+    "translating": "Traduction en cours…",
+    "translateNow": "Traduire maintenant",
+    "translateNowHint": "Traduire ce message en {{language}}.",
+    "viewOriginal": "Voir l'original",
+    "showOriginalHint": "Revenir au message d'origine.",
+    "translatedFrom": "Traduit depuis {{language}}",
+    "translatedLabel": "Traduit",
+    "always": "Toujours",
+    "never": "Jamais",
+    "alwaysTranslate": "Toujours traduire",
+    "alwaysTranslateHint": "Traduit automatiquement cette langue lorsque PulseSoc la détecte.",
+    "neverTranslate": "Ne jamais traduire",
+    "neverTranslateHint": "Conserve cette langue dans sa forme d'origine.",
+    "optionsTitle": "Options de langue du message",
+    "downloadLanguage": "Télécharger la langue",
+    "downloadExplainer": "PulseSoc utilise la traduction privée sur l'appareil d'Apple. Apple peut télécharger la langue requise sur cet iPhone.",
+    "tryAgain": "Réessayer",
+    "failure": {
+      "unavailable": "Traduction indisponible",
+      "unsupportedLanguage": "Cette langue ne peut pas être traduite sur cet appareil.",
+      "downloadFailed": "Le téléchargement de la langue ne s'est pas terminé.",
+      "offline": "Connectez-vous à Internet pour télécharger cette langue.",
+      "preferenceNotSaved": "Impossible d'enregistrer votre préférence de traduction."
+    },
+    "a11y": {
+      "controls": "Commandes de traduction. Langue cible : {{language}}.",
+      "translateTo": "Traduire en {{language}}",
+      "showOriginal": "Afficher le texte d'origine",
+      "options": "Options de traduction. Texte traduit affiché.",
+      "alwaysTo": "Toujours traduire en {{language}}",
+      "neverTo": "Ne jamais traduire en {{language}}",
+      "closeOptions": "Fermer les options de traduction",
+      "retry": "Réessayer la traduction",
+      "download": "Télécharger la langue {{language}} sur cet appareil"
+    }
   }
 }

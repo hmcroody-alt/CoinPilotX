@@ -595,6 +595,74 @@ export function regionDisplayName(region: string, options?: { locale?: string })
 }
 
 /* ------------------------------------------------------------------ *
+ * Language names
+ * ------------------------------------------------------------------ */
+
+/**
+ * English fallbacks for the languages PulseSoc itself ships in.
+ *
+ * Same reasoning as `REGION_FALLBACK`, with one addition: the tag handed to
+ * `languageDisplayName` is often a language Apple *detected*, not one this app
+ * was built for, so the set of possible inputs is every language in the world
+ * and a hand-maintained map could never cover it. This one exists so a
+ * reduced-ICU Hermes build reads "French" for the common cases instead of
+ * "fr"; anything else degrades to its own tag, which is still an honest
+ * answer — "Translated from ht" is worse copy than "Translated from Haitian
+ * Creole" but it is not a wrong claim.
+ */
+const LANGUAGE_FALLBACK: Readonly<Record<string, string>> = Object.freeze({
+  ar: "Arabic",
+  de: "German",
+  en: "English",
+  es: "Spanish",
+  fr: "French",
+  hi: "Hindi",
+  ht: "Haitian Creole",
+  ja: "Japanese",
+  ko: "Korean",
+  pt: "Portuguese",
+  zh: "Chinese"
+});
+
+type LanguageDisplayNames = new (
+  locales: string,
+  options: { type: "language" }
+) => { of(code: string): string | undefined };
+
+/**
+ * The name of a BCP-47 language in the active language.
+ *
+ * The region is dropped first, because the caller wants a language and `fr-FR`
+ * names a locale: left alone, `Intl` answers "French (France)" and the button
+ * reads "Translate to French (France)". A script subtag is kept — `zh-Hans`
+ * and `zh-Hant` are different written languages, and collapsing them to
+ * "Chinese" would be a wrong claim rather than a verbose one.
+ *
+ * Returns "" for an empty tag so a caller can treat "no detected source" as a
+ * missing label rather than rendering "Translated from ".
+ */
+export function languageDisplayName(language: string, options?: { locale?: string }): string {
+  const subtags = language.trim().replace(/_/g, "-").split("-").filter(Boolean);
+  if (subtags.length === 0) return "";
+  const primary = subtags[0].toLowerCase();
+  const script = subtags.slice(1).find((part) => /^[a-z]{4}$/i.test(part));
+  const tag = script
+    ? `${primary}-${script[0].toUpperCase()}${script.slice(1).toLowerCase()}`
+    : primary;
+  try {
+    const DisplayNames = (Intl as unknown as { DisplayNames?: LanguageDisplayNames }).DisplayNames;
+    if (DisplayNames) {
+      const name = new DisplayNames(localeOf(options), { type: "language" }).of(tag);
+      // `of` echoes the input back when it has no data for that language.
+      if (name && name !== tag) return name;
+    }
+  } catch {
+    // Reduced-ICU build: fall through to the static map.
+  }
+  return LANGUAGE_FALLBACK[primary] ?? tag;
+}
+
+/* ------------------------------------------------------------------ *
  * Local helpers
  * ------------------------------------------------------------------ */
 
