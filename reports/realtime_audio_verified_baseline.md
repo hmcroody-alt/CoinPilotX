@@ -560,11 +560,40 @@ to land in the same commit as the widening, not after it.
 | `CFBundleShortVersionString` | 1.0.2 | 1.0.2 |
 | Bundle id | `com.pulsesoc.app` | `com.pulsesoc.app` |
 | Commit | `0ba74903` | **`f25df471`** |
+| EAS build id | `2202a406` | **`06c9fa3c`** |
+| Fingerprint | `4677e836f12819cda91c636c8c9b50089855987f` | **`44dd2243288cd02d0d5701fedf14b4ac2fc9206d`** |
+| TestFlight submission | `6faeaff6`, finished 01:45:39 | **`7a260004`, finished 05:51:33** |
 | Carries | VoIP backlog replay (answering works) | answering device names itself (UI stops lying) |
+
+The fingerprints differ, which is the point of recording them: it is independent
+confirmation that 27 is a distinct artifact rather than 26 resubmitted under a new build
+number. TestFlight **internal** only — no external group, because that would trigger Beta
+App Review, and no App Store review submission.
 
 `MARKETING_VERSION` unchanged: 1.0.2 is the open train. Build number pinned across
 `ios/PulseSoc/Info.plist`, `app.json` and both `CURRENT_PROJECT_VERSION` entries in
 `project.pbxproj` — `tests/protection/test_ios_build_version_contract.py`, 8 passed.
+
+### 14.4a Device state
+
+**Simulator (iPhone 17 Pro Max, `E859950D-B187-4897-B389-05447C5AD796`)** — Release build
+27 installed over the existing app and launched. `CFBundleVersion` read back **from the
+installed container**, not the build product, because a stale product in shared derived
+data has already once been mistaken for a fresh build here.
+
+Lineage proved with a marker that **inverts**: `upgradeAccessibility` is a function name
+introduced by this change — 0 occurrences in the build-26 tree, 2 in the build-27 tree —
+and it is present in the installed Hermes bundle. Positive controls `readVoipBacklog` and
+`callkit_hangup` present; negative control absent.
+
+The first marker considered, `installation_id`, was **rejected**: it already occurs in
+`api/push.ts`, so Hermes' shared string table would have shown it present in both lineages
+and proved nothing. A marker that does not invert is not evidence.
+
+The simulator cannot receive PushKit, so this install is lineage parity only. It is not,
+and cannot be, verification of the fix.
+
+**P3r7or** — receives build 27 through TestFlight.
 
 ### 14.5 Automated verification at this code state
 
