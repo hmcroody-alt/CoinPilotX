@@ -6,6 +6,13 @@ if [[ $# -ne 1 || -z "${1:-}" ]]; then
   exit 64
 fi
 
+# PULSESOC_APS_ENVIRONMENT below is load-bearing, not decoration. The Release
+# configuration now declares "production" so that a store build gets the entitlement
+# it must have, and PulseSoc.entitlements reads the build setting rather than a
+# literal. Any *development-signed* Release build - which is what this script and
+# every local device build produce - has to pass "development" back, or codesign
+# rejects the product: a development provisioning profile does not grant
+# aps-environment=production.
 DEVICE_ID="$1"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE_DIR="$ROOT_DIR/mobile-native"
@@ -32,8 +39,8 @@ env \
   -u EXPO_PUBLIC_PULSESOC_QA_REELS_STATE \
   EXPO_PUBLIC_PULSE_API_BASE_URL=https://pulsesoc.com \
   xcodebuild \
-    -workspace ios/PulseSocNative.xcworkspace \
-    -scheme PulseSocNative \
+    -workspace ios/PulseSoc.xcworkspace \
+    -scheme PulseSoc \
     -configuration Release \
     -destination "id=$DEVICE_ID" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
@@ -46,7 +53,7 @@ env \
     -allowProvisioningUpdates \
     build
 
-APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-iphoneos/PulseSocNative.app"
+APP_PATH="$DERIVED_DATA_PATH/Build/Products/Release-iphoneos/PulseSoc.app"
 INFO_PLIST="$APP_PATH/Info.plist"
 
 if [[ ! -s "$APP_PATH/main.jsbundle" ]]; then
