@@ -49,7 +49,18 @@ BUCKETS = [
     "protected_audio",
     "test_pin",
     "documentation",
+    "non_color_channel",
 ]
+
+# A CSS custom property is a name, not a role, so the name is the only evidence
+# there is. These two word lists read it. They are checked text-first because a
+# property can carry both words -- `--pulse-text-on-panel` is a glyph colour.
+CUSTOM_PROP_TEXT = ("text", "ink", "fg", "foreground", "icon", "label", "caret")
+CUSTOM_PROP_SURFACE = (
+    "bg", "background", "surface", "panel", "glass", "card", "wallpaper",
+    "thread", "header", "footer", "well", "inset", "raised", "sunken", "base",
+    "canvas", "sheet", "page", "track", "rail", "dock", "bar",
+)
 
 TEXT_PROPS = {
     "color", "colour", "tintColor", "textColor", "placeholderTextColor",
@@ -123,7 +134,17 @@ def classify(row: dict, protected: set[str], opaque: set[str]) -> tuple[str, str
     if prop == "comment":
         return "documentation", "quoted inside a comment; nothing paints it"
 
-    if prop in SHADOW_PROPS:
+    # In a mask the channel is alpha, not paint: `#000` means "hide this pixel"
+    # and the colour is never seen. Migrating one would not restyle a surface,
+    # it would punch the wrong hole in one.
+    if prop in ("mask", "mask-image", "-webkit-mask", "-webkit-mask-image"):
+        return "non_color_channel", f"`{prop}` reads the alpha channel; the colour never paints"
+
+    # The custom-property arm has to be here rather than with the other `--`
+    # rules below, because a shadow is written `rgba(0,0,0,.5)` and the
+    # translucent-pure-black rule further down would otherwise claim it as a
+    # dimming scrim before its name was ever read.
+    if prop in SHADOW_PROPS or (prop.startswith("--") and "shadow" in prop):
         return "shadow", f"`{prop}` is a shadow; black is correct and stays"
 
     if prop in TEXT_PROPS:
@@ -149,6 +170,16 @@ def classify(row: dict, protected: set[str], opaque: set[str]) -> tuple[str, str
             "a theme palette definition; the user-selectable Black theme must keep "
             "its near-blacks"
         )
+
+    if prop.startswith("--"):
+        word = prop[2:].lower()
+        # Substring, not word match: the repo writes `--panel2` as often as
+        # `--panel-2`, and splitting on the hyphen misses the first form.
+        if any(w in word for w in CUSTOM_PROP_TEXT):
+            return "text_or_icon", f"`{prop}` names a glyph colour"
+        if any(w in word for w in CUSTOM_PROP_SURFACE):
+            return "structural_surface", f"`{prop}` names a structural surface"
+        return "visual_review", f"custom property `{prop}` names no role"
 
     if prop in SURFACE_PROPS:
         return "structural_surface", f"`{prop}` paints structural chrome"
