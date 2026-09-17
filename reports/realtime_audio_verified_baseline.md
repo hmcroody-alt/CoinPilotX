@@ -388,3 +388,108 @@ built green on the machine that made it and would have been absent everywhere el
 because the JS side degrades to a **no-op rather than an error** when the bridge is missing,
 the regression would have been silent all the way to a dead broadcast. That is why the
 protection asserts on the **patch file contents**, not merely on the JS call site.
+
+---
+
+## 13. Addendum — 2026-09-17 answered-call teardown, two causes, builds 25 and 26
+
+This section is **not** part of the original baseline. It records the build identity of the
+two builds that fix the answered-call teardown, per §2 of
+`docs/realtime_audio_release_checklist.md`, and states plainly which validation is done and
+which is still owed.
+
+### 13.1 The failure, and why one symptom had two causes
+
+Reported symptom: the callee answers and the call ends immediately, **while the caller's UI
+still reads "connected"**. That asymmetry is the whole diagnosis. The caller had joined the
+media room; the callee had not. iOS ends a CallKit call that is never reported connected,
+and `markCallKitConnected` fires only from `noteConnectedTransition()`, which is reached
+only from the Agora join callbacks (`callSessionStore.ts`). A callee that never joined
+therefore never reported connected, and CallKit tore the call down underneath it.
+
+Two independent defects produced that same state:
+
+1. **Backgrounded answer (fixed in build 25).** `acceptCall()`'s response already carries
+   the join credentials — `accept_call` returns `{"call": …, "join": token}` — but the
+   response was discarded and the join was left to the status poller. `ensurePolling()`
+   gates its tick behind `appIsForegrounded()`, and iOS suspends JS timers in the
+   background regardless, so a lock-screen answer never polled and never joined.
+2. **Cold-launch answer (fixed in build 26).** `callKitBridge`'s answer handler resolves
+   the CallKit UUID to a call id through `callIdByUuid`, and returns early when the lookup
+   misses. On a killed app the only writer that could have populated that map is the VoIP
+   `notification` event — and because the push is *what launched the process*, that event is
+   necessarily buffered by `react-native-voip-push-notification` and replayed through
+   `didLoadWithEvents`. The replay handler read only the token half of that backlog and
+   dropped the push half, so the lookup missed and `/accept` was never even sent.
+
+Build 25 alone fixes only case 1. **Build 26 is the build to test.**
+
+### 13.2 Build identity
+
+| Field | Value | Source |
+| --- | --- | --- |
+| Commit (build 26) | `375d5878b8bad4188aa44d6128ef2465a6d860fd` | repository-evidenced |
+| Commit (build 25) | `9660eb96` | repository-evidenced |
+| Fix commits | `63dcb694` (answer joins the media room), `545d095d` (read the whole PushKit backlog) | repository-evidenced |
+| Bundle identifier | `com.pulsesoc.app` — unchanged, both environments | repository-evidenced |
+| App version | `1.0.2` | repository-evidenced (`ios/PulseSoc/Info.plist`) |
+| iOS build number | `26` | repository-evidenced — plist, `app.json` and both `CURRENT_PROJECT_VERSION` values agree; pinned by `tests/protection/test_ios_build_version_contract.py` |
+| EAS build (26) | `2202a406-8574-4df4-abad-f4590c1c48e7`, profile `production` | repository-evidenced via EAS |
+| EAS build (25) | `a282c538-bac1-4247-a87a-a865888c95d5`, fingerprint `c7f36a3ed7e7c447026fa735a6c7c57be6092331` | repository-evidenced via EAS |
+| TestFlight submission (26) | `6faeaff6-0676-4052-8c0d-2494d5af0a12` | repository-evidenced via EAS |
+| Distribution | TestFlight **internal groups only**. Not submitted for App Store review, and not added to any external group — an external group would trigger Beta App Review | operator-stated constraint, honoured |
+| Backend deployment identifier | **NOT RECORDED** | — |
+| Backend commit deployed | **NOT RECORDED** — no deployed-SHA endpoint was read | — |
+| Agora App ID | Not pinned client-side: `callSessionStore.ts` initialises the engine with `appId: join.app_id`, supplied per call by the backend | repository-evidenced |
+
+### 13.3 Automated verification at this code state
+
+Typecheck exit 0. `test:realtime-audio-critical` 191 passed; `test:realtime-audio` 377
+passed; `test:realtime-audio-architecture` 22 passed; full native suite 456 suites /
+7873 tests passed; backend architecture 19; Agora token/room pytest 50; iOS build-version
+contract 8. The realtime-audio change gate reports **Declaration accepted** over
+`HEAD~3..HEAD`.
+
+Both fixes are pinned by regression tests that were **confirmed to fail when the fix is
+reverted**, not merely to pass while it is present:
+
+- `src/calls/__tests__/calleeAnswerJoinsMedia.test.tsx` — 4 tests. Reverting the whole fix
+  fails 3 of 4; dropping only `beginCallSession` fails on the join assertion itself;
+  dropping only `adoptCallSnapshot` fails exactly 2, the predicted split.
+- `src/calls/__tests__/voipPushBacklog.test.ts` — 6 tests. Deleting the push branch of the
+  backlog reader fails 3 of 6 while the token test stays green.
+
+### 13.4 Device state
+
+**Simulator (iPhone 17 Pro Max, `E859950D-B187-4897-B389-05447C5AD796`)** — Release build
+26 installed and launched. Lineage proved in-bundle with a marker that **inverts**:
+`readVoipBacklog` is present once in the build-26 bundle and absent from the build-25
+bundle, alongside a pre-existing control (`callkit_hangup`, present in both) and a negative
+control (absent from both). Installed *over* the existing app; the app was not uninstalled,
+because `simctl uninstall` signs the simulator out.
+
+**P3r7or** — receives build 26 through TestFlight.
+
+### 13.5 What is still owed, and only the owner can do it
+
+Neither fix is attested by sound. Per §4 of `docs/realtime_audio_release_checklist.md`,
+rows 1, 2 and 8, the owed test — now covering **both** answer paths — is:
+
+1. Call P3r7or with the app **backgrounded**, answer from the lock screen, and confirm
+   speech is physically audible **in both directions**.
+2. Force-quit PulseSoc, call again, answer from the lock screen, and confirm the same.
+3. Place a further call afterwards and confirm audio is still acquired, which is what
+   catches a session left in a bad state rather than a single call that happened to work.
+
+Until that is recorded here, this section attests **code state and automated coverage
+only**. It does not attest audibility.
+
+### 13.6 Known residual fragility, stated rather than hidden
+
+The two pods each keep their own replay backlog, and nothing orders them against each
+other: callkeep's answer replay could in principle fire before the VoIP pod's notification
+replay, leaving the mapping absent exactly as before. The new handler mitigates this by
+draining call mappings **before** tokens, and both backlogs drain during the same launch,
+but the ordering is not structurally guaranteed. It is recorded here rather than fixed,
+because fixing it means restructuring both listeners and the brief this work ran under
+forbids a broad rewrite.
