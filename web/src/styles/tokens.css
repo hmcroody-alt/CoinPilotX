@@ -28,10 +28,27 @@
 :root,
 [data-theme="dark"] {
   /* --- Surfaces --------------------------------------------------------- */
+  /* Blue graphite, mirroring BLUE_GRAPHITE_LEVELS in
+   * `mobile-native/src/theme/blueGraphite.ts`. Graphite is the base; deep navy
+   * enters at the edges on native, where a surface can carry a gradient.
+   *
+   * `--pulse-bg` is NOT part of that family and is deliberately left alone. The
+   * approved direction keeps the original deep page and puts graphite *on* it —
+   * a page this dark is what makes the surfaces above it read as surfaces. The
+   * previous values (`#0b141c`, `#111f2a`) were near-black plates on that page,
+   * which is the appearance this migration exists to remove.
+   *
+   * These stay inside `:root, [data-theme="dark"]`. The Black and Light
+   * Futuristic blocks below override the same token names, so the graphite
+   * cannot leak into either — theming here is an attribute swap, which is what
+   * makes the isolation structural rather than a rule someone has to remember. */
   --pulse-bg: #050910;
-  --pulse-surface: #0b141c;
-  --pulse-surface-raised: #111f2a;
-  --pulse-border: #203746;
+  --pulse-surface: #303843;
+  --pulse-surface-raised: #363D46;
+  /* Follows the surfaces: `#203746` was lighter than the near-blacks it divided
+   * and is darker than graphite, so keeping it would have erased every divider.
+   * See the note in `mobile-native/src/theme/colors.ts`. */
+  --pulse-border: #425065;
 
   /* --- Text ------------------------------------------------------------- */
   --pulse-text: #f4f7fb;
@@ -42,19 +59,19 @@
   --pulse-accent: #32e6b3;
   --pulse-accent-strong: #61d8ff;
   --pulse-warning: #f3c461;
-  --pulse-danger: #ff5f7e;
+  --pulse-danger: #ff7f97;
   --pulse-focus: #8df7ff;
 
   /* --- Domain accents --------------------------------------------------- */
-  --pulse-intelligence: #9f7cff;
+  --pulse-intelligence: #b297ff;
   --pulse-creator: #42e7d4;
   --pulse-economy: #f6c85d;
   --pulse-safety: #3ff0a0;
   --pulse-crypto: #62e0ff;
 
   /* --- Translucency ----------------------------------------------------- */
-  --pulse-glass: rgba(11, 24, 34, 0.82);
-  --pulse-glass-strong: rgba(15, 36, 50, 0.94);
+  --pulse-glass: rgba(48, 56, 67, 0.82);
+  --pulse-glass-strong: rgba(54, 61, 70, 0.94);
   --pulse-signal-dim: rgba(50, 230, 179, 0.12);
   --pulse-signal-soft: rgba(97, 216, 255, 0.12);
   --pulse-danger-soft: rgba(255, 95, 126, 0.14);
@@ -366,7 +383,7 @@
 [data-reduce-transparency="1"],
 [data-hc="1"] {
   --pulse-glass: var(--pulse-surface);
-  --pulse-glass-strong: var(--pulse-bg);
+  --pulse-glass-strong: var(--pulse-surface-raised);
 }
 
 @media (prefers-reduced-transparency: reduce) {

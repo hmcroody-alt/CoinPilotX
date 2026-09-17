@@ -95,7 +95,15 @@ const WHITE: Palette = {
   glassStrong: "#fafafa"
 };
 
-/** High-contrast overrides: maximize text/border separation, drop translucency. */
+/**
+ * High-contrast overrides: maximize text/border separation, drop translucency.
+ *
+ * `glass`/`glassStrong` here are pre-collapsed to `surface`/`surfaceRaised`,
+ * because `buildTheme` overwrites both whenever high contrast is on — a stored
+ * value that disagreed with the collapse would be unreachable at runtime and
+ * still be read by the parity gate, which is how `glassStrong` sat at
+ * `background` long enough to look intentional.
+ */
 const HIGH_CONTRAST_DARK: Partial<Palette> = {
   background: "#000000",
   surface: "#0a0a0a",
@@ -105,7 +113,7 @@ const HIGH_CONTRAST_DARK: Partial<Palette> = {
   border: "#7b8b99",
   accent: "#4dffc8",
   glass: "#0a0a0a",
-  glassStrong: "#000000"
+  glassStrong: "#161616"
 };
 
 const HIGH_CONTRAST_LIGHT: Partial<Palette> = {
@@ -117,7 +125,7 @@ const HIGH_CONTRAST_LIGHT: Partial<Palette> = {
   border: "#4a5a68",
   accent: "#00614a",
   glass: "#ffffff",
-  glassStrong: "#ffffff"
+  glassStrong: "#f0f0f0"
 };
 
 /** Spacing/typography scale. `compactDensity` tightens rows for power users. */
@@ -234,7 +242,13 @@ export function buildTheme(
 
   if (appearance.reduceTransparency || accessibility.highContrast) {
     palette.glass = palette.surface;
-    palette.glassStrong = palette.background;
+    // `surfaceRaised`, not `background`. Each glass token collapses to the
+    // opaque surface it was approximating, so switching translucency off
+    // changes the material and not the hierarchy. Collapsing the *strongest*
+    // surface to the page made a card indistinguishable from what it sits on —
+    // survivable while glass was itself near-black, a visible defect now that
+    // it is graphite and the page is not.
+    palette.glassStrong = palette.surfaceRaised;
   }
 
   const compact = appearance.compactDensity;

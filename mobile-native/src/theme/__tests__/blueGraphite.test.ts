@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
-import { BLUE_GRAPHITE_CARD, BLUE_GRAPHITE_NAV, blueGraphite } from "../blueGraphite";
+import { BLUE_GRAPHITE_CARD, BLUE_GRAPHITE_LEVELS, BLUE_GRAPHITE_NAV, blueGraphite } from "../blueGraphite";
 import { colors } from "../colors";
 
 /**
@@ -272,8 +272,21 @@ describe("the axis puts the blue where the brief puts it", () => {
  * The file is the single source. A hex belonging to this material appearing
  * anywhere else in `src/` means the system has a second copy, which is the
  * failure mode a token file exists to prevent.
+ *
+ * `theme/colors.ts` is the one exception, and it is not a concession to
+ * convenience. Two parity gates read that object with a regex that only matches
+ * string literals, so importing the levels there drops `surface` and
+ * `surfaceRaised` out of one gate entirely — which then reports PASS on the
+ * twenty-one keys it can still see, with the two most important colours in the
+ * platform unchecked. The exception is therefore paid for by the assertion
+ * directly below it: the copy is allowed, drifting is not.
  */
 describe("nothing re-declares the material", () => {
+  it("keeps the palette's copy of the levels in step", () => {
+    expect(colors.surface).toBe(BLUE_GRAPHITE_LEVELS.panel);
+    expect(colors.surfaceRaised).toBe(BLUE_GRAPHITE_LEVELS.raised);
+  });
+
   it("keeps every blue-graphite hex inside the token file", () => {
     const root = join(__dirname, "..", "..");
     const seen: string[] = [];
@@ -286,6 +299,9 @@ describe("nothing re-declares the material", () => {
         }
         if (!/\.tsx?$/.test(entry.name)) continue;
         if (path.endsWith(join("theme", "blueGraphite.ts"))) continue;
+        // See the note above this describe: allowed, and pinned by the test
+        // above rather than by trust.
+        if (path.endsWith(join("theme", "colors.ts"))) continue;
         const source = readFileSync(path, "utf8");
         for (const token of Object.values(blueGraphite)) {
           if (token.startsWith("#") && source.includes(token)) seen.push(`${path}: ${token}`);
