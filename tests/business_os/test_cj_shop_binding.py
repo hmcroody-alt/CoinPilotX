@@ -179,10 +179,16 @@ def test_a_storefront_that_cannot_receive_api_orders_cannot_be_bound(ready):
     assert bound(connection["id"]) == ""
 
     # And the same account, bound anyway, is refused where it would be spent.
+    #
+    # The stored reason names the cause, not the fallback: `dispatch` maps
+    # `api_shop_binding_required` through `PREFLIGHT_REASONS`, so the merchant
+    # reads "your shop is not bound" rather than `preflight_blocked`. The
+    # literal is asserted deliberately -- this value is rendered to the
+    # merchant, so changing it is a copy change, not an internal detail.
     force_bind(connection["id"], SHOP)
     intent = f.create_intent(**request)
     assert dispatch(connection, adapter) == "BLOCKED"
-    assert outbox(intent["intent_id"])["last_error"] == "preflight_blocked"
+    assert outbox(intent["intent_id"])["last_error"] == "supplier_shop_unbound"
     assert adapter.created == []
 
 
@@ -196,10 +202,13 @@ def test_two_shops_sharing_a_name_cannot_be_bound(ready):
         bind(connection, adapter)
     assert bound(connection["id"]) == ""
 
+    # `ambiguous_shop_name` is the other code carrying the same merchant-facing
+    # reason: both mean the binding cannot address a shop, which is one next
+    # action, so they are deliberately not split into two messages.
     force_bind(connection["id"], SHOP)
     intent = f.create_intent(**request)
     assert dispatch(connection, adapter) == "BLOCKED"
-    assert outbox(intent["intent_id"])["last_error"] == "preflight_blocked"
+    assert outbox(intent["intent_id"])["last_error"] == "supplier_shop_unbound"
     assert adapter.created == []
 
 
