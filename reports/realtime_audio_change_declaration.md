@@ -3733,3 +3733,107 @@ the matrix rather than being validated by it.
 Restore the single line `const uuid = rememberCallKitCall(incoming.callId,
 incoming.callUuid);` above the guard and delete the `reportedByPush` term. No schema
 change, no server-side state, no client/server contract affected.
+
+## Ring-seen acknowledgement addendum (2026-09-16)
+
+Declares one protected file changed: `mobile-native/src/screens/CallScreen.tsx`,
+category `audio_and_video_call_adapter`.
+
+### Why the change is required
+
+`CallScreen`'s mount effect called `markRingSeen(callId)` unconditionally. Only
+the recipient may acknowledge ringing; the backend refuses anyone else with 403
+`not_callee`. So every outgoing call issued a request that was guaranteed to
+fail, and the failure was logged in the same shape a real one would be. A fault
+that is always present is worse than no signal: it trains you to filter out the
+one line that would have named a genuine problem. The guard suppresses the call
+only when `direction` is explicitly `"outgoing"` — anything else still
+acknowledges, because a missing acknowledgement stops the caller's ringback and
+is the far more expensive direction to get wrong.
+
+### Which feature required it
+
+The incoming-call experience work (PushKit → CallKit ring on a locked handset).
+The 403 was found while reading the call logs for that mission and is a
+prerequisite for those logs being readable. No audio behaviour is in scope.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/screens/CallScreen.tsx` | `audio_and_video_call_adapter` | Wrapped the existing `markRingSeen(callId)` call in `if (params.direction !== "outgoing")` and added `params.direction` to the effect's dependency array. Nothing else in the file changed. |
+
+Supporting non-protected files:
+`mobile-native/src/screens/__tests__/CallScreen.actionsMenu.test.tsx` (3 tests
+added), `services/pulsesoc_communications_engine.py` (13 `ERROR_CATALOG`
+entries), `tests/test_call_error_catalog.py` (new static audit).
+
+### Why this is not an audio change
+
+The diff contains no `AVAudioSession`, no `Audio.setAudioModeAsync`, no
+`expo-av` call site, no Agora engine creation, no track publication, no lease or
+ownership call, and no new module-scope singleton. It adds a conditional around
+one `fetch`-backed API call and one dependency-array entry. `useNativeCallRoom`,
+`callSessionStore`, `callSignalMedia` and `callKitBridge` are untouched. The file
+is protected because it is the call adapter, not because this hunk is audio — but
+the declaration is owed regardless, which is why it is here.
+
+### Expected behavior change
+
+Outgoing calls stop issuing a request that always returned 403. Incoming calls
+are unaffected: they still acknowledge on mount exactly as before. No user-visible
+change on the incoming path, which is the path that rings.
+
+### Regression risk
+
+Low, and one-directional. The failure mode worth naming is over-suppression — a
+recipient whose route params somehow carry `direction: "outgoing"` would stop
+acknowledging, leaving the caller on ringback. That is why the guard tests for
+the literal `"outgoing"` rather than truthiness of an `isIncoming`-style flag,
+and why the test file pins the omitted-`direction` case explicitly. (Writing that
+test surfaced a JS trap worth recording: `renderCall("audio", undefined)` fires
+the default parameter, so a default cannot express "argument omitted" — the
+helper now takes an overrides object.)
+
+### Tests run
+
+- `src/screens/__tests__/CallScreen.actionsMenu.test.tsx` — **14 passed** (11
+  before, 3 added).
+- **Mutation check**, reverted afterwards and the file confirmed clean: force the
+  guard open with `if (true) {` → **exactly 1 failed**, `does not acknowledge
+  ringing on an outgoing call`.
+- `tests/test_call_error_catalog.py` — **6 passed**, each mutation-verified:
+  delete a catalog entry → 2 failed; change `rtc_provider()`'s return → 1 failed;
+  drop a field from an entry → 1 failed; add an undeclared computed `_err` code →
+  1 failed; add a stale `COMPUTED_CODES` entry → 1 failed.
+- Backend call suites, one file per process: `test_call_accept_race` (4 passed, 1
+  skipped), `test_call_acceptance_sync` (10), `test_call_multi_guest` (22),
+  `test_call_two_sided_hangup` (6).
+- Full gate battery, all green: `npm run typecheck`,
+  `npm run test:realtime-audio-critical` (**191**), `npm run test:realtime-audio`
+  (**377**), `npm run test:realtime-audio-architecture` (**22**),
+  `python3 -m unittest tests.protection.test_realtime_audio_architecture` (**19**),
+  and the Agora token/provider pytest pair (**13**).
+- `npx expo prebuild --platform ios --no-install` — finished clean. Its
+  regenerated output was reverted rather than committed, and one thing is worth
+  recording from it: prebuild preserved
+  `aps-environment = $(PULSESOC_APS_ENVIRONMENT)` in the entitlements. A prebuild
+  silently resetting that to a literal was a plausible way to lose the VoIP
+  environment configuration; it does not.
+
+### Physical validation required
+
+Owed and unrun, and it cannot be run yet: the locked-handset ring test needs the
+TestFlight build (23) currently uploading, because a locally dev-signed install
+is signed `aps-environment: development` and its sandbox VoIP token is refused by
+the production-restricted APNs key. When that build reaches P3r7or the matrix
+should confirm (a) an incoming call still rings and still acknowledges, and (b)
+an outgoing call no longer emits a 403 `not_callee` in the server log.
+
+### Rollback procedure
+
+Delete the `if (params.direction !== "outgoing")` wrapper and remove
+`params.direction` from the dependency array, restoring the unconditional
+`markRingSeen(callId)`. No schema change, no contract change, no server-side
+state. The `ERROR_CATALOG` additions are independent and need not be reverted
+with it.

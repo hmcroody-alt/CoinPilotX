@@ -271,6 +271,96 @@ ERROR_CATALOG = {
         "PulseSoc hit an unexpected backend error while handling the call.",
         "Open Calls Command Center and search the correlation ID in logs.",
     ),
+    # Every `_err` code below reached `_error_details` with no entry here and came
+    # back as UNKNOWN_ERROR — nine distinct faults collapsed onto one code, in the
+    # logs and in the client alike. `not_callee` is how that surfaced: a 403 on
+    # every outgoing call logged as UNKNOWN_ERROR, which is unsearchable and
+    # indistinguishable from a genuine backend fault.
+    "not_callee": (
+        "CALL_RECIPIENT_REQUIRED",
+        "Only the recipient can acknowledge ringing",
+        "This account is the caller on that call, not a recipient.",
+        "Acknowledge ringing only from the device that is being called.",
+    ),
+    "invalid_call_type": (
+        "CALL_TYPE_UNSUPPORTED",
+        "Unsupported call type",
+        "PulseSoc supports audio and video calls only.",
+        "Retry with an audio or video call.",
+    ),
+    "invalid_transition": (
+        "CALL_TRANSITION_INVALID",
+        "Call state change not allowed",
+        "The call is not in a state that permits this change.",
+        "Refresh the call and retry from its current state.",
+    ),
+    "transition_conflict": (
+        "CALL_TRANSITION_CONFLICT",
+        "Call already changed",
+        "Another device changed this call first; the compare-and-set was refused.",
+        "Refresh the call — first valid answer wins, and this one lost the race.",
+    ),
+    "unsupported_control": (
+        "CALL_CONTROL_UNSUPPORTED",
+        "Unsupported call control",
+        "PulseSoc does not recognise that in-call control.",
+        "Update the app, then retry the control.",
+    ),
+    "missing_device_id": (
+        "CALL_DEVICE_ID_REQUIRED",
+        "Device id required",
+        "This request must name the device it is registering or releasing.",
+        "Retry from the app; the device id is issued at install.",
+    ),
+    "missing_token": (
+        "CALL_PUSH_TOKEN_REQUIRED",
+        "Push token required",
+        "This request must carry a VoIP token or a device id.",
+        "Retry after the app has registered for PushKit.",
+    ),
+    "invalid_live_role": (
+        "CALL_LIVE_ROLE_INVALID",
+        "Unsupported live role",
+        "PulseSoc could not issue an Agora token for that role.",
+        "Retry as host or audience.",
+    ),
+    "agora_token_builder_missing": (
+        "CALL_RTC_TOKEN_UNAVAILABLE",
+        "Call media credentials unavailable",
+        "PulseSoc could not mint an Agora token for this call.",
+        "Check the Agora app id and certificate, then retry.",
+    ),
+    # The four below are not written literally at any `_err` call site — they
+    # arrive as a variable, which is why the literal audit missed them and why
+    # they outlived the nine above. `missing` and `denied` come straight from
+    # `comm_service._conversation_access`, so they cover *every* call route that
+    # resolves a conversation first: the most-travelled failure on the whole
+    # surface was answering UNKNOWN_ERROR. `unauthenticated` and `invalid` are
+    # `register_voip_token`'s own statuses forwarded verbatim.
+    "missing": (
+        "CONVERSATION_NOT_FOUND",
+        "Conversation not found",
+        "PulseSoc could not find the conversation this call refers to.",
+        "Reopen the conversation from the chat list and try again.",
+    ),
+    "denied": (
+        "CONVERSATION_ACCESS_DENIED",
+        "You do not have access to this conversation",
+        "This account is not a participant in the conversation this call refers to.",
+        "Ask a participant to add you, then try again.",
+    ),
+    "unauthenticated": (
+        "VOIP_SIGN_IN_REQUIRED",
+        "Sign-in required",
+        "A signed-in member is required to register a VoIP token.",
+        "Sign in, then reopen the app so PushKit can register again.",
+    ),
+    "invalid": (
+        "VOIP_REGISTRATION_INVALID",
+        "VoIP registration was incomplete",
+        "The registration did not carry both a device id and a VoIP token.",
+        "Reopen the app so PushKit can register again.",
+    ),
 }
 
 

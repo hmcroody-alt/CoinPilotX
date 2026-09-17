@@ -196,7 +196,16 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
   useEffect(() => {
     let mounted = true;
     if (!callId) return undefined;
-    markRingSeen(callId).catch(() => undefined);
+    // Only the recipient can acknowledge ringing; the backend answers `not_callee`
+    // with 403 to anyone else. The caller reaches this screen with the same
+    // `callId`, so an unguarded call here produced a guaranteed 403 on every
+    // outgoing call — noise that would hide a real ring-seen failure behind a
+    // failure that is always present. `direction` is only trusted to *suppress*:
+    // anything other than an explicit "outgoing" still acknowledges, because a
+    // missing acknowledgement is the expensive direction.
+    if (params.direction !== "outgoing") {
+      markRingSeen(callId).catch(() => undefined);
+    }
     refresh().catch((loadError) => {
       if (mounted) {
         setLoading(false);
@@ -204,7 +213,7 @@ export function CallScreen({ route, navigation }: NativeStackScreenProps<RootSta
       }
     });
     return () => { mounted = false; };
-  }, [callId, refresh]);
+  }, [callId, params.direction, refresh]);
 
   useEffect(() => {
     if (!connected || !session.connectedAtMs) return undefined;
