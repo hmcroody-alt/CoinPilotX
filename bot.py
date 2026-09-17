@@ -54547,9 +54547,24 @@ def music_authority_actor(permission):
     """
     init_db()
     actor = None
+    session_admin = admin_current_user()
+    # A browser driving these endpoints supplies ambient authority, so the
+    # cookie leg needs CSRF and the bearer leg does not. `enforce_admin_form_csrf`
+    # does not cover this: its scope is form-encoded bodies, and these routes take
+    # JSON. That was harmless while the only caller was the native app, which
+    # sends a bearer token and no cookie; it stops being harmless the moment an
+    # admin page posts here with a session. Narrowed to the cookie leg and to
+    # state-changing methods so the native client's requests are unaffected.
+    if session_admin and request.method not in ("GET", "HEAD", "OPTIONS"):
+        if not verify_csrf():
+            return None, api_error(
+                "Security check failed. Reload the page and try again.",
+                403,
+                error_code="csrf_failed",
+            )
     try:
         actor = music_authority.resolve_actor(
-            admin_current_user(),
+            session_admin,
             account_user_id(),
             admin_user_by_account_user_id,
         )

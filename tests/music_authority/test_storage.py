@@ -16,6 +16,7 @@ on "it didn't crash".
 """
 
 import os
+import secrets
 import sqlite3
 import tempfile
 import unittest
@@ -30,6 +31,7 @@ os.environ.setdefault("R2_BUCKET", "pulsesoc-test-bucket")
 from werkzeug.security import generate_password_hash  # noqa: E402
 
 import bot  # noqa: E402
+from services import csrf as csrf_service  # noqa: E402
 from services import media_storage, music_authority  # noqa: E402
 
 PUBLIC_BASE = "https://cdn.example.test"
@@ -267,14 +269,26 @@ class PurgeBlastRadiusTests(unittest.TestCase):
             )
         conn.commit()
         conn.close()
+        # A cookie session is ambient authority, so the endpoints require a CSRF
+        # token on this leg. Seeding it here is harness plumbing, not the thing
+        # under test -- `test_routes` owns the check that removing it is a 403.
+        self.csrf_token = secrets.token_urlsafe(24)
         with self.client.session_transaction() as sess:
             sess.pop("account_user_id", None)
             sess["admin_user_id"] = self.owner_admin_id
             sess["admin_session_issued_at"] = datetime.now().isoformat()
             sess["admin_session_last_seen"] = datetime.now().isoformat()
+            sess[csrf_service.CSRF_SESSION_KEY] = self.csrf_token
+
+    def _headers(self):
+        return {csrf_service.CSRF_HEADER: self.csrf_token}
 
     def _step_up(self):
-        response = self.client.post("/api/admin/music/step-up", json={"password": OWNER_PASSWORD})
+        response = self.client.post(
+            "/api/admin/music/step-up",
+            json={"password": OWNER_PASSWORD},
+            headers=self._headers(),
+        )
         self.assertEqual(response.status_code, 200, response.get_json())
 
     def _purge(self, track_id):
@@ -286,6 +300,7 @@ class PurgeBlastRadiusTests(unittest.TestCase):
                 "reason_note": "rights holder demand, controlled test",
                 "expected_state": music_authority.STATE_PURGE_PENDING,
             },
+            headers=self._headers(),
         )
 
     def test_a_purge_deletes_exactly_the_two_keys_that_track_owns(self):

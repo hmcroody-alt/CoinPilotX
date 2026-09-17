@@ -39,6 +39,7 @@ Run: .venv/bin/python3 -m pytest tests/music_authority/test_routes.py
 
 import json
 import os
+import secrets
 import sqlite3
 import sys
 import tempfile
@@ -52,6 +53,7 @@ os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
 
 import bot  # noqa: E402
+from services import csrf as csrf_service  # noqa: E402
 from services import music_authority  # noqa: E402
 from werkzeug.security import generate_password_hash  # noqa: E402
 
@@ -201,13 +203,24 @@ class MusicRouteTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
         self.track_id = _seed_track()
+        # Only the cookie-session leg needs one; `as_owner_session()` sets it.
+        self.csrf_token = None
 
     def as_owner_session(self):
-        """The pre-existing web admin session leg."""
+        """The pre-existing web admin session leg.
+
+        Also stashes a CSRF token, because this leg is cookie-authenticated and
+        therefore carries ambient authority: a browser on another origin can make
+        the user's browser send this request, and the bearer leg cannot be made to
+        do the same. `self.csrf_token` is sent by `post()` from here on; the test
+        below removes it deliberately to prove the check is real.
+        """
         with self.client.session_transaction() as sess:
             sess["admin_user_id"] = self.owner_admin_id
             sess["admin_session_issued_at"] = datetime.now().isoformat()
             sess["admin_session_last_seen"] = datetime.now().isoformat()
+            self.csrf_token = secrets.token_urlsafe(24)
+            sess[csrf_service.CSRF_SESSION_KEY] = self.csrf_token
 
     def as_account(self, account_user_id):
         """The native/website leg: a `users` id proven by the session cookie."""
@@ -215,9 +228,15 @@ class MusicRouteTestCase(unittest.TestCase):
             sess.pop("admin_user_id", None)
             sess["account_user_id"] = account_user_id
 
-    def post(self, path, payload=None):
+    def post(self, path, payload=None, csrf=True):
+        headers = {}
+        if csrf and self.csrf_token:
+            headers[csrf_service.CSRF_HEADER] = self.csrf_token
         return self.client.post(
-            path, data=json.dumps(payload or {}), content_type="application/json"
+            path,
+            data=json.dumps(payload or {}),
+            content_type="application/json",
+            headers=headers,
         )
 
     def body(self, response):
@@ -235,6 +254,45 @@ class ReachabilityTests(MusicRouteTestCase):
         self.assertEqual(response.status_code, 401)
         self.assertEqual(self.body(response)["error_code"], "music_authority_required")
         self.assertEqual(_track_row(self.track_id)["lifecycle_state"], "ACTIVE")
+
+    def test_a_cookie_session_post_without_a_csrf_token_is_refused(self):
+        """The admin library page posts here from a browser, so this leg needs CSRF.
+
+        `enforce_admin_form_csrf` does not cover these routes: its scope is
+        form-encoded bodies and these take JSON. That was harmless while the only
+        caller was the native app, which authenticates with a bearer token and
+        sends no cookie -- a request no other site can make the browser send. A
+        page in the admin panel changes that, and a cross-site POST that took a
+        track down would be indistinguishable in the audit trail from the owner
+        doing it deliberately.
+        """
+        self.as_owner_session()
+        response = self.post(
+            "/api/admin/music/tracks/%d/takedown" % self.track_id,
+            {"reason_code": "POLICY_VIOLATION"},
+            csrf=False,
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(self.body(response)["error_code"], "csrf_failed")
+        self.assertEqual(_track_row(self.track_id)["lifecycle_state"], "ACTIVE")
+        self.assertEqual(_audit_rows(self.track_id), [])
+
+    def test_the_bearer_account_leg_needs_no_csrf_token(self):
+        """The native app sends no token and must not be broken by the check above.
+
+        The distinction is not cosmetic: CSRF exists because a browser attaches
+        the cookie by itself. A bearer token is attached by the app deliberately,
+        so there is no ambient authority to forge, and demanding a token here
+        would break the shipped client for no security gain.
+        """
+        self.as_account(OWNER_ACCOUNT_ID)
+        self.assertIsNone(self.csrf_token)
+        response = self.post(
+            "/api/admin/music/tracks/%d/takedown" % self.track_id,
+            {"reason_code": "OWNER_DECISION"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(_track_row(self.track_id)["lifecycle_state"], "TAKEN_DOWN")
 
     def test_an_account_authenticated_owner_reaches_the_route(self):
         """The whole mission in one assertion.
