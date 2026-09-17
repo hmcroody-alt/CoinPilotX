@@ -20,10 +20,11 @@ sold / removed / restricted / low_stock) is derived from the listing row at
 read time. There is no state column to go stale.
 
 *Checkout.* One Stripe Checkout Session per seller group, reusing the exact
-surface `/api/pulse/payments/checkout` uses: `seller_transactions` rows,
-platform fee via `seller_fee_bps`, destination charge to the seller's connected
-account. Stripe Connect allows one transfer destination per session, which is
-why the group is per seller — this is a constraint, not a product choice.
+surface `/api/pulse/payments/checkout` uses: `seller_transactions` rows and a
+platform fee via `seller_fee_bps`. The charge is a plain platform charge — the
+buyer pays PulseSoc — and each seller is paid later by an explicit Transfer,
+which is what keeps the payout protection window enforceable. The session is
+still grouped per seller because the seller is the unit of settlement.
 
 *Idempotency.* `POST /checkout` accepts an `idempotency_key`. A replayed key
 returns the stored response instead of creating a second session. Duplicate
@@ -313,22 +314,29 @@ def _apple_pay_merchant_id() -> str:
 
 def _stripe_payment_intent_data(*, bot, tx_ids: list[int], buyer_id: int,
                                 platform_fee: int, payout: dict) -> tuple[dict, str]:
-    """Build a platform charge by default, upgrading to a destination charge
-    only when the seller's Connect account is one Stripe will actually accept a
-    transfer to. Seller earnings are recorded in ``seller_transactions`` either
-    way, so an unfinished onboarding never blocks the buyer from paying."""
+    """Build the platform charge for this cart.
+
+    Separate charges and transfers: the buyer always pays PulseSoc, and each
+    seller's cut leaves later as its own Transfer once that line's settlement
+    clears its protection window. A destination charge would settle at charge
+    time and make the protection window unenforceable.
+
+    One cart is one charge but several seller transactions, so they share the
+    transfer group of the first — that is how the later Transfers reconcile
+    back to this single charge.
+
+    The returned account id no longer routes anything; it only reports whether
+    Stripe would accept a transfer to this seller yet.
+    """
     data = {"metadata": {
         "seller_transaction_ids": ",".join(str(value) for value in tx_ids),
         "cart_checkout": "1",
         "buyer_user_id": str(buyer_id),
+        "platform_fee_cents": str(int(platform_fee)),
     }}
-    connected_account_id = bot.seller_destination_account_id(payout)
-    if connected_account_id:
-        data.update({
-            "application_fee_amount": int(platform_fee),
-            "transfer_data": {"destination": connected_account_id},
-        })
-    return data, connected_account_id
+    if tx_ids:
+        data["transfer_group"] = f"marketplace_order:{int(tx_ids[0])}"
+    return data, bot.seller_destination_account_id(payout)
 
 
 def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
@@ -953,7 +961,7 @@ def cart_checkout():
                     "platform_fee_cents": platform_fee,
                     "seller_net_cents": seller_net,
                     "commercial_quotes": line_quotes,
-                    "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding",
+                    "payout_state": "transfer_eligible" if connected_account_id else "ledger_pending_onboarding",
                 }
                 if idempotency_key:
                     cur.execute(
@@ -1000,7 +1008,7 @@ def cart_checkout():
                 "platform_fee_cents": platform_fee,
                 "seller_net_cents": seller_net,
                 "commercial_quotes": line_quotes,
-                "payout_state": "connect_routed" if connected_account_id else "ledger_pending_onboarding",
+                "payout_state": "transfer_eligible" if connected_account_id else "ledger_pending_onboarding",
             }
             if idempotency_key:
                 cur.execute(

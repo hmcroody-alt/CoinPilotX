@@ -7,11 +7,18 @@ from services import marketplace_settlement_service as settlements
 from services.business_os.payments import seller_payouts
 
 def run_once(*, account_resolver: Callable[[str], Mapping[str, Any]],
+             provider_transfer: Callable[[dict], Mapping[str, Any]],
              provider_create: Callable[[dict], Mapping[str, Any]], limit: int = 50) -> dict:
-    """Schedule eligible rows and invoke the existing Stripe payout adapter.
+    """Schedule eligible rows, transfer the seller's cut, then pay it out.
 
-    Callers inject the network operation. Tests use a fixture; production may
-    pass a Stripe-backed callable. Database idempotency keys, not memory, fence
+    Two distinct money movements, in order: `provider_transfer` moves funds from
+    the platform balance to the connected account, and `provider_create` moves
+    that balance to the seller's bank. Under separate charges and transfers the
+    second draws on nothing until the first lands, so a failed transfer must not
+    be followed by a payout attempt.
+
+    Callers inject the network operations. Tests use fixtures; production passes
+    Stripe-backed callables. Database idempotency keys, not memory, fence
     duplicate replicas and provider retries.
     """
     started = time.monotonic(); settlements.ensure_schema(); conn = db.connect()
@@ -20,8 +27,8 @@ def run_once(*, account_resolver: Callable[[str], Mapping[str, Any]],
             WHERE payout_state='eligible' AND payout_ready=1 AND blocker_code IS NULL
             ORDER BY seller_transaction_id LIMIT ?""", (max(1, min(int(limit), 200)),)).fetchall()]
     finally: conn.close()
-    metrics = {"eligible_count": len(rows), "scheduled_count": 0, "paid_count": 0,
-               "failed_count": 0, "duplicate_prevention": 0}
+    metrics = {"eligible_count": len(rows), "scheduled_count": 0, "transferred_count": 0,
+               "paid_count": 0, "failed_count": 0, "duplicate_prevention": 0}
     for row in rows:
         tx_id = int(row["seller_transaction_id"]); payout_key = f"marketplace:payout:{tx_id}"
         account = dict(account_resolver(str(row["seller_id"])) or {})
@@ -34,10 +41,19 @@ def run_once(*, account_resolver: Callable[[str], Mapping[str, Any]],
                 reason="canonical payout request created", idempotency_key=f"scheduled:{payout_key}")
             metrics["scheduled_count"] += 1
             payout = req["payout"]
+            transfer = dict(provider_transfer(seller_payouts.build_stripe_transfer_args(
+                payout, transfer_group=str(row.get("transfer_group") or row["order_id"]))) or {})
+            transfer_id = str(transfer.get("id") or transfer.get("transfer_id") or "")
+            if not transfer_id: raise RuntimeError("provider returned no transfer id")
+            metrics["transferred_count"] += 1
             provider = dict(provider_create(seller_payouts.build_stripe_payout_args(payout)) or {})
             provider_id = str(provider.get("id") or provider.get("payout_id") or "")
             if not provider_id: raise RuntimeError("provider returned no payout id")
-            seller_payouts.mark_payout_submitted(int(payout["id"]), stripe_payout_id=provider_id)
+            # One write records both legs. A payout failure after a successful
+            # transfer loses the id here, but seller_transfer:<payout_key> is
+            # stable, so the retry returns Stripe's existing transfer.
+            seller_payouts.mark_payout_submitted(int(payout["id"]), stripe_payout_id=provider_id,
+                                                 stripe_transfer_id=transfer_id)
             conn = db.connect()
             try:
                 conn.execute("UPDATE marketplace_commercial_settlements SET provider_payout_id=? WHERE seller_transaction_id=? AND payout_state='scheduled'",

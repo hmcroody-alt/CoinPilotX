@@ -83,7 +83,12 @@ def _seller_destination_account_id(payout):
     return account_id
 
 
-def test_stripe_wiring_supports_platform_and_connect_charges():
+def test_the_buyer_always_pays_the_platform_and_never_the_seller_directly():
+    # Separate charges and transfers. A destination charge settles the seller's
+    # cut at charge time, which would make the settlement protection window
+    # unenforceable, so the charge must stay first-party no matter how complete
+    # the seller's onboarding is. The seller is paid later by an explicit
+    # Transfer that reconciles back here through the transfer group.
     bot = _routing_bot()
     platform, account = cart._stripe_payment_intent_data(
         bot=bot, tx_ids=[11, 12], buyer_id=5, platform_fee=300, payout={}
@@ -92,8 +97,11 @@ def test_stripe_wiring_supports_platform_and_connect_charges():
     assert platform["metadata"]["seller_transaction_ids"] == "11,12"
     assert "transfer_data" not in platform
     assert "application_fee_amount" not in platform
+    # One cart is one charge but several seller transactions, so the group is
+    # taken from the first and shared by every line.
+    assert platform["transfer_group"] == "marketplace_order:11"
 
-    destination, account = cart._stripe_payment_intent_data(
+    enabled, account = cart._stripe_payment_intent_data(
         bot=bot, tx_ids=[11], buyer_id=5, platform_fee=300,
         payout={
             "connected_account_id": "acct_test_contract",
@@ -102,17 +110,20 @@ def test_stripe_wiring_supports_platform_and_connect_charges():
             "onboarding_status": "complete",
         },
     )
+    # The account id is still returned, but it no longer routes the charge — it
+    # only reports whether Stripe would accept a transfer to this seller yet.
     assert account == "acct_test_contract"
-    assert destination["transfer_data"]["destination"] == "acct_test_contract"
-    assert destination["application_fee_amount"] == 300
+    assert "transfer_data" not in enabled
+    assert "application_fee_amount" not in enabled
+    assert enabled["transfer_group"] == "marketplace_order:11"
 
 
 def test_unfinished_seller_onboarding_still_lets_the_buyer_pay():
     # A payout row is written the moment a seller *starts* Connect onboarding,
-    # so it carries a real account id while charges_enabled is still 0. Routing
-    # a destination charge there makes Stripe reject the session — turning the
-    # seller's paperwork into a buyer-facing checkout failure. The buyer must
-    # fall through to a platform charge instead.
+    # so it carries a real account id while charges_enabled is still 0. Stripe
+    # would reject a transfer to that account, so it must not be reported as a
+    # transfer destination — otherwise the settlement is marked transfer-eligible
+    # and the failure surfaces at payout time instead of at onboarding.
     bot = _routing_bot()
     started, account = cart._stripe_payment_intent_data(
         bot=bot, tx_ids=[11], buyer_id=5, platform_fee=300,
@@ -139,6 +150,22 @@ def test_buy_now_shares_the_same_payout_routing_rule():
     assert 'payout.get("charges_enabled")' in source
     assert 'payout.get("payouts_enabled")' in source
     assert "connected_account_id = seller_destination_account_id(payout)" in source
+
+
+def test_no_charge_site_routes_money_to_a_connected_account():
+    # The three server-side charge builders — buy-now, cart and offers — must
+    # all stay first-party. One of them reverting to a destination charge would
+    # settle that lane's seller cut at charge time, silently exempting it from
+    # the protection window while the other two still honour it.
+    for relative in ("bot.py", "services/marketplace_cart_routes.py",
+                     "services/marketplace_offers_routes.py"):
+        source = (REPO_ROOT / relative).read_text(encoding="utf-8", errors="ignore")
+        executable = "\n".join(line for line in source.splitlines()
+                               if not line.lstrip().startswith("#"))
+        assert '"transfer_data"' not in executable, relative
+        assert '"application_fee_amount"' not in executable, relative
+        # The group is what lets a later Transfer be reconciled to this charge.
+        assert 'f"marketplace_order:{' in executable, relative
 
 
 def test_cart_upsert_avoids_sqlite_only_min():
