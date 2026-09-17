@@ -38,6 +38,7 @@ from typing import Any, Optional
 from services import db
 from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace import orders as _ord
+from services.business_os.marketplace import policy as _policy
 from services.business_os.marketplace import refunds as _ref
 from services.business_os.marketplace.service import MarketplaceError
 
@@ -280,6 +281,17 @@ def request_return(buyer_user_id: Any, order_id: Any, *, reason: str,
         if order.get("status") not in RETURNABLE_ORDER_STATUSES:
             raise MarketplaceError(
                 "This order is not in a returnable state.", 409, "not_returnable")
+        # The deadline. Until this existed a return could be opened on a completed
+        # order indefinitely, so seller liability had no end date at all — and the
+        # seller agreement was about to promise a window nothing enforced.
+        if not _policy.return_window_open(delivered_at=order.get("delivered_at"),
+                                          purchased_at=order.get("created_at")):
+            closes = _policy.return_window_closes_at(
+                delivered_at=order.get("delivered_at"),
+                purchased_at=order.get("created_at"))
+            raise MarketplaceError(
+                f"The {_policy.STANDARD_RETURN_WINDOW_DAYS}-day return window for "
+                f"this order closed on {closes}.", 409, "return_window_closed")
         existing = conn.execute(
             "SELECT return_id FROM business_os_mkt_returns "
             "WHERE order_id = ? AND status IN ('requested','approved','received')",

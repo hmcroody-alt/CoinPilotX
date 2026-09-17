@@ -406,10 +406,16 @@ def fulfill_order(order_id: Any, seller_user_id: Any, *, tracking_ref: Optional[
         if order is None or order.get("seller_user_id") != _svc._sid(seller_user_id):
             raise MarketplaceError("Order not found.", 404, "not_found")
         _assert_transition(order.get("status"), "fulfilled")
+        # `delivered_at` is written once, here, and anchors the buyer's return
+        # window. It is kept distinct from `updated_at`, which any later status
+        # change rewrites — anchoring a deadline on a mutable column would let an
+        # unrelated edit silently extend or shorten a buyer's rights.
+        now = _now_iso()
         conn.execute(
             "UPDATE business_os_mkt_orders SET status = 'fulfilled', tracking_ref = ?, "
+            "delivered_at = COALESCE(delivered_at, ?), "
             "updated_at = ? WHERE order_id = ?",
-            (tracking_ref, _now_iso(), str(order_id)))
+            (tracking_ref, now, now, str(order_id)))
         _record_event(conn, order_id, "paid", "fulfilled", seller_user_id,
                       meta={"tracking_ref": tracking_ref} if tracking_ref else None)
         if owned:
