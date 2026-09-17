@@ -29,24 +29,41 @@ export function parseMessageNotification(key: string, data: Record<string, unkno
 }
 
 export type ReconciliationResult = { examined: number; dismissed: number; preserved: number; failures: number; cancelled: boolean };
-let flight: Promise<ReconciliationResult> | null = null;
-let again = false;
+type Flight = { epoch: number; again: boolean; promise: Promise<ReconciliationResult> };
+let flight: Flight | null = null;
 let generation = 0;
 export function cancelMessageReconciliation() { generation += 1; }
 
 export function reconcileMessageNotifications(): Promise<ReconciliationResult> {
-  if (flight) { again = true; return flight; }
-  flight = (async () => {
+  // Coalescing is scoped to one identity, not global. A caller arriving after
+  // `cancelMessageReconciliation` -- which is how an account switch announces
+  // itself -- belongs to a different account than the pass in flight, and that
+  // pass is about to abandon itself because its own scope check now fails.
+  // Handing the shared promise over would report a completed reconciliation to
+  // a caller whose Notification Center was never enumerated, so the incoming
+  // account's stale alerts would sit there until some later lifecycle trigger
+  // happened to fire. Nothing errors and nothing logs, which is what makes the
+  // extra field worth it.
+  const joinable = flight;
+  if (joinable && joinable.epoch === generation) { joinable.again = true; return joinable.promise; }
+  // `again` rides on the entry rather than the module for the same reason: two
+  // passes from different generations can briefly overlap, and a shared flag
+  // lets the incoming pass clear the outgoing one's trailing-pass request.
+  const entry: Flight = { epoch: generation, again: false, promise: null as unknown as Promise<ReconciliationResult> };
+  entry.promise = (async () => {
     let result: ReconciliationResult = { examined: 0, dismissed: 0, preserved: 0, failures: 0, cancelled: false };
     // A trailing pass picks up pushes/read events arriving during enumeration.
     for (let pass = 0; pass < 2; pass += 1) {
-      again = false;
+      entry.again = false;
       result = await run();
-      if (!again || result.cancelled) break;
+      if (!entry.again || result.cancelled) break;
     }
     return result;
-  })().finally(() => { flight = null; });
-  return flight;
+    // Only clear our own slot. A pass started after a switch has already
+    // replaced `flight`, and a blind `flight = null` here would drop it.
+  })().finally(() => { if (flight === entry) flight = null; });
+  flight = entry;
+  return entry.promise;
 }
 
 async function run(): Promise<ReconciliationResult> {

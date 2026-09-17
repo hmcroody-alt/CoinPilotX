@@ -75,3 +75,37 @@ def test_bounded_read_does_not_read_later_message(database):
 
 def test_malformed_and_missing_preserved(database):
     assert reconcile(database[1], 7, [None, {}, [], {'messageId': 'bad'}, entry(999)]) == []
+
+
+def test_the_source_type_guard_stops_a_cross_id_space_dismissal(database):
+    """Two message stores exist and their row ids overlap.
+
+    comm_v2 writes `comm_v2_messages`. Six live web routes -- the ones that go
+    through `pulse_send_conversation_message` in bot.py -- write `pulse_messages`
+    instead, and nothing bridges the two tables, so `pulse_messages.id = 1` and
+    `comm_v2_messages.id = 1` are unrelated messages that merely share a number.
+
+    The only thing separating them at reconciliation time is `source_type`:
+    `create_pulse_notification` stamps `entity_type` onto the row, comm_v2
+    declares `comm_v2_message`, and the legacy delivery path declares
+    `conversation`. Widen this filter to accept both and a web-sent, still-unread
+    alert gets resolved against a comm_v2 row that happens to carry the same id --
+    and if that unrelated comm_v2 message is read, iOS destroys the only copy of
+    a message the user never saw.
+
+    The consequence of keeping the filter narrow, which is worth stating plainly:
+    message alerts from the web routes are never dismissed by this reconciler.
+    They are preserved, which is the safe direction, but the fix does not cover
+    them. Closing that gap needs its own namespace and its own read query against
+    `pulse_messages` -- not a wider filter here.
+    """
+    _, cur = database
+    # comm_v2 message 1 is read by user 7: the fixture sets last_read_message_id=1.
+    assert reconcile(cur, 7, [entry(1)]) == ['os-1']
+    # The same id, arriving from the web emitter, is a different message.
+    web_alert = dict(key='web-1', type='chat_message', messageId=1, conversationId=10, notificationId=41)
+    cur.execute('INSERT INTO notifications VALUES (41,7,7,?,?,?,NULL)',
+                ('conversation', '1', json.dumps({'conversation_id': 10})))
+    assert reconcile(cur, 7, [web_alert]) == []
+    owner = cur.execute('SELECT recipient_user_id FROM notifications WHERE id=41').fetchone()[0]
+    assert owner == 7
