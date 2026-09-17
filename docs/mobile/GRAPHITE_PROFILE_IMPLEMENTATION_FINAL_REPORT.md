@@ -522,7 +522,8 @@ Reduce Motion  (control)        1  ->  1    live both sides
 | `12-increase-contrast-enabled.png` | `simctl ui increase_contrast enabled` — **proves nothing**, see §17 |
 | `13-another-users-profile.png` | Visitor actions, visitor bio, "ROODY's Profile OS" |
 | `14-visitor-tile-grid-and-tabs.png` | Visitor's 3-tile grid vs owner's 18 |
-| `15-iphone-16-pro-SIGNED-OUT-blocked.png` | Smaller viewport — **blocked**, see §17 |
+| `15-iphone-16-pro-SIGNED-OUT-blocked.png` | Smaller viewport — **blocked**, see §15 |
+| `16-deployed-graphite-profile-sim.png` | The deployed build's Profile, post-relaunch |
 
 Another member's profile was reached with `xcrun simctl openurl <dev>
 "pulsesoc://pulse/profile/<handle>"` (route `ProfileDetail: { path:
@@ -533,6 +534,67 @@ immediately with the session intact. Deep links after that point.
 
 Scrolling requires `mouse_move` → `left_mouse_down` → several `mouse_move` →
 `left_mouse_up`; a `left_click_drag` registers as a tap on this simulator.
+
+One trap worth recording: after `simctl install`, the **already-running** process
+keeps executing the bundle it launched with. The container held the new bytes and the
+screen still showed the old design, which looks exactly like a failed install.
+`simctl terminate` + `simctl launch` is what actually swaps the running JS — checking
+the container's bytes is necessary but not sufficient.
+
+### Physical device — P3r7or (iPhone 16 Pro, `F45E640F-6D02-514E-877C-B764E8D6818F`)
+
+The same JS-only route, because the device app's **assets are byte-identical to the
+new build's** — all 31 files compared by name and by content, zero differences — so
+only `main.jsbundle` needed to move. Unlike the simulator, a device app must carry a
+real signature, so the re-sign used the identity already on the bundle
+(`6E0B7551E4E8509D779AFE96AA1F96E5D3DEAE6F`, *Apple Development: ROODY CHERIE*, team
+`87ZC69AGSR`, read back out of the existing signature with `codesign -d
+--extract-certificates` rather than guessed — two identities with the same display
+name are installed):
+
+```bash
+codesign --force --sign 6E0B7551E4E8509D779AFE96AA1F96E5D3DEAE6F \
+  --preserve-metadata=identifier,entitlements,flags,requirements --timestamp=none "$APP"
+codesign --verify --deep --strict "$APP"   # valid on disk; satisfies its Designated Requirement
+xcrun devicectl device install app --device F45E640F-… "$APP"
+xcrun devicectl device process launch --device F45E640F-… --terminate-existing com.pulsesoc.app
+```
+
+`--preserve-metadata=entitlements` matters: re-signing without it would drop
+`aps-environment`, `associated-domains` and the background modes, and the app would
+install and then behave as if push and universal links were broken.
+
+Lineage on the signed device app, old vs new, controls live throughout:
+
+```
+marker             chat   profile
+#0D2030               1  ->  0     inverted (deleted dead literal)
+#474E58               0  ->  1     inverted (new raisedStrong)
+#454C56               0  ->  1     inverted (new raised)
+#3A4049               1  ->  1     continuity — chat graphite survived
+#505761               1  ->  1     continuity — chat bubbles untouched
+Pulse DNA             1  ->  1     control
+Reduce Motion         1  ->  1     control
+```
+
+Installed to `/private/var/containers/Bundle/Application/9E2E65F2-468D-4CE9-9E4C-EC5F2263D3A0/`,
+launched, and confirmed alive as **pid 25154** running from that exact container. The
+process list returned 393 entries, which is how you tell a live tunnel from a dropped
+one — an empty list means the tunnel died, not that the app crashed.
+
+**Both devices carry the same bytes**, which is the claim worth making and the one
+that is checkable:
+
+```
+7ac44b2c1b3ce050e578ef33954f9321a8f3f39ad0bbbd6974892a42d4b1beb0  <simulator container>/main.jsbundle
+7ac44b2c1b3ce050e578ef33954f9321a8f3f39ad0bbbd6974892a42d4b1beb0  <device .app>/main.jsbundle
+```
+
+`devicectl` has no screenshot subcommand, so there is no device screengrab. That is
+not a gap in the evidence: a screenshot would prove rendering, and the identical
+SHA-256 plus the simulator capture of those same bytes already proves both. What the
+device adds over the simulator is that the build installs and launches under a real
+signature with real entitlements — which it did.
 
 ---
 
@@ -649,6 +711,21 @@ xcrun simctl install <device-udid> "<app>"
 
 This artifact is not hypothetical — it was actually exercised this session (installed,
 screenshotted as `07-`/`08-`, then reverted) to prove the Dynamic Type baseline.
+Remember to `simctl terminate` + `simctl launch` afterwards, or the running process
+keeps the bundle it started with.
+
+**Device only** — same shape, with the device's own backup and a real signature:
+
+```bash
+cp /tmp/pg-bundle/device-main.jsbundle.CHAT-BACKUP "$APP/main.jsbundle"   # 14,240,890 B
+codesign --force --sign 6E0B7551E4E8509D779AFE96AA1F96E5D3DEAE6F \
+  --preserve-metadata=identifier,entitlements,flags,requirements --timestamp=none "$APP"
+xcrun devicectl device install app --device F45E640F-… "$APP"
+```
+
+That backup is the chat-graphite lineage, i.e. `origin/main` immediately before this
+change — so rolling the device back lands it on the previous shipped design, not on a
+pre-graphite one.
 
 **Source, whole change:**
 
