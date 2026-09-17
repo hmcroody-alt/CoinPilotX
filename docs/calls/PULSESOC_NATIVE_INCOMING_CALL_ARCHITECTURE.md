@@ -1,6 +1,6 @@
 # PulseSoc Native Incoming Call — Architecture
 
-Describes the call system as it exists at commit `0fe9cff5`. Component boundaries,
+Describes the call system as it exists at commit `7d2f0fc8`. Component boundaries,
 ownership, the state machine, and the delivery path.
 
 ---
@@ -373,7 +373,7 @@ session setup, a second microphone track, a second publication path and a second
 global audio singleton all remain forbidden.
 
 `config/realtime-audio-protected-paths.json:185` protects
-`services/pulsesoc_communications_engine.py#generate_agora_live_token`. The `0fe9cff5`
+`services/pulsesoc_communications_engine.py#generate_agora_live_token`. The `7d2f0fc8`
 edits are outside that symbol; the gate confirmed clean over 2 inspected files.
 
 ---
