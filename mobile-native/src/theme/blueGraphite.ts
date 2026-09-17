@@ -175,3 +175,74 @@ export const BLUE_GRAPHITE_NAV: BlueGraphiteSurface = {
   },
   fallback: blueGraphite.surfaceBlueGraphiteNavCore
 };
+
+/**
+ * The platform surface hierarchy.
+ *
+ * Mission 1 produced two surfaces — a card and a dock — and the only thing that
+ * made the dock "one step darker" was that someone chose two hex values that
+ * happened to differ. That is enough for two surfaces and not enough for a
+ * platform: the audit in `docs/ui/BLUE_GRAPHITE_PLATFORM_SURFACE_AUDIT.md`
+ * counts 1,009 structural near-blacks across 96 files, and they cannot each pick
+ * their own shade.
+ *
+ * So the two existing values are named as levels rather than as components, and
+ * one level is derived to complete the set:
+ *
+ *   page    the deep-space background. NOT blue-graphite, and deliberately
+ *           unchanged — the approved direction keeps the original purple-blue
+ *           page and puts graphite *on* it. A surface this dark is what makes
+ *           the graphite above it read as a surface at all.
+ *   panel   the default. Anything structural that is not explicitly raised or
+ *           inset is this. It is the dock's value, because the dock is the
+ *           most-seen instance of "a panel sitting on the page".
+ *   raised  a panel on a panel — cards, sheets, popovers, menus.
+ *   inset   a well inside a panel — inputs, tracks, code blocks, empty states.
+ *
+ * ## Why `inset` is derived and not chosen
+ *
+ * `raised → panel` is a step of (−6, −5, −3). `inset` is that same step applied
+ * once more to `panel`, which is the only way to add a level without adding a
+ * decision. Choosing a fourth value by eye would have made the spacing between
+ * levels arbitrary, and the levels are only useful if the distance between them
+ * is consistent enough that a reader can tell which way is up.
+ *
+ * ## Contrast
+ *
+ * Measured against the shared text tokens (WCAG 2.1 relative luminance):
+ *
+ *            #f4f7fb text   #9aa8b7 muted
+ *   raised      10.22            4.53
+ *   panel       11.03            4.89
+ *   inset       11.87            5.26
+ *   page        17.79            7.88
+ *
+ * `raised` is the binding constraint at 4.53:1, barely over the 4.5 floor — the
+ * same constraint that forced the card's blue edge down from the approved
+ * `#29466A` to `#243D5D`. Every level below it has more headroom, which means
+ * **a surface can always be made darker but never lighter**, and any proposal to
+ * lighten `raised` has to re-argue muted text across the entire platform.
+ *
+ * `colors.disabled` (`#51606c`) measures 1.69–2.95 here and passes nowhere.
+ * That is acceptable and not an oversight: WCAG 1.4.3 exempts inactive
+ * controls. It is recorded so the next reader does not "fix" it by lightening a
+ * surface.
+ */
+export const BLUE_GRAPHITE_LEVELS = {
+  /**
+   * Unchanged deep space. Not part of the graphite family; listed so the ladder
+   * is complete.
+   *
+   * This is the bottom stop of the galactic gradient. `colors.background`
+   * (`#050910`) is the flat equivalent for screens that paint no gradient — a
+   * hair darker, below every level here, and also untouched. Two values rather
+   * than one because the page is the one level this migration does not own.
+   */
+  page: "#06101C",
+  /** The default structural surface. */
+  panel: blueGraphite.surfaceBlueGraphiteNavCore,
+  /** A panel on a panel. */
+  raised: blueGraphite.surfaceBlueGraphiteCore,
+  /** A well inside a panel. `panel` stepped down by the same delta that separates it from `raised`. */
+  inset: "#2A3340"
+} as const;
