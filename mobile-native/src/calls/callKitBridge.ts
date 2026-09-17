@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { NATIVE_CALLKIT_ENABLED } from "../api/config";
+import type { PulseCall } from "../api/calls";
 import { acceptCall, declineCall, endCall, registerVoipPushToken, unregisterVoipPushToken } from "../api/calls";
 
 // Stage 2 of the native call experience: CallKit + PushKit VoIP so an incoming call
@@ -43,6 +44,27 @@ export type NativeCallKitProvider = {
 
 export type CallKitCallbacks = {
   onAnswered?: (callId: string) => void;
+  /**
+   * The authoritative accepted call, handed over the moment `/accept` answers.
+   *
+   * `/accept` already returns Agora join credentials alongside the call record and
+   * transitions the call to `connecting`, so this response is everything the callee needs
+   * to enter the media room. It used to be discarded, and the callee's join depended
+   * entirely on a later status poll — which is a poll that, on the path this feature
+   * exists for, never runs: answering from the lock screen leaves the app BACKGROUNDED,
+   * `callSessionStore`'s poll tick is gated on the app being foregrounded, and iOS
+   * suspends the timer anyway.
+   *
+   * The result was a callee that accepted and then went silent: no join token request, no
+   * Agora channel, no audio. The caller meanwhile joined normally and reported connected,
+   * so the caller's UI read "connected" for a call the callee was never in, and CallKit
+   * tore the callee's call down with nothing behind it. Observed on 2026-09-17 for calls
+   * 463 and 464: `POST /accept` 200, then not one further request from that device.
+   *
+   * Delivering the accepted record here makes the join a consequence of answering rather
+   * than of being foregrounded.
+   */
+  onAccepted?: (call: PulseCall) => void;
   onEnded?: (callId: string) => void;
 };
 
@@ -84,8 +106,14 @@ export async function initNativeCallKit(callbacks: CallKitCallbacks = {}) {
       const callId = callIdByUuid.get(uuid);
       if (!callId) return;
       answeredUuids.add(uuid);
-      acceptCall(callId).catch(() => undefined);
+      // Strictly before the request is sent. `onAnswered` is what opens the call session,
+      // and `onAccepted` below can only drive a media join if a session is already active
+      // when it lands. Accepting first left a window — the whole accept round trip — in
+      // which this device was committed to the call with nothing locally representing it.
       callbacks.onAnswered?.(callId);
+      acceptCall(callId)
+        .then((call) => callbacks.onAccepted?.(call))
+        .catch(() => undefined);
     }),
     provider.onEnd((uuid) => {
       const answered = answeredUuids.has(uuid);
