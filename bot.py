@@ -121127,6 +121127,25 @@ def _init_db_impl():
         ("account_user_id", "INTEGER"),
     ], conn=conn)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_users_account_user ON admin_users(account_user_id)")
+    # Re-run the owner link now that the column it writes exists.
+    #
+    # `ensure_owner_super_user()` already called this far earlier in init (see the
+    # call above `CREATE TABLE admin_users`), which is fine on every boot after the
+    # first but fails on the one deploy that introduces `account_user_id`: the
+    # column is added here, thousands of lines later, so the earlier attempt raises
+    # UndefinedColumn, is swallowed, and the owner is left unlinked -- reachable
+    # endpoints that refuse the only person allowed to use them. Production did
+    # exactly this (`OWNER_ADMIN_ACCOUNT_LINK_SKIPPED error=UndefinedColumn`).
+    #
+    # It is idempotent -- the UPDATE is a no-op once the link matches -- so calling
+    # it twice costs a single indexed lookup and removes the ordering assumption
+    # rather than relying on a later restart to paper over it.
+    #
+    # The `owner_super_user_enabled()` guard is not redundant: it is the gate the
+    # original call site sits behind, and without it this retry would link the
+    # owner on a deployment that had deliberately switched the bootstrap off.
+    if owner_super_user_enabled():
+        ensure_owner_admin_account_link(cur)
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS admin_audit_logs (
