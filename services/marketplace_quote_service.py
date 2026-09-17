@@ -31,6 +31,14 @@ def create_quote(*, listing_id: int, seller_id: int, store_id: Any = None,
     if isinstance(quantity, bool) or not isinstance(quantity, int) or quantity <= 0:
         raise ValueError("quantity must be a positive integer")
     rate = _money(live_fee_bps, "live_fee_bps")
+    # The caller transports the rate because the cash/pickup lane zeroes it, but
+    # it does not get to *choose* one: a commission that is not the disclosed
+    # policy rate is an undisclosed commission, and this quote is the snapshot a
+    # settlement is audited against. Refused here rather than written down.
+    if rate not in (0, policy.platform_fee_bps()):
+        raise ValueError(
+            f"live_fee_bps {rate} is not the {policy.POLICY_VERSION} rate "
+            f"({policy.platform_fee_bps()}) or the zero-fee lane")
     base = policy.quote(
         unit_price_cents=_money(unit_price_minor, "unit_price_minor"),
         quantity=quantity,
@@ -74,7 +82,12 @@ def create_quote(*, listing_id: int, seller_id: int, store_id: Any = None,
         "seller_shipping_credit_minor": base["seller_shipping_credit_cents"],
         "seller_earnings_minor": seller_earnings,
         "currency": str(currency or "USD").upper(),
-        "fee_policy_version": "MARKETPLACE_STANDARD_V1" if policy.fee_policy_active() else "MARKETPLACE_LEGACY_CURRENT",
+        # One version, always. The rate now comes from the policy whether or not
+        # the owner gates are open, so there is no longer a "legacy current"
+        # rate to name; `fee_policy_active` is what says which side of the gates
+        # this quote was priced on.
+        "fee_policy_version": policy.POLICY_VERSION,
+        "fee_policy_active": policy.fee_policy_active(),
         "fee_base": policy.FEE_BASE,
         "return_policy_version": policy.RETURN_POLICY_VERSION,
         "payout_policy_version": policy.PAYOUT_POLICY_VERSION,

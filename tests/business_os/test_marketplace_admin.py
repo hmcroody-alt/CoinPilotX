@@ -26,6 +26,8 @@ os.environ["BUSINESS_OS_MARKETPLACE"] = "on"
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from _fee_expectations import seller_net  # noqa: E402
+
 from services import db  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as svc  # noqa: E402
@@ -196,11 +198,11 @@ def test_payout_balance_and_note():
     orders_mod.fulfill_order(oid, S, tracking_ref="T")
     orders_mod.complete_order(oid, B)
     bal = admin.admin_seller_payout_balance(S)
-    assert bal["payable_cents"] == 3600, bal
+    assert bal["payable_cents"] == seller_net(4000), bal
     assert bal["disbursement"] == "provider_side_out_of_scope", bal
     before_payable = ledger.get_balance(orders_mod.seller_payable_account(S))
     note = admin.admin_record_payout_note(S, actor="admin", reason="paid via ACH",
-                                          amount_cents=3600, provider_reference="ACH-1")
+                                          amount_cents=seller_net(4000), provider_reference="ACH-1")
     assert note["moved_money"] is False, note
     # ledger balance is UNCHANGED — the note moved no money
     assert ledger.get_balance(orders_mod.seller_payable_account(S)) == before_payable

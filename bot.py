@@ -94044,6 +94044,21 @@ def approved_teacher_for_user(cur, user_id):
 
 
 def seller_fee_bps(cur, seller_type):
+    """The commission rate for a lane, from that lane's fee authority.
+
+    Marketplace commission comes from the versioned policy, never from
+    `platform_fee_rules`. A commission must be the rate the seller was shown and
+    agreed to, and a policy version is what a settlement can be audited against
+    years later; a mutable admin row is neither, and its 10% merchant value was
+    never disclosed to anyone. No seller has ever been charged it — production
+    has zero paid marketplace transactions — so the row is dead, not a rate cut.
+
+    The teacher lane is a different product with its own pricing and is not
+    covered by the Marketplace policy, so it still reads the table.
+    """
+    if str(seller_type or "").strip().lower() == "merchant":
+        from services.business_os.marketplace import policy as marketplace_policy
+        return marketplace_policy.platform_fee_bps()
     cur.execute("SELECT fee_bps FROM platform_fee_rules WHERE seller_type=? AND status='active' LIMIT 1", (seller_type,))
     row = dict(cur.fetchone() or {})
     return int(row.get("fee_bps") or (1500 if seller_type == "teacher" else 1000))
