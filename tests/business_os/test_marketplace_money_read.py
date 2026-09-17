@@ -29,6 +29,8 @@ os.environ["BUSINESS_OS_MARKETPLACE"] = "on"
 import sys  # noqa: E402
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from _fee_expectations import seller_net  # noqa: E402
+
 from services import db  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as svc  # noqa: E402
@@ -107,8 +109,8 @@ def test_available_reflects_only_completed_orders():
 
     _order(SELLER, price=5000, advance_to="completed")
     ov = money.seller_money_overview(SELLER)
-    # 10% platform fee: the seller nets 4500 of a 5000 order.
-    assert ov["available_cents"] == 4500, ov["available_cents"]
+    # The seller nets the policy's share of a 5000 order.
+    assert ov["available_cents"] == seller_net(5000), ov["available_cents"]
     assert ov["available_cents"] == ledger.get_balance(
         orders_mod.seller_payable_account(SELLER), "usd"), (
         "available must BE the ledger balance, not a recomputation of it")
@@ -179,7 +181,7 @@ def test_one_sellers_money_never_leaks_into_anothers():
     a = money.seller_money_overview(SELLER)
     b = money.seller_money_overview(SELLER2)
 
-    assert a["escrow_total_cents"] == 5000 and a["available_cents"] == 4500
+    assert a["escrow_total_cents"] == 5000 and a["available_cents"] == seller_net(5000)
     assert b["escrow_total_cents"] == 9900 and b["available_cents"] == 0
     assert not set(a["accounts"]["escrow"]) & set(b["accounts"]["escrow"])
 

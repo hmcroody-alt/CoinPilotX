@@ -28,6 +28,8 @@ os.environ["BUSINESS_OS_ORDERS"] = "on"
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from _fee_expectations import platform_fee, policy_gates_open, seller_net  # noqa: E402
+
 from services import db  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as mkt  # noqa: E402
@@ -122,10 +124,43 @@ def test_full_lifecycle_through_facade_hits_shared_ledger():
 
     # Escrow drains to exactly zero; fee + seller net accrue on the shared ledger.
     assert ledger.get_balance(_engine.escrow_account(oid), "usd") == 0
-    assert ledger.get_balance(_engine.seller_payable_account(SELLER), "usd") == 1800  # 90%
+    assert ledger.get_balance(_engine.seller_payable_account(SELLER), "usd") == seller_net(2000)
     summary = svc.order_money_summary(oid)
     assert summary["status"] == "completed"
-    assert summary["platform_fee_cents"] == 200  # 10%
+    assert summary["platform_fee_cents"] == platform_fee(2000)
+
+
+def test_the_commission_split_really_happens_once_the_gates_open():
+    # Positive control for every `seller_net`/`platform_fee` expectation in this
+    # directory. The gates are shut by default, so those helpers all return "the
+    # seller keeps everything" and would keep passing against an engine that had
+    # stopped splitting at all. This is the one test that proves the split works
+    # — and it has to open the gates to reach it, because 5% is unreachable
+    # until the owner turns the policy on.
+    # Both accounts are running balances carrying earlier tests' orders, so this
+    # order's split is only visible as a delta.
+    seller_before = ledger.get_balance(_engine.seller_payable_account(SELLER), "usd")
+    platform_before = ledger.get_balance(_engine.PLATFORM_REVENUE_ACCOUNT, "usd")
+    with policy_gates_open():
+        pid = _digital_product(price=1000)
+        order = svc.create_order(BUYER, pid, quantity=2, context=_ctx())
+        oid = order["order_id"]
+        assert order["total_cents"] == 2000
+        # The rate reached the order row, not just the quote.
+        assert order["platform_fee_bps"] == 500
+
+        svc.pay_order(oid, BUYER, context=_ctx())
+        svc.fulfill_order(oid, SELLER, context=_ctx())
+        svc.complete_order(oid, BUYER, context=_ctx())
+
+        assert svc.order_money_summary(oid)["platform_fee_cents"] == 100
+        assert ledger.get_balance(_engine.escrow_account(oid), "usd") == 0
+
+    seller_delta = ledger.get_balance(_engine.seller_payable_account(SELLER), "usd") - seller_before
+    platform_delta = ledger.get_balance(_engine.PLATFORM_REVENUE_ACCOUNT, "usd") - platform_before
+    assert (platform_delta, seller_delta) == (100, 1900)
+    # Every cent of the order lands on one side of the split or the other.
+    assert platform_delta + seller_delta == 2000
 
 
 def test_ownership_scoping_inherited():
@@ -191,7 +226,7 @@ def test_seller_payout_balance_reads_accrual():
     svc.fulfill_order(oid, SELLER, context=_ctx())
     svc.complete_order(oid, BUYER, context=_ctx())
     after = svc.seller_payout_balance(SELLER)["payable_cents"]
-    assert after - before == 1800  # 90% of 2000 accrues to the shared ledger
+    assert after - before == seller_net(2000)  # the seller's share accrues to the shared ledger
 
 
 def _run_standalone():

@@ -74,6 +74,17 @@ def fee_policy_active() -> bool:
     ))
 
 
+def platform_fee_bps() -> int:
+    """The one commission rate any Marketplace checkout may charge.
+
+    A commission has to be the rate the seller was actually shown, so it cannot
+    come from a database row an admin can edit out from under a live checkout.
+    Zero until the owner opens all three gates, and `PROPOSED_PLATFORM_FEE_BPS`
+    after — there is no third value.
+    """
+    return PROPOSED_PLATFORM_FEE_BPS if fee_policy_active() else 0
+
+
 @dataclass(frozen=True)
 class MarketplaceQuote:
     currency: str

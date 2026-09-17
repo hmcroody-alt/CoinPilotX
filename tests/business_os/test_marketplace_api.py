@@ -18,6 +18,8 @@ os.environ["BUSINESS_OS_MARKETPLACE"] = "on"
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from _fee_expectations import seller_net  # noqa: E402
+
 from services import db  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as svc  # noqa: E402
@@ -135,7 +137,7 @@ def test_full_order_lifecycle():
 
     # payout accrued to the seller
     st, body = api.seller_payout_balance(SELLER)
-    assert st == 200 and body["payout"]["payable_cents"] == 3600, body
+    assert st == 200 and body["payout"]["payable_cents"] == seller_net(4000), body
 
 
 # --- (f) governed assistant through the controller --------------------------

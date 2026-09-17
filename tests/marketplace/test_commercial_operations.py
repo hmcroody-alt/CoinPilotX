@@ -8,12 +8,22 @@ from services import marketplace_payout_scheduler as scheduler
 import json
 from datetime import datetime, timedelta, timezone
 
-def test_current_terms_are_ten_percent_and_future_notice_hidden():
+def test_terms_disclose_the_rate_checkout_will_actually_charge():
+    # These terms used to advertise a flat 10% that came from a mutable admin
+    # row, while the future notice named 5%. A seller reading the document could
+    # not tell what they would be charged. Both numbers now come from the one
+    # policy: the current rate is whatever it charges today, and the notice is
+    # the rate waiting on the owner gates.
     t = ops.terms()
-    assert t["current"]["platform_fee_bps"] == 1000
+    from services.business_os.marketplace import policy
+    assert t["current"]["platform_fee_bps"] == policy.platform_fee_bps() == 0
+    assert t["current"]["fee_policy_version"] == "MARKETPLACE_STANDARD_V1"
     assert t["future_notice"] == {"published": False, "policy_version": "MARKETPLACE_STANDARD_V1", "platform_fee_bps": 500, "effective_at": None}
     accepted = ops.accept_terms(7, source="native")
     assert accepted["terms_version"] == ops.CURRENT_TERMS_VERSION
+    # The acceptance names the policy, so it stays meaningful after the gates
+    # open; a version that named "legacy current" would not.
+    assert accepted["fee_policy_version"] == "MARKETPLACE_STANDARD_V1"
 
 def test_ip_case_has_audited_transitions():
     case = ops.submit_ip_case(listing_id=1, seller_id=7, claimant_reference="rights-holder:1",

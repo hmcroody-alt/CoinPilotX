@@ -59,6 +59,7 @@ from services import db
 from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace.service import MarketplaceError
 from services.business_os.marketplace import orders as _orders
+from services.business_os.marketplace import policy as _policy
 
 try:
     from services.business_os.marketplace import notifications as _notify
@@ -692,7 +693,10 @@ def convert_offer(offer_id: Any, buyer_user_id: Any, *,
         unit = int(offer["agreed_amount_cents"])
         quantity = int(offer["quantity"])
         subtotal = unit * quantity
-        fee_bps = _orders.DEFAULT_FEE_BPS
+        # The same authority the Buy Now lane uses. Accepting an offer is still
+        # a marketplace sale, so it cannot carry a different commission than the
+        # listing it was negotiated on.
+        fee_bps = _policy.platform_fee_bps()
         fee, net = _orders._fee_split(subtotal, fee_bps)
         order_id = "mkto_" + uuid.uuid4().hex
         now = _now_iso()

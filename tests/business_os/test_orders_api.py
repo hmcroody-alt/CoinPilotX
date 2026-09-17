@@ -28,6 +28,8 @@ os.environ["BUSINESS_OS_ORDERS"] = "on"
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from _fee_expectations import platform_fee, seller_net  # noqa: E402
+
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
 from services.business_os.marketplace import service as mkt  # noqa: E402
 from services.business_os.ledger import ledger  # noqa: E402
@@ -122,8 +124,8 @@ def test_full_lifecycle_through_controller_and_money_summary():
     # Money summary is server-authoritative and ownership-scoped.
     st, body = oapi.order_money_summary(BUYER, oid)
     assert st == 200 and body["ok"] is True, (st, body)
-    assert body["summary"]["platform_fee_cents"] == 100  # 10% of 1000
-    assert body["summary"]["seller_payable_cents"] == 900
+    assert body["summary"]["platform_fee_cents"] == platform_fee(1000)
+    assert body["summary"]["seller_payable_cents"] == seller_net(1000)
 
     # Stranger cannot see the money summary (existence not leaked).
     st, body = oapi.order_money_summary(STRANGER, oid)

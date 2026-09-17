@@ -52,8 +52,12 @@ except Exception:  # pragma: no cover
     _notify = None
 
 
-# Existing commercial behavior remains authoritative until the gated V1 policy
-# is activated. This avoids silently changing live seller economics.
+# The events/ticketing take rate, which imports this from here and is a separate
+# product with its own pricing. It is NOT a marketplace fee default: marketplace
+# commission comes from `services.business_os.marketplace.policy` and nothing
+# else. It sat here as a "keep existing economics" fallback long enough to be
+# mistaken for one, and production has never charged it — zero orders, zero
+# products, zero settlements in either marketplace lane.
 DEFAULT_FEE_BPS = 1000
 
 
@@ -211,23 +215,18 @@ def create_order(buyer_user_id: Any, product_id: Any, *, quantity: int = 1,
         if inv is not None and inv < quantity:
             raise MarketplaceError("Not enough inventory.", 409, "insufficient_inventory")
         unit = int(product["price_cents"])
-        proposed_active = _policy.fee_policy_active()
+        # One fee authority for both marketplace lanes. This lane used to fall
+        # back to a 10% "legacy" rate whenever the policy gates were shut, so the
+        # same product cost a seller 10% here and something else on the other
+        # lane — and the snapshot then relabelled itself to hide the divergence.
         commercial = _policy.quote(
             unit_price_cents=unit, quantity=quantity,
             currency=product.get("currency", "usd"),
-            activate_proposed_policy=proposed_active,
         )
         subtotal = commercial.merchandise_net_cents
-        fee_bps = commercial.platform_fee_bps if proposed_active else DEFAULT_FEE_BPS
+        fee_bps = commercial.platform_fee_bps
         fee, net = _fee_split(subtotal, fee_bps)
         snapshot = commercial.as_dict()
-        if not proposed_active:
-            snapshot.update({
-                "fee_policy_version": "MARKETPLACE_LEGACY_10_PERCENT",
-                "platform_fee_bps": fee_bps,
-                "platform_fee_cents": fee,
-                "seller_earnings_cents": net,
-            })
         oid = "mkto_" + uuid.uuid4().hex
         now = _now_iso()
         conn.execute(
@@ -447,7 +446,10 @@ def complete_order(order_id: Any, buyer_user_id: Any, *, context: Optional[dict]
         _assert_transition(order.get("status"), "completed")
 
         remaining = _ledger.get_balance(escrow_account(order_id), order.get("currency", "usd"))
-        fee, net = _fee_split(remaining, order.get("platform_fee_bps", DEFAULT_FEE_BPS))
+        # The rate this order was quoted at, not a default. An order with no
+        # recorded rate was never quoted a commission, so taking one at
+        # settlement would be charging a fee the seller never saw.
+        fee, net = _fee_split(remaining, order.get("platform_fee_bps") or 0)
 
         conn.execute(
             "UPDATE business_os_mkt_orders SET status = 'completed', updated_at = ? "

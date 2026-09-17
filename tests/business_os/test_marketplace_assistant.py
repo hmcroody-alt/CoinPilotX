@@ -32,6 +32,8 @@ os.environ.pop("BUSINESS_OS_MARKETPLACE_ASSISTANT_DISABLE_WRITES", None)
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
+from _fee_expectations import platform_fee, seller_net  # noqa: E402
+
 from services import db  # noqa: E402
 from services.business_os import confirmations as confirmation_grants  # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema  # noqa: E402
@@ -203,8 +205,8 @@ def test_execute_with_token_is_verified():
                             confirmation_token=p["confirmation_token"])
     assert out["verified"] is True and out["observed"]["status"] == "completed", out
     assert ledger.get_balance(orders_mod.escrow_account(oid)) == 0
-    assert ledger.get_balance(orders_mod.seller_payable_account(SELLER)) == 3600
-    assert ledger.get_balance(orders_mod.PLATFORM_REVENUE_ACCOUNT) == 400
+    assert ledger.get_balance(orders_mod.seller_payable_account(SELLER)) == seller_net(4000)
+    assert ledger.get_balance(orders_mod.PLATFORM_REVENUE_ACCOUNT) == platform_fee(4000)
 
 
 # --- (e) write kill switch disables writes but not reads --------------------
