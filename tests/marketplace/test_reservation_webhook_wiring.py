@@ -256,6 +256,99 @@ def test_the_payment_pause_is_untouched():
 # Owner-facing configuration
 # --------------------------------------------------------------------------
 
+# --------------------------------------------------------------------------
+# Chargebacks
+# --------------------------------------------------------------------------
+
+def test_the_dispute_branch_places_a_settlement_hold(bot_source):
+    """A chargeback must reach the settlement service, not just a status string.
+
+    The behaviour is proved in ``test_post_settlement_finance.py``. What this
+    catches is the branch going quiet again: before the hold existed, the webhook
+    wrote ``seller_transactions.status='dispute_opened'`` and nothing else, so
+    ``transition_payout`` was free to take a disputed order through ``eligible``
+    and ``scheduled`` to ``paid`` while Stripe was taking the money back.
+    """
+    assert "pulse_apply_marketplace_dispute(obj, event_type, event_id)" in bot_source
+    applier = bot_source.split("def pulse_apply_marketplace_dispute", 1)[1].split("\ndef ", 1)[0]
+    assert "place_hold(" in applier and "disputed=True" in applier
+
+
+def test_a_dispute_is_matched_by_payment_intent_and_not_by_metadata_alone(bot_source):
+    """Stripe does not copy a charge's metadata onto its Dispute.
+
+    This is why the original handler was inert: it read
+    ``metadata["seller_transaction_id"]`` off a Dispute object, which is always
+    empty, so no marketplace row was ever touched by a chargeback. The payment
+    intent is the only identifier both object shapes carry.
+    """
+    resolver = bot_source.split("def pulse_marketplace_reversal_transaction_ids", 1)[1].split("\ndef ", 1)[0]
+    assert "settlements_for_payment" in resolver
+    assert 'obj.get("payment_intent")' in resolver
+
+
+def test_completed_connect_onboarding_reconciles_the_sales_that_preceded_it(bot_source):
+    """`account.updated` must revisit settlements, not just the payout account.
+
+    A sale made before the seller finished onboarding opens in
+    `pending_onboarding`, and the branch used to refresh
+    `seller_payout_accounts` and stop — leaving the money unreleasable forever
+    with nothing anywhere reporting a problem.
+    """
+    branch = bot_source.split('if event_type == "account.updated":', 1)[1][:3000]
+    assert 'obj.get("payouts_enabled") and obj.get("charges_enabled")' in branch
+    assert "reconcile_seller_onboarding" in bot_source
+
+
+def test_the_dispute_events_are_declared_required_for_the_webhook_endpoint():
+    """`closed` matters as much as `created`: it is what lifts the hold."""
+    audit = (REPO_ROOT / "scripts" / "stripe_webhook_recovery_audit.py").read_text(encoding="utf-8")
+    required = audit.split("REQUIRED_EVENTS", 1)[1].split("\n}", 1)[0]
+    for event in ("charge.dispute.created", "charge.dispute.closed", "account.updated"):
+        assert f'"{event}"' in required, event
+
+
+# --------------------------------------------------------------------------
+# Connect account lifecycle
+# --------------------------------------------------------------------------
+
+def test_a_fraud_warning_holds_rather_than_reverses(bot_source):
+    """An early fraud warning is a prediction, not an outcome.
+
+    It is also the last moment the money is recoverable: once
+    ``charge.dispute.created`` arrives, a settlement past its protection window
+    has already been transferred to the seller. So the branch must place a real
+    blocker — but it must not touch the ledger, because nothing has yet been
+    taken back and reversing a warning that never becomes a dispute would rob
+    the seller of a legitimate sale.
+    """
+    assert "pulse_apply_marketplace_fraud_warning(event[\"data\"][\"object\"], event_id)" in bot_source
+    applier = bot_source.split("def pulse_apply_marketplace_fraud_warning", 1)[1].split("\ndef ", 1)[0]
+    assert 'reason_code="fraud_warning"' in applier
+    assert "apply_refund" not in applier and "pulse_allocate_marketplace_reversal" not in applier
+
+
+def test_deauthorization_reads_the_account_from_the_event_not_the_object(bot_source):
+    """``data.object`` on this event is the Application, not the account.
+
+    A handler that read ``data.object["id"]`` would update zero rows and leave
+    the seller's connected account marked payable forever. Stripe sends no
+    ``account.updated`` alongside a deauthorization, so nothing else would ever
+    correct it, and every transfer to that account would fail at the provider.
+    """
+    assert 'pulse_disconnect_seller_payout_account(event.get("account") or "", event_id)' in bot_source
+    applier = bot_source.split("def pulse_disconnect_seller_payout_account", 1)[1].split("\ndef ", 1)[0]
+    assert "payouts_enabled=0" in applier and "charges_enabled=0" in applier
+
+
+def test_the_connect_lifecycle_events_are_declared_required_for_the_endpoint():
+    """Both handlers are inert unless the Stripe endpoint subscribes to them."""
+    audit = (REPO_ROOT / "scripts" / "stripe_webhook_recovery_audit.py").read_text(encoding="utf-8")
+    required = audit.split("REQUIRED_EVENTS", 1)[1].split("\n}", 1)[0]
+    for event in ("radar.early_fraud_warning.created", "account.application.deauthorized"):
+        assert f'"{event}"' in required, event
+
+
 def test_the_canceled_event_is_declared_required_for_the_webhook_endpoint():
     """The handler is inert unless the Stripe endpoint subscribes to the event.
 

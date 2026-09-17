@@ -403,6 +403,8 @@ export function describeMusicAuthorityError(error: unknown): string {
       return "That track no longer exists.";
     case "music_track_required":
       return "Choose at least one track.";
+    case "music_reference_count_unavailable":
+      return "Could not read how much content uses this track. Try again before removing anything.";
     default:
       return error.message || "Something went wrong. Try again.";
   }

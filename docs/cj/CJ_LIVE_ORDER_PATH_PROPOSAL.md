@@ -1,7 +1,7 @@
 # Proposal: a live CJ order path
 
-**Status: steps 1, 3 and 4 of §4 are built. No live order can be placed, and
-nothing this deployment can be configured to do places one.**
+**Status: steps 1–4 of §4 are done. No live order can be placed, and nothing
+this deployment can be configured to do places one.**
 
 Written 2026-09-17 against `d09f3958`. Requested by Roody after the dropshipping
 pricing fix landed, with the standing instruction that no real CJ order may be
@@ -46,8 +46,35 @@ anything here:
    sites, and `create_live_fulfillment` refuses unless it is `"LIVE"`.
 
 Step 2 of the ordering — deploying `supplier_worker` with
-`CJ_RECONCILIATION_ENABLED` — is still **not done** and remains a hard
-prerequisite for step 6. The §5 questions are still open.
+`CJ_RECONCILIATION_ENABLED` — is now **done**, on 2026-09-17. The missing piece
+was never the `Procfile` line, which had existed since `3b3bc8e9`: a Railway
+*service* has to run that command, and none did. One now exists
+(`supplier_worker`, start command `python supplier_worker.py --interval 300`),
+with its own `CJ_*` configuration and `${{CoinPilotX.*}}` references to the
+three vault keys, so no credential value was copied to set it up.
+
+It was deployed against an empty queue on purpose — production had 0 outbox
+rows, 0 intents and 0 drain ticks — so the first tick could not have sent
+anything even if every other lock had failed. The first three:
+
+```
+15:49:14  status ok  intents 0  reads 20  revisions  84  deferred 0  fail 0
+15:55:25  status ok  intents 0  reads 20  revisions 304  deferred 0  fail 0
+16:01:26  status ok  intents 0  reads 20  revisions 201  deferred 0  fail 0
+```
+
+`intents 0` on every tick is the claim that matters here: the drain is running
+and has still never had a supplier order to send. `drain_status` moved from
+`NO_DRAIN_HAS_EVER_RUN` to `DRAINING`, the first time that has been true.
+
+The revisions are the other half of the mission, and they are not incidental:
+stock and cost reconciliation had never once run in production, so catalogue
+freshness was whatever the last manual repair left behind. 578 of 742 variants
+were refreshed across those three ticks, and the count of product sources still
+carrying a pre-deploy `last_synced_at` fell 36 → 29 → 18 → 8.
+
+The §5 questions are still open, and step 5 — the money approval — has not been
+asked for.
 
 ---
 
@@ -155,7 +182,7 @@ parameter would quietly destroy.
 
 Today three functions refuse unconditionally:
 `policy.require_funding_disabled()`, `fulfillment.fund_fulfillment()`,
-`cj.CJProvider.fund_fulfillment()`. The `funding_state` column exists with a
+`cj.CJAdapter.fund_fulfillment()`. The `funding_state` column exists with a
 `FUNDING_NOT_READY` default and is never written.
 
 CJ's `payType=3` is the only value the current payload builder allows, and it
@@ -201,13 +228,15 @@ of three accounts and ten business calls per second is *per outbound IP*. One
 merchant cannot breach a three-account ceiling, so this blocks scale, not the
 first live order. It should stay blocking.
 
-**Reconciliation in production.** `CJ_RECONCILIATION_ENABLED` is unset and no
-`supplier_worker` runs in the Procfile. **This is a hard prerequisite, not a
-nice-to-have:** `dispatch` settles a freshly-created order into `UNKNOWN` with
-`awaiting_create_readback` and relies on a later tick to read it back and reach
-`LINKED`. With no worker, a live order would be sent and then never confirmed,
-and the webhook path pushes state to `RECONCILE` expecting the same worker to
-drain it. Deploying the worker must precede step 3 above.
+**Reconciliation in production.** ~~`CJ_RECONCILIATION_ENABLED` is unset and no
+`supplier_worker` runs in the Procfile.~~ **Resolved 2026-09-17** — see the
+status section at the top. The reason it was a hard prerequisite rather than a
+nice-to-have is worth keeping: `dispatch` settles a freshly-created order into
+`UNKNOWN` with `awaiting_create_readback` and relies on a later tick to read it
+back and reach `LINKED`. With no worker, a live order would be sent and then
+never confirmed, and the webhook path pushes state to `RECONCILE` expecting the
+same worker to drain it. That dependency is why this was ordered before
+anything irreversible, and it is now satisfied.
 
 **A funding UI.** Out of scope here; step 2 above needs one and it should be
 designed against a real `FUNDING_APPROVAL_REQUIRED` row rather than in advance.
@@ -216,12 +245,15 @@ designed against a real `FUNDING_APPROVAL_REQUIRED` row rather than in advance.
 
 ## 4. Ordering
 
-1. §2.1 paid-order allowlist — independent, do now
-2. Deploy `supplier_worker` + `CJ_RECONCILIATION_ENABLED`, still sandbox —
-   proves the drain works before anything irreversible depends on it
-3. §2.2 method split — no behaviour change, all existing tests must stay green
-4. §2.3 steps 1–2 — funding state observable, still nothing sent
-5. **approval gate** — Roody, explicitly, to spend money
+1. ~~§2.1 paid-order allowlist~~ — **done**, `b86dc2f9`
+2. ~~Deploy `supplier_worker` + `CJ_RECONCILIATION_ENABLED`, still sandbox~~ —
+   **done**, 2026-09-17; the drain is proven before anything irreversible
+   depends on it
+3. ~~§2.2 method split~~ — **done**, `e920bf18`; no behaviour change
+4. ~~§2.3 steps 1–2~~ — **done**, `e920bf18`; funding state observable, nothing
+   sent
+5. **approval gate** — Roody, explicitly, to spend money. ← *this is where it
+   stops, and it has not been asked for*
 6. §2.3 step 3 + §2.4 — one watched live order
 
 Rollback for each of 1–4 is a revert; none of them can have placed an order.

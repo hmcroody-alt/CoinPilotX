@@ -173,15 +173,21 @@ DRAIN_STALL_SECONDS = 7200
 #: What is known about the process that turns a queued supplier order into a
 #: real one.
 #:
-#: ``NO_DRAIN_HAS_EVER_RUN`` is the state this deployment is actually in, and it
-#: is the reason this enumeration exists. `worker.run_once` is the only caller
-#: of `claim`/`dispatch`, and its only entry point is `supplier_worker.py`. That
-#: now has a `Procfile` entry, but the entry only starts a process: `run_tick`
-#: returns ``disabled`` without ``CJ_RECONCILIATION_ENABLED``, and `run_once` --
-#: which is what calls `record_drain_tick` -- is additionally behind
-#: `policy.require_network()`. Both env gates are unset in production, so every
-#: intent created here still sits at ``READY`` forever while the merchant reads
-#: "Queued to send to your supplier".
+#: ``NO_DRAIN_HAS_EVER_RUN`` is the state this enumeration was written for, and
+#: it is no longer the state production is in. `worker.run_once` is the only
+#: caller of `claim`/`dispatch`, and its only entry point is
+#: `supplier_worker.py`. A `Procfile` entry alone never started one -- a Railway
+#: *service* has to run that command -- and `run_tick` returns ``disabled``
+#: without ``CJ_RECONCILIATION_ENABLED`` while `run_once`, which is what calls
+#: `record_drain_tick`, is additionally behind `policy.require_network()`.
+#:
+#: As of 2026-09-17 a `supplier_worker` service runs that command on a 300s
+#: interval with both gates set, and the first tick moved this deployment from
+#: ``NO_DRAIN_HAS_EVER_RUN`` to ``DRAINING``. The merchant-facing "Queued to
+#: send to your supplier" is therefore now backed by something. What has *not*
+#: changed is that the queue stays empty of live work: `policy`'s
+#: `live_fulfillment_path_exists` still returns ``False``, so every intent this
+#: worker can ever claim is a sandbox intent.
 #:
 #: That copy was not a bug in the wording. It was unfalsifiable: `run_once`
 #: returned its counts to stdout and persisted nothing about itself, so no read

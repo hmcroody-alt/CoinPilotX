@@ -1495,8 +1495,19 @@ function PulseNetworkHero({
       : "Signals are loading quietly so the feed stays fast.";
   return (
     <LogiNexusPanel style={[styles.hero, compact && styles.heroCompact]} tone="default">
+      {/*
+        `surface="blueGraphite"` is what makes this card the approved material
+        rather than the near-black it used to be. The colour was never in
+        `styles.hero` — that is `rgba(5, 15, 29, 0.03)`, effectively clear — nor
+        in `LogiNexusPanel`'s `glassStrong`, which the `style` array above
+        overrides. It was this layer's own opaque base gradient, which is why
+        lightening the card by editing the panel would do nothing at all.
+
+        Deliberately a prop and not a component-wide change: `ReelsScreen`
+        renders the same component full-screen behind video and has to stay dark.
+      */}
       <View pointerEvents="none" style={styles.heroAtmosphere}>
-        <GalacticAtmosphere variant="feed" testID="pulse-network-galactic-atmosphere" />
+        <GalacticAtmosphere variant="feed" surface="blueGraphite" testID="pulse-network-galactic-atmosphere" />
       </View>
       <View style={styles.heroTopLine}>
         <LogiNexusBadge label="Pulse Network" />

@@ -458,6 +458,48 @@ def test_an_unrecognised_incoming_stock_state_is_stored_as_unknown(cur):
     assert variants.availability(row) == variants.UNKNOWN
 
 
+def test_an_import_that_learned_no_stock_does_not_stamp_the_synced_time(cur):
+    """``stock_synced_at`` records "we counted", and must not record "we looked".
+
+    An import whose stock came back UNKNOWN taught us nothing about the count.
+    Stamping it anyway is the failure this column exists to make visible: a
+    staleness sweep reads a fresh date over a count nobody confirmed and reports
+    the row as current, forever, because every subsequent failed read refreshes
+    the date again. It also made ``SUPPLIER_NEVER_SYNCED`` unreachable for an
+    imported variant -- the first import always wrote a date.
+    """
+    _variant(cur, options=[{"name": "Size", "value": "M"}], stock_state="PREORDER")
+    assert variants.variants_for(cur, 10)[0]["stock_synced_at"] is None
+
+
+def test_a_failed_reread_leaves_the_last_successful_stamp_alone(cur, monkeypatch):
+    """The update path preserves rather than clears -- we did once know.
+
+    Distinct from the insert case: clearing the stamp would discard a true fact
+    (the stock *was* counted, then) and would read as "never synced", which is a
+    different and equally wrong claim.
+
+    The clock is driven rather than observed, and that is what makes this test
+    real. ``_now`` has second resolution, so two ``upsert_variant`` calls in the
+    same test tick produce a byte-identical timestamp -- against which a version
+    that re-stamps unconditionally is indistinguishable from one that preserves,
+    and this assertion passes while guarding nothing.
+    """
+    clock = iter(["2026-01-01T00:00:00", "2026-06-01T00:00:00"])
+    monkeypatch.setattr(variants, "_now", lambda: next(clock))
+
+    opts = [{"name": "Size", "value": "M"}]
+    _variant(cur, options=opts, stock_state=variants.STOCK_IN_STOCK, stock_quantity=7)
+    assert variants.variants_for(cur, 10)[0]["stock_synced_at"] == "2026-01-01T00:00:00"
+
+    _variant(cur, options=opts, stock_state="PREORDER")
+
+    row = variants.variants_for(cur, 10)[0]
+    assert row["stock_synced_at"] == "2026-01-01T00:00:00", "the failed read re-stamped"
+    assert row["updated_at"] == "2026-06-01T00:00:00", "the row itself was still touched"
+    assert row["stock_state"] == variants.STOCK_UNKNOWN, "the state still degrades"
+
+
 # ---------------------------------------------------------------------------
 # Bounds
 # ---------------------------------------------------------------------------

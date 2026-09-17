@@ -376,6 +376,20 @@ def upsert_variant(cur, *, listing_id: int, seller_user_id: int,
     state, quantity = _coerce_stock(stock_state, stock_quantity)
     now = _now()
 
+    # `stock_synced_at` answers "when did we last learn this variant's stock",
+    # not "when did we last write this row". A supplier read that came back
+    # UNKNOWN taught us nothing about the count, so it must not advance the
+    # stamp: a staleness sweep would otherwise read a fresh timestamp sitting
+    # over a count nobody confirmed and conclude the row is current, which is
+    # the one thing the column exists to prevent. Stamping unconditionally also
+    # made `SUPPLIER_NEVER_SYNCED` unreachable for any imported variant, because
+    # the first import always wrote a date.
+    #
+    # `revisions.apply_stock_reading` has always held this rule on the reconcile
+    # path -- see the matching comment there. This is the same rule on the
+    # import path, which is where the stamp is first written.
+    learned = state != STOCK_UNKNOWN
+
     cur.execute(
         f"SELECT id FROM {VARIANT_TABLE} WHERE listing_id=? AND variant_key=? LIMIT 1",
         (int(listing_id), key),
@@ -386,13 +400,17 @@ def upsert_variant(cur, *, listing_id: int, seller_user_id: int,
             existing_id = int(row["id"])
         except (KeyError, IndexError, TypeError):
             existing_id = int(row[0])
+        # Omitted from the column list entirely when nothing was learned, so the
+        # value the last successful read left behind survives untouched.
+        stamp_column = "stock_synced_at=?, " if learned else ""
+        stamp_param = (now,) if learned else ()
         cur.execute(
             f"UPDATE {VARIANT_TABLE} SET options_json=?, sku=?, provider_variant_id=?, "
             f"price_cents=?, cost_cents=?, currency=?, stock_quantity=?, stock_state=?, "
-            f"stock_synced_at=?, position=?, status=?, updated_at=? "
+            f"{stamp_column}position=?, status=?, updated_at=? "
             f"WHERE id=? AND seller_user_id=?",
             (json.dumps(cleaned), sku, provider_variant_id, price, cost, currency,
-             quantity, state, now, int(position or 0), str(status or "active"),
+             quantity, state, *stamp_param, int(position or 0), str(status or "active"),
              now, existing_id, int(seller_user_id)),
         )
         return existing_id
@@ -421,7 +439,8 @@ def upsert_variant(cur, *, listing_id: int, seller_user_id: int,
         f"position, status, created_at, updated_at) "
         f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (int(listing_id), int(seller_user_id), key, json.dumps(cleaned), sku,
-         provider_variant_id, price, cost, currency, quantity, state, now,
+         provider_variant_id, price, cost, currency, quantity, state,
+         now if learned else None,
          int(position or 0), str(status or "active"), now, now),
     )
     cur.execute(

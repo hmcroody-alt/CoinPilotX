@@ -55173,6 +55173,19 @@ MUSIC_REFERENCE_TABLES = (
 )
 
 
+class MusicReferenceCountUnavailable(RuntimeError):
+    """A reference count could not be read, so the blast radius is unknown.
+
+    Unknown is not zero. This exists so the difference survives the trip to the
+    owner: the panel has an error state, and showing it is honest where showing
+    "0 attached" next to a failed query is an invitation to purge.
+    """
+
+    def __init__(self, table):
+        super().__init__("Could not count %s references for this track." % table)
+        self.table = table
+
+
 def music_reference_counts(cur, track_id):
     """How much existing content would be affected by removing this track.
 
@@ -55181,19 +55194,23 @@ def music_reference_counts(cur, track_id):
     works around elsewhere -- so each id is compared as text on both sides. A
     count that silently returned 0 because of that would tell the owner a
     takedown was harmless when it was not.
+
+    So a failed count raises `MusicReferenceCountUnavailable` rather than
+    contributing 0 to the total. Swallowing it bought no resilience anyway: on
+    Postgres the failed statement aborts the transaction, and the next table's
+    query raises InFailedSqlTransaction regardless.
     """
     counts = {}
     total = 0
     for table, column, label in MUSIC_REFERENCE_TABLES:
-        value = 0
         try:
             cur.execute(
                 f"SELECT COUNT(*) AS total FROM {table} WHERE CAST({column} AS TEXT)=CAST(? AS TEXT)",
                 (track_id,),
             )
             value = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-        except Exception:
-            value = 0
+        except Exception as exc:
+            raise MusicReferenceCountUnavailable(table) from exc
         counts[label] = value
         total += value
     counts["total"] = total
@@ -55477,6 +55494,14 @@ def music_mutation_route(track_id, *, action, permission, require_step_up=False)
         conn.rollback()
         conn.close()
         return api_error(exc.message, exc.status, error_code=exc.error_code)
+    except MusicReferenceCountUnavailable as exc:
+        # The rollback is the point: `affected_reference_count` goes into an
+        # immutable trail, and a transition recorded as touching 0 items when
+        # the count behind that 0 failed is a permanent false record.
+        conn.rollback()
+        conn.close()
+        app.logger.exception("music transition reference count failed for %s", track_ids)
+        return api_error(str(exc), 503, error_code="music_reference_count_unavailable")
     except Exception:
         conn.rollback()
         conn.close()
@@ -55634,19 +55659,27 @@ def api_admin_music_track_impact(track_id):
     if denied:
         return denied
     conn = db()
-    conn.row_factory = sqlite3.Row
-    cur = conn.cursor()
-    track = music_track_row(cur, track_id)
-    if not track:
+    try:
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        track = music_track_row(cur, track_id)
+        if not track:
+            return api_error("Track not found.", 404, error_code="music_track_not_found")
+        try:
+            counts = music_reference_counts(cur, track_id)
+        except MusicReferenceCountUnavailable as exc:
+            # Refusing to answer is the safe answer. This number is the one the
+            # owner reads before an irreversible purge, and a 200 carrying a
+            # fabricated 0 would read as permission to proceed.
+            app.logger.exception("music impact reference count failed for track %s", track_id)
+            return api_error(str(exc), 503, error_code="music_reference_count_unavailable")
+        cur.execute(
+            "SELECT COUNT(*) AS total FROM pulse_music_reports WHERE audio_track_id=? AND status='open'",
+            (track_id,),
+        )
+        open_reports = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+    finally:
         conn.close()
-        return api_error("Track not found.", 404, error_code="music_track_not_found")
-    counts = music_reference_counts(cur, track_id)
-    cur.execute(
-        "SELECT COUNT(*) AS total FROM pulse_music_reports WHERE audio_track_id=? AND status='open'",
-        (track_id,),
-    )
-    open_reports = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
-    conn.close()
     state = music_authority.normalize_state(track.get("lifecycle_state"))
     return jsonify({
         "ok": True,
@@ -57025,7 +57058,20 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
-def pulse_finalize_marketplace_settlement(tx, provider_payment_id=""):
+def marketplace_transfer_group(metadata):
+    """Recover the transfer group the charge carried, from its own metadata.
+
+    One cart charge can back several seller transactions. They all take the
+    group of the first, so every transfer that later pays those sellers
+    reconciles back to the single charge the buyer actually made.
+    """
+    meta = dict(metadata or {})
+    raw = str(meta.get("seller_transaction_ids") or meta.get("seller_transaction_id") or "")
+    first = next((part.strip() for part in raw.split(",") if part.strip().isdigit()), "")
+    return f"marketplace_order:{first}" if first else ""
+
+
+def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_group=""):
     """Create the idempotent post-payment seller and fee effects."""
     tx = dict(tx or {})
     if str(tx.get("item_type") or "") != "marketplace_product":
@@ -57041,26 +57087,51 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id=""):
     from services import marketplace_settlement_service
     return marketplace_settlement_service.settle_paid_transaction(
         tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
-        actor="stripe_webhook")
+        transfer_group=transfer_group, actor="stripe_webhook")
 
 
-def pulse_apply_marketplace_charge_refund(obj):
-    """Allocate Stripe's cumulative charge refund across its Marketplace rows.
+def pulse_marketplace_reversal_transaction_ids(obj):
+    """The seller transactions a refund or dispute event takes money back from.
 
-    Stripe does not provide commercial components. We consume the original
-    immutable settlement snapshot in merchandise, shipping, tax order and use
-    a cumulative provider key, so retries and alternate Stripe event types
-    cannot reverse the same money twice.
+    A Charge carries the ids in its own metadata, because this server put them
+    there at checkout. A Dispute does not: Stripe hands over a Dispute object
+    whose `metadata` is its own and empty, so reading `seller_transaction_id`
+    off it — which is all the webhook used to do — finds nothing and the
+    chargeback silently affects no settlement at all. The payment intent is the
+    one identifier both object shapes carry, and `provider_payment_id` on the
+    settlement is where it was recorded, so that is the fallback.
     """
-    metadata = dict((obj or {}).get("metadata") or {})
-    tx_ids = [safe_int(v, 0) for v in str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "").split(",")]
-    tx_ids = [v for v in tx_ids if v]
-    cumulative_refunded = int((obj or {}).get("amount_refunded") or 0)
-    if not tx_ids or cumulative_refunded <= 0:
+    obj = dict(obj or {})
+    metadata = dict(obj.get("metadata") or {})
+    raw = str(metadata.get("seller_transaction_ids") or metadata.get("seller_transaction_id") or "")
+    tx_ids = [v for v in (safe_int(part, 0) for part in raw.split(",")) if v]
+    if tx_ids:
+        return tx_ids
+    payment_intent = obj.get("payment_intent")
+    if isinstance(payment_intent, dict):
+        payment_intent = payment_intent.get("id")
+    from services import marketplace_settlement_service
+    return [int(row["seller_transaction_id"])
+            for row in marketplace_settlement_service.settlements_for_payment(payment_intent or "")]
+
+
+def pulse_allocate_marketplace_reversal(tx_ids, cumulative_minor, provider_key, actor="stripe_webhook"):
+    """Split one cumulative reversal figure across its Marketplace settlements.
+
+    Stripe reports money coming back as a running total against the charge, never
+    as commercial components, and one charge can back several sellers. We consume
+    each settlement's immutable snapshot in merchandise, shipping, tax order and
+    subtract what has already been reversed, so a $40 refund followed by a
+    cumulative $60 event reverses $20 and not $100.
+
+    Shared by the refund and lost-dispute paths deliberately: a chargeback the
+    platform loses is the same money leaving by a different door, and a second
+    allocator would be free to disagree with this one about where it came from.
+    """
+    tx_ids = [int(v) for v in (tx_ids or []) if int(v or 0)]
+    cumulative_minor = int(cumulative_minor or 0)
+    if not tx_ids or cumulative_minor <= 0:
         return []
-    # ``amount_refunded`` is cumulative on a Charge. Subtract reversals already
-    # recorded for these rows or a $40 refund followed by a cumulative $60
-    # event would incorrectly reverse $100.
     conn = db(); conn.row_factory = sqlite3.Row
     try:
         placeholders = ",".join(["?"] * len(tx_ids))
@@ -57071,10 +57142,9 @@ def pulse_apply_marketplace_charge_refund(obj):
         already_refunded = 0
     finally:
         conn.close()
-    remaining = max(0, cumulative_refunded - already_refunded)
+    remaining = max(0, cumulative_minor - already_refunded)
     if remaining <= 0:
         return []
-    provider_key = f"{(obj or {}).get('id') or 'charge'}:{cumulative_refunded}"
     from services import marketplace_settlement_service
     results = []
     for tx_id in tx_ids:
@@ -57101,8 +57171,166 @@ def pulse_apply_marketplace_charge_refund(obj):
             results.append(marketplace_settlement_service.apply_refund(
                 tx_id, provider_refund_id=f"{provider_key}:{tx_id}",
                 merchandise_refund_minor=merchandise, shipping_refund_minor=shipping,
-                tax_refund_minor=tax, other_refund_minor=other, actor="stripe_webhook"))
+                tax_refund_minor=tax, other_refund_minor=other, actor=actor))
     return results
+
+
+def pulse_apply_marketplace_charge_refund(obj):
+    """Reverse a Marketplace charge's refunded amount on the seller ledger."""
+    obj = dict(obj or {})
+    return pulse_allocate_marketplace_reversal(
+        pulse_marketplace_reversal_transaction_ids(obj),
+        int(obj.get("amount_refunded") or 0),
+        f"{obj.get('id') or 'charge'}:{int(obj.get('amount_refunded') or 0)}")
+
+
+def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
+    """Freeze, release or reverse a Marketplace settlement for a chargeback.
+
+    A disputed order used to move only the `seller_transactions.status` string —
+    and, because a Dispute carries no seller metadata, usually not even that. The
+    settlement kept no `blocker_code`, so `transition_payout` was free to take a
+    chargeback straight through `eligible` and `scheduled` to `paid`: PulseSoc
+    would transfer the seller their earnings on money Stripe was in the middle of
+    taking back, and then lose the dispute with nothing to claw it from.
+
+    Opening a dispute therefore places a real hold. Winning releases it back to
+    the state the hold interrupted. Losing is not a release — the money is gone
+    from the platform balance for good, so it is reversed through the same
+    allocator a refund uses, which is what leaves the seller ledger telling the
+    truth about what PulseSoc still owes.
+    """
+    obj = dict(obj or {})
+    event_type = str(event_type or "")
+    tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
+    if not tx_ids:
+        return []
+    from services import marketplace_settlement_service as settlements
+    dispute_id = str(obj.get("id") or event_id or "dispute")
+    # Stripe's terminal statuses. `warning_closed` is an inquiry that never
+    # became a real dispute, so the money was never at risk.
+    status = str(obj.get("status") or "")
+    outcomes = []
+    for tx_id in tx_ids:
+        settlement = settlements.get_settlement(tx_id)
+        if not settlement:
+            continue
+        try:
+            if event_type == "charge.dispute.created":
+                outcomes.append(settlements.place_hold(
+                    tx_id, actor="stripe_webhook", reason_code="dispute",
+                    idempotency_key=f"dispute:{dispute_id}:{tx_id}", disputed=True))
+            elif event_type == "charge.dispute.closed" and status in {"won", "warning_closed"}:
+                origin = settlements.hold_origin_state(tx_id)
+                if origin not in {"pending_onboarding", "pending_fulfillment", "protection_hold", "eligible"}:
+                    # The seller had already been paid before the chargeback, so
+                    # there is no state to hand the settlement back to. Never
+                    # invent one: this needs the owner, not an automatic
+                    # transition that would relabel a paid order as unpaid.
+                    logging.warning(
+                        "MARKETPLACE_DISPUTE_WON_NEEDS_REVIEW tx_id=%s dispute_id=%s origin_state=%s",
+                        tx_id, dispute_id, origin or "unknown")
+                    continue
+                outcomes.append(settlements.release_hold(
+                    tx_id, to_state=origin, actor="stripe_webhook",
+                    reason=f"dispute {status}", idempotency_key=f"dispute:{dispute_id}:{tx_id}:released"))
+        except settlements.SettlementError:
+            # Already held, already released, or the state machine refused the
+            # move. Idempotent by design — a Stripe redelivery must not raise.
+            logging.info("MARKETPLACE_DISPUTE_TRANSITION_SKIPPED tx_id=%s dispute_id=%s type=%s",
+                         tx_id, dispute_id, event_type)
+    if event_type == "charge.dispute.closed" and status == "lost":
+        # A dispute freezes and then takes its own `amount`, which is the whole
+        # disputed figure rather than a running total across reversals; the
+        # allocator subtracts what has already come back.
+        outcomes.extend(pulse_allocate_marketplace_reversal(
+            tx_ids, int(obj.get("amount") or 0), f"dispute:{dispute_id}"))
+    # The order row the seller and the admin panel read. It kept saying "paid"
+    # through a chargeback, for the same reason the hold never landed.
+    row_status = {"charge.dispute.created": "dispute_opened",
+                  "charge.dispute.updated": "dispute_updated",
+                  "charge.dispute.closed": "dispute_lost" if status == "lost" else "dispute_resolved"}.get(event_type)
+    if row_status:
+        conn = db()
+        try:
+            now = datetime.utcnow().isoformat(timespec="seconds")
+            placeholders = ",".join(["?"] * len(tx_ids))
+            conn.execute(f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
+                         tuple([row_status, now] + tx_ids))
+            conn.commit()
+        finally:
+            conn.close()
+    return outcomes
+
+
+def pulse_apply_marketplace_fraud_warning(obj, event_id=""):
+    """Freeze a payout on Stripe's warning, before the chargeback arrives.
+
+    An early fraud warning is the issuer telling Stripe the card was used
+    fraudulently, days ahead of the dispute that usually follows. It is the only
+    signal that arrives while the money is still recoverable: by the time
+    `charge.dispute.created` lands, a settlement that cleared its protection
+    window has already been transferred, and PulseSoc eats the loss because the
+    funds are in the seller's Stripe balance and on the way to their bank.
+
+    Held rather than reversed — a warning is not an outcome. The hold lifts when
+    a dispute closes in PulseSoc's favour, or by an owner decision if none ever
+    opens.
+    """
+    obj = dict(obj or {})
+    tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
+    if not tx_ids:
+        return []
+    from services import marketplace_settlement_service as settlements
+    warning_id = str(obj.get("id") or event_id or "efw")
+    held = []
+    for tx_id in tx_ids:
+        if not settlements.get_settlement(tx_id):
+            continue
+        try:
+            held.append(settlements.place_hold(
+                tx_id, actor="stripe_webhook", reason_code="fraud_warning",
+                idempotency_key=f"fraud_warning:{warning_id}:{tx_id}"))
+        except settlements.SettlementError:
+            # Already held, already paid, or otherwise refused by the state
+            # machine. A redelivery must not raise.
+            logging.info("MARKETPLACE_FRAUD_WARNING_SKIPPED tx_id=%s warning_id=%s", tx_id, warning_id)
+    return held
+
+
+def pulse_disconnect_seller_payout_account(connected_account_id, event_id=""):
+    """Stop routing money to a Connect account the seller has disconnected.
+
+    `account.application.deauthorized` is the seller revoking PulseSoc's access.
+    Stripe sends no `account.updated` alongside it, so `charges_enabled` and
+    `payouts_enabled` stay 1 in our copy forever: `seller_destination_account_id`
+    keeps reporting the account as a valid transfer destination, new sales keep
+    opening `payout_ready`, and every transfer to it fails at the provider with
+    nothing explaining why.
+
+    The connected account id arrives as the event's `account` field, not inside
+    `data.object` — that object is the deauthorized Application.
+    """
+    account = str(connected_account_id or "").strip()
+    if not account:
+        return 0
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = db()
+    try:
+        cursor = conn.execute(
+            "UPDATE seller_payout_accounts SET onboarding_status='disconnected', "
+            "payouts_enabled=0, charges_enabled=0, last_checked_at=?, updated_at=? "
+            "WHERE connected_account_id=?", (now, now, account))
+        conn.commit()
+        changed = int(getattr(cursor, "rowcount", 0) or 0)
+    finally:
+        conn.close()
+    if changed:
+        # Re-onboarding is the seller's move, not ours; settlements already past
+        # `pending_onboarding` stay where they are and need an owner decision.
+        logging.warning("MARKETPLACE_CONNECT_DEAUTHORIZED account=%s rows=%s event_id=%s",
+                        account, changed, event_id)
+    return changed
 
 
 def pulse_emit_comms_safety_event(
@@ -95425,6 +95653,21 @@ def approved_teacher_for_user(cur, user_id):
 
 
 def seller_fee_bps(cur, seller_type):
+    """The commission rate for a lane, from that lane's fee authority.
+
+    Marketplace commission comes from the versioned policy, never from
+    `platform_fee_rules`. A commission must be the rate the seller was shown and
+    agreed to, and a policy version is what a settlement can be audited against
+    years later; a mutable admin row is neither, and its 10% merchant value was
+    never disclosed to anyone. No seller has ever been charged it — production
+    has zero paid marketplace transactions — so the row is dead, not a rate cut.
+
+    The teacher lane is a different product with its own pricing and is not
+    covered by the Marketplace policy, so it still reads the table.
+    """
+    if str(seller_type or "").strip().lower() == "merchant":
+        from services.business_os.marketplace import policy as marketplace_policy
+        return marketplace_policy.platform_fee_bps()
     cur.execute("SELECT fee_bps FROM platform_fee_rules WHERE seller_type=? AND status='active' LIMIT 1", (seller_type,))
     row = dict(cur.fetchone() or {})
     return int(row.get("fee_bps") or (1500 if seller_type == "teacher" else 1000))
@@ -95436,18 +95679,17 @@ def seller_payout_account(cur, user_id, seller_type):
 
 
 def seller_destination_account_id(payout):
-    """The Connect account a destination charge may safely be routed to, or "".
+    """The Connect account a Transfer may safely be sent to, or "".
 
     A payout row is written the moment a seller *starts* Connect onboarding, so
     it carries a real ``connected_account_id`` long before Stripe will accept a
     transfer to it — ``charges_enabled``/``payouts_enabled`` stay 0 until
-    onboarding actually completes. Attaching ``transfer_data.destination`` to
-    such an account makes Stripe reject the whole session, which turned a
-    seller's unfinished onboarding into a *buyer-facing* checkout failure.
+    onboarding actually completes.
 
-    Buyers must always be able to pay. When the account is not yet chargeable we
-    return "" so the caller falls back to a plain platform charge and records the
-    seller's earnings as ``ledger_pending_onboarding``.
+    Charges never route here: the buyer always pays the platform. An empty
+    result only means the seller's earnings are recorded as
+    ``ledger_pending_onboarding`` instead of ``transfer_eligible``, deferring
+    the transfer until Stripe would accept it.
     """
     payout = dict(payout or {})
     account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "").strip()
@@ -95904,15 +96146,17 @@ def api_pulse_payments_checkout():
         # than re-requested from them a screen later.
         if stripe_shipping_object:
             payment_intent_data["shipping"] = stripe_shipping_object
-        # Seller Connect state must never be a prerequisite for the buyer to
-        # pay. Route a destination charge only to an account Stripe will
-        # actually accept; otherwise take the platform charge and settle the
-        # seller from the ledger once they finish onboarding.
+        # Separate charges and transfers: the buyer always pays PulseSoc, and
+        # the seller's cut leaves later as an explicit Transfer once the
+        # settlement clears its protection window. The transfer group is what
+        # ties those Transfers back to this one charge.
+        # `connected_account_id` no longer routes the charge; it now only says
+        # whether Stripe would accept a transfer to this seller yet, which is
+        # what decides payout readiness.
+        if item_type == "marketplace_product":
+            payment_intent_data["transfer_group"] = f"marketplace_order:{tx_id}"
         connected_account_id = seller_destination_account_id(payout)
-        if connected_account_id:
-            payment_intent_data.update({"application_fee_amount": platform_fee,
-                                        "transfer_data": {"destination": connected_account_id}})
-        payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
+        payout_state = "transfer_eligible" if connected_account_id else "ledger_pending_onboarding"
         # `payment_sheet` settles this purchase with a PaymentIntent the native
         # Stripe sheet can present in-app, instead of a hosted Session the phone
         # has to open in Safari. Everything above — eligibility, price authority,
@@ -109315,7 +109559,7 @@ def stripe_webhook():
                         notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
             for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "")
+                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "", marketplace_transfer_group(metadata))
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -109364,7 +109608,7 @@ def stripe_webhook():
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
             conn.close()
             if tx and str(tx.get("status") or "") != "refunded" and payment_status in {"paid", "no_payment_required"}:
-                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "")
+                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "", marketplace_transfer_group(metadata))
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -109691,7 +109935,7 @@ def stripe_webhook():
                     notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
             for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, intent_id)
+                pulse_finalize_marketplace_settlement(paid_tx, intent_id, marketplace_transfer_group(metadata))
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -109730,7 +109974,7 @@ def stripe_webhook():
                 conn.commit()
             conn.close()
             if tx:
-                pulse_finalize_marketplace_settlement(tx, intent_id)
+                pulse_finalize_marketplace_settlement(tx, intent_id, marketplace_transfer_group(metadata))
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -109947,6 +110191,7 @@ def stripe_webhook():
     if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"}:
         obj = event["data"]["object"]
         now = datetime.utcnow().isoformat(timespec="seconds")
+        connect_seller_id = ""
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if event_type == "account.updated":
             acct = obj.get("id") or ""
@@ -109959,6 +110204,14 @@ def stripe_webhook():
                 """,
                 ("complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due", 1 if obj.get("payouts_enabled") else 0, 1 if obj.get("charges_enabled") else 0, json.dumps(requirements, default=str), now, now, acct),
             )
+            if obj.get("payouts_enabled") and obj.get("charges_enabled"):
+                # Sales made *before* the seller finished onboarding opened in
+                # `pending_onboarding` and nothing ever revisited them, so a
+                # seller who sold first and onboarded second stayed unpayable
+                # forever. Collected here and reconciled after the commit, off
+                # this connection.
+                cur.execute("SELECT user_id FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
+                connect_seller_id = str(dict(cur.fetchone() or {}).get("user_id") or "")
         elif event_type in {"payout.paid", "payout.failed"}:
             destination = obj.get("destination") or obj.get("account") or ""
             cur.execute("SELECT * FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (destination,))
@@ -110034,8 +110287,51 @@ def stripe_webhook():
                         },
                     )
         conn.commit(); conn.close()
+        if connect_seller_id:
+            # Outside the connection above: the settlement service opens its own,
+            # and `ensure_schema(conn)` on a held connection is how a route
+            # deadlocks a worker on Postgres.
+            try:
+                from services import marketplace_settlement_service as _settlements
+                _settlements.reconcile_seller_onboarding(
+                    connect_seller_id, actor="connect_webhook", reference=obj.get("id") or event_id)
+            except Exception:
+                # A seller left in `pending_onboarding` is money that can never be
+                # released to them. Never silent.
+                logging.exception("MARKETPLACE_ONBOARDING_RECONCILE_FAILED event_id=%s account=%s",
+                                  event_id, obj.get("id") or "")
         if event_type == "charge.refunded":
             pulse_apply_marketplace_charge_refund(obj)
+        elif event_type.startswith("charge.dispute."):
+            # Outside the connection above on purpose: the settlement service and
+            # the ledger open their own, and holding this one across them is how
+            # `ensure_schema(conn)` deadlocks a worker on Postgres.
+            try:
+                pulse_apply_marketplace_dispute(obj, event_type, event_id)
+            except Exception:
+                # A chargeback that does not place its hold is money about to be
+                # transferred to a seller who is losing it. Never silent.
+                logging.exception("MARKETPLACE_DISPUTE_HOLD_FAILED event_id=%s type=%s", event_id, event_type)
+
+    if event_type == "radar.early_fraud_warning.created":
+        # Its own branch rather than the set above: that block opens a connection
+        # and runs every charge through the ad-wallet reversal path, and a fraud
+        # warning is neither a refund nor a charge object.
+        try:
+            pulse_apply_marketplace_fraud_warning(event["data"]["object"], event_id)
+        except Exception:
+            # The warning is the last point at which the money is still
+            # recoverable. Never silent.
+            logging.exception("MARKETPLACE_FRAUD_WARNING_FAILED event_id=%s", event_id)
+    elif event_type == "account.application.deauthorized":
+        # `data.object` here is the deauthorized Application, not the account;
+        # the connected account id is the event's own `account` field.
+        try:
+            pulse_disconnect_seller_payout_account(event.get("account") or "", event_id)
+        except Exception:
+            # Leaving the account marked payable means every transfer to it
+            # fails at the provider with nothing explaining why.
+            logging.exception("MARKETPLACE_CONNECT_DEAUTHORIZE_FAILED event_id=%s", event_id)
 
     record_stripe_event(event, "processed", resolved_event_user_id)
     creator_economy_service.update_webhook_event(event_id, "processed")

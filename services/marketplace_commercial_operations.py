@@ -8,7 +8,13 @@ from typing import Any, Mapping
 from services import db
 from services.business_os.marketplace import policy
 
-CURRENT_TERMS_VERSION = "MARKETPLACE_LEGACY_TERMS_10_PERCENT_V1"
+#: Renamed off "…LEGACY_TERMS_10_PERCENT_V1" when the versioned policy became the
+#: only fee authority: these terms no longer disclose 10%, and a terms version
+#: that misnames its own rate is the one field a seller would rely on. The
+#: UNIQUE(seller_id, terms_version) makes the rename force re-acceptance, which
+#: is the correct consequence of changing a fee disclosure — and costs nothing
+#: today because no seller has accepted the old version.
+CURRENT_TERMS_VERSION = "MARKETPLACE_TERMS_STANDARD_V1"
 COMPLIANCE_POLICY_VERSION = "MARKETPLACE_SELLER_COMPLIANCE_V1"
 IP_POLICY_VERSION = "MARKETPLACE_IP_V1"
 IP_TYPES = {"counterfeit", "trademark", "copyright", "unauthorized_brand_use", "misrepresentation"}
@@ -54,8 +60,11 @@ def terms(seller_id: Any | None = None) -> dict:
         ensure_schema(); conn = db.connect()
         try: accepted = _row(conn.execute("SELECT * FROM marketplace_seller_terms_acceptances WHERE seller_id=? AND terms_version=?", (str(seller_id), CURRENT_TERMS_VERSION)).fetchone())
         finally: conn.close()
-    return {"current": {"terms_version": CURRENT_TERMS_VERSION, "fee_policy_version": "MARKETPLACE_LEGACY_CURRENT",
-            "platform_fee_bps": 1000, "returns_policy_version": policy.RETURN_POLICY_VERSION,
+    # Disclosed from the same authority that prices checkout, so the rate a
+    # seller reads here is the rate their settlement will actually use. It said
+    # a flat 1000 while checkout charged something else entirely.
+    return {"current": {"terms_version": CURRENT_TERMS_VERSION, "fee_policy_version": policy.POLICY_VERSION,
+            "platform_fee_bps": policy.platform_fee_bps(), "returns_policy_version": policy.RETURN_POLICY_VERSION,
             "payout_policy_version": policy.PAYOUT_POLICY_VERSION,
             "sections": ["Seller Terms", "Platform Fee Policy", "Returns / Refunds", "Payout Policy", "Prohibited Goods", "Appeals / Enforcement"]},
             "future_notice": {"published": False, "policy_version": policy.POLICY_VERSION,
@@ -69,7 +78,11 @@ def accept_terms(seller_id: Any, *, source: str) -> dict:
         conn.execute("""INSERT INTO marketplace_seller_terms_acceptances
             (seller_id,terms_version,fee_policy_version,returns_policy_version,payout_policy_version,acceptance_source,accepted_at)
             VALUES (?,?,?,?,?,?,?) ON CONFLICT(seller_id,terms_version) DO NOTHING""",
-            (str(seller_id), CURRENT_TERMS_VERSION, "MARKETPLACE_LEGACY_CURRENT", policy.RETURN_POLICY_VERSION,
+            # The version, not the rate: `MARKETPLACE_STANDARD_V1` means 5% once
+            # it is in force, and the only state where it is not charged is the
+            # one where no commission is taken at all. The per-cent record lives
+            # in the settlement's quote snapshot, which pins the actual bps.
+            (str(seller_id), CURRENT_TERMS_VERSION, policy.POLICY_VERSION, policy.RETURN_POLICY_VERSION,
              policy.PAYOUT_POLICY_VERSION, str(source)[:80], now)); conn.commit()
     finally: conn.close()
     return terms(seller_id)["acceptance"]

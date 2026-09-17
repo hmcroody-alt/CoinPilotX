@@ -657,19 +657,18 @@ def offer_checkout(offer_id: int):
             # rather than re-requested from them a screen later.
             if stripe_shipping_object:
                 payment_intent_data["shipping"] = stripe_shipping_object
-            # The old gate here read the raw account id, which exists from the
-            # moment onboarding *starts*. Stripe then rejects the transfer to an
-            # account that cannot yet accept charges, and the buyer sees
-            # "Checkout could not be created." The shared capability check routes
-            # to Connect only when charges and payouts are both enabled, and
-            # otherwise settles on the platform with the seller's share recorded
-            # in seller_transactions — an unfinished seller onboarding is not a
-            # buyer checkout prerequisite.
+            # Separate charges and transfers: the buyer pays PulseSoc, and the
+            # seller's cut leaves later as an explicit Transfer once the
+            # settlement clears its protection window. The transfer group is
+            # what ties that Transfer back to this charge.
+            payment_intent_data["transfer_group"] = f"marketplace_order:{tx_id}"
+            payment_intent_data["metadata"]["platform_fee_cents"] = str(int(platform_fee))
+            # The capability check no longer routes the charge; it only reports
+            # whether Stripe would accept a transfer to this seller yet, which
+            # is what decides payout readiness. An unfinished seller onboarding
+            # was never a buyer checkout prerequisite and still is not.
             connected_account_id = bot.seller_destination_account_id(payout)
-            if connected_account_id:
-                payment_intent_data.update({"application_fee_amount": platform_fee,
-                                            "transfer_data": {"destination": connected_account_id}})
-            payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
+            payout_state = "transfer_eligible" if connected_account_id else "ledger_pending_onboarding"
             if native_sheet:
                 # Server-authoritative amount: the accepted offer price times qty,
                 # the same number the review screen was given. The sheet renders

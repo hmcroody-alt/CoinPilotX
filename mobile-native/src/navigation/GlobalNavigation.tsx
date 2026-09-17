@@ -2,6 +2,7 @@ import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -11,8 +12,10 @@ import { getPulseRadioState, playNextTrack, playPreviousTrack, PulseRadioState, 
 // The scope wording lives with the counts, in the unread store — not here, where
 // it could drift from the number it describes.
 import { badgeSpokenLabel, scopedBadgesEnabled } from "../core/unreadCounts";
+import { BLUE_GRAPHITE_NAV } from "../theme/blueGraphite";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
+import { useTheme } from "../theme/ThemeContext";
 import { useBottomNavVisibility } from "./BottomNavVisibility";
 import {
   BOTTOM_NAV_CREATE_MARGIN_TOP,
@@ -220,6 +223,14 @@ export function LogiNexusGlobalHeader({
 
 export function LogiNexusBottomNavigation({ state, descriptors, navigation, badges }: BottomTabBarProps & { badges?: GlobalNavigationBadges }) {
   const insets = useSafeAreaInsets();
+  const theme = useTheme();
+  /**
+   * Same gate as the Pulse Network card's: the released blue/futuristic
+   * appearance only, and never under high contrast, which substitutes the
+   * palette. Off that gate the dock keeps `bottomPanel`'s legacy fill exactly,
+   * so Black, White, Light Futuristic and high contrast are byte-unchanged.
+   */
+  const blueGraphite = theme.mode === "dark" && !theme.highContrast;
   const activeRoute = state.routes[state.index]?.name as keyof AppTabParamList | undefined;
   const { hidden: requestedHidden, showBottomNav } = useBottomNavVisibility();
   const hidden = resolveBottomNavPolicy(activeRoute) === "always-visible" ? false : requestedHidden;
@@ -280,7 +291,60 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
       testID="global-bottom-navigation"
     >
       <PulseMiniPlayerBar navigation={navigation} />
-      <View pointerEvents="auto" style={styles.bottomPanel}>
+      <View pointerEvents="auto" style={[styles.bottomPanel, blueGraphite && styles.bottomPanelBlueGraphite]}>
+        {/*
+          The material, as a clipped sibling rather than a fill on the panel.
+
+          Two constraints rule out the obvious alternatives. A gradient needs a
+          `LinearGradient`, which cannot be a `backgroundColor`; and giving the
+          panel `overflow: "hidden"` so a plain absolute-fill child would respect
+          the 38pt radius would clip the Create circle, which overhangs the panel
+          by `BOTTOM_NAV_CREATE_MARGIN_TOP`. So this layer carries its own radius
+          and clips itself. It is first in document order, so it paints under
+          every tab without any `zIndex`, and `pointerEvents="none"` keeps it out
+          of the hit path — geometry, hit targets and routing are untouched.
+
+          `bottomPanelBlueGraphite` still sets an opaque `backgroundColor`
+          underneath: the gradient is the material, the fill is what guarantees
+          the panel is never translucent even for the frame before it paints.
+        */}
+        {blueGraphite ? (
+          <LinearGradient
+            colors={[...BLUE_GRAPHITE_NAV.base.colors]}
+            locations={[...BLUE_GRAPHITE_NAV.base.locations]}
+            start={BLUE_GRAPHITE_NAV.base.start}
+            end={BLUE_GRAPHITE_NAV.base.end}
+            pointerEvents="none"
+            style={styles.bottomPanelMaterial}
+            testID="global-bottom-navigation-material"
+          />
+        ) : null}
+        {/*
+          The perimeter deepening, as a second layer rather than more stops on
+          the first.
+
+          It has to be separate because it is translucent. Folding its stops
+          into the base ramp would *replace* the graphite rather than deepen it,
+          and the base has to stay fully opaque — it is the layer that
+          guarantees the dock is never see-through.
+
+          It deliberately carries no axis, so it runs top-to-bottom while the
+          base runs mostly left-to-right. That is the point: a single ramp can
+          only put navy at the ends of its own axis, so without this the dock
+          deepened across its width and its top and bottom sat flat at core
+          graphite. The card has had this layer from the start, via
+          `GalacticAtmosphere`, which is why the two read as different materials
+          until the dock has one too.
+        */}
+        {blueGraphite ? (
+          <LinearGradient
+            colors={[...BLUE_GRAPHITE_NAV.edge.colors]}
+            locations={[...BLUE_GRAPHITE_NAV.edge.locations]}
+            pointerEvents="none"
+            style={styles.bottomPanelMaterial}
+            testID="global-bottom-navigation-material-edge"
+          />
+        ) : null}
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
           const active = activeRoute === item.routeName || (item.name === "Create" && activeRoute === "Create");
@@ -642,6 +706,29 @@ const styles = createThemedStyles(() => ({
     shadowColor: colors.accent,
     shadowOpacity: 0.2,
     shadowRadius: 24
+  },
+  /**
+   * The dock's half of the blue-graphite system. Colour only — every metric
+   * above (radius, padding, `minHeight`, border, shadow) is deliberately left
+   * in `bottomPanel`, because `bottomNavMetrics.ts` mirrors two of them and the
+   * geometry is an invariant of this change.
+   *
+   * Opaque, and one step darker than the card: the dock has to read as anchored
+   * chrome, and a floating panel that out-brightens the content it floats over
+   * reads as the subject instead.
+   */
+  bottomPanelBlueGraphite: {
+    backgroundColor: BLUE_GRAPHITE_NAV.fallback
+  },
+  /**
+   * Inset by the 1pt border (RN positions absolute children against the padding
+   * box), so the existing blue edge stays visible on top of the material. The
+   * radius is the panel's less that border, which is what keeps the corners from
+   * showing a hairline of fill outside the curve.
+   */
+  bottomPanelMaterial: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 37
   },
   bottomShell: {
     backgroundColor: "transparent",

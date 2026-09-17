@@ -509,12 +509,39 @@ infrastructure decision, not a patch: **set `CJ_RECONCILIATION_ENABLED` and
 deploy a `supplier_worker` service.** Flagged for the operator rather than taken
 unilaterally.
 
+> **Done on 2026-09-17** — both halves, exactly as recommended. The two
+> paragraphs above describe the state this report was written in, not the state
+> now; see §13.1. One correction to them: `_seed_jobs` would not have refreshed
+> all 34 pids in a single tick, because `run_once` is bounded to 20 reads per
+> tick. The catalogue is worked through over several ticks, which is the
+> intended behaviour of a bounded drain and not a defect. Measured across the
+> first three ticks, the sources still carrying a pre-deploy `last_synced_at`
+> fell 36 → 29 → 18 → 8, monotonically — which is what distinguishes a backlog
+> draining from the same rows being rewritten every tick. The two are easy to
+> confuse from the tick counters alone, because `revisions` does not fall as the
+> backlog does — it went 84, 304, 201 while the backlog only shrank. A tick's
+> revision count measures how much work that batch happened to contain, not how
+> much is left; only the timestamp distribution answers the second question.
+
 ## 13. Remaining blockers
 
-1. **Reconciliation is off in production** (§12). Without it the 654 counts
-   landed today go stale, and staleness is invisible — `stock_synced_at` is set
-   at import even when stock was unknown, so it cannot currently distinguish
-   "counted" from "looked at".
+1. ~~**Reconciliation is off in production** (§12).~~ **Resolved 2026-09-17.**
+   A `supplier_worker` Railway service now runs `python supplier_worker.py
+   --interval 300` with `CJ_RECONCILIATION_ENABLED` set; its first three ticks
+   each reported `status ok` with zero `revision_failures`, counting 84, 304 and
+   201 revisions. 578 of the 742 variants carry a post-deploy timestamp as a
+   result — fewer than the 589 the counters sum to, because `revisions` counts
+   applications and a variant reached by both a product and an inventory read is
+   counted twice. Meanwhile
+   `marketplace_product_sources.last_synced_at` — NULL on all 34 rows when this
+   report was written — is now written every tick. The §12 recommendation was
+   taken exactly as stated: it was an infrastructure decision, and the missing
+   piece was a *service*, not the Procfile line, which already existed.
+
+   The second half of this blocker stands, and is a different defect:
+   staleness is still invisible, because `stock_synced_at` is set at import even
+   when stock was unknown, so a row still cannot distinguish "counted" from
+   "looked at". A running reconciler makes that matter less, not none.
 2. **Order → variant link is missing** (§3.3). Must be fixed *before* any
    multi-variant supplier listing is published. Currently harmless: publication
    is blocked and there are no orders.
@@ -545,3 +572,11 @@ because the durable fix for the defect this mission is named after is an
 operational change that has not been made (§12). A repair that clears a backlog
 without turning on the thing that prevents the next one has fixed today, not the
 problem.
+
+**Addendum, 2026-09-17.** The second of those two reasons no longer holds: the
+operational change was made, and the reconciler is running (§13.1). That does
+not move this verdict to `PASS` — stages 4, 6, 8, 9 and 10 are still
+undelivered, and a verdict is not something a later change gets to edit in its
+own favour. It is recorded here because the sentence above is the argument for
+why the mission was only half-done, and half of that argument has since been
+answered.

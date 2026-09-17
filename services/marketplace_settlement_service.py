@@ -69,7 +69,35 @@ def _snapshot(tx: Mapping[str, Any]) -> dict:
         "currency": str(tx.get("currency") or quote.get("currency") or "USD").lower(),
     }
 
+_TRANSFER_GROUP_COLUMN_READY = False
+
+
+def _ensure_transfer_group_column(conn) -> None:
+    """One cart checkout is one charge but several settlements (one per line).
+
+    Stripe groups the resulting transfers back to that charge by `transfer_group`,
+    so each settlement has to remember the group its charge carried; it cannot be
+    derived from `order_id`, which is per-transaction.
+    """
+    global _TRANSFER_GROUP_COLUMN_READY
+    if _TRANSFER_GROUP_COLUMN_READY:
+        return
+    cols = set()
+    try:
+        cols = {str(r[1]).lower() for r in conn.execute(
+            "PRAGMA table_info(marketplace_commercial_settlements)").fetchall()}
+    except Exception:  # noqa: BLE001 - Postgres has no PRAGMA
+        cols = {str(r[0]).lower() for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='marketplace_commercial_settlements'").fetchall()}
+    if "transfer_group" not in cols:
+        conn.execute("ALTER TABLE marketplace_commercial_settlements ADD COLUMN transfer_group TEXT")
+    # Cached only once the caller's commit has landed, so a rolled-back DDL is
+    # not remembered as applied.
+
+
 def ensure_schema(conn=None) -> None:
+    global _TRANSFER_GROUP_COLUMN_READY
     owned = conn is None
     if owned:
         conn = db.connect()
@@ -100,8 +128,10 @@ def ensure_schema(conn=None) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT, seller_transaction_id INTEGER NOT NULL,
             idempotency_key TEXT NOT NULL UNIQUE, from_state TEXT, to_state TEXT NOT NULL,
             actor TEXT NOT NULL, reason TEXT, provider_reference TEXT, created_at TEXT NOT NULL)""")
+        _ensure_transfer_group_column(conn)
         if owned:
             conn.commit()
+            _TRANSFER_GROUP_COLUMN_READY = True
     finally:
         if owned:
             conn.close()
@@ -117,8 +147,57 @@ def get_settlement(transaction_id: Any, conn=None) -> dict | None:
         if owned:
             conn.close()
 
+def settlements_for_payment(provider_payment_id: str, conn=None) -> list[dict]:
+    """Every settlement funded by one Stripe payment, oldest first.
+
+    A dispute event does not carry the charge's metadata — Stripe hands over a
+    Dispute object whose own `metadata` is empty — so the seller transaction ids
+    the refund path reads straight off a Charge are simply not there. What a
+    dispute does carry is the payment intent, which is what `provider_payment_id`
+    records, so that is the way back from a chargeback to the sellers it affects.
+
+    A list, not a row: one cart checkout is one payment intent and one settlement
+    per seller line, and a chargeback takes back the whole charge.
+    """
+    reference = str(provider_payment_id or "").strip()
+    if not reference:
+        return []
+    owned = conn is None
+    if owned:
+        ensure_schema(); conn = db.connect()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM marketplace_commercial_settlements WHERE provider_payment_id=? "
+            "ORDER BY seller_transaction_id", (reference,)).fetchall()
+    finally:
+        if owned:
+            conn.close()
+    return [dict(row) for row in rows]
+
+
+def hold_origin_state(transaction_id: Any) -> str:
+    """The payout state a settlement was in before its current hold.
+
+    `place_hold` overwrites `payout_state`, so the state the settlement should go
+    back to when a dispute is won survives only in the immutable event log. Read
+    it from there rather than guessing: releasing everything to
+    `pending_fulfillment` would demand a second delivery confirmation that
+    `mark_delivered` would dedupe away, stranding the seller's money forever.
+    """
+    ensure_schema(); conn = db.connect()
+    try:
+        row = conn.execute(
+            "SELECT from_state FROM marketplace_payout_state_events "
+            "WHERE seller_transaction_id=? AND to_state IN ('held','disputed') "
+            "ORDER BY id DESC LIMIT 1", (int(transaction_id),)).fetchone()
+    finally:
+        conn.close()
+    return str(dict(row).get("from_state") or "") if row else ""
+
+
 def settle_paid_transaction(tx: Mapping[str, Any], *, payout_ready: bool,
-                            provider_payment_id: str = "", actor: str = "stripe") -> dict:
+                            provider_payment_id: str = "", transfer_group: str = "",
+                            actor: str = "stripe") -> dict:
     transaction_id = int(tx.get("id") or 0)
     seller_id = str(tx.get("seller_user_id") or "")
     if not transaction_id or not seller_id or str(tx.get("item_type") or "") != "marketplace_product":
@@ -131,15 +210,16 @@ def settle_paid_transaction(tx: Mapping[str, Any], *, payout_ready: bool,
             (seller_transaction_id,order_id,seller_id,quote_id,currency,fee_policy_version,payout_policy_version,
              fee_rate_bps,merchandise_net_minor,shipping_minor,tax_minor,seller_shipping_credit_minor,
              buyer_total_minor,gross_platform_fee_minor,net_platform_fee_minor,gross_seller_earnings_minor,
-             net_seller_earnings_minor,payout_state,payout_ready,provider_payment_id,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             net_seller_earnings_minor,payout_state,payout_ready,provider_payment_id,transfer_group,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(seller_transaction_id) DO NOTHING""",
             (transaction_id, order_id, seller_id, snap["quote_id"], snap["currency"],
              snap["fee_policy_version"], snap["payout_policy_version"], snap["fee_rate_bps"],
              snap["merchandise_net_minor"], snap["shipping_minor"], snap["tax_minor"],
              snap["seller_shipping_credit_minor"], snap["buyer_total_minor"], snap["platform_fee_minor"],
              snap["platform_fee_minor"], snap["seller_earnings_minor"], snap["seller_earnings_minor"],
-             initial, 1 if payout_ready else 0, provider_payment_id, now, now))
+             initial, 1 if payout_ready else 0, provider_payment_id,
+             str(transfer_group or order_id), now, now))
         conn.commit()
     finally:
         conn.close()
@@ -296,6 +376,44 @@ def reconcile_onboarding(transaction_id: Any, *, actor: str, idempotency_key: st
         conn.close()
     result["settlement"] = get_settlement(transaction_id)
     return result
+
+def reconcile_seller_onboarding(seller_id: Any, *, actor: str, reference: str) -> list[dict]:
+    """Unstick every sale a seller made before they finished Connect onboarding.
+
+    A settlement opens in `pending_onboarding` when the seller had no usable
+    connected account at the moment of the sale, and `reconcile_onboarding` is
+    what moves it on once they finish. Nothing ever called it: `account.updated`
+    refreshed `seller_payout_accounts` and stopped there, so a seller who sold
+    first and onboarded second stayed unpayable forever while their money sat in
+    the ledger looking perfectly healthy.
+
+    Keyed on the Stripe account id rather than the event, so a redelivery and a
+    later `account.updated` for the same seller both dedupe to one transition per
+    settlement. Nothing here moves money — it only lets the release chain reach
+    the states where the protection window and the payout gates still apply.
+    """
+    seller_id = str(seller_id or "").strip()
+    if not seller_id or not reference:
+        return []
+    ensure_schema(); conn = db.connect()
+    try:
+        rows = [dict(row) for row in conn.execute(
+            "SELECT seller_transaction_id FROM marketplace_commercial_settlements "
+            "WHERE seller_id=? AND payout_state='pending_onboarding' AND blocker_code IS NULL "
+            "ORDER BY seller_transaction_id", (seller_id,)).fetchall()]
+    finally:
+        conn.close()
+    reconciled = []
+    for row in rows:
+        tx_id = int(row["seller_transaction_id"])
+        try:
+            reconciled.append(reconcile_onboarding(
+                tx_id, actor=actor, idempotency_key=f"connect:{reference}:{tx_id}"))
+        except SettlementError:
+            # Raced by another worker or already moved on. Idempotent by design.
+            continue
+    return reconciled
+
 
 def place_hold(transaction_id: Any, *, actor: str, reason_code: str,
                idempotency_key: str, disputed: bool = False) -> dict:
