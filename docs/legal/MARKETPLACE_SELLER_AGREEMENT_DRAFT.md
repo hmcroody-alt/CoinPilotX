@@ -110,11 +110,15 @@ decision before volume.
 Steps 3 and 4 are different events. PulseSoc controls the timing of step 3. Step 4
 is between you and Stripe.
 
-**Open — commercial:** the protection window is 2 days while the buyer return
-window is 14 (§5). Those numbers do not currently line up, which means a return
-can be accepted after your money has already been released. Somebody must decide
-whether that is intentional (favouring seller cash flow, PulseSoc absorbing the
-gap) or a defect.
+**Open — commercial:** the protection window is 2 days and the return window is
+**unbounded** (§5 — the declared 14- and 30-day constants are both dead code). So a
+return can always be accepted after your money has been released, and no choice of
+protection window would change that: a card chargeback can arrive up to 120 days
+after the charge regardless.
+
+What happens then is described in §8 and is worth reading before you sign: your
+balance goes negative, you cannot withdraw until it clears, and it clears out of
+your later sales.
 
 ### Payment processing
 
@@ -128,11 +132,40 @@ agreement.
 
 ## 5. Returns
 
-Buyers may return eligible items within **14 days**
-(`STANDARD_RETURN_WINDOW_DAYS`), under `MARKETPLACE_RETURNS_V1`.
+> **⚠️ Do not state a return deadline here until one is actually enforced.**
+>
+> An earlier version of this section said "within 14 days", citing
+> `STANDARD_RETURN_WINDOW_DAYS`. That was wrong and it is the exact failure this
+> document exists to prevent — publishing a number the software does not honour.
 
-**Open:** who pays return shipping is not encoded anywhere and is not stated here.
-It is a common source of seller disputes and needs deciding before launch.
+**No return deadline is enforced anywhere in the codebase.** Two constants declare
+one, they disagree with each other, and neither is read by any code:
+
+| Declared | Where | Read by |
+|---|---|---|
+| 14 days | `policy.py::STANDARD_RETURN_WINDOW_DAYS` | nothing |
+| 30 days | `marketplace_returns_routes.py::OPEN_WINDOW_DAYS` | nothing |
+
+There are also **two separate returns implementations**, and the one wired to
+order state (`services/business_os/marketplace/returns.py::request_return`) gates
+only on order *status* — `paid`, `fulfilled` or `completed` — with no time
+component at all. A buyer can open a return on a completed order indefinitely.
+`tests/business_os/test_returns_core.py` exercises precisely that and expects it
+to succeed.
+
+So a seller signing this today would be agreeing to an unbounded return liability.
+
+**Open — must be decided before publication:**
+
+1. **What the window actually is**, and then make one constant real and delete the
+   other. Whatever is published here has to be the number the code enforces.
+2. **Which of the two returns implementations is the real one.** Two systems with
+   two schemas is a defect independent of this agreement.
+3. **Who pays return shipping.** Not encoded anywhere and not stated here. A common
+   source of seller disputes.
+4. How the window interacts with the 2-day payout protection and §4's gap — a
+   return accepted after funds are released creates the negative balance described
+   in §8.
 
 ---
 
@@ -193,9 +226,17 @@ withhold a payout, the notice given, and the appeal route are not written and ar
 not consistently enforced in code. Withholding someone's money needs stated
 grounds and a defined process.
 
-Note a related gap: if a seller is overpaid, their balance goes negative and
-**nothing in the system recovers it** (see `docs/payments/FUNDS_SEGREGATION.md`
-§6). Whatever recovery mechanism is agreed has to be stated here and then built.
+Note a related gap. If a refund or chargeback lands after you have already been
+paid, your balance goes negative: you cannot withdraw while it is, and the debt is
+repaid automatically out of your next sales (`docs/payments/FUNDS_SEGREGATION.md`
+§6). That mechanism works and is tested, but **it is not disclosed anywhere a
+seller would see, and this agreement does not yet say it.** A seller can currently
+be in debt to PulseSoc, and blocked from withdrawing, on terms they were never
+shown. That has to be stated plainly here before the agreement is published.
+
+The case the mechanism does not cover — a seller who goes negative and never sells
+again — has no collection or write-off policy at all. Whatever is decided has to
+be stated here and then built.
 
 ---
 
