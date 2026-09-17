@@ -25,10 +25,27 @@
 import { colors } from "./colors";
 
 export const progressTheme = {
-  /** The tile and header identity. Violet, never `colors.accent`. */
-  violet: "#8B5CF6",
-  violetSoft: "rgba(139, 92, 246, 0.14)",
-  violetBorder: "rgba(139, 92, 246, 0.42)",
+  /**
+   * The tile and header identity. Violet, never `colors.accent`.
+   *
+   * Was `#8B5CF6`; +12% lightness, hue and saturation held. This is the one
+   * value in the graphite migration that was already failing before it —
+   * 3.96:1 on the old raised surface — so the lift is not a regression repair.
+   * It is here because `ProgressCenterScreen` spends this token as link text,
+   * tab labels and the hero eyebrow, and on graphite it fell to 2.59:1.
+   *
+   * `tileGradient` and `violetDeep` keep the old violet. They are fills, and
+   * lifting a gradient's first stop to satisfy a text rule would have washed
+   * out the tile to fix something that was never drawn there.
+   *
+   * The lifted value lands within a hair of `colors.intelligence` (`#b297ff`).
+   * They stay separate literals: the two violets mean different things — Progress
+   * OS identity and the UNDX/AI layer — and collapsing them is a brand decision,
+   * not a contrast one.
+   */
+  violet: "#B496F9",
+  violetSoft: "rgba(180, 150, 249, 0.14)",
+  violetBorder: "rgba(180, 150, 249, 0.42)",
   /** Deeper violet for gradient tails and pressed states. */
   violetDeep: "#5B32C4",
 
@@ -51,8 +68,13 @@ export const progressTheme = {
   state: {
     met: "#E8B84B",
     pending: colors.muted,
-    /** Under review. Blue: it needs nothing from the member. */
-    review: "#5B8DEF",
+    /**
+     * Under review. Blue: it needs nothing from the member.
+     *
+     * Was `#5B8DEF`; +7.6% lightness, same hue, in step with
+     * `premiumTheme.state.hold`.
+     */
+    review: "#7EA6F2",
     /** Ended in a way that will not resume. */
     closed: colors.danger
   },

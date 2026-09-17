@@ -41,8 +41,19 @@ export const premiumTheme = {
   gold: progressTheme.gold,
   /** Highlight for the one element that should catch the eye first. */
   goldBright: "#F5D083",
-  /** Body copy and secondary marks that should read gold without shouting. */
-  goldMuted: "#B4801F",
+  /**
+   * Body copy and secondary marks that should read gold without shouting.
+   *
+   * Was `#B4801F`, lifted +8.6% in lightness at the same hue and saturation
+   * when `colors.surfaceRaised` became graphite. This token is body copy by its
+   * own definition, and on the lighter surface the old value read 3.16:1.
+   *
+   * `planGradient` below keeps `#B4801F`. The two shared a hex by coincidence,
+   * not by intent: one is read as text and owes 4.5:1, the other is the far
+   * stop of a fill and owes nothing. Lifting the tail as well would have
+   * flattened the gradient to make a rule apply that never applied to it.
+   */
+  goldMuted: "#D99B25",
   goldBorder: "rgba(232, 184, 75, 0.46)",
   /** Low-alpha fill behind icons and chips. Never a full-strength background. */
   goldSoft: "rgba(232, 184, 75, 0.14)",
@@ -70,8 +81,13 @@ export const premiumTheme = {
     /** No membership yet. Muted: not having bought something is not a fault. */
     none: colors.muted,
     expired: colors.muted,
-    /** Access paused by an account hold. Blue: it is not a billing problem. */
-    hold: "#5B8DEF"
+    /**
+     * Access paused by an account hold. Blue: it is not a billing problem.
+     *
+     * Was `#5B8DEF`; +7.6% lightness, same hue. `progressTheme.state.review`
+     * is the same blue for the same reason and moved with it.
+     */
+    hold: "#7EA6F2"
   },
 
   text: colors.text,

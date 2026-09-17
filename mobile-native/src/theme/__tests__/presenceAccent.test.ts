@@ -133,6 +133,17 @@ describe("the restraint doctrine is enforced, not just written down", () => {
   });
 });
 
+describe("the palette and the presence hues stay in step", () => {
+  it("reads the same violet as the palette", () => {
+    // `creative` and `colors.intelligence` are one violet stated twice, because
+    // `HUES` has to stay a literal `as const`. Two copies drift, and this drift
+    // would be invisible — the two are rarely on screen together. Not a hex
+    // assertion: it pins the relationship, so moving the violet is still free
+    // as long as both move.
+    expect(HUES.creative).toBe(colors.intelligence);
+  });
+});
+
 describe("every hue is legible where it is drawn", () => {
   const surfaces = {
     background: colors.background,

@@ -25,9 +25,18 @@ export const presenceTheme = {
   /** Static halo behind the tile icon — premium-quality, never animated. */
   glow: "rgba(50, 230, 179, 0.35)",
 
-  /** Secondary identity accent for artist surfaces (mirrors PulseSoc violet). */
-  violet: "#9f7cff",
-  violetSoft: "rgba(159, 124, 255, 0.14)",
+  /**
+   * Secondary identity accent for artist surfaces (mirrors PulseSoc violet).
+   *
+   * Stated as a reference rather than as the hex it used to restate. The
+   * literal here was the palette violet before the graphite migration lifted
+   * it, and this table had no way of knowing that — it has no consumer today,
+   * so nothing failed and nothing looked wrong. A token that says "mirrors
+   * PulseSoc violet" while quietly holding last season's violet is the kind of
+   * thing that ships the moment someone finally uses it.
+   */
+  violet: colors.intelligence,
+  violetSoft: "rgba(178, 151, 255, 0.14)",
 
   tileGradient: ["#32e6b3", "#0F8F6C"] as const,
 
