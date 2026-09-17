@@ -279,8 +279,28 @@ messages.
 | Push of `7d2f0fc8` | Done |
 | Merge to `main` | Done |
 | Production deploy | Done — Railway on `b15f4a7a` |
-| Registering `com.pulsesoc.nativeapp.dev` as an explicit App ID with Push | Needs Apple Developer account access |
+| Registering `com.pulsesoc.nativeapp.dev` as an explicit App ID with Push | Not required — one bundle id was chosen; see below |
 | Apple Distribution signing | Absent; blocks any `production`-entitlement artefact |
+
+**Bundle identifier: decided.** Both environments stay on `com.pulsesoc.app`, varying
+only `aps-environment` by configuration. This removes the last item that needed Apple
+Developer account access, and it matches what the committed Xcode project already
+built — the split existed only in `app.config.js` (prebuild-only, inert while `ios/`
+is committed) and in the development install script.
+
+The decision is now enforced rather than described.
+`tests/protection/test_ios_push_bundle_identity.py` fails if either configuration
+drifts to a second bundle id, which is exactly what an `expo prebuild` would
+reintroduce on its own. The gate matters because the failure it prevents is
+irreversible per device: a token minted under an unaddressed bundle draws
+`DeviceTokenNotForTopic`, and `services/pulsesoc_voip_push.py` revokes on that without
+replaying — correctly, since unlike `BadDeviceToken` it cannot be a host mismatch. A
+wrong host costs one request; a wrong topic costs the handset its ability to ring.
+
+The development install script keeps building `com.pulsesoc.nativeapp.dev` for
+side-by-side installation, which is a real capability unrelated to push. It now prints
+that such a build cannot receive VoIP pushes, so that "it never rings" is not
+mistaken for a CallKit or Agora defect.
 
 ---
 

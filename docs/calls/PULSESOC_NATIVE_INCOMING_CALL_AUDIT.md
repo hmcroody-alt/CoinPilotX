@@ -399,12 +399,28 @@ These are open, and nothing in this document should be read as closing them.
    unproven and cannot be proven here: local automatic signing takes the value from
    the provisioning profile, so it is only authoritative under the manual signing EAS
    uses, which needs a distribution profile this machine does not have.
-4. **The dev/prod bundle split.** Both configurations still build `com.pulsesoc.app`.
-   `apns-topic` now derives per device from the recorded `app_bundle`, but
-   `mobile-native/src/api/calls.ts` never reports one, so every row is empty and every
-   device resolves to the deployment-wide topic. Registering
-   `com.pulsesoc.nativeapp.dev` as an explicit App ID with Push enabled needs Apple
-   Developer account access.
+4. ~~**The dev/prod bundle split.**~~ Decided, and decided against: both environments
+   stay on `com.pulsesoc.app`, with only `aps-environment` varying by configuration.
+   No second App ID is registered and none is needed, so this is no longer blocked on
+   Apple Developer account access — it is a settled constraint, pinned by
+   `tests/protection/test_ios_push_bundle_identity.py`.
+
+   Two consequences follow, neither obvious from the decision itself:
+
+   * `apns-topic` still derives per device from the recorded `app_bundle`. That is now
+     a safety net rather than a feature — with one bundle every device resolves to the
+     topic it always did. It is kept because the cost of *not* having it is asymmetric:
+     re-introducing a second bundle without it converts a self-healing misroute into
+     permanent token revocation, and re-introduction is the kind of change someone
+     makes for unrelated reasons.
+   * `scripts/install_pulsesoc_native_dev_iphone.sh` still builds
+     `com.pulsesoc.nativeapp.dev`, deliberately, so a development build can sit beside
+     the App Store app instead of overwriting it. That capability is unrelated to push
+     and is retained. But a build under that bundle **cannot receive a VoIP push at
+     all** — it draws `DeviceTokenNotForTopic`, which is revoked rather than replayed.
+     The script now says so on every install, because "it never rings" on a dev-bundle
+     build is indistinguishable from the CallKit and Agora defects someone would
+     investigate first. Ring-testing must happen on a `com.pulsesoc.app` build.
 5. **Physical iPhone 16 Pro verification.** No lock-screen, terminated-app, Silent
    Mode, Focus, or Bluetooth-routing verification has been performed on hardware. No
    simulator result substitutes for it.
