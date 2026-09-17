@@ -1,6 +1,6 @@
 # PulseSoc Native Incoming Call — System Audit
 
-Audited against the working tree at commit `0fe9cff5`
+Audited against the working tree at commit `7d2f0fc8`
 (`calls: settle call state by compare-and-set so one answer wins`).
 
 Everything below is a statement about code that exists in this repository. Where a
@@ -73,7 +73,7 @@ Call identity is a server-minted opaque public id — `f"call_{secrets.token_url
 
 ---
 
-## 3. The defect fixed in `0fe9cff5`
+## 3. The defect fixed in `7d2f0fc8`
 
 ### 3.1 Shape of the bug
 
@@ -327,7 +327,7 @@ Test coverage: 11 Jest files under `mobile-native/src/calls/__tests__/`, 1852 li
 
 ## 9. Preserved foundations
 
-Confirmed unchanged by `0fe9cff5`:
+Confirmed unchanged by `7d2f0fc8`:
 
 - **Agora** remains the sole RTC provider. `_generate_agora_token()`
   (engine, 522-555) mints an RTC token with privilege `1` and TTL
@@ -340,7 +340,7 @@ Confirmed unchanged by `0fe9cff5`:
   microphone track, no second publication path.
 - `config/realtime-audio-protected-paths.json:185` protects exactly one symbol in the
   engine — `services/pulsesoc_communications_engine.py#generate_agora_live_token`. The
-  `0fe9cff5` edits are outside it. The realtime-audio gate was run on the commit and
+  `7d2f0fc8` edits are outside it. The realtime-audio gate was run on the commit and
   reported clean over 2 inspected files.
 
 ---
@@ -385,5 +385,5 @@ These are open, and nothing in this document should be read as closing them.
 4. **Physical iPhone 16 Pro verification.** No lock-screen, terminated-app, Silent
    Mode, Focus, or Bluetooth-routing verification has been performed on hardware. No
    simulator result substitutes for it.
-5. **Merge and production deployment.** `0fe9cff5` exists on a local detached HEAD in
+5. **Merge and production deployment.** `7d2f0fc8` exists on a local detached HEAD in
    an isolated worktree. It has not been pushed, merged, or deployed.

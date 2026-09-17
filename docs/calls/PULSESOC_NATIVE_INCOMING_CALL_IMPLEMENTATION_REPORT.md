@@ -2,7 +2,7 @@
 
 **Status: PARTIAL — IMPLEMENTATION AND PHYSICAL DEVICE VERIFICATION INCOMPLETE**
 
-Reporting commit: `0fe9cff5` — `calls: settle call state by compare-and-set so one
+Reporting commit: `7d2f0fc8` — `calls: settle call state by compare-and-set so one
 answer wins`.
 
 This report states what was changed, what was proven, and what was not. It does not
@@ -204,14 +204,14 @@ behaviour fails there regardless of what the server does.
 
 ### 3.5 Merge and production deployment — NOT DONE
 
-`0fe9cff5` exists on a local detached HEAD in an isolated worktree. It has not been
+`7d2f0fc8` exists on a local detached HEAD in an isolated worktree. It has not been
 pushed, merged into `main`, or deployed. No authorization to do so has been given.
 
 ### 3.6 No sweeper worker
 
 Stale-call cleanup depends entirely on an inbound request hitting `call_status()` or
 `active_calls()`. A call whose participants all disappear is not swept until an
-unrelated request happens to sweep it. This predates `0fe9cff5` and is unchanged by it.
+unrelated request happens to sweep it. This predates `7d2f0fc8` and is unchanged by it.
 
 ---
 
@@ -236,7 +236,7 @@ Three independent levers, detailed in the runbook:
    CallKit presentation path. A flag flip, not a revert.
 2. Unset `APNS_VOIP_BUNDLE_ID` / `APNS_BUNDLE_ID` — `is_configured()` goes false and
    every VoIP send short-circuits. Emergency stop only.
-3. `git revert 0fe9cff5` — two files, no schema, no data repair. Restores the
+3. `git revert 7d2f0fc8` — two files, no schema, no data repair. Restores the
    read-modify-write race.
 
 None of the three touches Agora, Mux, the audio coordinator, reels, radio or voice
@@ -260,7 +260,7 @@ messages.
 
 | Blocker | Status |
 | --- | --- |
-| Push of `0fe9cff5` | Not authorized |
+| Push of `7d2f0fc8` | Not authorized |
 | Merge to `main` | Not authorized |
 | Production deploy | Not authorized |
 
