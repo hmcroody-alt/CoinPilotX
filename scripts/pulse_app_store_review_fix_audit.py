@@ -1,7 +1,51 @@
 #!/usr/bin/env python3
-"""Guard PulseSoc App Store Review fixes for the 1.0 rejection."""
+"""Guard the parts of the 1.0 App Store rejection repair that are still policy.
 
-import json
+Scope
+-----
+
+Apple rejected 1.0 in June 2026 on four guidelines: Design 4.0 and Performance
+2.1(a) (iPad layout clipped), Privacy 5.1.1(v) (no in-app account deletion), and
+Payments 3.1.1 (Stripe checkout reachable inside the iOS app). `beb4e8d8` fixed
+all four and 1.0 shipped 2026-07-01.
+
+Two of those repairs are permanent product policy and are what this file guards:
+the app stays iPhone-only, and the **web** payment surfaces stay closed inside a
+native iOS request. Everything else here is an assertion about live web/server
+code (`bot.py`, `templates/`, `static/`, `services/`).
+
+What was removed from this file, and why
+----------------------------------------
+
+Every check that read `mobile/pulse-react-native/**` was deleted. That tree is
+the legacy Expo 51 app, frozen since 2026-06-30; the shipping app is
+`mobile-native/`. Both declare `com.pulsesoc.app` and both point at ascAppId
+6777591572, so the reads looked plausible while validating an artifact nobody
+builds. Three of them were worse than merely inert:
+
+  * `ios.buildNumber > 26` passed because the legacy tree holds 27 - the build
+    that already shipped. A frozen literal compared against a frozen file is a
+    tautology, not a gate. The live successor is
+    `tests/protection/test_ios_build_version_contract.py`, which reads the
+    authoritative `Info.plist`; repointing this check would only duplicate it
+    worse.
+  * `ios.supportsTablet is False` is advisory in a bare workflow - it reaches the
+    binary only via `expo prebuild`, which nobody runs here. Repointing it at
+    `mobile-native/app.json` would have reproduced exactly the bug 34f1d7d3 just
+    fixed, so the iPhone-only check now reads `TARGETED_DEVICE_FAMILY`.
+  * The `PremiumScreen.tsx` / store-metadata assertions required that iOS offer
+    no purchases at all. That was the 1.0 workaround for 3.1.1, and it has since
+    been **reversed on purpose**: `mobile-native/src/payments/appleIapPremium.ts`
+    ships StoreKit 2 with server-side verification through
+    `/api/pulse/payments/apple/premium/verify`. Repointing them would have failed
+    compliant code for being compliant.
+
+The `bot.py` gates below are not part of that reversal. StoreKit is the only
+sanctioned purchase channel; Stripe and web checkout inside a native iOS request
+stay blocked, which is why `ios_native_app_request()` is still load-bearing.
+"""
+
+import re
 from pathlib import Path
 
 
@@ -22,15 +66,16 @@ def require(text, token, label, failures):
 
 def main():
     failures = []
-    app = json.loads(read("mobile/pulse-react-native/app.json"))["expo"]
-    if (app.get("ios") or {}).get("supportsTablet") is not False:
-        failures.append("iOS tablet support must remain disabled until iPad layouts pass QA.")
-    try:
-        build_number = int(str((app.get("ios") or {}).get("buildNumber") or "0").split(".")[0])
-    except ValueError:
-        build_number = 0
-    if build_number <= 26:
-        failures.append("iOS build number must be higher than latest EAS/App Store build 26.")
+    pbxproj = read("mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj")
+    families = {
+        value.strip().strip('"')
+        for value in re.findall(r"^\s*TARGETED_DEVICE_FAMILY = ([^;]+);", pbxproj, re.M)
+    }
+    if families != {"1"}:
+        failures.append(
+            "iOS build must stay iPhone-only until iPad layouts pass Design 4.0 QA; "
+            f"TARGETED_DEVICE_FAMILY reads {sorted(families) or ['unset']}"
+        )
 
     account = read("templates/account.html")
     require(account, 'name="terms_accepted"', "account forms", failures)
@@ -56,7 +101,6 @@ def main():
     bot = read("bot.py")
     for token in [
         '@webhook_app.route("/api/pulse/block"',
-        "INSERT INTO blocked_users",
         "INSERT INTO pulse_reports",
         "Paid digital access is not available in this iOS build",
         "ios_paid_digital_unavailable_response(api=True)",
@@ -122,6 +166,13 @@ def main():
         if "ios_native_app_request()" not in segment:
             failures.append(f"{route_name} must explicitly gate native iOS paid digital access")
 
+    # The blocking write moved out of bot.py into the shared social-graph
+    # service, which writes `blocked_users` and `comm_v2_blocks` together - this
+    # audit was still pinning the bare `INSERT INTO blocked_users` literal that
+    # the route used to carry, and had been failing ever since.
+    social_graph = read("services/pulse_social_graph_service.py")
+    require(social_graph, "INSERT INTO blocked_users", "social graph block write", failures)
+
     feed_engine = read("services/pulse_feed_engine.py")
     require(feed_engine, "NOT EXISTS (SELECT 1 FROM blocked_users bu", "feed engine block filtering", failures)
 
@@ -134,40 +185,6 @@ def main():
         require(home_js, token, "feed block UI", failures)
     if "This menu action is queued for moderation tools." in home_js:
         failures.append("feed menu still exposes placeholder moderation actions")
-
-    app_store = read("mobile/pulse-react-native/store-metadata/en-US/app-store.md")
-    for token in [
-        "Guideline",
-        "Terms/EULA before signup/login",
-        "Premium purchase surfaces are disabled in native iOS context",
-        "Existing web subscriptions do not unlock paid digital premium surfaces inside this iOS build",
-        "native Premium screen does not open Stripe",
-        "iPhone-only",
-        "physical-device screen recording",
-    ]:
-        require(app_store, token, "app store review notes", failures)
-    if "premium creator tools into one mobile-first community" in app_store:
-        failures.append("App Store metadata still advertises premium creator tools in the iOS app")
-
-    store_config = read("mobile/pulse-react-native/store.config.json")
-    if "premium creator tools into one mobile-first community" in store_config:
-        failures.append("Store config still advertises premium creator tools in the iOS app")
-    if "ipad-13-premium-inside" in store_config:
-        failures.append("Store config still includes an iPad Premium screenshot")
-
-    premium_screen = read("mobile/pulse-react-native/screens/main/PremiumScreen.tsx")
-    for token in [
-        'const isIos = Platform.OS === "ios";',
-        'setStatus({ ok: true, plan: "iOS Core Access"',
-        'await Linking.openURL("https://pulsesoc.com/pulse")',
-        'isIos ? "Core Social Access" : "Premium"',
-    ]:
-        require(premium_screen, token, "native Premium screen iOS compliance", failures)
-
-    moderation = read("mobile/pulse-react-native/store-metadata/moderation.md")
-    require(moderation, "within 24 hours", "moderation metadata", failures)
-    premium = read("mobile/pulse-react-native/store-metadata/premium-compliance.md")
-    require(premium, "StoreKit purchase and restore flows", "premium compliance metadata", failures)
 
     if failures:
         print("PulseSoc App Store review fix audit FAILED")
