@@ -8,6 +8,7 @@ import secrets
 import logging
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import unquote
 from werkzeug.utils import secure_filename
 
 
@@ -206,6 +207,51 @@ def head_object(storage_key):
     return client.head_object(Bucket=os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), Key=key)
 
 
+def storage_key_from_public_url(url):
+    """The object key behind a url produced by `public_media_url`, or "".
+
+    Strict on purpose. A caller uses this to turn a *stored* url back into
+    something it may delete, so anything that does not sit under this
+    deployment's own public base -- a foreign host, an absolute path, a
+    traversal -- yields "" rather than a key guessed out of the path. A loose
+    parse here would let a url that reached the database from anywhere else name
+    any key in the bucket.
+    """
+    text = str(url or "").strip()
+    if not text:
+        return ""
+    text = unquote(text.split("#", 1)[0].split("?", 1)[0])
+    base = os.getenv("R2_PUBLIC_BASE_URL", "").strip().rstrip("/")
+    if base and text.startswith(base + "/"):
+        relative = text[len(base) + 1:]
+    elif text.startswith("/static/uploads/"):
+        relative = text[len("/static/uploads/"):]
+    else:
+        return ""
+    relative = relative.replace("\\", "/").lstrip("/")
+    if not relative or ".." in relative.split("/"):
+        return ""
+    return relative
+
+
+def delete_object_key(key):
+    """Delete one durable object by key. True if the delete was issued.
+
+    Shared by the upload-refusal path below and by deliberate destruction, so
+    both reach the bucket through the same key validation. A missing object is
+    not an error -- S3 and R2 both treat deleting an absent key as success, which
+    is what lets a caller retry a partly-finished purge.
+    """
+    clean = str(key or "").strip().replace("\\", "/").lstrip("/")
+    if not clean or ".." in clean.split("/"):
+        return False
+    client = object_client()
+    if client is None:
+        return False
+    client.delete_object(Bucket=os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), Key=clean)
+    return True
+
+
 def discard_public_file(storage):
     """Drop a just-stored object the caller has decided to refuse.
 
@@ -224,14 +270,9 @@ def discard_public_file(storage):
             logging.warning("MEDIA_DISCARD_LOCAL_FAILED path=%s error_type=%s", local_path[:200], type(exc).__name__)
     if not item.get("durable_uploaded"):
         return
-    key = str(item.get("storage_key") or "").strip().replace("\\", "/").lstrip("/")
-    if not key or ".." in key.split("/"):
-        return
-    client = object_client()
-    if client is None:
-        return
+    key = str(item.get("storage_key") or "")
     try:
-        client.delete_object(Bucket=os.getenv("R2_BUCKET") or os.getenv("S3_BUCKET"), Key=key)
+        delete_object_key(key)
     except Exception as exc:
         logging.warning("MEDIA_DISCARD_OBJECT_FAILED key=%s error_type=%s", key[:200], type(exc).__name__)
 

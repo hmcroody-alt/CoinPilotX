@@ -305,6 +305,13 @@ AUTO_PK_TABLES = {
     "pulse_videos": "id",
     "pulse_video_comments": "id",
     "pulse_audio_tracks": "id",
+    # The owner music takedown flow reads both of these back: the audit row's id
+    # becomes the `related_action_id` a later restore links to, and the step-up
+    # row's id is the grant a purge consumes. A missing entry here does not raise
+    # on Postgres, it silently yields 0 -- an unlinkable audit trail and a grant
+    # nothing can consume.
+    "music_takedown_audit": "action_id",
+    "music_owner_stepups": "id",
     # Same defect, quieter symptom. `bot.notify_user` reads the new notification's
     # id back to link its delivery rows and the push payload to it, but writes
     # `int(cur.lastrowid or 0)` — so instead of a TypeError, on Postgres every

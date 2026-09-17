@@ -5370,6 +5370,91 @@ def user_is_super_user(user):
     return bool(safe_int(user.get("is_super_user"), 0) or user_is_owner_account(user))
 
 
+def ensure_owner_admin_account_link(cur):
+    """Point the owner's ``admin_users`` row at the ``users`` row that may act as it.
+
+    Admin routes identify their caller through ``session["admin_user_id"]``, which
+    only the web login form ever sets. Without this link the owner signed in on
+    the phone -- a ``users`` row holding a bearer token -- has no admin identity
+    at all and is refused before any permission is read.
+
+    This is a bootstrap, not the security rule. ``OWNER_EMAIL`` seeds the link
+    once; from then on authorization reads ``admin_users.account_user_id`` and the
+    role tables, and no email is consulted. The match requires a *verified* email
+    and refuses to guess when several accounts claim it, so an unverified signup
+    on the owner's address cannot acquire the link. Failing to link is a 401 for
+    the owner, which is the safe direction to fail.
+    """
+    email = owner_email_value()
+    if not email:
+        return False
+    try:
+        cur.execute(
+            "SELECT id FROM admin_users WHERE lower(COALESCE(email,''))=lower(?) AND lower(COALESCE(role,''))='owner' LIMIT 2",
+            (email,),
+        )
+        admin_rows = [dict(row) for row in cur.fetchall()]
+        if len(admin_rows) != 1:
+            return False
+        cur.execute(
+            """
+            SELECT user_id FROM users
+            WHERE lower(COALESCE(email,''))=lower(?) AND COALESCE(email_verified,0)=1
+            LIMIT 2
+            """,
+            (email,),
+        )
+        user_rows = [dict(row) for row in cur.fetchall()]
+        if len(user_rows) != 1:
+            return False
+        admin_id = safe_int(admin_rows[0].get("id"), 0)
+        account_id = safe_int(user_rows[0].get("user_id"), 0)
+        if not admin_id or not account_id:
+            return False
+        cur.execute(
+            "UPDATE admin_users SET account_user_id=? WHERE id=? AND COALESCE(account_user_id,0)!=?",
+            (account_id, admin_id, account_id),
+        )
+        return True
+    except Exception as exc:
+        logging.info("OWNER_ADMIN_ACCOUNT_LINK_SKIPPED error=%s", type(exc).__name__)
+        return False
+
+
+def admin_user_by_account_user_id(account_user_id, cur=None):
+    """The active ``admin_users`` row explicitly linked to an account id.
+
+    The only input is an id already proven by a signed bearer token or a session
+    cookie. Nothing from the request body reaches this lookup, so a caller cannot
+    nominate the admin identity it would like to be resolved as.
+    """
+    account_user_id = safe_int(account_user_id, 0)
+    if not account_user_id:
+        return None
+    close_conn = False
+    conn = None
+    try:
+        if cur is None:
+            conn = db()
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            close_conn = True
+        cur.execute(
+            "SELECT * FROM admin_users WHERE account_user_id=? AND status='active' LIMIT 1",
+            (account_user_id,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+    except Exception:
+        return None
+    finally:
+        if close_conn and conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 def ensure_owner_super_user(cur=None, conn=None):
     if not owner_super_user_enabled():
         return False
@@ -5387,9 +5472,11 @@ def ensure_owner_super_user(cur=None, conn=None):
             if cur.fetchone():
                 return False
         cur.execute("UPDATE users SET is_super_user=1, updated_at=? WHERE lower(email)=lower(?)", (datetime.now().isoformat(), email))
+        promoted = bool(getattr(cur, "rowcount", 0))
+        ensure_owner_admin_account_link(cur)
         if close_conn:
             conn.commit()
-        return bool(getattr(cur, "rowcount", 0))
+        return promoted
     except Exception as exc:
         logging.info("OWNER_SUPER_USER_BOOTSTRAP_SKIPPED email=%s error=%s", mask_email(email), exc)
         try:
@@ -36579,7 +36666,7 @@ def api_arena_reputation():
     conn = db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, sportsmanship+1), updated_at=excluded.updated_at",
+        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, arena_reputation.sportsmanship+1), updated_at=excluded.updated_at",
         (user["user_id"], datetime.now().isoformat()),
     )
     conn.commit()
@@ -48611,6 +48698,53 @@ def pulse_reel_detail_page(reel_id):
     return pulse_social_shell("PulseSoc Reel", "Vertical PulseSoc clip with live social actions.", main, "", script)
 
 
+def pulse_reel_mark_audio_unavailable(reel, removed_state):
+    """Blank a reel's audio in place, keeping everything else the reel is.
+
+    A takedown stops the sound; it does not touch the video, the caption, the
+    likes or the comments. Three things this must get right:
+
+    * The reel dict starts life as the feed engine's post, which carries its own
+      copies of ``attached_audio_url`` and friends, and each media item carries a
+      third copy. Blanking only the nested ``audio`` dict would leave a live url
+      in two other places.
+    * ``original_audio_muted`` is carried over unchanged. Flipping it to False
+      would unmute the camera audio the creator chose to silence -- a takedown
+      removes the track, not the creator's decision.
+    * ``audio_unavailable`` is set so the client can render "Audio unavailable"
+      rather than spinning forever on an empty url.
+
+    Shared by both reel read paths deliberately: they build the same payload and
+    a fix applied to only one of them is how this leaked in the first place.
+    """
+    muted = bool((reel.get("audio") or {}).get("original_audio_muted"))
+    reel["audio"] = {**(reel.get("audio") or {}),
+                     **music_authority.unavailable_audio_payload(removed_state),
+                     "original_audio_muted": muted}
+    reel["audio_unavailable"] = True
+    reel["audio_unavailable_state"] = reel["audio"]["audio_unavailable_state"]
+    reel["audio_id"] = 0
+    reel["music_id"] = 0
+    reel["attached_audio_url"] = ""
+    reel["audio_title"] = ""
+    reel["audio_artist"] = ""
+    reel["original_audio_muted"] = muted
+    reel["media"] = [
+        {
+            **media_item,
+            "audio_id": 0,
+            "music_id": 0,
+            "attached_audio_url": "",
+            "audio_title": "",
+            "audio_artist": "",
+            "audio_unavailable": True,
+            "original_audio_muted": muted,
+        }
+        for media_item in (reel.get("media") or [])
+    ]
+    return reel
+
+
 def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_comments=True):
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -48679,6 +48813,13 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
         conn.close()
     except Exception:
         audio = {}
+    # A reel whose track has been taken down keeps its video, caption and
+    # engagement; only the sound stops. That is why this strips the audio after
+    # building it rather than filtering the JOIN: the reel must still render, and
+    # the client needs to be told *why* it is silent so it shows "Audio
+    # unavailable" instead of retrying a dead url forever.
+    audio_unavailable = bool(audio.get("id")) and not music_authority.is_servable(audio)
+    removed_state = music_authority.normalize_state(audio.get("lifecycle_state")) if audio_unavailable else ""
     merged["audio"] = {
         "id": int(audio.get("id") or 0),
         "track_id": int(audio.get("id") or 0),
@@ -48723,6 +48864,8 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
             }
             for media_item in (merged.get("media") or [])
         ]
+    if audio_unavailable:
+        merged = pulse_reel_mark_audio_unavailable(merged, removed_state)
     merged.update(reel_ranking_engine.score_reel({
         **merged,
         "premium_mark": bool((post.get("author") or {}).get("premium_mark")),
@@ -49331,6 +49474,10 @@ def pulse_reel_feed_payload(viewer_user_id=0, category="", limit=12, offset=0, l
                 }
                 for media_item in (reel.get("media") or [])
             ]
+        if audio and not music_authority.is_servable(audio):
+            reel = pulse_reel_mark_audio_unavailable(
+                reel, music_authority.normalize_state(audio.get("lifecycle_state"))
+            )
         reel = reel_prioritize_video_media(reel)
         reel.update(reel_ranking_engine.score_reel(reel))
         if not pulse_reel_matches_lane(reel, lane, viewer_user_id, category):
@@ -54362,6 +54509,592 @@ PULSE_WEB_APP_CSP = (
 )
 
 PULSE_WEB_APP_SHELL = Path(__file__).resolve().parent / "static" / "app" / "index.html"
+
+
+# ---------------------------------------------------------------------------
+# Owner music takedown authority
+#
+# These sit here rather than beside the other `/api/admin/pulse/music` routes
+# because `admin_required` is imported above and the declaration gate reads the
+# decorator, not the body.
+#
+# The policy -- who may act, what each action may do -- lives in
+# `services/music_authority.py`. What lives here is the Flask edge: resolving
+# the caller, counting the blast radius, and applying one transition inside one
+# transaction. Keeping the decisions out of the request handler is what lets the
+# tests exercise them without a request context.
+# ---------------------------------------------------------------------------
+
+from services import music_authority
+
+
+def music_authority_request_id():
+    return (
+        (request.headers.get("X-Request-Id") or request.headers.get("X-Request-ID") or "").strip()[:64]
+        or secrets.token_hex(8)
+    )
+
+
+def music_authority_actor(permission):
+    """Resolve the caller and check ``permission``.
+
+    Returns ``(actor, None)`` or ``(None, response)``. Both identity legs are
+    server-side: an existing admin session, or an account id proven by a signed
+    bearer token / session cookie and matched against the stored
+    ``admin_users.account_user_id`` link. Nothing the request *sends* selects an
+    identity, so a body carrying ``role``, ``is_owner`` or ``admin_user_id`` is
+    inert here.
+    """
+    init_db()
+    actor = None
+    try:
+        actor = music_authority.resolve_actor(
+            admin_current_user(),
+            account_user_id(),
+            admin_user_by_account_user_id,
+        )
+        music_authority.require_permission(actor, permission, admin_has_permission)
+    except music_authority.AuthorityError as exc:
+        if exc.status == 403 and actor:
+            log_admin_audit(
+                actor.get("id"), "music_permission_denied", "permission", permission,
+                {"path": request.path},
+            )
+        return None, api_error(exc.message, exc.status, error_code=exc.error_code)
+    return actor, None
+
+
+MUSIC_REFERENCE_TABLES = (
+    ("pulse_reel_audio", "audio_track_id", "reels"),
+    ("pulse_content_music", "audio_track_id", "content"),
+    ("pulse_status_music", "audio_track_id", "statuses"),
+)
+
+
+def music_reference_counts(cur, track_id):
+    """How much existing content would be affected by removing this track.
+
+    Counted per table and summed. `pulse_content_music.audio_track_id` is TEXT
+    while `pulse_audio_tracks.id` is INTEGER -- a live mismatch the repo already
+    works around elsewhere -- so each id is compared as text on both sides. A
+    count that silently returned 0 because of that would tell the owner a
+    takedown was harmless when it was not.
+    """
+    counts = {}
+    total = 0
+    for table, column, label in MUSIC_REFERENCE_TABLES:
+        value = 0
+        try:
+            cur.execute(
+                f"SELECT COUNT(*) AS total FROM {table} WHERE CAST({column} AS TEXT)=CAST(? AS TEXT)",
+                (track_id,),
+            )
+            value = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+        except Exception:
+            value = 0
+        counts[label] = value
+        total += value
+    counts["total"] = total
+    return counts
+
+
+def music_audit_write(cur, *, track_id, action, previous_state, new_state, actor,
+                      reason_code="", reason_note="", affected=0, request_id="",
+                      related_action_id=None):
+    """Append one row to the immutable takedown trail.
+
+    No foreign key to `pulse_audio_tracks`: the trail has to outlive the asset,
+    and a purge that cascaded its own audit away would destroy the only record
+    that it happened.
+    """
+    cur.execute(
+        """
+        INSERT INTO music_takedown_audit
+        (track_id, action, previous_state, new_state, actor_user_id, actor_role,
+         reason_code, reason_note, affected_reference_count, request_id, created_at,
+         restored_at, related_action_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        """,
+        (
+            safe_int(track_id, 0),
+            action,
+            previous_state,
+            new_state,
+            safe_int((actor or {}).get("id"), 0),
+            music_authority.actor_role(actor),
+            reason_code,
+            reason_note,
+            safe_int(affected, 0),
+            request_id,
+            datetime.utcnow().isoformat(timespec="seconds"),
+            safe_int(related_action_id, 0) or None,
+        ),
+    )
+    return safe_int(getattr(cur, "lastrowid", 0), 0)
+
+
+def music_step_up_is_valid(cur, admin_id):
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    cur.execute(
+        """
+        SELECT id FROM music_owner_stepups
+        WHERE admin_user_id=? AND COALESCE(consumed_at,'')='' AND expires_at > ?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (safe_int(admin_id, 0), now),
+    )
+    row = cur.fetchone()
+    return safe_int(dict(row or {}).get("id"), 0)
+
+
+def music_track_row(cur, track_id):
+    cur.execute("SELECT * FROM pulse_audio_tracks WHERE id=? LIMIT 1", (safe_int(track_id, 0),))
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def music_apply_transition(cur, *, track, action, actor, reason_code, reason_note,
+                           expected_state, request_id, now):
+    """Apply one lifecycle transition and record it. Caller owns the transaction.
+
+    Returns ``(new_state, changed, action_id, affected)``. When the action was
+    already applied, nothing is written -- no state update and no audit row -- so
+    a client retrying a request whose response it never saw does not manufacture
+    a second entry in the trail for work that happened once.
+    """
+    track_id = safe_int(track.get("id"), 0)
+    previous_state = music_authority.normalize_state(track.get("lifecycle_state"))
+    new_state, changed = music_authority.plan_transition(
+        action,
+        previous_state,
+        expected_state=expected_state,
+        legal_hold=bool(safe_int(track.get("legal_hold"), 0)),
+    )
+    affected = music_reference_counts(cur, track_id)["total"]
+    if not changed:
+        return new_state, False, 0, affected
+
+    legacy = music_authority.legacy_columns_for_state(
+        new_state, now=now, actor_admin_id=safe_int((actor or {}).get("id"), 0)
+    )
+    cur.execute(
+        """
+        UPDATE pulse_audio_tracks
+        SET lifecycle_state=?,
+            takedown_reason_code=?,
+            takedown_reason_note=?,
+            active=?,
+            approved_by_admin=?,
+            safety_status=?,
+            removed_at=?,
+            removed_by_admin=?,
+            updated_at=?
+        WHERE id=?
+        """,
+        (
+            new_state,
+            reason_code,
+            reason_note,
+            legacy["active"],
+            legacy["approved_by_admin"],
+            legacy["safety_status"],
+            legacy["removed_at"],
+            legacy["removed_by_admin"],
+            now,
+            track_id,
+        ),
+    )
+    if action == music_authority.ACTION_SCHEDULE_PURGE:
+        cur.execute("UPDATE pulse_audio_tracks SET purge_scheduled_at=? WHERE id=?", (now, track_id))
+    elif action == music_authority.ACTION_CANCEL_PURGE:
+        cur.execute("UPDATE pulse_audio_tracks SET purge_scheduled_at='' WHERE id=?", (track_id,))
+    elif action == music_authority.ACTION_PURGE:
+        cur.execute("UPDATE pulse_audio_tracks SET purged_at=?, audio_url='', cover_art_url='' WHERE id=?", (now, track_id))
+
+    related_action_id = None
+    if action == music_authority.ACTION_RESTORE:
+        cur.execute(
+            """
+            SELECT action_id FROM music_takedown_audit
+            WHERE track_id=? AND COALESCE(restored_at,'')=''
+              AND action IN (?, ?, ?)
+            ORDER BY action_id DESC LIMIT 1
+            """,
+            (
+                track_id,
+                music_authority.ACTION_TAKEDOWN,
+                music_authority.ACTION_QUARANTINE,
+                music_authority.ACTION_SCHEDULE_PURGE,
+            ),
+        )
+        related_action_id = safe_int(dict(cur.fetchone() or {}).get("action_id"), 0) or None
+
+    action_id = music_audit_write(
+        cur,
+        track_id=track_id,
+        action=action,
+        previous_state=previous_state,
+        new_state=new_state,
+        actor=actor,
+        reason_code=reason_code,
+        reason_note=reason_note,
+        affected=affected,
+        request_id=request_id,
+        related_action_id=related_action_id,
+    )
+    if related_action_id:
+        # The one permitted mutation of an existing audit row: closing the
+        # takedown this restore undid, so the trail reads as a pair rather than
+        # two unrelated events.
+        cur.execute(
+            "UPDATE music_takedown_audit SET restored_at=? WHERE action_id=?",
+            (now, related_action_id),
+        )
+
+    pulse_music_event(
+        cur,
+        track_id=track_id,
+        user_id=safe_int((actor or {}).get("account_user_id"), 0),
+        event_type="owner_%s" % action,
+        surface="owner_music_authority",
+        metadata={
+            "previous_state": previous_state,
+            "new_state": new_state,
+            "reason_code": reason_code,
+            "affected_reference_count": affected,
+            "request_id": request_id,
+        },
+    )
+    return new_state, True, action_id, affected
+
+
+def music_authority_payload():
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = request.form.to_dict() if request.form else {}
+    return payload or {}
+
+
+def music_requested_track_ids(track_id, payload):
+    """The tracks this call acts on: the path id, plus any ``track_ids`` batch.
+
+    Bulk is the same code path as single so the two cannot drift -- a bulk
+    takedown that skipped a guard the single one applied would be the obvious way
+    to lose this. Capped, de-duplicated, order preserved.
+    """
+    ids = [safe_int(track_id, 0)]
+    for value in (payload.get("track_ids") or []) if isinstance(payload.get("track_ids"), list) else []:
+        ids.append(safe_int(value, 0))
+    seen = set()
+    ordered = []
+    for value in ids:
+        if value and value not in seen:
+            seen.add(value)
+            ordered.append(value)
+    return ordered[:100]
+
+
+def music_mutation_route(track_id, *, action, permission, require_step_up=False):
+    """Shared body for the five lifecycle mutations.
+
+    One transaction for the whole batch: a bulk takedown that half-applied would
+    leave the owner with no way to tell which half.
+    """
+    actor, denied = music_authority_actor(permission)
+    if denied:
+        return denied
+    payload = music_authority_payload()
+    request_id = music_authority_request_id()
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    try:
+        reason_code, reason_note = music_authority.validate_reason(
+            action, payload.get("reason_code"), payload.get("reason_note") or payload.get("note")
+        )
+    except music_authority.AuthorityError as exc:
+        return api_error(exc.message, exc.status, error_code=exc.error_code)
+
+    track_ids = music_requested_track_ids(track_id, payload)
+    if not track_ids:
+        return api_error("Choose at least one track.", 400, error_code="music_track_required")
+
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        step_up_id = 0
+        if require_step_up:
+            step_up_id = music_step_up_is_valid(cur, (actor or {}).get("id"))
+            if not step_up_id:
+                raise music_authority.AuthorityError(
+                    "music_step_up_required",
+                    "Confirm your password before purging.",
+                    403,
+                )
+        results = []
+        purge_keys = []
+        for one_id in track_ids:
+            track = music_track_row(cur, one_id)
+            if not track:
+                raise music_authority.AuthorityError(
+                    "music_track_not_found", "Track %s was not found." % one_id, 404
+                )
+            if action == music_authority.ACTION_PURGE:
+                confirm = str(payload.get("confirm_track_id") or "").strip()
+                if len(track_ids) > 1 or confirm != str(one_id):
+                    raise music_authority.AuthorityError(
+                        "music_purge_confirmation_required",
+                        "Purge acts on one track at a time and needs confirm_track_id to match.",
+                        400,
+                    )
+                purge_keys = music_storage_keys_for_track(track)
+            new_state, changed, action_id, affected = music_apply_transition(
+                cur,
+                track=track,
+                action=action,
+                actor=actor,
+                reason_code=reason_code,
+                reason_note=reason_note,
+                expected_state=payload.get("expected_state"),
+                request_id=request_id,
+                now=now,
+            )
+            results.append({
+                "track_id": one_id,
+                "previous_state": music_authority.normalize_state(track.get("lifecycle_state")),
+                "state": new_state,
+                "changed": changed,
+                "action_id": action_id,
+                "affected_reference_count": affected,
+            })
+        if step_up_id:
+            cur.execute(
+                "UPDATE music_owner_stepups SET consumed_at=? WHERE id=?", (now, step_up_id)
+            )
+        conn.commit()
+    except music_authority.AuthorityError as exc:
+        conn.rollback()
+        conn.close()
+        return api_error(exc.message, exc.status, error_code=exc.error_code)
+    except Exception:
+        conn.rollback()
+        conn.close()
+        raise
+    conn.close()
+
+    # Storage deletion happens after the commit, deliberately. The database is
+    # the record of what was decided; deleting bytes for a transaction that then
+    # rolled back would be unrecoverable, while a commit whose delete fails is
+    # merely retryable.
+    deleted_keys = []
+    if action == music_authority.ACTION_PURGE:
+        deleted_keys = music_delete_storage_keys(purge_keys)
+
+    log_admin_audit(
+        (actor or {}).get("id"), "music_%s" % action, "music_track", str(track_ids[0]),
+        {"request_id": request_id, "reason_code": reason_code, "tracks": track_ids},
+    )
+    return jsonify({
+        "ok": True,
+        "action": action,
+        "request_id": request_id,
+        "results": results,
+        "changed": any(item["changed"] for item in results),
+        "deleted_object_count": len(deleted_keys),
+    })
+
+
+def music_storage_keys_for_track(track):
+    """The R2 object keys this track owns, and only those.
+
+    Derived from the track's own stored urls -- never from anything the request
+    sent -- so a purge cannot be steered into deleting another track's audio or
+    an unrelated user's upload.
+    """
+    keys = []
+    for field in ("audio_url", "cover_art_url"):
+        key = media_storage.storage_key_from_public_url((track or {}).get(field) or "")
+        if key:
+            keys.append(key)
+    return keys
+
+
+def music_delete_storage_keys(keys):
+    deleted = []
+    for key in keys or []:
+        try:
+            if media_storage.delete_object_key(key):
+                deleted.append(key)
+        except Exception as exc:
+            logging.warning("MUSIC_PURGE_OBJECT_FAILED key=%s error_type=%s", str(key)[:200], type(exc).__name__)
+    return deleted
+
+
+@webhook_app.route("/api/admin/music/step-up", methods=["POST"])
+@admin_required
+def api_admin_music_step_up():
+    """Re-prove the password before a purge.
+
+    A separate grant rather than a flag on the purge call: the purge endpoint is
+    also the one a script would retry, and a password travelling with every retry
+    is a password in more logs than it needs to be. The grant is a server-side
+    row, not a session value, because the native app authenticates with a bearer
+    token and carries no Flask session.
+    """
+    actor, denied = music_authority_actor("music.purge")
+    if denied:
+        return denied
+    payload = music_authority_payload()
+    password = str(payload.get("password") or "")
+    stored_hash = (actor or {}).get("password_hash") or ""
+    if not stored_hash:
+        return api_error(
+            "Set an admin password before using purge.", 403, error_code="music_step_up_unavailable"
+        )
+    if not password or not check_password_hash(stored_hash, password):
+        log_admin_audit((actor or {}).get("id"), "music_step_up_failed", "admin", str((actor or {}).get("id") or ""), {})
+        return api_error("That password did not match.", 403, error_code="music_step_up_failed")
+    now = datetime.utcnow()
+    expires = now + timedelta(seconds=music_authority.STEP_UP_TTL_SECONDS)
+    request_id = music_authority_request_id()
+    conn = db()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO music_owner_stepups (admin_user_id, granted_at, expires_at, request_id, consumed_at)
+        VALUES (?, ?, ?, ?, '')
+        """,
+        (
+            safe_int((actor or {}).get("id"), 0),
+            now.isoformat(timespec="seconds"),
+            expires.isoformat(timespec="seconds"),
+            request_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    log_admin_audit((actor or {}).get("id"), "music_step_up_granted", "admin", str((actor or {}).get("id") or ""), {"request_id": request_id})
+    return jsonify({
+        "ok": True,
+        "expires_in_seconds": music_authority.STEP_UP_TTL_SECONDS,
+        "request_id": request_id,
+    })
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/impact", methods=["GET"])
+@admin_required
+def api_admin_music_track_impact(track_id):
+    """What removing this track would touch, before anything is removed."""
+    actor, denied = music_authority_actor("music.view_all")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    track = music_track_row(cur, track_id)
+    if not track:
+        conn.close()
+        return api_error("Track not found.", 404, error_code="music_track_not_found")
+    counts = music_reference_counts(cur, track_id)
+    cur.execute(
+        "SELECT COUNT(*) AS total FROM pulse_music_reports WHERE audio_track_id=? AND status='open'",
+        (track_id,),
+    )
+    open_reports = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+    conn.close()
+    state = music_authority.normalize_state(track.get("lifecycle_state"))
+    return jsonify({
+        "ok": True,
+        "track": {
+            "id": safe_int(track.get("id"), 0),
+            "title": track.get("title") or "",
+            "artist": track.get("artist") or "",
+            "uploader_user_id": safe_int(track.get("uploader_user_id"), 0),
+            "state": state,
+            "legal_hold": bool(safe_int(track.get("legal_hold"), 0)),
+            "reason_code": track.get("takedown_reason_code") or "",
+            "reason_note": track.get("takedown_reason_note") or "",
+            "purge_scheduled_at": track.get("purge_scheduled_at") or "",
+            "purged_at": track.get("purged_at") or "",
+        },
+        "references": counts,
+        "open_reports": open_reports,
+        "play_count": safe_int(track.get("play_count"), 0),
+        "usage_count": safe_int(track.get("usage_count"), 0),
+        # Said plainly rather than implied: the bucket is public and the CDN was
+        # told the object is immutable for a year, so a takedown stops the server
+        # handing the url out but does not reach a client that already has it.
+        # Quarantine is the action that also deletes the bytes.
+        "cached_copies_remain_until_purge": state != music_authority.STATE_PURGED,
+        "reason_codes": list(music_authority.REASON_CODES),
+    })
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/takedown", methods=["POST"])
+@admin_required
+def api_admin_music_track_takedown(track_id):
+    payload = music_authority_payload()
+    quarantine = str(payload.get("quarantine") or "").strip().lower() in {"1", "true", "yes", "on"}
+    return music_mutation_route(
+        track_id,
+        action=music_authority.ACTION_QUARANTINE if quarantine else music_authority.ACTION_TAKEDOWN,
+        permission="music.takedown",
+    )
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/restore", methods=["POST"])
+@admin_required
+def api_admin_music_track_restore(track_id):
+    return music_mutation_route(
+        track_id, action=music_authority.ACTION_RESTORE, permission="music.restore"
+    )
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/schedule-purge", methods=["POST"])
+@admin_required
+def api_admin_music_track_schedule_purge(track_id):
+    return music_mutation_route(
+        track_id, action=music_authority.ACTION_SCHEDULE_PURGE, permission="music.purge"
+    )
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/cancel-purge", methods=["POST"])
+@admin_required
+def api_admin_music_track_cancel_purge(track_id):
+    return music_mutation_route(
+        track_id, action=music_authority.ACTION_CANCEL_PURGE, permission="music.purge"
+    )
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/purge", methods=["POST"])
+@admin_required
+def api_admin_music_track_purge(track_id):
+    return music_mutation_route(
+        track_id,
+        action=music_authority.ACTION_PURGE,
+        permission="music.purge",
+        require_step_up=True,
+    )
+
+
+@webhook_app.route("/api/admin/music/tracks/<int:track_id>/audit", methods=["GET"])
+@admin_required
+def api_admin_music_track_audit(track_id):
+    actor, denied = music_authority_actor("music.view_all")
+    if denied:
+        return denied
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT * FROM music_takedown_audit
+        WHERE track_id=? ORDER BY action_id DESC LIMIT 200
+        """,
+        (safe_int(track_id, 0),),
+    )
+    entries = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return jsonify({"ok": True, "track_id": track_id, "entries": entries})
 
 
 @webhook_app.route("/pulse/app", methods=["GET"])
@@ -88310,6 +89043,8 @@ def api_pulse_reels_sound_save():
         """
         SELECT id FROM pulse_audio_tracks
         WHERE id=?
+          AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE'
+          AND COALESCE(removed_at,'')=''
           AND COALESCE(safety_status,'approved')='approved'
           AND COALESCE(active,1)=1
           AND COALESCE(approved_by_admin,0)=1
@@ -88485,6 +89220,8 @@ def api_pulse_reels_create():
                 """
                 SELECT title FROM pulse_audio_tracks
                 WHERE id=?
+                  AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE'
+                  AND COALESCE(removed_at,'')=''
                   AND COALESCE(safety_status,'approved')='approved'
                   AND COALESCE(active,1)=1
                   AND COALESCE(approved_by_admin,0)=1
@@ -89178,7 +89915,8 @@ def api_pulse_reel_audio_manage(reel_id):
         cur.execute(
             """
             SELECT * FROM pulse_audio_tracks
-            WHERE id=? AND COALESCE(safety_status,'approved')='approved' AND COALESCE(active,1)=1
+            WHERE id=? AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE' AND COALESCE(removed_at,'')=''
+              AND COALESCE(safety_status,'approved')='approved' AND COALESCE(active,1)=1
               AND COALESCE(approved_by_admin,0)=1 AND COALESCE(commercial_use_allowed,0)=1
               AND COALESCE(remix_edit_allowed,0)=1 LIMIT 1
             """,
@@ -114674,10 +115412,58 @@ def _init_db_impl():
         ("removed_at", "TEXT"),
         ("removed_by_admin", "INTEGER"),
         ("admin_review_notes", "TEXT"),
+        ("lifecycle_state", "TEXT DEFAULT 'ACTIVE'"),
+        ("takedown_reason_code", "TEXT"),
+        ("takedown_reason_note", "TEXT"),
+        ("purge_scheduled_at", "TEXT"),
+        ("purged_at", "TEXT"),
+        ("legal_hold", "INTEGER DEFAULT 0"),
         ("tags_json", "TEXT"),
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
     ], conn=conn)
+    # Rows that predate `lifecycle_state` carry their state in the legacy trio.
+    # Reading them as ACTIVE would silently resurrect every track an admin has
+    # already removed through /api/admin/pulse/music/<id>/remove.
+    cur.execute(
+        """
+        UPDATE pulse_audio_tracks
+        SET lifecycle_state='TAKEN_DOWN'
+        WHERE COALESCE(lifecycle_state,'')=''
+          AND (COALESCE(removed_at,'')!='' OR lower(COALESCE(safety_status,''))='removed')
+        """
+    )
+    cur.execute("UPDATE pulse_audio_tracks SET lifecycle_state='ACTIVE' WHERE COALESCE(lifecycle_state,'')=''")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS music_takedown_audit (
+        action_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_id INTEGER,
+        action TEXT,
+        previous_state TEXT,
+        new_state TEXT,
+        actor_user_id INTEGER,
+        actor_role TEXT,
+        reason_code TEXT,
+        reason_note TEXT,
+        affected_reference_count INTEGER DEFAULT 0,
+        request_id TEXT,
+        created_at TEXT,
+        restored_at TEXT,
+        related_action_id INTEGER
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_music_takedown_audit_track ON music_takedown_audit(track_id, action_id)")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS music_owner_stepups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        admin_user_id INTEGER,
+        granted_at TEXT,
+        expires_at TEXT,
+        request_id TEXT,
+        consumed_at TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_music_owner_stepups_admin ON music_owner_stepups(admin_user_id, expires_at)")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_music_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -120016,7 +120802,14 @@ def _init_db_impl():
         ("temp_password_created_at", "TEXT"),
         ("failed_login_count", "INTEGER DEFAULT 0"),
         ("locked_until", "TEXT"),
+        # The explicit link from an `admin_users` row to the `users` row that may
+        # act as it. `admin_current_user()` reads session["admin_user_id"], which
+        # only the web login form ever sets, so a phone-authenticated owner could
+        # not reach an admin route at all. This column is what a bearer/cookie
+        # caller is resolved through; it is never derived from the request.
+        ("account_user_id", "INTEGER"),
     ], conn=conn)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_admin_users_account_user ON admin_users(account_user_id)")
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS admin_audit_logs (
