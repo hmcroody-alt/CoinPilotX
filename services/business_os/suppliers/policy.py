@@ -129,10 +129,66 @@ def require_funding_disabled() -> None:
     raise SupplierError("funding_not_ready", http_status=409)
 
 
+#: Sandbox orders are accepted and nothing is charged or shipped.
+ENVIRONMENT_SANDBOX = "SANDBOX"
+#: Real CJ orders are accepted and real money moves. Unreachable today by
+#: construction, and named here anyway so the value has one definition rather
+#: than being invented at a call site the day someone builds the live path.
+ENVIRONMENT_LIVE = "LIVE"
+#: Neither. The configuration does not describe any environment in which a
+#: supplier order can be created, so no order of any kind will be accepted.
+ENVIRONMENT_DISABLED = "DISABLED"
+
+
+def live_fulfillment_path_exists() -> bool:
+    """Is there code that can place a real, payable CJ order? No.
+
+    `cj.CJProvider` exposes exactly one order-creating method,
+    `create_sandbox_fulfillment`, and it calls :func:`require_sandbox` on its
+    first line. :func:`require_funding_disabled` raises unconditionally, so even
+    a created order cannot be paid. A live environment is therefore not a
+    configuration this deployment can reach -- it is code that has not been
+    written.
+
+    This is a constant rather than an inferred check on purpose. Reflecting over
+    the provider for a `create_live_*` method would make the badge start
+    claiming LIVE the moment such a method was *defined*, which is earlier than
+    the moment it is correct.
+    """
+    return False
+
+
+def fulfillment_environment() -> str:
+    """What the order path will actually do, asked of the gate that decides.
+
+    Not a second reading of ``CJ_ENVIRONMENT_MODE``. A badge computed from the
+    same environment variable the gate reads is still a parallel implementation
+    of the gate, and the two drift the first time one grows a condition the
+    other does not mirror -- which is exactly how a screen comes to show
+    ``Live`` over a runtime that is refusing live orders. So this probes
+    :func:`require_sandbox` itself, with the canonical sandbox payload, and
+    reports what it answered.
+
+    The third value is the one that earns its place. Setting
+    ``CJ_ENVIRONMENT_MODE=PRODUCTION`` today does not produce a live
+    integration: ``require_sandbox`` refuses, ``create_sandbox_fulfillment``
+    refuses again on its own environment check, and no order is created at all.
+    Labelling that ``LIVE`` would be the precise failure this function exists to
+    prevent, and labelling it ``SANDBOX`` would be a different lie -- sandbox
+    orders do not work there either. It is ``DISABLED``, which is what an
+    operator needs to be told.
+    """
+    try:
+        require_sandbox({"isSandbox": 1})
+    except SupplierError:
+        return ENVIRONMENT_LIVE if live_fulfillment_path_exists() else ENVIRONMENT_DISABLED
+    return ENVIRONMENT_SANDBOX
+
+
 def safe_status() -> dict:
     return {
         "enabled": enabled("BUSINESS_OS_SUPPLIERS_CJ"),
-        "environment": "SANDBOX",
+        "environment": fulfillment_environment(),
         "configuration_valid": _sandbox_mode() and not enabled("PRODUCTION_CJ_FULFILLMENT_ENABLED"),
         "network_enabled": enabled("CJ_NETWORK_ENABLED"),
         "standard_api_model_confirmed": STANDARD_API_MODEL_CONFIRMED,
@@ -146,6 +202,6 @@ def safe_status() -> dict:
         "egress_ip_attested": egress_ip_attested(),
         "multi_merchant_scale_blocker": multi_merchant_scale_blocker(),
         "network_permitted": enabled("CJ_NETWORK_ENABLED"),
-        "production_fulfillment_enabled": False,
+        "production_fulfillment_enabled": live_fulfillment_path_exists(),
         "real_funding_enabled": False,
     }

@@ -268,7 +268,20 @@ export function ImportCartScreen({ route, navigation }: Props) {
     />
   ) : null;
 
-  const importable = selected.length > 0 && !importing && state !== "LOADING";
+  // Rows the merchant ticked whose supplier cost we do not have. No pricing rule
+  // can turn an unknown cost into a sale price, so offering "Import & publish"
+  // over one of these promises something the server will refuse: it imports,
+  // fails the MISSING_PRICE check in `drafts._validate`, and lands as a
+  // price-required draft while the button said it was going live.
+  const unpriced = useMemo(
+    () =>
+      items.filter(
+        (item) => selected.includes(item.itemId) && (item.preview?.costLowCents ?? null) === null
+      ),
+    [items, selected]
+  );
+
+  const importable = selected.length > 0 && !importing && state !== "LOADING" && unpriced.length === 0;
 
   // What this import will actually price at, in priority order: what the merchant
   // changed here, then their store's saved rule, then the platform's. The same
@@ -391,19 +404,38 @@ export function ImportCartScreen({ route, navigation }: Props) {
                 accessibilityRole="button"
                 accessibilityState={{ disabled: !importable }}
                 accessibilityLabel={
-                  autoPublish
-                    ? `Import and publish ${selected.length} products to your store`
-                    : `Import ${selected.length} products as drafts`
+                  unpriced.length > 0
+                    ? `Resolve pricing issues on ${unpriced.length} products before importing`
+                    : autoPublish
+                      ? `Import and publish ${selected.length} products to your store`
+                      : `Import ${selected.length} products as drafts`
                 }
               >
                 <Text style={styles.primaryText}>
                   {importing
                     ? `Importing ${formatters.count(selected.length)}…`
-                    : autoPublish
-                      ? `Import & publish ${formatters.count(selected.length)}`
-                      : `Import ${formatters.count(selected.length)} as drafts`}
+                    : unpriced.length > 0
+                      ? "Resolve pricing issues"
+                      : autoPublish
+                        ? `Import & publish ${formatters.count(selected.length)}`
+                        : `Import ${formatters.count(selected.length)} as drafts`}
                 </Text>
               </Pressable>
+              {/* Named, not counted. "1 product has no cost" leaves the merchant
+                  hunting a list; the title is what they tap to deselect. Re-adding
+                  from the catalogue is what re-asks the supplier, because the cart
+                  caches a read rather than performing one. */}
+              {unpriced.length > 0 ? (
+                <Text style={styles.note}>
+                  {`We couldn't read a supplier cost for ${unpriced
+                    .map((item) => item.preview?.title || "an untitled product")
+                    .join(", ")}, so we can't work out what to charge. Untick ${
+                    unpriced.length === 1 ? "it" : "them"
+                  } to import the rest, or add ${
+                    unpriced.length === 1 ? "it" : "them"
+                  } again from the catalogue to re-check with your supplier.`}
+                </Text>
+              ) : null}
               {/* Said on the screen, not just in the button, and conditional on
                   the policy rather than fixed: this line claimed drafts for years,
                   and under auto-publish that is now the false half. */}

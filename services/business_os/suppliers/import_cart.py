@@ -47,10 +47,18 @@ import time
 import uuid
 
 from services import db
-from services.business_os.suppliers import connections, normalize, policy
+from services.business_os.suppliers import connections, gateway, normalize, policy
 from services.business_os.suppliers.errors import SupplierError
 
 TABLE = "supplier_import_cart_items"
+
+#: Where a cached cost came from. ``provider`` means this server read the
+#: supplier and derived the number; ``client_preview`` means it could only echo
+#: the summary the client drew its card from. Pricing treats them differently
+#: and the merchant is shown which one they have, so the two must not collapse
+#: into an undifferentiated "cost".
+COST_SOURCE_PROVIDER = "provider"
+COST_SOURCE_PREVIEW = "client_preview"
 
 #: A cached provider read older than this is shown as stale. Fifteen minutes is
 #: chosen to be shorter than a merchant's sourcing session, so the staleness
@@ -189,8 +197,53 @@ def _public(row, now=None):
     }
 
 
-def _cacheable(product: dict | None) -> dict | None:
-    """The subset of a normalized product worth caching for a cart row.
+def _minor_units(value) -> int | None:
+    """An amount that is *already* in minor units, or None.
+
+    Not :func:`normalize.cents`, which multiplies by 100 because it reads a
+    provider's major-unit money field. The summary fields here have been through
+    that conversion once already, and running it twice turns $13.27 into
+    $1,327.00.
+
+    Zero survives. A supplier cost of 0 is a fact about a free sample, not an
+    absence, and the truthiness test that would drop it is the same one that
+    makes "unknown" and "free" indistinguishable downstream.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")) or not value.is_integer():
+            return None
+        value = int(value)
+    if not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _cacheable(product: dict | None, *, source=COST_SOURCE_PREVIEW, checked_at=None) -> dict | None:
+    """The subset of a supplier product worth caching for a cart row.
+
+    ## Two shapes arrive here, and only one of them has variants
+
+    This is written against a defect where a catalogue card reading "$13.27
+    cost" became "cost unknown" the moment it was added to the cart. Nothing
+    lost the price: it was never read.
+
+    The parameter is called ``product`` and the body asked it for ``variants``,
+    which is right for a :func:`normalize.product`. But the only caller that
+    reaches here from the catalogue screen sends a :func:`discovery._card` —
+    a projection that has *already* collapsed the variants into
+    ``cost_low_cents``/``cost_high_cents`` and dropped the rows. Worse, a CJ
+    search result has no variant rows to collapse in the first place; its price
+    only ever exists as the product-level ``sellPrice`` that becomes
+    ``from_cost_cents``.
+
+    The two shapes agree on title, image, category, origin and currency, so the
+    cart row rendered correctly in every respect except the one that came from a
+    key the card does not have. That is why this survived: the row looked right.
+
+    So both shapes are read, variants first because they are the better answer
+    when present. ``variant_count`` has the same problem and the same fix.
 
     Bounded on purpose. The full normalized product carries every variant with
     dimensions and warehouse strings; a hundred of those in one cart response is
@@ -198,17 +251,33 @@ def _cacheable(product: dict | None) -> dict | None:
     """
     if not isinstance(product, dict):
         return None
-    low, high = normalize.cost_range(product.get("variants"))
+    variants = product.get("variants")
+    low, high = normalize.cost_range(variants)
+    if low is None:
+        # No variant rows, or none of them priced. Fall back to what a
+        # summarized payload carries, in the order of how specific it is.
+        low = _minor_units(product.get("cost_low_cents"))
+        high = _minor_units(product.get("cost_high_cents"))
+        if low is None:
+            low = high = _minor_units(product.get("from_cost_cents"))
+        elif high is None:
+            high = low
+    count = len(variants) if isinstance(variants, (list, tuple)) else None
+    if not count:
+        declared = _minor_units(product.get("variant_count"))
+        count = declared if declared is not None else (count or 0)
     return {
         "title": product.get("title"),
         "cover_image_url": product.get("cover_image_url"),
         "category": product.get("category"),
         "origin": product.get("origin"),
         "currency": product.get("currency"),
-        "variant_count": len(product.get("variants") or ()),
+        "variant_count": count,
         "cost_low_cents": low,
         "cost_high_cents": high,
-        "availability": _availability(product.get("variants")),
+        "availability": _availability(variants),
+        "cost_source": source if low is not None else None,
+        "cost_checked_at": checked_at if low is not None else None,
     }
 
 
@@ -233,6 +302,45 @@ def _availability(variants) -> str:
     if not seen_any:
         return normalize.STOCK_UNKNOWN
     return normalize.STOCK_UNKNOWN if seen_unknown else normalize.STOCK_OUT_OF_STOCK
+
+
+def _provider_cache(business_id, store_id, actor_user_id, connection_id, provider,
+                    external_product_id, *, context=None):
+    """Read the supplier and derive the cart's cost ourselves, or return None.
+
+    Best-effort by construction. Adding a bookmark to a private workspace must
+    not fail because the supplier is slow, rate-limited, or turned off — so
+    every failure here degrades to the client's preview rather than refusing the
+    add. The gateway caches product reads, so a merchant adding several products
+    from one search page mostly does not pay for this.
+
+    What it buys is that the cost on the row is a number *this server* read from
+    the supplier, with a timestamp, instead of a number the client handed us. A
+    forged preview could already only make a card look wrong; this makes it not
+    even do that for the common path.
+    """
+    try:
+        read = gateway.read("product", business_id=business_id, store_id=store_id,
+                            actor_user_id=actor_user_id, connection_id=connection_id,
+                            params={"pid": external_product_id}, context=context)
+        product = normalize.product(provider, read.get("data"))
+    except Exception:
+        return None
+    if not product.get("variants"):
+        try:
+            variant_read = gateway.read("variants", business_id=business_id, store_id=store_id,
+                                        actor_user_id=actor_user_id, connection_id=connection_id,
+                                        params={"pid": external_product_id}, context=context)
+            product["variants"] = normalize.variants(provider, variant_read.get("data"))
+        except Exception:
+            pass
+    cached = _cacheable(product, source=COST_SOURCE_PROVIDER, checked_at=time.time())
+    if cached is None or cached["cost_low_cents"] is None:
+        # A read that produced no cost is not better than the merchant's own
+        # view of the catalogue, and claiming provider provenance for a blank
+        # would make "we checked" and "we know" the same sentence.
+        return None
+    return cached
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +373,10 @@ def add_item(business_id, store_id, actor_user_id, connection_id, *,
              provider="cj", context=None):
     """Add or update one supplier product in the cart.
 
-    ``product`` is a normalized product used only to populate the display cache.
-    Passing it is optional and passing a wrong one is harmless: it affects what
-    the cart *shows*, never what the import *does*.
+    ``product`` is a client preview used only to populate the display cache, and
+    only when this server could not read the supplier itself. Passing it is
+    optional and passing a wrong one is harmless: it affects what the cart
+    *shows*, never what the import *does*.
 
     Adding a product already in the cart updates its selection rather than
     creating a second row — the merchant tapped "Add" again, which reads as
@@ -283,6 +392,8 @@ def add_item(business_id, store_id, actor_user_id, connection_id, *,
         raise SupplierError("unsupported_provider", http_status=400)
     selection = _selected(selected_variant_ids)
     now = time.time()
+    authoritative = _provider_cache(business_id, store_id, actor_user_id, connection_id,
+                                    provider_key, product_id, context=context)
     conn = db.connect()
     try:
         merchant_id = _scope(conn, business_id, store_id, actor_user_id, connection_id,
@@ -291,7 +402,7 @@ def add_item(business_id, store_id, actor_user_id, connection_id, *,
             f"SELECT item_id FROM {TABLE} WHERE merchant_id=? AND business_id=? AND store_id=? "
             f"AND connection_id=? AND external_product_id=?",
             (merchant_id, business_id, store_id, connection_id, product_id)).fetchone()
-        cached = _cacheable(product)
+        cached = authoritative or _cacheable(product, checked_at=now)
         cached_json = json.dumps(cached, separators=(",", ":")) if cached else None
         if existing is not None:
             conn.execute(
