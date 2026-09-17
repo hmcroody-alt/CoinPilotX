@@ -64,23 +64,28 @@ would have failed too.
 
 *A failure is audited afterwards, on its own connection, best-effort.* Here the
 reasoning inverts. The item has already failed; the work is already lost. Letting
-a logging error escape from inside an ``except`` block would turn one unreachable
+an audit error escape from inside an ``except`` block would turn one unreachable
 product into a dead batch of twenty, which is precisely the partial-success
-guarantee the importer is built around. So it is caught and logged. A gap in the
-trail is the lesser harm when the alternative is discarding nineteen good imports
-to record one bad one.
+guarantee the importer is built around. So it is caught. A gap in the trail is
+the lesser harm when the alternative is discarding nineteen good imports to
+record one bad one.
+
+The swallow reports itself through its return value and not through a log line,
+because this package may not hold a logger at all. :mod:`diagnostics` states that
+ban and exists because of it: the modules handling CJ credentials keep provider
+data behind :meth:`CJAdapter._safe_data` and the allowlists here, and a
+``logging`` call is a path out of the package that sits on neither. The facts
+worth recording about a lost item are provider-derived strings, which is exactly
+what such a line would have carried.
 """
 
 from __future__ import annotations
 
-import logging
 import re
 
 from services import db
 from services.business_os.store import schema as store_schema
 from services.business_os.store import service as store_service
-
-_log = logging.getLogger(__name__)
 
 #: One subject type for the whole import family, matching how ``connections``
 #: files everything under ``supplier_connection``.
@@ -297,10 +302,8 @@ def record_import_safely(*, business_id, actor_user_id, outcome, facts) -> bool:
         return True
     except Exception:
         # See the module docstring: the item is already lost, and the batch is
-        # not. Logged with the identifying facts so a gap in the trail is
-        # findable in the application log rather than merely absent.
-        _log.exception("supplier import audit failed: outcome=%s product=%s",
-                       outcome, (facts or {}).get("external_product_id"))
+        # not. Nothing is logged -- this package holds no logger, by rule -- so
+        # the ``False`` below is the whole signal that a row is missing.
         if conn is not None:
             try:
                 conn.rollback()
