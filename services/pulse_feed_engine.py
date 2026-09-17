@@ -10,7 +10,7 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import db, embed_service, media_service, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulsesoc_notification_system, user_context
+from . import db, embed_service, media_service, music_authority, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulsesoc_notification_system, user_context
 from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
@@ -668,7 +668,8 @@ def _music_for_posts(post_ids):
                    pcm.audio_track_id, pcm.title, pcm.artist, pcm.source,
                    pcm.license_snapshot_json, pcm.created_at, pcm.audio_start_time, pcm.audio_volume, pcm.original_audio_muted,
                    at.audio_url AS current_audio_url,
-                   at.duration_seconds AS current_duration_seconds
+                   at.duration_seconds AS current_duration_seconds,
+                   at.lifecycle_state, at.removed_at, at.safety_status, at.active, at.approved_by_admin
             FROM pulse_content_music pcm
             JOIN pulse_audio_tracks at ON CAST(at.id AS TEXT)=CAST(pcm.audio_track_id AS TEXT)
             LEFT JOIN pulse_reels r ON pcm.content_type='reel' AND r.id = pcm.content_id
@@ -676,13 +677,8 @@ def _music_for_posts(post_ids):
                 (pcm.content_type IN ('post','video') AND pcm.content_id IN ({placeholders}))
                 OR (pcm.content_type='reel' AND r.post_id IN ({placeholders}))
               )
-              AND COALESCE(at.safety_status,'approved')='approved'
-              AND COALESCE(at.active,1)=1
-              AND COALESCE(at.approved_by_admin,0)=1
               AND COALESCE(at.commercial_use_allowed,0)=1
               AND COALESCE(at.remix_edit_allowed,0)=1
-              AND COALESCE(at.removed_at,'')=''
-              AND COALESCE(at.audio_url,'')!=''
             ORDER BY CASE WHEN pcm.content_type='video' THEN 0 WHEN pcm.content_type='post' THEN 1 ELSE 2 END, pcm.created_at DESC
             """,
             [int(post_id) for post_id in post_ids] * 2,
@@ -695,17 +691,35 @@ def _music_for_posts(post_ids):
                 continue
             snapshot = _json(item.get("license_snapshot_json"), {})
             audio_baked_in = bool(snapshot.get("audio_baked_in"))
-            audio_url = "" if audio_baked_in else _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
-            if not audio_url and not audio_baked_in:
+            # A removed track used to be filtered out of this JOIN entirely, which
+            # looked like the safe answer and was the opposite of it: the post came
+            # back with no `music` at all, and the client's audio policy reads "no
+            # attached music" as "play the original camera audio". A takedown
+            # therefore *unmuted* every video whose creator had deliberately
+            # silenced it. The row is kept now and its audio blanked, so the mute
+            # the creator chose survives and the client can say why it is silent.
+            #
+            # Only the moderation/takedown state is handled this way. The two
+            # licensing predicates above still drop the row: whether a track may be
+            # used commercially is an attach-time question that predates this and
+            # is not what an owner takedown decides.
+            unavailable = not music_authority.is_servable(item) or not (
+                int(item.get("active") if item.get("active") is not None else 1)
+                and int(item.get("approved_by_admin") or 0)
+            )
+            audio_url = "" if (audio_baked_in or unavailable) else _public_media_url(item.get("current_audio_url") or snapshot.get("audio_url") or snapshot.get("preview_url") or "")
+            if not audio_url and not audio_baked_in and not unavailable:
                 continue
             music[post_id] = {
                 "audio_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
                 "track_id": str(item.get("audio_track_id") or snapshot.get("track_id") or ""),
-                "title": _clean_text(item.get("title") or snapshot.get("title") or "Approved track", 180),
-                "artist": _clean_text(item.get("artist") or snapshot.get("artist") or "PulseSoc Music", 180),
+                "title": "" if unavailable else _clean_text(item.get("title") or snapshot.get("title") or "Approved track", 180),
+                "artist": "" if unavailable else _clean_text(item.get("artist") or snapshot.get("artist") or "PulseSoc Music", 180),
                 "attached_audio_url": audio_url,
                 "audio_url": audio_url,
                 "preview_url": audio_url,
+                "audio_unavailable": unavailable,
+                "audio_unavailable_state": music_authority.normalize_state(item.get("lifecycle_state")) if unavailable else "",
                 "duration_seconds": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
                 "audio_duration": int(float(item.get("current_duration_seconds") or snapshot.get("duration_seconds") or snapshot.get("duration") or 0) or 0),
                 "audio_start_time": float(item.get("audio_start_time") or snapshot.get("audio_start_time") or snapshot.get("start_seconds") or 0),
@@ -777,7 +791,15 @@ def _view_counts(cur, post_ids):
 
 
 def _media_with_attached_music(media, music):
-    if not media or not music or not (music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url")):
+    # A removed track reaches here with every url blank, which the url check
+    # below would read as "no music to stamp" -- leaving each media record
+    # carrying whatever it had before. That is the one case where the records
+    # must still be written, because the blanking is the point: a surface reading
+    # the media item rather than the post must not find a live url on it.
+    unavailable = bool((music or {}).get("audio_unavailable"))
+    if not media or not music:
+        return media or []
+    if not unavailable and not (music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url")):
         return media or []
     out = []
     for item in media or []:
@@ -786,12 +808,16 @@ def _media_with_attached_music(media, music):
             "audio_id": music.get("audio_id") or music.get("track_id") or "",
             "music_id": music.get("track_id") or music.get("audio_id") or "",
             "attached_audio_url": music.get("attached_audio_url") or music.get("audio_url") or music.get("preview_url") or "",
-            "audio_title": music.get("title") or "Approved track",
-            "audio_artist": music.get("artist") or "PulseSoc Music",
+            "audio_title": "" if unavailable else (music.get("title") or "Approved track"),
+            "audio_artist": "" if unavailable else (music.get("artist") or "PulseSoc Music"),
             "audio_duration": music.get("audio_duration") or music.get("duration_seconds") or 0,
             "audio_start_time": music.get("audio_start_time") or 0,
             "audio_volume": music.get("audio_volume") or 1,
+            # Unchanged by a takedown, deliberately. The creator silenced this
+            # video when they attached a song; removing the song does not give
+            # anyone back the camera audio they chose not to publish.
             "original_audio_muted": True,
+            "audio_unavailable": unavailable,
         })
         out.append(enriched)
     return out

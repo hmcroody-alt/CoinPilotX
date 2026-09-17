@@ -24,6 +24,13 @@ export type PulseReelAudio = {
   /** Music is already digitally mixed into the uploaded MP4; do not attach a second player. */
   audio_baked_in?: boolean;
   original_audio_muted?: boolean;
+  /**
+   * The owner has taken this track down. The track is still attached -- the
+   * post, its caption and its engagement are untouched -- but no url will be
+   * served for it and nothing should try to load one.
+   */
+  audio_unavailable?: boolean;
+  audio_unavailable_state?: string;
 };
 
 export type PulseReel = {

@@ -260,6 +260,33 @@ def require_permission(actor, permission, permission_check):
     return actor
 
 
+def granted_permissions(actor, permission_check):
+    """Which music permissions this actor actually holds, one bool each.
+
+    This is what a client asks before drawing an owner surface, and the reason
+    it exists is that the alternative is the client deciding. A phone that
+    renders a takedown button because the profile said ``role == "owner"`` has
+    made a security decision in a place where the answer can be edited, and it
+    will be wrong in both directions: an owner whose role string is spelled
+    differently loses the surface, and anyone who can influence that string
+    gains it.
+
+    Every permission is reported explicitly, including the false ones. A map
+    that omitted what the actor lacks would be indistinguishable from a map the
+    server built with an older, shorter list of permissions, and the client
+    would read a missing key as "not granted" either way -- silently hiding a
+    real grant instead of failing loudly.
+
+    Advisory only. Nothing here is a gate: each endpoint re-resolves the actor
+    and re-checks its own permission, so a client that ignores this map entirely
+    gets exactly the same refusals.
+    """
+    names = sorted(MUSIC_PERMISSIONS)
+    if not actor:
+        return {name: False for name in names}
+    return {name: bool(permission_check(actor, name)) for name in names}
+
+
 def plan_transition(action, current_state, *, expected_state=None, legal_hold=False):
     """Decide what ``action`` does to a track in ``current_state``.
 

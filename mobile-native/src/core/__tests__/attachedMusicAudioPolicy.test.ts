@@ -79,6 +79,63 @@ describe("reel adapter", () => {
   });
 });
 
+describe("a track the owner removed", () => {
+  /**
+   * The failure this guards is quiet and backwards. A takedown blanks the url,
+   * and an empty url is also what "this post never had music" looks like -- so
+   * the resolver's obvious answer, ORIGINAL_AUDIO with nothing muted, would
+   * un-silence the camera audio of every video whose creator deliberately
+   * replaced it with a song. Nobody asked for that audio to be published.
+   *
+   * These read `muteOriginalAudio` rather than any rendering, because that one
+   * boolean is what every playback surface passes to `isMuted`.
+   */
+  it("keeps the original audio muted instead of falling back to it", () => {
+    const policy = resolveReelAudioPolicy({ attached_audio_url: "", audio_unavailable: true });
+    expect(policy.muteOriginalAudio).toBe(true);
+    expect(policy.audioUnavailable).toBe(true);
+  });
+
+  it("does not hand a player any url to load", () => {
+    const policy = resolveReelAudioPolicy({ attached_audio_url: "", audio_unavailable: true });
+    expect(policy.hasAttachedMusic).toBe(false);
+    expect(policy.musicUrl).toBeUndefined();
+    expect(resolveViewerAudioPlan(policy).shouldPlayMusic).toBe(false);
+  });
+
+  it("is distinguishable from a post that simply has no music", () => {
+    // Without this pair the previous two tests would pass on a resolver that
+    // muted *everything* with no url, which would silence untouched posts.
+    const removed = resolveReelAudioPolicy({ attached_audio_url: "", audio_unavailable: true });
+    const neverHadMusic = resolveReelAudioPolicy({ attached_audio_url: "" });
+    expect(removed.muteOriginalAudio).toBe(true);
+    expect(neverHadMusic.muteOriginalAudio).toBe(false);
+    expect(neverHadMusic.audioUnavailable).toBe(false);
+  });
+
+  it("wins over a stale url the server has not blanked", () => {
+    // The takedown flag is authoritative. A mirror field left over from attach
+    // time must not resurrect playback of a track that was removed.
+    const policy = resolveReelAudioPolicy({ attached_audio_url: "https://cdn/removed.m3u8", audio_unavailable: true });
+    expect(policy.hasAttachedMusic).toBe(false);
+    expect(policy.musicUrl).toBeUndefined();
+  });
+
+  it("applies to statuses and posts, not just reels", () => {
+    expect(resolveStatusMusicPolicy({ audio_unavailable: true }).muteOriginalAudio).toBe(true);
+    const post = resolvePostAudioPolicy({ music: { attached_audio_url: "", audio_unavailable: true } });
+    expect(post.muteOriginalAudio).toBe(true);
+    expect(post.audioUnavailable).toBe(true);
+  });
+
+  it("carries the notice into the fullscreen viewer plan", () => {
+    const plan = resolveViewerAudioPlan(resolveReelAudioPolicy({ audio_unavailable: true }));
+    expect(plan.audioUnavailable).toBe(true);
+    expect(plan.muteOriginalAudio).toBe(true);
+    expect(plan.shouldPlayMusic).toBe(false);
+  });
+});
+
 describe("status adapter", () => {
   it("mutes original audio when a status attaches music", () => {
     const policy = resolveStatusMusicPolicy({ attached_audio_url: "https://cdn/status.m3u8" });
@@ -200,6 +257,7 @@ describe("resolveViewerAudioPlan (expanded/fullscreen viewer)", () => {
 
   it("never claims music playback when a policy is exclusive but is missing a url", () => {
     const plan = resolveViewerAudioPlan({
+      audioUnavailable: false,
       mode: ATTACHED_MUSIC_EXCLUSIVE,
       hasAttachedMusic: true,
       muteOriginalAudio: true,

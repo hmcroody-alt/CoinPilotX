@@ -964,5 +964,125 @@ class ImpactTests(MusicRouteTestCase):
         self.assertEqual(self.body(response)["error_code"], "music_track_not_found")
 
 
+class CapabilityTests(MusicRouteTestCase):
+    """`/api/admin/music/capabilities` -- the one music route a normal user may call.
+
+    It exists so the phone never decides for itself whether to draw a takedown
+    button. The alternative the app would otherwise reach for is the profile's
+    role string, which is a security decision made in a place the server does
+    not control.
+
+    Two properties have to hold together and pull in opposite directions:
+
+    * it must answer **200** to an ordinary signed-in user, saying "you hold
+      nothing" -- otherwise the client cannot tell "not an owner" apart from a
+      dropped connection, and a real owner silently loses the surface whenever
+      the network blips;
+    * it must grant **nothing**, so that a client which ignores the answer and
+      calls a mutation anyway is refused exactly as before.
+
+    The second is the one worth distrusting, so it is asserted by calling a real
+    mutation immediately after a maximally-encouraging capability response.
+    """
+
+    def test_the_owner_is_told_they_hold_every_music_permission(self):
+        self.as_account(OWNER_ACCOUNT_ID)
+        body = self.body(self.client.get("/api/admin/music/capabilities"))
+        self.assertTrue(body["music_authority"])
+        for permission in sorted(music_authority.MUSIC_PERMISSIONS):
+            self.assertTrue(body["permissions"][permission], permission)
+
+    def test_an_ordinary_user_gets_a_200_saying_they_hold_nothing(self):
+        """Not a 403. The client needs an answer it can render, not an error."""
+        self.as_account(PLAIN_ACCOUNT_ID)
+        response = self.client.get("/api/admin/music/capabilities")
+        self.assertEqual(response.status_code, 200)
+        body = self.body(response)
+        self.assertFalse(body["music_authority"])
+        self.assertEqual(set(body["permissions"].values()), {False})
+
+    def test_an_unauthenticated_caller_is_still_refused(self):
+        """The 200-for-everyone rule stops at "signed in"."""
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        response = self.client.get("/api/admin/music/capabilities")
+        self.assertEqual(response.status_code, 401)
+
+    def test_a_partial_grant_reports_exactly_what_it_is(self):
+        """One granted permission, five not -- reported per permission, not per role.
+
+        The `analytics_viewer` fixture holds `music.takedown` alone. A response
+        that collapsed this to a single "is owner" boolean would either hide the
+        grant or promote the account to full authority in the UI.
+        """
+        self.as_account(GRANTED_ACCOUNT_ID)
+        body = self.body(self.client.get("/api/admin/music/capabilities"))
+        self.assertTrue(body["music_authority"])
+        self.assertTrue(body["permissions"]["music.takedown"])
+        self.assertFalse(body["permissions"]["music.purge"])
+        self.assertFalse(body["permissions"]["music.restore"])
+
+    def test_pulse_moderate_alone_reports_no_music_authority(self):
+        """The old music review route's permission grants nothing here."""
+        self.as_account(MODERATOR_ACCOUNT_ID)
+        body = self.body(self.client.get("/api/admin/music/capabilities"))
+        self.assertFalse(body["music_authority"])
+        self.assertEqual(set(body["permissions"].values()), {False})
+
+    def test_every_permission_is_named_even_the_false_ones(self):
+        """A missing key and a false key must not be the same wire answer.
+
+        A client reads both as "no", so an endpoint that omitted the denials
+        would look identical to one built against a stale, shorter permission
+        list -- hiding a real grant with no error anywhere.
+        """
+        self.as_account(PLAIN_ACCOUNT_ID)
+        body = self.body(self.client.get("/api/admin/music/capabilities"))
+        self.assertEqual(set(body["permissions"]), set(music_authority.MUSIC_PERMISSIONS))
+
+    def test_the_capability_answer_grants_nothing(self):
+        """The property that makes it safe to serve this to everyone.
+
+        Asking, being told "no", and then calling the mutation anyway is exactly
+        what a tampered client does. The refusal must come from the mutation's
+        own check, not from the client having believed the capability response.
+        """
+        self.as_account(PLAIN_ACCOUNT_ID)
+        self.assertEqual(self.client.get("/api/admin/music/capabilities").status_code, 200)
+        response = self.post(
+            "/api/admin/music/tracks/%d/takedown" % self.track_id,
+            {"reason_code": "OWNER_DECISION"},
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(_track_row(self.track_id)["lifecycle_state"], "ACTIVE")
+
+    def test_a_body_claiming_authority_does_not_change_the_answer(self):
+        """Nothing the request sends selects an identity -- including here."""
+        self.as_account(PLAIN_ACCOUNT_ID)
+        response = self.client.get(
+            "/api/admin/music/capabilities?role=owner&is_owner=1&admin_user_id=%d"
+            % self.owner_admin_id
+        )
+        self.assertFalse(self.body(response)["music_authority"])
+
+    def test_the_web_admin_session_leg_works_too(self):
+        self.as_owner_session()
+        body = self.body(self.client.get("/api/admin/music/capabilities"))
+        self.assertTrue(body["music_authority"])
+
+    def test_the_client_is_given_the_vocabulary_it_would_otherwise_hardcode(self):
+        """States and reason codes ship with the capability answer.
+
+        A client with its own copy of these lists drifts the moment one is added
+        server-side, and the drift shows up as a takedown the owner cannot file
+        rather than as an error.
+        """
+        self.as_account(OWNER_ACCOUNT_ID)
+        body = self.body(self.client.get("/api/admin/music/capabilities"))
+        self.assertEqual(body["reason_codes"], list(music_authority.REASON_CODES))
+        self.assertEqual(body["states"], list(music_authority.LIFECYCLE_STATES))
+        self.assertEqual(body["step_up_ttl_seconds"], music_authority.STEP_UP_TTL_SECONDS)
+
+
 if __name__ == "__main__":
     unittest.main()

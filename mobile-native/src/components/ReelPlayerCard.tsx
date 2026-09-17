@@ -579,7 +579,17 @@ export function ReelPlayerCard({
         ) : null}
         {isLive ? <Pressable accessibilityRole="button" accessibilityLabel="Join this Live" style={styles.joinLive} onPress={() => onJoinLive(reel)}><Text style={styles.joinLiveText}>Join Live</Text></Pressable> : null}
         <View style={styles.mediaMetaRow}>
-          <Pressable accessibilityRole="button" accessibilityLabel={reel.audio?.title ? `Music: ${reel.audio.title}${reel.audio.artist ? ` by ${reel.audio.artist}` : ""}` : "Original audio"} style={styles.musicMicro} onPress={() => onOpenMusic(reel)}><View style={styles.musicOrb}><Text style={styles.musicNote}>♪</Text></View><Text style={styles.musicLabel} numberOfLines={1}>{reel.audio?.title || "Original audio"}{reel.audio?.artist ? ` · ${reel.audio.artist}` : ""}</Text></Pressable>
+          {/* A removed track has a blank title, which would render as the chip
+              for "Original audio" — the one thing this reel is definitely not
+              playing. Saying so plainly is also what keeps the surface honest:
+              the video is fine, the sound is gone, and the viewer is not left
+              waiting for audio that will never arrive. The chip stays
+              non-interactive because there is no music page left to open. */}
+          {musicPolicy.audioUnavailable ? (
+            <View accessibilityRole="text" accessibilityLabel="Audio unavailable. This song was removed by PulseSoc." style={styles.musicMicro}><View style={styles.musicOrb}><Text style={styles.musicNote}>⌀</Text></View><Text style={styles.musicLabel} numberOfLines={1}>Audio unavailable</Text></View>
+          ) : (
+            <Pressable accessibilityRole="button" accessibilityLabel={reel.audio?.title ? `Music: ${reel.audio.title}${reel.audio.artist ? ` by ${reel.audio.artist}` : ""}` : "Original audio"} style={styles.musicMicro} onPress={() => onOpenMusic(reel)}><View style={styles.musicOrb}><Text style={styles.musicNote}>♪</Text></View><Text style={styles.musicLabel} numberOfLines={1}>{reel.audio?.title || "Original audio"}{reel.audio?.artist ? ` · ${reel.audio.artist}` : ""}</Text></Pressable>
+          )}
           <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Turn Reel sound on" : "Mute Reel"} style={styles.muteButton} onPress={onToggleMuted}><Text style={styles.muteButtonText}>{muted ? "⌁" : "◖))"}</Text></Pressable>
         </View>
       </View>

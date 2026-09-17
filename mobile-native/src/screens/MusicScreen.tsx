@@ -30,7 +30,9 @@ import {
   selectPulseMusicForSurface,
   uploadPulseMusic
 } from "../api/music";
+import { fetchMusicCapabilities, MusicCapabilities } from "../api/musicAuthority";
 import { getMyProfile, PulseProfile } from "../api/profile";
+import { MusicOwnerPanel } from "../components/MusicOwnerPanel";
 import {
   cyclePulseRadioRepeatMode,
   getPulseRadioState,
@@ -117,6 +119,13 @@ export function MusicScreen({ route, navigation }: Props) {
   const [radio, setRadio] = useState<PulseRadioState>(getPulseRadioState());
   const [deepLinkedTrack, setDeepLinkedTrack] = useState<PulseMusicTrack | null>(null);
   const [deepLinkFailure, setDeepLinkFailure] = useState<"" | "missing" | "unreachable">("");
+  // Server-provided, never inferred. The alternative -- reading `profile.role`
+  // or an `is_owner` field off the profile payload -- would put a security
+  // decision somewhere it can be wrong in both directions, and the visible
+  // symptom of getting it wrong is a removal button drawn for someone who
+  // cannot use it.
+  const [capabilities, setCapabilities] = useState<MusicCapabilities | null>(null);
+  const [ownerTrack, setOwnerTrack] = useState<PulseMusicTrack | null>(null);
   const previewSound = useRef<Audio.Sound | null>(null);
   const deepLinkAttemptedFor = useRef("");
 
@@ -189,6 +198,23 @@ export function MusicScreen({ route, navigation }: Props) {
 
   useEffect(() => {
     load("initial").catch(() => undefined);
+  }, []);
+
+  // Asked once, for the viewer, and answered 200 for everyone -- most accounts
+  // are told they hold nothing. `fetchMusicCapabilities` already degrades a
+  // failure to "no authority", which is safe here only because the answer grants
+  // nothing: every endpoint behind these controls re-resolves the actor and
+  // re-checks its own permission server-side.
+  useEffect(() => {
+    let cancelled = false;
+    fetchMusicCapabilities()
+      .then((next) => {
+        if (!cancelled) setCapabilities(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -608,9 +634,24 @@ export function MusicScreen({ route, navigation }: Props) {
             onShare={shareTrack}
             onReport={reportTrack}
             onUse={useTrack}
+            onManage={capabilities?.hasAuthority ? setOwnerTrack : undefined}
           />
         )}
       />
+      {ownerTrack && capabilities?.hasAuthority ? (
+        <MusicOwnerPanel
+          visible
+          trackId={ownerTrack.id}
+          trackTitle={ownerTrack.title}
+          capabilities={capabilities}
+          onClose={() => setOwnerTrack(null)}
+          // A takedown changes what the library should return, so the list is
+          // refetched rather than patched in place: editing the local row would
+          // leave a removed track visible under a state the server no longer
+          // agrees with.
+          onChanged={() => load("search").catch(() => undefined)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -624,7 +665,8 @@ function TrackCard({
   onSave,
   onShare,
   onReport,
-  onUse
+  onUse,
+  onManage
 }: {
   track: PulseMusicTrack;
   busy: boolean;
@@ -635,6 +677,8 @@ function TrackCard({
   onShare: (track: PulseMusicTrack) => void | Promise<void>;
   onReport: (track: PulseMusicTrack) => void | Promise<void>;
   onUse: (track: PulseMusicTrack, surface: "reel" | "video" | "status" | "post") => void | Promise<void>;
+  /** Omitted entirely when the server says the viewer holds no music authority. */
+  onManage?: (track: PulseMusicTrack) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -663,6 +707,9 @@ function TrackCard({
         <ActionButton label={t("discovery:music.actionSave")} disabled={busy} onPress={() => onSave(track)} />
         <ActionButton label={t("discovery:music.actionShare")} disabled={busy} onPress={() => onShare(track)} />
         <ActionButton label={t("discovery:music.actionReport")} disabled={busy} warning onPress={() => onReport(track)} />
+        {onManage ? (
+          <ActionButton label={t("discovery:music.ownerManage")} disabled={busy} warning onPress={() => onManage(track)} />
+        ) : null}
       </View>
       <View style={styles.useRow}>
         <ActionButton label={t("discovery:music.useInReel")} primary onPress={() => onUse(track, "reel")} />

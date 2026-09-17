@@ -23,6 +23,13 @@ export type PulseStatusMusic = {
   mood?: string;
   genre?: string;
   duration_seconds?: number;
+  /**
+   * The owner has taken this track down. The track is still attached -- the
+   * post, its caption and its engagement are untouched -- but no url will be
+   * served for it and nothing should try to load one.
+   */
+  audio_unavailable?: boolean;
+  audio_unavailable_state?: string;
 };
 
 export type StatusVisibility = "public" | "followers" | "private";
@@ -452,6 +459,13 @@ export function statusMediaKind(status: PulseStatus) {
 
 export function statusMusicLabel(status: PulseStatus) {
   const music = status.music || {};
+  // A taken-down track arrives with its title and artist blanked -- the server
+  // will not hand out a removed song's metadata -- so without this the line
+  // simply vanishes and the status plays silently with no explanation. The
+  // attachment is still real and the status is unchanged; what is gone is the
+  // sound, and saying so is the difference between an honest surface and one
+  // that looks like it lost the music by accident.
+  if (music.audio_unavailable) return "Audio unavailable";
   const title = music.audio_title || music.title || "";
   const artist = music.audio_artist || music.artist || "";
   if (title && artist) return `${title} · ${artist}`;
