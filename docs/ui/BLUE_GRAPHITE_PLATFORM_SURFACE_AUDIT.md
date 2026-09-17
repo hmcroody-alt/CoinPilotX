@@ -39,17 +39,40 @@ exact distinction being triaged — `#02050b` against `#363D46`.
 
 | bucket | count | migrate? |
 | --- | ---: | --- |
-| `structural_surface` | 1,009 | **yes — this is the migration** |
+| `structural_surface` | 895 | **yes — this is the migration** |
 | `shadow` | 275 | no; black is correct |
 | `text_or_icon` | 154 | no; the contrast is the point |
 | `dimming_scrim` | 139 | no; functional dimming |
-| `visual_review` | 74 | undecided — see below |
-| `test_pin` | 84 | only alongside the surface it pins |
+| `user_content` | 102 | no; a background the member picked |
+| `test_pin` | 80 | only alongside the surface it pins |
+| `visual_review` | 73 | undecided — see below |
 | `protected_audio` | 42 | **forbidden to this mission** |
-| `documentation` | 33 | no; prose, not pixels |
+| `documentation` | 37 | no; prose, not pixels |
 | `media_canvas` | 27 | no; immersive/fixed palette |
 | `non_color_channel` | 14 | no; alpha channel, not paint |
 | `black_theme_requirement` | 11 | no; user-selectable Black theme |
+
+### `user_content` — the bucket the first pass got wrong
+
+Without this rule the classifier puts 997 literals in the migration on today's
+tree (1,009 when Stage 0 ran; the tree has moved since). 102 are conversation
+themes and wallpapers the member selected: nine named chat themes (`pulse_green`,
+`deep_space`, `solar_flame`, `royal_purple`, …) and ten named wallpapers
+(`galaxy_grid`, `dark_nebula`, `star_tunnel`, …), scoped in CSS by
+`[data-control-theme=]` / `[data-control-wallpaper=]` and mirrored in the native
+catalog at `mobile-native/src/theme/chatWallpaper.ts`. The ids are persisted
+server-side as `appearance.wallpaper`, so both clients agree on them.
+
+They are near-black because that is what the member asked for — one is named
+`minimal_black`. Migrating them would not restyle a surface, it would delete a
+feature: every chat theme would come out the same colour. Same exclusion as the
+user-selectable Black theme, reached from the other direction.
+
+The rule reads the stylesheet's own selectors rather than a list of ids, so a
+theme shipped next month is excluded without editing the classifier. The
+**default** block carries no attribute selector and stays in scope on purpose: a
+member who has chosen nothing is looking at the platform's own chat chrome,
+which is what this migration is for.
 
 Three of those buckets are not in the brief's list of ten. They were added
 because the repository demands them, and each is a category that would otherwise
@@ -88,23 +111,27 @@ have been mis-filed as a migratable surface:
 | search | 5 | 1 |
 | everything else | 209 | 46 |
 
-The ten heaviest files carry 588 of the 1,009 — 58%:
+The ten heaviest files carry 504 of the 895 — 56%:
 
 ```
- 155  static/css/pulse_messages_v2.css
  116  static/css/pulse_status_system.css
+  92  static/css/pulse_messages_v2.css
   75  static/css/pulse_desktop_feed.css
   65  static/css/pulse_home_os.css
-  39  mobile-native/src/theme/chatWallpaper.ts
   35  static/css/pulse_reaction_system.css
   33  static/css/pulse_reels_experience.css
   29  static/css/pulse_live_studio.css
   21  templates/index.html
   20  templates/dashboard.html
+  18  static/css/pulse_cinematic_media.css
 ```
 
-96 files carry at least one. The distribution is the useful part: this is not
-1,009 independent decisions, it is roughly ten stylesheets plus a long tail. The
+`chatWallpaper.ts` was fifth on this list at 39 and is now absent: all 39 were
+the member's wallpaper catalog. `pulse_messages_v2.css` loses 63 the same way
+and drops from first to second.
+
+98 files carry at least one. The distribution is the useful part: this is not
+895 independent decisions, it is roughly ten stylesheets plus a long tail. The
 stylesheets should move to tokens first, because once they do, most of the tail
 is already correct by inheritance.
 
@@ -173,17 +200,21 @@ Order is the policy. First match wins.
    with no other role is a scrim in effect even when nothing in the name says so.
    The threshold is strict on purpose: at or above 0.8 the fill is being used as
    a surface, not as a dimmer.
-9. **a file in the `OPAQUE` map** of `backgroundSurfaces.test.ts` → `media_canvas`.
+9. **inside a `[data-control-theme=]` / `[data-control-wallpaper=]` block**, or in
+   `chatWallpaper.ts` → `user_content`. After rules 5–8 so that a label inside a
+   themed block still reports as text: the exclusion is about surfaces the member
+   chose, and a glyph is not one.
+10. **a file in the `OPAQUE` map** of `backgroundSurfaces.test.ts` → `media_canvas`.
    Parsed from that test, not copied, so adding a screen there starts being
    honoured on the next run with no edit here.
-10. **`ThemeContext.tsx`** → `black_theme_requirement`.
-11. **a CSS custom property**, classified by the role words in its own name —
+11. **`ThemeContext.tsx`** → `black_theme_requirement`.
+12. **a CSS custom property**, classified by the role words in its own name —
     text words checked before surface words, since `--pulse-text-on-panel` is a
     glyph colour.
-12. **a known surface property** → `structural_surface`.
-13. anything else → `visual_review`.
+13. **a known surface property** → `structural_surface`.
+14. anything else → `visual_review`.
 
-## The 74 that a script should not decide
+## The 73 that a script should not decide
 
 This is the honest measure of how much of this audit is still human judgement.
 It started at 547 and came down in three steps, each of which is a real finding
@@ -193,7 +224,8 @@ rather than a loosened threshold:
 | --- | ---: | --- |
 | first pass | 547 | line-local parsing; 345 gradient stops had no property |
 | + whole-file declaration state | 235 | multi-line CSS declarations now attribute correctly |
-| + custom-property naming, masks | **74** | `--bg`/`--panel`/`--glass` resolve by name |
+| + custom-property naming, masks | 74 | `--bg`/`--panel`/`--glass` resolve by name |
+| + user-selected theme scoping | **73** | one themed literal was a review, not a surface |
 
 22 randomly sampled rows from the newly-attributed set were checked by hand and
 all 22 were correct.
@@ -298,8 +330,8 @@ This is also the reason the migration must be gated on
 ## Next
 
 Stage 1 is the token layer. The evidence above says to start with
-`static/css/pulse_messages_v2.css`, `pulse_status_system.css`,
+`static/css/pulse_status_system.css`, `pulse_messages_v2.css`,
 `pulse_desktop_feed.css` and `pulse_home_os.css` on the web side, and
-`web/src/styles/tokens.css` for the SPA — those five files carry 426 of the
-1,009 structural literals, and they are all stylesheets, which means they can be
+`web/src/styles/tokens.css` for the SPA — those five files carry 348 of the
+895 structural literals, and they are all stylesheets, which means they can be
 moved to variables without touching a single component.
