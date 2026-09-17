@@ -2136,6 +2136,39 @@ def badge_counts(user_id: int, chat_unread_count: int = 0) -> dict[str, Any]:
     }
 
 
+def icon_badge_count(user_id: int) -> int:
+    """Combined unread for the app icon: alerts + chat + commerce.
+
+    Mirrors the merge `_pulse_notification_os_badge_counts()` performs in
+    bot.py for the read APIs, and must keep mirroring it: that helper is what
+    feeds the client's badge snapshot, so any other arithmetic here puts the
+    push badge and the foreground reconcile back into disagreement, which is
+    the whole defect this exists to close.
+
+    badge_counts() above cannot answer this alone. It counts only the
+    `notifications` table and takes chat as a parameter defaulting to 0, so on
+    its own it misses every legacy `pulse_notifications` alert, every chat
+    unread and every commerce unread.
+
+    Imported lazily: notification_service imports this module at module scope.
+    """
+    user_id = int(user_id or 0)
+    legacy_alert = legacy_chat = legacy_commerce = 0
+    try:
+        from services import notification_service as _notification_service
+
+        legacy = _notification_service.pulse_badge_counts(user_id) or {}
+        legacy_alert = _int(legacy.get("alert_unread_count"))
+        legacy_chat = _int(legacy.get("chat_unread_count"))
+        legacy_commerce = _int(legacy.get("commerce_unread_count"))
+    except Exception:
+        # A badge is not worth failing a delivery over. Fall back to whatever
+        # the central table alone can say.
+        pass
+    central_alert = _int((badge_counts(user_id) or {}).get("alert_unread_count"))
+    return central_alert + legacy_alert + legacy_chat + legacy_commerce
+
+
 def mark_read(user_id: int, notification_id: int) -> dict[str, Any]:
     conn = db_service.connect()
     ensure_schema(conn)
@@ -2411,7 +2444,7 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
     metadata = notification.get("metadata") if isinstance(notification.get("metadata"), dict) else {}
     deep_link = sanitize_deep_link(notification.get("deep_link") or metadata.get("deep_link") or "/pulse/notifications")
     body = str(notification.get("body") or notification.get("message") or notification.get("preview") or "New PulseSoc update.")
-    badge_count = badge_counts(int(notification.get("recipient_user_id") or notification.get("user_id") or 0)).get("total_unread_count", 0)
+    badge_count = icon_badge_count(int(notification.get("recipient_user_id") or notification.get("user_id") or 0))
     payload = {
         "notification_id": int(notification.get("id") or 0),
         "type": notification.get("type") or notification.get("notification_type") or "system_announcement",
@@ -2430,8 +2463,15 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
         "sound": notification.get("sound_key") or _sound_key(category, priority, prefs),
         "vibrate": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
         "vibration": notification.get("vibration") or _vibration_pattern(category, priority, prefs),
-        "badge": True,
-        "badge_count": badge_count,
+        # The number, not a flag. Both wire adapters read THIS key and coerce
+        # it to an int — push_service._send_expo_push() and the raw APNs body
+        # below — so the literal `True` this used to hold reached the phone as
+        # int(True) == 1 and pinned every non-comm_v2 push's icon to 1, while
+        # the real figure sat unread in `badge_count`. Web push is unaffected
+        # either way: static/sw.js only honours a same-origin string path here
+        # and falls back to the brand asset for anything else.
+        "badge": int(badge_count),
+        "badge_count": int(badge_count),
         "show_on_lock_screen": True,
         "lock_screen": True,
         **metadata,
