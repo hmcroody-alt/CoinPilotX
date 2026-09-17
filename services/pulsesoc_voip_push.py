@@ -145,11 +145,65 @@ def default_environment() -> str:
 
 
 def voip_topic() -> str:
-    """APNs topic for VoIP pushes: the app bundle id with a ``.voip`` suffix."""
+    """APNs topic for VoIP pushes: the app bundle id with a ``.voip`` suffix.
+
+    Deployment-wide. Correct only while every registered device runs the same
+    bundle id; ``topic_for_bundle`` is what addresses one specific device.
+    """
     bundle = _env_value("APNS_VOIP_BUNDLE_ID") or _env_value("APNS_BUNDLE_ID")
     if not bundle:
         return ""
     return bundle if bundle.endswith(".voip") else f"{bundle}.voip"
+
+
+def _strip_voip_suffix(bundle: str) -> str:
+    text = str(bundle or "").strip()
+    return text[: -len(".voip")] if text.endswith(".voip") else text
+
+
+def known_bundle_ids() -> set[str]:
+    """Every app bundle id this deployment is willing to address, suffix stripped.
+
+    ``APNS_ALLOWED_BUNDLE_IDS`` (comma separated) extends the two ids the sender
+    already derives its topic from. It exists so that introducing a second build
+    flavour — a development bundle id, say — is a configuration change rather than
+    a code change, while still being an explicit act rather than whatever a client
+    happened to report.
+    """
+    ids = {
+        _strip_voip_suffix(_env_value("APNS_BUNDLE_ID")),
+        _strip_voip_suffix(_env_value("APNS_VOIP_BUNDLE_ID")),
+    }
+    for part in str(_env_value("APNS_ALLOWED_BUNDLE_IDS")).split(","):
+        ids.add(_strip_voip_suffix(part))
+    ids.discard("")
+    return ids
+
+
+def topic_for_bundle(app_bundle: str) -> str:
+    """The APNs topic addressing the app a device actually reported running.
+
+    ``apns-topic`` was previously the deployment-wide ``voip_topic()`` for every
+    device, which is correct only for as long as exactly one bundle id exists. The
+    moment a second one does, every device on the other bundle is addressed with
+    the wrong topic and APNs answers ``DeviceTokenNotForTopic``. That answer is
+    classified ``invalid_device`` and — unlike ``BadDeviceToken`` — is deliberately
+    *not* replayed, so the token is revoked permanently rather than misrouted once.
+    A wrong topic costs a handset its ability to ring for good; a wrong host costs
+    one wasted request. This is much the more expensive of the two mistakes, and it
+    is the one the sender was structurally unable to avoid.
+
+    An unrecognised bundle falls back to ``voip_topic()`` rather than being trusted.
+    ``app_bundle`` is client-supplied, and putting an arbitrary string in the topic
+    would turn a bad registration into exactly the permanent revocation described
+    above — a device could talk itself out of ever ringing again. The fallback is
+    also what keeps this inert today: every stored ``app_bundle`` is empty, so every
+    device still resolves to the topic it already had.
+    """
+    bundle = _strip_voip_suffix(app_bundle)
+    if not bundle or bundle not in known_bundle_ids():
+        return voip_topic()
+    return f"{bundle}.voip"
 
 
 def is_configured() -> bool:
@@ -437,8 +491,12 @@ def other_environment(env: str) -> str:
     return ENVIRONMENT_SANDBOX if env == ENVIRONMENT_PRODUCTION else ENVIRONMENT_PRODUCTION
 
 
-def _post_voip(token: str, payload: dict[str, Any], env: str) -> dict[str, Any]:
+def _post_voip(token: str, payload: dict[str, Any], env: str, topic: str = "") -> dict[str, Any]:
     """One APNs request against one host. Makes no judgement about the answer.
+
+    ``topic`` is resolved by the caller from the device's own ``app_bundle`` and
+    falls back to the deployment-wide topic, so a caller that does not know which
+    app it is addressing still behaves exactly as this function always did.
 
     ``apns-push-type: voip`` and ``apns-priority: 10`` are both mandatory for the
     VoIP topic; APNs rejects the request otherwise. ``apns-expiration: 0`` says
@@ -461,7 +519,7 @@ def _post_voip(token: str, payload: dict[str, Any], env: str) -> dict[str, Any]:
                 f"{APNS_HOSTS[env]}/3/device/{token}",
                 headers={
                     "authorization": f"bearer {auth_token}",
-                    "apns-topic": voip_topic(),
+                    "apns-topic": topic or voip_topic(),
                     "apns-push-type": "voip",
                     "apns-priority": "10",
                     "apns-expiration": "0",
@@ -545,7 +603,12 @@ def _apns_reason(body: str) -> str:
     return str(parsed.get("reason") or "")[:64]
 
 
-def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -> dict[str, Any]:
+def send_voip_push(
+    token: str,
+    payload: dict[str, Any],
+    environment: str = "",
+    app_bundle: str = "",
+) -> dict[str, Any]:
     """Deliver one VoIP push, correcting the APNs host if it was guessed wrong.
 
     ``BadDeviceToken`` is what APNs answers both for a token that is genuinely dead
@@ -579,7 +642,12 @@ def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -
         return {"ok": False, "status": "skipped_no_device", "message": "VoIP token missing."}
 
     env = normalize_environment(environment) or default_environment()
-    attempt = _post_voip(token, payload, env)
+    # Resolved once and held fixed across the replay. The replay exists to test the
+    # other *host*; varying the topic at the same time would make a success
+    # unattributable, and ``environment_corrected`` would then persist a host that
+    # was never the thing at fault.
+    topic = topic_for_bundle(app_bundle)
+    attempt = _post_voip(token, payload, env, topic)
     corrected = False
     # "the replay never ran" and "the replay ran and the other host refused too"
     # are different faults that produce an identical rejection. Carried into the
@@ -588,7 +656,7 @@ def send_voip_push(token: str, payload: dict[str, Any], environment: str = "") -
 
     if _is_environment_mismatch(attempt):
         replay_env = other_environment(env)
-        replay = _post_voip(token, payload, replay_env)
+        replay = _post_voip(token, payload, replay_env, topic)
         replay_outcome = "rejected"
         if 200 <= int(replay.get("http_status") or 0) < 300:
             replay_outcome = "accepted"
@@ -693,7 +761,12 @@ def _deliver(cur: Any, user_id: int, devices: list[dict[str, Any]], payload: dic
     results: list[dict[str, Any]] = []
     for device in devices:
         token = str(device.get("voip_token") or "")
-        result = send_voip_push(token, payload, str(device.get("token_environment") or ""))
+        result = send_voip_push(
+            token,
+            payload,
+            str(device.get("token_environment") or ""),
+            str(device.get("app_bundle") or ""),
+        )
         results.append({"device_id": device.get("device_id"), "status": result.get("status")})
         if result.get("environment_corrected"):
             # The recorded host was wrong and the other one worked. Write that down
