@@ -55,9 +55,18 @@ REQUIRED_EVENTS = {
     "charge.dispute.created",
     "charge.dispute.updated",
     "charge.dispute.closed",
+    # The issuer's warning that a card was used fraudulently, days ahead of the
+    # dispute. It is the only reversal signal that arrives while the money is
+    # still recoverable — after `charge.dispute.created`, a settlement past its
+    # protection window has already been transferred and the loss is PulseSoc's.
+    "radar.early_fraud_warning.created",
     # Connect verification. Until this arrives, a seller who has finished Stripe
     # onboarding still reads as `pending_onboarding` here and cannot be paid.
     "account.updated",
+    # The seller revoking PulseSoc's access. Stripe sends no `account.updated`
+    # alongside it, so without this the account stays marked payable forever and
+    # every transfer to it fails at the provider.
+    "account.application.deauthorized",
     "payout.paid",
     "payout.failed",
 }
@@ -102,9 +111,16 @@ def main() -> int:
     for event_type in REQUIRED_EVENTS:
         if event_type not in source:
             failures.append(f"missing event handler token: {event_type}")
-    for token in ["request.data", "stripe.Webhook.construct_event", "record_webhook_event", "stripe_event_processed"]:
+    # Signature verification lives in its own module now, so a token search
+    # limited to bot.py reports it missing when it is present and exercised by
+    # the signed fixtures below. A false failure here is worse than no check:
+    # this report is the only webhook health summary a human reads.
+    verification = (ROOT / "services" / "stripe_webhook_verification.py").read_text(encoding="utf-8")
+    for token in ["request.data", "record_webhook_event", "stripe_event_processed"]:
         if token not in source:
             failures.append(f"missing raw/idempotency token: {token}")
+    if "stripe.Webhook.construct_event" not in source + verification:
+        failures.append("missing raw/idempotency token: stripe.Webhook.construct_event")
 
     payload = json.dumps(
         {
