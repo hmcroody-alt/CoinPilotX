@@ -319,6 +319,32 @@ export function LogiNexusBottomNavigation({ state, descriptors, navigation, badg
             testID="global-bottom-navigation-material"
           />
         ) : null}
+        {/*
+          The perimeter deepening, as a second layer rather than more stops on
+          the first.
+
+          It has to be separate because it is translucent. Folding its stops
+          into the base ramp would *replace* the graphite rather than deepen it,
+          and the base has to stay fully opaque — it is the layer that
+          guarantees the dock is never see-through.
+
+          It deliberately carries no axis, so it runs top-to-bottom while the
+          base runs mostly left-to-right. That is the point: a single ramp can
+          only put navy at the ends of its own axis, so without this the dock
+          deepened across its width and its top and bottom sat flat at core
+          graphite. The card has had this layer from the start, via
+          `GalacticAtmosphere`, which is why the two read as different materials
+          until the dock has one too.
+        */}
+        {blueGraphite ? (
+          <LinearGradient
+            colors={[...BLUE_GRAPHITE_NAV.edge.colors]}
+            locations={[...BLUE_GRAPHITE_NAV.edge.locations]}
+            pointerEvents="none"
+            style={styles.bottomPanelMaterial}
+            testID="global-bottom-navigation-material-edge"
+          />
+        ) : null}
         {PRIMARY_TABS.map((item) => {
           const route = state.routes.find((candidate) => candidate.name === item.routeName);
           const active = activeRoute === item.routeName || (item.name === "Create" && activeRoute === "Create");
