@@ -115627,30 +115627,52 @@ def _init_db_impl():
         ("Creator Glow Loop", "CoinPlotXAI", 98, 124, "creator", "cinematic", "electronic", ["post", "creator", "motion"]),
     ]
     for title, artist, trend, bpm, source, mood, genre, tags in default_sounds:
+        # `INSERT OR IGNORE` is not a de-duplicator on its own: it -- and the
+        # `ON CONFLICT DO NOTHING` that `_translate_sql` turns it into for
+        # Postgres -- suppresses a *constraint* violation, and there is no unique
+        # index on (title, artist). So every `init_db()` inserted three more rows.
+        # `init_db()` runs once per process, not once per deploy, so in production
+        # this had grown to 21,603 copies of these three titles: 99.3% of the
+        # music catalogue, every one of them approved and active, and therefore
+        # search results and trending sounds for real users.
+        #
+        # An explicit existence check rather than a unique index, because two
+        # genuinely different uploads may legitimately share a title and artist;
+        # the constraint that would fix this seeding bug would reject real music.
         cur.execute(
-            """
-            INSERT OR IGNORE INTO pulse_audio_tracks
-            (title, artist, duration_seconds, waveform_json, bpm, usage_count, trend_score, source_type, safety_status,
-             source_provider, license_type, commercial_use_allowed, remix_edit_allowed, attribution_required, proof_url,
-             approved_by_admin, active, mood, genre, tags_json, created_at, updated_at)
-            VALUES (?, ?, 30, ?, ?, 0, ?, ?, 'approved',
-                    'original_pulse_sound', 'PulseSoc original work', 1, 1, 0, ?, 1, 1, ?, ?, ?, ?, ?)
-            """,
-            (
-                title,
-                artist,
-                json.dumps([0.18, 0.45, 0.62, 0.38, 0.72, 0.54, 0.3, 0.66]),
-                bpm,
-                trend,
-                source,
-                f"internal:{title.lower().replace(' ', '-')}",
-                mood,
-                genre,
-                json.dumps(tags),
-                now_seed,
-                now_seed,
-            ),
+            "SELECT id FROM pulse_audio_tracks WHERE title=? AND artist=? "
+            "AND COALESCE(source_provider,'')='original_pulse_sound' LIMIT 1",
+            (title, artist),
         )
+        seed_exists = bool(cur.fetchone())
+        if not seed_exists:
+            cur.execute(
+                """
+                INSERT OR IGNORE INTO pulse_audio_tracks
+                (title, artist, duration_seconds, waveform_json, bpm, usage_count, trend_score, source_type, safety_status,
+                 source_provider, license_type, commercial_use_allowed, remix_edit_allowed, attribution_required, proof_url,
+                 approved_by_admin, active, mood, genre, tags_json, created_at, updated_at)
+                VALUES (?, ?, 30, ?, ?, 0, ?, ?, 'approved',
+                        'original_pulse_sound', 'PulseSoc original work', 1, 1, 0, ?, 1, 1, ?, ?, ?, ?, ?)
+                """,
+                (
+                    title,
+                    artist,
+                    json.dumps([0.18, 0.45, 0.62, 0.38, 0.72, 0.54, 0.3, 0.66]),
+                    bpm,
+                    trend,
+                    source,
+                    f"internal:{title.lower().replace(' ', '-')}",
+                    mood,
+                    genre,
+                    json.dumps(tags),
+                    now_seed,
+                    now_seed,
+                ),
+            )
+        # The repair UPDATE and the trending-sounds link still run either way:
+        # they are genuinely idempotent (COALESCE/NULLIF backfills, and a UNIQUE
+        # audio_track_id) and they are what keeps an existing seed row correct.
         cur.execute(
             """
             UPDATE pulse_audio_tracks
