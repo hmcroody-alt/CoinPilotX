@@ -111,10 +111,9 @@ Steps 3 and 4 are different events. PulseSoc controls the timing of step 3. Step
 is between you and Stripe.
 
 **Open — commercial:** the protection window is 2 days and the return window is
-**unbounded** (§5 — the declared 14- and 30-day constants are both dead code). So a
-return can always be accepted after your money has been released, and no choice of
-protection window would change that: a card chargeback can arrive up to 120 days
-after the charge regardless.
+14 days (§5), so a return can still be accepted after your money has been released.
+Narrowing that gap by lengthening the protection window would not close it: a card
+chargeback can arrive up to 120 days after the charge regardless.
 
 What happens then is described in §8 and is worth reading before you sign: your
 balance goes negative, you cannot withdraw until it clears, and it clears out of
@@ -132,40 +131,67 @@ agreement.
 
 ## 5. Returns
 
-> **⚠️ Do not state a return deadline here until one is actually enforced.**
+A buyer may open a return within **14 days**
+(`policy.STANDARD_RETURN_WINDOW_DAYS`). The 14 days run from **delivery** where
+delivery was recorded, and from the **purchase date** otherwise — a slow shipment
+does not consume the buyer's window. After the deadline the request is refused and
+the buyer is told the date it closed.
+
+The deadline is also shown **before** it matters: `/api/pulse/orders` now serves
+`return_window_closes_at` on every paid marketplace order, which the app has read
+since the orders dashboard shipped and which no endpoint had ever sent. It is
+omitted on orders that cannot be returned at all — refunded, cancelled, unpaid —
+because showing a deadline there would promise a right that does not exist.
+
+A return can also no longer be opened against a purchase that was never paid for.
+That was reachable, not theoretical: every `seller_transactions` row in production
+today is an abandoned or failed checkout.
+
+> **History, kept deliberately.** An earlier version of this section stated the
+> same 14 days while **nothing in the software enforced it**. Two constants
+> declared a window — 14 in `policy.py`, 30 in `marketplace_returns_routes.py` —
+> they disagreed, and neither was read by any code. Both returns engines admitted
+> a return on order *status* alone, so the real window was unbounded and a seller
+> signing that draft would have taken on unbounded return liability.
 >
-> An earlier version of this section said "within 14 days", citing
-> `STANDARD_RETURN_WINDOW_DAYS`. That was wrong and it is the exact failure this
-> document exists to prevent — publishing a number the software does not honour.
+> That is now fixed rather than reworded. The 30-day constant is deleted, the
+> policy module is the single source of truth, and both engines ask it:
+> `business_os/marketplace/returns.py::request_return` raises
+> `return_window_closed`, and `POST /api/pulse/marketplace/returns` answers 409
+> with the same code plus a `return_window_closes_at` field. The enforcement is
+> pinned by `tests/business_os/test_return_window_enforcement.py` and
+> `tests/marketplace/test_return_window_route_enforcement.py`, each of which was
+> mutation-checked — removing either gate turns them red.
+>
+> This paragraph stays until the agreement is published, because the lesson is the
+> point: **this document may only state numbers the software honours.**
 
-**No return deadline is enforced anywhere in the codebase.** Two constants declare
-one, they disagree with each other, and neither is read by any code:
-
-| Declared | Where | Read by |
-|---|---|---|
-| 14 days | `policy.py::STANDARD_RETURN_WINDOW_DAYS` | nothing |
-| 30 days | `marketplace_returns_routes.py::OPEN_WINDOW_DAYS` | nothing |
-
-There are also **two separate returns implementations**, and the one wired to
-order state (`services/business_os/marketplace/returns.py::request_return`) gates
-only on order *status* — `paid`, `fulfilled` or `completed` — with no time
-component at all. A buyer can open a return on a completed order indefinitely.
-`tests/business_os/test_returns_core.py` exercises precisely that and expects it
-to succeed.
-
-So a seller signing this today would be agreeing to an unbounded return liability.
+**Why there are two engines.** `business_os/marketplace/returns.py` serves Business
+OS orders (`business_os_mkt_orders`); the Pulse route pack serves the Pulse/mobile
+marketplace (`seller_transactions`). They are two marketplaces, not two copies of
+one — an earlier draft called this a defect and that was wrong. They share the
+window because they settle into the same seller ledger.
 
 **Open — must be decided before publication:**
 
-1. **What the window actually is**, and then make one constant real and delete the
-   other. Whatever is published here has to be the number the code enforces.
-2. **Which of the two returns implementations is the real one.** Two systems with
-   two schemas is a defect independent of this agreement.
+1. **Whether 14 days is the right number.** It is now enforced, so it is a real
+   commercial choice rather than a dead constant — and it is the owner's to make,
+   not engineering's. Changing it is a one-line change to
+   `STANDARD_RETURN_WINDOW_DAYS`.
+2. **Whether the window should run from delivery only.** Today a purchase that was
+   never marked delivered falls back to the purchase date. That bounds the
+   liability, but on a slow order it can shorten the buyer's effective window.
+   Closing this properly needs the delivery-confirmation mechanism that is still
+   open elsewhere in this mission.
 3. **Who pays return shipping.** Not encoded anywhere and not stated here. A common
    source of seller disputes.
 4. How the window interacts with the 2-day payout protection and §4's gap — a
    return accepted after funds are released creates the negative balance described
    in §8.
+
+**Known fail-open case, stated rather than hidden:** an order carrying no usable
+timestamp at all is allowed to be returned. Refusing would take a real right away
+from a buyer because a column was NULL. The defect is the NULL, not the return.
 
 ---
 
@@ -298,7 +324,13 @@ the parts that are legal rather than commercial.
 
 ## 12. Related
 
-- `services/business_os/marketplace/policy.py` — the enforced terms.
+- `services/business_os/marketplace/policy.py` — the enforced terms, including
+  `return_window_open` / `return_window_closes_at` (§5).
+- `tests/business_os/test_return_window_enforcement.py` — proves the 14 days are
+  enforced by the Business OS engine, that delivery anchors them, and that
+  fulfilment stamps the anchor once.
+- `tests/marketplace/test_return_window_route_enforcement.py` — the same deadline
+  on the Pulse route, plus the paid-purchase check.
 - `docs/payments/FUNDS_SEGREGATION.md` — how seller money is kept separate, and the
   open banking/regulatory question.
 - `docs/payments/STRIPE_CONNECT_ARCHITECTURE.md` — transfer and payout mechanics.

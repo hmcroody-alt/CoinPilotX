@@ -41,7 +41,12 @@ returns_blueprint = Blueprint("pulse_marketplace_returns", __name__)
 
 API_PREFIX = "/api/pulse/marketplace/returns"
 
-OPEN_WINDOW_DAYS = 30
+# The return window is NOT defined here. It used to be — `OPEN_WINDOW_DAYS = 30`,
+# which no code ever read, while `policy.STANDARD_RETURN_WINDOW_DAYS` said 14 and
+# was equally unread. Two constants disagreeing and neither enforced meant the
+# real window was unbounded. There is now one source of truth and it is the policy
+# module, because that is the version-stamped object the seller agreement quotes.
+from services.business_os.marketplace import policy as _policy  # noqa: E402
 
 RETURN_REASONS = {
     "not_received", "not_as_described", "damaged", "wrong_item",
@@ -162,6 +167,22 @@ def _ensure_schema(cur) -> None:
     _SCHEMA_READY = True
 
 
+def _delivered_at(cur, transaction_id: int):
+    """When delivery was confirmed for this purchase, or None.
+
+    Delegated to the settlement service, which owns the table, so this route and
+    the buyer-orders serializer cannot drift into two different answers about the
+    same buyer's deadline. See ``delivered_at_map`` for why the lookup is
+    savepoint-guarded (Postgres aborts the whole transaction on a failed
+    statement) and why an absent table is a normal state here rather than an
+    error.
+    """
+    from services import marketplace_settlement_service as _settlements
+
+    return _settlements.delivered_at_map(cur, [transaction_id]).get(
+        int(transaction_id))
+
+
 def _load(cur, return_id: int) -> dict:
     cur.execute("SELECT * FROM marketplace_returns WHERE id=? LIMIT 1", (return_id,))
     return dict(cur.fetchone() or {})
@@ -274,6 +295,29 @@ def return_open():
             return _error("Purchase not found.", 404)
         if tx.get("item_type") != "marketplace_product":
             return _error("Returns apply to marketplace purchases only.", 400)
+        # Only a purchase that was actually paid for can be returned. Without this
+        # a buyer could open a return against an abandoned or failed checkout —
+        # every one of the transactions in production today is in exactly that
+        # state, so this was reachable, not theoretical.
+        if str(tx.get("status") or "") != "paid":
+            return _error("This purchase was never completed, so there is nothing "
+                          "to return.", 409, error_code="not_paid")
+        # The deadline, anchored on delivery when it was recorded and on the
+        # purchase otherwise. One source of truth in the policy module.
+        # The settlements table belongs to marketplace_settlement_service and is
+        # created on its first use, which may not have happened yet. A missing
+        # table (or column) means only that no delivery was recorded, so the
+        # window falls back to the purchase date — bounded either way. It must not
+        # 500 a buyer's return, and it must not silently become "no deadline".
+        delivered_at = _delivered_at(cur, transaction_id)
+        if not _policy.return_window_open(delivered_at=delivered_at,
+                                          purchased_at=tx.get("created_at")):
+            closes = _policy.return_window_closes_at(
+                delivered_at=delivered_at, purchased_at=tx.get("created_at"))
+            return _error(
+                f"The {_policy.STANDARD_RETURN_WINDOW_DAYS}-day return window for "
+                f"this purchase closed on {closes}.", 409,
+                error_code="return_window_closed", return_window_closes_at=closes)
         cur.execute(
             "SELECT id FROM marketplace_returns WHERE transaction_id=? AND buyer_user_id=? LIMIT 1",
             (transaction_id, buyer_id),

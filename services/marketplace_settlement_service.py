@@ -92,6 +92,12 @@ def _ensure_transfer_group_column(conn) -> None:
             "WHERE table_name='marketplace_commercial_settlements'").fetchall()}
     if "transfer_group" not in cols:
         conn.execute("ALTER TABLE marketplace_commercial_settlements ADD COLUMN transfer_group TEXT")
+    # `delivered_at` anchors the buyer's return window. It is stored rather than
+    # derived from `protection_ends_at`, which would mean changing
+    # STANDARD_PAYOUT_PROTECTION_DAYS silently moved every past order's return
+    # deadline — two unrelated policies must not share one stored number.
+    if "delivered_at" not in cols:
+        conn.execute("ALTER TABLE marketplace_commercial_settlements ADD COLUMN delivered_at TEXT")
     # Cached only once the caller's commit has landed, so a rolled-back DDL is
     # not remembered as applied.
 
@@ -146,6 +152,69 @@ def get_settlement(transaction_id: Any, conn=None) -> dict | None:
     finally:
         if owned:
             conn.close()
+
+def delivered_at_map(cur, transaction_ids) -> dict:
+    """``{seller_transaction_id: delivered_at}`` for the ids that have a delivery.
+
+    Two different callers need this — the returns route, to decide whether the
+    window is still open, and the buyer-orders serializer, to tell the buyer when
+    it closes — so it lives here, with the table it reads, rather than being
+    written twice with two different failure behaviours.
+
+    Batched on purpose: the orders list renders up to 100 rows, and a per-row
+    lookup there is exactly the N+1 that made that screen the slowest surface in
+    the app once already.
+
+    Two things it must not do:
+
+      * it must not raise. This table is created on this module's first use,
+        which in a fresh deployment may not have happened, and neither caller
+        should fail because an optional fact is unavailable.
+      * it must not poison the caller's transaction. On Postgres a failed
+        statement aborts the whole transaction, so a bare try/except would leave
+        every *later* statement in the same request failing with "current
+        transaction is aborted" — the orders list would go blank, or the returns
+        INSERT would be lost. Hence the SAVEPOINT. SQLite never shows this.
+
+    An absent table or column yields ``{}``, which both callers read as "no
+    delivery recorded" and fall back to the purchase date. Bounded either way —
+    never "no deadline".
+    """
+    ids = []
+    for value in transaction_ids or ():
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    ids = sorted(set(i for i in ids if i))
+    if not ids:
+        return {}
+    try:
+        cur.execute("SAVEPOINT mkt_delivered_at_map")
+    except Exception:  # noqa: BLE001 - driver without savepoint support
+        return {}
+    placeholders = ",".join(["?"] * len(ids))
+    try:
+        cur.execute(
+            "SELECT seller_transaction_id, delivered_at "
+            "FROM marketplace_commercial_settlements "
+            f"WHERE seller_transaction_id IN ({placeholders})", tuple(ids))
+        found = {}
+        for row in cur.fetchall() or ():
+            record = dict(row)
+            value = record.get("delivered_at")
+            if value:
+                found[int(record.get("seller_transaction_id") or 0)] = value
+        cur.execute("RELEASE SAVEPOINT mkt_delivered_at_map")
+        return found
+    except Exception:  # noqa: BLE001 - absent table/column is a normal state here
+        try:
+            cur.execute("ROLLBACK TO SAVEPOINT mkt_delivered_at_map")
+            cur.execute("RELEASE SAVEPOINT mkt_delivered_at_map")
+        except Exception:  # noqa: BLE001
+            pass
+        return {}
+
 
 def settlements_for_payment(provider_payment_id: str, conn=None) -> list[dict]:
     """Every settlement funded by one Stripe payment, oldest first.
@@ -355,10 +424,15 @@ def transition_payout(transaction_id: Any, to_state: str, *, actor: str, reason:
 def mark_delivered(transaction_id: Any, *, actor: str, idempotency_key: str) -> dict:
     result = transition_payout(transaction_id, "protection_hold", actor=actor,
                                reason="delivery confirmed", idempotency_key=idempotency_key)
-    ends = (datetime.now(timezone.utc) + timedelta(days=policy.STANDARD_PAYOUT_PROTECTION_DAYS)).isoformat()
+    now = datetime.now(timezone.utc)
+    ends = (now + timedelta(days=policy.STANDARD_PAYOUT_PROTECTION_DAYS)).isoformat()
     conn = db.connect()
     try:
-        conn.execute("UPDATE marketplace_commercial_settlements SET protection_ends_at=? WHERE seller_transaction_id=?", (ends, int(transaction_id))); conn.commit()
+        # COALESCE so a repeated delivery confirmation cannot restart the buyer's
+        # return window; the first confirmation is the one that counts.
+        conn.execute("UPDATE marketplace_commercial_settlements SET protection_ends_at=?, "
+                     "delivered_at=COALESCE(delivered_at, ?) WHERE seller_transaction_id=?",
+                     (ends, now.isoformat(), int(transaction_id))); conn.commit()
     finally:
         conn.close()
     result["settlement"] = get_settlement(transaction_id)

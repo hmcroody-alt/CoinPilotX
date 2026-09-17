@@ -96529,13 +96529,18 @@ def pulse_buyer_order_prefetch(cur, rows):
 
 
 def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
-                               sellers_by_id=None, listings_by_id=None):
+                               sellers_by_id=None, listings_by_id=None,
+                               delivered_at=None):
     """Serialize one buyer order.
 
     `sellers_by_id` / `listings_by_id` are optional prefetched maps from
     `pulse_buyer_order_prefetch`. When they are None this queries per row
     exactly as it always did — which is correct for the single-order detail
     endpoint, where N is 1 and a batch would be two queries instead of one.
+
+    `delivered_at` is passed in rather than looked up here, so this stays a pure
+    function of what it is handed and the caller keeps control of how many
+    queries a page of orders costs.
     """
     raw = dict(order or {})
     tx_id = safe_int(raw.get("id"), 0)
@@ -96641,6 +96646,18 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
     # all along without ever reading the key. The app, having no lane field to
     # read, defaulted every order's timeline to shipping.
     fulfillment_kind = marketplace_fulfillment.order_kind(metadata, listing)
+    # When this buyer's return window closes. The app has read
+    # `return_window_closes_at` since the orders dashboard shipped and no
+    # endpoint has ever sent it, so the deadline was something a buyer could only
+    # discover by being refused. Served only on a paid marketplace purchase:
+    # on a refunded, cancelled or unpaid order a return deadline is meaningless,
+    # and showing one would be worse than showing nothing.
+    return_window_closes_at = None
+    if payment_status == "paid" and item_type in {"marketplace_product", "product"}:
+        from services.business_os.marketplace import policy as marketplace_policy
+
+        return_window_closes_at = marketplace_policy.return_window_closes_at(
+            delivered_at=delivered_at, purchased_at=raw.get("created_at"))
     return {
         **raw,
         "id": tx_id,
@@ -96671,6 +96688,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
         },
         "listing": listing,
         "fulfillment_kind": fulfillment_kind,
+        "return_window_closes_at": return_window_closes_at,
         "digital_files": digital_files,
         "marketplace_listing_id": numeric_item_id if item_type in {"marketplace_product", "product"} else 0,
         "receipt_url": receipt_url,
@@ -96740,9 +96758,18 @@ def api_pulse_buyer_orders():
     # the rows have to be off it first.
     seller_rows = cur.fetchall()
     seller_sellers, seller_listings = pulse_buyer_order_prefetch(cur, seller_rows)
+    # One query for the whole page, not one per order — this screen renders up to
+    # 100 rows and a per-row lookup here is the N+1 that made it the slowest
+    # surface in the app once already. Settlements key on `seller_transactions`,
+    # so creator orders below have no delivery record and get nothing.
+    from services import marketplace_settlement_service as _settlements
+    seller_delivered = _settlements.delivered_at_map(
+        cur, [safe_int(dict(row or {}).get("id"), 0) for row in seller_rows])
     seller_orders = [
         pulse_buyer_order_response(cur, row, "seller_transactions",
-                                   sellers_by_id=seller_sellers, listings_by_id=seller_listings)
+                                   sellers_by_id=seller_sellers, listings_by_id=seller_listings,
+                                   delivered_at=seller_delivered.get(
+                                       safe_int(dict(row or {}).get("id"), 0)))
         for row in seller_rows
     ]
     cur.execute(
@@ -96791,7 +96818,13 @@ def api_pulse_buyer_order_detail(transaction_id):
     if not order:
         conn.close()
         return api_error("Order not found.", 404)
-    payload = pulse_buyer_order_response(cur, order, source_table)
+    delivered_at = None
+    if source_table == "seller_transactions":
+        from services import marketplace_settlement_service as _settlements
+        delivered_at = _settlements.delivered_at_map(
+            cur, [int(transaction_id)]).get(int(transaction_id))
+    payload = pulse_buyer_order_response(cur, order, source_table,
+                                         delivered_at=delivered_at)
     conn.close()
     return jsonify({"ok": True, "order": payload, "payment_status": payload.get("payment_status"), "fulfilled": payload.get("status_group") == "paid"})
 
