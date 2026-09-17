@@ -49,7 +49,13 @@ private struct AppleTranslationPairHost: View {
     Color.clear
       .frame(width: 1, height: 1)
       .translationTask(configuration) { session in
-        await coordinator.run(session: session, descriptor: descriptor)
+        // The engine is built here, inside the task, and handed over by value.
+        // Nothing retains it past `run`, so Apple's session still lives and dies
+        // with this view's task exactly as the framework requires.
+        await coordinator.run(
+          engine: TranslationSessionEngine(session: session),
+          descriptor: descriptor
+        )
       }
       .onAppear {
         guard configuration == nil else { return }

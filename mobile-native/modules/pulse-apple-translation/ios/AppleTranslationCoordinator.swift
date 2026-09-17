@@ -1,10 +1,9 @@
 import Combine
 import Foundation
-import Translation
 
 // Stage 2 core. Owns the queue, deduplication, cancellation and result
 // correlation for Apple's on-device translation — but deliberately does NOT own
-// a `TranslationSession`.
+// a translation session.
 //
 // Apple only vends a session through `.translationTask(_:action:)` on a mounted
 // SwiftUI view, and the session dies with that view's task. So the ownership
@@ -13,25 +12,40 @@ import Translation
 //   * This coordinator is a long-lived queue. It publishes `hosts`, the minimum
 //     set of (source, target) pairs that currently have work.
 //   * `AppleTranslationHostRoot` renders one `.translationTask` per published
-//     host and calls `run(session:descriptor:)`. The session reference exists
-//     only inside that call and is cleared in its `defer`.
+//     host and calls `run(engine:descriptor:)`. The engine reference exists only
+//     inside that call and is cleared in its `defer`.
 //
 // That is why there is no session singleton here: a stored session would be a
 // dangling handle the moment SwiftUI tore the host down.
+//
+// It reaches Apple only through `AppleTranslationEngine` and
+// `AppleTranslationAvailability`, and so imports neither Translation nor
+// SwiftUI. That is not decoration. The behaviour that matters in this file —
+// which request a response belongs to, what a cancellation does to a job Apple
+// is already working on, whether a scroll-away can turn into a billable cloud
+// call — was unreachable from any test while the entry point required a
+// `TranslationSession`, and a `TranslationSession` cannot be constructed.
 
-@available(iOS 18.0, *)
 @MainActor
 final class AppleTranslationCoordinator: ObservableObject {
-  static let shared = AppleTranslationCoordinator()
+  /// Watchdog and cache deadlines. Injected so tests can run them in
+  /// milliseconds; production uses `AppleTranslationLimits` unchanged.
+  struct Timings {
+    var hostMount: TimeInterval
+    var translate: TimeInterval
+    var pairIdle: TimeInterval
+    var statusCacheTTL: TimeInterval
 
-  // Tunables live in `AppleTranslationLimits` so the Expo module can publish
-  // them to JS without tripping this class's iOS 18 availability gate.
+    static let production = Timings(
+      hostMount: AppleTranslationLimits.hostMountTimeout,
+      translate: AppleTranslationLimits.translateTimeout,
+      pairIdle: AppleTranslationLimits.pairIdleTimeout,
+      statusCacheTTL: AppleTranslationLimits.statusCacheTTL
+    )
+  }
+
   private static let maxActivePairs = AppleTranslationLimits.maxActivePairs
   private static let maxTextLength = AppleTranslationLimits.maxTextLength
-  private static let hostMountTimeout = AppleTranslationLimits.hostMountTimeout
-  private static let translateTimeout = AppleTranslationLimits.translateTimeout
-  private static let pairIdleTimeout = AppleTranslationLimits.pairIdleTimeout
-  private static let statusCacheTTL = AppleTranslationLimits.statusCacheTTL
 
   /// Identifies one mounted host. `generation` exists so a wedged session can be
   /// replaced: bumping it changes the SwiftUI identity, which tears the old
@@ -46,6 +60,14 @@ final class AppleTranslationCoordinator: ObservableObject {
   /// True while at least one host view is attached. The JS side reads this to
   /// distinguish "no native module" from "module present, host not mounted".
   private(set) var isHostMounted = false
+
+  private let availability: any AppleTranslationAvailability
+  private let timings: Timings
+
+  init(availability: any AppleTranslationAvailability, timings: Timings = .production) {
+    self.availability = availability
+    self.timings = timings
+  }
 
   private struct Job {
     let request: AppleTranslationJobRequest
@@ -63,9 +85,9 @@ final class AppleTranslationCoordinator: ObservableObject {
     /// Which `run` call currently owns this pair. Guards against an outgoing
     /// host's `defer` clobbering an incoming host's state.
     var runToken = 0
-    /// Held ONLY for the duration of `run(session:descriptor:)` and cleared in
+    /// Held ONLY for the duration of `run(engine:descriptor:)` and cleared in
     /// its `defer`, so its lifetime never exceeds the SwiftUI view's task.
-    var session: TranslationSession?
+    var engine: (any AppleTranslationEngine)?
     var lastActivity = Date()
   }
 
@@ -81,8 +103,6 @@ final class AppleTranslationCoordinator: ObservableObject {
   private var statusCache: [TranslationPairKey: (status: AppleLanguageStatus, at: Date)] = [:]
   private var nextRunToken = 1
   private var mountedHostCount = 0
-
-  private init() {}
 
   // MARK: - Host lifecycle
 
@@ -175,10 +195,10 @@ final class AppleTranslationCoordinator: ObservableObject {
       cancelledRequestIds.insert(requestId)
       if let index = pairs[job.request.pair]?.queued.firstIndex(of: requestId) {
         pairs[job.request.pair]?.queued.remove(at: index)
-      } else if #available(iOS 26.0, *), let session = pairs[job.request.pair]?.session {
-        // Only iOS 26 can actually stop work already handed to Apple. On 18.x
-        // we simply drop the response; see `process`.
-        session.cancel()
+      } else {
+        // Already handed to Apple. Only iOS 26 can actually stop it, so this is
+        // best-effort and `process` discards the late response regardless.
+        pairs[job.request.pair]?.engine?.cancelInFlight()
       }
       finish(requestId, .failure(AppleTranslationError(.requestCanceled, detail: reason)))
     }
@@ -195,10 +215,10 @@ final class AppleTranslationCoordinator: ObservableObject {
 
   func availabilityStatus(source: String?, target: String) async -> AppleLanguageStatus {
     let pair = TranslationPairKey(source: source, target: target)
-    if let cached = statusCache[pair], Date().timeIntervalSince(cached.at) < Self.statusCacheTTL {
+    if let cached = statusCache[pair], Date().timeIntervalSince(cached.at) < timings.statusCacheTTL {
       return cached.status
     }
-    let status = await Self.probeStatus(pair: pair, text: nil)
+    let status = await classifiedStatus(for: pair, text: nil)
     // Auto-detect results depend on the text, so only explicit pairs are cached.
     if source != nil {
       statusCache[pair] = (status, Date())
@@ -207,16 +227,15 @@ final class AppleTranslationCoordinator: ObservableObject {
   }
 
   func supportedLanguages() async -> [String] {
-    let languages = await LanguageAvailability().supportedLanguages
-    return languages.map { $0.minimalIdentifier }.sorted()
+    await availability.supportedLanguages()
   }
 
   // MARK: - Session loop, driven by AppleTranslationHostRoot
 
   /// Consumes this pair's queue for as long as SwiftUI keeps the host's task
-  /// alive. Returns when the task is cancelled, at which point the session is
-  /// released.
-  func run(session: TranslationSession, descriptor: HostDescriptor) async {
+  /// alive. Returns when the task is cancelled, at which point the engine — and
+  /// with it Apple's session — is released.
+  func run(engine: any AppleTranslationEngine, descriptor: HostDescriptor) async {
     let pair = descriptor.pair
     // Attach to an existing pair only. `hosts` is published *by* this
     // coordinator, so the pair must already exist; if `reset` or `retire`
@@ -227,19 +246,19 @@ final class AppleTranslationCoordinator: ObservableObject {
     let token = nextRunToken
     nextRunToken += 1
     state.runToken = token
-    state.session = session
+    state.engine = engine
     state.lastActivity = Date()
     isHostMounted = true
 
     defer {
       if let current = pairs[pair], current.runToken == token {
-        current.session = nil
+        current.engine = nil
       }
     }
 
     while !Task.isCancelled {
       guard let requestId = await nextRequestId(for: pair, token: token) else { break }
-      await process(requestId: requestId, pair: pair, session: session)
+      await process(requestId: requestId, pair: pair, engine: engine)
       scheduleIdleRetirement(for: pair)
     }
   }
@@ -315,7 +334,7 @@ final class AppleTranslationCoordinator: ObservableObject {
   }
 
   private func scheduleIdleRetirement(for pair: TranslationPairKey) {
-    let deadline = Self.pairIdleTimeout
+    let deadline = timings.pairIdle
     Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
       guard let self, let state = self.pairs[pair] else { return }
@@ -328,10 +347,11 @@ final class AppleTranslationCoordinator: ObservableObject {
   /// Fails a job that never found a session. Fires only while no host is
   /// attached — a queued job behind a busy session is not a mounting failure.
   private func scheduleHostMountWatchdog(requestId: String, pair: TranslationPairKey) {
+    let deadline = timings.hostMount
     Task { @MainActor [weak self] in
-      try? await Task.sleep(nanoseconds: UInt64(Self.hostMountTimeout * 1_000_000_000))
+      try? await Task.sleep(nanoseconds: UInt64(deadline * 1_000_000_000))
       guard let self, self.jobs[requestId] != nil else { return }
-      guard self.pairs[pair]?.session == nil else { return }
+      guard self.pairs[pair]?.engine == nil else { return }
       self.finish(
         requestId,
         .failure(AppleTranslationError(
@@ -346,7 +366,7 @@ final class AppleTranslationCoordinator: ObservableObject {
   /// the host generation so SwiftUI rebuilds the `.translationTask` and the pair
   /// is not wedged for the rest of the app's life.
   private func scheduleJobWatchdog(requestId: String, pair: TranslationPairKey) {
-    let budget = Self.hostMountTimeout + Self.translateTimeout
+    let budget = timings.hostMount + timings.translate
     Task { @MainActor [weak self] in
       try? await Task.sleep(nanoseconds: UInt64(budget * 1_000_000_000))
       guard let self, self.jobs[requestId] != nil else { return }
@@ -358,7 +378,7 @@ final class AppleTranslationCoordinator: ObservableObject {
   private func bumpGeneration(for pair: TranslationPairKey) {
     guard let state = pairs[pair] else { return }
     state.generation += 1
-    state.session = nil
+    state.engine = nil
     wake(pair)
     if let index = hosts.firstIndex(where: { $0.pair == pair }) {
       hosts[index] = HostDescriptor(pair: pair, generation: state.generation)
@@ -370,7 +390,7 @@ final class AppleTranslationCoordinator: ObservableObject {
   private func process(
     requestId: String,
     pair: TranslationPairKey,
-    session: TranslationSession
+    engine: any AppleTranslationEngine
   ) async {
     guard let job = jobs[requestId] else { return }
     if cancelledRequestIds.contains(requestId) {
@@ -383,7 +403,8 @@ final class AppleTranslationCoordinator: ObservableObject {
     var downloadPrepared = false
 
     do {
-      switch await Self.probeStatus(pair: pair, text: pair.source == nil ? job.request.text : nil) {
+      let text = pair.source == nil ? job.request.text : nil
+      switch await classifiedStatus(for: pair, text: text) {
       case .unsupported:
         throw AppleTranslationError(.unsupportedLanguagePair, detail: pair.debugDescription)
       case .invalid:
@@ -394,7 +415,7 @@ final class AppleTranslationCoordinator: ObservableObject {
         guard job.request.allowDownload else {
           throw AppleTranslationError(.modelNotInstalled, detail: pair.debugDescription)
         }
-        try await session.prepareTranslation()
+        try await engine.prepare()
         downloadPrepared = true
       case .installed, .temporarilyUnavailable:
         break
@@ -402,19 +423,17 @@ final class AppleTranslationCoordinator: ObservableObject {
 
       try Task.checkCancellation()
 
-      let appleRequest = TranslationSession.Request(
-        sourceText: job.request.text,
-        clientIdentifier: requestId
-      )
-      let responses = try await session.translations(from: [appleRequest])
+      let responses = try await engine.translate([
+        TranslationEngineRequest(clientIdentifier: requestId, sourceText: job.request.text)
+      ])
 
-      // Correlate on Apple's own client identifier rather than on array
-      // position. This is what makes a recycled feed cell safe.
+      // Correlate on the client identifier the request carried rather than on
+      // array position. This is what makes a recycled feed cell safe.
       guard let response = responses.first(where: { $0.clientIdentifier == requestId }) else {
         throw AppleTranslationError(.providerFailure, detail: "client_identifier_mismatch")
       }
 
-      // iOS 18 has no `session.cancel()`, so a cancellation that landed while
+      // iOS 18 cannot interrupt a session, so a cancellation that landed while
       // Apple was working is enforced here by discarding the result.
       if cancelledRequestIds.contains(requestId) {
         finish(requestId, .failure(AppleTranslationError(.requestCanceled, detail: "post_dispatch")))
@@ -426,8 +445,8 @@ final class AppleTranslationCoordinator: ObservableObject {
         contentId: job.request.contentId,
         contentVersion: job.request.contentVersion,
         translatedText: response.targetText,
-        detectedSourceLanguage: response.sourceLanguage.minimalIdentifier,
-        targetLanguage: response.targetLanguage.minimalIdentifier,
+        detectedSourceLanguage: response.sourceLanguage,
+        targetLanguage: response.targetLanguage ?? pair.target,
         durationMs: Int(Date().timeIntervalSince(started) * 1000),
         deduplicated: false,
         downloadPrepared: downloadPrepared
@@ -480,46 +499,22 @@ final class AppleTranslationCoordinator: ObservableObject {
 
   // MARK: - Availability
 
-  /// Classifies a pair using Apple's programmatic API. Never a hardcoded list —
-  /// Stage 4 requires the device to be the authority, which is also what lets
-  /// Haitian Creole be answered honestly rather than guessed.
-  private static func probeStatus(pair: TranslationPairKey, text: String?) async -> AppleLanguageStatus {
-    let target = Locale.Language(identifier: pair.target)
-    let availability = LanguageAvailability()
-
-    if let source = pair.source {
-      if LanguageNormalizer.modelScope(source) == LanguageNormalizer.modelScope(pair.target) {
-        return .sameLanguage
-      }
-      let status = await availability.status(
-        from: Locale.Language(identifier: source),
-        to: target
-      )
-      return classify(status)
+  /// Classifies a pair, answering from the tags alone where that is possible and
+  /// asking the device otherwise.
+  ///
+  /// The same-language verdict is decided here rather than by the probe so that
+  /// a pair needing no translation never reaches Apple — and, because
+  /// `sameLanguage.permitsCloudFallback` is false, never reaches the cloud
+  /// either. The comparison is on `modelScope`, so `en-GB` to `en-US` is the
+  /// same language while `zh-Hans` to `zh-Hant` is not.
+  private func classifiedStatus(
+    for pair: TranslationPairKey,
+    text: String?
+  ) async -> AppleLanguageStatus {
+    if let source = pair.source,
+       LanguageNormalizer.modelScope(source) == LanguageNormalizer.modelScope(pair.target) {
+      return .sameLanguage
     }
-
-    // Auto-detect: Apple needs the text to decide.
-    guard let text, !text.isEmpty else { return .temporarilyUnavailable }
-    do {
-      return classify(try await availability.status(for: text, to: target))
-    } catch {
-      // Detection failure is not the same as an unsupported pair; leaving it
-      // `temporarilyUnavailable` lets `process` try anyway rather than falsely
-      // reporting that Apple does not support the language.
-      return .temporarilyUnavailable
-    }
-  }
-
-  private static func classify(_ status: LanguageAvailability.Status) -> AppleLanguageStatus {
-    switch status {
-    case .installed:
-      return .installed
-    case .supported:
-      return .supportedDownloadRequired
-    case .unsupported:
-      return .unsupported
-    @unknown default:
-      return .temporarilyUnavailable
-    }
+    return await availability.status(pair: pair, text: text)
   }
 }

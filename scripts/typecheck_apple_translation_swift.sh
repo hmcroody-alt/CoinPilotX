@@ -34,7 +34,9 @@ SDK_PATH="$(xcrun --sdk "$SDK_NAME" --show-sdk-path)"
 PURE_SOURCES=(
   "$MODULE_DIR/AppleTranslationModels.swift"
   "$MODULE_DIR/AppleTranslationError.swift"
+  "$MODULE_DIR/AppleTranslationEngine.swift"
   "$MODULE_DIR/AppleTranslationCoordinator.swift"
+  "$MODULE_DIR/AppleTranslationSessionEngine.swift"
   "$MODULE_DIR/AppleTranslationHost.swift"
 )
 
