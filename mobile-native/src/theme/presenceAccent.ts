@@ -50,12 +50,21 @@ import { colors } from "./colors";
 const HUES = {
   /** Brand teal — an operation. The default weight of the product. */
   enterprise: "#32e6b3",
-  /** Violet — a person's creative output. Mirrors PulseSoc's creator accent. */
-  creative: "#9f7cff",
+  /**
+   * Violet — a person's creative output. Tracks `colors.intelligence`, which
+   * was lifted from `#9f7cff` when the surfaces became graphite and that violet
+   * stopped clearing 4.5:1 on them. Kept equal by hand rather than by reference
+   * so `HUES` stays a literal `as const`; `reads the same violet as the palette`
+   * below is the test that says so.
+   */
+  creative: "#b297ff",
   /** Cyan — something with a storefront and a price on it. */
   commerce: "#61d8ff",
-  /** Magenta — something people gather at or belong to. */
-  community: "#ff6ad5"
+  /**
+   * Magenta — something people gather at or belong to. Was `#ff6ad5`; +1.9%
+   * lightness, same hue, for the same reason.
+   */
+  community: "#ff74d8"
 } as const;
 
 export type PresenceHue = keyof typeof HUES;
