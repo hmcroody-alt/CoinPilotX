@@ -1538,7 +1538,7 @@ overflow: hidden;
 border-radius: inherit;
 background:
 radial-gradient(circle at 26% 18%, rgba(110, 223, 246, .24), transparent 32%),
-linear-gradient(145deg, rgba(8, 20, 37, .96), rgba(3, 8, 17, .98));
+linear-gradient(145deg, rgba(48, 56, 67, .96), rgba(48, 56, 67, .98));
 }
 .pulse-status-card .status-preview-video,
 .pulse-status-card .status-preview-image {

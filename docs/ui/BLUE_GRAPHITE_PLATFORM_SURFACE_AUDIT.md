@@ -335,3 +335,44 @@ Stage 1 is the token layer. The evidence above says to start with
 `web/src/styles/tokens.css` for the SPA — those five files carry 348 of the
 895 structural literals, and they are all stylesheets, which means they can be
 moved to variables without touching a single component.
+
+## Stage 4, and the two things the buckets could not decide
+
+The four heavy stylesheets are migrated. 348 structural literals became 191:
+`pulse_status_system.css` 116 → 89, `pulse_messages_v2.css` 92 → 42,
+`pulse_desktop_feed.css` 75 → 34, `pulse_home_os.css` 65 → 28. Each commit
+carries its own exclusion list, and in each file the total inventory fell by
+exactly as much as the structural bucket did — an arithmetic check that is
+only satisfiable if no literal quietly changed bucket.
+
+Two decisions came out of the migration rather than out of the audit, and
+both are the kind a classifier cannot make because they are about what a
+selector is *used on*, not what it is named.
+
+**A control painted on media stays dark, and that decides whole files.**
+`pulse_reaction_system.css` is 35 structural literals and is excluded whole.
+Its own header calls it shared across "Reels, Statuses, feed", and its four
+surface tokens resolve onto selector lists that include
+`.reel-action.reel-action-button` and `.pulse-status-action` — controls that
+float over a video or a photograph. A graphite pill needs the background
+behind it to be dark to read; over a bright frame it washes out. The same
+reasoning already excluded the play, sound and reaction controls in
+`pulse_desktop_feed.css`, so the file follows them rather than contradicting
+them.
+
+That exclusion reached backwards. Four `.pulse-action-button` declarations in
+`pulse_desktop_feed.css` had been lifted before the shared language was
+traced, and they are the on-card half of the same design vocabulary whose
+other half sits on media. The two halves cannot be split without splitting
+the stylesheet, so the lift was **reverted**: the action-button language is
+now uniformly dark everywhere, which is worth more than half of it being
+consistent with the cards around it.
+
+**A selector that appears in two stylesheets must be decided once.**
+`.pulse-status-card .status-preview-layer` is declared in both
+`pulse_desktop_feed.css` and `pulse_status_system.css` with near-identical
+gradients. The first migration moved one and left the other, which would have
+put two different fills behind the same element depending on which page you
+were on. Reconciled to the migrated value. Worth checking for directly on the
+remaining files — a duplicated selector is invisible to a per-file pass, and
+the per-file pass is the shape this migration has.

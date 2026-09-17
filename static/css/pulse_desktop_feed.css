@@ -3596,7 +3596,7 @@ width: 100%;
 .feed > .post-card-modern .pulse-action-button,
 .post-comment-composer .pulse-action-button {
 border-radius: 999px !important;
-background: rgba(42, 51, 64, .28) !important;
+background: rgba(4, 10, 20, .28) !important;
 border: 1px solid rgba(150, 235, 255, .24) !important;
 backdrop-filter: blur(14px) saturate(1.5);
 -webkit-backdrop-filter: blur(14px) saturate(1.5);
@@ -3615,7 +3615,7 @@ color 160ms ease !important;
 .pulse-action-button:hover,
 .pulse-action-button:focus-visible {
 transform: translateY(-1px) scale(1.025);
-background: rgba(54, 61, 70, .38) !important;
+background: rgba(8, 18, 32, .38) !important;
 border-color: rgba(150, 235, 255, .42) !important;
 outline: none;
 }
@@ -3737,7 +3737,7 @@ min-width: 0 !important;
 min-height: 54px !important;
 padding: 7px 8px !important;
 border-radius: 999px !important;
-background: rgba(42, 51, 64, .26) !important;
+background: rgba(4, 10, 20, .26) !important;
 border: 1px solid rgba(150, 235, 255, .26) !important;
 backdrop-filter: blur(14px) saturate(150%) !important;
 -webkit-backdrop-filter: blur(14px) saturate(150%) !important;
@@ -3760,7 +3760,7 @@ transition: transform 160ms ease, border-color 160ms ease, background 160ms ease
 .video-card-modern.post-card-modern .post-action-row .pulse-action-button:hover,
 .video-card-modern.post-card-modern .post-action-row .pulse-action-button:focus-visible {
 transform: translateY(-1px) scale(1.025) !important;
-background: rgba(54, 61, 70, .38) !important;
+background: rgba(8, 18, 32, .38) !important;
 outline: 2px solid rgba(110, 223, 246, .28) !important;
 outline-offset: 3px !important;
 }
