@@ -23,11 +23,23 @@ const mockSetItemAsync = jest.fn();
 jest.mock("../../native/secureStore", () => ({
   getItemAsync: (...args: unknown[]) => mockGetItemAsync(...args),
   setItemAsync: (...args: unknown[]) => mockSetItemAsync(...args),
+  AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY: "afterFirstUnlockThisDeviceOnly",
 }));
 
-import { getPushInstallationId } from "../installationId";
-
 const KEY = "pulsesoc.native.push.installation_id";
+/** What the module must write so a *locked* phone can still read the id back. */
+const LOCKED_READABLE = { keychainAccessible: "afterFirstUnlockThisDeviceOnly" };
+
+/**
+ * Re-imported per test on purpose.
+ *
+ * The module carries process state — the shared in-flight promise, and the flag that
+ * makes the accessibility upgrade happen once per launch. Sharing one instance across
+ * tests makes each one depend on the order of the ones before it: the upgrade assertions
+ * would pass or fail according to whether an earlier test had already consumed the single
+ * upgrade. A fresh module per test is what a fresh app launch actually looks like.
+ */
+let getPushInstallationId: typeof import("../installationId").getPushInstallationId;
 
 /** A promise plus the handles to settle it from the test body. */
 function deferred<T>() {
@@ -44,6 +56,8 @@ beforeEach(() => {
   mockGetItemAsync.mockReset();
   mockSetItemAsync.mockReset();
   mockSetItemAsync.mockResolvedValue(undefined);
+  jest.resetModules();
+  getPushInstallationId = require("../installationId").getPushInstallationId;
 });
 
 describe("push installation id", () => {
@@ -78,15 +92,64 @@ describe("push installation id", () => {
 
     expect(new Set(ids).size).toBe(1);
     expect(mockSetItemAsync).toHaveBeenCalledTimes(1);
-    expect(mockSetItemAsync).toHaveBeenCalledWith(KEY, ids[0]);
+    expect(mockSetItemAsync).toHaveBeenCalledWith(KEY, ids[0], LOCKED_READABLE);
   });
 
-  it("returns the stored id and does not overwrite it", async () => {
+  it("returns the stored id unchanged, rewriting it only to widen when it can be read", async () => {
+    // The rewrite is a migration, not an overwrite: same value, different accessibility.
+    // Installs made before this carry the id under the `whenUnlocked` default, and the
+    // keychain offers no way to ask which accessibility an item has, so writing it again
+    // is the only way to move it. What must never change is the value itself — a new id
+    // here would silently split this device's alert and VoIP registrations.
     mockGetItemAsync.mockResolvedValue("native-ios-existing-0123456789");
 
     const id = await getPushInstallationId();
 
     expect(id).toBe("native-ios-existing-0123456789");
+    expect(mockSetItemAsync).toHaveBeenCalledWith(KEY, "native-ios-existing-0123456789", LOCKED_READABLE);
+  });
+
+  it("upgrades the stored id once per launch, not on every read", async () => {
+    // Every authenticated request on the call path reads this id. Rewriting a keychain
+    // item on each one is pointless work on the latency-sensitive answer path.
+    mockGetItemAsync.mockResolvedValue("native-ios-existing-0123456789");
+
+    await getPushInstallationId();
+    await getPushInstallationId();
+    await getPushInstallationId();
+
+    expect(mockSetItemAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries the upgrade after a failed write rather than giving up for the process", async () => {
+    // The first attempt can land while the device is locked *and* the item is still
+    // stored under the old accessibility — precisely the state the upgrade exists to
+    // leave. Marking it done anyway would strand the device there until the app is
+    // killed and relaunched.
+    mockGetItemAsync.mockResolvedValue("native-ios-existing-0123456789");
+    mockSetItemAsync.mockRejectedValueOnce(new Error("keychain locked"));
+
+    await getPushInstallationId();
+    await getPushInstallationId();
+
+    expect(mockSetItemAsync).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not mint an id when the keychain refuses the read", async () => {
+    // The load-bearing distinction. `searchKeyChain` returns null only for
+    // `errSecItemNotFound` and throws for every other status, so a throw means the keychain
+    // refused — on iOS, overwhelmingly a locked device — not that the item is absent.
+    // Collapsing the two (`.catch(() => "")` around the read, then minting) is what the
+    // implementation used to do, and it is now actively dangerous: the item is written
+    // `afterFirstUnlock`, so a mint during a locked read would *overwrite* the real
+    // installation id. The device's alert registration would then be filed under an id its
+    // VoIP token no longer matches, and the backend would stop suppressing the alert push.
+    // Empty says "not known right now"; every caller handles that by omitting the id.
+    mockGetItemAsync.mockRejectedValue(new Error("errSecInteractionNotAllowed"));
+
+    const id = await getPushInstallationId();
+
+    expect(id).toBe("");
     expect(mockSetItemAsync).not.toHaveBeenCalled();
   });
 

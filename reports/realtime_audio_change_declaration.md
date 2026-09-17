@@ -4025,3 +4025,143 @@ that a call which previously could not start now can. `npm run typecheck` exit 0
 The physical validation owed is unchanged and now covers both answer paths:
 answer from the lock screen with the app **backgrounded**, and again with the app
 **force-quit**, confirming speech audible in both directions each time.
+
+---
+
+## Build 27 — the answering device names itself in the accept body
+
+### The change and why it is not a rewrite
+
+Build 26 fixed answering. This fixes what happens *immediately after* answering:
+the phone that answered receives its own `answered_elsewhere` VoIP cancel and
+tears its own CallKit UI down, while the media session keeps running. Reported
+from a locked device as **"PulseSoc Audio ended"** displayed over a call that was
+in fact still connected and still audible.
+
+The cause is one missing field in one request body. `_voip_stop_ringing` adds the
+answering *user* back into the cancel recipient set deliberately — a participant
+row is per user, not per device, so once the actor's row flips to `joined` their
+other handsets are invisible to the ringing query while still showing a
+full-screen CallKit UI. It then spares the answering *device* via an exclusion
+set fed by `_answering_device_ids(payload)`, read out of the accept body. The
+native client sent `{"source": "native"}` and named no device, so the exclusion
+set was empty and the cancel came home.
+
+Both surfaces of the fix are in `mobile-native/src/api/`:
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/src/api/calls.ts` | **`backend_token_and_room_policy` (protected)** | `acceptCall` adds `device_id` / `installation_id` to the POST body, sourced from `getPushInstallationId()`. Keys are **omitted**, not blanked, when the id is unknown. No other function touched. |
+| `mobile-native/src/api/installationId.ts` | not protected | Writes the id `afterFirstUnlockThisDeviceOnly`; stops conflating a keychain *refusal* with an *absent* item; migrates existing items once per process. |
+
+No AVAudioSession call, no Agora engine, no publication path, no ownership
+arbitration call, no new audio singleton, no second RTC provider, no Mux in call
+transport, no new route, no schema change, no new `os.getenv`. **The backend is
+unchanged** — it already implemented the exclusion, correctly, and the tests
+added here pin that rather than alter it.
+
+### Why the protected file had to be the one to change
+
+`calls.ts` owns the accept request. The device id has to be in *that* body
+because `_answering_device_ids` reads exactly that payload; there is no other
+seam. The alternative considered and rejected was backend-side: skip the actor's
+own cancel whenever the exclusion set is empty. That trades this bug for the
+stuck-CallKit-UI bug the fan-out exists to prevent, and it is unrecoverable —
+`_voip_stop_ringing` is scoped to the single `ringing -> anything` edge, so no
+later transition would ever clear that UI. A second option, echoing a per-device
+id back through the push payload, expands a deliberately minimal 10-key VoIP
+payload and needs both halves shipped together to help anyone.
+
+### The second-order hazard that made this more than a one-liner
+
+Adding the field alone would have shipped a no-op, and widening the keychain
+alone would have been dangerous. Both are worth stating because neither is
+visible from the diff:
+
+1. **The id was unreadable at the only moment it is needed.** `expo-secure-store`
+   defaults to `kSecAttrAccessibleWhenUnlocked`
+   (`SecureStoreOptions.swift:8`), so the stored installation id cannot be read
+   while the screen is locked — and a locked screen is precisely when a VoIP call
+   is answered. The body would have carried nothing on exactly the path the bug
+   was reported from. Now written `AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY`,
+   following the precedent `session/sessionStore.ts` already set for the access
+   token (which is why an authenticated `/accept` works from the lock screen at
+   all). `THIS_DEVICE_ONLY` because an id synced through the iCloud keychain
+   would name the wrong phone.
+
+2. **Widening it without fixing the read would have corrupted the id.**
+   `searchKeyChain` returns `nil` only for `errSecItemNotFound` and *throws* for
+   every other status, so the old `.catch(() => "")` turned "unreadable" into
+   "absent" and minted a replacement. Harmless while the item was unwritable when
+   locked; once it is writable, that mint **overwrites the real installation id**
+   — and since the backend suppresses the incoming-call alert push for device ids
+   holding an active VoIP token, the device would start getting CallKit *and* a
+   banner for every call. The read now distinguishes throw from null and returns
+   `""` on a refusal, minting only on a genuine absence. Ordering matters: this
+   had to land in the same change as the widening, not after it.
+
+### Verification
+
+Every assertion below was mutation-checked — the implementation was reverted to
+the broken form and the test confirmed to fail, then restored.
+
+| Mutation | Caught by |
+|---|---|
+| accept body reverted to the shipped `{"source": "native"}` | 2 tests, `calls.test.ts` |
+| empty device id forwarded instead of omitted | 2 tests, `calls.test.ts` |
+| `.catch` dropped from the id lookup (answering breaks on a locked keychain) | 1 test, `calls.test.ts` |
+| keychain refusal collapsed back into "absent" (mints, overwrites) | 1 test, `installationId.test.ts` |
+| accessibility widening removed | 2 tests, `installationId.test.ts` |
+| failed upgrade never retried for the process | 1 test, `installationId.test.ts` |
+| engine: exclusion never applied (the shipped backend-side equivalent) | 1 test, new backend file |
+| engine: exclusion applied to *every* recipient, not just the actor | 2 tests |
+| engine: `answered` guard dropped, so a decline spares a device too | 1 test |
+| engine: blank ids kept in the exclusion list | 3 tests |
+| transport: `cancel_devices` ignores `exclude_device_ids` | 2 tests |
+
+Suites:
+
+- `npm run typecheck` — exit 0
+- `npm run i18n:validate` — exit 0
+- `npm test` — **456 suites / 7880 tests, all passed**
+- `test:realtime-audio-critical` — 11 suites / **191 passed**
+- `test:realtime-audio` — 21 suites / **377 passed**
+- `test:realtime-audio-architecture` — **22 passed**
+- `tests/protection/test_realtime_audio_architecture.py` — 19 passed
+- `tests/protection/test_agora_token_generation.py` — 9 passed
+- `tests/protection/test_agora_rtc_provider_contract.py` — 4 passed
+- `tests/protection/test_ios_aps_environment_contract.py` — 5 passed
+- `tests/protection/test_ios_push_bundle_identity.py` — 4 passed
+- `tests/test_voip_pushkit_delivery.py` — 49 passed
+- `tests/test_call_accept_race.py` — 4 passed, 1 skipped
+- `tests/test_call_acceptance_sync.py` — 10 passed
+- `tests/test_call_two_sided_hangup.py` — 6 passed
+- `tests/test_call_multi_guest.py` — 22 passed
+- `tests/protection/test_environment_contract.py` — 10 passed
+- `tests/protection/test_realtime_audio_gate_coverage.py` — 14 passed, 27 subtests
+- `tests/test_call_answered_elsewhere_self_cancel.py` (**new**) — 9 passed
+
+### Build-number addendum (build 27)
+
+Same shape as builds 25 and 26: `CFBundleVersion` 26 → 27 touches
+`mobile-native/app.json`, a `dependency_watch` path.
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | One line: `"buildNumber": "26"` → `"27"`. No dependency, plugin, SDK, pod, or native-module change. |
+
+Changed in step with `ios/PulseSoc/Info.plist` and both `CURRENT_PROJECT_VERSION`
+entries in `project.pbxproj`; `tests/protection/test_ios_build_version_contract.py`
+— **8 passed**. `MARKETING_VERSION` stays 1.0.2. No entry in `package.json`,
+`package-lock.json`, `eas.json`, `ios/Podfile`, `ios/Podfile.lock` or the patch
+set changed, so the media stack is byte-identical to the one the battery above
+ran against.
+
+### Still owed
+
+The physical validation carried forward from builds 25 and 26 is unchanged and
+now has a third case. On a **locked** P3r7or, with the app backgrounded and again
+force-quit: answer, confirm speech is audible in both directions, **and confirm
+the CallKit UI stays up for the duration instead of reporting the call ended.**
+That last clause is the only direct evidence for this fix — every assertion above
+tests the mechanism, and none of them can observe the system call UI.

@@ -179,10 +179,36 @@ export async function startCall(payload: {
   return call;
 }
 
+/**
+ * Answer a call, and tell the server *which device* answered.
+ *
+ * The device id is not bookkeeping. Accepting moves the call out of `ringing`, and that
+ * edge fans an `answered_elsewhere` VoIP cancel out to every device belonging to the
+ * answering user, so the ones still ringing stop — an iPad left showing a full-screen
+ * CallKit UI for a call that is already being taken elsewhere has no way out but to
+ * answer a dead call. That cancel carries the *same* call UUID as the call just
+ * answered, so `_voip_stop_ringing` spares the answering device — but only when the
+ * accept body names it, which is what `_answering_device_ids` reads.
+ *
+ * With no id in the body the exclusion set is empty and the phone cancels its own call:
+ * `AppDelegate`'s `cancel_call` branch calls `endCall(withUUID:reason:)` on the UUID it
+ * is currently connected on, CallKit tears the UI down as `answeredElsewhere`, and
+ * because the media session no longer waits on CallKit to start, Agora keeps running
+ * underneath it. The call is live and the system says it ended.
+ *
+ * The keys are omitted rather than sent empty when the id cannot be read — see
+ * `getPushInstallationId`, which returns empty on a locked keychain rather than minting
+ * an id that matches no registration. A body that admits it does not know which device
+ * it is beats one that names a device that was never registered.
+ */
 export async function acceptCall(callId: string) {
+  const deviceId = await getPushInstallationId().catch(() => "");
   const data = await pulseApi<PulseCall | PulseCallEnvelope>(`/api/calls/${encodeURIComponent(callId)}/accept`, {
     method: "POST",
-    body: JSON.stringify({ source: "native" })
+    body: JSON.stringify({
+      source: "native",
+      ...(deviceId ? { device_id: deviceId, installation_id: deviceId } : {})
+    })
   });
   const call = normalizeCallPayload(data);
   await cacheCallStatus(call).catch(() => undefined);

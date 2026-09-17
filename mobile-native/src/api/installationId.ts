@@ -37,13 +37,71 @@ const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
  */
 let inFlight: Promise<string> | null = null;
 
+/**
+ * The id has to survive being read on a *locked* phone, so it cannot use the default.
+ *
+ * `expo-secure-store` defaults to `kSecAttrAccessibleWhenUnlocked`
+ * (`SecureStoreOptions.swift`: `keychainAccessible: SecureStoreAccessible = .whenUnlocked`),
+ * which makes the item unreadable while the screen is locked. Every moment this id is
+ * actually needed is a locked moment: a VoIP push arrives, CallKit rings on the lock
+ * screen, the user answers without unlocking, and the accept request has to name the
+ * device that answered. `session/sessionStore` already reached the same conclusion for
+ * the access token — which is why an authenticated `/accept` works from the lock screen
+ * at all — and this id is strictly less sensitive than that token.
+ *
+ * `THIS_DEVICE_ONLY` because a device id that synced to another device through the
+ * iCloud keychain would name the wrong phone, which is the exact confusion it exists to
+ * prevent.
+ */
+const KEYCHAIN_OPTIONS = {
+  keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY
+} as const;
+
+/** Whether this process has already rewritten the stored id under `KEYCHAIN_OPTIONS`. */
+let upgraded = false;
+
+/**
+ * Rewrite an id stored under the old default so later locked reads can see it.
+ *
+ * Installs that predate `KEYCHAIN_OPTIONS` hold the id under `whenUnlocked`, and there is
+ * no keychain API to ask which accessibility an item has — so the only way to move it is
+ * to write it again. Done once per process, after a read that succeeded, which means it
+ * runs while the device is unlocked and cannot lose the value it is preserving.
+ */
+async function upgradeAccessibility(value: string) {
+  if (upgraded) return;
+  upgraded = true;
+  await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, value, KEYCHAIN_OPTIONS).catch(() => {
+    // Leave it un-upgraded so the next call tries again rather than giving up for the
+    // life of the process.
+    upgraded = false;
+  });
+}
+
 export async function getPushInstallationId() {
   if (inFlight) return inFlight;
   inFlight = (async () => {
-    const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
-    if (existing) return existing;
+    let existing: string | null = null;
+    try {
+      existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY);
+    } catch {
+      // "Absent" and "unreadable" are different facts and only one of them means mint.
+      // `searchKeyChain` returns null for `errSecItemNotFound` and *throws* for anything
+      // else, so a throw here is the keychain refusing — on iOS, overwhelmingly a locked
+      // device. Minting on a refusal would hand out an id that matches no registration,
+      // and — now that the item is writable while locked — would then overwrite the real
+      // one. Returning empty says "not known right now", which every caller can handle.
+      return "";
+    }
+    if (existing) {
+      await upgradeAccessibility(existing);
+      return existing;
+    }
     const generated = `native-${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
-    await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated).catch(() => undefined);
+    await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated, KEYCHAIN_OPTIONS).catch(
+      () => undefined
+    );
+    upgraded = true;
     return generated;
   })();
   try {
