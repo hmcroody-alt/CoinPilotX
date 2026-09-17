@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import RNCallKeep, { AudioSessionMode } from "react-native-callkeep";
 import VoipPushNotification from "react-native-voip-push-notification";
 import { NativeCallKitProvider, rememberCallKitCall } from "./callKitBridge";
+import { pushedCallFromPayload, readVoipBacklog } from "./voipPushBacklog";
 
 /**
  * The real `NativeCallKitProvider`, bound to react-native-callkeep + PushKit.
@@ -139,14 +140,21 @@ export function createNativeCallKitProvider(): NativeCallKitProvider | null {
       // running — so on every relaunch the real token is already sitting in that backlog
       // and arrives here, wrapped, rather than as a plain `register`. Reading only
       // `register` means the token is visible exactly once per install and never again.
-      VoipPushNotification.addEventListener("didLoadWithEvents", ((
-        events: Array<{ name: string; data: unknown }>
-      ) => {
-        (events || []).forEach((event) => {
-          if (event?.name === "RNVoipPushRemoteNotificationsRegisteredEvent" && event.data) {
-            cb(String(event.data));
-          }
-        });
+      //
+      // The backlog carries the incoming push too, not just the token, and dropping that
+      // half is how a lock-screen answer on a KILLED app did nothing at all. The push is
+      // what launched the process, so its `notification` event is necessarily buffered —
+      // and it is the only event carrying the call id beside the CallKit UUID. Without
+      // that pair recorded, `callKitBridge`'s `onAnswer` cannot resolve the UUID CallKit
+      // hands it back to a call id, so it returns early and `/accept` is never sent. The
+      // two writers of that mapping are this listener and `reportIncomingCallKit`, and
+      // the latter is driven by the foreground poller, which a killed app does not run.
+      VoipPushNotification.addEventListener("didLoadWithEvents", ((events: unknown) => {
+        const { tokens, calls } = readVoipBacklog(events);
+        // Mappings first: an answer replayed by callkeep can only resolve against a
+        // mapping that already exists, and both backlogs drain during the same launch.
+        calls.forEach((call) => rememberCallKitCall(call.callId, normalizeUuid(call.uuid)));
+        tokens.forEach((token) => cb(token));
       }) as never);
 
       // Every VoIP push also arrives here, after AppDelegate has already reported it to
@@ -156,11 +164,12 @@ export function createNativeCallKitProvider(): NativeCallKitProvider | null {
       // or `endCallKitCall` find the CallKit call that the push created.
       // The pod types this callback as `(args: object) => void`, so the payload arrives
       // without an index signature and has to be narrowed before its keys can be read.
+      // It is narrowed by the same function the replay above uses, because the pod sends
+      // the identical `dictionaryPayload` on both paths — a live push and a replayed one
+      // must not be able to disagree about which call they name.
       VoipPushNotification.addEventListener("notification", (args: object) => {
-        const payload = (args || {}) as Record<string, unknown>;
-        const callId = String(payload.call_id || "");
-        const uuid = String(payload.uuid || "");
-        if (callId && uuid) rememberCallKitCall(callId, normalizeUuid(uuid));
+        const call = pushedCallFromPayload(args);
+        if (call) rememberCallKitCall(call.callId, normalizeUuid(call.uuid));
       });
 
       return () => {
