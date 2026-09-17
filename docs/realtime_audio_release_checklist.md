@@ -42,7 +42,16 @@ A green test run against the wrong build proves nothing. Record, for the build
 you are actually shipping:
 
 - Commit SHA, and confirm local `HEAD` equals the remote ref.
-- App version and iOS build number from `mobile-native/app.json`.
+- App version and iOS build number from `mobile-native/ios/PulseSoc/Info.plist`
+  (`CFBundleShortVersionString` / `CFBundleVersion`) — **not** from `app.json`.
+  `app.json` is advisory for this bare-workflow project: the target sets
+  `INFOPLIST_FILE` with no `GENERATE_INFOPLIST_FILE`, so the plist literal is
+  what reaches the binary, and the two have disagreed at ship time three times
+  (`3757dbfb`, `76084cc2`, and an EAS build that produced 22 while both
+  `app.json` and the pbxproj said 23).
+  `tests/protection/test_ios_build_version_contract.py` now keeps all three
+  files in step — but record the plist value anyway, because reading the
+  advisory file is precisely how a checklist ends up certifying the wrong build.
 - The SHA embedded in the built binary, if the build embeds one.
 - Backend deployment identifier and the backend commit it was built from.
 - Agora environment: the App ID the build points at, and whether the backend is
