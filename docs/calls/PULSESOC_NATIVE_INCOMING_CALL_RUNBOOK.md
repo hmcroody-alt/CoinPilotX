@@ -397,12 +397,30 @@ Carried from the audit. These are open.
      it is not a data wipe, but the store build is gone until reinstalled. The script
      warns before building. On the home screen the local build reads "PulseSoc Native
      Dev" — that display name is now the only thing distinguishing the two.
-   * **Expect exactly one `voip_push_environment_corrected` event per device.** The
-     build is development-signed, so PushKit mints a *sandbox* token while the
-     deployment addresses the production host. The first push draws
-     `BadDeviceToken`; the sender replays once against the other host, succeeds, and
-     persists the correction. This is the designed path, not a fault. A token that
-     both hosts reject is genuinely dead — that one is not.
+   * **This build will not ring unless the app is already in the foreground.** Do not
+     use it to test incoming calls. (Until 2026-09-16 this bullet said the opposite —
+     "expect exactly one `voip_push_environment_corrected` event per device" — and it
+     was wrong. It was withdrawn after the two hosts were probed directly.)
+
+     The build is development-signed, so PushKit mints a *sandbox* token while the
+     deployment addresses the production host:
+
+     | host | topic | result |
+     |---|---|---|
+     | sandbox | `com.pulsesoc.app.voip` | **403 `BadEnvironmentKeyInToken`** |
+     | production | `com.pulsesoc.app.voip` | 400 `BadDeviceToken` |
+
+     The replay never succeeds, because the APNs auth key is restricted to production
+     and sandbox refuses the *request* on the key before looking at the token. Two
+     refusals used to be read as a dead token and got it revoked, which — since alert
+     suppression is conditioned on an active VoIP token — downgraded the handset to a
+     plain banner. That revocation is fixed; the missing push is not, and cannot be
+     from the app side.
+
+     **To test ringing on a locked handset, use a TestFlight build.** `Release` is
+     already signed `aps-environment: production`, so no new Apple credential is
+     needed. If you are watching logs: `voip_push_rejected` now carries
+     `replay_reason`, which names the host that refused and why.
 5. **No physical-device verification** of lock screen, terminated app, Silent Mode,
    Focus, or Bluetooth routing.
 6. **No sweeper worker.** Stale-call cleanup depends on someone polling

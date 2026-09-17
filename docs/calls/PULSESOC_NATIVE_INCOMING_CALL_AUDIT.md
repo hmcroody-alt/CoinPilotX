@@ -423,12 +423,24 @@ These are open, and nothing in this document should be read as closing them.
      warns before building. The display name stays "PulseSoc Native Dev", which is now
      the only on-device signal separating the two.
 
-     Consequence worth recording because it looks like a fault and is not: the build
-     is development-signed, so its PushKit token is a *sandbox* token while the
-     deployment addresses the production host. The first push draws `BadDeviceToken`,
-     the sender replays once against the other host and persists the correction, and
-     the call connects. One `voip_push_environment_corrected` event per device is the
-     designed path.
+     Consequence worth recording, and **corrected 2026-09-16 after it was measured
+     rather than reasoned about**: a development-signed build cannot receive VoIP
+     pushes at all. This entry previously said the opposite — that the first push
+     draws `BadDeviceToken`, the sender replays against the other host, and the call
+     connects — and filed it as "the designed path", which is precisely why the live
+     failure went unexamined for as long as it did.
+
+     The build is development-signed, so its PushKit token is a *sandbox* token while
+     the deployment addresses the production host. Production answers `BadDeviceToken`
+     correctly. The replay to sandbox then draws **403 `BadEnvironmentKeyInToken`**:
+     the APNs auth key is restricted to production and sandbox refuses the *request*,
+     faulting the key, without ever evaluating the token. Two refusals looked like a
+     dead token, so it was revoked — and because alert-push suppression is conditioned
+     on an active VoIP token, the handset quietly dropped from CallKit to a banner.
+
+     The revocation is fixed (an inconclusive replay now yields `failed`, not
+     `invalid_device`). The delivery gap is not fixable from the app side: it needs a
+     `production`-signed build, which `Release` already is.
 5. **Physical iPhone 16 Pro verification.** No lock-screen, terminated-app, Silent
    Mode, Focus, or Bluetooth-routing verification has been performed on hardware. No
    simulator result substitutes for it.

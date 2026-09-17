@@ -315,10 +315,31 @@ Two smaller findings came out of making that change:
   sharing a bundle id, since the display name became the sole on-device distinction.
   Now declared in both configurations and gated.
 * A development-signed build mints a *sandbox* PushKit token while the deployment
-  addresses the production host, so the first push draws `BadDeviceToken` and relies
-  on §6's one-shot replay to connect. This is expected and self-correcting — one
-  `voip_push_environment_corrected` event per device — but it reads like a dead token
-  to anyone watching the logs, so it is stated in the script output and the runbook.
+  addresses the production host, so the first push draws `BadDeviceToken` and falls to
+  §6's one-shot replay. **An earlier revision of this document claimed that replay
+  succeeds and the correction is paid once per device. Direct measurement against APNs
+  disproved it** — and the claim was doing real harm, because it explained away as
+  "designed" the exact symptom it should have escalated:
+
+  | host | topic | result |
+  |---|---|---|
+  | sandbox | `com.pulsesoc.app.voip` | **403 `BadEnvironmentKeyInToken`** |
+  | production | `com.pulsesoc.app.voip` | 400 `BadDeviceToken` |
+
+  The APNs auth key is restricted to the production environment, so the sandbox host
+  refuses the *request* — 403, faulting the key — before it ever evaluates the token.
+  The replay cannot succeed for any development-signed build. Worse, the sender read
+  "both hosts refused" as proof of a dead token and revoked it; alert-push suppression
+  is conditioned on an *active* VoIP token, so revoking it silently downgraded the
+  handset from CallKit to an ordinary banner. The token was never dead — iOS returned
+  the identical hash after every revocation.
+
+  Fixed by distinguishing *refused* from *inconclusive*: a replay that never reached a
+  verdict on the token now degrades to `failed`, never `invalid_device`, and
+  `voip_push_rejected` carries `replay_reason` so this is legible from logs without a
+  hand-written probe. The push still will not arrive on a dev-signed build. That needs
+  a `production`-signed one — which `Release` already is, so TestFlight rings today and
+  this failure is specific to locally dev-signed installs.
 
 ---
 
