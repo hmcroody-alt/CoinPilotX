@@ -52,3 +52,12 @@ export {
 } from "./metrics";
 
 export { appleAvailability, appleIsUsable } from "./providers/apple";
+
+export { AppleTranslationHost } from "./AppleTranslationHost";
+
+export { useContentTranslation } from "./useContentTranslation";
+export type {
+  ContentTranslationStatus,
+  TranslateOptions,
+  UseContentTranslationOptions
+} from "./useContentTranslation";

@@ -356,7 +356,10 @@ function AppRoot() {
               */}
               <PulseBackground />
               {authState.status === "signedIn" ? (
-                <TranslationPreferencesBootstrap key={authState.user?.user_id || "signed-in"} />
+                <TranslationPreferencesBootstrap
+                  key={authState.user?.user_id || "signed-in"}
+                  userId={authState.user?.user_id}
+                />
               ) : null}
               <ThemedNavigationShell
                 signedIn={authState.status === "signedIn"}

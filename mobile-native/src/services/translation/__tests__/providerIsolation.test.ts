@@ -22,12 +22,12 @@ import path from "path";
 
 const SRC_ROOT = path.resolve(__dirname, "../../..");
 
-function importersOf(symbol: string) {
+function importersOf(pattern: string) {
   let output = "";
   try {
     output = execFileSync(
       "grep",
-      ["-rl", symbol, ".", "--include=*.ts", "--include=*.tsx"],
+      ["-rlE", pattern, ".", "--include=*.ts", "--include=*.tsx"],
       { cwd: SRC_ROOT, encoding: "utf8" }
     );
   } catch (error) {
@@ -50,10 +50,25 @@ describe("no screen reaches a provider directly", () => {
     // is stateful per mounted host, so a second importer would also be a second
     // session lifecycle owner (Stage 2).
     expect(importersOf("pulse-apple-translation")).toEqual([
+      "services/translation/AppleTranslationHost.tsx",
       "services/translation/index.ts",
       "services/translation/languages.ts",
       "services/translation/providers/apple.ts",
       "services/translation/types.ts"
+    ]);
+  });
+
+  it("mounts the Apple host in exactly one place", () => {
+    // The native coordinator multiplexes every language pair behind one host,
+    // so a second mount is not a redundancy — it is a second session owner for
+    // the same pairs, which is Stage 3's "one session per feed cell" mistake
+    // arriving through the front door. The component takes no props precisely
+    // so that there is nothing a screen could usefully pass it.
+    // `<AppleTranslationHost` alone would also match `<AppleTranslationHostView`
+    // — the native view, rendered by the component itself — and the test would
+    // then be asserting that the wrapper does not use the thing it wraps.
+    expect(importersOf("<AppleTranslationHost ?/>")).toEqual([
+      "components/TranslationPreferencesBootstrap.tsx"
     ]);
   });
 
