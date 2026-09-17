@@ -2,12 +2,28 @@ import * as Battery from "expo-battery";
 import { LinearGradient } from "expo-linear-gradient";
 import { memo, useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, AppState, Easing, StyleSheet, View, ViewStyle } from "react-native";
+import { BLUE_GRAPHITE_CARD, BlueGraphiteLayer } from "../theme/blueGraphite";
 import { useTheme } from "../theme/ThemeContext";
 
 export type GalacticAtmosphereVariant = "feed" | "profile" | "messages" | "marketplace" | "business" | "advertising" | "music" | "live" | "undx";
 
+/**
+ * Which opaque material the layer paints underneath its stars and nebulae.
+ *
+ * `"space"` is the original near-black field and remains the default, because
+ * the other live caller is `ReelsScreen` — a full-screen immersive media
+ * surface, where dark *is* the design and video is what sits on top of it. A
+ * component-wide change would have taken Reels with it; an opt-in does not.
+ *
+ * `"blueGraphite"` is the approved surface material for a *panel* — a bounded,
+ * content-bearing card that the page background frames rather than replaces.
+ */
+export type GalacticAtmosphereSurface = "space" | "blueGraphite";
+
 type Props = {
   variant?: GalacticAtmosphereVariant;
+  /** Defaults to `"space"`: existing callers are unchanged by construction. */
+  surface?: GalacticAtmosphereSurface;
   style?: ViewStyle;
   /** A scroll-position driver may be supplied by long surfaces for restrained parallax. */
   scrollY?: Animated.Value;
@@ -43,13 +59,21 @@ const ACCENTS: Record<GalacticAtmosphereVariant, { a: string; b: string; planet:
  * White renders nothing, Black dims the whole layer, light themes swap the
  * space gradient for a bright haze so the atmosphere never fights legibility.
  */
+/** The original near-black field, and the light-theme haze that replaces it. */
+const SPACE_BASE: BlueGraphiteLayer = { colors: ["#02050A", "#040A14", "#06101C"], locations: [0, 0.48, 1] };
+const LIGHT_BASE: BlueGraphiteLayer = { colors: ["#eef4fb", "#e9f1fa", "#e3edf9"], locations: [0, 0.48, 1] };
+const SPACE_EDGE: BlueGraphiteLayer = { colors: ["rgba(4,10,18,0.02)", "rgba(4,10,18,0.13)"], locations: [0, 1] };
+const LIGHT_EDGE: BlueGraphiteLayer = { colors: ["rgba(255,255,255,0)", "rgba(226,236,248,0.35)"], locations: [0, 1] };
+
 export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   variant = "feed",
+  surface = "space",
   style,
   scrollY,
   testID = "galactic-atmosphere"
 }: Props) {
-  const profile = useTheme().galacticBackground;
+  const theme = useTheme();
+  const profile = theme.galacticBackground;
   const [lowPower, setLowPower] = useState(false);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [foreground, setForeground] = useState(AppState.currentState === "active");
@@ -89,6 +113,16 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
   const parallax = scrollY?.interpolate({ inputRange: [0, 1200], outputRange: [0, 24], extrapolate: "clamp" }) || 0;
   if (!profile.enabled) return null;
   const light = profile.variant === "light";
+  /**
+   * Blue graphite is scoped to the released blue/futuristic appearance, which is
+   * the one `buildTheme` pins (`activeTheme = "dark"`). Black keeps its dimmed
+   * near-black field, the light themes keep their haze, and high contrast stands
+   * down entirely — that mode *substitutes* the palette, so a surface tuned
+   * against the normal ramp has no standing to override it.
+   */
+  const material = surface === "blueGraphite" && theme.mode === "dark" && !theme.highContrast ? BLUE_GRAPHITE_CARD : null;
+  const base = material ? material.base : light ? LIGHT_BASE : SPACE_BASE;
+  const edge = material ? material.edge : light ? LIGHT_EDGE : SPACE_EDGE;
   return (
     <View
       testID={testID}
@@ -98,8 +132,10 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
       style={[styles.root, { opacity: profile.intensity }, style]}
     >
       <LinearGradient
-        colors={light ? ["#eef4fb", "#e9f1fa", "#e3edf9"] : ["#02050A", "#040A14", "#06101C"]}
-        locations={[0, 0.48, 1]}
+        colors={[...base.colors]}
+        locations={[...base.locations]}
+        start={base.start}
+        end={base.end}
         style={StyleSheet.absoluteFill}
       />
       <Animated.View style={[styles.depth, { transform: [{ translateY: parallax }] }]}>
@@ -113,7 +149,10 @@ export const GalacticAtmosphere = memo(function GalacticAtmosphere({
         <View style={styles.dustA} /><View style={styles.dustB} /><View style={styles.dustC} />
       </Animated.View>
       <LinearGradient
-        colors={light ? ["rgba(255,255,255,0)", "rgba(226,236,248,0.35)"] : ["rgba(4,10,18,0.02)", "rgba(4,10,18,0.13)"]}
+        colors={[...edge.colors]}
+        locations={[...edge.locations]}
+        start={edge.start}
+        end={edge.end}
         style={StyleSheet.absoluteFill}
       />
     </View>
