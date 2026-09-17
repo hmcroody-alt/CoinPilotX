@@ -588,5 +588,59 @@ def test_the_host_and_a_guest_get_different_ledes(cur, outbox):
     assert "invited you" in by_address["guest@example.com"]
 
 
+def test_the_veto_is_actually_installed_in_the_process_that_sends():
+    """A validator nobody registered is a veto that silently never runs.
+
+    Every other test in this file imports ``meeting_reminders`` directly, so
+    ``install()`` has already run by the time they assert — which means they
+    would all still pass in a deployment where the veto never loads. It did not
+    load. The only caller of ``email_send_guard.may_send`` is the outbox
+    processor in ``notification_service``, running inside ``email_worker``,
+    whose whole import surface is ``import bot``; and ``meetings.py`` reaches
+    ``meeting_reminders`` only through a lazy import in ``_plan_reminders``'s
+    body, which fires in the *web* process on the first booking and never in
+    the worker. A fresh interpreter doing ``import bot`` reported
+    ``registered_types() == ()``.
+
+    Nothing broke loudly, because ``may_send`` allows an email_type it has no
+    validator for. So the send-time veto simply did not exist: a reminder for a
+    meeting cancelled or moved months earlier would still go out, its reminder
+    row dutifully marked CANCELLED, the queued email never asking.
+
+    The fix is an import-for-side-effect in the meetings route pack, and the
+    realistic way to lose it again is a tidy-up that deletes an import which
+    genuinely is unused by name — it is even spelled ``# noqa: F401``, which
+    reads like an invitation. So this pins the import itself, at module scope,
+    where the process boundary needs it.
+    """
+    import ast
+    import pathlib
+
+    from services import private_office_meetings_routes as routes
+
+    tree = ast.parse(
+        pathlib.Path(routes.__file__).read_text(encoding="utf-8"),
+        filename=routes.__file__)
+    # tree.body only — an import nested in a function is exactly the arrangement
+    # that failed, so finding one there must not count as finding one.
+    assert any(
+        isinstance(node, ast.ImportFrom)
+        and node.module == "services.private_office"
+        and any(alias.name == "meeting_reminders" for alias in node.names)
+        for node in tree.body), (
+        "services/private_office_meetings_routes.py no longer imports "
+        "meeting_reminders at module scope. Nothing will fail loudly: the send "
+        "guard allows an unregistered email_type, so reminders for cancelled "
+        "and rescheduled meetings would quietly start sending again.")
+
+    # And the import has to still be worth making. Unregister first so this
+    # cannot pass on a registration some earlier import in this process already
+    # performed, then put it back the way the route pack does.
+    email_send_guard.unregister(pm_rem.REMINDER_EMAIL_TYPE)
+    assert pm_rem.REMINDER_EMAIL_TYPE not in email_send_guard.registered_types()
+    pm_rem.install()
+    assert pm_rem.REMINDER_EMAIL_TYPE in email_send_guard.registered_types()
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
