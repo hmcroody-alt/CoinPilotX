@@ -76,7 +76,13 @@
   --surface-elevated:    var(--pulse-palette-surface-raised);
   --surface-overlay:     var(--pulse-palette-glass);
   --surface-overlay-strong: var(--pulse-palette-glass-strong);
-  --surface-inset:       rgba(5, 9, 16, 0.6);
+  /* A well *inside* a panel: search fields, code blocks, empty states. It is
+     the one surface level that did not move to graphite, because it was the
+     one written as an alpha rather than as a palette reference — 0.6 of the
+     page colour over a graphite panel composites to ~#161C24, a near-black
+     recess in a graphite card. Opaque now, and darker than `--surface-raised`
+     by the same step the native ladder uses (BLUE_GRAPHITE_LEVELS.inset). */
+  --surface-inset:       #2A3340;
 
   /* text */
   --text-primary:        var(--pulse-palette-text);
@@ -338,7 +344,12 @@
   /* semantic strays found by scripts/web_parity/verify_tokens.py */
   --line-strong: var(--border-strong);
   --warn:        var(--status-warning);
-  --soft:        var(--surface-inset);
+  /* Its one consumer is `color:` on the marketing nav links, so a surface
+     level was the wrong side of the dictionary — the alias only ever resolved
+     to a background. Nothing rendered wrong because index.html declares its
+     own `--soft`; that override is what kept a text token pointed at a panel
+     colour from being noticed. */
+  --soft:        var(--text-secondary);
   --media-backdrop: var(--surface-overlay-strong);
 
   /* safe-area insets — mobile web parity with native notch handling.
