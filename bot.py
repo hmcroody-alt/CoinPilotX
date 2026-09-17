@@ -116389,11 +116389,26 @@ def _init_db_impl():
     # Rows that predate `lifecycle_state` carry their state in the legacy trio.
     # Reading them as ACTIVE would silently resurrect every track an admin has
     # already removed through /api/admin/pulse/music/<id>/remove.
+    #
+    # This keyed on `COALESCE(lifecycle_state,'')=''` and therefore never ran: the
+    # column is added with `DEFAULT 'ACTIVE'`, and both Postgres and SQLite apply a
+    # default to the rows that already exist, so by the time the backfill looked
+    # there was nothing left NULL to find. Production carried three tracks reading
+    # ACTIVE that a human had removed -- the exact outcome the comment above
+    # describes -- and the admin menu computed from `lifecycle_state` offered
+    # "Take down" on them while withholding "Restore", so the one action an
+    # operator would want was the one action unreachable.
+    #
+    # Keyed on ACTIVE instead, which is what the default actually produced. Still
+    # idempotent, and it cannot walk a state backwards: a restore clears
+    # `removed_at` and sets `safety_status='approved'`, so a restored track stops
+    # matching, and QUARANTINED / PURGE_PENDING / PURGED are not ACTIVE so a later
+    # boot cannot demote them to TAKEN_DOWN.
     cur.execute(
         """
         UPDATE pulse_audio_tracks
         SET lifecycle_state='TAKEN_DOWN'
-        WHERE COALESCE(lifecycle_state,'')=''
+        WHERE UPPER(COALESCE(lifecycle_state,'ACTIVE'))='ACTIVE'
           AND (COALESCE(removed_at,'')!='' OR lower(COALESCE(safety_status,''))='removed')
         """
     )
