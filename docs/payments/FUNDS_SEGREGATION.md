@@ -98,8 +98,8 @@ wrong is a withdrawal PulseSoc could have made, not a seller who cannot be paid.
 `seller_payable:<uid>` means that seller was overpaid. Netting it against another
 seller's credit would fund seller A's payout out of seller B's debt, which is the
 exact thing segregation exists to prevent. Overdrawn accounts are reported
-separately as `overdrawn_accounts` — they are a real receivable, and **nothing in
-this system recovers them** (see §6).
+separately as `overdrawn_accounts` — they are a real receivable, recovered by
+offset against that seller's future earnings (see §6).
 
 **`withdrawable` is never derived from what the ledger thinks PulseSoc earned.**
 Those two numbers disagree the moment a Stripe processing fee is deducted: the fee
@@ -169,7 +169,9 @@ is legally not PulseSoc's general-purpose cash.
 - [ ] Take Option C to a payments lawyer — before volume, not after.
 - [ ] Decide who is alerted on `status == "shortfall"`, and how. Nothing currently
       alerts; the module only answers when asked.
-- [ ] Decide how overdrawn seller balances are recovered (§6).
+- [ ] Decide what happens to an overdrawn seller who never sells again (§6). The
+      offset mechanism handles everyone who does; this is the residual case and it
+      needs a collection or write-off policy, not code.
 
 None of these are set by this change. All of them are open.
 
@@ -181,9 +183,35 @@ None of these are set by this change. All of them are open.
 shortfall is only visible if somebody asks. Wiring it to an alert is a follow-up and
 it is not done.
 
-**Nothing recovers an overdrawn seller balance.** A negative `seller_payable:<uid>`
-is reported and then sits there. `services/business_os/payments/reconciliation.py`
-raises an incident for it; no code collects the money.
+**An overdrawn seller balance recovers by offset, and only by offset.** An earlier
+version of this document said nothing recovered it. That was wrong, and the
+correction matters because the two statements imply very different risks.
+
+A negative `seller_payable:<uid>` arises when a refund or chargeback lands after
+the seller's money has already been transferred out — which no protection window
+can prevent, since a card chargeback can arrive up to 120 days after the charge.
+What actually happens then:
+
+1. `request_payout` compares the requested amount against the ledger balance and
+   refuses while it is negative, so the hole cannot be deepened by withdrawal.
+2. The ledger re-checks under a row lock. `seller_payable:` is deliberately absent
+   from `_ALLOW_NEGATIVE_PREFIXES`, so the overdraft is refused there too even if
+   the first check is bypassed or races.
+3. The seller's next sale credits the same account, so the debt is repaid out of
+   earnings automatically. No code runs to make this happen — the debt and the
+   earnings are the same number in the same account.
+
+`tests/marketplace/test_post_payout_refund_recovery.py` pins all three, because
+none of it was designed; it is a consequence of using one account per seller, and
+it would be easy to break while "fixing" something else.
+
+**What is genuinely not recovered** is a seller who goes negative and never sells
+again. There is no collection route, no write-off policy, and no ageing. The
+balance sits overdrawn indefinitely and is reported in `overdrawn_accounts`
+forever. `services/business_os/payments/reconciliation.py` raises an incident;
+nothing collects. Deciding that policy is an owner item (§5) — note that ageing it
+out or zeroing it on a schedule would convert a recoverable receivable into a
+silent write-off, which is why a test now guards against exactly that.
 
 **Tax is recorded but not remitted.** `liability:marketplace_tax` accrues and is
 correctly held in the reserve, but nothing in this repository files or pays it. The
@@ -204,6 +232,8 @@ the gap, not the freshness of the number.
 - `services/marketplace_funds_segregation.py` — the module.
 - `tests/marketplace/test_funds_segregation.py` — including the AST drift guard that
   fails CI when an unclassified ledger account appears.
+- `tests/marketplace/test_post_payout_refund_recovery.py` — pins the recovery-by-offset
+  behaviour in §6, which nothing else defends.
 - `docs/payments/STRIPE_CONNECT_LEDGER.md` — the account taxonomy in full.
 - `docs/payments/STRIPE_CONNECT_RUNBOOK.md` — what to do when a seller asks where
   their money is.
