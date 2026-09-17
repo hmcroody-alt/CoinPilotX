@@ -953,7 +953,28 @@ def _transition(
         except Exception:
             pass
     values.append(int(call["id"]))
-    cur.execute(f"UPDATE communication_calls SET {', '.join(updates)} WHERE id=?", values)
+    values.append(current)
+    # Compare-and-set on the status we validated against. `call` is an in-memory
+    # snapshot taken by an earlier SELECT, so between that read and this write
+    # another device's accept, the caller's cancel or the stale-call sweeper can
+    # have moved the row on. A bare `WHERE id=?` overwrote them regardless, which
+    # let a second answer re-drive an already-connecting call back to 'accepted'
+    # and let the sweeper stomp a call that was answered mid-batch. Re-checking
+    # the status in the UPDATE makes the loser touch zero rows: on Postgres the
+    # blocked statement re-evaluates this predicate against the committed row
+    # version, so the losing write is rejected rather than queued behind it.
+    cur.execute(
+        f"UPDATE communication_calls SET {', '.join(updates)} WHERE id=? AND COALESCE(status,'created')=?",
+        values,
+    )
+    if getattr(cur, "rowcount", -1) == 0:
+        return _err(
+            "This call has already moved on.",
+            409,
+            "transition_conflict",
+            from_status=current,
+            to_status=new_status,
+        )
     _event(cur, int(call["id"]), int(user_id or 0), new_status, {"from": current, "to": new_status, "reason": reason})
     if current == "ringing" and new_status != current:
         _voip_stop_ringing(cur, call, int(user_id or 0), new_status, reason, voip_exclude_device_ids)
@@ -1128,7 +1149,14 @@ def _mark_missed_stale_calls_cur(cur: Any, timeout_seconds: int = 45) -> int:
             (int(call["id"]),),
         )
         recipients = [int(item["user_id"]) for item in cur.fetchall()]
-        _transition(cur, call, "missed", int(call.get("created_by_user_id") or 0), "ring_timeout")
+        # Every row here came from one SELECT taken before the loop, and the loop
+        # body does real work (notifications, sync events) per call. A call that
+        # is answered while an earlier row is being written off must not then be
+        # marked missed: the compare-and-set rejects the write, and the missed
+        # notification and sync event have to be skipped with it, or the two
+        # people already talking get told they missed each other.
+        if not _transition(cur, call, "missed", int(call.get("created_by_user_id") or 0), "ring_timeout").get("ok"):
+            continue
         cur.execute(
             "UPDATE communication_call_participants SET status='missed', left_at=?, updated_at=? WHERE call_id=? AND role='callee' AND status='ringing'",
             (_now(), _now(), int(call["id"])),
@@ -1602,9 +1630,22 @@ def accept_call(user_id: int, call_ref: str | int, payload: dict[str, Any] | Non
                 voip_exclude_device_ids=_answering_device_ids(payload),
             )
             if not transition.get("ok"):
-                return transition
-            _event(cur, int(call["id"]), int(user_id), "accepted", {})
-            _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_accepted", int(user_id), status="accepted")
+                # Losing the compare-and-set means the call was already answered
+                # (the other device, or this device's other accept path) or was
+                # already torn down. Answering twice stays idempotent, so the
+                # loser still gets a token off the current state -- but it must
+                # not re-announce the acceptance: a second `call_accepted` and a
+                # second answered-elsewhere fan-out would cancel the device that
+                # actually won. A call that moved to a terminal status instead
+                # has nothing to join.
+                if transition.get("status") != "transition_conflict":
+                    return transition
+                current = _get_call(cur, call_ref)
+                if str(current.get("status") or "") in FINAL_STATUSES:
+                    return _err("This call has ended.", 409, "call_final")
+            else:
+                _event(cur, int(call["id"]), int(user_id), "accepted", {})
+                _emit_call_sync_event(cur, _get_call(cur, call_ref), "call_accepted", int(user_id), status="accepted")
         refreshed = _get_call(cur, call_ref)
         token = _generate_rtc_token(
             "agora",
