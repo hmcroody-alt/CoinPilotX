@@ -20,7 +20,7 @@ border-radius: 14px;
 padding: 12px;
 background:
 radial-gradient(circle at 8% 0, rgba(54, 229, 143, .16), transparent 15rem),
-linear-gradient(135deg, rgba(15, 23, 42, .92), rgba(8, 19, 35, .86));
+linear-gradient(135deg, rgba(48, 56, 67, .92), rgba(42, 51, 64, .86));
 box-shadow: 0 14px 44px rgba(2, 6, 23, .18);
 }
 .pulse-status-home-copy {
@@ -117,8 +117,8 @@ padding: 10px;
 text-align: left;
 color: #f8fafc;
 background:
-linear-gradient(180deg, rgba(15, 23, 42, .05), rgba(15, 23, 42, .86)),
-linear-gradient(145deg, #29465c, #101827);
+linear-gradient(180deg, rgba(48, 56, 67, .05), rgba(48, 56, 67, .86)),
+linear-gradient(145deg, #29465c, #303843);
 box-shadow: 0 10px 24px rgba(15, 23, 42, .12);
 scroll-snap-align: start;
 cursor: pointer;
@@ -126,8 +126,8 @@ cursor: pointer;
 .pulse-status2-create {
 border-color: rgba(54, 229, 143, .42);
 background:
-linear-gradient(180deg, rgba(12, 45, 31, .08), rgba(9, 18, 24, .88)),
-linear-gradient(145deg, #12835a, #0d2632);
+linear-gradient(180deg, rgba(12, 45, 31, .08), rgba(48, 56, 67, .88)),
+linear-gradient(145deg, #12835a, #303843);
 }
 .pulse-status2-create span,
 .pulse-status2-card span {
@@ -206,7 +206,7 @@ overflow: hidden;
 background:
 radial-gradient(circle at 28% 26%, rgba(54, 229, 143, .18), transparent 32%),
 radial-gradient(circle at 76% 16%, rgba(157, 92, 255, .18), transparent 30%),
-linear-gradient(145deg, rgba(4, 11, 22, .94), rgba(7, 18, 31, .92));
+linear-gradient(145deg, rgba(48, 56, 67, .94), rgba(42, 51, 64, .92));
 box-shadow: 0 18px 46px rgba(0, 0, 0, .32), 0 0 34px rgba(110, 223, 246, .08), inset 0 1px 0 rgba(255, 255, 255, .05);
 transform: translateZ(0);
 contain: layout paint;
@@ -246,7 +246,7 @@ height: 24px;
 display: grid;
 place-items: center;
 border: 1px solid rgba(255, 255, 255, .18);
-background: rgba(4, 12, 22, .66);
+background: rgba(48, 56, 67, .66);
 box-shadow: 0 0 20px rgba(255, 255, 255, .08);
 transition: transform .18s ease, box-shadow .18s ease;
 }
@@ -522,7 +522,7 @@ gap: 10px;
 border: 1px solid rgba(110, 223, 246, .18);
 border-radius: 8px;
 padding: 12px;
-background: linear-gradient(180deg, rgba(15, 23, 42, .72), rgba(8, 19, 35, .58));
+background: linear-gradient(180deg, rgba(48, 56, 67, .72), rgba(42, 51, 64, .58));
 }
 .pulse-status-side-panel.open {
 display: grid;
@@ -571,7 +571,7 @@ display: grid;
 grid-template-rows: auto minmax(0, 1fr) auto;
 border: 1px solid rgba(148, 163, 184, .22);
 border-radius: 8px;
-background: #07111d;
+background: #303843;
 color: #f8fafc;
 box-shadow: 0 34px 100px rgba(0, 0, 0, .42);
 }
@@ -588,7 +588,7 @@ border-bottom: 1px solid rgba(148, 163, 184, .14);
 }
 .pulse-status2-composer footer {
 border-top: 1px solid rgba(148, 163, 184, .14);
-background: rgba(7, 17, 29, .96);
+background: rgba(54, 61, 70, .96);
 }
 .pulse-status2-composer h3 {
 font-size: 20px;
@@ -736,7 +736,7 @@ gap: 12px;
 border: 1px solid rgba(110, 223, 246, .16);
 border-radius: 8px;
 padding: 12px;
-background: linear-gradient(180deg, rgba(15, 23, 42, .72), rgba(8, 19, 35, .58));
+background: linear-gradient(180deg, rgba(48, 56, 67, .72), rgba(42, 51, 64, .58));
 }
 .pulse-status2-style-panel header {
 display: flex;
@@ -852,7 +852,7 @@ width: min(96vw, 1040px);
 background:
 radial-gradient(circle at 14% 10%, rgba(110, 223, 246, .14), transparent 28%),
 radial-gradient(circle at 92% 18%, rgba(54, 229, 143, .12), transparent 30%),
-rgba(4, 12, 22, .86);
+rgba(48, 56, 67, .86);
 backdrop-filter: blur(24px) saturate(1.18);
 border-color: rgba(110, 223, 246, .2);
 box-shadow: 0 38px 120px rgba(0, 0, 0, .52), inset 0 1px 0 rgba(255, 255, 255, .08);
@@ -1514,7 +1514,7 @@ align-content: end;
 gap: 4px;
 padding: 12px;
 color: #f8fafc;
-background: linear-gradient(145deg, #12324a, #07111d);
+background: linear-gradient(145deg, #12324a, #303843);
 cursor: pointer;
 isolation: isolate;
 }
@@ -2342,7 +2342,7 @@ right: 10px;
 display: block;
 padding: 10px;
 border-radius: 18px;
-background: linear-gradient(180deg, rgba(8, 19, 35, .9), rgba(5, 11, 20, .86));
+background: linear-gradient(180deg, rgba(48, 56, 67, .9), rgba(42, 51, 64, .86));
 border-color: rgba(110, 223, 246, .18);
 box-shadow: 0 14px 42px rgba(0, 0, 0, .22);
 }
@@ -2382,8 +2382,8 @@ overflow: hidden;
 text-decoration: none;
 scroll-snap-align: start;
 background:
-linear-gradient(180deg, rgba(5, 11, 20, .04), rgba(5, 11, 20, .86)),
-linear-gradient(145deg, #12314a, #071321);
+linear-gradient(180deg, rgba(48, 56, 67, .04), rgba(48, 56, 67, .86)),
+linear-gradient(145deg, #12314a, #303843);
 border: 1px solid rgba(110, 223, 246, .24);
 box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
 cursor: pointer;
@@ -2403,8 +2403,8 @@ border-color: rgba(54, 229, 143, .58);
 }
 .pulse-status-tray-only .pulse-status2-create {
 background:
-linear-gradient(180deg, rgba(54, 229, 143, .12), rgba(5, 11, 20, .86)),
-linear-gradient(145deg, #11845c, #0b2634);
+linear-gradient(180deg, rgba(54, 229, 143, .12), rgba(48, 56, 67, .86)),
+linear-gradient(145deg, #11845c, #303843);
 border-color: rgba(54, 229, 143, .38);
 }
 .pulse-status-tray-only .pulse-status2-create span,
