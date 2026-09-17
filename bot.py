@@ -90142,7 +90142,19 @@ def api_pulse_reels_create():
                     video_attach = pulse_attach_music_to_content(cur, content_type="video", content_id=post_id, track_id=audio_track_id, user_id=user["user_id"], start_seconds=sound_start, volume=audio_volume)
                     if not video_attach.get("ok"):
                         logging.warning("PULSE_REEL_FEED_VIDEO_MUSIC_ATTACH_BLOCKED user_id=%s reel_id=%s post_id=%s track_id=%s reason=%s", user["user_id"], reel_id, post_id, audio_track_id, video_attach.get("message"))
-                cur.execute("UPDATE pulse_trending_sounds SET usage_count=COALESCE(usage_count,0)+1, trend_score=COALESCE(trend_score,0)+1, updated_at=? WHERE audio_track_id=?", (now, audio_track_id))
+                # An `UPDATE pulse_trending_sounds ... WHERE audio_track_id=?` used to
+                # sit here. The only INSERT into that table was the retired init_db
+                # seed, so the UPDATE matched a row for a seeded placeholder and never
+                # for a track a user uploaded -- it has never once fired for real music.
+                #
+                # It is not replaced with an upsert, because the counter it maintained
+                # is a second one. `pulse_attach_music_to_content` above already routes
+                # through `pulse_music_event`, which increments the track's own
+                # `usage_count`/`trend_score` for every surface -- reel, post, video,
+                # status. The sounds picker reads `COALESCE(ts.trend_score,
+                # at.trend_score, 0)`, so a track with a trending row would be ranked on
+                # reel attachments alone while every other track was ranked on all
+                # surfaces: two scales in one ORDER BY. One writer, one counter.
         conn.commit()
         conn.close()
         try:
