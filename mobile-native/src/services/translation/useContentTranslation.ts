@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { TranslatableContentType } from "../../api/translation";
+import { digestText } from "./cache";
 import { cancelTranslationRequests, translateText } from "./router";
 import type { TranslationFailure, TranslationProviderId } from "./types";
 
@@ -70,7 +71,12 @@ export function useContentTranslation({
   const pendingRequestId = useRef<string | null>(null);
   const sequence = useRef(0);
 
-  const identity = `${contentId}|${contentVersion ?? "-"}|${targetLanguage}`;
+  // The text digest is here as well as the version, not instead of it. A caller
+  // that tracks versions gets an invalidation the moment the version moves, and
+  // a caller that does not still cannot show a translation of words that are no
+  // longer on screen — which is the case for every call site today, since the
+  // feed has no edit counter.
+  const identity = `${contentId}|${contentVersion ?? "-"}|${digestText(text)}|${targetLanguage}`;
 
   // Abandon anything in flight when the item, its version or the target
   // language changes, and clear the visible translation with it. Cancelling is
