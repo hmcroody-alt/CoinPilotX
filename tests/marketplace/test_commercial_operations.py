@@ -45,9 +45,39 @@ def test_scheduler_uses_canonical_payout_and_does_not_claim_paid():
     settlements.settle_paid_transaction(tx, payout_ready=True)
     settlements.mark_delivered(91, actor="carrier", idempotency_key="delivered:91")
     settlements.evaluate_eligibility(91, now=datetime.now(timezone.utc)+timedelta(days=3))
+    calls = []
+    def transfer(args):
+        calls.append(args); return {"id": "tr_test"}
+    def payout(args):
+        calls.append(args); return {"id": "po_test"}
     metrics = scheduler.run_once(account_resolver=lambda _: {"connected_account_id":"acct_test","payouts_enabled":True},
-                                 provider_create=lambda _: {"id":"po_test"})
-    assert metrics["scheduled_count"] == 1
+                                 provider_transfer=transfer, provider_create=payout)
+    assert metrics["scheduled_count"] == 1 and metrics["transferred_count"] == 1
+    # The transfer funds the connected account; only then can it pay out.
+    assert [c["method"] for c in calls] == ["transfer", "payout"]
+    assert calls[0]["kwargs"]["destination"] == "acct_test"
+    assert calls[0]["kwargs"]["transfer_group"] == "marketplace_order:91"
+    assert "stripe_account" not in calls[0]
+    assert calls[1]["stripe_account"] == "acct_test"
+    assert calls[0]["idempotency_key"] != calls[1]["idempotency_key"]
     assert settlements.get_settlement(91)["payout_state"] == "scheduled"
     assert scheduler.apply_provider_event("po_test", paid=True, event_id="evt_paid")["changed"] == 1
     assert settlements.get_settlement(91)["payout_state"] == "paid"
+
+def test_failed_transfer_never_reaches_the_payout_call():
+    tx = {"id": 92, "seller_user_id": 8, "item_type": "marketplace_product", "amount_cents": 5000,
+          "platform_fee_cents": 500, "seller_net_cents": 4500, "currency": "USD",
+          "metadata_json": json.dumps({"commercial_quote": {"merchandise_net_minor":5000,
+          "buyer_total_minor":5000,"platform_fee_bps":1000,"fee_policy_version":"MARKETPLACE_LEGACY_CURRENT"}})}
+    settlements.settle_paid_transaction(tx, payout_ready=True)
+    settlements.mark_delivered(92, actor="carrier", idempotency_key="delivered:92")
+    settlements.evaluate_eligibility(92, now=datetime.now(timezone.utc)+timedelta(days=3))
+    payout_calls = []
+    def failing_transfer(_):
+        raise RuntimeError("insufficient platform balance")
+    metrics = scheduler.run_once(account_resolver=lambda _: {"connected_account_id":"acct_test","payouts_enabled":True},
+                                 provider_transfer=failing_transfer,
+                                 provider_create=lambda a: payout_calls.append(a) or {"id":"po_never"})
+    assert payout_calls == []
+    assert metrics["transferred_count"] == 0 and metrics["failed_count"] == 1
+    assert settlements.get_settlement(92)["payout_state"] == "failed"

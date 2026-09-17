@@ -575,6 +575,32 @@ def request_payout(user_id: Any, amount_cents: int, *,
         conn.close()
 
 
+def build_stripe_transfer_args(payout: Mapping[str, Any], *, transfer_group: str = "") -> dict:
+    """The kwargs for the platform→connected-account transfer that funds a payout.
+
+    The intended call is ``stripe.Transfer.create(**args["kwargs"],
+    idempotency_key=args["idempotency_key"])`` against the *platform* key — no
+    ``stripe_account``, because the money leaves the platform balance. This must
+    succeed before the payout in `build_stripe_payout_args`, which draws on the
+    balance this transfer creates. Shapes arguments only; calls nothing.
+    """
+    return {
+        "method": "transfer",
+        "idempotency_key": f"seller_transfer:{payout.get('payout_key')}",
+        "kwargs": {
+            "amount": int(payout.get("amount_cents") or 0),
+            "currency": str(payout.get("currency") or "usd"),
+            "destination": str(payout.get("connected_account_id") or ""),
+            **({"transfer_group": transfer_group} if transfer_group else {}),
+            "metadata": {
+                "payout_key": str(payout.get("payout_key") or ""),
+                "pulse_user_id": str(payout.get("user_id") or ""),
+                "local_payout_id": str(payout.get("id") or ""),
+            },
+        },
+    }
+
+
 def build_stripe_payout_args(payout: Mapping[str, Any]) -> dict:
     """The kwargs a networked caller passes to the Stripe API for this payout.
 

@@ -69,7 +69,35 @@ def _snapshot(tx: Mapping[str, Any]) -> dict:
         "currency": str(tx.get("currency") or quote.get("currency") or "USD").lower(),
     }
 
+_TRANSFER_GROUP_COLUMN_READY = False
+
+
+def _ensure_transfer_group_column(conn) -> None:
+    """One cart checkout is one charge but several settlements (one per line).
+
+    Stripe groups the resulting transfers back to that charge by `transfer_group`,
+    so each settlement has to remember the group its charge carried; it cannot be
+    derived from `order_id`, which is per-transaction.
+    """
+    global _TRANSFER_GROUP_COLUMN_READY
+    if _TRANSFER_GROUP_COLUMN_READY:
+        return
+    cols = set()
+    try:
+        cols = {str(r[1]).lower() for r in conn.execute(
+            "PRAGMA table_info(marketplace_commercial_settlements)").fetchall()}
+    except Exception:  # noqa: BLE001 - Postgres has no PRAGMA
+        cols = {str(r[0]).lower() for r in conn.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name='marketplace_commercial_settlements'").fetchall()}
+    if "transfer_group" not in cols:
+        conn.execute("ALTER TABLE marketplace_commercial_settlements ADD COLUMN transfer_group TEXT")
+    # Cached only once the caller's commit has landed, so a rolled-back DDL is
+    # not remembered as applied.
+
+
 def ensure_schema(conn=None) -> None:
+    global _TRANSFER_GROUP_COLUMN_READY
     owned = conn is None
     if owned:
         conn = db.connect()
@@ -100,8 +128,10 @@ def ensure_schema(conn=None) -> None:
             id INTEGER PRIMARY KEY AUTOINCREMENT, seller_transaction_id INTEGER NOT NULL,
             idempotency_key TEXT NOT NULL UNIQUE, from_state TEXT, to_state TEXT NOT NULL,
             actor TEXT NOT NULL, reason TEXT, provider_reference TEXT, created_at TEXT NOT NULL)""")
+        _ensure_transfer_group_column(conn)
         if owned:
             conn.commit()
+            _TRANSFER_GROUP_COLUMN_READY = True
     finally:
         if owned:
             conn.close()
@@ -118,7 +148,8 @@ def get_settlement(transaction_id: Any, conn=None) -> dict | None:
             conn.close()
 
 def settle_paid_transaction(tx: Mapping[str, Any], *, payout_ready: bool,
-                            provider_payment_id: str = "", actor: str = "stripe") -> dict:
+                            provider_payment_id: str = "", transfer_group: str = "",
+                            actor: str = "stripe") -> dict:
     transaction_id = int(tx.get("id") or 0)
     seller_id = str(tx.get("seller_user_id") or "")
     if not transaction_id or not seller_id or str(tx.get("item_type") or "") != "marketplace_product":
@@ -131,15 +162,16 @@ def settle_paid_transaction(tx: Mapping[str, Any], *, payout_ready: bool,
             (seller_transaction_id,order_id,seller_id,quote_id,currency,fee_policy_version,payout_policy_version,
              fee_rate_bps,merchandise_net_minor,shipping_minor,tax_minor,seller_shipping_credit_minor,
              buyer_total_minor,gross_platform_fee_minor,net_platform_fee_minor,gross_seller_earnings_minor,
-             net_seller_earnings_minor,payout_state,payout_ready,provider_payment_id,created_at,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             net_seller_earnings_minor,payout_state,payout_ready,provider_payment_id,transfer_group,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(seller_transaction_id) DO NOTHING""",
             (transaction_id, order_id, seller_id, snap["quote_id"], snap["currency"],
              snap["fee_policy_version"], snap["payout_policy_version"], snap["fee_rate_bps"],
              snap["merchandise_net_minor"], snap["shipping_minor"], snap["tax_minor"],
              snap["seller_shipping_credit_minor"], snap["buyer_total_minor"], snap["platform_fee_minor"],
              snap["platform_fee_minor"], snap["seller_earnings_minor"], snap["seller_earnings_minor"],
-             initial, 1 if payout_ready else 0, provider_payment_id, now, now))
+             initial, 1 if payout_ready else 0, provider_payment_id,
+             str(transfer_group or order_id), now, now))
         conn.commit()
     finally:
         conn.close()
