@@ -1,7 +1,7 @@
 # PulseSoc Native Incoming Call — Operations Runbook
 
 Deployment, diagnosis and rollback for the native incoming-call path at commit
-`0fe9cff5`.
+`7d2f0fc8`.
 
 No secret values appear in this document. Every credential is referred to by variable
 name only.
@@ -72,7 +72,7 @@ and `pytest` and will fake a protection-suite failure.
 
 ### 2.1 Backend
 
-Backend deploys to Railway. The change in `0fe9cff5` is confined to
+Backend deploys to Railway. The change in `7d2f0fc8` is confined to
 `services/pulsesoc_communications_engine.py` and its test file. It contains **no
 schema change** — the compare-and-set adds a predicate to an existing `UPDATE` and
 reads `cursor.rowcount`, both of which work on the current `communication_calls`
@@ -227,14 +227,14 @@ user.
 
 ### 4.6 Two devices both appear to be in the call
 
-Before `0fe9cff5` this was reachable. After it, a second accept cannot re-drive the
+Before `7d2f0fc8` this was reachable. After it, a second accept cannot re-drive the
 call to `accepted` and cannot emit a second answered-elsewhere fan-out.
 
 If it recurs, capture:
 
 - `call_timeline(call_ref)` — look for two `accepted` events on the same call.
 - `call_events(user_id, call_ref)` (engine:2010).
-- Whether the deployed revision actually contains `0fe9cff5`.
+- Whether the deployed revision actually contains `7d2f0fc8`.
 
 Note the open verification gap: the two-genuine-threads-under-PostgreSQL proof is still
 skipped (no PostgreSQL available on the verification machine). The SQLite coverage
@@ -286,10 +286,10 @@ Use only as an emergency stop: it removes native incoming-call behaviour entirel
 ### 5.3 Revert the backend commit
 
 ```bash
-git revert 0fe9cff5
+git revert 7d2f0fc8
 ```
 
-`0fe9cff5` touches two files:
+`7d2f0fc8` touches two files:
 
 - `services/pulsesoc_communications_engine.py`
 - `tests/test_call_accept_race.py`
