@@ -24,10 +24,36 @@ const PUSH_INSTALLATION_ID_KEY = "pulsesoc.native.push.installation_id";
  * read here is the same one `api/push` already writes under, so there is no new keychain
  * service and no new security policy — only a second reader of an existing item.
  */
+/**
+ * Shared by concurrent callers so that a read-then-write cannot interleave.
+ *
+ * `push.ts` (alert registration) and `calls.ts` (VoIP registration) both call this
+ * during start-up, and neither awaits the other. Without this, both `await` the read,
+ * both see nothing stored, and both mint an id — so the two registrations land under
+ * *different* device ids. That is precisely the split the module docstring above warns
+ * about: nothing errors, CallKit rings, and the alert banner is no longer suppressed
+ * because it is filed under an id with no VoIP token. Measured on device, three ids
+ * were minted within about 2 ms.
+ */
+let inFlight: Promise<string> | null = null;
+
 export async function getPushInstallationId() {
-  const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
-  if (existing) return existing;
-  const generated = `native-${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
-  await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated).catch(() => undefined);
-  return generated;
+  if (inFlight) return inFlight;
+  inFlight = (async () => {
+    const existing = await SecureStore.getItemAsync(PUSH_INSTALLATION_ID_KEY).catch(() => "");
+    if (existing) return existing;
+    const generated = `native-${Platform.OS}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+    await SecureStore.setItemAsync(PUSH_INSTALLATION_ID_KEY, generated).catch(() => undefined);
+    return generated;
+  })();
+  try {
+    return await inFlight;
+  } finally {
+    // Deliberately not a process-lifetime memo. SecureStore stays the source of truth
+    // because a read can fail transiently while the device is *locked* — and a locked
+    // device is exactly when a VoIP push arrives. Caching that failure would pin a
+    // freshly minted id for the rest of the process and permanently diverge from the
+    // stored one; re-reading lets the next call recover the real id instead.
+    inFlight = null;
+  }
 }
