@@ -60,6 +60,7 @@ os.environ.setdefault("DATABASE_URL", f"sqlite:///{_DB_PATH}")
 os.environ["BUSINESS_OS_SUPPLIERS_CJ"] = "1"
 
 from services.business_os.suppliers import fulfillment  # noqa: E402
+from services.business_os.suppliers import policy  # noqa: E402
 
 MOBILE_API = os.path.join(REPO, "mobile-native", "src", "api", "dropshipping.ts")
 
@@ -80,7 +81,6 @@ STATE_MODULES = (
 NOT_A_STATE = {
     "CJ_ENVIRONMENT_MODE": "environment variable name",
     "PRODUCTION_CJ_FULFILLMENT_ENABLED": "environment variable name",
-    "SANDBOX": "value of CJ_ENVIRONMENT_MODE",
     "CONNECTED": "a supplier *connection* status, not an order state",
     "ORDER_CONNNECTED": "CJ's own webhook type, triple-N typo included",
     "DROPSHIP": "marketplace_product_sources.fulfillment_mode",
@@ -124,8 +124,17 @@ def python_states():
     # test immediately, which is this collect-everything-and-subtract method
     # doing precisely what its docstring claims, on a vocabulary it had never
     # seen. They are pinned in their own right further down this file.
+    # `ENVIRONMENTS` is the fourth, and arrived the same way the third did: the
+    # live/sandbox method split put `"LIVE"` into `fulfillment.py` and this test
+    # failed on a word it had never seen. `"SANDBOX"` used to sit in the
+    # allowlist above as "value of CJ_ENVIRONMENT_MODE"; it is read from
+    # `policy` now instead, because a hand-typed pair of environment names is a
+    # copy of the vocabulary in exactly the way this file argues against, and
+    # because subtracting a *read* set means a future environment is excluded
+    # without an edit while a future order *state* still cannot hide in it.
     return (found - set(fulfillment.FUNDING_STATES) - set(fulfillment.BLOCKERS)
-            - set(fulfillment.DRAIN_STATES) - set(NOT_A_STATE))
+            - set(fulfillment.DRAIN_STATES) - set(policy.ENVIRONMENTS)
+            - set(NOT_A_STATE))
 
 
 def mobile_states():

@@ -1,11 +1,53 @@
 # Proposal: a live CJ order path
 
-**Status: proposal. Nothing here is implemented. No code in this document exists.**
+**Status: steps 1, 3 and 4 of §4 are built. No live order can be placed, and
+nothing this deployment can be configured to do places one.**
 
 Written 2026-09-17 against `d09f3958`. Requested by Roody after the dropshipping
 pricing fix landed, with the standing instruction that no real CJ order may be
 paid or confirmed without separate explicit approval to spend money. This
 document is the thing to argue with *before* that approval is asked for.
+
+### What changed since it was written
+
+The header used to read "Nothing here is implemented. No code in this document
+exists." That stopped being true, and a status line that describes a proposal
+after the code has landed is the same defect this subsystem already fixed in its
+Sandbox badge: a constant that cannot track the thing it describes.
+
+- **§2.1 paid-order allowlist** — landed as `b86dc2f9`. Applied at three gates,
+  not the two named below; `quote_for_order` is a third.
+- **§2.2 method split** — `CJAdapter.create_sandbox_fulfillment` /
+  `create_live_fulfillment` over a shared `_create_fulfillment`. `dispatch`
+  chooses by re-deriving the environment from the intent's own frozen
+  `isSandbox`, which is covered by `snapshot_hash` — not from a parameter. An
+  intent created in sandbox therefore cannot be sent live by a later
+  configuration change; it is refused.
+- **§2.3 steps 1–2** — `outbox.funding_state` is now written at insert
+  (`FUNDING_APPROVAL_REQUIRED` for live, `FUNDING_NOT_READY` for sandbox), read
+  by `claim`, and enforced by `require_funded` before any live send. The
+  merchant-facing reason `supplier_funding_required` has words in the app.
+
+**§4 step 5, the approval gate, has not been passed, and nothing past it is
+built.** Three independent locks hold. Each was verified by mutation — the test
+suite fails when any one of them is removed, which is the only evidence worth
+anything here:
+
+1. `policy.live_fulfillment_path_exists()` returns `False`, and `require_live`
+   checks it *first*, before reading any environment variable. No combination of
+   Railway variables reaches a live order;
+   `test_no_environment_variable_reaches_a_live_order` asserts that over the
+   product of every mode and flag value. Flipping this one line is what approval
+   to spend money would authorise, and it needs an edit, a review and a deploy.
+2. `funding_state` must equal exactly `"FUNDED"`, and nothing in `services/` or
+   any root-level worker writes that value — pinned by a source walk, so the day
+   something does write it is the day that test fails.
+3. `connections.py` constructs `CJAdapter(environment="SANDBOX")` at both call
+   sites, and `create_live_fulfillment` refuses unless it is `"LIVE"`.
+
+Step 2 of the ordering — deploying `supplier_worker` with
+`CJ_RECONCILIATION_ENABLED` — is still **not done** and remains a hard
+prerequisite for step 6. The §5 questions are still open.
 
 ---
 

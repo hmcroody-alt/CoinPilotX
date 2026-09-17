@@ -127,6 +127,11 @@ PREFLIGHT_REASONS = {
     # Neither of these is about this order at all.
     "production_fulfillment_locked": "supplier_ordering_disabled",
     "explicit_sandbox_required": "supplier_ordering_disabled",
+    "live_fulfillment_not_available": "supplier_ordering_disabled",
+    # This one *is* about this order, which is why it does not join the two
+    # above. The deployment is willing; this particular order has not been
+    # approved for payment, and the merchant is the one who can change that.
+    "supplier_funding_not_approved": "supplier_funding_required",
     "intent_integrity_failed": "supplier_order_needs_support",
 }
 
@@ -305,6 +310,75 @@ def assert_sandbox(value):
         raise FulfillmentError("production_fulfillment_locked")
     if type(value) is not int or value != 1:
         raise FulfillmentError("explicit_sandbox_required", 400)
+
+
+def assert_live(value):
+    """The live twin of :func:`assert_sandbox`, delegated to the policy module.
+
+    Not a second copy of the rules. ``policy.require_live`` is where the four
+    conditions live, and this wrapper exists only to translate its
+    ``SupplierError`` into the ``FulfillmentError`` this module's callers and
+    its ``PREFLIGHT_REASONS`` table are written against. Re-deriving the
+    conditions here would give live ordering two gates that could disagree,
+    which is the failure the environment badge work already had to undo once.
+    """
+    from . import policy
+    from .errors import SupplierError
+
+    try:
+        policy.require_live({"isSandbox": value})
+    except SupplierError as exc:
+        raise FulfillmentError("live_fulfillment_not_available"
+                               if exc.code == "live_fulfillment_not_available"
+                               else "explicit_sandbox_required", 409) from None
+
+
+def assert_environment(value):
+    """Which environment is this intent for, refusing anything that is neither.
+
+    Returns the environment name rather than a boolean, and that is the point of
+    its existence: a boolean would be read by a caller that then picks a method,
+    and a call site that picks between "spend nothing" and "spend money" from a
+    flag is exactly what §2.2 of the live-order proposal refused to build. The
+    name is carried instead, derived here once from the intent's own frozen
+    ``isSandbox``.
+
+    ``0`` and ``1`` only, as ints. ``True`` is not ``1`` here -- ``type(...) is
+    int`` excludes it -- because a bool arriving in this position means a caller
+    serialised something it did not think about.
+    """
+    from . import policy
+
+    if type(value) is not int or value not in (0, 1):
+        raise FulfillmentError("explicit_sandbox_required", 400)
+    if value == 1:
+        assert_sandbox(value)
+        return policy.ENVIRONMENT_SANDBOX
+    assert_live(value)
+    return policy.ENVIRONMENT_LIVE
+
+
+#: The only ``funding_state`` from which a live supplier order may be sent.
+#:
+#: Nothing in this codebase writes it. That is not an oversight -- it is step 3
+#: of the live-order proposal, the step that spends money, and it is the step
+#: that needs a human to say so. The column, the vocabulary and the refusal
+#: below are steps 1 and 2: the state becomes observable, and a live intent
+#: parks in ``FUNDING_APPROVAL_REQUIRED`` where a merchant-facing surface can
+#: show it, without anything being sent.
+FUNDING_APPROVED_STATE = "FUNDED"
+
+
+def require_funded(intent):
+    """Refuse to send a live order that nobody has approved paying for.
+
+    Deliberately independent of :func:`assert_live`. That one asks whether this
+    *deployment* may place live orders at all; this asks whether this *order*
+    has been approved, and collapsing the two would mean switching on live
+    ordering silently approved every intent already sitting in the outbox.
+    """
+    if str(intent.get("funding_state") or "") != FUNDING_APPROVED_STATE:
+        raise FulfillmentError("supplier_funding_not_approved")
 
 
 def ensure_schema(conn=None):
@@ -548,7 +622,13 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
     it, from that frozen record, and is the only thing that does.
     """
     from . import connections, gateway
-    assert_sandbox(isSandbox)
+    # The environment is decided once, here, and then frozen -- `isSandbox` is
+    # already part of the snapshot and therefore already covered by
+    # `snapshot_hash`, so no new field and no digest change was needed to record
+    # it. `dispatch` re-derives it from that frozen value rather than from the
+    # deployment, which is what stops an intent created in sandbox from being
+    # sent live if the deployment changes while the row waits in the outbox.
+    environment = assert_environment(isSandbox)
     metadata = connections.get_connection(connection_id, business_id, store_id,
                                           actor_user_id, context=context, write=True)
     bundle = connections.worker_connection(connection_id, business_id, store_id)
@@ -734,8 +814,16 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
              external_ref, encoded, digest, now))
         if cursor.rowcount != 1:
             raise FulfillmentError("concurrent_intent_conflict")
-        conn.execute("INSERT INTO business_os_supplier_outbox(intent_id,available_at,updated_at) VALUES(?,?,?)",
-                     (identity, now, now))
+        # `funding_state` stops being a column nobody writes. A sandbox intent
+        # keeps `FUNDING_NOT_READY` because there is no funding question to
+        # answer -- nothing will be charged. A live intent parks in
+        # `FUNDING_APPROVAL_REQUIRED`, which is a real state a real row reaches,
+        # so the approval surface that has to exist before any money moves can
+        # be designed against one rather than imagined.
+        conn.execute("INSERT INTO business_os_supplier_outbox(intent_id,available_at,updated_at,funding_state) "
+                     "VALUES(?,?,?,?)",
+                     (identity, now, now,
+                      "FUNDING_APPROVAL_REQUIRED" if environment == "LIVE" else "FUNDING_NOT_READY"))
         webhook_inbox._commit(conn)
         return {"intent_id": identity, "duplicate": False}
     except Exception:
@@ -766,7 +854,11 @@ def claim(*, now=None, lease_seconds=120):
         if cursor.rowcount != 1:
             webhook_inbox._commit(conn)
             return None
-        result = dict(conn.execute("SELECT i.*,o.state,o.lease_token,o.attempts,o.provider_order_id "
+        # `funding_state` is selected because `dispatch` refuses to send a live
+        # order without it. Reading it here, inside the same claim, rather than
+        # in `dispatch` on a second connection: the approval must be the one
+        # that was true when this attempt took its lease.
+        result = dict(conn.execute("SELECT i.*,o.state,o.lease_token,o.attempts,o.provider_order_id,o.funding_state "
              "FROM business_os_supplier_intents i JOIN business_os_supplier_outbox o ON i.id=o.intent_id "
              "WHERE i.id=?", (row[0],)).fetchone())
         webhook_inbox._commit(conn)
@@ -885,7 +977,10 @@ def dispatch(intent, adapter, meta, *, now=None):
         snapshot = json.loads(intent["snapshot_json"])
         if hashlib.sha256(_json(snapshot).encode()).hexdigest() != intent["snapshot_hash"]:
             raise FulfillmentError("intent_integrity_failed")
-        assert_sandbox(snapshot.get("isSandbox"))
+        # Re-derived from the snapshot the hash above just proved intact, never
+        # from the deployment's current configuration. An intent created in
+        # sandbox stays a sandbox intent for its whole life in the outbox.
+        environment = assert_environment(snapshot.get("isSandbox"))
         if intent["state"] in {"UNKNOWN", "RECONCILE"}:
             observed = adapter.get_fulfillment(external_order_ref=intent["external_order_ref"])
             if not observed or not observed.get("order_id"):
@@ -951,10 +1046,22 @@ def dispatch(intent, adapter, meta, *, now=None):
                         "storeName": selected_shop["name"],
                         "products": [{"vid": item["vid"], "quantity": item["quantity"]}
                                      for item in snapshot["items"]]})
-        assert_sandbox(payload.get("isSandbox"))
+        # Checked a second time against the payload actually built, not the
+        # snapshot read at the top: between them sits the assembly that puts
+        # `isSandbox` into the request, and that is the line whose bug would
+        # matter. The two must agree, so disagreement is its own refusal.
+        if assert_environment(payload.get("isSandbox")) != environment:
+            raise FulfillmentError("intent_integrity_failed")
+        if environment == "LIVE":
+            require_funded(intent)
         _sending(intent, now)
         sent = True
-        adapter.create_sandbox_fulfillment(payload)
+        # No boolean, no ternary picking a method name. Two branches, so that
+        # reading this line tells you which one spends money.
+        if environment == "LIVE":
+            adapter.create_live_fulfillment(payload)
+        else:
+            adapter.create_sandbox_fulfillment(payload)
         # Always prove identity/sandbox through independent read-back, not POST payload echo.
         settle(intent, "UNKNOWN", now=now, delay=2, error="awaiting_create_readback")
         return "UNKNOWN"
@@ -1006,11 +1113,19 @@ def real_order_activity(conn, connection_id):
     """Count orders that reach CJ as *real*, and when the last one did.
 
     CJ's inactivity rule counts real orders only, and this deployment sends
-    none: `assert_sandbox` rejects any payload without an integral
-    ``isSandbox=1``, on every path, so the count returned here is structurally
-    zero rather than incidentally zero. That is the correct answer and the
-    whole reason the caller needs it -- an integration that never places a real
-    order is exactly the one CJ eventually disables.
+    none, so the count returned here is structurally zero rather than
+    incidentally zero. That is the correct answer and the whole reason the
+    caller needs it -- an integration that never places a real order is exactly
+    the one CJ eventually disables.
+
+    It used to be structurally zero because `assert_sandbox` rejected any
+    payload without an integral ``isSandbox=1`` on every path. That sentence is
+    no longer the reason: `assert_environment` now admits ``isSandbox=0`` as
+    well, and the zero rests on `policy.live_fulfillment_path_exists` returning
+    ``False`` instead. The conclusion did not change and the argument for it
+    did, which is worth writing down -- a docstring that keeps citing a gate the
+    code no longer goes through is how a "structurally zero" quietly becomes an
+    "incidentally zero" nobody rechecked.
 
     Counted from the snapshot rather than from a column, because the snapshot
     is what was actually sent. A column would be a second place for the sandbox

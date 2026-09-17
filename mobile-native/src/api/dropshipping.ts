@@ -1887,6 +1887,7 @@ export const SUPPLIER_ORDER_REASONS = [
   "supplier_stock_unconfirmed",
   "order_no_longer_eligible",
   "supplier_ordering_disabled",
+  "supplier_funding_required",
   "supplier_order_needs_support"
 ] as const;
 export type SupplierOrderReason = (typeof SUPPLIER_ORDER_REASONS)[number];
@@ -1926,6 +1927,7 @@ export const SUPPLIER_ORDER_REASON_COPY: Record<SupplierOrderReason, string> = {
   supplier_stock_unconfirmed: "Your supplier has not confirmed stock for this order",
   order_no_longer_eligible: "This sale was cancelled, refunded or disputed, so nothing was ordered",
   supplier_ordering_disabled: "Supplier ordering is not switched on for this account yet",
+  supplier_funding_required: "Waiting for this order to be funded before it goes to your supplier. Nothing has been sent",
   supplier_order_needs_support: "This order needs support before it can be sent to your supplier"
 };
 

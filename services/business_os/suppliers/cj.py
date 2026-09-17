@@ -663,10 +663,55 @@ class CJAdapter:
             "products": [{"vid": _id(_dict(p).get("vid"), provider=True), "quantity": _number(p.get("quantity"))} for p in _list(data.get("productList", []))]}
 
     def create_sandbox_fulfillment(self, payload):
+        """Place a CJ order that is accepted, charged for nothing, and shipped never.
+
+        Unchanged in behaviour by the live split: it still refuses anything
+        ``require_sandbox`` refuses and still demands an explicit ``isSandbox=1``.
+        What moved out is the part that was never about sandbox -- payload shape,
+        the POST, the identity read-back -- so that the live twin below shares
+        one validated request builder instead of a copy that drifts from it.
+        """
         from .policy import require_sandbox
         require_sandbox(payload)
         if self.environment != "SANDBOX":
             raise SupplierError("PRODUCTION_FULFILLMENT_DISABLED", http_status=409)
+        return self._create_fulfillment(payload)
+
+    def create_live_fulfillment(self, payload):
+        """Place a real CJ order against a real balance. Spends money.
+
+        Separate from the sandbox method rather than a branch inside it, and the
+        difference is who reads what. ``_create_fulfillment`` is forty lines of
+        shape validation that everyone reads and nobody fears; putting an
+        ``if live:`` inside it would have hidden the only irreversible decision
+        in this file behind the most-skimmed code in it, and turned every
+        existing sandbox test into a test of a function that can now spend.
+
+        There is no boolean parameter selecting between the two, and there must
+        not be one. :func:`fulfillment.dispatch` chooses by the intent's own
+        frozen ``isSandbox``, so an intent created in sandbox cannot be
+        dispatched live even if the deployment flips while the row sits in the
+        outbox -- which is precisely the property a parameter would destroy.
+
+        ``require_live`` refuses until :func:`policy.live_fulfillment_path_exists`
+        is edited in source, so today this raises for every caller. It is not
+        dead code: the tests reach it by flipping that function, which is the
+        same act the money approval will be.
+        """
+        from .policy import require_live
+        require_live(payload)
+        if self.environment != "LIVE":
+            raise SupplierError("PRODUCTION_FULFILLMENT_DISABLED", http_status=409)
+        return self._create_fulfillment(payload)
+
+    def _create_fulfillment(self, payload):
+        """Validate, POST, and prove the order that came back is the one we asked for.
+
+        Holds no opinion about sandbox or live on purpose -- both callers above
+        have already formed theirs, and a second opinion here would be a second
+        place to get it wrong. ``isSandbox`` is passed through as given, having
+        been checked for the value each caller requires.
+        """
         if type(payload.get("payType")) is not int or payload["payType"] != 3:
             raise SupplierError("FUNDING_NOT_READY", http_status=409)
         if type(payload.get("orderFlow")) is not int or payload["orderFlow"] != 1:

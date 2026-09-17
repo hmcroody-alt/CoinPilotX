@@ -71,6 +71,12 @@ class CommerceAdapter(FakeAdapter):
     def __init__(self):
         super().__init__()
         self.created = []
+        #: Live creates, recorded apart from sandbox ones. A single shared list
+        #: would make every assertion below read "a supplier order was placed"
+        #: and none of them read "the method that spends money is the one that
+        #: ran" -- and the second is the only question the live split exists to
+        #: answer.
+        self.created_live = []
         self.observed = None
         self.create_error = None
         self.stock = 8
@@ -107,6 +113,15 @@ class CommerceAdapter(FakeAdapter):
         self.created.append(copy.deepcopy(payload))
         self.observed = {"order_id": "90001", "external_order_ref": payload["orderNumber"],
             "shop_id": "cj-shop-a", "is_sandbox": 1, "provider_status": "CREATED",
+            "products": [{"vid": VID, "quantity": 1}]}
+        if self.create_error:
+            raise self.create_error
+        return self.observed
+
+    def create_live_fulfillment(self, payload):
+        self.created_live.append(copy.deepcopy(payload))
+        self.observed = {"order_id": "90002", "external_order_ref": payload["orderNumber"],
+            "shop_id": "cj-shop-a", "is_sandbox": 0, "provider_status": "CREATED",
             "products": [{"vid": VID, "quantity": 1}]}
         if self.create_error:
             raise self.create_error
@@ -1660,3 +1675,324 @@ def test_every_eligibility_gate_uses_the_shared_predicate():
     assert '{"cancelled", "refunded", "disputed"}' not in body, (
         "an inline status denylist reappeared below the constants -- it will "
         "pass pending_payment, which is the bug this replaced")
+
+
+# ---------------------------------------------------------------------------
+# The live order path.
+#
+# Two claims have to hold at once and they pull against each other, which is
+# why this section is longer than the code it covers:
+#
+#   1. The code really works. A live intent, dispatched, produces a real CJ
+#      createOrderV2 call carrying isSandbox=0. Asserting only that live is
+#      blocked would be satisfied by a path that is broken rather than gated,
+#      and that difference surfaces on the day of the first real order.
+#   2. Nothing this deployment can be configured to do reaches it. Not a
+#      Railway variable, not a combination of them, not an intent already in
+#      the outbox when someone flips a switch.
+#
+# Every test that reaches the live path does so by monkeypatching
+# `policy.live_fulfillment_path_exists`, which is a source edit in production.
+# That is the approval gate, expressed as the one thing a test can fake and an
+# operator cannot.
+# ---------------------------------------------------------------------------
+
+from services.business_os.suppliers import policy
+
+
+def allow_live(monkeypatch):
+    """Everything the live path needs, in one place, so each test varies one thing."""
+    monkeypatch.setattr(policy, "live_fulfillment_path_exists", lambda: True)
+    monkeypatch.setenv("CJ_ENVIRONMENT_MODE", "LIVE")
+    monkeypatch.setenv("PRODUCTION_CJ_FULFILLMENT_ENABLED", "1")
+
+
+def fund(intent_id, state="FUNDED"):
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE business_os_supplier_outbox SET funding_state=? WHERE intent_id=?",
+                     (state, intent_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def outbox_funding(intent_id):
+    return outbox(intent_id)["funding_state"]
+
+
+def intent_row(intent_id):
+    """The intent, not the outbox row beside it.
+
+    `outbox()` reads the queue entry; `snapshot_json` and `snapshot_hash` live
+    on the intent, which is the record the environment is re-derived from.
+    """
+    conn = db.connect()
+    try:
+        return dict(conn.execute("SELECT * FROM business_os_supplier_intents WHERE id=?",
+                                 (intent_id,)).fetchone())
+    finally:
+        conn.close()
+
+
+def live_request(ready):
+    return ready[2] | {"isSandbox": 0, "idempotency_key": "fixture-live-1"}
+
+
+def test_the_live_method_exists_on_the_real_provider():
+    """Not the fake. The split is in `cj.py` and that is what ships."""
+    from services.business_os.suppliers.cj import CJAdapter
+
+    assert callable(getattr(CJAdapter, "create_live_fulfillment", None))
+    assert callable(getattr(CJAdapter, "create_sandbox_fulfillment", None))
+    assert callable(getattr(CJAdapter, "_create_fulfillment", None))
+
+
+def test_no_environment_variable_reaches_a_live_order(ready, monkeypatch):
+    """The safety claim, stated over configuration rather than over one setting.
+
+    Exhaustive across the variables an operator controls, with the source-level
+    approval deliberately *not* granted. The point is not that these particular
+    combinations are handled -- it is that the first condition `require_live`
+    checks is not configuration at all, so the product of every other switch is
+    still a refusal.
+    """
+    adapter = ready[0]
+    for mode in ("LIVE", "PRODUCTION", "live", "production", "SANDBOX", ""):
+        for flag in ("1", "true", "on", "0", ""):
+            monkeypatch.setenv("CJ_ENVIRONMENT_MODE", mode)
+            monkeypatch.setenv("PRODUCTION_CJ_FULFILLMENT_ENABLED", flag)
+            with pytest.raises(f.FulfillmentError):
+                f.create_intent(**live_request(ready))
+    assert adapter.created_live == [], "a live supplier order was reachable from configuration"
+    assert policy.live_fulfillment_path_exists() is False, (
+        "the money approval is on -- this is the line that must not be committed True")
+
+
+def test_a_live_intent_is_created_and_parks_awaiting_funding(ready, monkeypatch):
+    """Step 2 of the funding sequence: the state becomes real and observable.
+
+    `funding_state` was a column with a default that nothing ever wrote, which
+    made `FUNDING_APPROVAL_REQUIRED` a string in a frozenset rather than a state
+    any row had been in. An approval surface cannot be designed against that.
+    """
+    allow_live(monkeypatch)
+    intent = f.create_intent(**live_request(ready))
+    assert outbox_funding(intent["intent_id"]) == "FUNDING_APPROVAL_REQUIRED"
+    assert ready[0].created_live == []
+
+
+def test_a_sandbox_intent_needs_no_funding_approval(ready):
+    """Nothing is charged, so there is nothing to approve, so the state stays put.
+
+    Worth asserting rather than assuming: making every intent await funding
+    would have been the easy symmetric choice and would have stopped the
+    sandbox path working, which is the path that actually runs today.
+    """
+    intent = f.create_intent(**ready[2])
+    assert outbox_funding(intent["intent_id"]) == "FUNDING_NOT_READY"
+
+
+def test_an_approved_live_intent_places_a_real_order(ready, monkeypatch):
+    """The positive control for the whole feature: the live path is not broken.
+
+    Reached the only way it can be -- the approval faked and the funding state
+    written by hand, because no code writes `FUNDED` and that is deliberate.
+    What this proves is that when those two acts happen for real, a correctly
+    shaped order with an explicit integer `isSandbox=0` goes to CJ.
+    """
+    allow_live(monkeypatch)
+    adapter, connection, _ = ready
+    intent = f.create_intent(**live_request(ready))
+    fund(intent["intent_id"])
+    claimed = f.claim(now=time.time() + .1)
+    state = f.dispatch(claimed, adapter,
+                       connections.worker_connection(connection["id"], "biz-a", "store-a")["connection"])
+    assert adapter.created == [], "the sandbox method ran for a live intent"
+    assert len(adapter.created_live) == 1
+    payload = adapter.created_live[0]
+    assert payload["isSandbox"] == 0
+    assert type(payload["isSandbox"]) is int and payload["isSandbox"] is not False, (
+        "isSandbox must be an explicit int -- a bool here is a serialisation bug "
+        "that CJ would read as 0 and nobody would notice")
+    assert "isSandbox" in payload, "the flag must be sent, never left to CJ's default"
+    assert payload["payType"] == 3 and payload["orderFlow"] == 1
+    assert state == "UNKNOWN", "a created live order still has to be read back before it is LINKED"
+
+
+def test_an_unfunded_live_intent_sends_nothing(ready, monkeypatch):
+    """The second lock, checked with the first one open.
+
+    `live_fulfillment_path_exists` is faked here, so this is not re-testing the
+    approval gate -- it is the case where the deployment *is* allowed to place
+    live orders and this particular order has not been approved for payment.
+    """
+    allow_live(monkeypatch)
+    adapter, connection, _ = ready
+    f.create_intent(**live_request(ready))
+    claimed = f.claim(now=time.time() + .1)
+    state = f.dispatch(claimed, adapter,
+                       connections.worker_connection(connection["id"], "biz-a", "store-a")["connection"])
+    assert adapter.created_live == [] and adapter.created == []
+    assert state == "BLOCKED"
+    assert outbox(claimed["id"])["last_error"] == "supplier_funding_required"
+
+
+@pytest.mark.parametrize("funding", ["FUNDING_NOT_READY", "FUNDING_APPROVAL_REQUIRED",
+                                     "FUNDING_REAPPROVAL_REQUIRED", "FUNDING_FAILED",
+                                     "", "funded", "FUNDED "])
+def test_only_the_exact_funded_state_authorises_a_live_send(ready, monkeypatch, funding):
+    """Every other funding state, including the ones that only look like approval.
+
+    `"funded"` and `"FUNDED "` are here because a case-insensitive or stripped
+    comparison would be a reasonable-looking convenience that quietly widens the
+    one check standing between an intent and a charge.
+    """
+    allow_live(monkeypatch)
+    adapter, connection, _ = ready
+    intent = f.create_intent(**live_request(ready))
+    fund(intent["intent_id"], funding)
+    claimed = f.claim(now=time.time() + .1)
+    f.dispatch(claimed, adapter,
+               connections.worker_connection(connection["id"], "biz-a", "store-a")["connection"])
+    assert adapter.created_live == []
+
+
+def test_nothing_in_the_codebase_writes_the_funded_state():
+    """The reason the test above has to write it by hand, pinned so it stays true.
+
+    If a code path ever writes `FUNDED`, the funding lock stops being a lock and
+    this assertion is where that is noticed -- rather than in a CJ balance.
+    """
+    import pathlib
+
+    root = pathlib.Path(f.__file__).resolve().parents[3]
+    # Scoped to shipped server code on purpose. A repo-root walk reads `.venv`
+    # and every vendored package, which is slow and whose hits mean nothing --
+    # the write that would matter has to reach *this* outbox, so it lives in
+    # `services/`, in `bot.py`, or in a root-level worker.
+    candidates = sorted((root / "services").rglob("*.py")) + sorted(root.glob("*.py"))
+    assert (root / "services" / "business_os" / "suppliers" / "fulfillment.py") in candidates, (
+        "the walk no longer reaches the module that owns the outbox")
+    offenders = []
+    for path in candidates:
+        if "test" in path.parts or path.name.startswith("test_"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        for line in text.splitlines():
+            if "FUNDED" in line and ("UPDATE" in line.upper() or "INSERT" in line.upper()):
+                offenders.append(f"{path.name}: {line.strip()[:110]}")
+    assert not offenders, (
+        "something now writes a funding state into the outbox -- if that write "
+        f"can produce FUNDED, live orders are no longer gated: {offenders}")
+
+
+def test_a_sandbox_intent_cannot_be_dispatched_live_after_the_deployment_flips(ready, monkeypatch):
+    """The property a boolean parameter would have destroyed.
+
+    An intent is created in sandbox, sits in the outbox, and the deployment
+    becomes live underneath it. The environment is re-derived from the intent's
+    own frozen `isSandbox` -- covered by `snapshot_hash`, so it cannot be edited
+    -- and the sandbox gate then refuses it, because a deployment in LIVE mode
+    is not one where sandbox orders work either. Nothing is sent, which is the
+    correct outcome: this order was never approved as a live order.
+    """
+    adapter, connection, _ = ready
+    intent = f.create_intent(**ready[2])
+    assert json.loads(intent_row(intent["intent_id"])["snapshot_json"])["isSandbox"] == 1
+    claimed = f.claim(now=time.time() + .1)
+    allow_live(monkeypatch)
+    fund(intent["intent_id"])  # even pre-approved for funding, it is still a sandbox intent
+    state = f.dispatch(claimed, adapter,
+                       connections.worker_connection(connection["id"], "biz-a", "store-a")["connection"])
+    assert adapter.created_live == [], "a sandbox intent was sent to the live order method"
+    assert adapter.created == [], "a sandbox order was sent from a live deployment"
+    assert state == "BLOCKED"
+
+
+def test_dispatch_chooses_the_method_from_the_intent_not_from_a_parameter():
+    """Read as source, because the property is about what the code cannot express.
+
+    A `create_live=` argument, or a ternary picking a method name, would pass
+    every behavioural test above while making the environment a property of the
+    caller instead of the intent. The two explicit branches are the design.
+    """
+    import inspect
+
+    source = inspect.getsource(f.dispatch)
+    assert "adapter.create_live_fulfillment(payload)" in source
+    assert "adapter.create_sandbox_fulfillment(payload)" in source
+    assert 'environment = assert_environment(snapshot.get("isSandbox"))' in source, (
+        "dispatch stopped deriving the environment from the frozen snapshot")
+    for smell in ("create_live=", "live=True", "getattr(adapter,"):
+        assert smell not in source, (
+            f"{smell!r} makes the money decision a caller's argument rather than "
+            "the intent's own recorded environment")
+
+
+def test_the_real_provider_refuses_live_before_it_would_ever_post(monkeypatch):
+    """`cj.CJAdapter.create_live_fulfillment` itself, not the fake.
+
+    Given a payload that is otherwise perfectly valid, so the refusal is the
+    policy gate rather than a shape complaint arriving first and looking like
+    safety.
+    """
+    from services.business_os.suppliers.cj import CJAdapter
+    from services.business_os.suppliers.errors import SupplierError
+
+    provider = CJAdapter(environment="LIVE")
+    posted = []
+    monkeypatch.setattr(provider, "_request", lambda *a, **k: posted.append(a))
+    payload = {"orderNumber": "pss_x", "isSandbox": 0, "payType": 3, "orderFlow": 1,
+               "shippingCountryCode": "US", "shippingCountry": "United States",
+               "shippingProvince": "CA", "shippingCity": "Test City",
+               "shippingCustomerName": "Fixture", "shippingAddress": "Somewhere",
+               "logisticName": "Fixture Channel", "fromCountryCode": "CN",
+               "storeName": "cj-shop-a", "products": [{"vid": VID, "quantity": 1}]}
+    with pytest.raises(SupplierError) as caught:
+        provider.create_live_fulfillment(payload)
+    assert caught.value.code == "live_fulfillment_not_available"
+    assert posted == [], "the provider contacted CJ before the live gate refused"
+
+
+@pytest.mark.parametrize("flag", [None, 1, True, False, "0", 0.0])
+def test_the_real_provider_demands_an_explicit_integer_zero(monkeypatch, flag):
+    """`isSandbox` on the live path, with the approval granted so the flag is the test."""
+    from services.business_os.suppliers.cj import CJAdapter
+    from services.business_os.suppliers.errors import SupplierError
+
+    monkeypatch.setattr(policy, "live_fulfillment_path_exists", lambda: True)
+    monkeypatch.setenv("CJ_ENVIRONMENT_MODE", "LIVE")
+    monkeypatch.setenv("PRODUCTION_CJ_FULFILLMENT_ENABLED", "1")
+    provider = CJAdapter(environment="LIVE")
+    posted = []
+    monkeypatch.setattr(provider, "_request", lambda *a, **k: posted.append(a))
+    payload = {"orderNumber": "pss_x", "payType": 3, "orderFlow": 1, "storeName": "s",
+               "products": [{"vid": VID, "quantity": 1}]}
+    if flag is not None:
+        payload["isSandbox"] = flag
+    with pytest.raises(SupplierError) as caught:
+        provider.create_live_fulfillment(payload)
+    assert caught.value.code == "live_flag_required"
+    assert posted == []
+
+
+def test_the_sandbox_and_live_methods_cannot_be_crossed(monkeypatch):
+    """Each public method refuses the other's flag, before any shape validation."""
+    from services.business_os.suppliers.cj import CJAdapter
+    from services.business_os.suppliers.errors import SupplierError
+
+    monkeypatch.setattr(policy, "live_fulfillment_path_exists", lambda: True)
+    monkeypatch.setenv("CJ_ENVIRONMENT_MODE", "LIVE")
+    monkeypatch.setenv("PRODUCTION_CJ_FULFILLMENT_ENABLED", "1")
+    live_provider = CJAdapter(environment="LIVE")
+    with pytest.raises(SupplierError):
+        live_provider.create_sandbox_fulfillment({"isSandbox": 0, "payType": 3, "orderFlow": 1})
+    monkeypatch.delenv("PRODUCTION_CJ_FULFILLMENT_ENABLED")
+    monkeypatch.setenv("CJ_ENVIRONMENT_MODE", "SANDBOX")
+    sandbox_provider = CJAdapter(environment="SANDBOX")
+    with pytest.raises(SupplierError):
+        sandbox_provider.create_live_fulfillment({"isSandbox": 1, "payType": 3, "orderFlow": 1})

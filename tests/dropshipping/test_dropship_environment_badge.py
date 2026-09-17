@@ -100,12 +100,51 @@ def test_live_would_be_reported_once_the_path_exists(monkeypatch):
 
     Without this, every assertion above passes against a function hard-wired to
     return ``DISABLED`` and the ``LIVE`` constant would be decoration. Faking the
-    capability -- and nothing else -- shows the branch is wired to the one fact
-    it claims to depend on.
+    capability -- and nothing else that matters -- shows the branch is wired to
+    the fact it claims to depend on.
+
+    This now also sets ``PRODUCTION_CJ_FULFILLMENT_ENABLED``, and the change is
+    not a weakening. While the live path was a hardcoded ``False`` the badge
+    could gate ``LIVE`` on that alone; now that ``require_live`` exists the badge
+    probes it, and a label ignoring one of that gate's conditions would be the
+    original defect rebuilt on the live side. The test grew a setenv because the
+    code stopped guessing.
+    """
+    monkeypatch.setenv("CJ_ENVIRONMENT_MODE", "PRODUCTION")
+    monkeypatch.setenv("PRODUCTION_CJ_FULFILLMENT_ENABLED", "1")
+    monkeypatch.setattr(policy, "live_fulfillment_path_exists", lambda: True)
+    assert policy.fulfillment_environment() == policy.ENVIRONMENT_LIVE
+
+
+def test_the_live_path_existing_is_not_on_its_own_enough_for_a_live_badge(monkeypatch):
+    """The case the setenv above exposed, asserted rather than assumed.
+
+    Code existing and a deployment being configured to use it are two facts, and
+    the badge reports the conjunction. ``PRODUCTION`` mode with the live path
+    present but ``PRODUCTION_CJ_FULFILLMENT_ENABLED`` unset is a runtime where
+    ``require_live`` refuses every order -- so the honest label is ``DISABLED``,
+    for exactly the reason ``PRODUCTION`` alone was never ``LIVE``.
     """
     monkeypatch.setenv("CJ_ENVIRONMENT_MODE", "PRODUCTION")
     monkeypatch.setattr(policy, "live_fulfillment_path_exists", lambda: True)
-    assert policy.fulfillment_environment() == policy.ENVIRONMENT_LIVE
+    assert policy.fulfillment_environment() == policy.ENVIRONMENT_DISABLED
+
+
+@pytest.mark.parametrize("mode", ["SANDBOX", "sandbox", "", "prod", "REAL", "Live "])
+def test_a_live_badge_needs_a_mode_that_names_live(monkeypatch, mode):
+    """Everything is granted except the mode, so the mode is what is under test.
+
+    ``require_live`` accepts ``LIVE`` and ``PRODUCTION``; ``require_sandbox``
+    accepts ``SANDBOX``. ``"SANDBOX"`` appears here because with the production
+    flag on, the sandbox gate refuses too -- neither gate accepts, and the label
+    is ``DISABLED`` rather than the nearest match.
+    """
+    monkeypatch.setenv("CJ_ENVIRONMENT_MODE", mode)
+    monkeypatch.setenv("PRODUCTION_CJ_FULFILLMENT_ENABLED", "1")
+    monkeypatch.setattr(policy, "live_fulfillment_path_exists", lambda: True)
+    expected = (policy.ENVIRONMENT_LIVE if mode.strip().upper() in {"LIVE", "PRODUCTION"}
+                else policy.ENVIRONMENT_DISABLED)
+    assert policy.fulfillment_environment() == expected
 
 
 def test_safe_status_carries_the_derived_label(monkeypatch):

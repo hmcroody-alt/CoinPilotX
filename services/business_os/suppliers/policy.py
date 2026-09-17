@@ -125,6 +125,32 @@ def require_sandbox(payload: dict) -> None:
         raise SupplierError("sandbox_flag_required", http_status=400)
 
 
+def require_live(payload: dict) -> None:
+    """Refuse unless this deployment may place a real, payable CJ order.
+
+    The mirror of :func:`require_sandbox`, and deliberately not its inverse: a
+    sandbox order is refused by two conditions, a live one by four, and the
+    first of them is not configuration at all. :func:`live_fulfillment_path_exists`
+    is checked before anything an operator can set, so no combination of Railway
+    variables reaches a live order without a code change first.
+
+    ``isSandbox`` must be ``0`` and must be present *as an int*. CJ's default is
+    not ours to assume and an absent field is indistinguishable from a
+    serialisation bug -- the whole difference between a test order and a real
+    shipment is one key, so it is stated rather than implied. ``type(...) is
+    int`` rather than ``isinstance`` because ``False`` is an ``int`` to
+    ``isinstance``, and ``False`` is not an answer to this question.
+    """
+    if not live_fulfillment_path_exists():
+        raise SupplierError("live_fulfillment_not_available", http_status=409)
+    if os.getenv("CJ_ENVIRONMENT_MODE", "SANDBOX").strip().upper() not in {"LIVE", "PRODUCTION"}:
+        raise SupplierError("live_fulfillment_not_available", http_status=409)
+    if not enabled("PRODUCTION_CJ_FULFILLMENT_ENABLED"):
+        raise SupplierError("live_fulfillment_not_available", http_status=409)
+    if not isinstance(payload, dict) or type(payload.get("isSandbox")) is not int or payload["isSandbox"] != 0:
+        raise SupplierError("live_flag_required", http_status=400)
+
+
 def require_funding_disabled() -> None:
     raise SupplierError("funding_not_ready", http_status=409)
 
@@ -139,21 +165,47 @@ ENVIRONMENT_LIVE = "LIVE"
 #: supplier order can be created, so no order of any kind will be accepted.
 ENVIRONMENT_DISABLED = "DISABLED"
 
+#: Every value ``fulfillment_environment`` can return, as a set.
+#:
+#: Declared because these names are *not* supplier-order states, and the test
+#: that checks every backend-written state has merchant-facing copy works by
+#: collecting upper-case literals and subtracting the vocabularies that are
+#: something else. That subtraction reads this set rather than retyping the
+#: names, so an environment added here cannot be mistaken for an order state,
+#: and — the direction that actually bites — a *state* cannot be hidden from
+#: that test by being spelled like an environment.
+ENVIRONMENTS = frozenset({ENVIRONMENT_SANDBOX, ENVIRONMENT_LIVE, ENVIRONMENT_DISABLED})
+
 
 def live_fulfillment_path_exists() -> bool:
-    """Is there code that can place a real, payable CJ order? No.
+    """May this deployment place a real, payable CJ order? No -- and this line is why.
 
-    `cj.CJProvider` exposes exactly one order-creating method,
-    `create_sandbox_fulfillment`, and it calls :func:`require_sandbox` on its
-    first line. :func:`require_funding_disabled` raises unconditionally, so even
-    a created order cannot be paid. A live environment is therefore not a
-    configuration this deployment can reach -- it is code that has not been
-    written.
+    The answer used to be ``False`` because the code did not exist. It now does:
+    ``cj.CJProvider.create_live_fulfillment`` is written, dispatch selects it
+    from the intent's own frozen ``isSandbox``, and the whole path is exercised
+    by tests that flip this function. What has not happened is the decision.
 
-    This is a constant rather than an inferred check on purpose. Reflecting over
-    the provider for a `create_live_*` method would make the badge start
-    claiming LIVE the moment such a method was *defined*, which is earlier than
-    the moment it is correct.
+    So this constant has changed meaning and kept its value. It is no longer a
+    statement about which functions are defined -- it is the money approval
+    itself, expressed as the one line that has to be edited, reviewed and
+    deployed before a real order can be placed. That is the property worth
+    having: an operator with every Railway variable in the account cannot reach
+    a live order, because the first thing :func:`require_live` checks is not
+    configuration.
+
+    Flipping it to ``True`` is not sufficient either, and that is deliberate.
+    ``require_live`` still wants ``CJ_ENVIRONMENT_MODE`` and
+    ``PRODUCTION_CJ_FULFILLMENT_ENABLED``, and ``fulfillment.dispatch`` still
+    refuses to send a live intent whose ``funding_state`` is not ``FUNDED`` --
+    a value nothing in this codebase writes. Turning on live ordering is
+    therefore three deliberate acts by two different kinds of person, none of
+    which can happen by accident.
+
+    Still a constant rather than an inferred check, for the reason it always
+    was: reflecting over the provider for a ``create_live_*`` method would have
+    made the badge start claiming LIVE the moment such a method was *defined*,
+    which is exactly the moment that has now arrived and exactly the claim that
+    would now be wrong.
     """
     return False
 
@@ -177,11 +229,23 @@ def fulfillment_environment() -> str:
     prevent, and labelling it ``SANDBOX`` would be a different lie -- sandbox
     orders do not work there either. It is ``DISABLED``, which is what an
     operator needs to be told.
+
+    Both gates are probed now that both exist, which keeps the rule intact
+    rather than extending it: the label is whichever gate *accepts*, and
+    ``DISABLED`` when neither does. Asking only ``require_sandbox`` and then
+    reading ``live_fulfillment_path_exists`` would have reintroduced the
+    original defect on the live side -- a badge saying ``Live`` over a runtime
+    where ``require_live`` is still refusing for a reason the badge never asked
+    about.
     """
     try:
         require_sandbox({"isSandbox": 1})
     except SupplierError:
-        return ENVIRONMENT_LIVE if live_fulfillment_path_exists() else ENVIRONMENT_DISABLED
+        try:
+            require_live({"isSandbox": 0})
+        except SupplierError:
+            return ENVIRONMENT_DISABLED
+        return ENVIRONMENT_LIVE
     return ENVIRONMENT_SANDBOX
 
 
