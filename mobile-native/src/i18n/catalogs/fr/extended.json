@@ -406,6 +406,7 @@
       "a11yVoiceProgress": "Progression du message vocal",
       "a11yVoiceUnavailable": "{{label}}. Message vocal indisponible.",
       "assistantAlwaysAvailable": "Toujours disponible · PulseSoc Intelligence",
+      "assistantConnecting": "Connexion · PulseSoc Intelligence",
       "assistantReconnecting": "Reconnexion du service",
       "attachCamera": "Appareil photo",
       "attachCameraDetail": "Capturer maintenant",

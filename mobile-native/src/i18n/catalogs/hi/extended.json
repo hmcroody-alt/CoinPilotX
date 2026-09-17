@@ -406,6 +406,7 @@
       "a11yVoiceProgress": "वॉइस मैसेज की प्रोग्रेस",
       "a11yVoiceUnavailable": "{{label}}. वॉइस मैसेज उपलब्ध नहीं।",
       "assistantAlwaysAvailable": "हमेशा उपलब्ध · PulseSoc इंटेलिजेंस",
+      "assistantConnecting": "कनेक्ट हो रहा है · PulseSoc इंटेलिजेंस",
       "assistantReconnecting": "सर्विस फिर से कनेक्ट हो रही है",
       "attachCamera": "कैमरा",
       "attachCameraDetail": "अभी कैप्चर करें",

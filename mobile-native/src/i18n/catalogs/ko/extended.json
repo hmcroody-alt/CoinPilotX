@@ -403,6 +403,7 @@
       "a11yVoiceProgress": "음성 메시지 진행",
       "a11yVoiceUnavailable": "{{label}}. 음성 메시지를 사용할 수 없어요.",
       "assistantAlwaysAvailable": "항상 이용 가능 · PulseSoc 인텔리전스",
+      "assistantConnecting": "연결 중 · PulseSoc 인텔리전스",
       "assistantReconnecting": "서비스 다시 연결 중",
       "attachCamera": "카메라",
       "attachCameraDetail": "지금 촬영",

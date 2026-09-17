@@ -438,6 +438,7 @@
       "a11yVoiceProgress": "تقدّم الرسالة الصوتية",
       "a11yVoiceUnavailable": "{{label}}. الرسالة الصوتية غير متاحة.",
       "assistantAlwaysAvailable": "متاح دائمًا · ذكاء PulseSoc",
+      "assistantConnecting": "جارٍ الاتصال · ذكاء PulseSoc",
       "assistantReconnecting": "جارٍ إعادة اتصال الخدمة",
       "attachCamera": "الكاميرا",
       "attachCameraDetail": "التصوير الآن",

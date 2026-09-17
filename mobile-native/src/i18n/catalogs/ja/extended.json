@@ -403,6 +403,7 @@
       "a11yVoiceProgress": "音声メッセージの再生位置",
       "a11yVoiceUnavailable": "{{label}}。音声メッセージはご利用いただけません。",
       "assistantAlwaysAvailable": "いつでも利用可能 · PulseSocインテリジェンス",
+      "assistantConnecting": "接続中 · PulseSocインテリジェンス",
       "assistantReconnecting": "サービスに再接続中",
       "attachCamera": "カメラ",
       "attachCameraDetail": "その場で撮影",
