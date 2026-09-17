@@ -1,3 +1,4 @@
+import { cancelMessageReconciliation } from "../core/messageNotificationReconciliation";
 import { createContext, useContext } from "react";
 import { getSession, login, logout, logoutAll, PulseUser, RegisterResponse, SessionResponse, signup } from "../api/auth";
 import { unregisterPushDevice } from "../api/push";
@@ -80,6 +81,7 @@ export function stateFor(phase: SessionPhase, user: PulseUser | null = null): Au
   const scopeId = phase === "AUTHENTICATED" && userId > 0 ? userId : null;
   setMediaCacheScope(scopeId);
   setOutboxScope(scopeId);
+  cancelMessageReconciliation();
   return { phase, status: statusForPhase(phase), user };
 }
 

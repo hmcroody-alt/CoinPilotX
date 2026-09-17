@@ -82,7 +82,8 @@ const ENVELOPE_VERSION = 1 as const;
  * that is clearly not transient.
  */
 export const QUEUEABLE_OPERATIONS = Object.freeze({
-  "messenger.send": { maxAttempts: 10, ordered: true }
+  "messenger.send": { maxAttempts: 10, ordered: true },
+  "messenger.read": { maxAttempts: 30, ordered: true }
 } as const satisfies Record<string, { maxAttempts: number; ordered: boolean }>);
 
 export type QueueableOperationType = keyof typeof QUEUEABLE_OPERATIONS;

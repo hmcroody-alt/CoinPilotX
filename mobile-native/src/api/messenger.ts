@@ -1,3 +1,4 @@
+import { reconcileMessageNotifications } from "../core/messageNotificationReconciliation";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { PULSESOC_QA_MESSENGER_FIXTURES } from "./config";
@@ -13,7 +14,7 @@ import {
 // messengerOrdering imports only TYPES from this module, so the cycle is erased
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
-import { drainOutbox, enqueueMutation, registerOutboxHandler } from "../core/mutations/outbox";
+import { drainOutbox, enqueueMutation, registerOutboxHandler, outboxScope } from "../core/mutations/outbox";
 import { PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
@@ -843,10 +844,12 @@ export async function reactToMessage(messageId: number, reactionType = "pulse") 
 }
 
 export async function deleteMessage(messageId: number, scope: "self" | "everyone" = "self") {
-  return pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
+  const result = await pulseApi<{ ok?: boolean; deleted?: boolean; message?: string }>(`${MESSENGER_API}/messages/${messageId}`, {
     method: "DELETE",
     body: JSON.stringify({ delete_for: scope })
   });
+  if (result.ok) void reconcileMessageNotifications();
+  return result;
 }
 
 export async function reportMessage(messageId: number, reason = "Needs review") {
@@ -863,8 +866,28 @@ export async function pinConversation(conversationId: number, pinned = true) {
   });
 }
 
-export async function markConversationSeen(conversationId: number) {
-  return pulseApi<{ ok: boolean; last_read_message_id?: number }>(`${MESSENGER_API}/conversations/${conversationId}/read`, { method: "POST" });
+type MessageReadOperation = { conversationId: number; messageIds: number[]; accountScope: string };
+registerOutboxHandler("messenger.read", async operation => {
+  const payload = operation.payload as MessageReadOperation;
+  if (payload.accountScope !== outboxScope()) throw new Error("Read account changed");
+  const result = await pulseApi<{ ok: boolean }>(`${MESSENGER_API}/conversations/${payload.conversationId}/read`, {
+    method: "POST", body: JSON.stringify({ through_message_id: Math.max(...payload.messageIds) })
+  });
+  if (!result.ok) throw new Error("Read acknowledgement failed");
+  void reconcileMessageNotifications();
+});
+
+export async function markConversationSeen(conversationId: number, displayed?: MessengerMessage[]) {
+  const messages = displayed ?? await loadCachedMessages(conversationId);
+  const messageIds = [...new Set(messages.map(m => Number(m.id)).filter(n => Number.isSafeInteger(n) && n > 0))];
+  const accountScope = outboxScope();
+  if (!messageIds.length || accountScope === "anon") return { ok: false };
+  await enqueueMutation({ type: "messenger.read", stream: `read:${conversationId}`,
+    idempotencyKey: `read:${accountScope}:${conversationId}:${messageIds.join(",")}`,
+    payload: { conversationId, messageIds, accountScope } });
+  void reconcileMessageNotifications();
+  void drainOutbox().then(() => reconcileMessageNotifications()).catch(() => undefined);
+  return { ok: true };
 }
 
 export async function sendTyping(conversationId: number, typing: boolean) {

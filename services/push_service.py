@@ -763,6 +763,8 @@ def _send_expo_push(endpoint, payload):
     }
     if push_type in {"private_message", "chat_message", "message", "voice_message"} or data.get("conversationId") or data.get("conversation_id"):
         message["interruptionLevel"] = os.getenv("PUSH_MESSAGE_INTERRUPTION_LEVEL", "active")
+    if data.get("notificationType") == "message" and data.get("schemaVersion") == 1 and data.get("messageNamespace") == "comm_v2":
+        message["threadId"] = f"message:{data.get('recipientUserId')}:{data.get('conversationId')}"
     if str(os.getenv("PUSH_BADGE_ENABLED", "1")).lower() not in {"0", "false", "off", "no"} and data.get("badge") is not None:
         try:
             message["badge"] = int(data.get("badge") or 0)

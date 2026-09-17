@@ -2412,7 +2412,7 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
     deep_link = sanitize_deep_link(notification.get("deep_link") or metadata.get("deep_link") or "/pulse/notifications")
     body = str(notification.get("body") or notification.get("message") or notification.get("preview") or "New PulseSoc update.")
     badge_count = badge_counts(int(notification.get("recipient_user_id") or notification.get("user_id") or 0)).get("total_unread_count", 0)
-    return {
+    payload = {
         "notification_id": int(notification.get("id") or 0),
         "type": notification.get("type") or notification.get("notification_type") or "system_announcement",
         "category": category,
@@ -2436,6 +2436,13 @@ def _push_payload(notification: dict[str, Any], prefs: dict[str, Any]) -> dict[s
         "lock_screen": True,
         **metadata,
     }
+
+    # Only the message domain gets this contract; call/Live payloads are untouched.
+    if metadata.get("notificationType") == "message" and metadata.get("messageNamespace") == "comm_v2":
+        payload.update(schemaVersion=1, notificationType="message", messageNamespace="comm_v2",
+                       recipientUserId=int(notification.get("recipient_user_id") or notification.get("user_id") or 0),
+                       badge=int(badge_count), badge_count=int(badge_count))
+    return payload
 
 
 def _send_fcm_token(token: str, notification: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
