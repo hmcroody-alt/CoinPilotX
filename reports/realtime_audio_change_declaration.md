@@ -3997,3 +3997,31 @@ and 1.0.2 is the open train build 24 already landed in.
 No entry in `package.json`, `package-lock.json`, `eas.json`, `ios/Podfile`,
 `ios/Podfile.lock` or the React Native patch set changed, so the media stack is
 byte-identical to the one the test battery above ran against.
+
+### Build-number addendum (build 26)
+
+Same shape as the build-25 entry above, for the same reason: bumping
+`CFBundleVersion` 25 → 26 touches `mobile-native/app.json`, a `dependency_watch`
+path.
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | `dependency_watch` | One line: `"buildNumber": "25"` → `"26"`. No dependency, plugin, SDK, pod, or native-module change. |
+
+Changed in step with `ios/PulseSoc/Info.plist` and `project.pbxproj`;
+`tests/protection/test_ios_build_version_contract.py` — **8 passed**.
+`MARKETING_VERSION` stays 1.0.2.
+
+The code change 26 carries is `mobile-native/src/calls/callKitNativeProvider.ts`
+plus a new pure module `mobile-native/src/calls/voipPushBacklog.ts`, **neither of
+which is a protected path** — the gate confirms "No protected real-time audio
+path changed (3 files inspected)" for that commit in isolation. It reads the
+`call_id`/`uuid` pair out of a replayed PushKit backlog so a lock-screen answer
+on a killed app can resolve to a call id. It touches no AVAudioSession, no Agora
+engine, no publication path and no ownership call; its only effect on audio is
+that a call which previously could not start now can. `npm run typecheck` exit 0,
+`src/calls` **13 suites / 108 tests** green.
+
+The physical validation owed is unchanged and now covers both answer paths:
+answer from the lock screen with the app **backgrounded**, and again with the app
+**force-quit**, confirming speech audible in both directions each time.
