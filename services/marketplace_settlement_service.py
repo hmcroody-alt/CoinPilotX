@@ -377,6 +377,44 @@ def reconcile_onboarding(transaction_id: Any, *, actor: str, idempotency_key: st
     result["settlement"] = get_settlement(transaction_id)
     return result
 
+def reconcile_seller_onboarding(seller_id: Any, *, actor: str, reference: str) -> list[dict]:
+    """Unstick every sale a seller made before they finished Connect onboarding.
+
+    A settlement opens in `pending_onboarding` when the seller had no usable
+    connected account at the moment of the sale, and `reconcile_onboarding` is
+    what moves it on once they finish. Nothing ever called it: `account.updated`
+    refreshed `seller_payout_accounts` and stopped there, so a seller who sold
+    first and onboarded second stayed unpayable forever while their money sat in
+    the ledger looking perfectly healthy.
+
+    Keyed on the Stripe account id rather than the event, so a redelivery and a
+    later `account.updated` for the same seller both dedupe to one transition per
+    settlement. Nothing here moves money — it only lets the release chain reach
+    the states where the protection window and the payout gates still apply.
+    """
+    seller_id = str(seller_id or "").strip()
+    if not seller_id or not reference:
+        return []
+    ensure_schema(); conn = db.connect()
+    try:
+        rows = [dict(row) for row in conn.execute(
+            "SELECT seller_transaction_id FROM marketplace_commercial_settlements "
+            "WHERE seller_id=? AND payout_state='pending_onboarding' AND blocker_code IS NULL "
+            "ORDER BY seller_transaction_id", (seller_id,)).fetchall()]
+    finally:
+        conn.close()
+    reconciled = []
+    for row in rows:
+        tx_id = int(row["seller_transaction_id"])
+        try:
+            reconciled.append(reconcile_onboarding(
+                tx_id, actor=actor, idempotency_key=f"connect:{reference}:{tx_id}"))
+        except SettlementError:
+            # Raced by another worker or already moved on. Idempotent by design.
+            continue
+    return reconciled
+
+
 def place_hold(transaction_id: Any, *, actor: str, reason_code: str,
                idempotency_key: str, disputed: bool = False) -> dict:
     if not reason_code:
