@@ -24,6 +24,15 @@ def _base_url() -> str:
     return (os.getenv("APP_BASE_URL") or os.getenv("BASE_URL") or "https://pulsesoc.com").rstrip("/")
 
 
+def transfer_group_for(transaction_id: Any) -> str:
+    """Link a platform charge to the Transfer that later pays the seller.
+
+    Matches `marketplace_settlement_service`'s `order_id`, so a Stripe transfer
+    group and a settlement row resolve to each other without a lookup table.
+    """
+    return f"marketplace_order:{int(transaction_id)}"
+
+
 def _stripe_ready() -> bool:
     key = (os.getenv("STRIPE_SECRET_KEY") or "").strip()
     if key:
@@ -220,9 +229,14 @@ def create_checkout_session(
         "item_id": str(item_id),
     }
     payment_intent_data: dict[str, Any] = {"metadata": metadata}
-    if connected_account_id:
-        payment_intent_data["application_fee_amount"] = int(platform_fee_cents or 0)
-        payment_intent_data["transfer_data"] = {"destination": connected_account_id}
+    if int(seller_user_id or 0) > 0:
+        # Separate charges and transfers: the buyer pays the platform, and the
+        # seller's cut leaves later via an explicit Transfer once the settlement
+        # clears its protection window. A destination charge would settle at
+        # charge time and make that window unenforceable.
+        metadata["platform_fee_cents"] = str(int(platform_fee_cents or 0))
+        metadata["connected_account_id"] = str(connected_account_id or "")
+        payment_intent_data["transfer_group"] = transfer_group_for(transaction_id)
     session = stripe.checkout.Session.create(
         mode="payment",
         client_reference_id=str(buyer_user_id),
@@ -258,10 +272,20 @@ def create_payment_intent(**kwargs) -> dict[str, Any]:
     }
 
 
-def create_transfer(**kwargs) -> dict[str, Any]:
+def create_transfer(*, destination: str = "", idempotency_key: str = "", **kwargs) -> dict[str, Any]:
+    """Move funds from the platform balance to a connected account.
+
+    This is not a payout. A transfer credits the connected account's Stripe
+    balance; a separate payout moves that balance to the seller's bank.
+    """
     if not _stripe_ready():
         return setup_required("Transfers are unavailable until Stripe is configured.")
-    transfer = stripe.Transfer.create(**kwargs)
+    if destination:
+        kwargs["destination"] = destination
+    if not kwargs.get("destination"):
+        return {"ok": False, "message": "Connected account id is required."}
+    extra: dict[str, Any] = {"idempotency_key": idempotency_key} if idempotency_key else {}
+    transfer = stripe.Transfer.create(**kwargs, **extra)
     return {
         "ok": True,
         "transfer": stripe_response_dict(transfer),

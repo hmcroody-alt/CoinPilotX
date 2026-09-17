@@ -56423,7 +56423,20 @@ def pulse_upsert_marketplace_order(cur, tx, provider_payment_id="", now="", prov
          tx.get("created_at") or timestamp, timestamp, timestamp))
 
 
-def pulse_finalize_marketplace_settlement(tx, provider_payment_id=""):
+def marketplace_transfer_group(metadata):
+    """Recover the transfer group the charge carried, from its own metadata.
+
+    One cart charge can back several seller transactions. They all take the
+    group of the first, so every transfer that later pays those sellers
+    reconciles back to the single charge the buyer actually made.
+    """
+    meta = dict(metadata or {})
+    raw = str(meta.get("seller_transaction_ids") or meta.get("seller_transaction_id") or "")
+    first = next((part.strip() for part in raw.split(",") if part.strip().isdigit()), "")
+    return f"marketplace_order:{first}" if first else ""
+
+
+def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_group=""):
     """Create the idempotent post-payment seller and fee effects."""
     tx = dict(tx or {})
     if str(tx.get("item_type") or "") != "marketplace_product":
@@ -56439,7 +56452,7 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id=""):
     from services import marketplace_settlement_service
     return marketplace_settlement_service.settle_paid_transaction(
         tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
-        actor="stripe_webhook")
+        transfer_group=transfer_group, actor="stripe_webhook")
 
 
 def pulse_apply_marketplace_charge_refund(obj):
@@ -94834,18 +94847,17 @@ def seller_payout_account(cur, user_id, seller_type):
 
 
 def seller_destination_account_id(payout):
-    """The Connect account a destination charge may safely be routed to, or "".
+    """The Connect account a Transfer may safely be sent to, or "".
 
     A payout row is written the moment a seller *starts* Connect onboarding, so
     it carries a real ``connected_account_id`` long before Stripe will accept a
     transfer to it — ``charges_enabled``/``payouts_enabled`` stay 0 until
-    onboarding actually completes. Attaching ``transfer_data.destination`` to
-    such an account makes Stripe reject the whole session, which turned a
-    seller's unfinished onboarding into a *buyer-facing* checkout failure.
+    onboarding actually completes.
 
-    Buyers must always be able to pay. When the account is not yet chargeable we
-    return "" so the caller falls back to a plain platform charge and records the
-    seller's earnings as ``ledger_pending_onboarding``.
+    Charges never route here: the buyer always pays the platform. An empty
+    result only means the seller's earnings are recorded as
+    ``ledger_pending_onboarding`` instead of ``transfer_eligible``, deferring
+    the transfer until Stripe would accept it.
     """
     payout = dict(payout or {})
     account_id = str(payout.get("connected_account_id") or payout.get("provider_account_id") or "").strip()
@@ -95302,15 +95314,17 @@ def api_pulse_payments_checkout():
         # than re-requested from them a screen later.
         if stripe_shipping_object:
             payment_intent_data["shipping"] = stripe_shipping_object
-        # Seller Connect state must never be a prerequisite for the buyer to
-        # pay. Route a destination charge only to an account Stripe will
-        # actually accept; otherwise take the platform charge and settle the
-        # seller from the ledger once they finish onboarding.
+        # Separate charges and transfers: the buyer always pays PulseSoc, and
+        # the seller's cut leaves later as an explicit Transfer once the
+        # settlement clears its protection window. The transfer group is what
+        # ties those Transfers back to this one charge.
+        # `connected_account_id` no longer routes the charge; it now only says
+        # whether Stripe would accept a transfer to this seller yet, which is
+        # what decides payout readiness.
+        if item_type == "marketplace_product":
+            payment_intent_data["transfer_group"] = f"marketplace_order:{tx_id}"
         connected_account_id = seller_destination_account_id(payout)
-        if connected_account_id:
-            payment_intent_data.update({"application_fee_amount": platform_fee,
-                                        "transfer_data": {"destination": connected_account_id}})
-        payout_state = "connect_routed" if connected_account_id else "ledger_pending_onboarding"
+        payout_state = "transfer_eligible" if connected_account_id else "ledger_pending_onboarding"
         # `payment_sheet` settles this purchase with a PaymentIntent the native
         # Stripe sheet can present in-app, instead of a hosted Session the phone
         # has to open in Safari. Everything above — eligibility, price authority,
@@ -108713,7 +108727,7 @@ def stripe_webhook():
                         notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
             for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "")
+                pulse_finalize_marketplace_settlement(paid_tx, session.get("payment_intent") or "", marketplace_transfer_group(metadata))
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -108762,7 +108776,7 @@ def stripe_webhook():
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
             conn.close()
             if tx and str(tx.get("status") or "") != "refunded" and payment_status in {"paid", "no_payment_required"}:
-                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "")
+                pulse_finalize_marketplace_settlement(tx, session.get("payment_intent") or "", marketplace_transfer_group(metadata))
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
@@ -109089,7 +109103,7 @@ def stripe_webhook():
                     notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
             for paid_tx in paid_marketplace_txs:
-                pulse_finalize_marketplace_settlement(paid_tx, intent_id)
+                pulse_finalize_marketplace_settlement(paid_tx, intent_id, marketplace_transfer_group(metadata))
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
@@ -109128,7 +109142,7 @@ def stripe_webhook():
                 conn.commit()
             conn.close()
             if tx:
-                pulse_finalize_marketplace_settlement(tx, intent_id)
+                pulse_finalize_marketplace_settlement(tx, intent_id, marketplace_transfer_group(metadata))
             record_stripe_event(event, "processed", resolved_event_user_id)
             creator_economy_service.update_webhook_event(event_id, "processed")
             return "OK", 200
