@@ -36579,7 +36579,7 @@ def api_arena_reputation():
     conn = db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, sportsmanship+1), updated_at=excluded.updated_at",
+        "INSERT INTO arena_reputation (user_id, discipline, helpfulness, leadership, scam_defense, sportsmanship, consistency, updated_at) VALUES (?, 50, 50, 50, 50, 55, 50, ?) ON CONFLICT(user_id) DO UPDATE SET sportsmanship=MIN(100, arena_reputation.sportsmanship+1), updated_at=excluded.updated_at",
         (user["user_id"], datetime.now().isoformat()),
     )
     conn.commit()
