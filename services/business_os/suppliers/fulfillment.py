@@ -27,6 +27,51 @@ class FulfillmentError(ValueError):
 FUNDING_STATES = frozenset({"FUNDING_NOT_READY", "FUNDING_APPROVAL_REQUIRED",
                           "FUNDING_REAPPROVAL_REQUIRED", "FUNDED", "FUNDING_FAILED"})
 
+#: Customer-order statuses a supplier order may be created from.
+#:
+#: This replaces a denylist, and the reason is a column default.
+#: ``marketplace_orders.status`` is declared ``TEXT DEFAULT 'pending_payment'``,
+#: so an INSERT that merely omits the column produces an unpaid order -- and
+#: ``{"cancelled", "refunded", "disputed"}`` let that value straight through.
+#: The direction of the mistake is what matters: a denylist answers "is this
+#: order known to be dead", and the question being asked here is "has this order
+#: been paid for", which is not the same question and is not safely approximated
+#: by the first. Today nothing ships from it, because the one writer of that
+#: table always names ``'paid'`` explicitly and no live supplier path exists.
+#: That is a coincidence of the current callers, not a property of the check.
+#:
+#: ``pending`` is deliberately absent despite appearing in the dashboard's status
+#: vocabulary: it does not say whether money arrived. ``completed`` is present
+#: because :func:`dispatch` re-reads the order after the merchant approves, and
+#: an order that legitimately advanced in between must not become ineligible for
+#: the supplier order it was approved for.
+ORDERABLE_ORDER_STATUSES = frozenset({"paid", "processing", "fulfilled", "completed"})
+
+#: Kept beside the allowlist rather than deleted by it. Nothing is in both sets
+#: today, so this refuses nothing the allowlist has not already refused -- it
+#: exists so that the day someone widens the allowlist, the three statuses that
+#: must never ship are still caught by a second check that was written when the
+#: question was fresh.
+NON_ORDERABLE_ORDER_STATUSES = frozenset({"cancelled", "refunded", "disputed"})
+
+
+def order_status_is_orderable(status) -> bool:
+    """May a supplier order be created against a customer order in this status?
+
+    Exact match, no normalising. :func:`_canonical_order` already lowercases and
+    strips on the way out of the database and is the only way these statuses are
+    read, so normalising a second time here would buy nothing and cost the
+    property worth having: that an unrecognised value is refused. A status this
+    function does not recognise is a status it does not understand, and the safe
+    answer to a question you do not understand is no.
+
+    Non-strings -- ``None`` from a NULL column, an integer from a schema that
+    drifted -- are refused for the same reason rather than coerced.
+    """
+    if not isinstance(status, str):
+        return False
+    return status in ORDERABLE_ORDER_STATUSES and status not in NON_ORDERABLE_ORDER_STATUSES
+
 #: How long a freight quote may be acted on. CJ prices a route at a moment, and
 #: this deployment will not place an order against a price it cannot still see.
 #:
@@ -615,7 +660,7 @@ def create_intent(*, connection_id, business_id, store_id, actor_user_id, order_
         canonical = _canonical_order(conn, order_id)
         if canonical is None or str(canonical["seller_user_id"]) != str(meta["merchant_id"]):
             raise FulfillmentError("order_not_found", 404)
-        if canonical["status"] in {"cancelled", "refunded", "disputed"} or canonical["listing_type"] != "physical":
+        if not order_status_is_orderable(canonical["status"]) or canonical["listing_type"] != "physical":
             raise FulfillmentError("order_not_eligible")
         canonical_items = {str(canonical["listing_id"]): int(canonical["quantity"])}
         if set(canonical_items) != {item["canonical_product_id"] for item in clean_items} or any(canonical_items.get(item["canonical_product_id"]) != item["quantity"] for item in clean_items):
@@ -858,7 +903,7 @@ def dispatch(intent, adapter, meta, *, now=None):
             current_order = _canonical_order(conn, intent["order_id"])
         finally:
             conn.close()
-        if not current_order or str(current_order["seller_user_id"]) != str(intent["merchant_id"]) or current_order["status"] in {"cancelled", "refunded", "disputed"}:
+        if not current_order or str(current_order["seller_user_id"]) != str(intent["merchant_id"]) or not order_status_is_orderable(current_order["status"]):
             raise FulfillmentError("order_not_eligible")
         selected_shop = dispatch_shop(adapter.get_shops(), intent["external_shop_id"])
         # Backend provider validation, never labels/SKUs inferred from display text.
@@ -1265,7 +1310,7 @@ def quote_for_order(*, connection_id, business_id, store_id, actor_user_id, orde
         conn.close()
     if canonical is None or str(canonical["seller_user_id"]) != str(connection.get("merchant_id")):
         raise FulfillmentError("order_not_found", 404)
-    if (canonical["status"] in {"cancelled", "refunded", "disputed"}
+    if (not order_status_is_orderable(canonical["status"])
             or canonical["listing_type"] != "physical"):
         raise FulfillmentError("order_not_eligible")
     quantity = canonical["quantity"]

@@ -1472,3 +1472,191 @@ def test_the_never_sent_claim_is_derived_from_the_guard_that_makes_it_true():
     assert 'state IN (\'READY\',\'UNKNOWN\',\'RECONCILE\')' in source, (
         "claim's due-state list changed -- BLOCKED may no longer be terminal, "
         "which is half of what makes it recoverable")
+
+
+# ---------------------------------------------------------------------------
+# Whether the customer paid, asked as an allowlist.
+#
+# The eligibility check used to be a denylist -- `{"cancelled", "refunded",
+# "disputed"}` -- and `marketplace_orders.status` is declared
+# `TEXT DEFAULT 'pending_payment'`. So the one status the column produces
+# without anyone choosing it was the one status the check did not mention, and
+# an unpaid order passed every gate on the way to a supplier order.
+#
+# Nothing shipped from it. The single writer of that table always names 'paid',
+# and no live CJ path exists to ship from at all. Both of those are facts about
+# the current callers, not about the check, which is the reason to fix it while
+# it is still inert rather than after a second writer or a live path exists.
+# ---------------------------------------------------------------------------
+
+def set_order_status(status):
+    conn = db.connect()
+    try:
+        conn.execute("UPDATE marketplace_orders SET status=? WHERE id=?", (status, int(ORDER_ID)))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+#: Every status this codebase writes or displays, plus the values a column can
+#: produce without anyone choosing them. Paired with what the answer must be, so
+#: adding a status to the vocabulary forces a decision here rather than
+#: inheriting one.
+STATUS_CASES = [
+    ("paid", True),
+    ("processing", True),
+    ("fulfilled", True),
+    ("completed", True),
+    ("pending_payment", False),   # the column default -- the whole point
+    ("pending", False),           # in the dashboard vocabulary; says nothing about money
+    ("cancelled", False),
+    ("refunded", False),
+    ("disputed", False),
+    ("", False),                  # NULL, normalised by _canonical_order
+    ("payment_failed", False),
+    ("awaiting_payment", False),
+    ("shipped", False),           # plausible, unused, and therefore not understood
+]
+
+
+@pytest.mark.parametrize("status,orderable", STATUS_CASES)
+def test_only_paid_statuses_reach_intent_creation(ready, status, orderable):
+    set_order_status(status)
+    if orderable:
+        assert f.create_intent(**ready[2])["intent_id"]
+    else:
+        with pytest.raises(f.FulfillmentError, match="order_not_eligible"):
+            f.create_intent(**ready[2])
+
+
+@pytest.mark.parametrize("status,orderable", STATUS_CASES)
+def test_only_paid_statuses_reach_a_freight_quote(ready, status, orderable):
+    """The quote is refused too, one step before the intent.
+
+    Not strictly required to stop an unpaid shipment -- `create_intent` already
+    does that -- but a quote is a live CJ call made to price the shipping of an
+    order that can never be dispatched, and the merchant-facing outcome of
+    letting it succeed is a priced option that refuses when taken.
+    """
+    set_order_status(status)
+    if orderable:
+        assert quote(ready)["options"]
+    else:
+        with pytest.raises(f.FulfillmentError, match="order_not_eligible"):
+            quote(ready)
+
+
+def test_an_order_inserted_without_a_status_is_refused(ready):
+    """The hazard in its original form: nobody says 'unpaid', the column does.
+
+    Written as an INSERT that omits the column rather than one that sets
+    `pending_payment`, because the defect was never that someone would write
+    that word -- it is that the schema writes it for them. If this test's own
+    INSERT stops producing an unpaid row, the assertion about the default is
+    what fails, not the assertion about eligibility.
+    """
+    conn = db.connect()
+    try:
+        conn.execute("INSERT INTO seller_transactions (id,buyer_user_id,seller_user_id,item_type,"
+                     "item_id,amount_cents,status,metadata_json) VALUES (?,?,?,?,?,?,?,?)",
+                     (7003, 999, MERCHANT, "marketplace_listing", int(OWNED_LISTING), 900, "paid",
+                      json.dumps({"fulfillment": {"kind": "shipping",
+                                                  "details": dict(FROZEN_DETAILS)}})))
+        conn.execute("INSERT INTO marketplace_orders (id,seller_transaction_id,buyer_user_id,"
+                     "seller_user_id,listing_id,quantity,unit_price_cents,amount_cents,created_at) "
+                     "VALUES (?,?,?,?,?,?,?,?,?)",
+                     (4003, 7003, 999, MERCHANT, int(OWNED_LISTING), 1, 900, 900, "now"))
+        conn.commit()
+        landed = dict(conn.execute("SELECT * FROM marketplace_orders WHERE id=4003").fetchone())
+    finally:
+        conn.close()
+    assert landed["status"] == "pending_payment", (
+        "the orders table no longer defaults to an unpaid status -- re-derive "
+        "what this test is protecting against before deleting it")
+    assert landed["paid_at"] is None
+    with pytest.raises(f.FulfillmentError, match="order_not_eligible"):
+        quote(ready, order_id="4003")
+
+
+def test_an_order_that_becomes_unpaid_after_approval_is_not_dispatched(ready):
+    """The second gate, which is the one that can still stop a send.
+
+    `create_intent` runs while the merchant is watching; `dispatch` runs later,
+    in a worker, and re-reads the order precisely because the window between
+    them is where a refund or a reversal lands. A denylist covered the refund
+    case and missed this one.
+    """
+    adapter, connection, request = ready
+    f.create_intent(**request)
+    claimed = f.claim(now=time.time() + .1)
+    set_order_status("pending_payment")
+    state = f.dispatch(claimed, adapter,
+                       connections.worker_connection(connection["id"], "biz-a", "store-a")["connection"])
+    assert adapter.created == [], "a supplier order was created for an unpaid customer order"
+    assert state != "LINKED"
+
+
+@pytest.mark.parametrize("status,orderable", STATUS_CASES)
+def test_the_predicate_answers_the_same_question_the_gates_ask(status, orderable):
+    """A unit check beside the behavioural ones, for the cases a DB row cannot hold.
+
+    `_canonical_order` lowercases and strips on the way out, so the gates never
+    hand this function a `None` or a `"PAID "`. It refuses them anyway: the
+    normalising lives in exactly one place and this function must not become a
+    second, quietly disagreeing, copy of it.
+    """
+    assert f.order_status_is_orderable(status) is orderable
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, True, b"paid", ["paid"], "PAID", "paid ", " paid"])
+def test_unnormalised_and_non_string_statuses_are_refused(value):
+    assert f.order_status_is_orderable(value) is False
+
+
+def test_the_denylist_this_replaced_would_have_shipped_the_default(ready):
+    """Negative control: the old check, run against the case that motivated the new one.
+
+    Without this, every assertion above is consistent with the denylist having
+    been fine all along and the allowlist being ceremony. It is not -- the
+    expression below is the one that was on the eligibility line, and it says
+    an order nobody has paid for is eligible.
+    """
+    for status, orderable in STATUS_CASES:
+        old_says_eligible = status not in {"cancelled", "refunded", "disputed"}
+        if orderable:
+            assert old_says_eligible, (
+                f"{status!r} is meant to be orderable but the old check refused it -- "
+                "the allowlist narrowed something it should not have")
+    assert "pending_payment" not in {"cancelled", "refunded", "disputed"}
+    assert f.order_status_is_orderable("pending_payment") is False
+
+
+def test_the_two_status_sets_cannot_disagree():
+    """The denylist is kept as a second check; overlap would make it a contradiction.
+
+    An empty intersection is what makes `NON_ORDERABLE_ORDER_STATUSES`
+    redundant *today* and load-bearing the day someone widens the allowlist by
+    hand. A status in both sets means a decision was made twice in opposite
+    directions, and the code silently honours the refusal.
+    """
+    assert not (f.ORDERABLE_ORDER_STATUSES & f.NON_ORDERABLE_ORDER_STATUSES)
+    for status in f.ORDERABLE_ORDER_STATUSES:
+        assert status == status.strip().lower(), (
+            f"{status!r} cannot match a status read through _canonical_order, "
+            "which lowercases and strips -- this entry can never fire")
+
+
+def test_every_eligibility_gate_uses_the_shared_predicate():
+    """No fourth site may grow its own copy of the question.
+
+    The defect being fixed was one expression repeated at three call sites, two
+    of which anyone auditing would have found and one of which was in a worker.
+    Pinning the absence of the literal is what stops the fourth.
+    """
+    source = open(f.__file__, encoding="utf-8").read()
+    assert source.count("order_status_is_orderable(") >= 4, (
+        "an eligibility gate stopped using the shared predicate")
+    body = source.split("NON_ORDERABLE_ORDER_STATUSES = ", 1)[1].split("\n", 1)[1]
+    assert '{"cancelled", "refunded", "disputed"}' not in body, (
+        "an inline status denylist reappeared below the constants -- it will "
+        "pass pending_payment, which is the bug this replaced")
