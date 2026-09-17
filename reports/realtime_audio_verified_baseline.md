@@ -434,9 +434,9 @@ Build 25 alone fixes only case 1. **Build 26 is the build to test.**
 | Bundle identifier | `com.pulsesoc.app` — unchanged, both environments | repository-evidenced |
 | App version | `1.0.2` | repository-evidenced (`ios/PulseSoc/Info.plist`) |
 | iOS build number | `26` | repository-evidenced — plist, `app.json` and both `CURRENT_PROJECT_VERSION` values agree; pinned by `tests/protection/test_ios_build_version_contract.py` |
-| EAS build (26) | `2202a406-8574-4df4-abad-f4590c1c48e7`, profile `production` | repository-evidenced via EAS |
+| EAS build (26) | `2202a406-8574-4df4-abad-f4590c1c48e7`, fingerprint `4677e836f12819cda91c636c8c9b50089855987f`, profile `production` | repository-evidenced via EAS |
 | EAS build (25) | `a282c538-bac1-4247-a87a-a865888c95d5`, fingerprint `c7f36a3ed7e7c447026fa735a6c7c57be6092331` | repository-evidenced via EAS |
-| TestFlight submission (26) | `6faeaff6-0676-4052-8c0d-2494d5af0a12` | repository-evidenced via EAS |
+| TestFlight submission (26) | `6faeaff6-0676-4052-8c0d-2494d5af0a12` — **finished** 2026-09-17 01:45:39, ASC app `6777591572` | repository-evidenced via EAS |
 | Distribution | TestFlight **internal groups only**. Not submitted for App Store review, and not added to any external group — an external group would trigger Beta App Review | operator-stated constraint, honoured |
 | Backend deployment identifier | **NOT RECORDED** | — |
 | Backend commit deployed | **NOT RECORDED** — no deployed-SHA endpoint was read | — |
