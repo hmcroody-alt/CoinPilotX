@@ -44,6 +44,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
@@ -962,6 +963,101 @@ class ImpactTests(MusicRouteTestCase):
         response = self.client.get("/api/admin/music/tracks/987654321/impact")
         self.assertEqual(response.status_code, 404)
         self.assertEqual(self.body(response)["error_code"], "music_track_not_found")
+
+
+class ReferenceCountFailureTests(MusicRouteTestCase):
+    """A count that cannot be read must not arrive as the number 0.
+
+    `music_reference_counts` used to wrap each COUNT in `except Exception:
+    value = 0`. The owner-facing blast radius is the number a person reads
+    immediately before an irreversible purge, so the failure mode was: the query
+    breaks, the panel says "0 attached", and the owner reads that as permission
+    to proceed while the content is still out there.
+
+    The failure injected here is a *query* failure on a table that exists -- a
+    column that is not there -- rather than a dropped table. That is the shape
+    the real hazard takes (the `CAST` comparison spans a TEXT/INTEGER mismatch,
+    and on Postgres the first failed statement aborts the transaction), and it
+    keeps the test honest about what is being simulated.
+
+    Each test seeds a real reference first, so a reported 0 is demonstrably a
+    lie rather than merely unproven.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.as_account(OWNER_ACCOUNT_ID)
+        self._seed_one_real_reel_reference()
+
+    def _seed_one_real_reel_reference(self):
+        conn = _connect()
+        conn.execute("DELETE FROM pulse_reel_audio WHERE audio_track_id=?", (self.track_id,))
+        conn.execute(
+            "INSERT INTO pulse_reel_audio (reel_id, audio_track_id, created_at) VALUES (1, ?, '')",
+            (self.track_id,),
+        )
+        conn.commit()
+        conn.close()
+
+    def _broken_reference_tables(self):
+        """The real tables, with the reels count aimed at a column that is absent."""
+        return (
+            ("pulse_reel_audio", "column_that_does_not_exist", "reels"),
+            ("pulse_content_music", "audio_track_id", "content"),
+            ("pulse_status_music", "audio_track_id", "statuses"),
+        )
+
+    def test_the_injected_failure_really_breaks_the_query(self):
+        """Control: without this, every assertion below could pass vacuously."""
+        conn = _connect()
+        cur = conn.cursor()
+        with patch.object(bot, "MUSIC_REFERENCE_TABLES", self._broken_reference_tables()):
+            with self.assertRaises(bot.MusicReferenceCountUnavailable):
+                bot.music_reference_counts(cur, self.track_id)
+        conn.close()
+
+    def test_a_genuine_zero_is_still_reported_as_zero(self):
+        """The positive control: only *failure* is special, not emptiness."""
+        conn = _connect()
+        conn.execute("DELETE FROM pulse_reel_audio WHERE audio_track_id=?", (self.track_id,))
+        conn.commit()
+        conn.close()
+        response = self.client.get("/api/admin/music/tracks/%d/impact" % self.track_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.body(response)["references"]["total"], 0)
+
+    def test_a_failed_reference_query_does_not_reach_the_owner_as_zero(self):
+        with patch.object(bot, "MUSIC_REFERENCE_TABLES", self._broken_reference_tables()):
+            response = self.client.get("/api/admin/music/tracks/%d/impact" % self.track_id)
+        self.assertNotEqual(
+            response.status_code,
+            200,
+            "a broken count answered 200 -- the owner is being shown a number nobody read",
+        )
+        body = self.body(response)
+        self.assertEqual(body.get("error_code"), "music_reference_count_unavailable")
+        # The refusal must not smuggle the fabricated number in beside itself.
+        self.assertNotIn("references", body)
+
+    def test_a_failed_reference_query_does_not_record_a_takedown_as_harmless(self):
+        """`affected_reference_count` lands in an immutable trail.
+
+        A takedown recorded as touching 0 items, when the count behind that 0
+        failed, is a permanent false record of how much was affected.
+        """
+        with patch.object(bot, "MUSIC_REFERENCE_TABLES", self._broken_reference_tables()):
+            response = self.post(
+                "/api/admin/music/tracks/%d/takedown" % self.track_id,
+                {"reason_code": "OWNER_DECISION"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(self.body(response)["error_code"], "music_reference_count_unavailable")
+        self.assertEqual(_track_row(self.track_id)["lifecycle_state"], "ACTIVE")
+        self.assertEqual(
+            _audit_rows(self.track_id),
+            [],
+            "the transition rolled forward on a blast radius nobody could read",
+        )
 
 
 class CapabilityTests(MusicRouteTestCase):
