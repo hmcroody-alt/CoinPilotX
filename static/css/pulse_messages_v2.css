@@ -5,9 +5,9 @@
 :root {
   color-scheme: dark;
   --bg: var(--surface-primary, var(--pulse-palette-background, #020711));
-  --bg-deep: #01040b;
+  --bg-deep: #050910;
   --panel: var(--surface-raised, rgba(6, 14, 26, .94));
-  --panel-soft: rgba(11, 24, 41, .82);
+  --panel-soft: rgba(48, 56, 67, .82);
   --panel-glass: var(--surface-overlay, rgba(11, 27, 45, .68));
   --text: var(--text-primary, var(--pulse-palette-text, #f2fbff));
   --muted: var(--text-secondary, var(--pulse-palette-muted, #95aabc));
@@ -41,7 +41,7 @@ body {
   background:
     radial-gradient(circle at 10% 4%, rgba(56, 221, 160, .1), transparent 28rem),
     radial-gradient(circle at 92% 10%, rgba(105, 218, 240, .09), transparent 30rem),
-    linear-gradient(180deg, #020711 0%, #040b16 52%, #01040b 100%);
+    linear-gradient(180deg, #050910 0%, #070d17 52%, #050910 100%);
 }
 
 body::before {
@@ -163,7 +163,7 @@ select:focus-visible {
   margin: 0 auto var(--dock-height);
   overflow: hidden;
   border-inline: 1px solid rgba(105, 218, 240, .09);
-  background: rgba(2, 7, 17, .54);
+  background: rgba(48, 56, 67, .54);
   box-shadow: 0 0 80px rgba(0, 0, 0, .28);
 }
 
@@ -189,7 +189,7 @@ select:focus-visible {
   background:
     radial-gradient(circle at 18% 16%, rgba(56, 221, 160, .07), transparent 28rem),
     radial-gradient(circle at 86% 12%, rgba(105, 218, 240, .06), transparent 26rem),
-    rgba(3, 9, 19, .88);
+    rgba(48, 56, 67, .88);
 }
 
 .comm-toolbar,
@@ -202,7 +202,7 @@ select:focus-visible {
   min-height: 72px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--line);
-  background: rgba(2, 7, 15, .76);
+  background: rgba(54, 61, 70, .76);
   backdrop-filter: blur(20px);
 }
 
@@ -996,7 +996,7 @@ select:focus-visible {
   gap: 8px;
   padding: 8px clamp(16px, 3vw, 34px);
   border-bottom: 1px solid var(--line);
-  background: rgba(3, 9, 19, .92);
+  background: rgba(54, 61, 70, .92);
 }
 
 .thread-search-panel[hidden] {
@@ -1072,7 +1072,7 @@ select:focus-visible {
   gap: 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(8, 20, 35, .62);
+  background: rgba(42, 51, 64, .62);
   color: var(--muted);
   text-align: center;
 }
@@ -1092,7 +1092,7 @@ select:focus-visible {
   background:
     radial-gradient(circle at 50% 0, rgba(105, 218, 240, .12), transparent 44%),
     linear-gradient(135deg, rgba(155, 108, 244, .095), rgba(56, 221, 160, .055)),
-    rgba(8, 20, 35, .66);
+    rgba(42, 51, 64, .66);
 }
 
 .pulse-ai-quick-prompts {
@@ -1310,7 +1310,7 @@ select:focus-visible {
   border: 0;
   border-radius: 50%;
   opacity: 0;
-  background: rgba(2, 7, 17, .48);
+  background: rgba(48, 56, 67, .48);
 }
 
 .message:hover .message-menu-trigger,
@@ -1337,7 +1337,7 @@ select:focus-visible {
   border: 0;
   border-left: 3px solid var(--cyan);
   border-radius: 6px;
-  background: rgba(2, 7, 17, .26);
+  background: rgba(42, 51, 64, .26);
   color: var(--muted);
   text-align: left;
   font-size: 10px;
@@ -1404,7 +1404,7 @@ select:focus-visible {
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(4, 11, 22, .97);
+  background: rgba(54, 61, 70, .97);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
 }
@@ -1442,7 +1442,7 @@ select:focus-visible {
   min-height: 26px;
   padding: 5px clamp(18px, 5vw, 80px);
   color: var(--green);
-  background: rgba(3, 9, 19, .86);
+  background: rgba(48, 56, 67, .86);
   font-size: 11px;
 }
 
@@ -1520,7 +1520,7 @@ select:focus-visible {
   grid-template-rows: auto auto auto;
   min-width: 0;
   border-top: 1px solid var(--line);
-  background: rgba(2, 7, 15, .94);
+  background: rgba(48, 56, 67, .94);
   box-shadow: 0 -18px 46px rgba(0, 0, 0, .22);
   backdrop-filter: blur(20px);
 }
@@ -1543,7 +1543,7 @@ select:focus-visible {
   overflow-x: auto;
   padding: 8px clamp(18px, 5vw, 80px);
   border-bottom: 1px solid rgba(105, 218, 240, .08);
-  background: linear-gradient(180deg, rgba(6, 17, 31, .88), rgba(3, 9, 19, .64));
+  background: linear-gradient(180deg, rgba(42, 51, 64, .88), rgba(42, 51, 64, .64));
 }
 
 .attachment-preview-rail[hidden] {
@@ -1766,7 +1766,7 @@ select:focus-visible {
   overflow-x: auto;
   padding: 8px clamp(18px, 5vw, 80px);
   border-bottom: 1px solid rgba(105, 218, 240, .09);
-  background: linear-gradient(180deg, rgba(6, 17, 31, .92), rgba(3, 9, 19, .72));
+  background: linear-gradient(180deg, rgba(54, 61, 70, .92), rgba(54, 61, 70, .72));
   scrollbar-width: none;
 }
 
@@ -1897,7 +1897,7 @@ select:focus-visible {
   min-height: 0;
   padding: 0 clamp(18px, 5vw, 80px) 7px;
   color: var(--muted);
-  background: rgba(2, 7, 15, .94);
+  background: rgba(48, 56, 67, .94);
   font-size: 11px;
 }
 
@@ -1919,7 +1919,7 @@ select:focus-visible {
   height: 100dvh;
   overflow-y: auto;
   border-left: 1px solid var(--line);
-  background: rgba(4, 11, 22, .98);
+  background: rgba(48, 56, 67, .98);
   box-shadow: -24px 0 70px rgba(0, 0, 0, .42);
   transform: translateX(105%);
   transition: transform .24s cubic-bezier(.22, .61, .36, 1);
@@ -2034,7 +2034,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: rgba(4, 11, 22, .98);
+  background: rgba(54, 61, 70, .98);
   box-shadow: var(--shadow);
   transform: translateX(-50%);
   backdrop-filter: blur(20px);
@@ -2085,7 +2085,7 @@ select:focus-visible {
   background:
     radial-gradient(circle at 12% 5%, rgba(39, 229, 194, .18), transparent 16rem),
     radial-gradient(circle at 92% 18%, rgba(158, 88, 255, .20), transparent 17rem),
-    linear-gradient(145deg, rgba(4, 12, 26, .96), rgba(5, 8, 18, .98));
+    linear-gradient(145deg, rgba(54, 61, 70, .96), rgba(48, 56, 67, .98));
   box-shadow: 0 24px 90px rgba(0, 0, 0, .55), 0 0 34px rgba(74, 241, 222, .16);
   transform: translateX(110%);
   opacity: .4;
@@ -2127,7 +2127,7 @@ select:focus-visible {
   border: 1px solid rgba(84, 230, 255, .35);
   border-radius: 50%;
   color: #65f4ff;
-  background: rgba(12, 29, 48, .78);
+  background: rgba(42, 51, 64, .78);
   box-shadow: 0 0 26px rgba(58, 220, 255, .25), inset 0 0 24px rgba(92, 255, 218, .10);
 }
 
@@ -2160,7 +2160,7 @@ select:focus-visible {
   border: 1px solid rgba(101, 230, 255, .20);
   border-radius: 12px;
   color: var(--text);
-  background: rgba(10, 22, 39, .88);
+  background: rgba(42, 51, 64, .88);
 }
 
 .control-panel-status[data-kind="error"] {
@@ -2236,7 +2236,7 @@ select:focus-visible {
   border: 1px solid rgba(84, 230, 255, .35);
   border-radius: 50%;
   color: #65f4ff;
-  background: rgba(12, 29, 48, .78);
+  background: rgba(42, 51, 64, .78);
   box-shadow: 0 0 22px rgba(58, 220, 255, .20);
 }
 
@@ -2257,7 +2257,7 @@ select:focus-visible {
   border-radius: 14px;
   color: var(--text);
   text-align: left;
-  background: rgba(10, 22, 39, .72);
+  background: rgba(42, 51, 64, .72);
   transition: border-color .18s ease, background .18s ease, transform .18s ease;
 }
 
@@ -2265,7 +2265,7 @@ select:focus-visible {
 .control-conversation-choice:focus-visible {
   border-color: rgba(62, 243, 190, .56);
   outline: 0;
-  background: rgba(18, 42, 57, .90);
+  background: rgba(54, 61, 70, .90);
   box-shadow: 0 0 0 3px rgba(62, 243, 190, .10);
 }
 
@@ -2351,7 +2351,7 @@ select:focus-visible {
   border-radius: 16px;
   background:
     linear-gradient(135deg, rgba(27, 255, 196, .10), rgba(132, 80, 255, .08)),
-    rgba(8, 17, 32, .74);
+    rgba(42, 51, 64, .74);
 }
 
 .control-avatar {
@@ -2397,7 +2397,7 @@ select:focus-visible {
 .control-quick-action {
   border: 1px solid rgba(111, 229, 255, .24);
   color: var(--text);
-  background: rgba(12, 25, 43, .78);
+  background: rgba(42, 51, 64, .78);
   box-shadow: inset 0 0 20px rgba(94, 234, 255, .05);
 }
 
@@ -2463,7 +2463,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid rgba(111, 229, 255, .18);
   border-radius: 14px;
-  background: rgba(10, 21, 37, .68);
+  background: rgba(42, 51, 64, .68);
 }
 
 .control-info-grid span {
@@ -2494,7 +2494,7 @@ select:focus-visible {
   padding: 0 12px;
   border: 1px solid rgba(109, 231, 255, .24);
   border-radius: 14px;
-  background: rgba(7, 16, 30, .82);
+  background: rgba(42, 51, 64, .82);
 }
 
 .control-search input {
@@ -2530,7 +2530,7 @@ select:focus-visible {
   border-radius: 16px;
   background:
     radial-gradient(circle at 0 0, rgba(68, 245, 215, .14), transparent 18rem),
-    rgba(5, 16, 31, .82);
+    rgba(48, 56, 67, .82);
   box-shadow: 0 18px 52px rgba(0, 0, 0, .22), inset 0 0 28px rgba(80, 235, 255, .04);
 }
 
@@ -2587,7 +2587,7 @@ select:focus-visible {
   padding: 10px;
   border: 1px solid rgba(130, 232, 255, .14);
   border-radius: 13px;
-  background: rgba(8, 19, 35, .72);
+  background: rgba(42, 51, 64, .72);
 }
 
 .control-detail-list article > span:nth-child(2),
@@ -2613,7 +2613,7 @@ select:focus-visible {
   border: 1px solid rgba(84, 233, 255, .24);
   border-radius: 12px;
   color: #66f1ff;
-  background: rgba(15, 35, 57, .88);
+  background: rgba(54, 61, 70, .88);
 }
 
 .control-detail-grid {
@@ -2650,7 +2650,7 @@ select:focus-visible {
   border: 1px solid rgba(111, 229, 255, .24);
   border-radius: 12px;
   color: #dffcff;
-  background: rgba(8, 20, 36, .78);
+  background: rgba(42, 51, 64, .78);
   text-decoration: none;
 }
 
@@ -2658,7 +2658,7 @@ select:focus-visible {
   overflow: hidden;
   border: 1px solid rgba(100, 224, 255, .18);
   border-radius: 16px;
-  background: rgba(6, 16, 31, .68);
+  background: rgba(48, 56, 67, .68);
 }
 
 .control-section.is-danger {
@@ -2688,7 +2688,7 @@ select:focus-visible {
   place-items: center;
   border: 1px solid rgba(101, 230, 255, .22);
   border-radius: 12px;
-  background: rgba(15, 29, 51, .78);
+  background: rgba(54, 61, 70, .78);
 }
 
 .control-section-head small {
@@ -2713,7 +2713,7 @@ select:focus-visible {
   border-bottom: 1px solid rgba(116, 228, 255, .09);
   color: var(--text);
   text-align: left;
-  background: rgba(5, 13, 26, .34);
+  background: rgba(42, 51, 64, .34);
 }
 
 .control-option:last-child {
@@ -2760,7 +2760,7 @@ select:focus-visible {
   height: 24px;
   border: 1px solid rgba(134, 238, 255, .26);
   border-radius: 999px;
-  background: rgba(24, 36, 54, .88);
+  background: rgba(42, 51, 64, .88);
 }
 
 .control-switch::after {
@@ -2795,7 +2795,7 @@ select:focus-visible {
   border: 1px solid rgba(118, 232, 255, .24);
   border-radius: 10px;
   color: var(--text);
-  background: rgba(7, 16, 31, .96);
+  background: rgba(42, 51, 64, .96);
 }
 
 .control-option.is-stat {
@@ -2817,14 +2817,14 @@ select:focus-visible {
   --control-theme-thread:
     radial-gradient(circle at 16% 10%, rgba(53, 244, 182, .10), transparent 28rem),
     radial-gradient(circle at 84% 16%, rgba(102, 231, 255, .08), transparent 28rem),
-    rgba(3, 9, 19, .90);
+    rgba(48, 56, 67, .90);
   --control-theme-header:
-    linear-gradient(110deg, rgba(4, 16, 32, .90), rgba(7, 20, 33, .80)),
-    rgba(2, 7, 15, .76);
+    linear-gradient(110deg, rgba(48, 56, 67, .90), rgba(48, 56, 67, .80)),
+    rgba(48, 56, 67, .76);
   --control-theme-panel:
     radial-gradient(circle at 12% 5%, rgba(53, 244, 182, .18), transparent 16rem),
     radial-gradient(circle at 92% 18%, rgba(155, 103, 255, .20), transparent 17rem),
-    linear-gradient(145deg, rgba(4, 12, 26, .96), rgba(5, 8, 18, .98));
+    linear-gradient(145deg, rgba(54, 61, 70, .96), rgba(48, 56, 67, .98));
   --control-wallpaper:
     radial-gradient(circle at 15% 18%, rgba(53, 244, 182, .08), transparent 30%),
     radial-gradient(circle at 82% 22%, rgba(102, 231, 255, .06), transparent 28%),
@@ -3106,13 +3106,13 @@ select:focus-visible {
 
 .comm-shell .composer {
   background:
-    linear-gradient(180deg, rgba(2, 7, 15, .10), rgba(2, 7, 15, .78)),
+    linear-gradient(180deg, rgba(48, 56, 67, .10), rgba(48, 56, 67, .78)),
     color-mix(in srgb, var(--control-accent) 6%, transparent);
   box-shadow: 0 -18px 45px rgba(0, 0, 0, .24), 0 -1px 0 var(--control-theme-border);
 }
 
 .comm-shell .composer-status {
-  background: color-mix(in srgb, var(--control-accent) 7%, rgba(2, 7, 15, .94));
+  background: color-mix(in srgb, var(--control-accent) 7%, rgba(48, 56, 67, .94));
 }
 
 .comm-shell .composer-input-shell input,
@@ -3250,7 +3250,7 @@ select:focus-visible {
   border-radius: 12px;
   background:
     radial-gradient(circle at 0 0, rgba(56, 221, 160, .08), transparent 20rem),
-    rgba(5, 14, 27, .98);
+    rgba(54, 61, 70, .98);
   box-shadow: var(--shadow);
 }
 
@@ -3311,7 +3311,7 @@ select:focus-visible {
   padding: 6px;
   border: 1px solid rgba(105, 218, 240, .18);
   border-radius: 16px;
-  background: rgba(3, 9, 19, .88);
+  background: rgba(54, 61, 70, .88);
   box-shadow: 0 18px 54px rgba(0, 0, 0, .44), 0 0 28px rgba(105, 218, 240, .08);
   transform: translateX(-50%);
   backdrop-filter: blur(20px);
