@@ -14,7 +14,7 @@ import random
 import sqlite3
 from typing import Iterable
 
-from services import user_context
+from services import music_authority, user_context
 
 
 SAFE_MUSIC_PROVIDERS = {
@@ -156,6 +156,12 @@ def public_visibility_reasons(track: dict) -> list[str]:
     license_type = str(track.get("license_type") or track.get("license") or "").strip().lower()
     safety_status = str(track.get("safety_status") or track.get("moderation_status") or "approved").strip().lower()
     reasons: list[str] = []
+    # An owner takedown writes both the lifecycle state and the legacy
+    # active/safety_status trio, so either alone would block this track. Both are
+    # checked anyway: this function is the single definition of "may a creator
+    # attach this", and it should not depend on two writers staying in lockstep.
+    if not music_authority.is_servable(track):
+        reasons.append("track has been removed by the platform owner")
     if safety_status != "approved":
         reasons.append("safety_status must be approved")
     if not _bool(track.get("active", True)):
@@ -212,6 +218,14 @@ def _db_track(row) -> dict:
         "description": item.get("description") or "",
         "rights_confirmed": _bool(item.get("rights_confirmed")),
         "moderation_status": item.get("safety_status") or "approved",
+        # Carried verbatim so `is_servable` reads the same three columns here as
+        # it does on a raw row. Without them this projection silently answers
+        # "servable" for every track, and the guard in
+        # `public_visibility_reasons` -- the one that stops a creator attaching a
+        # removed song -- would be dead code that still looked correct.
+        "lifecycle_state": item.get("lifecycle_state") or "",
+        "safety_status": item.get("safety_status") or "approved",
+        "removed_at": item.get("removed_at") or "",
         "usage_count": int(item.get("usage_count") or 0),
         "trend_score": int(item.get("trend_score") or 0),
         "play_count": int(item.get("play_count") or 0),
@@ -247,7 +261,9 @@ def _load_db_tracks(query: str = "", limit: int = 300) -> list[dict]:
         cur.execute(
             f"""
             SELECT * FROM pulse_audio_tracks
-            WHERE COALESCE(safety_status,'approved')='approved'
+            WHERE COALESCE(lifecycle_state,'ACTIVE')='ACTIVE'
+              AND COALESCE(removed_at,'')=''
+              AND COALESCE(safety_status,'approved')='approved'
               AND COALESCE(active,1)=1
               AND COALESCE(audio_url,'')!=''
               AND COALESCE(approved_by_admin,0)=1
@@ -283,6 +299,8 @@ def _load_db_track_by_id(track_id: str) -> dict:
             """
             SELECT * FROM pulse_audio_tracks
             WHERE id=?
+              AND COALESCE(lifecycle_state,'ACTIVE')='ACTIVE'
+              AND COALESCE(removed_at,'')=''
               AND COALESCE(safety_status,'approved')='approved'
               AND COALESCE(active,1)=1
               AND COALESCE(audio_url,'')!=''
