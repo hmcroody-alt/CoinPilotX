@@ -13,12 +13,12 @@
   <link rel="stylesheet" href="/static/css/pulse_design_system.css" />
   <link rel="stylesheet" href="/static/css/pulse_mobile_system.css" />
   <style>
-    :root { --bg:var(--surface-primary,#050b14); --panel:var(--surface-raised,#0d1627); --panel2:var(--surface-elevated,#101c31); --line:var(--border-subtle,rgba(110,223,246,.2)); --text:var(--text-primary,#f2fbff); --muted:var(--text-secondary,#9fb5c0); --cyan:var(--action-secondary,#6edff6); --green:var(--action-primary,#36e58f); --gold:var(--status-warning,#ffd166); --danger:var(--status-error,#ff6b7a); }
+    :root { --bg:var(--surface-primary,#050910); --panel:var(--surface-raised,#303843); --panel2:var(--surface-elevated,#363D46); --line:var(--border-subtle,rgba(110,223,246,.2)); --text:var(--text-primary,#f2fbff); --muted:var(--text-secondary,#9fb5c0); --cyan:var(--action-secondary,#6edff6); --green:var(--action-primary,#36e58f); --gold:var(--status-warning,#ffd166); --danger:var(--status-error,#ff6b7a); }
     * { box-sizing:border-box; }
-    body { margin:0; min-height:100vh; color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 95% 10%,rgba(54,229,143,.13),transparent 24rem),linear-gradient(145deg,#050b14,#081523 60%,#03070d); line-height:1.55; padding-bottom:78px; }
+    body { margin:0; min-height:100vh; color:var(--text); font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif; background:radial-gradient(circle at 10% 0,rgba(110,223,246,.18),transparent 28rem),radial-gradient(circle at 95% 10%,rgba(54,229,143,.13),transparent 24rem),linear-gradient(145deg,#050910,#070d17 60%,#050910); line-height:1.55; padding-bottom:78px; }
     a { color:inherit; }
     .shell { width:min(100% - 28px,1180px); margin:0 auto; }
-    header { position:sticky; top:0; z-index:20; background:rgba(5,11,20,.88); border-bottom:1px solid rgba(255,255,255,.08); backdrop-filter:blur(18px); }
+    header { position:sticky; top:0; z-index:20; background:rgba(48,56,67,.88); border-bottom:1px solid rgba(255,255,255,.08); backdrop-filter:blur(18px); }
     nav { min-height:70px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
     .brand { display:inline-flex; align-items:center; gap:10px; font-weight:950; text-decoration:none; }
     .brand img { width:42px; height:42px; object-fit:contain; filter:drop-shadow(0 0 16px rgba(110,223,246,.3)); }
@@ -41,13 +41,13 @@
     @keyframes alertDance { 0%,100%{transform:translateY(0) rotate(0)} 18%{transform:translateY(-5px) rotate(-2deg)} 36%{transform:translateY(0) rotate(2deg)} 54%{transform:translateY(-3px) rotate(-1deg)} 72%{transform:translateY(0) rotate(1deg)} }
     main { padding:22px 0 32px; }
     .hero { display:grid; grid-template-columns:minmax(0,1.2fr) minmax(280px,.8fr); gap:16px; align-items:stretch; }
-    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(16,28,49,.92),rgba(13,22,39,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:18px; overflow-wrap:break-word; }
+    .card { border:1px solid var(--line); border-radius:14px; background:linear-gradient(180deg,rgba(54,61,70,.92),rgba(48,56,67,.86)); box-shadow:0 24px 70px rgba(0,0,0,.28); padding:18px; overflow-wrap:break-word; }
     .kicker { color:var(--green); font-size:12px; font-weight:950; letter-spacing:.08em; text-transform:uppercase; }
     h1 { margin:8px 0 10px; font-size:clamp(34px,7vw,64px); line-height:.98; letter-spacing:0; }
     h2 { margin:0 0 12px; font-size:clamp(20px,3vw,30px); }
     p,.muted { color:var(--muted); }
     .command-bar { position:sticky; top:82px; z-index:10; display:grid; grid-template-columns:1fr auto; gap:8px; margin:16px 0; }
-    .chat-mode .command-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; top:auto; width:min(100% - 28px,900px); margin:0; padding:10px; border:1px solid var(--line); border-radius:14px; background:rgba(5,11,20,.94); backdrop-filter:blur(18px); }
+    .chat-mode .command-bar { position:fixed; left:50%; transform:translateX(-50%); bottom:70px; top:auto; width:min(100% - 28px,900px); margin:0; padding:10px; border:1px solid var(--line); border-radius:14px; background:rgba(54,61,70,.94); backdrop-filter:blur(18px); }
     .chat-mode main { padding-bottom:190px; }
     input { width:100%; min-height:50px; border-radius:10px; border:1px solid var(--line); background:rgba(255,255,255,.06); color:var(--text); padding:12px 13px; font:inherit; }
     .sections { display:grid; gap:16px; margin-top:16px; }
@@ -68,7 +68,7 @@
     .chat-shortcuts { display:flex; gap:8px; overflow-x:auto; padding:4px 0 10px; scrollbar-width:thin; }
     .chat-shortcuts .button { width:auto; white-space:nowrap; flex:0 0 auto; }
     .meta { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; color:var(--muted); font-size:13px; }
-    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:30; min-height:calc(64px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom); background:rgba(5,11,20,.94); border-top:1px solid rgba(255,255,255,.08); backdrop-filter:blur(10px); overflow:hidden; }
+    .bottom-nav { position:fixed; left:0; right:0; bottom:0; z-index:30; min-height:calc(64px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom); background:rgba(48,56,67,.94); border-top:1px solid rgba(255,255,255,.08); backdrop-filter:blur(10px); overflow:hidden; }
     .bottom-nav .shell { display:flex; gap:2px; padding:6px; align-items:center; justify-content:space-around; }
     .bottom-nav a { min-width:0; flex:1 1 0; min-height:50px; display:grid; place-items:center; color:var(--muted); text-decoration:none; font-size:10px; line-height:1; font-weight:850; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-radius:9px; position:relative; }
     .nav-badge { min-width:20px; height:20px; display:inline-grid; place-items:center; border-radius:999px; color:#fff; background:#ff335d; font-size:11px; font-weight:950; padding:0 6px; box-shadow:0 0 0 2px rgba(5,11,20,.92),0 0 18px rgba(255,51,93,.55); }

@@ -1,8 +1,8 @@
 :root {
   color-scheme: dark;
-  --pulse-bg: var(--surface-primary, #050b14);
-  --pulse-panel: var(--surface-overlay, rgba(13, 22, 39, 0.86));
-  --pulse-panel-strong: var(--surface-overlay-strong, rgba(17, 29, 50, 0.94));
+  --pulse-bg: var(--surface-primary, #050910);
+  --pulse-panel: var(--surface-overlay, rgba(48, 56, 67, 0.82));
+  --pulse-panel-strong: var(--surface-overlay-strong, rgba(54, 61, 70, 0.94));
   --pulse-line: var(--border-subtle, rgba(110, 223, 246, 0.22));
   --pulse-line-strong: var(--border-strong, rgba(255, 255, 255, 0.16));
   --pulse-text: var(--text-primary, #f2fbff);
@@ -38,7 +38,7 @@ body {
   background:
     radial-gradient(circle at 14% 0, rgba(110, 223, 246, 0.16), transparent 30rem),
     radial-gradient(circle at 88% 8%, rgba(54, 229, 143, 0.11), transparent 28rem),
-    linear-gradient(145deg, #050b14, #081421 62%, #04070d);
+    linear-gradient(145deg, #050910, #070d17 62%, #050910);
 }
 
 a,
@@ -288,7 +288,7 @@ a[href="/pulse/premium"]:not(.desktop-rail-link):not(.drawer-link) {
   body {
     background:
       radial-gradient(circle at 14% 0, rgba(110, 223, 246, 0.08), transparent 22rem),
-      linear-gradient(145deg, #050b14, #081421 62%, #04070d) !important;
+      linear-gradient(145deg, #050910, #070d17 62%, #050910) !important;
   }
 
   .pulse-premium-sheen::before,

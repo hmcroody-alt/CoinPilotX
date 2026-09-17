@@ -4,11 +4,11 @@
 
 :root {
   color-scheme: dark;
-  --bg: var(--surface-primary, var(--pulse-palette-background, #020711));
+  --bg: var(--surface-primary, var(--pulse-palette-background, #050910));
   --bg-deep: #050910;
-  --panel: var(--surface-raised, rgba(6, 14, 26, .94));
+  --panel: var(--surface-raised, #303843);
   --panel-soft: rgba(48, 56, 67, .82);
-  --panel-glass: var(--surface-overlay, rgba(11, 27, 45, .68));
+  --panel-glass: var(--surface-overlay, rgba(48, 56, 67, .82));
   --text: var(--text-primary, var(--pulse-palette-text, #f2fbff));
   --muted: var(--text-secondary, var(--pulse-palette-muted, #95aabc));
   --quiet: var(--text-disabled, #6f8495);

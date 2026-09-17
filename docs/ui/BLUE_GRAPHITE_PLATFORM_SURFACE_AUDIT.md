@@ -431,3 +431,40 @@ numbers. Three of the fifteen tints are Pulse Radio (`commandRadioNow`,
 `commandRadioPanel`, `heroRadioPill`) and two are frozen city-scene art
 (`heroPlanetShadow`, `heroSkylineTower`), both already excluded on the web side,
 so the two platforms agree without having been coordinated.
+
+## Stage 4 closes: the fallbacks, the templates, and where a page keeps its own colour
+
+Six more files, 56 structural literals removed (713 -> 671 platform-wide across
+this batch and the one before it). Two rules did most of the deciding.
+
+**A `var()` fallback must name the same colour as the token it backs.**
+`pulse_design_system.css`, `pulse_advertiser_portal.css`, `pulse_messages_v2.css`
+and all four templates declare their locals as
+`--panel: var(--surface-raised, <near-black>)`. Every one of those fallbacks is
+dead — `pulsesoc-tokens.css` is linked before them in all eleven templates that
+load them, and all the referenced tokens exist, so the literal after the comma
+never paints. That is exactly why it was worth fixing. A fallback is the colour
+the page wears the day the token sheet 404s or a new template forgets the link,
+and until now that colour was the pre-migration near-black on every surface at
+once. They now equal their tokens exactly, alpha included.
+
+**A page background moves onto the canonical page value; a page *identity* does
+not.** Four body gradients were three arbitrary near-blacks apiece — `#030811`,
+`#020817`, `#070b14`, `#050b14`, no two agreeing on what "the background" is.
+That disagreement is the thing this migration exists to end, so they were
+unified onto `#050910 / #070d17 / #050910`, the same triple the messages shell
+already uses. `.premium-auth-body` was left alone: its ramp ends at `#081d2b`,
+which is visibly teal rather than another near-black, and a designed hue is a
+decision somebody made rather than an accident of six files never being compared.
+
+The survivors are page level in every file, plus three groups that the earlier
+rules already covered: the paywall scrim over a locked analytics preview
+(`pulse_design_system.css`), the ad upload and card previews that frame
+user-uploaded media (`pulse_advertiser_portal.css`), and the marketing page's
+video tile and phone mockup (`templates/index.html`) — device art and media
+framing, not chrome. The app-preview cards inside that same mockup *were*
+migrated, because a picture of the product should look like the product.
+
+Card-above-nav, the rule mission 1 settled on the home screen, carried onto
+`app.html` and `dashboard.html` unchanged: cards and floating bars are `raised`,
+rails and anchored navigation are `panel`.

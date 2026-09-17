@@ -1,7 +1,7 @@
 :root {
-  --bg: var(--surface-primary, var(--pulse-palette-background, #030811));
-  --panel: var(--surface-raised, rgba(8, 19, 34, .86));
-  --panel-strong: rgba(11, 27, 47, .94);
+  --bg: var(--surface-primary, var(--pulse-palette-background, #050910));
+  --panel: var(--surface-raised, #303843);
+  --panel-strong: rgba(54, 61, 70, .94);
   --line: var(--border-subtle, rgba(91, 220, 255, .22));
   --hot: var(--status-success-bg, rgba(50, 235, 174, .62));
   --text: var(--text-primary, var(--pulse-palette-text, #f4fbff));
@@ -24,7 +24,7 @@ body {
   background:
     radial-gradient(circle at 16% 10%, rgba(45, 140, 255, .2), transparent 32rem),
     radial-gradient(circle at 82% 0, rgba(169, 92, 255, .17), transparent 34rem),
-    linear-gradient(135deg, #030811, #071425 58%, #02050b);
+    linear-gradient(135deg, #050910, #070d17 58%, #050910);
 }
 body::before {
   content: "";
@@ -79,7 +79,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 24px;
-  background: linear-gradient(180deg, rgba(8,20,36,.96), rgba(4,10,19,.84));
+  background: linear-gradient(180deg, rgba(48,56,67,.96), rgba(42,51,64,.84));
   box-shadow: 0 26px 90px rgba(0,0,0,.32), inset 0 1px 0 rgba(255,255,255,.045);
 }
 .brand {
@@ -121,7 +121,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   border-radius: 24px;
   background:
     radial-gradient(circle at 20% 0, rgba(91,220,255,.13), transparent 18rem),
-    linear-gradient(135deg, rgba(10,24,43,.94), rgba(5,12,23,.86));
+    linear-gradient(135deg, rgba(54,61,70,.94), rgba(48,56,67,.86));
   box-shadow: 0 26px 90px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.045);
 }
 .hero {
@@ -244,7 +244,7 @@ input, select, textarea {
   border-radius: 14px;
   padding: 0 13px;
   color: var(--text);
-  background: rgba(2,8,18,.72);
+  background: rgba(42,51,64,.72);
   outline: none;
 }
 textarea { min-height: 112px; padding-top: 12px; resize: vertical; }
@@ -348,7 +348,7 @@ fieldset input { width: auto; min-height: auto; }
   border-radius: 20px;
   background:
     radial-gradient(circle at 18% 0, rgba(50,235,174,.13), transparent 18rem),
-    linear-gradient(135deg, rgba(4,16,28,.84), rgba(14,30,48,.66));
+    linear-gradient(135deg, rgba(48,56,67,.84), rgba(54,61,70,.66));
 }
 .ad-upload-zone {
   display: flex;
@@ -359,7 +359,7 @@ fieldset input { width: auto; min-height: auto; }
   padding: 16px;
   border: 1px dashed rgba(91,220,255,.34);
   border-radius: 18px;
-  background: rgba(1,8,18,.62);
+  background: rgba(42,51,64,.62);
 }
 .ad-upload-zone strong {
   display: block;
