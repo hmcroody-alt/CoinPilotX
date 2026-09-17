@@ -129,6 +129,17 @@ TRANSITIONS = {
 # Actions that destroy bytes. These require a step-up regardless of permission.
 DESTRUCTIVE_ACTIONS = frozenset({ACTION_PURGE})
 
+# Menu order: least to most destructive, so the item nearest the cursor is the
+# recoverable one and "delete permanently" is the furthest to reach.
+ACTION_ORDER = (
+    ACTION_TAKEDOWN,
+    ACTION_QUARANTINE,
+    ACTION_RESTORE,
+    ACTION_SCHEDULE_PURGE,
+    ACTION_CANCEL_PURGE,
+    ACTION_PURGE,
+)
+
 STEP_UP_TTL_SECONDS = 300
 
 
@@ -323,6 +334,42 @@ def plan_transition(action, current_state, *, expected_state=None, legal_hold=Fa
         )
     new_state = TRANSITIONS[key]
     return new_state, new_state != current
+
+
+def available_actions(state, *, legal_hold=False, permissions=None):
+    """Which actions a track in ``state`` can be offered, in menu order.
+
+    Read out of ``TRANSITIONS`` and ``ACTION_PERMISSIONS`` rather than restated,
+    so a menu cannot drift from the server: it can neither offer an action that
+    ``plan_transition`` would refuse with 409, nor hide one the actor may take.
+    A menu that lists an impossible action trains the operator to expect errors;
+    one that hides a possible action is indistinguishable from a missing feature.
+
+    ``permissions`` is the ``granted_permissions()`` map. Passing ``None`` skips
+    the permission filter and answers the pure state question, which is what the
+    tests for the state machine want.
+
+    Self-transitions are omitted. ``TRANSITIONS`` carries them -- ``(restore,
+    ACTIVE) -> ACTIVE`` and four siblings -- so a retried request answers
+    ``changed: false`` rather than 409. That is right for a request and wrong for
+    a menu: offering "Restore" on a track that is already active, or "Restrict"
+    on one already restricted, reads as a broken state display and invites a
+    click that does nothing. Retry-safety belongs on the endpoint; the menu
+    shows only what would change something.
+    """
+    current = normalize_state(state)
+    actions = []
+    for action in ACTION_ORDER:
+        if (action, current) not in TRANSITIONS:
+            continue
+        if TRANSITIONS[(action, current)] == current:
+            continue
+        if legal_hold and action in DESTRUCTIVE_ACTIONS:
+            continue
+        if permissions is not None and not permissions.get(ACTION_PERMISSIONS[action]):
+            continue
+        actions.append(action)
+    return actions
 
 
 def legacy_columns_for_state(state, *, now, actor_admin_id):

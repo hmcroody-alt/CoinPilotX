@@ -44080,6 +44080,566 @@ def api_pulse_music_artist(artist_user_id):
     return jsonify({"ok": True, "artist": artist, "songs": songs, "followers": followers, "plays": sum(int(s.get("play_count") or 0) for s in songs), "trending": bool(any(int(s.get("trend_score") or 0) >= 50 for s in songs))})
 
 
+ADMIN_MUSIC_LIBRARY_PAGE_SIZE = 40
+
+
+def admin_music_library_query(cur, *, search="", state="", page=1):
+    """One page of the music catalogue for the admin library table.
+
+    Searching by id as well as by text matters more than it looks: the audit
+    trail, the reports queue and the mobile client all identify a track by id, so
+    an operator arriving from any of them has a number and not a title.
+
+    The state filter reads `lifecycle_state` through the same COALESCE default the
+    rest of the code uses, so the ~21.7k rows written before that column existed
+    are selectable as ACTIVE rather than being invisible under every filter.
+    """
+    page = max(1, safe_int(page, 1))
+    offset = (page - 1) * ADMIN_MUSIC_LIBRARY_PAGE_SIZE
+    where = []
+    params = []
+    search = (search or "").strip()
+    if search:
+        like = f"%{search.lower()}%"
+        clause = "(lower(COALESCE(t.title,'')) LIKE ? OR lower(COALESCE(t.artist,'')) LIKE ?)"
+        params.extend([like, like])
+        if search.isdigit():
+            clause = clause[:-1] + " OR t.id=?)"
+            params.append(safe_int(search, 0))
+        where.append(clause)
+    state = music_authority.normalize_state(state) if (state or "").strip() else ""
+    if state:
+        where.append("UPPER(COALESCE(t.lifecycle_state,'ACTIVE'))=?")
+        params.append(state)
+    sql_where = ("WHERE " + " AND ".join(where)) if where else ""
+    cur.execute(f"SELECT COUNT(*) AS total FROM pulse_audio_tracks t {sql_where}", tuple(params))
+    total = safe_int(dict(cur.fetchone() or {}).get("total"), 0)
+    cur.execute(
+        f"""
+        SELECT t.*, COALESCE(u.display_name, u.full_name, u.username, '') AS uploader_name,
+               COALESCE(u.email, '') AS uploader_email
+        FROM pulse_audio_tracks t
+        LEFT JOIN users u ON u.user_id=t.uploader_user_id
+        {sql_where}
+        ORDER BY t.id DESC
+        LIMIT ? OFFSET ?
+        """,
+        tuple(params) + (ADMIN_MUSIC_LIBRARY_PAGE_SIZE, offset),
+    )
+    return [dict(row) for row in cur.fetchall()], total
+
+
+def admin_music_library_row(track, permissions):
+    """One library row, with the actions this viewer may take carried on it.
+
+    The action list is computed here and not in the browser. Putting it in the
+    markup rather than letting the script infer it from the state string means the
+    menu is a rendering of a server decision -- the same decision the endpoint will
+    re-make when the item is clicked -- instead of a second, drifting copy of the
+    rules written in JavaScript.
+    """
+    track_id = safe_int(track.get("id"), 0)
+    state = music_authority.normalize_state(track.get("lifecycle_state"))
+    legal_hold = bool(safe_int(track.get("legal_hold"), 0))
+    actions = music_authority.available_actions(
+        state, legal_hold=legal_hold, permissions=permissions
+    )
+    if permissions.get("music.view_all"):
+        actions = ["impact"] + actions + ["audit"]
+    title = html_escape(clean_html(track.get("title") or "Untitled track"))
+    artist = html_escape(clean_html(track.get("artist") or ""))
+    uploader = html_escape(clean_html(
+        track.get("uploader_name") or track.get("uploader_email")
+        or (f"User {track.get('uploader_user_id')}" if track.get("uploader_user_id") else "")
+    ))
+    public_reasons = music_service.public_visibility_reasons(track)
+    public_state = "yes" if not public_reasons else "hidden"
+    public_title = html_escape(clean_html(
+        "; ".join(public_reasons) if public_reasons else "Visible in PulseSoc Music."
+    ))
+    updated = html_escape(clean_html(track.get("updated_at") or track.get("created_at") or ""))
+    hold = " <span class='pill hold'>legal hold</span>" if legal_hold else ""
+    if actions:
+        menu = (
+            f"<button type='button' class='music-dots' data-track='{track_id}' "
+            f"data-title='{title}' data-state='{state}' "
+            f"data-actions='{html_escape(','.join(actions))}' "
+            f"aria-haspopup='true' aria-expanded='false' "
+            f"aria-label='More options for {title}'>&hellip;</button>"
+        )
+    else:
+        # An empty menu button would be a dead control. Say why instead.
+        menu = "<span class='muted' title='This account holds no music permissions.'>&mdash;</span>"
+    return (
+        f"<tr data-track-row='{track_id}'>"
+        f"<td>{track_id}</td><td>{title}</td><td>{artist}</td><td>{uploader}</td>"
+        f"<td><span class='state state-{state}'>{state.replace('_', ' ').title()}</span>{hold}</td>"
+        f"<td title='{public_title}'>{public_state}</td><td>{updated}</td>"
+        f"<td class='music-lib-cell'>{menu}</td>"
+        f"</tr>"
+    )
+
+
+ADMIN_MUSIC_LIBRARY_CSS = """
+      .music-library .music-lib-filter{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+      .music-library .music-lib-filter input[type=search]{flex:1 1 260px;min-width:0}
+      /* The page-wide admin CSS gives form controls width:100%, which stacks
+         this three-control row into three full-width bars. Constrain here
+         rather than there: that rule is load-bearing for every other admin form. */
+      .music-library .music-lib-filter select{flex:0 0 auto;width:auto;min-width:190px}
+      .music-library .music-lib-filter button{flex:0 0 auto;width:auto}
+      .music-lib-table td,.music-lib-table th{vertical-align:middle}
+      .music-lib-cell{text-align:right;white-space:nowrap}
+      .music-dots{background:transparent;border:1px solid var(--line);border-radius:10px;
+        color:var(--text,#e8f0f5);cursor:pointer;font-size:18px;line-height:1;padding:2px 10px 6px}
+      .music-dots:hover,.music-dots:focus{background:rgba(255,255,255,.08);outline:none}
+      .music-lib-pager{display:flex;gap:10px;margin-top:12px}
+      .state{border-radius:999px;padding:3px 9px;font-size:12px;border:1px solid rgba(255,255,255,.14)}
+      .state-ACTIVE{color:#0f9d58;border-color:rgba(15,157,88,.5)}
+      .state-TAKEN_DOWN,.state-QUARANTINED{color:#e8a33d;border-color:rgba(232,163,61,.5)}
+      .state-PURGE_PENDING{color:#e8713d;border-color:rgba(232,113,61,.5)}
+      .state-PURGED{color:#9aa7b2;border-color:rgba(154,167,178,.4)}
+      .pill.hold{background:rgba(232,61,61,.16);color:#ff9a9a;margin-left:6px}
+      .music-menu{position:absolute;z-index:70;min-width:260px;background:#0d1627;
+        border:1px solid var(--line);border-radius:12px;padding:6px;
+        box-shadow:0 24px 70px rgba(0,0,0,.5)}
+      .music-menu button{display:block;width:100%;text-align:left;background:transparent;
+        border:0;color:var(--text,#e8f0f5);padding:9px 10px;border-radius:8px;cursor:pointer;font-size:14px}
+      .music-menu button:hover,.music-menu button:focus{background:rgba(255,255,255,.08);outline:none}
+      .music-menu button.danger{color:#ff9a9a}
+      .music-menu hr{border:0;border-top:1px solid rgba(255,255,255,.08);margin:5px 2px}
+      .music-dialog{position:fixed;inset:0;z-index:80;background:rgba(3,7,14,.72);
+        display:grid;place-items:center;padding:18px}
+      /* `hidden` is only `display:none` in the UA stylesheet, so any author
+         `display` here outranks it and the dialog would sit open over the page
+         from first paint -- an empty modal with a live confirm button on it.
+         Every element in this section that toggles via `hidden` needs the guard,
+         not just the overlay. */
+      #music-menu[hidden],#music-dialog[hidden],#music-dialog-error[hidden],
+      #music-dialog-confirm[hidden]{display:none}
+      .music-dialog-panel{background:#0d1627;border:1px solid var(--line);border-radius:16px;
+        padding:18px;width:min(560px,100%);max-height:86vh;overflow:auto}
+      .music-dialog-panel label{display:block;margin:12px 0 4px;font-size:13px;color:#9fb5c0}
+      .music-dialog-panel input,.music-dialog-panel select,.music-dialog-panel textarea{width:100%}
+      .music-dialog-panel textarea{min-height:70px}
+      .music-dialog-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:16px}
+      .music-dialog-error{color:#ff9a9a;margin-top:10px}
+      .music-dialog-note{color:#9fb5c0;font-size:13px;line-height:1.5}
+      .music-dialog-panel table{width:100%;border-collapse:collapse;font-size:13px}
+      .music-dialog-panel table td,.music-dialog-panel table th{border-bottom:1px solid rgba(255,255,255,.08);
+        padding:6px 4px;text-align:left}
+"""
+
+
+# Vanilla, no build step, and deliberately thin: it renders a menu the server
+# already decided the contents of, and posts. Every rule it appears to enforce --
+# which actions exist, which need a note, whether a purge may proceed -- is
+# re-decided by the endpoint, so a reader of this file should not mistake any of
+# it for a security control.
+ADMIN_MUSIC_LIBRARY_JS = r"""
+(function () {
+  var cfgEl = document.getElementById('music-lib-config');
+  if (!cfgEl) { return; }
+  var CFG = JSON.parse(cfgEl.textContent || '{}');
+  var menu = document.getElementById('music-menu');
+  var dialog = document.getElementById('music-dialog');
+  var dialogTitle = document.getElementById('music-dialog-title');
+  var dialogBody = document.getElementById('music-dialog-body');
+  var dialogError = document.getElementById('music-dialog-error');
+  var confirmBtn = document.getElementById('music-dialog-confirm');
+  var cancelBtn = document.getElementById('music-dialog-cancel');
+  var openerBtn = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function closeMenu() {
+    menu.hidden = true;
+    menu.innerHTML = '';
+    var expanded = document.querySelector('.music-dots[aria-expanded="true"]');
+    if (expanded) { expanded.setAttribute('aria-expanded', 'false'); }
+  }
+
+  function closeDialog() {
+    dialog.hidden = true;
+    dialogBody.innerHTML = '';
+    dialogError.hidden = true;
+    confirmBtn.hidden = true;
+    confirmBtn.onclick = null;
+    // Focus goes back where it came from, or the menu button is lost to anyone
+    // driving this from the keyboard.
+    if (openerBtn && document.body.contains(openerBtn)) { openerBtn.focus(); }
+    openerBtn = null;
+  }
+
+  function showError(message) {
+    dialogError.textContent = message;
+    dialogError.hidden = false;
+  }
+
+  function reasonFields(action) {
+    var opts = CFG.reasonCodes.map(function (code) {
+      var selected = code === 'OWNER_DECISION' ? ' selected' : '';
+      var label = (CFG.reasonLabels || {})[code] || code.replace(/_/g, ' ');
+      return '<option value="' + esc(code) + '"' + selected + '>'
+        + esc(label) + '</option>';
+    }).join('');
+    var noteRequired = CFG.destructive.indexOf(action) >= 0;
+    return '<label for="music-reason">Reason</label>'
+      + '<select id="music-reason">' + opts + '</select>'
+      + '<label for="music-note">Note' + (noteRequired ? ' (required)' : '') + '</label>'
+      + '<textarea id="music-note" placeholder="Recorded in the audit trail."></textarea>';
+  }
+
+  function request(trackId, action, body) {
+    var spec = CFG.endpoints[action];
+    var url = '/api/admin/music/tracks/' + encodeURIComponent(trackId) + '/' + spec[1];
+    var opts = { method: spec[0], credentials: 'same-origin', headers: {} };
+    if (spec[0] === 'POST') {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.headers['X-CSRF-Token'] = CFG.csrf;
+      opts.body = JSON.stringify(body || {});
+    }
+    return fetch(url, opts).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        return { ok: res.ok, status: res.status, data: data };
+      });
+    });
+  }
+
+  // A refusal is shown as the server worded it. Rewriting these client-side is
+  // how "this track is now TAKEN_DOWN, not ACTIVE" becomes "Something went wrong".
+  function failureText(result) {
+    return (result.data && (result.data.error || result.data.message))
+      || ('Request failed (' + result.status + ').');
+  }
+
+  function openImpact(trackId, title) {
+    dialogTitle.textContent = 'Impact — ' + title;
+    dialogBody.innerHTML = '<p class="music-dialog-note">Loading…</p>';
+    dialog.hidden = false;
+    request(trackId, 'impact').then(function (result) {
+      if (!result.ok) { dialogBody.innerHTML = ''; showError(failureText(result)); return; }
+      var d = result.data;
+      var refs = d.references || {};
+      var cached = d.cached_copies_remain_until_purge
+        ? '<p class="music-dialog-note"><strong>Note:</strong> audio files are served from a CDN '
+          + 'that was told to cache them for a year. Restricting this track stops PulseSoc handing '
+          + 'the link out, but anyone who already has the link can still play it until the file '
+          + 'itself is deleted. Use Quarantine or Delete permanently for copyright or safety cases.</p>'
+        : '';
+      dialogBody.innerHTML =
+        '<table>'
+        + '<tr><th>State</th><td>' + esc(d.track.state) + '</td></tr>'
+        + '<tr><th>Reels using it</th><td>' + esc(refs.reels || 0) + '</td></tr>'
+        + '<tr><th>Posts using it</th><td>' + esc(refs.content || 0) + '</td></tr>'
+        + '<tr><th>Statuses using it</th><td>' + esc(refs.statuses || 0) + '</td></tr>'
+        + '<tr><th>Total references</th><td>' + esc(refs.total || 0) + '</td></tr>'
+        + '<tr><th>Open reports</th><td>' + esc(d.open_reports || 0) + '</td></tr>'
+        + '<tr><th>Plays</th><td>' + esc(d.play_count || 0) + '</td></tr>'
+        + '<tr><th>Legal hold</th><td>' + (d.track.legal_hold ? 'yes' : 'no') + '</td></tr>'
+        + '</table>'
+        + '<p class="music-dialog-note">Restricting this track leaves every post, Reel and status '
+        + 'in place — the video, caption, likes and comments are untouched. Only the audio stops, '
+        + 'and those items show “Audio unavailable”.</p>'
+        + cached;
+    });
+  }
+
+  function openAudit(trackId, title) {
+    dialogTitle.textContent = 'Audit trail — ' + title;
+    dialogBody.innerHTML = '<p class="music-dialog-note">Loading…</p>';
+    dialog.hidden = false;
+    request(trackId, 'audit').then(function (result) {
+      if (!result.ok) { dialogBody.innerHTML = ''; showError(failureText(result)); return; }
+      var entries = (result.data && result.data.entries) || [];
+      if (!entries.length) {
+        dialogBody.innerHTML = '<p class="music-dialog-note">No actions recorded for this track.</p>';
+        return;
+      }
+      var rows = entries.map(function (e) {
+        return '<tr><td>' + esc(e.created_at) + '</td><td>' + esc(e.action)
+          + '</td><td>' + esc(e.previous_state) + ' &rarr; ' + esc(e.new_state)
+          + '</td><td>' + esc(e.actor_role) + ' #' + esc(e.actor_user_id)
+          + '</td><td>' + esc(e.reason_code || '') + '</td></tr>';
+      }).join('');
+      dialogBody.innerHTML = '<table><tr><th>When</th><th>Action</th><th>State</th>'
+        + '<th>By</th><th>Reason</th></tr>' + rows + '</table>';
+    });
+  }
+
+  function openMutation(trackId, title, state, action) {
+    var label = CFG.labels[action] || action;
+    var destructive = CFG.destructive.indexOf(action) >= 0;
+    dialogTitle.textContent = label + ' — ' + title;
+    var intro = '';
+    if (action === 'takedown') {
+      intro = '<p class="music-dialog-note">The track stops appearing in search, Reels audio and '
+        + 'the composer. Existing posts keep their video and engagement and show “Audio unavailable”. '
+        + 'This is reversible.</p>';
+    } else if (action === 'quarantine') {
+      intro = '<p class="music-dialog-note">As Restrict, and the audio file itself is deleted so '
+        + 'cached links stop working too. Use this for copyright and safety cases. The track row '
+        + 'and its history are kept.</p>';
+    } else if (action === 'restore') {
+      intro = '<p class="music-dialog-note">The track becomes available again and existing posts '
+        + 'get their audio back.</p>';
+    } else if (action === 'schedule_purge') {
+      intro = '<p class="music-dialog-note">Marks the track for permanent deletion. Nothing is '
+        + 'deleted yet — you can still cancel.</p>';
+    } else if (action === 'cancel_purge') {
+      intro = '<p class="music-dialog-note">Returns the track to restricted. Nothing was deleted.</p>';
+    } else if (action === 'purge') {
+      intro = '<p class="music-dialog-note"><strong>This cannot be undone.</strong> The audio and '
+        + 'cover files are deleted permanently. Posts that used the track keep their video and '
+        + 'engagement. The audit trail is kept.</p>';
+    }
+    var extra = '';
+    if (destructive) {
+      extra = '<label for="music-confirm-id">Type the track id (' + esc(trackId) + ') to confirm</label>'
+        + '<input id="music-confirm-id" autocomplete="off" inputmode="numeric">'
+        + '<label for="music-password">Your admin password</label>'
+        + '<input id="music-password" type="password" autocomplete="current-password">';
+    }
+    dialogBody.innerHTML = intro + reasonFields(action) + extra;
+    confirmBtn.textContent = label;
+    confirmBtn.hidden = false;
+    confirmBtn.onclick = function () {
+      dialogError.hidden = true;
+      var body = {
+        reason_code: (document.getElementById('music-reason') || {}).value,
+        reason_note: (document.getElementById('music-note') || {}).value,
+        expected_state: state
+      };
+      if (action === 'quarantine') { body.quarantine = true; }
+      confirmBtn.disabled = true;
+      var chain;
+      if (destructive) {
+        var confirmId = (document.getElementById('music-confirm-id') || {}).value;
+        var password = (document.getElementById('music-password') || {}).value;
+        body.confirm_track_id = String(trackId);
+        if (String(confirmId || '').trim() !== String(trackId)) {
+          confirmBtn.disabled = false;
+          showError('The track id did not match.');
+          return;
+        }
+        // The step-up is a separate call so the password is not carried by a
+        // request anything would retry.
+        chain = fetch('/api/admin/music/step-up', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CFG.csrf },
+          body: JSON.stringify({ password: password })
+        }).then(function (res) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            return { ok: res.ok, status: res.status, data: data };
+          });
+        }).then(function (stepUp) {
+          if (!stepUp.ok) { return stepUp; }
+          return request(trackId, action, body);
+        });
+      } else {
+        chain = request(trackId, action, body);
+      }
+      chain.then(function (result) {
+        confirmBtn.disabled = false;
+        if (!result.ok) { showError(failureText(result)); return; }
+        if (result.data && result.data.changed === false) {
+          // Not an error: the action had already been applied. Saying so beats a
+          // silent reload that looks identical to having done nothing.
+          showError('Already ' + esc(state) + ' — no change was needed.');
+          return;
+        }
+        window.location.reload();
+      }).catch(function () {
+        confirmBtn.disabled = false;
+        showError('Network error. Nothing was changed.');
+      });
+    };
+    dialog.hidden = false;
+    var first = dialogBody.querySelector('select, input, textarea');
+    if (first) { first.focus(); }
+  }
+
+  document.addEventListener('click', function (event) {
+    var dots = event.target.closest ? event.target.closest('.music-dots') : null;
+    if (dots) {
+      event.preventDefault();
+      var wasOpen = dots.getAttribute('aria-expanded') === 'true';
+      closeMenu();
+      if (wasOpen) { return; }
+      var actions = (dots.getAttribute('data-actions') || '').split(',').filter(Boolean);
+      menu.innerHTML = actions.map(function (action) {
+        var danger = CFG.destructive.indexOf(action) >= 0 ? ' danger' : '';
+        var rule = action === 'audit' ? '<hr>' : '';
+        return rule + '<button type="button" role="menuitem" class="music-item' + danger
+          + '" data-action="' + esc(action) + '">' + esc(CFG.labels[action] || action) + '</button>';
+      }).join('');
+      var rect = dots.getBoundingClientRect();
+      menu.hidden = false;
+      var width = menu.offsetWidth || 260;
+      menu.style.top = (window.scrollY + rect.bottom + 6) + 'px';
+      menu.style.left = Math.max(8, window.scrollX + rect.right - width) + 'px';
+      dots.setAttribute('aria-expanded', 'true');
+      openerBtn = dots;
+      var firstItem = menu.querySelector('button');
+      if (firstItem) { firstItem.focus(); }
+      return;
+    }
+    var item = event.target.closest ? event.target.closest('.music-item') : null;
+    if (item && openerBtn) {
+      event.preventDefault();
+      var trackId = openerBtn.getAttribute('data-track');
+      var title = openerBtn.getAttribute('data-title') || ('Track ' + trackId);
+      var state = openerBtn.getAttribute('data-state');
+      var action = item.getAttribute('data-action');
+      closeMenu();
+      dialogError.hidden = true;
+      confirmBtn.hidden = true;
+      if (action === 'impact') { openImpact(trackId, title); }
+      else if (action === 'audit') { openAudit(trackId, title); }
+      else { openMutation(trackId, title, state, action); }
+      return;
+    }
+    if (!menu.hidden && !menu.contains(event.target)) { closeMenu(); }
+    if (!dialog.hidden && event.target === dialog) { closeDialog(); }
+  });
+
+  cancelBtn.addEventListener('click', closeDialog);
+  document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Escape') { return; }
+    if (!dialog.hidden) { closeDialog(); }
+    else if (!menu.hidden) { closeMenu(); }
+  });
+})();
+"""
+
+ADMIN_MUSIC_ACTION_LABELS = {
+    "impact": "View impact",
+    "takedown": "Restrict (take down)",
+    "quarantine": "Quarantine (stop serving + delete file)",
+    "restore": "Restore",
+    "schedule_purge": "Schedule permanent delete",
+    "cancel_purge": "Cancel scheduled delete",
+    "purge": "Delete permanently",
+    "audit": "Audit trail",
+}
+
+# The wire codes are what the audit trail stores and what a later export reads;
+# these are what the operator choosing a reason should see. Derived labels
+# ("OWNER DECISION") leak the storage format into the decision, and the two that
+# matter most -- unauthorised upload vs. uploader request -- are a rights
+# distinction the bare code does not make.
+ADMIN_MUSIC_REASON_LABELS = {
+    "COPYRIGHT": "Copyright claim",
+    "LICENSING_EXPIRED": "Licence expired",
+    "POLICY_VIOLATION": "Policy violation",
+    "UNAUTHORIZED_UPLOAD": "Uploaded without the rights to it",
+    "DUPLICATE": "Duplicate of another track",
+    "MALWARE_OR_UNSAFE_FILE": "Unsafe or malicious file",
+    "PRIVACY_REQUEST": "Privacy request",
+    "UPLOADER_REQUEST": "Uploader asked for it to come down",
+    "OWNER_DECISION": "Owner decision",
+    "OTHER": "Other (note required)",
+}
+
+ADMIN_MUSIC_ACTION_ENDPOINTS = {
+    "impact": ("GET", "impact"),
+    "audit": ("GET", "audit"),
+    "takedown": ("POST", "takedown"),
+    "quarantine": ("POST", "takedown"),
+    "restore": ("POST", "restore"),
+    "schedule_purge": ("POST", "schedule-purge"),
+    "cancel_purge": ("POST", "cancel-purge"),
+    "purge": ("POST", "purge"),
+}
+
+
+def admin_music_library_section(tracks, total, *, search, state, page, permissions, csrf):
+    """The catalogue table, its filter, and the per-row overflow menu.
+
+    Three things here are deliberate rather than incidental:
+
+    * The menu offers only what the viewer may do to *that* track in *that*
+      state, because the alternative -- a fixed menu that errors on click -- makes
+      the operator learn to ignore refusals.
+    * Every action opens a dialog. None fires on the click that opened the menu,
+      including the reversible ones, because the rows are dense and adjacent and
+      the mis-click cost is a track going dark for real users.
+    * `expected_state` goes out with every mutation, taken from what this page
+      rendered. If someone else moved the track meanwhile the server answers 409
+      and the operator reloads, rather than overwriting a decision they never saw.
+    """
+    rows = "".join(admin_music_library_row(track, permissions) for track in tracks)
+    if not rows:
+        rows = "<tr><td colspan='8' class='muted'>No tracks match this filter.</td></tr>"
+    page_size = ADMIN_MUSIC_LIBRARY_PAGE_SIZE
+    pages = max(1, (total + page_size - 1) // page_size)
+    page = min(max(1, page), pages)
+    state_options = "".join(
+        "<option value='{v}'{sel}>{label}</option>".format(
+            v=value,
+            sel=" selected" if value == state else "",
+            label=(value.replace("_", " ").title() if value else "All states"),
+        )
+        for value in ("",) + tuple(music_authority.LIFECYCLE_STATES)
+    )
+    query_base = "q=%s&state=%s" % (quote(search or ""), quote(state or ""))
+    prev_link = (
+        f"<a class='button' href='?{query_base}&page={page - 1}'>Previous</a>" if page > 1 else ""
+    )
+    next_link = (
+        f"<a class='button' href='?{query_base}&page={page + 1}'>Next</a>" if page < pages else ""
+    )
+    config = json.dumps({
+        "csrf": csrf,
+        "labels": ADMIN_MUSIC_ACTION_LABELS,
+        "endpoints": {k: list(v) for k, v in ADMIN_MUSIC_ACTION_ENDPOINTS.items()},
+        "reasonCodes": list(music_authority.REASON_CODES),
+        "reasonLabels": ADMIN_MUSIC_REASON_LABELS,
+        "noteRequiredCodes": sorted(music_authority.REASON_CODES_REQUIRING_NOTE),
+        "destructive": sorted(music_authority.DESTRUCTIVE_ACTIONS),
+        "stepUpTtl": music_authority.STEP_UP_TTL_SECONDS,
+    })
+    return f"""
+    <section class='card music-library' data-total='{total}'>
+      <h2>Music Library</h2>
+      <p class='muted'>Every track on the platform. Use the &hellip; menu on a row to inspect what
+      a removal would touch, restrict a track, restore it, or delete it permanently.
+      Restricting is reversible; deleting permanently is not.</p>
+      <form method='get' class='music-lib-filter'>
+        <input type='search' name='q' value='{html_escape(clean_html(search or ""))}'
+               placeholder='Search title, artist, or track id'>
+        <select name='state'>{state_options}</select>
+        <button class='button primary' type='submit'>Search</button>
+      </form>
+      <p class='muted'>{total} track{"" if total == 1 else "s"} &middot; page {page} of {pages}</p>
+      <table class='table music-lib-table'>
+        <tr><th>ID</th><th>Title</th><th>Artist</th><th>Uploader</th><th>State</th>
+            <th>Public</th><th>Updated</th><th></th></tr>
+        {rows}
+      </table>
+      <p class='music-lib-pager'>{prev_link} {next_link}</p>
+    </section>
+    <div id='music-menu' class='music-menu' hidden role='menu'></div>
+    <div id='music-dialog' class='music-dialog' hidden>
+      <div class='music-dialog-panel' role='dialog' aria-modal='true' aria-labelledby='music-dialog-title'>
+        <h3 id='music-dialog-title'></h3>
+        <div id='music-dialog-body'></div>
+        <p id='music-dialog-error' class='music-dialog-error' hidden></p>
+        <div class='music-dialog-actions'>
+          <button type='button' class='button' id='music-dialog-cancel'>Close</button>
+          <button type='button' class='button primary' id='music-dialog-confirm' hidden></button>
+        </div>
+      </div>
+    </div>
+    <script type='application/json' id='music-lib-config'>{config}</script>
+    <script>{ADMIN_MUSIC_LIBRARY_JS}</script>
+    """
+
+
 def admin_pulse_music_track_card(track):
     track_id = safe_int(track.get("id"), 0)
     title = clean_html(track.get("title") or "Untitled track")
@@ -44246,7 +44806,32 @@ def admin_pulse_music_review_page():
         """
     )
     recent_tracks = [dict(row) for row in cur.fetchall()]
+    # The library is the whole catalogue, not the review queue: an approved track
+    # that has to come down years later is the ordinary case, and it is exactly
+    # the one a "pending uploads" page cannot reach. No approval filter here.
+    library_search = (request.args.get("q") or "").strip()[:120]
+    library_state = (request.args.get("state") or "").strip()
+    library_page = safe_int(request.args.get("page"), 1)
+    library_tracks, library_total = admin_music_library_query(
+        cur, search=library_search, state=library_state, page=library_page
+    )
     conn.close()
+    # Which actions this admin may take, resolved from the role system. The page
+    # itself is `system.view` gated, so a viewer can legitimately reach it holding
+    # no music permissions at all -- they get the table and no menus.
+    library_permissions = music_authority.granted_permissions(
+        music_authority.resolve_actor(admin, account_user_id(), admin_user_by_account_user_id),
+        admin_has_permission,
+    )
+    library_html = admin_music_library_section(
+        library_tracks,
+        library_total,
+        search=library_search,
+        state=library_state,
+        page=library_page,
+        permissions=library_permissions,
+        csrf=get_csrf_token(),
+    )
     pending_html = "".join(admin_pulse_music_track_card(track) for track in pending_tracks) or "<div class='card'><p>No music uploads are waiting for review.</p></div>"
     recent_rows = ""
     for r in recent_tracks:
@@ -44266,11 +44851,13 @@ def admin_pulse_music_review_page():
       .music-review-actions{{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:end;margin-top:12px}}
       .music-review-actions textarea{{min-height:54px}}
       @media(max-width:900px){{.music-review-main,.music-review-actions{{grid-template-columns:1fr}}.music-review-grid{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
+{ADMIN_MUSIC_LIBRARY_CSS}
     </style>
     <h1>PulseSoc Music Review</h1>
     <p class='muted'>Review creator-uploaded music before it can appear in Reels, Status, Composer, or public music search. Approvals require recorded rights and commercial/edit permission.</p>
     <p>{html_escape(clean_html(message))}</p>
     <section class='grid'><div class='card'><h2>Pending Review</h2><p class='metric'>{pending_count}</p></div><div class='card'><h2>Approved Active</h2><p class='metric'>{approved_count}</p></div><div class='card'><h2>Open Music Reports</h2><p class='metric'>{open_reports}</p></div></section>
+    {library_html}
     <section><h2>Pending Uploads</h2>{pending_html}</section>
     <section class='card'><h2>Recent Music Inventory</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Artist</th><th>Uploader</th><th>Status</th><th>Approved</th><th>Active</th><th>Public</th><th>Updated</th></tr>{recent_rows or '<tr><td colspan=9>No tracks yet.</td></tr>'}</table></section>
     <p><a class='button' href='/admin/reels-health'>Reels Health</a> <a class='button' href='/admin/media-studio'>Media Studio</a> <a class='button' href='/pulse/music'>Public Music Page</a></p>
