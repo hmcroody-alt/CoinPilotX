@@ -23,6 +23,7 @@ import {
 } from "../api/messenger";
 import { PULSE_AI_CONVERSATION_ID, PULSE_AI_DISPLAY_NAME } from "../api/messenger";
 import { translate, useTranslation } from "../i18n";
+import { BLUE_GRAPHITE_LEVELS } from "../theme/blueGraphite";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize } from "../utils/format";
@@ -995,17 +996,17 @@ function SettingRow({ row, settings, saving, onSaveSetting, onPress }: { row: Ro
 
 const styles = createThemedStyles(() => ({
   backdrop: { backgroundColor: "rgba(0,0,0,0.64)", flex: 1, justifyContent: "flex-end" },
-  sheet: { backgroundColor: "#030b19", borderBottomLeftRadius: 0, borderBottomRightRadius: 0, height: "92%", padding: 0 },
+  sheet: { backgroundColor: BLUE_GRAPHITE_LEVELS.panel, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, height: "92%", padding: 0 },
   handle: { alignSelf: "center", backgroundColor: "#60759a", borderRadius: 3, height: 5, marginTop: 10, width: 54 },
-  header: { alignItems: "center", backgroundColor: "#0d1734", borderBottomColor: "#18395a", borderBottomWidth: 1, flexDirection: "row", gap: 10, padding: 14 },
-  gear: { alignItems: "center", backgroundColor: "#10233a", borderColor: "#1e6176", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
+  header: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.raised, borderBottomColor: "#18395a", borderBottomWidth: 1, flexDirection: "row", gap: 10, padding: 14 },
+  gear: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1e6176", borderRadius: 23, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
   gearText: { color: "#63e8f5", fontSize: 23 },
   headerCopy: { flex: 1 },
   title: { color: colors.text, fontSize: 18, fontWeight: "900" },
   subtitle: { color: colors.muted, fontSize: 12, marginTop: 2 },
-  headerButton: { alignItems: "center", backgroundColor: "#10233a", borderColor: "#1e6176", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
+  headerButton: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1e6176", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
   headerButtonText: { color: colors.accent, fontSize: 19, fontWeight: "900" },
-  close: { alignItems: "center", backgroundColor: "#171d3b", borderColor: "#6f4c9c", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
+  close: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#6f4c9c", borderRadius: 17, borderWidth: 1, height: 42, justifyContent: "center", width: 42 },
   closeText: { color: colors.text, fontSize: 24 },
   content: { gap: 10, paddingBottom: 38 },
   dashboard: { borderColor: "#17485d", borderRadius: 18, borderWidth: 1, gap: 10, margin: 12, padding: 12 },
@@ -1021,13 +1022,13 @@ const styles = createThemedStyles(() => ({
   quickIcon: { color: "#65eafb", fontSize: 19 },
   quickLabel: { color: colors.text, fontSize: 10, fontWeight: "800", marginTop: 4, textAlign: "center" },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
-  dashboardMetric: { backgroundColor: "#071326", borderColor: "#173c50", borderRadius: 12, borderWidth: 1, minHeight: 58, padding: 9, width: "48.8%" },
+  dashboardMetric: { backgroundColor: BLUE_GRAPHITE_LEVELS.raised, borderColor: "#173c50", borderRadius: 12, borderWidth: 1, minHeight: 58, padding: 9, width: "48.8%" },
   metricLabel: { color: colors.text, fontSize: 11, fontWeight: "800" },
   metricValue: { color: colors.muted, fontSize: 11, marginTop: 5 },
-  searchWrap: { alignItems: "center", backgroundColor: "#030b19", borderColor: "#1c4c63", borderRadius: 15, borderWidth: 1, flexDirection: "row", marginHorizontal: 12, paddingHorizontal: 12 },
+  searchWrap: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1c4c63", borderRadius: 15, borderWidth: 1, flexDirection: "row", marginHorizontal: 12, paddingHorizontal: 12 },
   searchIcon: { color: "#67eafb", fontSize: 18 },
   search: { color: colors.text, flex: 1, minHeight: 48, paddingHorizontal: 10 },
-  detailPanel: { backgroundColor: "#071326", borderColor: "#1f6076", borderRadius: 16, borderWidth: 1, gap: 9, marginHorizontal: 12, padding: 12 },
+  detailPanel: { backgroundColor: BLUE_GRAPHITE_LEVELS.raised, borderColor: "#1f6076", borderRadius: 16, borderWidth: 1, gap: 9, marginHorizontal: 12, padding: 12 },
   detailHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
   detailTitle: { color: colors.text, fontSize: 17, fontWeight: "900" },
   detailSubtitle: { color: colors.muted, fontSize: 11, marginTop: 3 },
@@ -1040,8 +1041,8 @@ const styles = createThemedStyles(() => ({
   chatSearchButtonText: { color: "#001118", fontWeight: "900" },
   section: { borderColor: "#143a4e", borderRadius: 16, borderWidth: 1, marginHorizontal: 12, overflow: "hidden" },
   dangerSection: { borderColor: "#702642" },
-  sectionHeader: { alignItems: "center", backgroundColor: "#0c1730", flexDirection: "row", gap: 10, minHeight: 70, padding: 12 },
-  sectionIcon: { alignItems: "center", backgroundColor: "#10233a", borderColor: "#1d5268", borderRadius: 12, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
+  sectionHeader: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.raised, flexDirection: "row", gap: 10, minHeight: 70, padding: 12 },
+  sectionIcon: { alignItems: "center", backgroundColor: BLUE_GRAPHITE_LEVELS.inset, borderColor: "#1d5268", borderRadius: 12, borderWidth: 1, height: 46, justifyContent: "center", width: 46 },
   sectionIconText: { color: "#61e9f6", fontSize: 20 },
   sectionCopy: { flex: 1 },
   sectionTitle: { color: colors.text, fontSize: 17, fontWeight: "900" },

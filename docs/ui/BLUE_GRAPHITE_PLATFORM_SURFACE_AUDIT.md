@@ -376,3 +376,58 @@ put two different fills behind the same element depending on which page you
 were on. Reconciled to the migrated value. Worth checking for directly on the
 remaining files — a duplicated selector is invisible to a per-file pass, and
 the per-file pass is the shape this migration has.
+
+## The native tail, where two of the three files were right already
+
+`ConversationControlCenter.tsx`, `PostCard.tsx` and `HomeScreen.tsx` carried 40
+structural literals between them. 13 moved. The other 27 are named below, and
+the reason they stayed is the substance of this section: a count of untouched
+literals is only reassuring if every one of them is untouched on purpose.
+
+These are also the first consumers of `BLUE_GRAPHITE_LEVELS`. Until now the
+native ladder was a constant nothing imported — a declaration of intent with no
+enforcement behind it. Importing it instead of restating `#303843` is what makes
+a future change to the ladder actually reach the screens. The one place that
+still restates the values, `colors.ts`, documents why: two gates parse that
+object by regex and would silently drop keys.
+
+**`ConversationControlCenter.tsx` — 10 of 11.** The native twin of the web
+control centre, so the role assignments were already decided in
+`pulse_messages_v2.css` and only had to be repeated: the sheet is `panel`, the
+bands on it (`header`, `sectionHeader`) are `raised`, the cards in it
+(`dashboardMetric`, `detailPanel`) are `raised`, and every control chip and text
+field (`gear`, `headerButton`, `close`, `sectionIcon`, `searchWrap`) is `inset`.
+The survivor is `notice` at `#0e2b31`, a dark teal banner that prints
+`colors.accent` on itself. That is an accent-tinted state surface, the same
+category as the gradient tails preserved in stage 1, and lifting it to graphite
+would delete the tint that carries the meaning while changing a measured
+contrast pair for no reason.
+
+**`PostCard.tsx` — 3 of 11.** The on-media test decided this file almost
+entirely. `mediaTilePlayBadge`, `mediaVideoMute` and `mediaMore` sit on
+photographs and video; `liveStage` is a video canvas and `liveProcessing`,
+`liveProcessingBadge`, `liveProcessingShade` and `liveStageButton` are the
+livestream surfaces around it, which this mission is not allowed to touch at
+all. That leaves three surfaces that are card chrome and nothing else — the
+overflow sheet (`panel`, matched deliberately to the control centre's sheet so
+the platform has one bottom-sheet colour), the reaction toolbar (`panel`) and
+the inline comment composer (`inset`, because it is a text well).
+
+**`HomeScreen.tsx` — 0 of 18, and that is the finding.** Fifteen of the
+eighteen are tints at **0.03 alpha**. Substituting the hue of a 3% wash changes
+the composited result by about one unit per channel, so migrating them would
+have produced a diff with no pixels behind it. Worse than useless, in fact:
+`hero`, `heroTile`, `heroMetricCell`, `heroMetricBlock` and `heroHealthPill` are
+painted *on top of* the blue-graphite material that mission 1 already installed,
+and the only job a 3% tint has there is to be a whisper of separation from the
+base beneath it. Replacing its hue with the base's own hue nulls the whisper.
+The tint is doing the opposite of what a near-black literal usually means.
+
+Of the remaining three, `actionErrorBanner` is `rgba(74, 24, 24, 0.92)` — dark
+**red**, a danger surface that the inventory catches only because it is dark.
+`drawerOverlay` and `heroMapPanel` are declared and never referenced; they are
+dead style keys, and migrating dead code is how a migration inflates its own
+numbers. Three of the fifteen tints are Pulse Radio (`commandRadioNow`,
+`commandRadioPanel`, `heroRadioPill`) and two are frozen city-scene art
+(`heroPlanetShadow`, `heroSkylineTower`), both already excluded on the web side,
+so the two platforms agree without having been coordinated.

@@ -13,6 +13,7 @@ import { configureReelsAudioSession } from "../core/reelsAudioSession";
 import { canonicalMediaPlaybackUrl, refreshCanonicalMediaAccess } from "../media/mediaAccess";
 import { useSavedState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
+import { BLUE_GRAPHITE_LEVELS } from "../theme/blueGraphite";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
@@ -1404,7 +1405,7 @@ const styles = createThemedStyles(() => ({
   },
   inlineCommentComposer: {
     alignItems: "center",
-    backgroundColor: "rgba(4, 11, 22, 0.62)",
+    backgroundColor: "rgba(42, 51, 64, 0.62)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 18,
     borderWidth: 1,
@@ -1701,7 +1702,7 @@ const styles = createThemedStyles(() => ({
     width: 42
   },
   overflowMenu: {
-    backgroundColor: "rgb(5, 13, 26)",
+    backgroundColor: BLUE_GRAPHITE_LEVELS.panel,
     borderColor: logiNexus.colors.home.borderSubtle,
     borderTopLeftRadius: 22,
     borderTopRightRadius: 22,
@@ -1769,7 +1770,7 @@ const styles = createThemedStyles(() => ({
     fontWeight: "800"
   },
   reactionSelector: {
-    backgroundColor: "rgba(3, 9, 18, 0.92)",
+    backgroundColor: "rgba(48, 56, 67, 0.92)",
     borderColor: logiNexus.colors.home.borderSubtle,
     borderRadius: 18,
     borderWidth: 1,
