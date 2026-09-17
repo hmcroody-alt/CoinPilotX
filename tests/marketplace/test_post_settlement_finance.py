@@ -173,6 +173,44 @@ def test_a_dispute_on_a_cart_charge_freezes_every_seller_on_it():
     assert [settlement.get_settlement(t)["payout_state"] for t in (9, 10)] == ["disputed", "disputed"]
 
 
+def test_a_seller_who_onboards_after_selling_stops_being_unpayable():
+    # A sale made before Connect onboarding finished opens in
+    # `pending_onboarding`. Nothing ever revisited those rows: `account.updated`
+    # refreshed the payout account and stopped, so the earliest sellers — the
+    # ones who list before they have a bank account attached — would have had
+    # their money frozen permanently while the ledger looked perfectly healthy.
+    ledger.ensure_schema(); settlement.ensure_schema()
+    for tx_id in (11, 12):
+        assert settlement.settle_paid_transaction(
+            _tx(tx_id), payout_ready=False,
+            provider_payment_id=f"pi_{tx_id}")["payout_state"] == "pending_onboarding"
+    # A third sale by a different seller must not be swept along.
+    other = dict(_tx(13)); other["seller_user_id"] = 23
+    settlement.settle_paid_transaction(other, payout_ready=False, provider_payment_id="pi_13")
+
+    done = settlement.reconcile_seller_onboarding("22", actor="connect_webhook", reference="acct_x")
+    assert len(done) == 2
+    assert [settlement.get_settlement(t)["payout_state"] for t in (11, 12)] == \
+        ["pending_fulfillment", "pending_fulfillment"]
+    assert all(settlement.get_settlement(t)["payout_ready"] == 1 for t in (11, 12))
+    assert settlement.get_settlement(13)["payout_state"] == "pending_onboarding"
+    # Stripe sends `account.updated` many times. The second pass must be a no-op,
+    # not a second transition out of a state the settlement has already left.
+    assert settlement.reconcile_seller_onboarding("22", actor="connect_webhook", reference="acct_x") == []
+
+
+def test_onboarding_reconciliation_does_not_lift_a_hold():
+    # `pending_onboarding` and "blocked" are different facts. Finishing Connect
+    # onboarding says nothing about a refund or chargeback, so a settlement
+    # carrying a blocker must stay exactly where it is.
+    ledger.ensure_schema(); settlement.ensure_schema()
+    settlement.settle_paid_transaction(_tx(14), payout_ready=False, provider_payment_id="pi_14")
+    settlement.place_hold(14, actor="risk", reason_code="fraud_review", idempotency_key="risk:14")
+    assert settlement.reconcile_seller_onboarding("22", actor="connect_webhook", reference="acct_y") == []
+    still = settlement.get_settlement(14)
+    assert still["payout_state"] == "held" and still["blocker_code"] == "fraud_review"
+
+
 def test_onboarding_hold_release_and_versioned_eligibility():
     ledger.ensure_schema(); settlement.ensure_schema()
     assert settlement.settle_paid_transaction(_tx(5), payout_ready=False)["payout_state"] == "pending_onboarding"

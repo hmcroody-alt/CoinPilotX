@@ -287,6 +287,19 @@ def test_a_dispute_is_matched_by_payment_intent_and_not_by_metadata_alone(bot_so
     assert 'obj.get("payment_intent")' in resolver
 
 
+def test_completed_connect_onboarding_reconciles_the_sales_that_preceded_it(bot_source):
+    """`account.updated` must revisit settlements, not just the payout account.
+
+    A sale made before the seller finished onboarding opens in
+    `pending_onboarding`, and the branch used to refresh
+    `seller_payout_accounts` and stop — leaving the money unreleasable forever
+    with nothing anywhere reporting a problem.
+    """
+    branch = bot_source.split('if event_type == "account.updated":', 1)[1][:3000]
+    assert 'obj.get("payouts_enabled") and obj.get("charges_enabled")' in branch
+    assert "reconcile_seller_onboarding" in bot_source
+
+
 def test_the_dispute_events_are_declared_required_for_the_webhook_endpoint():
     """`closed` matters as much as `created`: it is what lifts the hold."""
     audit = (REPO_ROOT / "scripts" / "stripe_webhook_recovery_audit.py").read_text(encoding="utf-8")

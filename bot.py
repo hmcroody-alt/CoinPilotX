@@ -108694,6 +108694,7 @@ def stripe_webhook():
     if event_type in {"account.updated", "payout.paid", "payout.failed", "charge.refunded", "charge.dispute.created", "charge.dispute.updated", "charge.dispute.closed"}:
         obj = event["data"]["object"]
         now = datetime.utcnow().isoformat(timespec="seconds")
+        connect_seller_id = ""
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if event_type == "account.updated":
             acct = obj.get("id") or ""
@@ -108706,6 +108707,14 @@ def stripe_webhook():
                 """,
                 ("complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due", 1 if obj.get("payouts_enabled") else 0, 1 if obj.get("charges_enabled") else 0, json.dumps(requirements, default=str), now, now, acct),
             )
+            if obj.get("payouts_enabled") and obj.get("charges_enabled"):
+                # Sales made *before* the seller finished onboarding opened in
+                # `pending_onboarding` and nothing ever revisited them, so a
+                # seller who sold first and onboarded second stayed unpayable
+                # forever. Collected here and reconciled after the commit, off
+                # this connection.
+                cur.execute("SELECT user_id FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
+                connect_seller_id = str(dict(cur.fetchone() or {}).get("user_id") or "")
         elif event_type in {"payout.paid", "payout.failed"}:
             destination = obj.get("destination") or obj.get("account") or ""
             cur.execute("SELECT * FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (destination,))
@@ -108781,6 +108790,19 @@ def stripe_webhook():
                         },
                     )
         conn.commit(); conn.close()
+        if connect_seller_id:
+            # Outside the connection above: the settlement service opens its own,
+            # and `ensure_schema(conn)` on a held connection is how a route
+            # deadlocks a worker on Postgres.
+            try:
+                from services import marketplace_settlement_service as _settlements
+                _settlements.reconcile_seller_onboarding(
+                    connect_seller_id, actor="connect_webhook", reference=obj.get("id") or event_id)
+            except Exception:
+                # A seller left in `pending_onboarding` is money that can never be
+                # released to them. Never silent.
+                logging.exception("MARKETPLACE_ONBOARDING_RECONCILE_FAILED event_id=%s account=%s",
+                                  event_id, obj.get("id") or "")
         if event_type == "charge.refunded":
             pulse_apply_marketplace_charge_refund(obj)
         elif event_type.startswith("charge.dispute."):
