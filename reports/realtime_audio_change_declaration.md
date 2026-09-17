@@ -4337,3 +4337,46 @@ Physical audible validation is recorded in
 `docs/release/FINAL_DEVICE_INSTALL_REPORT.md` against the installed build rather
 than repeated here, so that the audible check is tied to the binary that was
 actually installed.
+
+---
+
+## TestFlight build addendum (2026-09-17)
+
+### Range
+
+`7dfeb7ac..HEAD` — two commits: `75ebd772` (docs only) and `560972f9`.
+
+### What changed and why
+
+`560972f9` raises `mobile-native/app.json` `ios.buildNumber` from `27` to `28`.
+That is the whole change: one integer in one key. It is required because App
+Store Connect rejects a re-used build number, and build 27 is already uploaded.
+
+Build 28 is the first store build whose `Podfile.lock` links
+`PulseAppleTranslation`, which is the reason a new build is being cut at all.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | dependency watch | `ios.buildNumber` `"27"` → `"28"`. Nothing else in the file changed — no plugin added or removed, no `UIBackgroundModes` change (`audio` and `voip` remain), no permission string, no `newArchEnabled` flip, no bundle identifier change. |
+
+No `categories[].paths` entry changed in this range. No Agora, AVAudioSession,
+microphone-publication, LiveKit, Mux or livestream source file was touched.
+
+### Why this cannot affect real-time audio
+
+`buildNumber` is metadata consumed by Xcode and App Store Connect. It is read at
+runtime only by `src/screens/settings/AboutSettingsScreen.tsx`, which displays
+it. No audio code path branches on it, and no test asserts its value.
+
+### Validation run on this range
+
+| Check | Result |
+|---|---|
+| `scripts/protection/run_protection_suite.py` | re-run on this HEAD — see the final report |
+| Jest, typecheck, audio batteries, i18n | unchanged from the `7dfeb7ac` run above; no source file in this range is an input to any of them |
+
+The batteries are not re-listed line by line because the only code-bearing file
+in this range is a JSON build number. Re-running them would re-derive the same
+table from the same inputs.
