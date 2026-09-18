@@ -12308,24 +12308,38 @@ APP_LANDING_FAQS = [
 ]
 
 
-# Real screenshots of the shipped build, resized and re-encoded rather than
-# hotlinked from Apple's CDN. Dimensions are declared so the images cannot shift
-# the layout while they load.
+# Five of the ten assets on the current App Store listing, re-encoded to WebP at
+# display width rather than hotlinked from Apple's CDN. Showing a different set
+# than the store this page links to is a discrepancy the visitor meets at exactly
+# the moment they are deciding, so these track the listing rather than the repo:
+# the source files are conformed to Apple's 6.9" spec and their names match what
+# `itunes.apple.com/lookup?id=6777591572` returns.
 #
-# The alt text describes the screen in the image, not the feature the section is
-# arguing for. Alt text is read aloud to someone who cannot see the picture, so
-# "the home feed showing posts from people you follow" beside a screenshot of
-# the composer and the status row is a small lie told to the one reader who has
-# no way to check it.
+# They are marketing compositions, not screen captures, and each has its headline
+# rendered into the pixels. That text does not exist for a screen reader or for
+# Google, so the alt attribute transcribes it *verbatim* before describing the
+# picture -- the first pass here quoted tidied-up paraphrases, which is worse than
+# no alt text because it reads as a complete transcription and is not one.
+#
+# The video-calls slot deliberately uses the listing's second video asset. The
+# first one's headline is "Face Time, Reimagined.", and putting that in alt text
+# is how a page tells Google to associate itself with Apple's trademark.
 APP_LANDING_SCREENSHOTS = [
-    ("pulsesoc-app-home-feed.webp",
-     "The PulseSoc home screen: a network summary, a row of friends' statuses, and the composer for a new post."),
-    ("pulsesoc-app-search.webp",
-     "The PulseSoc search screen, with filters for people, posts, reels, status and marketplace listings."),
-    ("pulsesoc-app-groups-rooms.webp",
-     "The PulseSoc communities screen, listing group channels and live rooms with their member counts."),
-    ("pulsesoc-app-profile.webp",
-     "A PulseSoc profile page with the account's bio, its post and follower counts, and tabs for its media."),
+    ("pulsesoc-app-home-network.webp",
+     "“Share Connect Belong.” — the PulseSoc home screen, with the Pulse Network panel, "
+     "a row of friends' statuses, and Pulse Radio and Safety Shield tiles."),
+    ("pulsesoc-app-live.webp",
+     "“Go Live. Instantly. Real conversations. Real people. A more connected you.” — a live "
+     "broadcast in the PulseSoc feed, with its For You, Following, Friends and Communities tabs."),
+    ("pulsesoc-app-profiles.webp",
+     "“Your Profile. More Than A Page. Express yourself. Show what moves you. Connect deeper.” "
+     "— a PulseSoc profile with a cover photo, follower counts and a grid of profile settings."),
+    ("pulsesoc-app-video-calls.webp",
+     "“See Every Smile. Private, high-quality video calls that bring you closer.” — a video "
+     "call in progress on an iPhone, showing an encrypted, connected call timer."),
+    ("pulsesoc-app-market.webp",
+     "“Pulse Market. Real Data. Deeper Insights. Better Decisions.” — the market screen with "
+     "a global overview, market sentiment, and watchlist, news and insight tabs."),
 ]
 
 

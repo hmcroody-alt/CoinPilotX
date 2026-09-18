@@ -93,6 +93,10 @@ footer a{margin-right:16px;display:inline-block}
       <article class="card"><h3>Groups and rooms</h3><p>Topic groups, plus live audio rooms for conversations that are not written down.</p></article>
       <article class="card"><h3>Creator profiles</h3><p>A profile page that collects your posts, reels and links in one place.</p></article>
       <article class="card"><h3>Marketplace</h3><p>List something for sale, or buy from a seller, with payment handled by Stripe.</p></article>
+      {# The fifth screenshot below is the market screen. Every picture on this
+         page has to correspond to a feature the page actually claims, or the
+         image is asserting something the text never stands behind. #}
+      <article class="card"><h3>Markets</h3><p>Live crypto prices, a watchlist and market news, carried over from the product this app grew out of.</p></article>
     </div>
   </section>
 
@@ -100,7 +104,7 @@ footer a{margin-right:16px;display:inline-block}
     <h2>Inside the app</h2>
     <div class="shots">
       {% for filename, alt in screenshots %}
-      <img src="/static/img/app/{{ filename }}" alt="{{ alt }}" width="480" height="1039" loading="lazy" decoding="async">
+      <img src="/static/img/app/{{ filename }}" alt="{{ alt }}" width="480" height="1043" loading="lazy" decoding="async">
       {% endfor %}
     </div>
   </section>

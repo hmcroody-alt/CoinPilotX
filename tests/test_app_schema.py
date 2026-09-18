@@ -253,12 +253,44 @@ def test_the_screenshots_that_are_referenced_actually_exist(landing):
     body = landing.get_data(as_text=True)
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     referenced = re.findall(r'src="(/static/img/app/[^"]+)"', body)
-    assert len(referenced) == 4
+    assert len(referenced) == len(bot.APP_LANDING_SCREENSHOTS) == 5
     for src in referenced:
         assert os.path.exists(os.path.join(root, src.lstrip("/"))), src
     for tag in re.findall(r"<img [^>]*/static/img/app/[^>]*>", body):
         assert 'width="' in tag and 'height="' in tag, tag
         assert 'alt="' in tag and 'alt=""' not in tag, tag
+
+
+def test_the_declared_dimensions_match_the_files_on_disk():
+    """A width/height pair that is merely *present* still shifts the layout if
+    it is wrong -- the browser reserves the wrong box and corrects it on load.
+    The first version of this page declared 1039px for images that are 1043."""
+
+    from PIL import Image
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(root, "templates/app_landing.html")) as handle:
+        tag = re.search(r'<img [^>]*?width="(\d+)" height="(\d+)"', handle.read())
+    declared = (int(tag.group(1)), int(tag.group(2)))
+    for filename, _alt in bot.APP_LANDING_SCREENSHOTS:
+        with Image.open(os.path.join(root, "static/img/app", filename)) as image:
+            assert image.size == declared, f"{filename} is {image.size}, declared {declared}"
+
+
+def test_every_screenshot_transcribes_the_words_printed_on_it():
+    """These are the App Store's marketing compositions, not raw captures, and
+    each has a headline rendered into the pixels. That text does not exist for a
+    screen reader or for Google, so the alt attribute has to carry it.
+
+    The quote marks are the machine-checkable part. Requiring them is what stops
+    the next person from adding a composite image with a paraphrase underneath,
+    which reads as a complete description and is not one.
+    """
+
+    for filename, alt in bot.APP_LANDING_SCREENSHOTS:
+        assert "“" in alt and "”" in alt, f"{filename} does not quote its headline"
+        assert alt.index("“") < alt.index("”"), filename
+        assert len(alt) > 60, f"{filename} alt is too short to be both quote and description"
 
 
 def test_the_page_does_not_send_a_visitor_to_a_login_wall_it_called_the_web_app(client, landing):
