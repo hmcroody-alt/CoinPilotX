@@ -2629,15 +2629,27 @@ def start_performance_trace():
     return None
 
 
+# This hook predates the pulsesoc.com migration and named only the old domain,
+# so `www.pulsesoc.com` -- a host Railway actually serves -- answered 200 beside
+# the apex. A rel=canonical was the only thing joining the two, and a canonical
+# is a hint.
+_WWW_HOSTS = {"www." + search_visibility.CANONICAL_HOST, "www.coinpilotx.app"}
+
+
 @webhook_app.before_request
 def redirect_www_to_apex_domain():
     host = (request.host or "").split(":", 1)[0].lower()
-    if host != "www.coinpilotx.app":
+    if host not in _WWW_HOSTS:
+        return None
+    # Apple fetches the app-site-association file without following redirects,
+    # and app version 1.0.0 shipped `applinks:www.pulsesoc.com`. Redirecting
+    # this prefix would break universal links for anyone still on that build.
+    if (request.path or "").startswith("/.well-known/"):
         return None
     path = request.full_path or request.path or "/"
     if path.endswith("?"):
         path = path[:-1]
-    return redirect(f"https://pulsesoc.com{path}", code=301)
+    return redirect(f"{search_visibility.CANONICAL_ORIGIN}{path}", code=301)
 
 
 def record_performance_trace(path, method, status, duration_ms, db_queries, response_size, trace_id, level):

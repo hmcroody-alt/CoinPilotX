@@ -107,6 +107,23 @@ Currently mitigated only by a correct `rel=canonical`, which is a hint. Two host
 serving identical 200s is a duplicate-host condition.
 *Fix:* 301 `www` → apex at the edge of the app, canonical tag retained as a backstop.
 
+> **Correction, 2026-09-18.** The redirect was not missing. `redirect_www_to_apex_domain`
+> has existed all along and already used a fixed origin — it matched only
+> `www.coinpilotx.app`, the host from before the domain migration, and was never
+> updated when `www.pulsesoc.com` was attached to Railway. So this is a stale
+> condition, not an absent feature, and the fix is one host set rather than a new
+> hook. Two things the rewrite had to preserve: the target must never be built
+> from the client-supplied `Host` header (that hook is one of two that could
+> otherwise become an open redirect), and `/.well-known/` must keep answering on
+> `www`, because Apple fetches the app-site-association file without following
+> redirects and app version 1.0.0 shipped `applinks:www.pulsesoc.com` under the
+> same bundle id as the current build.
+>
+> **Owner decision required before deploy.** `reports/pulsesoc_domain_reference_inventory.md`
+> (2026-06-06) records that `www.pulsesoc.com` "should not be force-redirected
+> until approved". The code is written and tested; whether it ships is the
+> owner's call, not this pass's.
+
 ### P1 — the app-discovery objective is structurally blocked
 
 **B1. There is no public page about the iPhone app.**

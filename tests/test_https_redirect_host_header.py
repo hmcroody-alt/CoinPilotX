@@ -10,9 +10,11 @@ gunicorn sees it, so the deployed app was not reachable through this. The tests
 below pin the behaviour at the application layer anyway, because the edge is the
 only thing that was stopping it and nothing in this repo enforces that.
 
-The redirect target must come from a fixed origin. The two hosts this app is
-actually served on stay on their own origin so the upgrade is not also a
-cross-host hop; anything else lands on the canonical origin.
+The redirect target must come from a fixed origin. The apex stays on its own
+origin so the upgrade is not also a cross-host hop; anything else lands on the
+canonical origin. `www` is the exception, and deliberately so: the sibling
+`redirect_www_to_apex_domain` hook is registered first, so it collapses the
+scheme upgrade and the host consolidation into a single hop.
 
 Run: python3 -m pytest tests/test_https_redirect_host_header.py
 """
@@ -68,14 +70,12 @@ class EnforceHttpsHostHeaderTests(unittest.TestCase):
             "https://pulsesoc.com/pulse?tab=live&page=2",
         )
 
-    def test_served_hosts_upgrade_on_their_own_origin(self):
-        for host in ("pulsesoc.com", "www.pulsesoc.com"):
-            with self.subTest(host=host):
-                response = self._upgrade("/privacy", host)
-                self.assertEqual(response.status_code, 301)
-                self.assertEqual(
-                    response.headers["Location"], f"https://{host}/privacy"
-                )
+    def test_the_apex_upgrades_on_its_own_origin(self):
+        response = self._upgrade("/privacy", "pulsesoc.com")
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(
+            response.headers["Location"], "https://pulsesoc.com/privacy"
+        )
 
     def test_served_host_match_is_case_insensitive(self):
         response = self._upgrade("/privacy", "PulseSoc.COM")
@@ -106,20 +106,87 @@ class EnforceHttpsHostHeaderTests(unittest.TestCase):
 
 
 class WwwApexRedirectTests(unittest.TestCase):
-    """The sibling hook already used a fixed origin. Pin it so it stays that way."""
+    """One host, one set of ranking signals.
+
+    The hook used a fixed origin from the start, but it matched only
+    `www.coinpilotx.app` -- a host that stopped being served -- so after the
+    migration `https://www.pulsesoc.com` answered 200 exactly like the apex.
+    Two hosts returning identical 200s is a duplicate-host condition, and the
+    `rel=canonical` that was mitigating it is a hint Google may decline.
+    """
 
     def setUp(self):
         self.client = bot.app.test_client()
 
-    def test_legacy_www_host_redirects_to_the_canonical_origin(self):
-        response = self.client.get(
-            "/privacy",
-            headers={"Host": "www.coinpilotx.app", "X-Forwarded-Proto": "https"},
+    def _get(self, path, host, proto="https"):
+        return self.client.get(
+            path, headers={"Host": host, "X-Forwarded-Proto": proto}
         )
+
+    def test_legacy_www_host_redirects_to_the_canonical_origin(self):
+        response = self._get("/privacy", "www.coinpilotx.app")
         self.assertEqual(response.status_code, 301)
         self.assertEqual(
             response.headers["Location"], "https://pulsesoc.com/privacy"
         )
+
+    def test_www_pulsesoc_redirects_to_the_apex(self):
+        for path in ("/", "/privacy", "/pulse"):
+            with self.subTest(path=path):
+                response = self._get(path, "www.pulsesoc.com")
+                self.assertEqual(response.status_code, 301)
+                self.assertEqual(
+                    response.headers["Location"], f"https://pulsesoc.com{path}"
+                )
+
+    def test_the_query_string_survives_the_hop(self):
+        response = self._get("/pulse?tab=live&page=2", "www.pulsesoc.com")
+        self.assertEqual(
+            response.headers["Location"],
+            "https://pulsesoc.com/pulse?tab=live&page=2",
+        )
+
+    def test_the_host_match_ignores_case_and_port(self):
+        for host in ("WWW.PulseSoc.com", "www.pulsesoc.com:8080"):
+            with self.subTest(host=host):
+                response = self._get("/privacy", host)
+                self.assertEqual(response.status_code, 301)
+                self.assertEqual(
+                    response.headers["Location"], "https://pulsesoc.com/privacy"
+                )
+
+    def test_an_http_www_request_reaches_the_https_apex_in_one_hop(self):
+        """Not two.
+
+        `enforce_https` keeps the apex on its own origin, so if it ran first a
+        www visitor would take `http://www` -> `https://www` -> `https://apex`.
+        Registration order is what makes that one hop, and registration order is
+        not visible from either hook alone.
+        """
+
+        response = self._get("/privacy", "www.pulsesoc.com", proto="http")
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(
+            response.headers["Location"], "https://pulsesoc.com/privacy"
+        )
+
+    def test_the_apex_is_not_redirected_to_itself(self):
+        response = self._get("/privacy", "pulsesoc.com")
+        self.assertNotEqual(response.status_code, 301)
+
+    def test_the_app_site_association_file_is_still_served_on_www(self):
+        """Apple does not follow redirects when it fetches this file.
+
+        App version 1.0.0 shipped `applinks:www.pulsesoc.com` under the same
+        bundle id as the current build, so redirecting this prefix would
+        silently break universal links for anyone still on it. The file is not
+        a ranking surface, so keeping it on both hosts costs nothing.
+        """
+
+        response = self._get(
+            "/.well-known/apple-app-site-association", "www.pulsesoc.com"
+        )
+        self.assertNotEqual(response.status_code, 301)
 
 
 if __name__ == "__main__":
