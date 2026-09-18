@@ -182,6 +182,80 @@ def test_signup_is_not_sitemap_eligible():
     assert sv.sitemap_eligible("/signup") is False
 
 
+def test_a_page_that_always_redirects_is_not_recommended_to_google():
+    """``/day-signal`` calls ``require_account()`` and 302s anonymous visitors.
+
+    Googlebot is anonymous, so the redirect is the only response it has ever
+    received -- and the URL was in sitemap-pages.xml regardless. It keeps
+    ``follow`` because ``seo/content.py`` links to it from three public pages.
+    """
+
+    decision = sv.classify("/day-signal")
+    assert decision.sitemap_eligible is False
+    assert decision.directive == sv.NOINDEX_FOLLOW
+
+
+# ---------------------------------------------------------------------------
+# Canonical aliases
+# ---------------------------------------------------------------------------
+
+
+def test_an_alias_leaves_the_sitemap_without_being_deindexed():
+    """``/support`` and ``/help`` are two decorators on one handler.
+
+    The page already emits ``canonical: /help``. Submitting it in the sitemap
+    as well asks Google to crawl a URL we have declared non-canonical.
+    """
+
+    decision = sv.classify("/support")
+    assert decision.sitemap_eligible is False
+    assert sv.sitemap_eligible("/support") is False
+    assert "/help" in decision.reason
+
+
+def test_an_alias_must_not_be_given_noindex():
+    """The pair Google warns about: ``noindex`` beside a cross-page canonical.
+
+    The canonical says "credit /help instead"; a ``noindex`` on the same page
+    says "drop this", and the documented risk is that the drop propagates to
+    the canonical target. Removing ``/support`` from the sitemap must not be
+    implemented by de-indexing it -- that would put ``/help`` at risk to tidy
+    up a duplicate that the canonical already resolved.
+    """
+
+    decision = sv.classify("/support")
+    assert decision.indexable is True
+    assert decision.directive == sv.INDEX_DIRECTIVE
+    assert "noindex" not in decision.directive
+
+
+def test_canonical_url_resolves_an_alias_to_its_target():
+    assert sv.canonical_url("/support") == "https://pulsesoc.com/help"
+    assert sv.canonical_url("/support/") == "https://pulsesoc.com/help"
+    assert sv.canonical_url("/SUPPORT") == "https://pulsesoc.com/help"
+    assert sv.canonical_url("/support?utm_source=x") == "https://pulsesoc.com/help"
+
+
+def test_the_alias_target_is_itself_sitemap_eligible():
+    """An alias that pointed at an excluded page would remove both from the
+    sitemap and leave the content with no submitted URL at all."""
+
+    for target in sv._CANONICAL_ALIASES.values():
+        assert sv.sitemap_eligible(target) is True, target
+        assert sv.canonical_url(target) == sv.CANONICAL_ORIGIN + target, target
+
+
+def test_no_alias_shadows_a_rule():
+    """A path cannot be both an alias and rule-classified.
+
+    ``_RULES`` is checked first, so an alias added under an excluded prefix
+    would be silently dead -- and the dead entry would read as working.
+    """
+
+    for alias in sv._CANONICAL_ALIASES:
+        assert sv.classify(alias).reason.startswith("canonical alias"), alias
+
+
 def test_indexable_and_directive_never_disagree():
     paths = ["/", "/about", "/signup", "/markets/eth", "/api/x", "/pulse/post/5"]
     for path in paths:

@@ -127,20 +127,103 @@ _RULES = (
     # longer ask to be ranked and they no longer enter the sitemap.
     ("/markets/", NOINDEX_FOLLOW, "templated near-duplicate page"),
     ("/country-intelligence/", NOINDEX_FOLLOW, "templated near-duplicate page"),
+
+    # --- Authenticated surface reached through a redirect ------------------
+    # /day-signal calls require_account() and 302s anonymous visitors to
+    # /signup, so Googlebot has never seen anything else. It sat in the
+    # sitemap anyway -- we were recommending a URL that cannot be fetched.
+    # "follow" rather than "nofollow" because seo/content.py links to it from
+    # three public pages: Disallow-ing it would leave Google with inbound
+    # links to a URL and no instruction about it.
+    ("/day-signal", NOINDEX_FOLLOW, "authenticated surface behind a redirect"),
 )
+
+
+# Paths that serve the same page as another path and say so in their canonical.
+#
+# /support and /help are two decorators on one handler, so /support is not a
+# near-duplicate of /help -- it is /help. The page already emits the right
+# canonical; what it should not also do is enter the sitemap, because
+# submitting a URL we have declared non-canonical asks Google to crawl a page
+# we have already told it to fold into another one.
+#
+# These stay `index,follow`. Adding `noindex` to a page that carries a
+# cross-page `canonical` is the conflicting-signal pair Google explicitly warns
+# against: the canonical says "credit /help instead", the noindex says "drop
+# this", and the risk is that the noindex propagates to the canonical target.
+# The canonical alone is the complete instruction.
+_CANONICAL_ALIASES = {
+    "/support": "/help",
+}
+
+
+# Prefixes that stay crawlable even though they are `noindex`.
+#
+# Blocking `/static/` stops Google fetching the CSS and JS it needs to render
+# the page. That degrades what it understands about the content *and* what it
+# measures for Core Web Vitals, in exchange for hiding files nobody would have
+# ranked. `noindex` is the right instruction for an asset; `Disallow` is not.
+_CRAWLABLE_DESPITE_NOINDEX = ("/static/", "/.well-known/")
+
+
+def robots_disallow_prefixes():
+    """The `Disallow:` lines, derived from the same table as everything else.
+
+    THE RULE THAT GOVERNS THIS FUNCTION
+    -----------------------------------
+    `Disallow` stops the crawl, so a disallowed page's `noindex` is never read.
+    Google can still index a URL it was never allowed to fetch, on the strength
+    of inbound links alone, and it then has no instruction from us to stop. So
+    disallowing a page we want de-indexed achieves the opposite of the intent.
+
+    Which means only `noindex,nofollow` paths are eligible: "nofollow" is the
+    statement that there is nothing here worth crawling. Every `noindex,follow`
+    path is deliberately left crawlable -- `/search`, `/signup` and the
+    templated market pages are excluded from the index but are real crawl paths
+    into content that should rank, and `Disallow` would sever them.
+
+    This is derived rather than hand-listed because the hand-list in
+    `seo_engine.robots_txt()` is precisely how robots.txt and the page-level
+    directives came to disagree with each other.
+    """
+
+    prefixes = []
+    for prefix, directive, _reason in _RULES:
+        if directive != NOINDEX_NOFOLLOW:
+            continue
+        if prefix in _CRAWLABLE_DESPITE_NOINDEX:
+            continue
+        prefixes.append(prefix)
+    return tuple(prefixes)
+
+
+def _normalize(path):
+    """Strip the query string, the fragment and a trailing slash.
+
+    The root is the exception: `"/".rstrip("/")` is the empty string, and a
+    path that normalises to nothing matches every prefix rule.
+    """
+
+    p = (path or "/").split("?", 1)[0].split("#", 1)[0] or "/"
+    if not p.startswith("/"):
+        p = "/" + p
+    if len(p) > 1:
+        p = p.rstrip("/") or "/"
+    return p
 
 
 def classify(path):
     """Indexability for a request path. Query strings are not consulted."""
 
-    p = (path or "/").split("?", 1)[0].split("#", 1)[0] or "/"
-    if len(p) > 1:
-        p = p.rstrip("/") or "/"
-    lowered = p.lower()
+    lowered = _normalize(path).lower()
 
     for prefix, directive, reason in _RULES:
         if lowered == prefix or lowered.startswith(prefix if prefix.endswith("/") else prefix + "/") or lowered == prefix.rstrip("/"):
             return _d(directive, False, reason)
+
+    target = _CANONICAL_ALIASES.get(lowered)
+    if target:
+        return _d(INDEX_DIRECTIVE, False, f"canonical alias of {target}")
 
     return _d(INDEX_DIRECTIVE, True, "public content")
 
@@ -159,15 +242,14 @@ def canonical_url(path):
     """Absolute canonical URL on the one host we rank.
 
     Tracking and app-intent parameters are dropped: `?pulse_app=1` reaches the
-    same public page and must not compete with it for the same content.
+    same public page and must not compete with it for the same content. An
+    alias resolves to the path it is an alias of, so a caller that asks for the
+    canonical of `/support` is told `/help` rather than being handed back the
+    duplicate it started with.
     """
 
-    p = (path or "/").split("?", 1)[0].split("#", 1)[0] or "/"
-    if not p.startswith("/"):
-        p = "/" + p
-    if len(p) > 1:
-        p = p.rstrip("/") or "/"
-    return CANONICAL_ORIGIN + p
+    p = _normalize(path)
+    return CANONICAL_ORIGIN + _CANONICAL_ALIASES.get(p.lower(), p)
 
 
 # Minimum body length for a user post to be worth asking Google to rank. Short

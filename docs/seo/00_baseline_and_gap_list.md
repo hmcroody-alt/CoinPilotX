@@ -62,14 +62,31 @@ signal against the whole host, and it wastes crawl budget the real pages need.
 still renders, not merely that the id was once selected.
 
 **A2. `noindex` URLs are in the sitemap.**
-`/signup` and `/day-signal` ship `noindex` *and* sit in `sitemap.xml`. We are asking
-Google to crawl pages we told it to ignore. `/signup` is hardcoded in
+`/signup` ships `noindex,nofollow` *and* sits in `sitemap.xml`. We are asking Google
+to crawl a page we told it to ignore. It is hardcoded in
 `seo/content.py:all_public_paths()`.
 *Fix:* the same gate. A sitemap entry that is `noindex` is a self-contradiction.
 
-**A3. Two sitemap URLs are non-canonical.**
-`/day-signal` canonicalises to `/signup`; `/support` canonicalises to `/help`.
-Listing a page that points elsewhere splits the signal it was meant to consolidate.
+> **Correction, 2026-09-18.** This entry originally also named `/day-signal` as
+> shipping `noindex`. Re-probing all 76 remaining sitemap URLs as Googlebot showed
+> that is wrong: `/day-signal` calls `require_account()` and returns **302** to
+> `/signup?next=/day-signal`, so Googlebot has never seen a meta tag on it at all.
+> The `noindex` I recorded is on the *signed-in* render, which no crawler reaches.
+> The URL still had to leave the sitemap — recommending a URL that cannot be
+> fetched anonymously is its own defect — but it is A3's kind of defect, not A2's,
+> and the distinction changes the fix: a redirecting page must not be given
+> `nofollow`, because three public pages in `seo/content.py` link to it.
+
+**A3. Two sitemap URLs never resolve to themselves.**
+`/support` declares `canonical: /help` — the two are decorators on one handler, so
+`/support` is not a near-duplicate of `/help`, it *is* `/help`. `/day-signal` 302s
+anonymous visitors away entirely (see the A2 correction). Listing either splits or
+wastes the signal it was meant to consolidate.
+
+Both were found by probing every URL the sitemap emits rather than by reasoning
+about which ones looked suspicious. That is the only method that establishes there
+are exactly two: the same sweep confirmed the other 74 return 200 with a
+self-referential canonical and no `noindex`.
 
 **A4. `lastmod` is stamped with today's date for all 354 URLs, every day.**
 `bot.py:sitemap_xml()` computes `today` once and applies it to everything. A
@@ -137,12 +154,25 @@ the sitemap. "follow" is load-bearing — dropping it would amputate the crawl p
 through those sections.
 
 **C2. There is no single answer to "may this be indexed?"**
-Before this work the answer was spread across four places that disagreed:
-`seo_engine.robots_txt()`'s Disallow list, per-template hard-coded robots metas,
-`all_public_paths()`, and route-body redirects. A2 is a direct consequence.
-*Fix:* `services/search_visibility.py` — written, **not yet tested, not yet wired,
-not committed**. It is the shared dependency of almost everything else on this list,
-which is why it is being built first.
+Before this work the answer was spread across **six** places that disagreed:
+
+1. `seo_engine.robots_txt()`'s hand-maintained Disallow list,
+2. per-template hard-coded `<meta name=robots>` values,
+3. `seo/content.py:all_public_paths()`, which decided the sitemap,
+4. route-body redirects, which decided what a crawler actually received,
+5. `/api/indexnow`, whose `urlList` was `all_public_paths()` unfiltered — and
+   which declared `host: coinpilotx.app` against URLs on `pulsesoc.com`, a
+   payload IndexNow rejects outright,
+6. `/admin/seo`, whose hardcoded `noindex` list named `/app` and
+   `/command-center` (neither is excluded) and omitted a dozen prefixes that are.
+
+The count rose from four to six during implementation: 5 and 6 were found by
+grepping for callers of `all_public_paths()` rather than by reading templates,
+which is how the first four were found. A2 is a direct consequence of the
+disagreement, and 5 was independently broken in a way no amount of SEO work
+elsewhere would have surfaced.
+
+*Fix:* `services/search_visibility.py`, with all six surfaces now reading from it.
 
 **C3. Creator search opt-out has no representation anywhere.**
 Growth §2 is explicit that public visibility must not silently override an existing

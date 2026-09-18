@@ -409,6 +409,7 @@ from services import (
     security_monitor,
     seller_lifecycle,
     seo_engine,
+    search_visibility,
     sms_service,
     social_energy_engine,
     social_loop_engine,
@@ -429,6 +430,11 @@ from services import (
     world_presence_engine,
     action_result_tracker,
 )
+# Imported here rather than at its historical position further down the file
+# because route declarations have to be in scope at `def` time, and the sitemap
+# routes are defined well before it. `services.route_auth` imports nothing from
+# this package, so hoisting it cannot create a cycle.
+from services.route_auth import admin_required, auth_required, public_route
 from seo import schema as seo_schema
 from seo.content import (
     all_public_paths,
@@ -2755,7 +2761,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -29784,67 +29790,93 @@ def ai_index_json():
     return jsonify(seo_index_payload())
 
 
-def pulse_public_paths(limit=200):
+def pulse_public_entries(limit=200):
+    """Public posts as `(path, lastmod)`, filtered by the central policy.
+
+    The SQL selects candidates; `search_visibility.content_eligibility` decides.
+    The two overlap on visibility and moderation, and that duplication is
+    deliberate -- the query is an index-friendly prefilter, the policy is the
+    answer, and the policy sees the fields SQL cannot conveniently express
+    (creator opt-out, takedown, thin content).
+
+    A column left out of the SELECT list is a permission silently granted.
+    `content_eligibility` treats a missing key as its permissive default, so an
+    unselected column reads as "no objection" rather than as "unknown" -- which
+    is how `status` came to be omitted here and draft posts came to be
+    submitted to Google. Any field the policy consults must be selected.
+
+    `lastmod` is the post's own `updated_at`, falling back to `created_at`, and
+    is omitted entirely when neither exists. It is never today's date: a
+    sitemap that claims all 200 posts changed this morning teaches Google to
+    ignore the field on the pages that really did change.
+    """
+
     try:
         conn = db()
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT id FROM pulse_posts
+            SELECT id, title, body, visibility, moderation_status, status, updated_at, created_at
+            FROM pulse_posts
             WHERE visibility='public' AND moderation_status='approved' AND deleted_at IS NULL
             ORDER BY engagement_score DESC, created_at DESC
             LIMIT ?
             """,
             (int(limit),),
         )
-        paths = [f"/pulse/post/{int(row['id'] if hasattr(row, 'keys') else row[0])}" for row in cur.fetchall()]
+        rows = [dict(row) if hasattr(row, "keys") else row for row in cur.fetchall()]
         conn.close()
-        return paths
     except Exception:
+        # Serving an empty <urlset> beats returning 500 to Googlebot, but an
+        # empty sitemap and a genuinely postless site are byte-identical.
+        # Without this line the only symptom is "Search Console discovered 0
+        # URLs", with no way to tell a broken query from an empty table.
+        logging.exception("SITEMAP_POSTS_QUERY_FAILED serving an empty posts sitemap")
         return []
+
+    entries = []
+    for row in rows:
+        path = f"/pulse/post/{int(row.get('id') or 0)}"
+        if not search_visibility.sitemap_eligible(path, row):
+            continue
+        entries.append((path, row.get("updated_at") or row.get("created_at") or ""))
+    return entries
+
+
+def pulse_public_paths(limit=200):
+    return [path for path, _lastmod in pulse_public_entries(limit)]
+
+
+#: Child sitemaps, in the order `/sitemap.xml` lists them.
+SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
 def sitemap_xml():
-    today = datetime.now().strftime("%Y-%m-%d")
-    priority = {
-        "/": "1.0",
-        "/ai-market-analysis": "0.92",
-        "/telegram-crypto-bot": "0.92",
-        "/crypto-scams": "0.9",
-        "/wallet-security": "0.88",
-        "/sports-edge": "0.86",
-        "/portfolio-intelligence": "0.86",
-    }
-    body = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-    for path in sorted(set(all_public_paths()) | set(seo_engine.ADS_LANDING_PATHS) | set(pulse_public_paths())):
-        loc = "https://pulsesoc.com" + path
-        if path.startswith("/markets/") and path.endswith("/live"):
-            page_priority = "0.82"
-        elif path.startswith("/markets/") and path.endswith("/prediction"):
-            page_priority = "0.8"
-        elif path.startswith("/markets/"):
-            page_priority = "0.8"
-        elif path.startswith("/sports-edge/") or path.startswith("/intel/"):
-            page_priority = "0.78"
-        elif path.startswith("/country-intelligence/"):
-            page_priority = "0.74"
-        else:
-            page_priority = priority.get(path, "0.72")
-        body.append("  <url>")
-        body.append(f"    <loc>{loc}</loc>")
-        body.append(f"    <lastmod>{today}</lastmod>")
-        body.append("    <changefreq>weekly</changefreq>")
-        body.append(f"    <priority>{page_priority}</priority>")
-        body.append("  </url>")
-    body.append("</urlset>")
-    return Response("\n".join(body), mimetype="application/xml")
+    """A sitemap index, not a flat list.
+
+    It used to be one `<urlset>` of 354 URLs mixing marketing pages, templated
+    market pages and user posts. Search Console reports coverage per submitted
+    sitemap, so a mixed bag produces one uninterpretable number -- "80% indexed"
+    tells you nothing about whether it is the marketing pages or the posts that
+    are missing. Split by type, each line is actionable on its own.
+    """
+
+    return Response(seo_engine.sitemap_index_xml(SITEMAP_CHILDREN), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-pages.xml", methods=["GET"])
 def sitemap_pages_xml():
-    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS) | set(pulse_public_paths()))
+    paths = sorted(set(all_public_paths()) | set(seo_engine.PUBLIC_LEARN_PATHS) | set(seo_engine.ADS_LANDING_PATHS))
     return Response(seo_engine.sitemap_xml(paths), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-posts.xml", methods=["GET"])
+@public_route(reason="Sitemap for crawlers. Lists only posts the eligibility policy already cleared for public search.")
+def sitemap_posts_xml():
+    """Member posts, each with its own real `updated_at`."""
+
+    return Response(seo_engine.sitemap_xml(pulse_public_entries()), mimetype="application/xml")
 
 
 @webhook_app.route("/sitemap-live.xml", methods=["GET"])
@@ -29959,12 +29991,29 @@ def indexnow_key_txt():
 
 @webhook_app.route("/api/indexnow", methods=["GET"])
 def indexnow_metadata_api():
+    """The IndexNow payload we would submit. This endpoint does not submit it.
+
+    Two things were wrong with the payload and both made it unusable:
+
+    `host` said `coinpilotx.app` while every URL in `urlList` and the key file
+    itself are on `pulsesoc.com`. IndexNow requires the host to own the URLs
+    being submitted, so the endpoint would have rejected the whole batch --
+    this was not a cosmetic mismatch, it was a payload that could not succeed.
+
+    `urlList` came from `all_public_paths()` unfiltered, which is the same list
+    the old sitemap used and carried `/signup`, `/support` and the templated
+    market pages. Submitting a URL we have marked `noindex` asks Bing to hurry
+    and crawl something we have asked it not to index.
+    """
+
     return jsonify({
-        "host": "coinpilotx.app",
+        "host": search_visibility.CANONICAL_HOST,
         "key": "4d4dc0c2c0f94b7bb8184fd91b7f0b1e",
-        "keyLocation": "https://pulsesoc.com/indexnow-key.txt",
+        "keyLocation": f"{search_visibility.CANONICAL_ORIGIN}/indexnow-key.txt",
         "urlList": [
-            *["https://pulsesoc.com" + path for path in all_public_paths()],
+            search_visibility.canonical_url(path)
+            for path in all_public_paths()
+            if search_visibility.sitemap_eligible(path)
         ],
         "submitEndpoint": "https://api.indexnow.org/indexnow",
     })
@@ -40420,8 +40469,13 @@ def admin_seo_page():
     admin, denied = require_admin_page("system.view")
     if denied:
         return denied
-    public_paths = all_public_paths()
-    noindex = ["/app", "/chat", "/command-center", "/dashboard", "/account", "/admin", "/api/*", "/stripe/*"]
+    # Both lists are read from the policy rather than typed here. The old
+    # hardcoded pair claimed /app and /command-center were noindex (neither is
+    # in the rule table) and omitted a dozen prefixes that are -- an admin
+    # dashboard that reports a different answer than the site serves is worse
+    # than no dashboard, because it gets believed.
+    public_paths = [path for path in all_public_paths() if search_visibility.is_indexable(path)]
+    noindex = [prefix for prefix, _directive, _reason in search_visibility._RULES]
     schema_types = ["Organization", "SoftwareApplication", "Product", "FAQPage", "BreadcrumbList", "WebSite", "Course", "LearningResource"]
     rows = "".join(f"<tr><td>{html_escape(clean_html(path))}</td><td>crawlable</td><td>canonical expected</td></tr>" for path in public_paths[:80])
     body = f"<h1>SEO Intelligence Center</h1><div class='grid'><div class='card'><div class='metric'>{len(public_paths)}</div><p>public indexable paths tracked</p></div><div class='card'><div class='metric'>{len(noindex)}</div><p>private/noindex patterns protected</p></div><div class='card'><div class='metric'>{len(schema_types)}</div><p>schema families active/planned</p></div></div><div class='card'><h2>Noindex Protection</h2><p>{', '.join(noindex)}</p></div><div class='card'><h2>Public Crawl Targets</h2><table><tr><th>Path</th><th>Status</th><th>Metadata</th></tr>{rows}</table></div>"
@@ -55268,8 +55322,6 @@ def pulse_creator_camera_page():
 #: is not universal, and where it is missing the browser falls back and the
 #: backdrop silently disappears. Inline *style* is not the XSS vector inline
 #: *script* is; the requirement was always scoped to script-src.
-from services.route_auth import admin_required, auth_required, public_route
-
 PULSE_WEB_APP_CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
@@ -88198,7 +88250,12 @@ def pulse_post_page(post_id):
     post = pulse_feed_engine.get_post(post_id, viewer_user_id=(user or {}).get("user_id"), include_private=bool(user))
     if not post:
         return Response("PulseSoc post not found.", status=404)
-    is_public_indexable = post.get("visibility") == "public" and post.get("moderation_status") == "approved"
+    # The route no longer decides this for itself. It used to check visibility
+    # and moderation inline, which was right as far as it went and silently
+    # disagreed with the sitemap, which checked the same two fields in SQL and
+    # nothing else. Both now ask the same module, so a creator's search opt-out
+    # or a takedown reaches the page and the sitemap at the same moment.
+    robots_directive = search_visibility.content_eligibility(post).directive
     title = post.get("title") or (post.get("body") or "PulseSoc Post")[:72]
     description = post.get("ai_summary") or (post.get("body") or "Community post on PulseSoc.")[:155]
     media = (post.get("media") or [{}])[0]
@@ -88244,7 +88301,7 @@ def pulse_post_page(post_id):
     # navigation, which stays: someone reading this page on a desktop wants the
     # rest of the site, not the App Store.
     post_app_cta = app_cta_html("post", post_id, source="web")
-    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{"index,follow,max-image-preview:large" if is_public_indexable else "noindex,nofollow"}'><link rel='canonical' href='https://pulsesoc.com/pulse/post/{post_id}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
+    return Response(f"""<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1,viewport-fit=cover'><title>{html_escape(clean_html(title))} | PulseSoc</title><meta name='description' content='{html_escape(clean_html(description))}'><meta name='robots' content='{robots_directive}'><link rel='canonical' href='{search_visibility.canonical_url(f"/pulse/post/{post_id}")}'><meta property='og:title' content='{html_escape(clean_html(title))}'><meta property='og:description' content='{html_escape(clean_html(description))}'><meta property='og:image' content='{html_escape(clean_html(image))}'><meta name='twitter:card' content='summary_large_image'><link rel='stylesheet' href='/static/css/pulsesoc-tokens.css?v=parity-20260806a'><style>:root{{color-scheme:dark;--line:var(--border-subtle,rgba(110,223,246,.22));--muted:var(--text-secondary,#9fb5c0);--cyan:var(--action-secondary,#6edff6);--green:var(--action-primary,#36e58f)}}*{{box-sizing:border-box}}html,body{{max-width:100%;overflow-x:hidden}}body{{margin:0;background:radial-gradient(circle at 12% 0,rgba(110,223,246,.18),transparent 28rem),linear-gradient(145deg,#050b14,#081421);color:#f2fbff;font-family:Inter,system-ui,sans-serif}}.wrap{{width:min(100% - 28px,900px);margin:auto;padding:max(20px,env(safe-area-inset-top)) 0 calc(98px + env(safe-area-inset-bottom))}}.card{{border:1px solid var(--line);border-radius:16px;background:rgba(13,22,39,.9);padding:14px;margin:12px 0;box-shadow:0 20px 70px rgba(0,0,0,.24);position:relative;overflow:hidden}}a{{color:var(--cyan)}}p,.muted,small{{color:var(--muted);line-height:1.55}}.smart-time{{font-size:.82rem;color:rgba(217,247,255,.62);white-space:nowrap}}.time-dot{{opacity:.42;margin:0 4px}}h1{{font-size:clamp(30px,7vw,56px);line-height:1;margin:8px 0 12px}}img,video{{width:100%;max-height:min(74vh,760px);object-fit:contain;border-radius:12px;background:#020817;border:1px solid rgba(255,255,255,.08)}}.pulse-media-wrap{{position:relative;isolation:isolate;overflow:hidden;border-radius:14px;background:radial-gradient(circle at 50% 20%,rgba(110,223,246,.14),transparent 32%),#020817;border:1px solid rgba(110,223,246,.18);margin:12px 0;box-shadow:0 18px 70px rgba(0,0,0,.34),0 0 46px rgba(54,229,143,.08)}}.pulse-cinematic-media-shell:before,.pulse-cinematic-media-shell:after,.pulse-media-backdrop,.pulse-media-depth-layer,.pulse-media-aura{{position:absolute;inset:0;pointer-events:none}}.pulse-media-backdrop{{z-index:0;inset:-12%;background-image:var(--media-backdrop);background-size:cover;background-position:center;filter:blur(34px) saturate(1.32) brightness(.62);opacity:.86;transform:scale(1.08)}}.pulse-media-depth-layer{{z-index:1;background:radial-gradient(circle at var(--pulse-media-x,50%) var(--pulse-media-y,42%),rgba(var(--pulse-media-rgb,110,223,246),.3),transparent 35%),radial-gradient(circle at 12% 18%,rgba(54,229,143,.16),transparent 36%),radial-gradient(circle at 86% 80%,rgba(166,88,255,.15),transparent 38%),linear-gradient(180deg,rgba(2,8,17,.18),rgba(2,8,17,.58));mix-blend-mode:screen;opacity:.74}}.pulse-media-aura{{z-index:2;border-radius:inherit;box-shadow:inset 0 0 54px rgba(var(--pulse-media-rgb,110,223,246),.16),inset 0 -34px 72px rgba(0,0,0,.28),0 0 52px rgba(var(--pulse-media-rgb,110,223,246),.1);background:linear-gradient(115deg,transparent 10%,rgba(255,255,255,.06) 48%,transparent 62%);opacity:.8}}.pulse-cinematic-media-shell:before{{content:"";z-index:3;background:radial-gradient(1px 1px at 18% 22%,rgba(110,223,246,.55),transparent),radial-gradient(1px 1px at 77% 26%,rgba(54,229,143,.45),transparent),radial-gradient(1px 1px at 66% 72%,rgba(166,88,255,.42),transparent);background-size:150px 150px,190px 190px,230px 230px;opacity:.28}}.pulse-cinematic-media-shell:after{{content:"";z-index:4;border-radius:inherit;background:linear-gradient(180deg,rgba(255,255,255,.06),transparent 22%,transparent 76%,rgba(0,0,0,.18));box-shadow:inset 0 0 0 1px rgba(255,255,255,.045)}}.pulse-media-wrap img,.pulse-media-wrap video{{position:relative;z-index:5;display:block;border:0;width:100%;height:auto;object-fit:contain;object-position:center;background:transparent!important;filter:drop-shadow(0 18px 44px rgba(0,0,0,.42))}}.pulse-media-fallback{{position:absolute;z-index:7;inset:0;display:none;place-items:center;text-align:center;padding:18px;background:linear-gradient(145deg,rgba(8,19,35,.92),rgba(4,9,17,.96));color:#dffcff}}.pulse-media-fallback strong{{display:block;margin-bottom:5px}}.pulse-media-wrap.is-broken .pulse-media-fallback{{display:grid}}button,.button,input{{min-height:42px;border:1px solid var(--line);border-radius:10px;background:rgba(255,255,255,.06);color:#f2fbff;padding:9px 12px;font-weight:900;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}}.primary{{background:linear-gradient(135deg,var(--green),var(--cyan));color:#06101b;border:0}}.actions,.tags{{display:flex;gap:8px;flex-wrap:wrap}}.pulse-post-actions-old,.pulse-action-wall,.reaction-stack{{display:none!important}}.tag{{font-size:12px;border:1px solid rgba(110,223,246,.2);border-radius:999px;padding:5px 9px;text-decoration:none}}.author{{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}}.badge{{display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:999px;padding:5px 9px;color:#dffcff;background:rgba(110,223,246,.08)}}.menu-btn{{width:38px;height:38px;min-height:38px;border-radius:999px;padding:0;font-size:20px}}.post-sheet{{display:none;position:fixed;left:12px;right:12px;bottom:calc(110px + env(safe-area-inset-bottom));z-index:20;border:1px solid var(--line);border-radius:18px;background:#071321;padding:10px;box-shadow:0 24px 80px rgba(0,0,0,.5)}}.post-sheet.open{{display:grid;gap:7px}}.post-sheet .button,.post-sheet button{{width:100%;justify-content:flex-start}}.reactions{{display:flex;gap:6px;overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}}.reaction-pill{{flex:0 0 auto;min-height:34px;border-radius:999px;padding:6px 10px;font-size:13px}}.reaction-pill.active{{background:rgba(54,229,143,.18);border-color:rgba(54,229,143,.5);box-shadow:0 0 24px rgba(54,229,143,.15)}}.comment{{border-radius:12px;padding:8px 10px;background:rgba(255,255,255,.04);margin:7px 0}}.comment p{{margin:3px 0}}.comment-box{{display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:7px;align-items:center}}.comment-box input{{border-radius:999px;min-height:40px}}.comment-box button{{width:42px;min-height:40px;border-radius:999px;padding:0}}@media(max-width:720px){{.wrap{{width:100%;padding:max(24px,env(safe-area-inset-top)) 10px calc(160px + env(safe-area-inset-bottom))}}.actions{{overflow-x:auto;flex-wrap:nowrap}}.actions .button,.actions button{{white-space:nowrap}}}}</style></head><body><main class='wrap'><nav class='actions'>{post_app_cta}<a class='button' href='/pulse'>Back to PulseSoc</a><a class='button' href='/pulse/my-posts'>My Posts</a><a class='button' href='/pulse#create'>Create</a><button id='shareBtn' type='button'>Share</button></nav><article class='card'><div class='author'><p><strong>{html_escape(clean_html(author.get('display_name') or 'PulseSoc creator'))}{author_mark}</strong><br><span class='badge'>{html_escape(clean_html(author_label or 'Member'))}</span><br><small>{smart_time_html(post.get('created_at'))}</small></p><button class='menu-btn' id='moreBtn' type='button'>⋯</button></div><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(post.get('body') or ''))}</p>{media_html}<div class='tags'>{tags_html}</div><p class='muted'>Type: {html_escape(clean_html(post.get('post_type') or 'post'))} · Status: {html_escape(clean_html(post.get('moderation_status') or 'approved'))} · Risk score: {int(post.get('risk_score') or 0)}</p><div class='reactions'>{reaction_buttons}</div><p>{PULSE_DISCLAIMER}</p></article><section class='card'><h2>Comments</h2><div id='comments'>{comment_html or '<p>No comments yet.</p>'}</div><form class='comment-box' id='commentForm'><input name='body' placeholder='Write a comment...'><button class='primary'>➤</button></form></section><section class='post-sheet' id='postSheet'><a class='button primary' href='/pulse/post/{post_id}'>View post</a><a class='button' href='{author_profile_url}'>View profile</a><button id='sheetShare' type='button'>Share</button><a class='button' href='/pulse/my-posts'>My Posts</a></section></main><script src='/static/js/time.js'></script><script src='/static/js/pulse_media_renderer.js?v=global-media-ui-20260628g'></script><script>async function api(url,opts={{}}){{const r=await fetch(url,{{credentials:'same-origin',cache:'no-store',headers:{{'Content-Type':'application/json',...(opts.headers||{{}})}},...opts}});const d=await r.json().catch(()=>({{}}));if(!r.ok||d.ok===false)throw new Error(d.error||d.message||'Request failed.');return d}}const share=async()=>{{const url=location.href;if(navigator.share){{await navigator.share({{title:document.title,url}}).catch(()=>{{}})}}else{{await navigator.clipboard.writeText(url).catch(()=>{{}});alert('Post link copied.')}}}};document.getElementById('shareBtn').addEventListener('click',share);document.getElementById('sheetShare').addEventListener('click',share);document.getElementById('moreBtn').addEventListener('click',()=>document.getElementById('postSheet').classList.toggle('open'));document.querySelectorAll('[data-react]').forEach(btn=>btn.addEventListener('click',async()=>{{try{{await api('/api/pulse/posts/{post_id}/react',{{method:'POST',body:JSON.stringify({{reaction_type:btn.dataset.react}})}});btn.classList.add('active')}}catch(e){{alert(e.message)}}}}));document.getElementById('commentForm').addEventListener('submit',async e=>{{e.preventDefault();const input=e.target.body;if(!input.value.trim())return;try{{await api('/api/pulse/posts/{post_id}/comments',{{method:'POST',body:JSON.stringify({{body:input.value}})}});location.reload()}}catch(err){{alert(err.message)}}}});window.CoinPilotTime?.hydrate(document);window.PulseMediaRenderer?.hydrate(document);</script></body></html>""")
 
 
 def pulse_attach_video_detail_links(posts):
