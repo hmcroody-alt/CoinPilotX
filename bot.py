@@ -124462,6 +124462,16 @@ def log_engagement(user_id, feature, query=""):
 
 
 def clean_html(text):
+    # Row dicts hand this sanitizer whatever the column holds, and a numeric
+    # column arrives as an int. `re.sub` raises TypeError on one, which is how
+    # sixteen public post pages came to return HTTP 500: `data-media-id` is a
+    # media row id, and `clean_html(item.get("id"))` crashed the whole render.
+    #
+    # Only *truthy* non-strings are coerced. None and the falsy values already
+    # became "" via the `or ""` below, so no call site that works today changes
+    # behaviour -- this widens the set of inputs that do not crash, nothing else.
+    if text and not isinstance(text, str):
+        text = str(text)
     text = re.sub(r"<[^>]+>", " ", text or "")
     text = re.sub(r"\s+", " ", text).strip()
     return text
