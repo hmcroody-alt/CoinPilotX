@@ -1,0 +1,340 @@
+/* =========================================================================
+   PulseSoc — app promotion surfaces
+   The visual half of services/app_promotion.py. The copy, the link and the
+   frequency policy live there and in pulse_app_promotion.js; this file styles
+   what they render and owns nothing else.
+
+   WHY EVERY SELECTOR IS PREFIXED
+   ------------------------------
+   These surfaces render inside pulse_social_shell, whose <style> block is
+   inline and therefore later in the cascade than this file. Anything declared
+   here under a name that block also declares -- `.card`, `.button`, `.pill`,
+   `.pulse-topnav-control` -- loses, silently, on exactly the pages that matter.
+   So nothing here is named after an existing class. `.pulse-app-promo`,
+   `.pulse-app-pill` and `.pulse-topnav-app-promo` were each confirmed to have
+   no prior declaration anywhere in static/css or in bot.py's inline blocks.
+
+   The same constraint is why the glass treatment on the header control is
+   re-declared rather than inherited: reusing `.pulse-topnav-control` would
+   inherit its fixed 52x52 square, which clips a two-word label.
+
+   Every var() carries the current token value as a literal fallback, so a page
+   that does not link pulsesoc-tokens.css renders the same rather than falling
+   back to the browser's initial value and losing the text.
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   The card, shared by the header panel, the sidebar and the Marketplace note
+   ------------------------------------------------------------------------- */
+
+.pulse-app-promo {
+  display: grid;
+  gap: var(--spacing-sm, 12px);
+  padding: var(--spacing-md, 16px);
+  border: 1px solid var(--border-subtle, #425065);
+  border-radius: var(--radius-card, 16px);
+  background: var(--surface-raised, #303843);
+  color: var(--text-primary, #f4f7fb);
+}
+
+/* `hidden` is how the server ships a surface the policy has not cleared yet.
+   Grid containers ignore the attribute's UA `display:none`, so it has to be
+   restated or a "hidden" card paints anyway. */
+.pulse-app-promo[hidden] {
+  display: none !important;
+}
+
+/* The feed's right rail is an allowlist: `.pulse-home-os .pulse-desktop-right
+   > *` hides every direct child and five named classes are re-shown. The card
+   is not one of them, so without this it ships in the markup and never paints
+   -- which a markup assertion cannot see. Specificity (0,3,0) beats the
+   allowlist's (0,2,0) whichever stylesheet loads last. The [hidden] pair has
+   to be restated at the same weight or a dismissed card comes back. */
+.pulse-home-os .pulse-desktop-right > .pulse-app-promo {
+  display: grid;
+}
+
+.pulse-home-os .pulse-desktop-right > .pulse-app-promo[hidden] {
+  display: none !important;
+}
+
+.pulse-app-promo__head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm, 12px);
+}
+
+.pulse-app-promo__mark {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  object-fit: cover;
+}
+
+.pulse-app-promo__copy {
+  min-width: 0;
+}
+
+.pulse-app-promo__title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: 0;
+  color: var(--text-primary, #f4f7fb);
+}
+
+.pulse-app-promo__note {
+  margin: 4px 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-secondary, #9aa8b7);
+}
+
+/* 44px is the HIG touch target. It is a floor, not a fixed size, because the
+   close control is the only way out of this surface on a phone and a 36px hit
+   area is the difference between dismissing it and mis-tapping the store link
+   underneath. */
+.pulse-app-promo__close {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle, #425065);
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--text-primary, #f4f7fb);
+  font: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pulse-app-promo__close:hover {
+  border-color: var(--border-strong, #2e4d60);
+}
+
+/* -------------------------------------------------------------------------
+   QR
+   ------------------------------------------------------------------------- */
+
+/* White plate behind the code, not a styling choice: a QR is decoded by
+   contrast between dark modules and a light quiet zone, and this design system
+   is dark. Rendering the SVG straight onto --surface-raised leaves the quiet
+   zone the same value as the modules and a phone camera finds nothing. */
+.pulse-app-promo__qr {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+}
+
+.pulse-app-promo__qr img {
+  width: 120px;
+  height: 120px;
+  padding: 8px;
+  border-radius: var(--pulse-radius-sm, 12px);
+  background: #ffffff;
+}
+
+.pulse-app-promo__qr figcaption {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--text-secondary, #9aa8b7);
+  text-align: center;
+}
+
+/* -------------------------------------------------------------------------
+   Actions
+   ------------------------------------------------------------------------- */
+
+.pulse-app-promo__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm, 12px);
+}
+
+.pulse-app-promo__button {
+  flex: 1 1 auto;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs, 8px);
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
+  border: 1px solid var(--border-subtle, #425065);
+  border-radius: var(--pulse-radius-sm, 12px);
+  background: var(--surface-elevated, #363d46);
+  color: var(--text-primary, #f4f7fb);
+  font: inherit;
+  font-weight: 900;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pulse-app-promo__button--primary {
+  border-color: transparent;
+  background: var(--action-primary, #32e6b3);
+  color: var(--text-on-action, #04121a);
+}
+
+.pulse-app-promo__button--ghost {
+  background: transparent;
+}
+
+.pulse-app-promo__button:hover {
+  border-color: var(--border-strong, #2e4d60);
+}
+
+.pulse-app-promo__button:focus-visible,
+.pulse-app-promo__close:focus-visible {
+  outline: 2px solid var(--border-focus, #8df7ff);
+  outline-offset: 2px;
+}
+
+/* -------------------------------------------------------------------------
+   The `APP` marker beside a Marketplace destination
+   ------------------------------------------------------------------------- */
+
+.pulse-app-pill {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong, #2e4d60);
+  border-radius: var(--radius-pill, 999px);
+  background: color-mix(in srgb, var(--action-secondary, #61d8ff) 14%, transparent);
+  color: var(--action-secondary, #61d8ff);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* The visible text is two letters. Read aloud in a list of navigation links
+   that is noise, so the sentence goes here and the letters are aria-hidden. */
+.pulse-app-pill__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------------
+   Marketplace explanation
+   ------------------------------------------------------------------------- */
+
+/* Fixed rather than anchored to the nav item that triggered it. The trigger
+   can be in the top bar, the left rail or the mobile drawer, and a popover
+   positioned against a rail item inside `overflow:auto` gets clipped by it.
+   Bottom-right also keeps it clear of the mobile bottom nav's 64px + inset. */
+.pulse-app-promo--marketplace_note {
+  position: fixed;
+  right: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  z-index: 10100;
+  width: min(92vw, 360px);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.46);
+}
+
+@media (max-width: 900px) {
+  .pulse-app-promo--marketplace_note {
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Desktop header control
+   ------------------------------------------------------------------------- */
+
+.pulse-topnav-app-promo {
+  position: relative;
+  z-index: 10020;
+}
+
+.pulse-topnav-app-promo[open] {
+  z-index: 10080;
+}
+
+.pulse-topnav-app-promo__summary {
+  list-style: none;
+  cursor: pointer;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong, rgba(110, 230, 255, 0.28));
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(42, 51, 64, 0.46);
+  color: var(--text-primary, #f2fbff);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.pulse-topnav-app-promo__summary::-webkit-details-marker {
+  display: none;
+}
+
+.pulse-topnav-app-promo__summary:hover {
+  border-color: var(--border-focus, #8df7ff);
+}
+
+.pulse-topnav-app-promo__summary:focus-visible {
+  outline: 2px solid var(--border-focus, #8df7ff);
+  outline-offset: 2px;
+}
+
+.pulse-topnav-app-promo-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 10090;
+  width: min(320px, calc(100vw - 24px));
+  /* The shell's inline <style> carries `* { max-width: 100% }`, and the panel's
+     containing block is the 137px summary, so without restating max-width here
+     the 320px is clamped to the button's width and the title wraps mid-word. */
+  max-width: min(320px, calc(100vw - 24px));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.52);
+}
+
+/* The top bar's third column is 120px between 1024 and 1279px, shared with
+   search, notifications, Live, the avatar and Create. There is no room for a
+   sixth control there and the brief is explicit that this must not displace
+   them, so it yields. The sidebar card still reaches those widths. Below
+   1024px the whole top bar is display:none already. */
+@media (max-width: 1279px) {
+  .pulse-topnav-app-promo {
+    display: none;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   Motion
+   ------------------------------------------------------------------------- */
+
+/* There is no entrance animation to begin with -- these surfaces appear by
+   having `hidden` removed. This block exists so that stays true: if a
+   transition is ever added above, it is already excluded here. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-app-promo,
+  .pulse-topnav-app-promo-panel {
+    animation: none !important;
+    transition: none !important;
+  }
+}

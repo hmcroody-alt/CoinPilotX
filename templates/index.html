@@ -4,6 +4,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  {# Safari's own install banner. Empty on every path that did not opt in, and
+     its app-argument is the site root rather than this page, because iOS hands
+     that argument to the app as a destination and the app cannot open a
+     marketing page. See services/app_promotion.py. #}
+  {{ smart_app_banner_meta|safe }}
   <title>PulseSoc | Creator, Video, Live, Messaging, Premium Intelligence</title>
   <meta name="description" content="PulseSoc brings creator tools, video, Reels, live, messaging, Roast Battle, Premium Intelligence, and safety tools into one social platform." />
   <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />

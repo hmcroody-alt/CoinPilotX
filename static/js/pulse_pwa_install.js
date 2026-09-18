@@ -175,6 +175,13 @@
   function maybeShowPrompt() {
     usageMatured = true;
     if (promptShown || isInstalledKnown() || recentlyDismissed()) return;
+    // The other half of the one-promotion-at-a-time agreement with
+    // static/js/pulse_app_promotion.js. Asking someone to bookmark the website
+    // while a card beside it asks them to install the native app reads as spam
+    // and converts neither. This prompt yields because it is the one on a
+    // timer: it can simply come back on the next navigation, whereas the app
+    // surfaces are tied to what the member just reached for.
+    if (window.PulseAppPromotion && window.PulseAppPromotion.hasVisibleSurface()) return;
     if (canShowBrowserPrompt()) {
       promptShown = true;
       createPrompt("browser");
