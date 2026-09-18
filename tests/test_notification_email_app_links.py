@@ -88,13 +88,27 @@ def test_missing_deep_link_falls_back_to_notifications():
 
 @pytest.mark.parametrize(
     "web_link",
-    ["/privacy", "/terms", "/support", "/account/settings", "/reset-password?token=abc"],
+    ["/privacy", "/terms", "/support", "/reset-password?token=abc"],
 )
 def test_web_intent_notifications_still_open_on_the_web(web_link):
     href, label = cta(web_link)
     assert app_links.APP_INTENT_PARAM not in href
     assert href == f"https://pulsesoc.com{web_link}"
     assert label == "Open PulseSoc"
+
+
+def test_a_declared_override_inside_a_web_intent_family_does_open_the_app():
+    """`/account/*` is a web-intent family with named exceptions inside it.
+
+    `/account/settings` used to be in the list above, on the assumption that the
+    whole family stayed on the web. The shipped binary declares the screen, so
+    `app_links` registers it with `overrides_web_intent=True` and the email CTA
+    opens it. Kept as a positive assertion rather than deleted, so the prefix
+    rule silently swallowing the override again would fail here.
+    """
+    assert app_links.DESTINATIONS["account_settings"].overrides_web_intent
+    href, _ = cta("/account/settings")
+    assert app_links.APP_INTENT_PARAM in href
 
 
 def test_a_reset_password_token_is_not_leaked_into_an_app_link():
