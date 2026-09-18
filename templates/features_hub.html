@@ -1,0 +1,62 @@
+{#
+  /features -- the hub for the eight feature pages.
+
+  This path used to render `seo_page.html` with copy about an AI crypto
+  assistant, Scam Shield, Wallet Intel and a Telegram companion bot. That page
+  was answering a question nobody typing "pulsesoc features" is asking, and it
+  was the only /features URL on the domain. The crypto pages it described still
+  exist on their own URLs and are still linked from the site; what changed is
+  which page owns the word "features".
+#}
+{% extends "_public_shell.html" %}
+{% from "_app_link_cta.html" import app_store_badge with context %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › <a href="/app">iPhone app</a> › Features
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+    <p class="lede">{{ page.lede }}</p>
+    <div class="actions">
+      {{ app_store_badge(classes="button primary") }}
+      <a class="button" href="/app">About the app</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every feature, one page each</h2>
+    <div class="grid">
+      {% for feature in page.features %}
+      <article class="card">
+        <h3><a href="{{ feature.canonical_path }}">{{ feature.card_title }}</a></h3>
+        <p>{{ feature.card_summary }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="prose">
+    <h2>Why these pages say what is missing</h2>
+    <p>Each page above describes what that part of PulseSoc does, and several of
+    them spend a section on what it does not. Messages are not end-to-end
+    encrypted; there are no hashtags; calls are one-to-one; Marketplace card
+    payments are paused.</p>
+    <p>Those are the things people find out after installing, and finding them
+    out then is worse for everyone than reading them here. A feature page that
+    only lists capabilities is a page that has decided the reader is a target
+    rather than a user.</p>
+  </section>
+
+  <section>
+    <h2>The crypto side</h2>
+    <p>PulseSoc grew out of a crypto intelligence product, and that part still
+    exists: <a href="/ai-market-analysis">market analysis</a>,
+    <a href="/crypto-safety">scam and safety tooling</a>, and
+    <a href="/portfolio-intelligence">portfolio tracking</a>. The app carries a
+    markets screen for the same reason.</p>
+  </section>
+
+{% endblock %}

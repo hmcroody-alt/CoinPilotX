@@ -1,74 +1,18 @@
 {#
-  /app -- the public page about the iPhone app.
+  /app -- the public page about the iPhone app, and the parent of /features.
 
-  Not rendered through seo_page.html on purpose. That template carries the
-  crypto-era furniture this product no longer is: "Unlock Pro Intelligence", a
-  Scam Shield / Wallet Intel / Telegram aside, and an email + SMS lead-capture
-  form. A page titled for a social app whose body argues for a Telegram crypto
-  bot is off-topic for its own title, and off-topic is the one thing a landing
-  page cannot be.
+  The head, the CSS and the footer now live in `_public_shell.html`, shared with
+  /features and the eight /features/<slug> pages, so that ten pages cannot drift
+  into ten designs. What is left here is only what is true of this page.
 
-  The CSS is inline and small rather than three <link> tags, because this page's
-  whole job is to be fast enough to convert a search visitor: every external
-  stylesheet is a render-blocking round trip in front of the LCP element.
-
-  Every claim here is checkable. No download counts, no ratings, no
-  testimonials, no awards. The store link comes from `app_store_badge` so the
-  App Store URL is never hand-written.
+  Every claim is checkable. No download counts, no ratings, no testimonials, no
+  awards. The store link comes from `app_store_badge` so the App Store URL is
+  never hand-written.
 #}
+{% extends "_public_shell.html" %}
 {% from "_app_link_cta.html" import app_store_badge with context %}
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ page.title }}</title>
-<meta name="description" content="{{ page.description }}">
-<meta name="robots" content="{{ robots }}">
-<link rel="canonical" href="{{ page.canonical }}">
-{{ smart_app_banner_meta|safe }}
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="PulseSoc">
-<meta property="og:title" content="{{ page.title }}">
-<meta property="og:description" content="{{ page.description }}">
-<meta property="og:url" content="{{ page.canonical }}">
-<meta property="og:image" content="{{ page.image }}">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="{{ page.title }}">
-<meta name="twitter:description" content="{{ page.description }}">
-<meta name="twitter:image" content="{{ page.image }}">
-<style>
-:root{color-scheme:dark}
-*{box-sizing:border-box}
-body{margin:0;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,-apple-system,sans-serif;line-height:1.55}
-a{color:#6edff6}
-.wrap{width:min(100% - 32px,1080px);margin:0 auto}
-h1{font-size:clamp(34px,6vw,60px);line-height:1.05;margin:0 0 16px;letter-spacing:-.02em}
-h2{font-size:clamp(24px,3.4vw,34px);line-height:1.15;margin:0 0 12px}
-h3{font-size:18px;margin:0 0 6px}
-p{color:#a9bfca;margin:0 0 14px}
-section{padding:44px 0;border-top:1px solid rgba(110,223,246,.12)}
-section:first-of-type{border-top:0}
-.lede{font-size:clamp(17px,2.2vw,20px);color:#c9dbe4;max-width:60ch}
-.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
-.button{display:inline-flex;min-height:48px;align-items:center;justify-content:center;border-radius:12px;border:1px solid rgba(110,223,246,.26);padding:12px 20px;font-weight:800;text-decoration:none;color:#f2fbff}
-.button.primary{color:#06101b;border-color:transparent;background:linear-gradient(135deg,#36e58f,#6edff6)}
-.meta{font-size:14px;color:#7f97a4;margin-top:14px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
-.card{border:1px solid rgba(110,223,246,.18);border-radius:16px;background:rgba(15,26,44,.7);padding:18px}
-.shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px}
-.shots img{width:100%;height:auto;border-radius:18px;border:1px solid rgba(110,223,246,.18);background:#0b1626}
-dl{margin:0}
-dt{font-weight:800;margin-top:20px}
-dd{margin:6px 0 0;color:#a9bfca}
-footer{padding:32px 0 60px;color:#7f97a4;font-size:14px}
-footer a{margin-right:16px;display:inline-block}
-@media(max-width:640px){.button{width:100%}}
-</style>
-<script type="application/ld+json">{{ schema_json|safe }}</script>
-</head>
-<body>
-<main class="wrap">
+
+{% block content %}
 
   <section>
     <h1>PulseSoc for iPhone</h1>
@@ -85,19 +29,18 @@ footer a{margin-right:16px;display:inline-block}
   <section>
     <h2>What you can do</h2>
     <div class="grid">
-      <article class="card"><h3>Post and follow</h3><p>Share text, photos and video, follow the people you care about, and reply in the open.</p></article>
-      <article class="card"><h3>Reels</h3><p>Short vertical video with sound, in a full-screen feed.</p></article>
-      <article class="card"><h3>Live video</h3><p>Go live from your phone, or watch and comment in someone else's stream.</p></article>
-      <article class="card"><h3>Direct messages</h3><p>One-to-one and group conversations, with photos, voice notes and files.</p></article>
-      <article class="card"><h3>Voice and video calls</h3><p>Call anyone you can message, with incoming calls that ring like a phone call.</p></article>
-      <article class="card"><h3>Groups and rooms</h3><p>Topic groups, plus live audio rooms for conversations that are not written down.</p></article>
-      <article class="card"><h3>Creator profiles</h3><p>A profile page that collects your posts, reels and links in one place.</p></article>
-      <article class="card"><h3>Marketplace</h3><p>List something for sale, or buy from a seller, with payment handled by Stripe.</p></article>
+      {% for feature in features %}
+      <article class="card">
+        <h3><a href="{{ feature.canonical_path }}">{{ feature.card_title }}</a></h3>
+        <p>{{ feature.card_summary }}</p>
+      </article>
+      {% endfor %}
       {# The fifth screenshot below is the market screen. Every picture on this
          page has to correspond to a feature the page actually claims, or the
          image is asserting something the text never stands behind. #}
       <article class="card"><h3>Markets</h3><p>Live crypto prices, a watchlist and market news, carried over from the product this app grew out of.</p></article>
     </div>
+    <p class="meta"><a href="/features">All features</a></p>
   </section>
 
   <section>
@@ -146,15 +89,4 @@ footer a{margin-right:16px;display:inline-block}
     </dl>
   </section>
 
-  <footer>
-    <a href="/">Home</a>
-    <a href="/about">About</a>
-    <a href="/help">Help</a>
-    <a href="/terms">Terms</a>
-    <a href="/privacy">Privacy</a>
-    <a href="/support">Support</a>
-  </footer>
-
-</main>
-</body>
-</html>
+{% endblock %}

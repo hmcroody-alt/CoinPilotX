@@ -436,6 +436,7 @@ from services import (
 # this package, so hoisting it cannot create a cycle.
 from services.route_auth import admin_required, auth_required, public_route
 from seo import schema as seo_schema
+from seo import features as seo_features
 from seo.content import (
     all_public_paths,
     article_page,
@@ -12258,11 +12259,73 @@ def app_landing_page():
         "app_landing.html",
         page=page,
         robots=search_visibility.robots_meta("/app"),
-        schema_json=seo_schema.app_landing_graph(page),
+        schema_json=seo_schema.app_page_graph(page),
         screenshots=APP_LANDING_SCREENSHOTS,
+        features=seo_features.cards(search_visibility.canonical_url),
     ))
     # Public, identical for every anonymous visitor, and it changes about as
     # often as the App Store listing does.
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return response
+
+
+# The breadcrumb between the home page and a feature page. Spelled out once
+# because a crumb that disagrees with the one the visitor can see is a
+# structured-data mismatch, and the two are generated from different code.
+_APP_TRAIL = (("PulseSoc for iPhone", search_visibility.canonical_url("/app")),)
+_FEATURES_TRAIL = _APP_TRAIL + (("Features", search_visibility.canonical_url("/features")),)
+
+
+@webhook_app.route("/features", methods=["GET"])
+@public_route(reason="Public hub listing what the iPhone app does. No account state is read.")
+def features_hub_page():
+    """`/features` taken back from the crypto-era landing page.
+
+    It rendered `seo_page.html` with copy about an AI crypto assistant and a
+    Telegram companion bot -- the only /features URL on a domain whose product
+    is a social app. This route is declared before the `/<slug>` catch-all that
+    used to serve it, so Flask matches the static rule first; the crypto pages
+    themselves are untouched and still linked from the hub.
+    """
+
+    page = seo_features.hub_page(search_visibility.canonical_url)
+    page["image"] = seo_schema.SHARE_IMAGE_URL
+    response = webhook_app.make_response(render_template(
+        "features_hub.html",
+        page=page,
+        robots=search_visibility.robots_meta("/features"),
+        schema_json=seo_schema.app_page_graph(page, trail=_APP_TRAIL),
+    ))
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return response
+
+
+@webhook_app.route("/features/<slug>", methods=["GET"])
+@public_route(reason="Public page describing one feature of the iPhone app. No account state is read.")
+def feature_detail_page(slug):
+    """One page per feature, written rather than generated.
+
+    `seo/features.py` explains why the eight are hand-written: this site's 108
+    templated pages measure 99.2% identical and are now `noindex` for it, and
+    generating these from one skeleton would rebuild that problem on the pages
+    that most need to rank. `tests/test_feature_pages.py` measures the rendered
+    similarity and fails if they drift back together.
+
+    An unknown slug 404s rather than falling through to the catch-all, so
+    `/features/anything` cannot become an accidental soft-404 that answers 200.
+    """
+
+    page = seo_features.detail_page(slug, search_visibility.canonical_url)
+    if not page:
+        abort(404)
+    page["image"] = seo_schema.SHARE_IMAGE_URL
+    response = webhook_app.make_response(render_template(
+        "feature_page.html",
+        page=page,
+        robots=search_visibility.robots_meta(f"/features/{slug}"),
+        schema_json=seo_schema.app_page_graph(page, trail=_FEATURES_TRAIL),
+        siblings=seo_features.siblings(slug, search_visibility.canonical_url),
+    ))
     response.headers["Cache-Control"] = "public, max-age=600"
     return response
 
@@ -12334,9 +12397,15 @@ APP_LANDING_SCREENSHOTS = [
     ("pulsesoc-app-profiles.webp",
      "“Your Profile. More Than A Page. Express yourself. Show what moves you. Connect deeper.” "
      "— a PulseSoc profile with a cover photo, follower counts and a grid of profile settings."),
-    ("pulsesoc-app-video-calls.webp",
-     "“See Every Smile. Private, high-quality video calls that bring you closer.” — a video "
-     "call in progress on an iPhone, showing an encrypted, connected call timer."),
+    # There is deliberately no call screenshot. Both of the listing's call assets
+    # render "End-to-end encrypted" into the image -- one as a feature label, one
+    # inside the mocked call UI. Nothing in this repository calls Agora's
+    # `enableEncryption`, so the claim is not true, and /features/messages says in
+    # as many words that PulseSoc is not end-to-end encrypted. Serving both would
+    # put a contradiction on one site where a visitor could see both halves.
+    #
+    # Dropping it here does not fix the App Store listing, which still ships the
+    # asset. That needs an owner with App Store Connect access.
     ("pulsesoc-app-market.webp",
      "“Pulse Market. Real Data. Deeper Insights. Better Decisions.” — the market screen with "
      "a global overview, market sentiment, and watchlist, news and insight tabs."),

@@ -1,0 +1,77 @@
+{#
+  /features/<slug> -- one page per thing the app does.
+
+  The section bodies are marked `|safe` because they carry internal links and
+  the occasional <strong>. They come from `seo/features.py`, which is source
+  code, not from user input or from the database; nothing renders through here
+  that an author did not type.
+
+  `limits` is optional on purpose. A "what this does not do" block appears only
+  where there is a specific, checkable limit to state -- six of the eight pages
+  have one. Giving all eight a limits section for symmetry would mean inventing
+  two, which is how these pages would start converging on a template.
+#}
+{% extends "_public_shell.html" %}
+{% from "_app_link_cta.html" import app_store_badge with context %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › <a href="/app">iPhone app</a> › <a href="/features">Features</a> › {{ page.breadcrumb }}
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+    <p class="lede">{{ page.lede }}</p>
+  </section>
+
+  {% for section in page.sections %}
+  <section class="prose">
+    <h2>{{ section.heading }}</h2>
+    {% for paragraph in section.body %}
+    <p>{{ paragraph|safe }}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  {% if page.limits %}
+  <section class="prose">
+    <h2>{{ page.limits.heading }}</h2>
+    {% for paragraph in page.limits.body %}
+    <p>{{ paragraph|safe }}</p>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  <section>
+    <h2>Questions</h2>
+    <dl>
+      {% for item in page.faqs %}
+      <dt>{{ item.question }}</dt>
+      <dd>{{ item.answer }}</dd>
+      {% endfor %}
+    </dl>
+  </section>
+
+  <section>
+    <h2>Get the app</h2>
+    <p>{{ page.h1 }} is part of PulseSoc for iPhone. Free to download, iOS 15.1 or later.</p>
+    <div class="actions">
+      {{ app_store_badge(classes="button primary") }}
+      <a class="button" href="/app">About the app</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>The rest of the app</h2>
+    <div class="grid">
+      {% for sibling in siblings %}
+      <article class="card">
+        <h3><a href="{{ sibling.canonical_path }}">{{ sibling.card_title }}</a></h3>
+        <p>{{ sibling.card_summary }}</p>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+{% endblock %}

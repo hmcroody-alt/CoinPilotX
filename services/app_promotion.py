@@ -151,6 +151,19 @@ TELEMETRY_EVENTS = {
 # meets the stated rule more squarely than the other two do.
 SMART_BANNER_PATHS = frozenset({"/", "/search", "/app"})
 
+# `/features` and its eight children are the same argument as `/app`, made one
+# feature at a time, so they carry the same banner.
+#
+# A prefix rather than the nine literal paths because the slugs are defined in
+# `seo/features.py` and this package cannot import from `seo` -- the dependency
+# runs the other way and must keep running the other way. The usual objection to
+# a prefix is that it claims URLs nobody defined, which does not apply here:
+# `/features/<slug>` 404s for an unknown slug, so there is no page for the
+# over-broad rule to reach. `tests/test_feature_pages.py` asserts that every
+# defined feature path gets the banner, which is the half a prefix cannot prove
+# on its own.
+SMART_BANNER_PREFIXES = ("/features",)
+
 # Generic on purpose. `app-argument` is handed to the app verbatim when the
 # banner is tapped, and iOS shows the banner whether or not the app is
 # installed -- so naming a destination here would be a promise the website
@@ -186,7 +199,7 @@ def smart_app_banner_content() -> str:
 
 
 def wants_smart_app_banner(path: str) -> bool:
-    """Whether this path is one of the two the banner is scoped to."""
+    """Whether this path is one of the ones the banner is scoped to."""
 
     # An empty path is not the site root. `bot.inject_app_link_helpers` passes
     # "" when there is no request context, and "/" compares equal to "" once
@@ -194,9 +207,13 @@ def wants_smart_app_banner(path: str) -> bool:
     # on every template rendered outside a request.
     if not path:
         return False
-    return path.split("?")[0].rstrip("/") in {
-        p.rstrip("/") for p in SMART_BANNER_PATHS
-    }
+    normalized = path.split("?")[0].rstrip("/")
+    if normalized in {p.rstrip("/") for p in SMART_BANNER_PATHS}:
+        return True
+    return any(
+        normalized == prefix or normalized.startswith(prefix + "/")
+        for prefix in SMART_BANNER_PREFIXES
+    )
 
 
 def smart_app_banner_meta(path: str) -> str:

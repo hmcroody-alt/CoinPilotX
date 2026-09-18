@@ -112,13 +112,18 @@ def mobile_app_schema():
     }
 
 
-def app_landing_graph(page):
-    """The graph for /app, composed by hand rather than through `schema_graph`.
+def app_page_graph(page, trail=()):
+    """The graph for the app pages, composed by hand rather than through
+    `schema_graph`.
 
     `schema_graph` attaches a `Service` node to every page, with `serviceType`
     defaulting to "AI intelligence". On a page whose subject is a free iPhone
     app that is not a smaller claim than the rest, it is a different one, and
     the point of this pass is that each node corresponds to something real.
+
+    `trail` is the breadcrumb between the home page and this one, so a feature
+    page can say it sits under /app. Passing it explicitly rather than deriving
+    it from the URL keeps the crumb honest when the two disagree.
     """
 
     graph = [
@@ -128,6 +133,7 @@ def app_landing_graph(page):
         webpage_schema(page),
         breadcrumb_schema([
             ("Home", SITE_URL + "/"),
+            *trail,
             (page["breadcrumb"], page["canonical"]),
         ]),
     ]

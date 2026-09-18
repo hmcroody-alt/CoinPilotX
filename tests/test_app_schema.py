@@ -253,9 +253,17 @@ def test_the_screenshots_that_are_referenced_actually_exist(landing):
     body = landing.get_data(as_text=True)
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     referenced = re.findall(r'src="(/static/img/app/[^"]+)"', body)
-    assert len(referenced) == len(bot.APP_LANDING_SCREENSHOTS) == 5
+    assert len(referenced) == len(bot.APP_LANDING_SCREENSHOTS)
     for src in referenced:
         assert os.path.exists(os.path.join(root, src.lstrip("/"))), src
+
+    # And the other direction, which matters for a different reason. A screenshot
+    # dropped from the list for a copy reason is still served at its own URL and
+    # still indexable as an image, so the removal is only real once the file is
+    # gone. `pulsesoc-app-video-calls.webp` was dropped precisely because its
+    # pixels read "End-to-end encrypted".
+    on_disk = set(os.listdir(os.path.join(root, "static/img/app")))
+    assert on_disk == {name for name, _alt in bot.APP_LANDING_SCREENSHOTS}
     for tag in re.findall(r"<img [^>]*/static/img/app/[^>]*>", body):
         assert 'width="' in tag and 'height="' in tag, tag
         assert 'alt="' in tag and 'alt=""' not in tag, tag
