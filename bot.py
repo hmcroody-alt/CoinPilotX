@@ -3613,6 +3613,67 @@ def enforce_admin_form_csrf():
     )
 
 
+def render_app_only_destination(
+    destination_key, source, can_open_app, scheme_path=None, status=200
+):
+    """The "this lives in the iPhone app" page, for one destination.
+
+    Deliberately a 200 and not a 302 to the App Store. A visitor at a desktop
+    cannot install an iPhone app on the machine in front of them, so bouncing
+    them to the listing ends the session on a page they can do nothing with; the
+    QR code is the affordance that actually carries the destination to a phone.
+
+    `can_open_app` decides whether the `pulsesoc://` button is offered at all.
+    It is only true where an installed app could plausibly answer — a scheme
+    navigation on a desktop browser can never succeed, and one fired
+    automatically shows an OS error sheet to everybody without the app. The
+    button is offered; it is never taken on the member's behalf.
+
+    `scheme_path` carries the exact resource — `/pulse/marketplace/9`, not
+    `/pulse/marketplace`. It is validated by `app_links.app_scheme_url`, which
+    refuses anything that is not a known destination, so the value that reaches
+    the `href` can never be assembled from raw request input.
+
+    Renders for signed-out visitors too, on purpose: it names a destination and
+    reveals nothing about it, and gating it behind login would strand exactly
+    the person the page exists for.
+    """
+    spec = app_links.DESTINATIONS.get(destination_key)
+    noun = (spec.display_name if spec else "") or "This part of PulseSoc"
+    scheme_url = ""
+    if can_open_app and spec is not None:
+        try:
+            scheme_url = app_links.app_scheme_url(scheme_path or spec.path_template)
+        except app_links.AppLinkError:
+            scheme_url = ""
+
+    logging.info(
+        "%s destination=%s source=%s can_open_app=%s",
+        app_links.EVENT_APP_ONLY_INTERSTITIAL,
+        destination_key,
+        source,
+        "yes" if scheme_url else "no",
+    )
+
+    body = render_template(
+        "app_only_destination.html",
+        heading=f"{noun} is available in the PulseSoc iPhone app",
+        explanation=(
+            "We are still building this experience for the web. Install PulseSoc "
+            "on iPhone to pick up exactly where you left off."
+        ),
+        app_store_url=pulsesoc_app_store_url(),
+        qr_src=app_links.app_store_qr_asset(),
+        app_scheme_url=scheme_url,
+        can_open_app=bool(scheme_url),
+        destination_key=destination_key,
+        native_open_event=app_links.EVENT_NATIVE_OPEN_SELECTED,
+    )
+    response = webhook_app.make_response((body, status))
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.before_request
 def route_app_intent_links_to_the_app_store():
     """App-first fallback for links that say "open this in the PulseSoc app".
@@ -3655,6 +3716,13 @@ def route_app_intent_links_to_the_app_store():
         return None
 
     source = app_links.app_link_source(request.args)
+    if action == app_links.FALLBACK_APP_ONLY:
+        # Desktop or Android on a destination with no finished web surface. Not
+        # a redirect to the listing: an iPhone app cannot be installed from the
+        # machine this visitor is sitting at, so the QR code is the affordance
+        # that actually moves them forward.
+        return render_app_only_destination(detail, source, can_open_app=False)
+
     if action != app_links.FALLBACK_APP_STORE:
         if detail == "unknown_destination":
             # Normal routing takes it from here, which means the ordinary 404 —
@@ -55844,6 +55912,74 @@ def pulse_web_app_shell(spa_path: str = ""):
     # route, and a second SPA mount gets the same treatment by construction.
     g.pulse_spa_response = True
     return response
+
+
+@webhook_app.route("/open/<destination>", methods=["GET"])
+@webhook_app.route("/open/<destination>/<resource_id>", methods=["GET"])
+@public_route(
+    reason=(
+        "A handoff page. It names a destination and renders two links -- the "
+        "App Store listing and, on iOS, a pulsesoc:// button -- and reads no "
+        "member data of any kind, so there is nothing here for a gate to "
+        "protect. Gating it would be actively harmful: the people who reach "
+        "this URL are the ones who do not yet have the app, and bouncing them "
+        "to /login first is how the destination gets lost."
+    )
+)
+def open_destination_interstitial(destination: str, resource_id: str = ""):
+    """The `/open/...` compatibility surface. Deliberately NOT a universal link.
+
+    Every binary in the App Store today claims a fixed component list that does
+    not include `/open/...` (`services/native_app_links.py`), so iOS hands these
+    URLs to Safari no matter who is asking. The two obvious shortcuts are both
+    worse than doing nothing:
+
+    - A 302 to the canonical `/pulse/...` universal link does not open the app.
+      iOS does not re-evaluate associated domains on a redirect target, and it
+      never opens the app for a same-domain navigation. It would also actively
+      punish members who DO have the app, by bouncing them to the App Store.
+    - An automatic `pulsesoc://` navigation shows an OS "cannot open" sheet to
+      every visitor without the app -- which, on this page, is most of them.
+
+    So it renders, and the member chooses. `/open/...` becomes a real universal
+    link in Phase 2, once a binary that declares those routes has shipped and
+    the association has been updated; see
+    `docs/routing/PULSESOC_WEBSITE_TO_NATIVE_ROUTING.md`.
+
+    The canonical `/pulse/...?pulse_app=1` links stay the production authority
+    throughout. Nothing here supersedes them.
+    """
+    source = app_links.app_link_source(request.args)
+    key = (destination or "").strip().lower()
+    spec = app_links.DESTINATIONS.get(key)
+    if spec is None or not spec.native_supported:
+        # Never a redirect assembled from the path, and never a page promising
+        # a destination the shipped binary cannot resolve.
+        logging.info(
+            "%s destination=%s source=%s surface=open",
+            app_links.EVENT_UNKNOWN_DESTINATION,
+            key or "(empty)",
+            source,
+        )
+        abort(404)
+
+    try:
+        path = app_links.resolve_destination_path(key, resource_id or None)
+    except app_links.AppLinkError as exc:
+        logging.info("%s error=%s surface=open", app_links.EVENT_LINK_INVALID, exc)
+        abort(404)
+
+    is_ios = is_ios_user_agent(request.headers.get("User-Agent", ""))
+    logging.info(
+        "%s destination=%s source=%s client=%s surface=open",
+        app_links.EVENT_OPEN_REQUESTED,
+        key,
+        source,
+        "ios" if is_ios else "other",
+    )
+    return render_app_only_destination(
+        key, source, can_open_app=is_ios, scheme_path=path
+    )
 
 
 @webhook_app.route("/pulse/spaces", methods=["GET"])

@@ -1,0 +1,130 @@
+{#
+  The page a visitor gets when the thing they asked for exists only in the
+  iPhone app.
+
+  Two callers, one page:
+  - `bot.route_app_intent_links_to_the_app_store` on FALLBACK_APP_ONLY, i.e. a
+    desktop or Android visitor following an app-intent link whose destination
+    has no finished web surface.
+  - `/open/<destination>`, the compatibility alias.
+
+  Why this is a 200 and not a redirect to the App Store: a person at a desktop
+  cannot install an iPhone app on the machine they are sitting at, so the
+  listing is a dead end that reads as a bug. The QR code is the actual
+  affordance -- it is how the destination travels from the desk to the phone.
+
+  Why the "Open PulseSoc" button is user-initiated and gated on `can_open_app`:
+  a `pulsesoc://` navigation fired automatically shows an OS error sheet to
+  everyone without the app, and on a desktop it can never succeed at all. It is
+  offered, never taken.
+#}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  {# Not a destination for search traffic: it is a handoff, and the resource it
+     names is indexed at its own canonical URL. #}
+  <meta name="robots" content="noindex, nofollow" />
+  <meta name="theme-color" content="#020817" />
+  <title>{{ heading }} | PulseSoc</title>
+  <link rel="icon" type="image/png" href="/static/brand/pulsesoc-favicon-32-20260913.png" />
+  <link rel="apple-touch-icon" href="/static/brand/pulsesoc-apple-touch-icon-20260913.png" />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      color: #f2fbff;
+      background: linear-gradient(135deg, #050b14, #07111e);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    }
+    .card {
+      width: min(100%, 560px);
+      padding: 32px;
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      background: rgba(13, 22, 39, 0.9);
+      text-align: center;
+    }
+    h1 { font-size: 1.5rem; margin: 0 0 12px; line-height: 1.3; }
+    p { margin: 0 0 20px; line-height: 1.55; color: #c8d8e8; }
+    .actions { display: flex; flex-direction: column; gap: 12px; align-items: stretch; }
+    a.action {
+      display: block;
+      padding: 14px 18px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    a.primary { background: #0f9d58; color: #ffffff; }
+    a.ghost { border: 1px solid rgba(255, 255, 255, 0.28); color: #f2fbff; }
+    a.action:focus-visible { outline: 3px solid #00e5ff; outline-offset: 2px; }
+    figure { margin: 24px 0 0; }
+    figure img {
+      width: 180px;
+      height: 180px;
+      background: #ffffff;
+      border-radius: 10px;
+      padding: 8px;
+    }
+    figcaption { margin-top: 10px; font-size: 0.85rem; color: #93a8bd; }
+    .back { display: inline-block; margin-top: 22px; color: #93a8bd; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>{{ heading }}</h1>
+    <p>{{ explanation }}</p>
+
+    <div class="actions">
+      {% if can_open_app and app_scheme_url %}
+      {# No auto-launch, no meta refresh, no redirect. The member decides. #}
+      <a class="action primary" href="{{ app_scheme_url }}" data-app-link="open-installed">Open PulseSoc</a>
+      <a class="action ghost" href="{{ app_store_url }}" rel="noopener" data-app-link="app-store">Get PulseSoc on the App Store</a>
+      {% else %}
+      <a class="action primary" href="{{ app_store_url }}" rel="noopener" data-app-link="app-store">Get PulseSoc on the App Store</a>
+      {% endif %}
+    </div>
+
+    {% if qr_src %}
+    <figure>
+      <img src="{{ qr_src }}" width="180" height="180"
+           alt="QR code linking to the PulseSoc app on the App Store" />
+      <figcaption>Scan with an iPhone camera to install PulseSoc.</figcaption>
+    </figure>
+    {% endif %}
+
+    <a class="back" href="/">Back to PulseSoc</a>
+  </main>
+
+  {% if can_open_app and app_scheme_url %}
+  {# The one event on this page the server cannot see for itself: following a
+     `pulsesoc://` href never reaches us. It is also the event worth having --
+     it is the only signal that anyone arriving here already had the app, which
+     is what tells us whether this page is helping or is pure install funnel.
+
+     sendBeacon because the navigation tears the page down immediately; a fetch
+     would usually be cancelled. Nothing here gates the navigation: the anchor's
+     default action is untouched, and a failed beacon is silently dropped. #}
+  <script>
+    (function () {
+      var link = document.querySelector('[data-app-link="open-installed"]');
+      if (!link || !navigator.sendBeacon) return;
+      link.addEventListener("click", function () {
+        try {
+          navigator.sendBeacon("/api/track", new Blob([JSON.stringify({
+            event_name: {{ native_open_event | tojson }},
+            page_url: location.pathname,
+            metadata: { destination: {{ destination_key | tojson }} }
+          })], { type: "application/json" }));
+        } catch (e) {}
+      });
+    })();
+  </script>
+  {% endif %}
+</body>
+</html>
