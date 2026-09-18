@@ -14,10 +14,14 @@ established by reading the shipped sources rather than by assumption:
 
 1. The Associated Domains entitlement claims exactly one host, `pulsesoc.com`
    (`mobile-native/ios/PulseSoc/PulseSoc.entitlements`), and the published
-   apple-app-site-association claims exactly two path components, `/pulse/*`
-   and `/search*` (`services/native_app_links.py`). iOS will never hand any
-   other path to the app. A brand-new path family such as `/open/...` would be
-   silently ignored by every installed copy of the app in the world.
+   apple-app-site-association claims a fixed list of path components --
+   `/pulse`, `/pulse/*`, `/search*`, `/dashboard`, `/dashboard/*`,
+   `/account/*`, `/settings/*`, `/notifications`, `/saved` and `/education/*`
+   (`services/native_app_links.py`, `APPLE_LINK_COMPONENTS`). iOS will never
+   hand any other path to the app. A brand-new path family such as `/open/...`
+   would be silently ignored by every installed copy of the app in the world,
+   which is why `/open/...` is a user-initiated `pulsesoc://` interstitial and
+   not a universal link. See `docs/routing/PULSESOC_WEBSITE_TO_NATIVE_ROUTING.md`.
 
 2. The binary's own router (`mobile-native/src/navigation/nativeRouteActions.ts`
    and `linking.ts`) matches on the URL *path* with anchored regexes. Query
@@ -92,6 +96,56 @@ def app_store_url() -> str:
     return APP_STORE_FALLBACK_URL
 
 
+# The QR code is a committed static asset rather than a render-time encode: the
+# listing URL is a constant, and encoding it per request would add a dependency
+# and a CPU cost for a picture that never changes. The consequence is that the
+# asset is only truthful while `app_store_url()` still returns the URL it was
+# generated from, which is what `app_store_qr_asset()` checks. An operator who
+# points PULSESOC_APP_STORE_URL somewhere else gets no QR rather than a QR that
+# silently sends phones to the old listing.
+APP_STORE_QR_ASSET = "/static/img/app-store-qr.svg"
+
+
+def app_store_qr_asset() -> str:
+    """The QR image path, or "" when it would no longer encode the live URL."""
+
+    return APP_STORE_QR_ASSET if app_store_url() == APP_STORE_FALLBACK_URL else ""
+
+
+# --------------------------------------------------------------------------
+# Custom URL scheme
+# --------------------------------------------------------------------------
+
+# Declared in `mobile-native/src/navigation/linking.ts` alongside
+# `https://pulsesoc.com`. React Navigation strips the prefix and routes what is
+# left, so `pulsesoc://pulse/marketplace/9` resolves through exactly the same
+# route table as the universal link.
+#
+# This exists for one job: the interstitial's "Open PulseSoc" button. A custom
+# scheme is the only way a web page can reach an already-installed app on a path
+# the association does not claim, and unlike a universal link it does not need a
+# new binary. It is not an alternative link authority -- nothing shareable is
+# ever built from it, because a `pulsesoc://` link in an email or a message is a
+# dead end for every person who has not installed the app.
+APP_SCHEME = "pulsesoc://"
+
+
+def app_scheme_url(path: str) -> str:
+    """The `pulsesoc://` form of a canonical path, for a user-initiated open.
+
+    Raises unless the path resolves to a destination the shipped binary declares.
+    That is a security boundary as much as a correctness one: the result goes
+    into an `href`, and a scheme URL assembled from unvalidated request input is
+    how `javascript:` or an unrelated app's scheme gets into the page.
+    """
+
+    normalized = _normalize_path(path)
+    spec = match_destination(normalized)
+    if spec is None or not spec.native_supported:
+        raise AppLinkError(f"no native destination for {path!r}")
+    return f"{APP_SCHEME}{normalized.lstrip('/')}"
+
+
 # --------------------------------------------------------------------------
 # Markers
 # --------------------------------------------------------------------------
@@ -117,6 +171,14 @@ EVENT_OPEN_REQUESTED = "app_link_open_requested"
 EVENT_LINK_INVALID = "app_link_invalid"
 EVENT_LINK_FALLBACK = "app_link_fallback"
 EVENT_UNKNOWN_DESTINATION = "app_link_unknown_destination"
+# The app-only interstitial was rendered: the visitor asked for a destination
+# with no production-ready web surface on a platform that cannot open the app.
+EVENT_APP_ONLY_INTERSTITIAL = "app_link_app_only_interstitial"
+# The visitor pressed "Open PulseSoc" on an interstitial, so a `pulsesoc://`
+# launch was attempted. Records the choice, never whether the app was there --
+# the page cannot observe that, and claiming otherwise in telemetry would make
+# every later adoption number wrong.
+EVENT_NATIVE_OPEN_SELECTED = "app_link_native_open_selected"
 
 
 # --------------------------------------------------------------------------
@@ -175,6 +237,13 @@ class Destination:
     # Truthful default CTA wording. Callers may override, but a caller that
     # cannot describe the destination should fall back to this.
     label: str = "Open in PulseSoc"
+    # Noun phrase for the app-only interstitial's heading ("Marketplace is
+    # available in the PulseSoc iPhone app"). Separate from `label`, which is
+    # imperative CTA wording and reads as nonsense in a headline. Only worth
+    # setting on destinations that can actually reach that page, i.e. the
+    # `web_equivalent=False` ones; everything else falls back to a heading that
+    # names no surface rather than naming the wrong one.
+    display_name: str = ""
     notes: str = ""
     # Path segments that live *under* this destination but are not resources of
     # it. `/pulse/profile/security` is the account security page, not a member
@@ -182,6 +251,25 @@ class Destination:
     # Without this, a slug destination would happily mint a link that opens
     # unrelated content -- the exact failure the CTA-honesty rule forbids.
     reserved_ids: frozenset[str] = frozenset()
+    # Set when this destination's path sits under a WEB_INTENT_PREFIXES entry
+    # but is nevertheless an app destination the shipped binary resolves.
+    #
+    # `/dashboard` and `/account/` are web-intent *families* -- most of what
+    # lives under them is a browser-only analytics or billing surface -- yet the
+    # association claims `/dashboard*` and `/account/*` and the binary declares
+    # `dashboard`, `dashboard/home`, `account/settings` and a handful more. Left
+    # unreconciled that split produced a genuinely incoherent product: a member
+    # WITH the app got the native screen (iOS matched the association before
+    # Flask ever saw the request), while a member WITHOUT it got the web page
+    # instead of the App Store, because `is_web_intent_path` short-circuits
+    # `fallback_decision` before the destination registry is consulted.
+    #
+    # Declaring the exception here rather than in a second list beside
+    # WEB_INTENT_PREFIXES is deliberate: there is then exactly one place where a
+    # path is both named and justified, and `tests/test_app_links.py` can check
+    # every flagged path against linking.ts. A hand-kept parallel list is how
+    # the two would drift back apart.
+    overrides_web_intent: bool = False
 
     @property
     def supports_resource(self) -> bool:
@@ -337,6 +425,7 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
             "route for the id form; the web fallback drops to "
             "/pulse/notifications."
         ),
+        display_name="This notification",
     ),
     # --- groups and events ----------------------------------------------
     _d(
@@ -365,6 +454,7 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         web_equivalent=False,
         label="Open this event in PulseSoc",
         notes="No web route for a single event; the web fallback is /pulse/events.",
+        display_name="This event",
     ),
     _d(
         "events",
@@ -374,12 +464,30 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         label="Open Events in PulseSoc",
     ),
     # --- commerce --------------------------------------------------------
+    #
+    # The whole Marketplace family is app-first, and `web_equivalent=False` is
+    # how that is expressed rather than a special case somewhere downstream.
+    #
+    # It is a statement about the *website*, not about the app: `/pulse/
+    # marketplace`, `/pulse/marketplace/<id>` and the seller surfaces do have
+    # Flask routes, but they render through `pulse_social_shell()` with no
+    # template behind them and were never designed for the browser. Marking them
+    # `web_equivalent=True` -- which `marketplace` and `store` previously were --
+    # meant `fallback_decision` sent desktop visitors *into* that unfinished
+    # surface. Flipping the flag routes them to the app-only interstitial
+    # instead, which is the honest answer until the web Marketplace ships.
+    #
+    # To return a row to web-first: flip this flag back, delete its entry from
+    # MARKETPLACE_WEB_PATHS in bot.py, and re-run tests/test_app_links.py. The
+    # procedure is written out in docs/routing/.
     _d(
         "marketplace",
         "/pulse/marketplace",
         native_screen="Tabs>Marketplace",
-        web_equivalent=True,
+        web_equivalent=False,
         label="Open Marketplace in PulseSoc",
+        notes="App-first: the web Marketplace is not production-ready.",
+        display_name="Marketplace",
     ),
     _d(
         "product",
@@ -389,7 +497,17 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         native_screen="MarketplaceDetail",
         web_equivalent=False,
         label="Open this listing in PulseSoc",
-        notes="No web route for a single listing; the web fallback is /pulse/marketplace.",
+        notes="App-first: no production-ready web route for a single listing.",
+        display_name="This listing",
+    ),
+    _d(
+        "marketplace_create",
+        "/pulse/marketplace/create",
+        native_screen="MarketplaceCreateGateway",
+        web_equivalent=False,
+        auth_required=True,
+        label="Create a listing in PulseSoc",
+        display_name="The listing composer",
     ),
     _d(
         "store",
@@ -397,9 +515,47 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         id_kind=ID_KIND_SLUG,
         id_required=True,
         native_screen="MerchantProfile",
-        web_equivalent=True,
+        web_equivalent=False,
         label="Open this store in PulseSoc",
+        notes="App-first: the web store page is not production-ready.",
         reserved_ids=frozenset({"apply", "dashboard", "payouts"}),
+        display_name="This store",
+    ),
+    _d(
+        "seller",
+        "/pulse/seller-store",
+        native_screen="SellerStore",
+        web_equivalent=False,
+        auth_required=True,
+        label="Open Seller Tools in PulseSoc",
+        display_name="Seller Tools",
+    ),
+    _d(
+        "seller_dashboard",
+        "/pulse/merchant/dashboard",
+        native_screen="MerchantDashboard",
+        web_equivalent=False,
+        auth_required=True,
+        label="Open your seller dashboard in PulseSoc",
+        display_name="The seller dashboard",
+    ),
+    _d(
+        "seller_apply",
+        "/pulse/merchant/apply",
+        native_screen="MerchantApply",
+        web_equivalent=False,
+        auth_required=True,
+        label="Apply to sell in PulseSoc",
+        display_name="The seller application",
+    ),
+    _d(
+        "purchases",
+        "/pulse/purchases",
+        native_screen="BuyerPurchases",
+        web_equivalent=False,
+        auth_required=True,
+        label="Open your purchases in PulseSoc",
+        display_name="Purchase history",
     ),
     _d(
         "orders",
@@ -408,7 +564,8 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         web_equivalent=False,
         auth_required=True,
         label="Open your orders in PulseSoc",
-        notes="No web route at all; /pulse/purchases is the nearest web surface.",
+        notes="App-first with the rest of Marketplace. /pulse/orders does render on the web; the decision is not to send members there yet.",
+        display_name="Order history",
     ),
     _d(
         "order",
@@ -419,7 +576,8 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         web_equivalent=False,
         auth_required=True,
         label="Open this order in PulseSoc",
-        notes="No web route; the web fallback is /pulse/purchases.",
+        notes="App-first with the rest of Marketplace. /pulse/orders/<id> does render on the web; the decision is not to send members there yet.",
+        display_name="This order",
     ),
     # --- AI / private ----------------------------------------------------
     _d(
@@ -429,6 +587,7 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         web_equivalent=False,
         auth_required=True,
         label="Open PulseSoc AI",
+        display_name="PulseSoc AI",
     ),
     _d(
         "private_office",
@@ -441,6 +600,7 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
             "Private Office keeps its own second lock inside the app. A deep "
             "link names the destination; it grants nothing."
         ),
+        display_name="Private Office",
     ),
     # --- misc ------------------------------------------------------------
     _d(
@@ -465,6 +625,148 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         web_equivalent=True,
         auth_required=True,
         label="Open Premium in PulseSoc",
+    ),
+    # --- creator and account workflows -----------------------------------
+    #
+    # Every path below was read off mobile-native/src/navigation/linking.ts and
+    # is resolved by the CURRENT App Store binary. `tests/test_app_links.py`
+    # re-derives that list from linking.ts and fails if any entry here stops
+    # being declared, so this block cannot quietly outlive the routes it names.
+    _d(
+        "dashboard",
+        "/dashboard",
+        native_screen="UserDashboard",
+        web_equivalent=True,
+        auth_required=True,
+        overrides_web_intent=True,
+        label="Open your dashboard in PulseSoc",
+    ),
+    _d(
+        "create",
+        "/pulse/compose",
+        native_screen="DashboardComposeAlias",
+        web_equivalent=True,
+        auth_required=True,
+        label="Create a post in PulseSoc",
+    ),
+    _d(
+        "creator_studio",
+        "/pulse/creator-studio",
+        native_screen="CreatorStudio",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open Creator Studio in PulseSoc",
+    ),
+    _d(
+        "promote",
+        "/pulse/growth",
+        native_screen="GrowthCenter",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open Promote in PulseSoc",
+    ),
+    _d(
+        "portfolio",
+        "/pulse/portfolio",
+        native_screen="Portfolio",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open your portfolio in PulseSoc",
+    ),
+    _d(
+        "saved",
+        "/saved",
+        native_screen="Saved",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open Saved in PulseSoc",
+    ),
+    _d(
+        "friends",
+        "/dashboard/network/friends",
+        native_screen="DashboardLegacyModule",
+        web_equivalent=True,
+        auth_required=True,
+        overrides_web_intent=True,
+        label="Open Friends in PulseSoc",
+    ),
+    _d(
+        "profile_edit",
+        "/pulse/profile/edit",
+        native_screen="ProfileEdit",
+        web_equivalent=True,
+        auth_required=True,
+        label="Edit your profile in PulseSoc",
+    ),
+    # The top-level alias. `/pulse/notifications` above is the in-product path;
+    # this is the one the association claims as its own component and the one
+    # notification emails have always used.
+    _d(
+        "notifications_web",
+        "/notifications",
+        native_screen="NotificationCenter",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open notifications in PulseSoc",
+    ),
+    _d(
+        "account_settings",
+        "/account/settings",
+        native_screen="AccountWebSettings",
+        web_equivalent=True,
+        auth_required=True,
+        overrides_web_intent=True,
+        label="Open account settings in PulseSoc",
+    ),
+    _d(
+        "account_security",
+        "/account/security",
+        native_screen="AccountWebSecurity",
+        web_equivalent=True,
+        auth_required=True,
+        overrides_web_intent=True,
+        label="Open account security in PulseSoc",
+    ),
+    # --- named, and deliberately not linkable ----------------------------
+    #
+    # Collections and Roast Battle are app-first in product terms and have no
+    # native route at all: neither appears in linking.ts, in nativeRouteActions
+    # .ts, or as a screen file. They are registered as `native_supported=False`
+    # rather than left out so that the gap is a fact the code states, and so the
+    # CTA-honesty rule does the enforcing -- `build_app_link("collections")`
+    # raises, and `app_intent_url` leaves any such path unmarked, which means no
+    # button promising them can ship by accident.
+    #
+    # Removing `native_supported=False` is the deliberate act that turns each of
+    # these on, and it is only correct once the route exists in a RELEASED
+    # binary. See docs/routing/ for the checklist.
+    _d(
+        "collections",
+        "/pulse/collections",
+        native_supported=False,
+        native_screen="",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open Collections in PulseSoc",
+        notes=(
+            "No native route in the shipped binary. Requires a future build "
+            "before any link or CTA may name it. The web page at "
+            "/pulse/collections is finished and is where everyone goes today."
+        ),
+    ),
+    _d(
+        "roast_battle",
+        "/pulse/roast-battle",
+        native_supported=False,
+        native_screen="",
+        web_equivalent=True,
+        auth_required=True,
+        label="Open Roast Battle in PulseSoc",
+        notes=(
+            "No native route in the shipped binary. Requires a future build "
+            "before any link or CTA may name it. The web page at "
+            "/pulse/roast-battle is finished and is where everyone goes today."
+        ),
     ),
 )
 
@@ -560,10 +862,57 @@ WEB_INTENT_PREFIXES = (
 )
 
 
+# Destinations that are app-first even though pulsesoc.com does have a route for
+# them. Everywhere else `web_equivalent` is expected to agree with the Flask URL
+# map, and `tests/test_app_intent_fallback_router.py` checks that against the
+# live map -- a check worth having, because the field had already drifted: two
+# entries carried the note "no web route" long after `/pulse/orders` was built.
+#
+# Since `web_equivalent=False` now decides what a *desktop* visitor sees, a stale
+# False is no longer a harmless annotation. It takes a working web page away from
+# someone who could have used it.
+APP_FIRST_DESPITE_WEB_ROUTE: dict[str, str] = {
+    "marketplace": "Marketplace is app-first by decision until the web Marketplace is rebuilt.",
+    "marketplace_create": "Listing creation is app-first with the rest of Marketplace.",
+    "product": "Listing detail is app-first with the rest of Marketplace.",
+    "store": "Merchant storefronts are app-first with the rest of Marketplace.",
+    "seller": "Seller tools are app-first with the rest of Marketplace.",
+    "seller_apply": "Seller onboarding is app-first with the rest of Marketplace.",
+    "seller_dashboard": "The seller dashboard is app-first with the rest of Marketplace.",
+    "orders": "Order management is app-first with the rest of Marketplace.",
+    "order": "Order detail is app-first with the rest of Marketplace.",
+    "purchases": "Purchase history is app-first with the rest of Marketplace.",
+    # Pre-dating the app-first decision and deliberately left alone. Both render
+    # a web page, so `web_equivalent=True` is arguably the truthful value -- and
+    # changing it would be a behaviour change for two subsystems this work has
+    # not otherwise touched. Recorded as an open question in the routing doc
+    # rather than changed quietly here.
+    "undx": "Pre-existing classification, retained pending review.",
+    "private_office": "Pre-existing classification, retained pending review.",
+}
+
+
+# The exact paths that are app destinations despite sitting inside a web-intent
+# family. Derived from the registry so there is one source of truth; see the
+# `overrides_web_intent` field for why the exception is declared there.
+WEB_INTENT_OVERRIDES: frozenset[str] = frozenset(
+    spec.path_template
+    for spec in _DESTINATION_LIST
+    if spec.overrides_web_intent and spec.native_supported
+)
+
+
 def is_web_intent_path(path: str) -> bool:
-    """True when the path is ordinary website navigation and must be left alone."""
+    """True when the path is ordinary website navigation and must be left alone.
+
+    The override check runs first. Without it a prefix always wins, and the
+    prefixes are families (`/dashboard`, `/account/`) that contain both kinds of
+    page -- so the specific app destinations inside them could never be reached.
+    """
 
     normalized = _normalize_path(path)
+    if normalized in WEB_INTENT_OVERRIDES:
+        return False
     if normalized in WEB_INTENT_PATHS:
         return True
     return any(normalized.startswith(prefix) for prefix in WEB_INTENT_PREFIXES)
@@ -816,6 +1165,12 @@ def app_link_source(query: Mapping[str, object] | None) -> str:
 FALLBACK_APP_STORE = "app_store"
 FALLBACK_WEB = "web"
 FALLBACK_IGNORE = "ignore"
+# Render the "this lives in the iPhone app" page: an explanation, an App Store
+# button and a QR code to carry the destination to a phone. Distinct from
+# FALLBACK_APP_STORE because a desktop visitor cannot install an iPhone app on
+# the machine they are sitting at, so redirecting them to the listing ends their
+# session on a page they can do nothing with.
+FALLBACK_APP_ONLY = "app_only"
 
 
 def fallback_decision(path: str, is_ios: bool, is_app_intent: bool) -> tuple[str, str]:
@@ -830,10 +1185,17 @@ def fallback_decision(path: str, is_ios: bool, is_app_intent: bool) -> tuple[str
 
     Off iOS, an iOS App Store listing is not a usable destination, so a desktop or
     Android visitor continues to the web page when one genuinely exists. When it
-    does not, the listing is still the only honest place left to send them. This
-    is a deliberate reading of "never the website": the rule protects the
-    app-first contract on the platform where the app can actually be installed,
-    and stranding a desktop reader on a 404 would serve nobody.
+    does not, they get FALLBACK_APP_ONLY: a page that names the destination,
+    links the listing and offers a QR code to carry it to a phone.
+
+    `native_supported=False` short-circuits both of those, including the iOS
+    branch, because no amount of installing reaches a route the binary does not
+    have.
+
+    That last branch used to return the App Store listing itself. Redirecting a
+    desktop visitor to an iPhone listing they cannot install from is a dead end,
+    and for the Marketplace family -- now `web_equivalent=False` throughout -- it
+    would have become the single most common outcome on desktop.
     """
 
     if not is_app_intent:
@@ -849,11 +1211,24 @@ def fallback_decision(path: str, is_ios: bool, is_app_intent: bool) -> tuple[str
         # redirect built from anything the caller sent.
         return FALLBACK_WEB, "unknown_destination"
 
+    if not spec.native_supported:
+        # The shipped binary has no route for this, so installing the app would
+        # not get the visitor there -- on iOS or anywhere else. `app_intent_url`
+        # never marks these, so reaching here means a hand-made or stale URL,
+        # which is exactly the case worth handling rather than assuming away.
+        # Sending them to the listing would be the CTA-honesty violation the
+        # registry exists to prevent, just committed by the server instead of by
+        # a button.
+        return (FALLBACK_WEB, spec.key) if spec.web_equivalent else (
+            FALLBACK_WEB,
+            "native_unsupported",
+        )
+
     if is_ios:
         return FALLBACK_APP_STORE, spec.key
     if spec.web_equivalent:
         return FALLBACK_WEB, spec.key
-    return FALLBACK_APP_STORE, spec.key
+    return FALLBACK_APP_ONLY, spec.key
 
 
 def destination_label(destination: str, fallback: str = "Open in PulseSoc") -> str:
@@ -890,22 +1265,32 @@ __all__ = [
     "APP_INTENT_VALUE",
     "APP_SOURCE_PARAM",
     "APP_LINK_SOURCES",
+    "APP_FIRST_DESPITE_WEB_ROUTE",
+    "APP_SCHEME",
+    "APP_STORE_QR_ASSET",
     "AppLinkError",
     "CANONICAL_APP_HOST",
     "CANONICAL_APP_ORIGIN",
     "DEGRADE_TO",
     "DESTINATIONS",
     "Destination",
+    "EVENT_APP_ONLY_INTERSTITIAL",
     "EVENT_LINK_FALLBACK",
     "EVENT_LINK_GENERATED",
     "EVENT_LINK_INVALID",
+    "EVENT_NATIVE_OPEN_SELECTED",
     "EVENT_OPEN_REQUESTED",
     "EVENT_UNKNOWN_DESTINATION",
+    "FALLBACK_APP_ONLY",
     "FALLBACK_APP_STORE",
     "FALLBACK_IGNORE",
     "FALLBACK_WEB",
+    "WEB_INTENT_OVERRIDES",
     "app_intent_url",
     "app_link_source",
+    "app_scheme_url",
+    "app_store_qr_asset",
+    "app_store_url",
     "build_app_link",
     "describe_destinations",
     "destination_label",

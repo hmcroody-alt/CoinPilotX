@@ -17,12 +17,66 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+def _load_aasa_health():
+    import importlib.util
+
+    path = ROOT / "scripts" / "web_rebuild" / "aasa_health.py"
+    spec = importlib.util.spec_from_file_location("aasa_health_for_app_links", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_HEALTH = _load_aasa_health()
+
+
+def _declared_native_paths():
+    return _HEALTH.declared_native_paths()
+
+
+def _binary_resolves(path: str) -> bool:
+    """Does a route template in linking.ts resolve this concrete path?
+
+    Template-aware on purpose. `/dashboard/network/friends` is resolved by
+    `dashboard/:legacyGroup/:legacyModule/:legacySubmodule?`, so a literal
+    membership test against the declared strings would report the app cannot
+    open a path it opens every day.
+    """
+    wanted = path.strip("/")
+    for paths in _declared_native_paths().values():
+        for declared in paths:
+            for pattern in _template_regexes(declared):
+                if pattern and re.fullmatch(pattern, wanted):
+                    return True
+    return False
+
+
+def _template_regexes(declared: str) -> list[str]:
+    """Expand a React Navigation template into regexes, one per optional arm.
+
+    Deliberately not built on `aasa_health.concrete_urls`, which substitutes
+    every `:param` with the literal `sample` — a regex derived from its output
+    matches only paths that happen to contain the word `sample`, which is a
+    check that passes for nothing real.
+    """
+    variants: list[list[str]] = [[]]
+    for segment in declared.strip("/").split("/"):
+        if segment.endswith("?"):
+            variants = variants + [v + [r"[^/]+"] for v in variants]
+        elif segment.startswith(":"):
+            variants = [v + [r"[^/]+"] for v in variants]
+        else:
+            variants = [v + [re.escape(segment)] for v in variants]
+    return ["/".join(v) for v in variants if v]
+
+
 from services import app_links
 from services.app_links import (
     APP_INTENT_PARAM,
     APP_SOURCE_PARAM,
     CANONICAL_APP_ORIGIN,
     DESTINATIONS,
+    FALLBACK_APP_ONLY,
     FALLBACK_APP_STORE,
     FALLBACK_IGNORE,
     FALLBACK_WEB,
@@ -137,8 +191,10 @@ def test_existing_query_is_preserved_and_markers_are_not_duplicated():
         "/legal/dpa",
         "/support",
         "/help/getting-started",
-        "/account/settings",
+        "/account",
+        "/account/billing",
         "/checkout/confirm",
+        "/dashboard/economy/subscriptions",
         "/reset-password",
         "/verify-email",
         "/login",
@@ -148,6 +204,40 @@ def test_existing_query_is_preserved_and_markers_are_not_duplicated():
 def test_website_navigation_is_never_converted_into_an_app_launch(web_link):
     # Section 2: legitimate web destinations keep working as web destinations.
     assert app_intent_url(web_link, "email") == web_link
+
+
+@pytest.mark.parametrize(
+    "path,key",
+    [
+        ("/dashboard", "dashboard"),
+        ("/dashboard/network/friends", "friends"),
+        ("/account/settings", "account_settings"),
+        ("/account/security", "account_security"),
+    ],
+)
+def test_app_destinations_inside_web_intent_families_are_reachable(path, key):
+    """The five families the association claims must not be web-intent.
+
+    `/dashboard` and `/account/` are web-intent prefixes, and the prefix used to
+    win unconditionally. That made the product incoherent rather than merely
+    conservative: iOS matches the association before Flask sees the request, so
+    a member WITH the app got the native screen while a member WITHOUT it got
+    the web page instead of the App Store. Same link, opposite contract.
+    """
+    assert is_web_intent_path(path) is False
+    assert match_destination(path).key == key
+    assert app_intent_url(path, "email").startswith(f"{CANONICAL_APP_ORIGIN}{path}?")
+
+
+@pytest.mark.parametrize("path", sorted(app_links.WEB_INTENT_OVERRIDES))
+def test_every_web_intent_override_is_a_path_the_binary_declares(path):
+    """An override is a hole in a protective prefix. It has to be earned.
+
+    Checked against linking.ts rather than against a list in this file, so an
+    override outliving the native route it was granted for fails here instead of
+    silently sending members to the App Store for a screen that no longer exists.
+    """
+    assert _binary_resolves(path), f"{path} is not declared in linking.ts"
 
 
 @pytest.mark.parametrize(
@@ -168,11 +258,7 @@ def test_off_host_and_hostile_links_pass_through_untouched(foreign):
     "reserved",
     [
         "/pulse/profile/security",
-        "/pulse/profile/edit",
         "/pulse/groups/create",
-        "/pulse/merchant/apply",
-        "/pulse/merchant/dashboard",
-        "/pulse/marketplace/create",
     ],
 )
 def test_reserved_sub_pages_are_not_mistaken_for_resources(reserved):
@@ -180,6 +266,27 @@ def test_reserved_sub_pages_are_not_mistaken_for_resources(reserved):
     # as a member handle would open unrelated content behind an honest-looking
     # button.
     assert app_intent_url(reserved, "email") == reserved
+
+
+@pytest.mark.parametrize(
+    "reserved,key",
+    [
+        ("/pulse/profile/edit", "profile_edit"),
+        ("/pulse/merchant/apply", "seller_apply"),
+        ("/pulse/merchant/dashboard", "seller_dashboard"),
+        ("/pulse/marketplace/create", "marketplace_create"),
+    ],
+)
+def test_reserved_sub_pages_resolve_to_themselves_not_to_their_parent(reserved, key):
+    """The stronger form of the rule above, for sub-pages that now have a key.
+
+    These four were only ever checked for what they must NOT do -- resolve as a
+    member handle, a store slug or a listing id. Now that each names a real
+    destination, asserting the negative alone would pass just as happily if
+    `/pulse/merchant/dashboard` started resolving as a store called "dashboard".
+    Pinning the key is what makes the id-space separation observable.
+    """
+    assert match_destination(reserved).key == key
 
 
 def test_paths_the_released_binary_cannot_resolve_are_left_alone():
@@ -238,10 +345,37 @@ def test_web_intent_paths_are_ignored_even_if_someone_appends_the_marker():
 
 def test_non_ios_continues_to_the_web_only_where_a_web_page_genuinely_exists():
     assert fallback_decision("/pulse/post/5", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
-    # No web route exists for a single listing or for orders, so the listing is
-    # the only honest destination left.
-    assert fallback_decision("/pulse/marketplace/9", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_STORE
-    assert fallback_decision("/pulse/orders", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_STORE
+    # No production-ready web surface for a listing or for orders. A desktop
+    # visitor gets the app-only page, not a redirect to an iPhone listing they
+    # cannot install from.
+    assert fallback_decision("/pulse/marketplace/9", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
+    assert fallback_decision("/pulse/orders", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/pulse/marketplace",
+        "/pulse/marketplace/9",
+        "/pulse/merchant/acme",
+        "/pulse/seller-store",
+        "/pulse/merchant/dashboard",
+        "/pulse/merchant/apply",
+        "/pulse/orders",
+        "/pulse/orders/4",
+        "/pulse/purchases",
+    ],
+)
+def test_the_whole_marketplace_family_is_app_first_on_every_platform(path):
+    """Mission decision: no visitor is shown the unfinished web Marketplace.
+
+    iOS without the app gets the listing; everything else gets the app-only
+    page. The one outcome that must never occur is FALLBACK_WEB, because the
+    web surface behind these paths renders through `pulse_social_shell()` with
+    no template and was never designed for a browser.
+    """
+    assert fallback_decision(path, is_ios=True, is_app_intent=True)[0] == FALLBACK_APP_STORE
+    assert fallback_decision(path, is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
 
 
 def test_unknown_destination_fails_safe_to_our_own_web_surface():
@@ -256,13 +390,37 @@ def test_unknown_destination_fails_safe_to_our_own_web_surface():
 
 
 def test_every_destination_path_is_claimed_by_the_published_aasa():
-    # services/native_app_links.py publishes exactly /pulse/* and /search*.
-    # A destination outside those components would never be handed to the app.
+    """A destination iOS never hands to the app is a button that opens Safari.
+
+    This used to assert the path started with `/pulse/`, on the stated grounds
+    that the AASA published "exactly /pulse/* and /search*". It publishes eleven
+    components and has for some time, so the test was enforcing a rule the
+    system had already outgrown -- it would have rejected `/notifications`, a
+    path the association explicitly claims.
+
+    Asking the real payload instead makes the test both correct and stricter: it
+    walks `components` in order through `opens_in_app`, so an `exclude` entry
+    above a claim is honoured rather than summarised away.
+    """
+    import os
+
+    os.environ.setdefault("PULSESOC_APPLE_TEAM_ID", "A1B2C3D4E5")
+    from services.native_app_links import apple_app_site_association
+
+    payload, error = apple_app_site_association()
+    assert payload is not None, error
+
     for spec in DESTINATIONS.values():
-        assert spec.path_template.startswith("/pulse/") or spec.path_template in (
-            "/pulse",
-            "/search",
-        ), spec.key
+        if not spec.native_supported:
+            # Registered to document a gap; no link is ever emitted for it.
+            continue
+        sample = spec.path_template.replace(
+            "{id}", "7" if spec.id_kind == "positive_int" else "sample"
+        )
+        assert _HEALTH.opens_in_app_anywhere(payload, sample), (
+            f"{spec.key} ({sample}) is not claimed by the published AASA, so iOS "
+            f"would open the website instead of the app"
+        )
 
 
 def test_unsupported_destinations_do_not_advertise_a_native_promise():
@@ -370,4 +528,4 @@ def test_mutation_web_equivalence_flag_is_load_bearing(monkeypatch):
             for pattern, spec in app_links._MATCHERS
         ),
     )
-    assert fallback_decision("/pulse/post/5", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_STORE
+    assert fallback_decision("/pulse/post/5", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
