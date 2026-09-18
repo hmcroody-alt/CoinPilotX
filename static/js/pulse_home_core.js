@@ -3286,9 +3286,21 @@
     return safe.replace(new RegExp(`(${needle})`, "ig"), "<em>$1</em>");
   }
 
+  // `item.url` is the canonical web path, and the same search payload is read by
+  // the native app, which feeds that url to its own router. So the app-first
+  // rewrite happens here, on a shape the server built in `app_links`, rather
+  // than in the API. A result type with no entry keeps its canonical url.
+  function pulseSearchAppFirstHref(item) {
+    const shape = (window.PULSE_APP_FIRST_LINKS || {})[item && item.type];
+    if (!shape) return (item && item.url) || "/pulse";
+    const id = item && item.id;
+    if (id === undefined || id === null || id === "") return shape.fallback;
+    return shape.template.replace(shape.token, encodeURIComponent(String(id)));
+  }
+
   function pulseSearchResultHtml(item, query) {
     const letter = String(item.type || item.title || "P").slice(0, 1).toUpperCase();
-    return `<a class="pulse-search-result" href="${esc(item.url || "/pulse")}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title || "PulseSoc result", query)}</strong><small>${pulseSearchHighlight(item.description || item.meta || "", query)}</small></span><span class="pulse-search-type">${esc(item.type || "PulseSoc")}</span></a>`;
+    return `<a class="pulse-search-result" href="${esc(pulseSearchAppFirstHref(item))}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title || "PulseSoc result", query)}</strong><small>${pulseSearchHighlight(item.description || item.meta || "", query)}</small></span><span class="pulse-search-type">${esc(item.type || "PulseSoc")}</span></a>`;
   }
 
   function renderPulseSearchResults(data) {

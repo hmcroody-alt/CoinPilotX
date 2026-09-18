@@ -146,6 +146,69 @@ routes through the same table as the universal link and needs no new binary. It
 is never used for anything shareable: a `pulsesoc://` link in an email is a dead
 end for everyone without the app.
 
+## On-site CTAs use `/open/...`, not the canonical marker link
+
+A button on pulsesoc.com cannot use `/pulse/marketplace?pulse_app=1`, even
+though that is the correct link to put in an email.
+
+iOS does not consult associated domains for a tap whose destination is the same
+domain as the page already showing. So a member who *has* the app taps the
+canonical link on pulsesoc.com, stays in Safari, reaches Flask, and the
+`before_request` hook — seeing iOS plus the marker — 302s them to the App Store
+listing for the app they are already holding.
+
+The server cannot tell the two apart. "App not installed" and "same-domain
+navigation" arrive looking identical: in both cases the marked request simply
+reached Flask. That inference is the whole mechanism, and on-site it is wrong.
+
+`/open/<destination>` is the only shape correct for both groups:
+
+- installed, iOS → the `pulsesoc://` button reaches the exact native destination;
+- not installed, any platform → the App Store button and the QR code.
+
+`bot.app_first_href(destination, resource_id=None)` is the single caller. Every
+Marketplace button on the website goes through it. No page hand-writes a
+Marketplace path, and `tests/test_marketplace_web_ctas_are_app_first.py` scans
+the whole of `bot.py` to keep it that way — the source layer is what survives the
+file growing, and the render layer over seven real pages is what proves the
+source layer is measuring something.
+
+### Cards the browser renders
+
+Search results arrive from `/api/pulse/search` as JSON, and their `url` is
+consumed by the native app too (`SearchScreen` feeds it to
+`routeNotificationTarget`). It has to stay canonical, so the app-first rewrite
+cannot happen in the API — it happens in the three renderers that build the
+anchor: `static/js/pulse_search_bridge.js`, `static/js/pulse_home_core.js`, and
+an inline script in the home shell.
+
+They do not assemble a URL. `bot.app_first_link_map_script()` injects
+
+```
+window.PULSE_APP_FIRST_LINKS = {
+  "marketplace": {template, fallback, token}
+}
+```
+
+built by `app_links.open_interstitial_url_template()`, and the browser
+substitutes only an id. The tests assert the substituted result is
+character-for-character `open_interstitial_url()`'s own output, so the two
+cannot drift. The map is keyed by the result `type`, so a card type with no
+entry keeps its canonical url and nothing has to be excluded by hand.
+
+### The deliberate exceptions
+
+| Kept on the web | Why |
+| --- | --- |
+| `/pulse/merchant/payouts` | Stripe Connect onboarding's `return_url` and `refresh_url`. It has to be a page a browser can land on; sending the button to the app would split one flow across two surfaces. |
+| the post-create redirect (`location.href='/pulse/merchant/dashboard'`) | A merchant who just built a listing in the browser continues in the browser. An install interstitial mid-flow loses the thing they came to see. |
+| `/pulse/orders`, `/pulse/purchases` | Notification deep-link targets, which native resolves. They have no website CTA. |
+| `.mobile-bottom-nav a[href="/pulse/marketplace"]` | A CSS selector, not a button — and already dead: the bottom nav has five items and Marketplace is not one of them. |
+
+None of the underlying routes were removed. They still answer a direct request,
+still serve Stripe, webhooks, OAuth callbacks and admin workflows, and links
+already sent to members still resolve. Only the buttons moved.
+
 ## Telemetry
 
 All six emit through `logging.info` with an `app_link_*` prefix, except the
@@ -237,6 +300,7 @@ exists in a **released** binary.
 | `tests/test_app_links.py` | the registry, CTA honesty, `linking.ts` agreement |
 | `tests/test_app_intent_fallback_router.py` | the hook, the interstitial, url_map agreement, security |
 | `tests/test_open_destination_interstitial.py` | `/open/...`, the scheme button, the beacon |
+| `tests/test_marketplace_web_ctas_are_app_first.py` | every website Marketplace CTA, the source scan, the rendered pages, the search-card map, the Stripe exception |
 | `tests/test_share_link_app_intent.py` | share links carry the marker |
 | `tests/test_resource_page_app_ctas.py` | resource pages emit honest CTAs |
 | `tests/web_parity/test_aasa_claims.py` | the association file's claims |

@@ -158,10 +158,14 @@ grid = client.get("/pulse/marketplace").get_data(as_text=True)
 report["grid"] = {
     "status": 200,
     "shows": {str(l): ("Listing %%d" %% l) in grid for l in %(seeded_ids)r},
-    # Every listing id the served grid links to, server-rendered.
-    "links": sorted({int(m) for m in re.findall(r"/pulse/marketplace/(\d+)", grid)}),
-    # The client-rendered card builds the same link from its own row.
-    "js_link": "/pulse/marketplace/${listingId}" in grid,
+    # Every listing id the served grid links to, server-rendered. The card's
+    # href is the app-first interstitial, not the canonical path -- see
+    # tests/test_marketplace_web_ctas_are_app_first.py -- but it still names a
+    # listing id, and that id is what this file is about.
+    "links": sorted({int(m) for m in re.findall(r"/open/product/(\d+)", grid)}),
+    # The client-rendered card builds the same link from its own row, by
+    # substituting an id into a shape the server built.
+    "js_link": "/open/product/__RESOURCE_ID__" in grid,
 }
 
 # The signed-out view of all three outcomes, to show they are indistinguishable
@@ -274,14 +278,19 @@ def test_the_grid_only_links_to_listings_it_can_serve(marketplace_probe):
 
     Written over whatever the grid emitted rather than a fixed list, so a
     future card that links somewhere new is covered without editing this test.
+
+    The card now points at `/open/product/<id>`, the app-first interstitial, so
+    the id is read from there. The listing it names still has to be one this
+    server will serve: that is what the interstitial's App Store fallback and
+    its native destination both resolve to, and it is what a desktop visitor
+    reaches. Moving the button did not make a dead id acceptable.
     """
     grid = marketplace_probe["grid"]
     assert grid["links"], "the grid links to no listings at all"
     for listing_id in grid["links"]:
         page = marketplace_probe["pages"].get("/pulse/marketplace/%d" % listing_id)
         assert page is not None and page["status"] == 200, (
-            "the grid links to /pulse/marketplace/%d, which does not serve"
-            % listing_id)
+            "the grid links to listing %d, which does not serve" % listing_id)
 
 
 def test_the_grid_and_the_listing_page_agree_on_who_is_public(marketplace_probe):
@@ -309,8 +318,8 @@ def test_the_client_rendered_card_links_to_the_same_place(marketplace_probe):
     product that browsing offered — the same page, two behaviours.
     """
     assert marketplace_probe["grid"]["js_link"], (
-        "the client-side marketplace card builds no /pulse/marketplace/<id> link, "
-        "so search results are not openable")
+        "the client-side marketplace card ships no product link shape, so "
+        "search results are not openable")
 
 
 def test_the_create_page_still_wins_over_the_id_route(marketplace_probe):

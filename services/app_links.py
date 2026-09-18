@@ -1101,6 +1101,100 @@ def app_intent_url(link: str, source: str = DEFAULT_APP_LINK_SOURCE) -> str:
     return f"{CANONICAL_APP_ORIGIN}{normalized}?{urlencode(query)}"
 
 
+def open_interstitial_url(
+    destination: str,
+    resource_id: str | int | None = None,
+    source: str = DEFAULT_APP_LINK_SOURCE,
+) -> str:
+    """The href for an app-first button **rendered on pulsesoc.com itself**.
+
+    Not the same job as `build_app_link`, and the difference is the whole
+    reason this exists. A canonical `?pulse_app=1` link works from an email,
+    a message, or any other site: iOS matches the association before Safari
+    ever loads it and the app opens on the exact screen.
+
+    From a page already on pulsesoc.com it does not. iOS treats a same-domain
+    tap as ordinary in-site navigation and does not consult associated
+    domains, so the request reaches Flask, the fallback router sees iOS plus
+    the marker, and 302s to the App Store -- sending a member who already has
+    the app to a listing for the app they are holding. The marker cannot tell
+    "no app installed" apart from "same-domain navigation", because both look
+    identical from the server.
+
+    So an on-site button points here instead. The interstitial asks, which is
+    the only thing that is correct for both groups: the iOS `pulsesoc://`
+    button reaches the exact destination for members who have the app, and the
+    App Store button plus QR code serve everyone who does not.
+
+    Relative on purpose -- it is same-origin navigation, and an absolute
+    pulsesoc.com URL would break every non-production host.
+
+    Raises `AppLinkError` rather than emit a button for something the shipped
+    binary cannot resolve, which is the same CTA-honesty rule `build_app_link`
+    enforces. `/open/...` would 404 on those anyway; failing here fails at the
+    render that created the button instead of under the member who tapped it.
+    """
+
+    key = str(destination or "").strip().lower()
+    spec = DESTINATIONS.get(key)
+    if spec is None:
+        raise AppLinkError(f"Unknown app link destination: {destination!r}")
+    if not spec.native_supported:
+        raise AppLinkError(
+            f"Destination {key!r} has no route in the shipped binary, so an "
+            f"'open the app' button for it would promise a screen that does "
+            f"not exist."
+        )
+
+    # Validated for its own sake: it raises on a bad id, and it is what proves
+    # the id is safe to put in a path segment.
+    resolve_destination_path(spec, resource_id)
+
+    raw_id = "" if resource_id is None else str(resource_id).strip()
+    path = f"/open/{quote(key, safe='')}"
+    if raw_id and spec.supports_resource:
+        path = f"{path}/{quote(raw_id, safe='')}"
+    return f"{path}?{urlencode({APP_SOURCE_PARAM: normalize_source(source)})}"
+
+
+CLIENT_ID_TOKEN = "__RESOURCE_ID__"
+
+
+def open_interstitial_url_template(
+    destination: str,
+    source: str = DEFAULT_APP_LINK_SOURCE,
+) -> str:
+    """`open_interstitial_url` for a card whose id only exists in the browser.
+
+    Some listings are rendered by JavaScript from a search response, so the
+    resource id is not known to Python at render time. The alternative is a
+    hand-written `/open/product/${id}` in a script literal, which is exactly the
+    per-site re-derivation this module exists to prevent: it would keep working
+    while the URL shape changed underneath it, and nothing would say so.
+
+    So the shape is still built here and the browser substitutes only the id.
+    `tests/test_app_links.py` asserts the substituted result is character-for-
+    character what `open_interstitial_url` returns, so the two cannot drift.
+    """
+
+    key = str(destination or "").strip().lower()
+    spec = DESTINATIONS.get(key)
+    if spec is None:
+        raise AppLinkError(f"Unknown app link destination: {destination!r}")
+    if not spec.native_supported:
+        raise AppLinkError(
+            f"Destination {key!r} has no route in the shipped binary, so an "
+            f"'open the app' button for it would promise a screen that does "
+            f"not exist."
+        )
+    if not spec.supports_resource:
+        raise AppLinkError(
+            f"Destination {key!r} takes no resource id, so it needs no template."
+        )
+    query = urlencode({APP_SOURCE_PARAM: normalize_source(source)})
+    return f"/open/{quote(key, safe='')}/{CLIENT_ID_TOKEN}?{query}"
+
+
 # --------------------------------------------------------------------------
 # Reverse matching -- used by the adapter and by the server-side fallback router
 # --------------------------------------------------------------------------

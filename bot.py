@@ -3613,6 +3613,56 @@ def enforce_admin_form_csrf():
     )
 
 
+def app_first_href(destination, resource_id=None):
+    """The href for a website button whose destination lives in the app.
+
+    Every Marketplace button on pulsesoc.com goes through here, so that the
+    decision about what opens the app is made in one place instead of being
+    re-derived at each of the two dozen sites that render one.
+
+    Marketplace is app-first while the web one is unbuilt, so these buttons
+    must not reach `/pulse/marketplace...`. They cannot use the canonical
+    `?pulse_app=1` link either: that link is tapped from the same domain it
+    points at, and iOS does not consult associated domains for a same-domain
+    tap, so an installed member would land in Safari and get 302'd to the
+    App Store. `open_interstitial_url` explains that in full.
+    """
+
+    return app_links.open_interstitial_url(destination, resource_id, source="web")
+
+
+def app_first_link_map_script():
+    """The same decision, handed to the scripts that render cards in the browser.
+
+    Search results arrive as JSON from `/api/pulse/search`, and that payload's
+    `url` is shared with the native app, which feeds it to
+    `routeNotificationTarget`. It has to stay canonical, so the app-first
+    rewrite cannot happen in the API -- it has to happen where the web renders
+    the card.
+
+    The alternative is a product URL hand-interpolated in two static JS files,
+    which is the per-site re-derivation `app_links` exists to prevent and is
+    invisible to every Python test in the repo. So the shapes are built here and
+    the browser only substitutes an id.
+
+    Keyed by the result `type` the search API sets, so a card type with no entry
+    keeps its canonical url and nothing has to be excluded by hand.
+    """
+
+    payload = {
+        "marketplace": {
+            "template": app_links.open_interstitial_url_template("product", source="web"),
+            "fallback": app_first_href("marketplace"),
+            "token": app_links.CLIENT_ID_TOKEN,
+        }
+    }
+    return (
+        "<script>window.PULSE_APP_FIRST_LINKS="
+        + json.dumps(payload)
+        + ";</script>"
+    )
+
+
 def render_app_only_destination(
     destination_key, source, can_open_app, scheme_path=None, status=200
 ):
@@ -40572,9 +40622,9 @@ def pulse_desktop_top_nav_html(user=None):
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", "/pulse/marketplace"),
+        ("Marketplace", app_first_href("marketplace")),
         ("Creator Studio", "/pulse/creator-studio"),
-        ("Seller Tools", "/pulse/seller-tools"),
+        ("Seller Tools", app_first_href("seller")),
         ("Promote", "/pulse/promote"),
         ("Portfolio", "/pulse/portfolio"),
         ("Premium", "/pulse/premium"),
@@ -40649,7 +40699,7 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         ("Videos", "/pulse/videos", "▣"),
         ("Live", "/pulse/live", "●"),
         ("Communities", "/pulse/communities", "◇"),
-        ("Marketplace", "/pulse/marketplace", "▣"),
+        ("Marketplace", app_first_href("marketplace"), "▣"),
         ("Music", "/pulse/music", "♪"),
         ("Events", "/pulse/events", "E"),
         ("Messenger", "/pulse/messages", "M"),
@@ -40662,7 +40712,7 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         # route, so the rail never offers a destination that dark-404s.
         *([("Action Center", "/pulse/undx/actions", "§")]
           if _business_os_undx_actions_enabled() else []),
-        ("Seller Tools", "/pulse/seller-tools", "$"),
+        ("Seller Tools", app_first_href("seller"), "$"),
         ("Premium", "/pulse/premium", "◆"),
         ("Promote", "/pulse/promote", "↗"),
         ("Saved", "/pulse/saved", "★"),
@@ -41197,7 +41247,7 @@ def marketplace_promo_card(compact=False):
     return promotion_card(
         "Marketplace",
         "Discover trusted sellers, creator products, and commerce signals inside the PulseSoc economy.",
-        "/pulse/marketplace",
+        app_first_href("marketplace"),
         "Explore Marketplace",
         "▣",
         "marketplace",
@@ -41341,7 +41391,7 @@ def pulse_desktop_right_rail_html():
         "<a class='desktop-intel-row' href='/pulse/communities'><span class='desktop-rail-ico'>◇</span><span><strong>Communities</strong><small class='muted'>Find rooms and groups without leaving PulseSoc.</small></span></a>"
         "</div></section>"
         "<section class='desktop-rail-card home-quick-apps' id='pulseHomeQuickApps'><h3>Quick Apps</h3><div class='pulse-quick-app-grid'>"
-        "<a href='/pulse/communities'>Communities</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/business-os'>Business OS</a><a href='/pulse/assistant'>UNDX AI</a><a href='/pulse/discover#apps'>More Apps</a>"
+        f"<a href='/pulse/communities'>Communities</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/music'>Music</a><a href='/pulse/events'>Events</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/business-os'>Business OS</a><a href='/pulse/assistant'>UNDX AI</a><a href='/pulse/discover#apps'>More Apps</a>"
         "</div></section>"
         "<section class='desktop-rail-card home-promotion-gateway'><h3>Grow Your Reach</h3><p class='muted'>Promotion starts from real owner content and checks growth readiness before any launch.</p><a class='button primary' href='/pulse/promote'>Open Promote</a></section>"
         "<section class='desktop-rail-card'><h3>Educator Signal</h3><div class='desktop-intel-grid' data-desktop-educators>"
@@ -41433,14 +41483,14 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
         ("Portfolio", "/pulse/portfolio"),
         ("Spaces", "/pulse/spaces"),
         ("Friends", "/pulse/friends"),
-        ("Marketplace", "/pulse/marketplace"),
+        ("Marketplace", app_first_href("marketplace")),
         ("Notifications", "/pulse/notifications"),
         ("Messenger", "/pulse/messages"),
         ("Profile", "/pulse/profile"),
         ("Groups", "/pulse/groups"),
         ("Teachers", "/pulse/teachers"),
         ("Creator Studio", "/pulse/creator-studio"),
-        ("Seller Tools", "/pulse/seller-tools"),
+        ("Seller Tools", app_first_href("seller")),
         ("Premium", "/pulse/premium"),
         ("Promote", "/pulse/promote"),
         ("Saved", "/pulse/saved"),
@@ -41463,7 +41513,7 @@ def pulse_page_html(title, active_feed="for_you", topic="", profile_id=""):
     drawer_groups = [
         ("Primary", [("Home", "/pulse"), ("Discover", "/pulse/discover"), ("Create Status", "/pulse?create_status=1"), ("Reels", "/pulse/reels"), ("Videos", "/pulse/videos"), ("Live", "/pulse/live"), ("PulseSoc Music", "/pulse/music"), ("Pulse Radio", "/pulse/music#pulse-radio"), *([("PulseSoc Labs", "/pulse/labs")] if user_is_super_user(user) else [])]),
         ("Social", [("Friends", "/pulse/friends"), ("Communities", "/pulse/communities"), ("Groups", "/pulse/groups"), ("Messenger", "/pulse/messages"), ("Notifications", "/pulse/notifications"), ("My Posts", "/pulse/my-posts"), ("Profile", "/pulse/profile")]),
-        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", "/pulse/seller-tools"), ("Marketplace", "/pulse/marketplace"), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
+        ("Creator / Business", [("Creator Studio", "/pulse/creator-studio"), ("Seller Tools", app_first_href("seller")), ("Marketplace", app_first_href("marketplace")), ("Promote", "/pulse/promote"), ("Premium", "/pulse/premium"), ("Portfolio", "/pulse/portfolio")]),
         ("Content", [("Events", "/pulse/events"), ("Scam Alerts", "/pulse/scam-alerts"), ("Arena Highlights", "/pulse/arena"), ("Roast Clips", "/pulse/roast-clips"), ("Saved", "/pulse/saved"), ("Collections", "/pulse/collections")]),
         ("Utility", [("Dashboard", "/dashboard"), ("Invite", "/pulse/invite"), ("Camera", "/pulse/camera/post"), ("Settings", "/pulse/settings"), ("Help", "/help"), ("Log Out", "/logout")]),
     ]
@@ -41568,14 +41618,14 @@ __DESKTOP_LEFT_RAIL__
 __PULSE_STATUS_RAIL__
 __MOBILE_INLINE_AD__
 __LIVE_NOW_HUB__
-<section class="card composer pulse-publisher-card pulse-composer-command" id="pulseComposer"><div class="pulse-composer-top"><div class="pulse-composer-kicker"><span>Pulse Composer</span></div><details class="pulse-live-menu"><summary><span class="pulse-live-dot"></span>LIVE</summary><div><a href="/pulse/live/studio?context_type=home">Go Live</a><a href="/pulse/live/schedule">Schedule Live</a><a href="/pulse/live/events/create">Create Live Event</a></div></details></div><select id="postType" class="post-type-select"><option value="text">Post</option><option value="video">Reel</option><option value="poll">Poll / Question</option><option value="scam_report">Scam Alert</option></select><div class="composer-tools composer-type-row" aria-label="Choose post type"><button class="active" type="button" data-type="text"><span aria-hidden="true">✦</span>Post</button><button type="button" data-composer-reel data-composer-row-reel><span aria-hidden="true">▶</span>Reel</button><a class="button" href="/pulse/live/studio?context_type=home" data-composer-live><span aria-hidden="true">●</span>Live</a><a class="button" href="/pulse/marketplace/create"><span aria-hidden="true">▣</span>Marketplace</a><button type="button" data-composer-music><span aria-hidden="true">♪</span>Music</button><button type="button" data-type="poll"><span aria-hidden="true">□</span>Poll</button><button type="button" data-type="poll"><span aria-hidden="true">?</span>Question</button><button type="button" data-create-menu-more><span aria-hidden="true">+</span>More</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" class="composer-title-buffer" aria-hidden="true" tabindex="-1" autocomplete="off"><div class="pulse-smart-field"><textarea id="postBody" maxlength="3000" placeholder="What’s happening in your world?" aria-describedby="composerAiSuggestions composerCharCounter"></textarea><div class="pulse-composer-counter" id="composerCharCounter" data-composer-char-counter>0/3000</div><div class="pulse-ai-native-suggestions" id="composerAiSuggestions" data-composer-ai-suggestions aria-live="polite"><button type="button" data-ai-suggestion="clarity">Improve wording</button><button type="button" data-ai-suggestion="hashtags">Add hashtags</button><button type="button" data-ai-suggestion="scam">Improve scam alert</button><button type="button" data-ai-suggestion="question">Improve question</button><button type="button" data-ai-suggestion="caption">Generate caption</button></div></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-primary-actions composer-media-actions pulse-action-card-grid" data-pulse-media-picker="composer"><button class="pulse-action-card" type="button" data-open-composer-picker="image"><span>▧</span><strong>Photo</strong></button><button class="pulse-action-card" type="button" data-open-composer-picker="video"><span>▶</span><strong>Video</strong></button><button class="pulse-action-card" type="button" data-composer-music><span>♪</span><strong>Music</strong></button><button class="pulse-action-card" type="button" data-composer-rail="feeling"><span>☺</span><strong>Feeling</strong></button><button class="pulse-action-card" type="button" data-composer-rail="location"><span>⌖</span><strong>Location</strong></button><button class="pulse-action-card" type="button" data-composer-rail="mention"><span>@</span><strong>Mention</strong></button><button class="pulse-action-card" type="button" data-composer-rail="topic"><span>#</span><strong>Topic</strong></button><button class="pulse-action-card" type="button" data-composer-audience><span>◎</span><strong>Public</strong></button></div><section class="composer-context-panel" data-composer-audience-panel hidden><label for="postAudience">Audience</label><select id="postAudience"><option value="public">Public</option><option value="followers">Followers</option><option value="private">Only me</option></select></section><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><section class="composer-context-panel" id="composerMusicSelection" data-composer-music-selection hidden aria-live="polite"><span><strong>♪ Music attached</strong><small data-composer-music-label></small></span><button type="button" data-remove-composer-music aria-label="Remove selected music">Remove</button></section><div class="pulse-upload-progress-track pulse-upload-stage-track" data-upload-progress role="progressbar" aria-label="PulseSoc upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small><em data-upload-progress-meta></em></div><div class="composer-scam-actions" data-scam-actions hidden><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted composer-hint" id="composeMsg">Ready to publish.</p><button class="primary composer-publish-button" id="publishBtn" type="button">Publish Signal</button></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your PulseSoc is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="#create" data-pulse-create-trigger="1">Create Another</a><a class="button" href="/pulse">PulseSoc Home</a></div></section></section>
+<section class="card composer pulse-publisher-card pulse-composer-command" id="pulseComposer"><div class="pulse-composer-top"><div class="pulse-composer-kicker"><span>Pulse Composer</span></div><details class="pulse-live-menu"><summary><span class="pulse-live-dot"></span>LIVE</summary><div><a href="/pulse/live/studio?context_type=home">Go Live</a><a href="/pulse/live/schedule">Schedule Live</a><a href="/pulse/live/events/create">Create Live Event</a></div></details></div><select id="postType" class="post-type-select"><option value="text">Post</option><option value="video">Reel</option><option value="poll">Poll / Question</option><option value="scam_report">Scam Alert</option></select><div class="composer-tools composer-type-row" aria-label="Choose post type"><button class="active" type="button" data-type="text"><span aria-hidden="true">✦</span>Post</button><button type="button" data-composer-reel data-composer-row-reel><span aria-hidden="true">▶</span>Reel</button><a class="button" href="/pulse/live/studio?context_type=home" data-composer-live><span aria-hidden="true">●</span>Live</a><a class="button" href="__MARKETPLACE_CREATE_HREF__"><span aria-hidden="true">▣</span>Marketplace</a><button type="button" data-composer-music><span aria-hidden="true">♪</span>Music</button><button type="button" data-type="poll"><span aria-hidden="true">□</span>Poll</button><button type="button" data-type="poll"><span aria-hidden="true">?</span>Question</button><button type="button" data-create-menu-more><span aria-hidden="true">+</span>More</button></div><div class="composer-advanced" id="composerAdvanced"><input id="postTitle" class="composer-title-buffer" aria-hidden="true" tabindex="-1" autocomplete="off"><div class="pulse-smart-field"><textarea id="postBody" maxlength="3000" placeholder="What’s happening in your world?" aria-describedby="composerAiSuggestions composerCharCounter"></textarea><div class="pulse-composer-counter" id="composerCharCounter" data-composer-char-counter>0/3000</div><div class="pulse-ai-native-suggestions" id="composerAiSuggestions" data-composer-ai-suggestions aria-live="polite"><button type="button" data-ai-suggestion="clarity">Improve wording</button><button type="button" data-ai-suggestion="hashtags">Add hashtags</button><button type="button" data-ai-suggestion="scam">Improve scam alert</button><button type="button" data-ai-suggestion="question">Improve question</button><button type="button" data-ai-suggestion="caption">Generate caption</button></div></div><input id="postMedia" class="pulse-native-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" multiple><div class="composer-primary-actions composer-media-actions pulse-action-card-grid" data-pulse-media-picker="composer"><button class="pulse-action-card" type="button" data-open-composer-picker="image"><span>▧</span><strong>Photo</strong></button><button class="pulse-action-card" type="button" data-open-composer-picker="video"><span>▶</span><strong>Video</strong></button><button class="pulse-action-card" type="button" data-composer-music><span>♪</span><strong>Music</strong></button><button class="pulse-action-card" type="button" data-composer-rail="feeling"><span>☺</span><strong>Feeling</strong></button><button class="pulse-action-card" type="button" data-composer-rail="location"><span>⌖</span><strong>Location</strong></button><button class="pulse-action-card" type="button" data-composer-rail="mention"><span>@</span><strong>Mention</strong></button><button class="pulse-action-card" type="button" data-composer-rail="topic"><span>#</span><strong>Topic</strong></button><button class="pulse-action-card" type="button" data-composer-audience><span>◎</span><strong>Public</strong></button></div><section class="composer-context-panel" data-composer-audience-panel hidden><label for="postAudience">Audience</label><select id="postAudience"><option value="public">Public</option><option value="followers">Followers</option><option value="private">Only me</option></select></section><div class="pulse-media-preview" id="postMediaPreview" data-media-preview aria-live="polite"></div><section class="composer-context-panel" id="composerMusicSelection" data-composer-music-selection hidden aria-live="polite"><span><strong>♪ Music attached</strong><small data-composer-music-label></small></span><button type="button" data-remove-composer-music aria-label="Remove selected music">Remove</button></section><div class="pulse-upload-progress-track pulse-upload-stage-track" data-upload-progress role="progressbar" aria-label="PulseSoc upload progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span data-upload-progress-bar></span><small data-upload-progress-text>Ready to publish.</small><em data-upload-progress-meta></em></div><div class="composer-scam-actions" data-scam-actions hidden><a class="button" href="/scam-shield/scan">Run Scam Shield</a></div><p class="muted composer-hint" id="composeMsg">Ready to publish.</p><button class="primary composer-publish-button" id="publishBtn" type="button">Publish Signal</button></div><section class="card success-panel" id="publishSuccess"><h2>Post published.</h2><p class="muted">Your PulseSoc is saved. Use these links if the page does not move automatically.</p><div class="actions pulse-actions"><a class="button primary" id="successView" href="/pulse">View Post</a><a class="button" href="/pulse/my-posts">My Posts</a><a class="button" href="#create" data-pulse-create-trigger="1">Create Another</a><a class="button" href="/pulse">PulseSoc Home</a></div></section></section>
 <section class="card"><div class="tabs" id="tabs"><button data-feed="for_you">For You</button><button data-feed="following">Following</button><button data-feed="friends">Friends</button><button data-feed="communities">Communities</button><button data-feed="trending">Trending</button><button data-feed="crypto">Crypto</button><button data-feed="scam_alerts">Scam Alerts</button><button data-feed="arena_highlights">Arena Highlights</button><button data-feed="roast_clips">Roast Clips</button><button data-feed="questions">Questions</button><button data-feed="my_posts">My Posts</button></div></section>
 <button class="new-pulses-banner" id="newPulsesBanner" type="button">New Pulses Available</button><section class="feed" id="feed"></section><button class="button" id="loadMore">Load More</button></div>
 <aside class="side"><section class="card"><h2>AI PulseSoc Intelligence</h2><div id="intel" class="intel-list"><p class="muted">Loading community signal...</p></div></section>__DAILY_MENTOR_CARD__<section class="card"><h2>PulseSoc Safety</h2><p class="muted">Never share seed phrases, private keys, wallet passwords, or personal financial details. Report suspicious posts.</p></section></aside></section>
 </div>
 __DESKTOP_RIGHT_RAIL__
 </section>
-</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create PulseSoc">+</button><section class="create-sheet" id="createSheet"><h3>Create Signal</h3><div class="create-sheet-grid"><button data-sheet-type="text" data-pulse-create-trigger="1">Post</button><button data-open-composer-picker="image" data-pulse-create-trigger="1">Photo</button><button data-open-composer-picker="video" data-pulse-create-trigger="1">Video</button><button data-sheet-type="video" data-pulse-create-trigger="1">Reel</button><a class="button" href="/pulse/live/studio?context_type=home">Live</a><button data-status-card data-status-intent="create">Status</button><a class="button" href="/pulse/marketplace/create">Marketplace Listing</a><a class="button" href="/pulse/music">Music Release</a><a class="button" href="/pulse/events">Event</a><a class="button" href="/pulse/communities">Community Post</a><button data-sheet-type="poll" data-pulse-create-trigger="1">Poll</button><button data-sheet-type="poll" data-pulse-create-trigger="1">Question</button><button data-sheet-type="scam_report" data-pulse-create-trigger="1">Scam Alert</button><a class="button primary" href="#create" data-pulse-create-trigger="1">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search PulseSoc"><header class="pulse-search-head"><div><span class="badge">PulseSoc Search</span><h2>Find people, posts, reels, videos, music, marketplace listings, events, communities, creators, businesses, live streams, hashtags, and topics.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search" action="/pulse/search" method="get"><input id="pulseSearchOverlayInput" data-pulse-search-input name="q" type="search" placeholder="Search PulseSoc" autocomplete="off" aria-label="Search PulseSoc"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, comments, hashtags, topics, and live activity.</p></div></div></section>__PULSE_STATUS_HOME_CREATOR__<section class="pulse-status-story-viewer" id="pulseStatusStoryViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-label="PulseSoc Status viewer"><article class="pulse-status-story-shell"><div class="pulse-status-story-progress" data-story-progress aria-hidden="true"><span></span></div><button class="pulse-status-story-close" type="button" data-status-story-close aria-label="Close PulseSoc Status">×</button><button class="pulse-status-story-nav prev" type="button" data-status-story-prev aria-label="Previous PulseSoc Status">‹</button><button class="pulse-status-story-nav next" type="button" data-status-story-next aria-label="Next PulseSoc Status">›</button><div class="pulse-status-story-media" data-status-story-media></div><footer class="pulse-status-story-footer"><span class="pulse-status-story-avatar" data-status-story-avatar>P</span><div><strong data-status-story-author>PulseSoc creator</strong><small data-status-story-time>Active story</small><span data-status-story-body>PulseSoc Status</span><small data-status-story-count>0 views</small></div></footer><div class="pulse-status-story-actions"><button type="button" data-status-story-react="love">Like</button><button type="button" data-status-story-comment>Comment</button><button type="button" data-status-story-share>Share</button><button type="button" data-status-story-save>Save</button><button type="button" data-status-story-more>More</button><button type="button" data-status-story-mute>Sound</button><input data-status-story-reply placeholder="Reply to this Status" aria-label="Reply to this Status"><button type="button" data-status-story-send-reply>Send</button></div></article></section>__PROMOTION_MODAL__<section class="ufo-welcome-overlay" id="ufoWelcomeOverlay" data-ufo-welcome-overlay hidden aria-hidden="true"><div class="ufo-welcome-stars" aria-hidden="true"></div><article class="ufo-welcome-panel" role="dialog" aria-modal="true" aria-labelledby="ufoWelcomeTitle" aria-describedby="ufoWelcomeBody"><button class="ufo-welcome-close" type="button" data-ufo-welcome-dismiss aria-label="Dismiss welcome">×</button><div class="ufo-welcome-ship" aria-hidden="true"><span></span></div><div class="ufo-welcome-beam" aria-hidden="true"></div><div class="ufo-welcome-copy"><span class="ufo-welcome-kicker" data-ufo-welcome-type>PulseSoc Galaxy</span><h2 id="ufoWelcomeTitle" data-ufo-welcome-title>Welcome back to the Galaxy</h2><p id="ufoWelcomeBody" data-ufo-welcome-body>The galaxy is better with you in it.</p><p data-ufo-welcome-subtext>New adventures. New opportunities.</p><button class="ufo-welcome-cta" type="button" data-ufo-welcome-dismiss>Enter the Galaxy</button></div></article></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
+</main><nav class="mobile-bottom-nav">__MOBILE_BOTTOM__</nav><button class="pulse-fab" id="pulseFab" type="button" aria-label="Create PulseSoc">+</button><section class="create-sheet" id="createSheet"><h3>Create Signal</h3><div class="create-sheet-grid"><button data-sheet-type="text" data-pulse-create-trigger="1">Post</button><button data-open-composer-picker="image" data-pulse-create-trigger="1">Photo</button><button data-open-composer-picker="video" data-pulse-create-trigger="1">Video</button><button data-sheet-type="video" data-pulse-create-trigger="1">Reel</button><a class="button" href="/pulse/live/studio?context_type=home">Live</a><button data-status-card data-status-intent="create">Status</button><a class="button" href="__MARKETPLACE_CREATE_HREF__">Marketplace Listing</a><a class="button" href="/pulse/music">Music Release</a><a class="button" href="/pulse/events">Event</a><a class="button" href="/pulse/communities">Community Post</a><button data-sheet-type="poll" data-pulse-create-trigger="1">Poll</button><button data-sheet-type="poll" data-pulse-create-trigger="1">Question</button><button data-sheet-type="scam_report" data-pulse-create-trigger="1">Scam Alert</button><a class="button primary" href="#create" data-pulse-create-trigger="1">Full composer</a></div></section><section class="pulse-search-overlay" id="pulseSearchOverlay" aria-hidden="true"><div class="pulse-search-panel" role="dialog" aria-modal="true" aria-label="Search PulseSoc"><header class="pulse-search-head"><div><span class="badge">PulseSoc Search</span><h2>Find people, posts, reels, videos, music, marketplace listings, events, communities, creators, businesses, live streams, hashtags, and topics.</h2></div><button class="icon-btn" type="button" data-close-pulse-search aria-label="Close search">×</button></header><form class="pulse-search-box" data-pulse-search-overlay-form role="search" action="/pulse/search" method="get"><input id="pulseSearchOverlayInput" data-pulse-search-input name="q" type="search" placeholder="Search PulseSoc" autocomplete="off" aria-label="Search PulseSoc"><button class="primary" type="submit">Search</button></form><section class="pulse-search-shelf" data-pulse-search-starter><div><h3>Recent searches</h3><div class="pulse-search-chips" data-pulse-search-recent></div></div><div><h3>Rising searches</h3><div class="pulse-search-chips" data-pulse-search-trending></div></div></section><div class="pulse-search-results" data-pulse-search-results><p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, comments, hashtags, topics, and live activity.</p></div></div></section>__PULSE_STATUS_HOME_CREATOR__<section class="pulse-status-story-viewer" id="pulseStatusStoryViewer" aria-hidden="true" role="dialog" aria-modal="true" aria-label="PulseSoc Status viewer"><article class="pulse-status-story-shell"><div class="pulse-status-story-progress" data-story-progress aria-hidden="true"><span></span></div><button class="pulse-status-story-close" type="button" data-status-story-close aria-label="Close PulseSoc Status">×</button><button class="pulse-status-story-nav prev" type="button" data-status-story-prev aria-label="Previous PulseSoc Status">‹</button><button class="pulse-status-story-nav next" type="button" data-status-story-next aria-label="Next PulseSoc Status">›</button><div class="pulse-status-story-media" data-status-story-media></div><footer class="pulse-status-story-footer"><span class="pulse-status-story-avatar" data-status-story-avatar>P</span><div><strong data-status-story-author>PulseSoc creator</strong><small data-status-story-time>Active story</small><span data-status-story-body>PulseSoc Status</span><small data-status-story-count>0 views</small></div></footer><div class="pulse-status-story-actions"><button type="button" data-status-story-react="love">Like</button><button type="button" data-status-story-comment>Comment</button><button type="button" data-status-story-share>Share</button><button type="button" data-status-story-save>Save</button><button type="button" data-status-story-more>More</button><button type="button" data-status-story-mute>Sound</button><input data-status-story-reply placeholder="Reply to this Status" aria-label="Reply to this Status"><button type="button" data-status-story-send-reply>Send</button></div></article></section>__PROMOTION_MODAL__<section class="ufo-welcome-overlay" id="ufoWelcomeOverlay" data-ufo-welcome-overlay hidden aria-hidden="true"><div class="ufo-welcome-stars" aria-hidden="true"></div><article class="ufo-welcome-panel" role="dialog" aria-modal="true" aria-labelledby="ufoWelcomeTitle" aria-describedby="ufoWelcomeBody"><button class="ufo-welcome-close" type="button" data-ufo-welcome-dismiss aria-label="Dismiss welcome">×</button><div class="ufo-welcome-ship" aria-hidden="true"><span></span></div><div class="ufo-welcome-beam" aria-hidden="true"></div><div class="ufo-welcome-copy"><span class="ufo-welcome-kicker" data-ufo-welcome-type>PulseSoc Galaxy</span><h2 id="ufoWelcomeTitle" data-ufo-welcome-title>Welcome back to the Galaxy</h2><p id="ufoWelcomeBody" data-ufo-welcome-body>The galaxy is better with you in it.</p><p data-ufo-welcome-subtext>New adventures. New opportunities.</p><button class="ufo-welcome-cta" type="button" data-ufo-welcome-dismiss>Enter the Galaxy</button></div></article></section><div class="toast" id="toast"></div><section class="pulse-media-lightbox" id="pulseMediaLightbox" aria-hidden="true"><button class="pulse-media-lightbox-close" type="button" data-close-media-lightbox aria-label="Close media preview">×</button><div class="pulse-media-lightbox-stage" data-lightbox-stage></div></section>
 <script data-pulse-instant-core>
 (function(){
   const mark=name=>{window.__pulseInstantMarks=window.__pulseInstantMarks||{};window.__pulseInstantMarks[name]=(window.__pulseInstantMarks[name]||0)+1;try{document.documentElement.dataset[name.replace(/_/g,'-')]=String(window.__pulseInstantMarks[name])}catch(_){ }try{window.performance?.mark?.(name)}catch(_){ }};
@@ -41950,7 +42000,7 @@ __DESKTOP_RIGHT_RAIL__
 <script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>
 <script src="/static/js/pulse_media_picker.js" defer></script>
 <script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>
-<script src="/static/js/pulse_search_bridge.js?v=nav-search-20260618a" defer></script>
+__APP_FIRST_LINKS__<script src="/static/js/pulse_search_bridge.js?v=nav-search-20260618a" defer></script>
 <script data-pulse-shell-runtime>
 const main=document.querySelector('main');const pulseShellBootStartedAt=Date.now();const pulseBootTrace=[];function pulseBootLog(step,extra={}){const entry={step,ms:Date.now()-pulseShellBootStartedAt,...extra};pulseBootTrace.push(entry);if(pulseBootTrace.length>80)pulseBootTrace.shift();window.__pulseBootTrace=pulseBootTrace;try{console.info('[PulseShell]',entry)}catch(_){}}pulseBootLog('shell-boot-start',{path:location.pathname});const state={feed:main.dataset.feed||'for_you',topic:main.dataset.topic||'',profile:main.dataset.profile||'',offset:0,loading:false,feedReady:false,shellReady:false,pendingPosts:[],pendingPostIds:new Set(),deletedPostIds:new Set(JSON.parse(sessionStorage.getItem('pulseDeletedPostIds')||'[]')),lastUserScrollAt:Date.now(),checkingFeed:false,lastToast:{message:'',at:0}};
 const feedPaths={for_you:'/pulse',following:'/pulse/friends',trending:'/pulse/trending',crypto:'/pulse?feed=crypto',questions:'/pulse/questions',my_posts:'/pulse/my-posts',scam_alerts:'/pulse/scam-alerts',arena_highlights:'/pulse/arena',roast_clips:'/pulse/roast-clips'};
@@ -42107,7 +42157,8 @@ function pulseSearchSave(q){const clean=String(q||'').trim();if(!clean)return;tr
 function pulseSearchChip(label){return `<button class="pulse-search-chip" type="button" data-pulse-search-chip="${esc(label)}">${esc(label)}</button>`}
 function pulseSearchStarter(trending=[]){if(!pulseSearch.recent||!pulseSearch.trending)return;const recent=pulseSearchRecent();pulseSearch.recent.innerHTML=recent.length?recent.map(pulseSearchChip).join(''):'<span class="muted">Your searches will appear here.</span>';pulseSearch.trending.innerHTML=(trending.length?trending:['scam alerts','AI builders','creator economy','wallet safety']).map(pulseSearchChip).join('')}
 function pulseSearchHighlight(text,q){const safe=esc(text||'');const term=String(q||'').trim();if(!term)return safe;const needle=[...term].map(ch=>'.*+?^${}()|[]\\\\'.includes(ch)?'\\\\'+ch:ch).join('');return safe.replace(new RegExp(`(${needle})`,'ig'),'<em>$1</em>')}
-function pulseSearchResult(item,q){const letter=(item.type||item.title||'P').slice(0,1).toUpperCase();return `<a class="pulse-search-result" href="${esc(item.url||'/pulse')}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title||'PulseSoc result',q)}</strong><small>${pulseSearchHighlight(item.description||item.meta||'',q)}</small></span><span class="pulse-search-type">${esc(item.type||'PulseSoc')}</span></a>`}
+function pulseSearchAppFirstHref(item){const shape=(window.PULSE_APP_FIRST_LINKS||{})[item&&item.type];if(!shape)return (item&&item.url)||'/pulse';const id=item&&item.id;if(id===undefined||id===null||id==='')return shape.fallback;return shape.template.replace(shape.token,encodeURIComponent(String(id)));}
+function pulseSearchResult(item,q){const letter=(item.type||item.title||'P').slice(0,1).toUpperCase();return `<a class="pulse-search-result" href="${esc(pulseSearchAppFirstHref(item))}"><span class="pulse-search-mark">${esc(letter)}</span><span><strong>${pulseSearchHighlight(item.title||'PulseSoc result',q)}</strong><small>${pulseSearchHighlight(item.description||item.meta||'',q)}</small></span><span class="pulse-search-type">${esc(item.type||'PulseSoc')}</span></a>`}
 function pulseSearchRender(data){const q=data.query||pulseSearch.query||'';const results=data.results||{};const sections=pulseSearch.groups.map(([key,label])=>{const items=results[key]||[];if(!items.length)return '';return `<section class="pulse-search-group"><h3>${label}</h3>${items.map(item=>pulseSearchResult(item,q)).join('')}</section>`}).join('');pulseSearch.panel.innerHTML=sections||'<div class="pulse-search-empty"><strong>No PulseSoc results found.</strong><p class="muted">Try another creator, topic, video, sound, listing, room, reel, or signal.</p></div>';pulseSearchStarter(data.trending||[])}
 async function runPulseSearch(q){const clean=String(q||'').trim();pulseSearch.query=clean;if(!pulseSearch.panel)return;if(!clean){pulseSearch.panel.innerHTML='<p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.</p>';pulseSearchStarter();return}pulseSearch.starter?.classList.remove('is-hidden');pulseSearch.panel.innerHTML='<div class="pulse-search-loading">Searching PulseSoc...</div>';try{const d=await api('/api/pulse/search?q='+encodeURIComponent(clean)+'&limit=8');pulseSearchSave(clean);pulseSearchRender(d)}catch(err){pulseSearch.panel.innerHTML=`<div class="pulse-search-error"><strong>Search could not load.</strong><p class="muted">${esc(err.message||'Try again in a moment.')}</p></div>`}}
 function openPulseSearch(q=''){if(!pulseSearch.overlay)return;pulseSearch.overlay.classList.add('open');pulseSearch.overlay.setAttribute('aria-hidden','false');document.body.classList.add('pulse-search-open');const value=String(q||pulseSearch.desktopInput?.value||'').trim();if(pulseSearch.overlayInput){pulseSearch.overlayInput.value=value;setTimeout(()=>pulseSearch.overlayInput.focus(),30)}pulseSearchStarter();if(value)runPulseSearch(value);else pulseSearch.panel.innerHTML='<p class="muted">Search public PulseSoc posts, creators, videos, reels, statuses, marketplace listings, music, groups, rooms, and comments.</p>'}
@@ -42228,6 +42279,8 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         .replace("__NOTIFICATION_BELL_ICON__", PULSE_NOTIFICATION_BELL_ICON)
         .replace("__SHELL_AVATAR__", shell_avatar_html)
         .replace("__MOBILE_BOTTOM__", mobile_bottom_html)
+        .replace("__MARKETPLACE_CREATE_HREF__", app_first_href("marketplace_create"))
+        .replace("__APP_FIRST_LINKS__", app_first_link_map_script())
         .replace("__DESKTOP_TOP_NAV__", desktop_top_nav_html)
         .replace("__DESKTOP_LEFT_RAIL__", desktop_left_rail_html)
         .replace("__PULSE_STATUS_RAIL__", status_rail_html)
@@ -48364,9 +48417,9 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
         ("Events", "/pulse/events"),
         ("Communities", "/pulse/communities"),
         ("Roast Battle", "/pulse/roast-battle"),
-        ("Marketplace", "/pulse/marketplace"),
+        ("Marketplace", app_first_href("marketplace")),
         ("Creator Studio", "/pulse/creator-studio"),
-        ("Seller Tools", "/pulse/seller-tools"),
+        ("Seller Tools", app_first_href("seller")),
         ("Promote", "/pulse/promote"),
         ("Portfolio", "/pulse/portfolio"),
         ("Premium", "/pulse/premium"),
@@ -48426,7 +48479,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     shell_intro_html = ""
     if show_intro and not live_shell_mode:
         shell_intro_html = f"<section class=\"card\"><span class=\"pill\">PulseSoc Social Ecosystem</span><h1>{html_escape(clean_html(title))}</h1><p>{html_escape(clean_html(description))}</p><p>{html_escape(clean_html(PULSE_DISCLAIMER))}</p></section>"
-    create_sheet_html = """
+    create_sheet_html = f"""
 <section class="create-sheet" id="createSheet" aria-hidden="true" role="dialog" aria-modal="false" aria-label="Create PulseSoc content">
   <h3>Create Signal</h3>
   <div class="create-sheet-grid">
@@ -48437,7 +48490,7 @@ def pulse_social_shell(title, description, main_html, side_html="", script_html=
     <a class="button" href="/pulse/live">Live</a>
     <a class="button" href="/pulse?create_status=1">Status</a>
     <a class="button" href="/pulse/music">Music</a>
-    <a class="button" href="/pulse/marketplace/create">Marketplace</a>
+    <a class="button" href="{app_first_href('marketplace_create')}">Marketplace</a>
     <a class="button" href="/pulse/events">Event</a>
     <a class="button" href="/pulse/communities">Community</a>
   </div>
@@ -56336,21 +56389,23 @@ def pulse_marketplace_page():
         # because moderation approved it -- that approval is the signal. The
         # reviewer's working number stays with the reviewer (§27/§95); the admin
         # queue reads the same column as risk and is already correct.
-        return f"<article class='card'><h2><a href='/pulse/marketplace/{listing_id}'>{html_escape(clean_html(row.get('title')))}</a></h2><p>{html_escape(clean_html(row.get('description')))}</p><p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> {price_pill}</p><p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+        return f"<article class='card'><h2><a href='{app_first_href('product', listing_id)}'>{html_escape(clean_html(row.get('title')))}</a></h2><p>{html_escape(clean_html(row.get('description')))}</p><p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> {price_pill}</p><p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
 
     listing_html = "".join(marketplace_card(row) for row in listings)
-    seller_form = "<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a><a class='button' href='/pulse/merchant/dashboard'>Merchant Dashboard</a></div></section>"
+    seller_form = f"<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='{app_first_href('seller_apply')}'>Apply as Merchant</a><a class='button' href='{app_first_href('seller_dashboard')}'>Merchant Dashboard</a></div></section>"
     listing_form = ""
     if seller and seller.get("status") == "approved":
-        listing_form = "<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='/pulse/marketplace/create'>Create Product</a></section>"
+        listing_form = f"<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a></section>"
     elif seller:
         listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'pending_review'))}</p><p>Products unlock after approval.</p></section>"
     script = """
     const marketplaceResults=document.querySelector('[data-marketplace-results]');
     const marketplaceSearch=document.querySelector('[data-marketplace-search]');
     const marketplaceCurrentUserId=%d;
+    const marketplaceProductHrefTemplate=%s;
+    const marketplaceProductHref=id=>marketplaceProductHrefTemplate.replace(%s,encodeURIComponent(String(id)));
     const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="/pulse/marketplace/${listingId}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
+    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="${marketplaceProductHref(listingId)}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
     let marketplaceSearchTimer=0;
     async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
     marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
@@ -56358,7 +56413,13 @@ def pulse_marketplace_page():
     document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
     document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
     document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
-    """ % int(user.get("user_id") or 0)
+    """ % (
+        int(user.get("user_id") or 0),
+        # The URL shape is built by `app_links`, never by this script. The
+        # browser substitutes an id into it and nothing else.
+        json.dumps(app_links.open_interstitial_url_template("product", source="web")),
+        json.dumps(app_links.CLIENT_ID_TOKEN),
+    )
     search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
     listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
     main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
@@ -56456,7 +56517,7 @@ def pulse_marketplace_listing_page(listing_id):
     price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
     main = (
         f"<section class='card'>"
-        f"<p><a href='/pulse/marketplace'>&larr; Marketplace</a></p>"
+        f"<p><a href='{app_first_href('marketplace')}'>&larr; Marketplace</a></p>"
         f"<h1>{html_escape(clean_html(row.get('title')))}</h1>"
         f"<p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> "
         # No "Safety N" pill here either -- see `marketplace_card` on the grid
@@ -59135,9 +59196,13 @@ def pulse_merchant_dashboard_page():
             msg = "Your merchant application is still under review."
         else:
             msg = "Apply and complete verification before merchant tools unlock."
-        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{html_escape(clean_html(msg))}</p><a class='button primary' href='/pulse/merchant/apply'>Open Merchant Application</a></section>")
+        return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{html_escape(clean_html(msg))}</p><a class='button primary' href='{app_first_href('seller_apply')}'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{html_escape(clean_html(l.get('title') or ''))}</td><td>{html_escape(clean_html(l.get('status') or ''))}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'not applied'))}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='/pulse/marketplace/create'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='/pulse/merchant/apply'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
+    # "Payouts" deliberately stays on the web. `/pulse/merchant/payouts` is the
+    # `return_url` and `refresh_url` Stripe Connect onboarding comes back to, so
+    # it has to be a page a browser can land on. Sending the button to the app
+    # while Stripe returns to the web would split one flow across two surfaces.
+    main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'not applied'))}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='{app_first_href('seller_apply')}'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
 
 
@@ -59233,7 +59298,7 @@ def pulse_merchant_profile_page(username):
         listings = [dict(row) for row in cur.fetchall()]
     conn.close()
     if not seller:
-        return pulse_social_shell("Merchant", "Merchant profile not found.", "<section class='card'><a class='button' href='/pulse/marketplace'>Back to Marketplace</a></section>")
+        return pulse_social_shell("Merchant", "Merchant profile not found.", f"<section class='card'><a class='button' href='{app_first_href('marketplace')}'>Back to Marketplace</a></section>")
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(l.get('title') or ''))}</h2><p>{html_escape(clean_html(l.get('short_description') or l.get('description') or ''))}</p><span class='pill'>{html_escape(clean_html(l.get('price_label') or ''))}</span></article>" for l in listings)
     cards_empty = '<article class="card"><h2>No public products yet.</h2></article>'
     main = f"<section class='card'><h2>{html_escape(clean_html(seller.get('display_name') or 'Merchant'))}</h2><p><span class='pill'>Verified merchant</span> <span class='pill'>Trust {100-int(seller.get('risk_score') or 0)}</span></p><p>{html_escape(clean_html(seller.get('bio') or ''))}</p></section><section class='grid'>{cards or cards_empty}</section>"
@@ -59251,7 +59316,7 @@ def pulse_marketplace_create_page():
     seller = dict(cur.fetchone() or {})
     conn.close()
     if seller.get("status") != "approved":
-        return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", "<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='/pulse/merchant/apply'>Apply as Merchant</a></section>")
+        return pulse_social_shell("Create Product", "Merchant approval is required before listing products.", f"<section class='card'><h2>Approval Required</h2><p>Apply and complete review before creating products.</p><a class='button primary' href='{app_first_href('seller_apply')}'>Apply as Merchant</a></section>")
     categories = ["AI Tools","Cybersecurity","Crypto Education","Trading Education","Coding","Business","Marketing","Design","Ebooks","Courses","Templates","Coaching","Livestream Access","Premium Communities","Creator Resources","Productivity","Investing Education","Scam Prevention"]
     opts = "".join(f"<option>{html_escape(clean_html(c))}</option>" for c in categories)
     main = f"""
@@ -59331,7 +59396,7 @@ def pulse_creator_monetization_page():
     steps = "".join(f"<li>{html_escape(clean_html(item))}</li>" for item in readiness.get("next_steps", []))
     body = f"""
     <section class='grid'><div class='card'><h2>Creator Readiness</h2><p class='metric'>{readiness['readiness_score']}%</p><p>{'Ready to prepare monetized tools.' if readiness['ready'] else 'Keep building trust before paid tools unlock.'}</p></div><div class='card'><h2>Audience Growth</h2><p class='metric'>{counts['posts']}</p><p>PulseSoc posts published.</p></div><div class='card'><h2>Revenue Placeholder</h2><p class='metric'>$0</p><p>Real payout release stays off until compliance is ready.</p></div></section>
-    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='/pulse/marketplace'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
+    <section class='card'><h2>Your Next Unlock</h2><ul>{steps}</ul><div class='actions'><a class='button primary' href='{app_first_href('marketplace')}'>Prepare Marketplace Product</a><a class='button' href='/pulse/teacher-dashboard'>Open Teacher Tools</a><a class='button' href='/pulse/live'>Livestream Readiness</a></div></section>
     <section class='grid'>{product_cards}</section>
     """
     return pulse_social_shell("Creator Monetization", "Trust-first creator revenue readiness for premium tools, courses, marketplace products, and livestream monetization placeholders.", body)
@@ -83824,7 +83889,7 @@ def pulse_creator_dashboard_page():
         <section class='card' id='content'><h2>Content Studio</h2><div class='studio-shortcuts'>{shortcut_html}</div></section>
         <section class='card' id='creator-ai'><h2>Creator AI Tools</h2><p>Paste an idea and choose a tool.</p><textarea id='creatorAiText' placeholder='Post idea, Reel caption, lesson topic, live title, or marketplace product...'></textarea><div class='studio-tool-row'>{tool_html}</div><pre class='card studio-output' id='creatorAiOutput'>Creator AI output appears here.</pre></section>
         <section class='studio-section-grid' id='analytics'><article class='card'><h2>Analytics</h2><div>{top_html}</div></article><article class='card'><h2>Growth Tools</h2><p>Trending topics, creator challenges, recommended rooms, collaboration suggestions, audience questions, and content calendar.</p><a class='button primary' href='/pulse/groups'>Find Rooms</a></article></section>
-        <section class='studio-section-grid'><article class='card' id='monetization'><h2>Monetization / Marketplace</h2><p>Creator products, services, digital downloads, paid rooms, paid lessons, premium content readiness, and payout checklist.</p><a class='button primary' href='/pulse/marketplace/create'>Create Product</a></article><article class='card' id='live'><h2>Live Studio</h2><p>Mux Live setup, protected stream key, live status, replay library, and upcoming schedule.</p><a class='button primary' href='/pulse/live/studio?context_type=creator_studio'>Open Live Studio</a></article></section>
+        <section class='studio-section-grid'><article class='card' id='monetization'><h2>Monetization / Marketplace</h2><p>Creator products, services, digital downloads, paid rooms, paid lessons, premium content readiness, and payout checklist.</p><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a></article><article class='card' id='live'><h2>Live Studio</h2><p>Mux Live setup, protected stream key, live status, replay library, and upcoming schedule.</p><a class='button primary' href='/pulse/live/studio?context_type=creator_studio'>Open Live Studio</a></article></section>
         <section class='card' id='media'><h2>Media Library</h2><div class='studio-media-grid'>{media_html}</div></section>
         <section class='studio-section-grid'><article class='card'><h2>Safety / Trust</h2><p>Scam Shield score, flagged content, moderation guidance, trust signals, and creator safety checklist.</p><button type='button' data-ai-tool='virality'>Run Trust Check</button></article><article class='card' id='resources'><h2>Resources</h2><p>Creator guides, better Reels, audience growth, safe selling, live setup, and PulseSoc AI playbooks.</p><a class='button' href='/pulse/teachers'>Open Guides</a></article></section>
       </main>
@@ -83876,7 +83941,7 @@ def pulse_discover_page():
             ],
         )
         + "<section class='card' id='apps'><h2>Apps</h2><div class='actions'>"
-        "<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='/pulse/marketplace'>Marketplace</a>"
+        f"<a class='button' href='/pulse/communities'>Communities</a><a class='button' href='{app_first_href('marketplace')}'>Marketplace</a>"
         "<a class='button' href='/pulse/music'>Music</a><a class='button' href='/pulse/events'>Events</a>"
         "<a class='button' href='/pulse/creator-studio'>Creator Studio</a><a class='button' href='/pulse/promote'>Promote</a>"
         "<a class='button' href='/business-os'>Business OS</a>"
@@ -83939,7 +84004,7 @@ def pulse_promote_page():
     main = pulse_gateway_card_html(
         "Promote",
         "Start promotion from owned content only. Campaign launch remains gated by growth readiness, billing, and review.",
-        [("My Posts", "/pulse/my-posts"), ("Marketplace", "/pulse/marketplace"), ("Creator Studio", "/pulse/creator-studio")],
+        [("My Posts", "/pulse/my-posts"), ("Marketplace", app_first_href("marketplace")), ("Creator Studio", "/pulse/creator-studio")],
         [("Launch Without Content", "Choose an owned post, Reel, or listing first."), ("Estimated Reach", "Forecasting provider is not configured; fake reach is not shown.")],
     )
     return pulse_social_shell("Promote", "A safe gateway to owner-only PulseSoc promotion tools.", main)
@@ -83982,7 +84047,7 @@ def pulse_seller_tools_gateway_page():
     main = pulse_gateway_card_html(
         "Seller Tools",
         "Seller tools use marketplace and dashboard seller APIs. Revenue, orders, and billing are not fabricated.",
-        [("Seller Dashboard", "/pulse/dashboard/seller-tools"), ("Create Product", "/pulse/marketplace/create"), ("Marketplace", "/pulse/marketplace")],
+        [("Seller Dashboard", app_first_href("seller_dashboard")), ("Create Product", app_first_href("marketplace_create")), ("Marketplace", app_first_href("marketplace"))],
         [("Synthetic Sales Demo", "Fake sales and order data are not shown.")],
     )
     return pulse_social_shell("Seller Tools", "Seller storefront, product, and promotion readiness tools.", main)
@@ -87980,7 +88045,7 @@ def pulse_profile_page_for_user(target_user_id):
     premium_html = pulse_premium_mark_html(ident.get("premium_mark"))
     if is_owner:
         action_html = "<a class='button primary' href='/pulse/profile/edit'>Edit Profile</a><button type='button' data-share-profile>Share Profile</button><a class='button' href='/account'>Settings</a>"
-        more_tools_html = "<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
+        more_tools_html = f"<a href='/pulse/profile/edit'>Profile Controls</a><a href='/account'>Account</a><a href='/privacy-center'>Privacy</a><a href='/pulse/teachers'>Teacher Status</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/music'>PulseSoc Music</a><a href='/pulse/creator/dashboard'>Creator Tools</a><a href='/pulse/live'>Livestream Studio</a><a href='/arena'>Arena Call Signs</a>"
     else:
         action_html = f"<button class='primary profile-action-primary' data-follow-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>＋</span> Follow</button><button class='profile-action-message' data-message-public='{html_escape(clean_html(ident['public_player_id']))}'><span aria-hidden='true'>◇</span> Message</button><button class='profile-action-more' type='button' data-profile-more-toggle aria-label='More actions' aria-expanded='false'>•••</button>"
         more_tools_html = f"<button class='profile-sheet-action' data-friend-public='{html_escape(clean_html(ident['public_player_id']))}'><span class='profile-sheet-icon' aria-hidden='true'>＋</span><span><strong>Add Friend</strong><small>Send a connection request</small></span></button><button class='profile-sheet-action' data-share-profile><span class='profile-sheet-icon' aria-hidden='true'>↗</span><span><strong>Share Profile</strong><small>Send this profile securely</small></span></button><div class='profile-sheet-divider' role='separator'></div><button class='profile-sheet-action profile-sheet-safety' data-open-report-profile><span class='profile-sheet-icon' aria-hidden='true'>!</span><span><strong>Report Profile</strong><small>Alert the PulseSoc safety team</small></span></button><button class='profile-sheet-action profile-sheet-danger' data-open-block-profile><span class='profile-sheet-icon' aria-hidden='true'>⊘</span><span><strong>Block User</strong><small>Stop contact and hide their activity</small></span></button>"
@@ -88758,7 +88823,7 @@ def pulse_videos_page():
       <main class='videos-main videos-mobile-fallback'>
         <header class='videos-mobile-header' aria-label='Mobile Videos header'><div class='videos-mobile-topline'><div class='videos-mobile-left'><button class='videos-mobile-icon videos-mobile-menu' type='button' data-videos-drawer-open aria-label='Open navigation'>☰</button><h1>Videos</h1></div><div class='videos-mobile-actions'><button class='videos-mobile-icon' type='button' data-mobile-video-search aria-label='Search videos'>⌕</button><a class='videos-mobile-icon videos-mobile-alert' data-header-notifications href='/pulse/notifications' aria-label='Notifications'>{PULSE_NOTIFICATION_BELL_ICON}<span class='pulse-notification-badge' data-alert-unread data-notification-unread hidden>0</span></a><a class='videos-mobile-avatar' href='/pulse/profile' aria-label='Profile'>{mobile_avatar}</a></div></div><p>Discover high-quality videos from creators</p></header>
         <div class='videos-mobile-drawer-backdrop' data-videos-drawer-backdrop aria-hidden='true'></div>
-        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='/pulse/marketplace'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
+        <aside class='videos-mobile-drawer' data-videos-mobile-drawer aria-hidden='true' aria-label='PulseSoc navigation'><div class='videos-drawer-head'><strong>PulseSoc</strong><button class='videos-drawer-close' type='button' data-videos-drawer-close aria-label='Close navigation'>×</button></div><nav class='videos-drawer-nav'><a href='/pulse'>Home</a><a href='/pulse/videos' aria-current='page'>Videos</a><a href='/pulse/reels'>Reels</a><a href='/pulse/music'>Music</a><a href='/pulse/live'>Live</a><a href='/pulse/messages'>Messages</a><a href='/pulse/notifications'>Alerts</a><a href='{app_first_href('marketplace')}'>Marketplace</a><a href='/pulse/creator-studio'>Creator Studio</a><a href='/pulse/premium'>Premium</a><a href='/pulse/profile'>Profile</a></nav></aside>
         <header class='videos-title-row'><div><h1>Videos</h1><p>Discover high-quality videos from creators around the world.</p></div><form class='video-search-bar' data-video-search><input type='search' data-video-search-input placeholder='Search videos or creators' autocomplete='off' aria-label='Search videos'><button type='submit'>Search</button></form></header>
         <nav class='video-category-chips' aria-label='Video categories'>{category_html}</nav>
         <section class='video-toolbar'><div><label class='sr-only' for='videoSort'>Sort videos</label><select id='videoSort' data-video-sort><option value='recent'>Most Recent</option><option value='trending'>Trending</option><option value='most_viewed'>Most Viewed</option><option value='top_rated'>Top Rated</option></select></div><div class='video-view-toggle' aria-label='Video view mode'><button type='button' class='active' data-video-view='grid'>Grid</button><button type='button' data-video-view='list'>List</button></div></section>
@@ -89137,7 +89202,7 @@ def pulse_video_detail_page(video_id):
       </header>
       <div class='video-watch-shell'>
         <aside class='video-watch-left-rail' aria-label='Video navigation'>
-          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='/pulse/marketplace'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
+          <a href='/pulse'>⌂ Home</a><a href='/pulse' >▤ Feed</a><a href='/pulse/reels'>▻ Reels</a><a class='active' href='/pulse/videos'>▶ Videos</a><a href='/pulse/status'>◴ Status</a><a href='/pulse/groups'>♧ Groups</a><a href='/pulse/events'>◇ Events</a><a href='{app_first_href('marketplace')}'>▧ Marketplace</a><a href='/pulse/premium/intelligence'>✦ Pulse AI</a><a href='/pulse/music'>♪ Pulse Music</a><a href='/pulse/bookmarks'>▱ Bookmarks</a><a href='/pulse/settings/privacy'>Privacy Center</a><a href='/pulse/help'>Help & Support</a><div class='video-watch-premium'><strong>Go Premium</strong><p class='muted'>Unlock creator-grade video tools.</p></div>
         </aside>
         <main class='video-watch-main'>
       <article class='card video-detail-card'>
