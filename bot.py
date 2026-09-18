@@ -12219,6 +12219,116 @@ def pulse_advertiser_portal_page():
 
 
 @webhook_app.route("/app", methods=["GET"])
+@public_route(reason="Public landing page for the iPhone app. Signed-in members fall through to the command center, which keeps its own gate.")
+def app_landing_page():
+    """`/app` split off from the command center it used to share a handler with.
+
+    It was the one URL on this site whose subject is the iPhone app, and it
+    answered a 302 to /signup for everyone who was not already a member --
+    including Googlebot, which is why nothing on this domain was eligible to
+    rank for the app's own name.
+
+    The branch is on authentication, not on user-agent. Googlebot sees exactly
+    what a logged-out person sees, and a signed-in member sees exactly what they
+    saw before this change: handing a member a page that sells them the app they
+    are already inside would be a regression dressed as SEO.
+
+    The other three paths this handler used to serve stay authenticated, and
+    `services.search_visibility` marks them `noindex,nofollow` so they cannot
+    inherit this page's indexability by sharing its code.
+    """
+
+    init_db()
+    if require_account():
+        return app_command_center_page()
+
+    page = {
+        "canonical": search_visibility.canonical_url("/app"),
+        "breadcrumb": "PulseSoc for iPhone",
+        "title": "PulseSoc for iPhone — social feed, reels, live video, calls and marketplace",
+        "description": (
+            "PulseSoc is a free iPhone app for posts, reels, live video, direct messages, "
+            "voice and video calls, creator profiles and a marketplace, with reporting, "
+            "blocking and moderation built in. Requires iOS 15.1 or later."
+        ),
+        "image": seo_schema.SHARE_IMAGE_URL,
+        "faqs": APP_LANDING_FAQS,
+    }
+    response = webhook_app.make_response(render_template(
+        "app_landing.html",
+        page=page,
+        robots=search_visibility.robots_meta("/app"),
+        schema_json=seo_schema.app_landing_graph(page),
+        screenshots=APP_LANDING_SCREENSHOTS,
+    ))
+    # Public, identical for every anonymous visitor, and it changes about as
+    # often as the App Store listing does.
+    response.headers["Cache-Control"] = "public, max-age=600"
+    return response
+
+
+# Answers kept here rather than in the template so the FAQPage JSON-LD and the
+# visible text are one string each. Structured data that does not match what the
+# page says is a rich-result violation, and the way it happens is two copies.
+APP_LANDING_FAQS = [
+    {
+        "question": "Is PulseSoc free?",
+        "answer": (
+            "Yes. The iPhone app is free to download and use. PulseSoc Premium is an "
+            "optional subscription billed through your Apple ID, and ad credit is an "
+            "optional one-time purchase."
+        ),
+    },
+    {
+        "question": "Is there an Android app?",
+        "answer": (
+            "Not today. PulseSoc is available on iPhone. In the meantime pulsesoc.com "
+            "works in a mobile browser once you create a free account."
+        ),
+    },
+    {
+        "question": "What iOS version does PulseSoc need?",
+        "answer": "iOS 15.1 or later.",
+    },
+    {
+        "question": "Can I use PulseSoc without installing the app?",
+        "answer": (
+            "Partly. You can search pulsesoc.com and read its public pages without an "
+            "account, and the feed, profiles and messages work in a web browser once "
+            "you sign in. Live video, calls and push notifications are app features."
+        ),
+    },
+    {
+        "question": "How do I report someone or something on PulseSoc?",
+        "answer": (
+            "Every post, profile and message has a report control, and you can block an "
+            "account from its profile. Reports go to human moderation review."
+        ),
+    },
+]
+
+
+# Real screenshots of the shipped build, resized and re-encoded rather than
+# hotlinked from Apple's CDN. Dimensions are declared so the images cannot shift
+# the layout while they load.
+#
+# The alt text describes the screen in the image, not the feature the section is
+# arguing for. Alt text is read aloud to someone who cannot see the picture, so
+# "the home feed showing posts from people you follow" beside a screenshot of
+# the composer and the status row is a small lie told to the one reader who has
+# no way to check it.
+APP_LANDING_SCREENSHOTS = [
+    ("pulsesoc-app-home-feed.webp",
+     "The PulseSoc home screen: a network summary, a row of friends' statuses, and the composer for a new post."),
+    ("pulsesoc-app-search.webp",
+     "The PulseSoc search screen, with filters for people, posts, reels, status and marketplace listings."),
+    ("pulsesoc-app-groups-rooms.webp",
+     "The PulseSoc communities screen, listing group channels and live rooms with their member counts."),
+    ("pulsesoc-app-profile.webp",
+     "A PulseSoc profile page with the account's bio, its post and follower counts, and tabs for its media."),
+]
+
+
 @webhook_app.route("/command-center", methods=["GET"])
 @webhook_app.route("/intelligence", methods=["GET"])
 @webhook_app.route("/dashboard/intelligence", methods=["GET"])

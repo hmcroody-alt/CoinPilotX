@@ -136,6 +136,15 @@ _RULES = (
     # three public pages: Disallow-ing it would leave Google with inbound
     # links to a URL and no instruction about it.
     ("/day-signal", NOINDEX_FOLLOW, "authenticated surface behind a redirect"),
+
+    # The AI command center answers on four paths. `/app` now branches on
+    # authentication and serves a public landing page to anonymous visitors, so
+    # it is deliberately absent from this table. The other three still 302 to
+    # /signup and must not inherit the public page's indexability just because
+    # they share its handler. (`/dashboard/intelligence` is already covered by
+    # the `/dashboard` rule above.)
+    ("/command-center", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
+    ("/intelligence", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
 )
 
 

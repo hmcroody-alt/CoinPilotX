@@ -136,6 +136,23 @@ keep the command center exactly as it is. This is not cloaking: Googlebot is tre
 identically to any logged-out human, and the distinction is authentication, not
 user-agent.
 
+> **Done, 2026-09-18.** `/app` split into `app_landing_page` (public) and
+> `app_command_center_page` (unchanged, now serving its other three paths only).
+> The three siblings are declared `noindex,nofollow` in `services/search_visibility.py`
+> so they cannot inherit the public page's indexability by having shared its code.
+>
+> Two things found while building it, both corrections to assumptions in this
+> document. First, **A5 is narrower than it reads above**: Apple records the seller
+> as `COINPLOTXAI INC`, so the `legalName` in the Organization schema is *correct*
+> and corroborated by a source outside this repo. What remains of A5 is page copy
+> that presents the company name where the product name belongs. Second, **the
+> whole Pulse web surface is behind login** — `/pulse` and `/pulse/u/<handle>` both
+> 302 to `/login`. The landing page therefore does not offer "use it on the web"
+> as an alternative, because that is not true for a logged-out visitor today.
+> That is a P1 finding in its own right and belongs to the server-rendered
+> discovery stage, not here: `sitemap-posts.xml` submits `/pulse/post/<id>` URLs
+> whose public fetchability has not yet been demonstrated.
+
 **B2. All eight `/features/*` pages 404.**
 The information architecture the brief asks for does not exist yet.
 

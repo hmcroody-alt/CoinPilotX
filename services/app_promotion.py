@@ -141,11 +141,15 @@ TELEMETRY_EVENTS = {
 # Smart App Banner
 # --------------------------------------------------------------------------
 
-# Only the two pages a logged-out visitor can actually reach. Every other
-# anonymous surface on this domain is a legal page, an auth page or the
-# `/open/` interstitial, and none of those is improved by a banner: the legal
-# pages exist to be read on the web, and the interstitial *is* the app pitch.
-SMART_BANNER_PATHS = frozenset({"/", "/search"})
+# Only the pages a logged-out visitor can actually reach. Every other anonymous
+# surface on this domain is a legal page, an auth page or the `/open/`
+# interstitial, and none of those is improved by a banner: the legal pages exist
+# to be read on the web, and the interstitial *is* the app pitch.
+#
+# `/app` joined the list when it stopped redirecting anonymous visitors to
+# /signup. It is the one page on this domain whose subject is the app, so it
+# meets the stated rule more squarely than the other two do.
+SMART_BANNER_PATHS = frozenset({"/", "/search", "/app"})
 
 # Generic on purpose. `app-argument` is handed to the app verbatim when the
 # banner is tapped, and iOS shows the banner whether or not the app is
