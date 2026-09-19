@@ -117,19 +117,61 @@ Two files, neither of them a `dependency_watch` path:
 - `PulseSoc.xcodeproj/project.pbxproj` — all four occurrences, 15.1 → 16.1.
 - `ios/Podfile.properties.json` — added `"ios.deploymentTarget": "16.1"`.
   `ios/Podfile:19` reads this key (`podfile_properties['ios.deploymentTarget']
-  || '15.1'`), so without it the next `pod install` would rebuild the pods at
-  15.1 against an app target of 16.1. This is the same key `expo-build-properties`
-  writes, reached without adding the dependency.
+  || '15.1'`) to set the Podfile's `platform :ios`. This is the same key
+  `expo-build-properties` writes, reached without adding the dependency.
 
 Re-verified by a second `npx expo prebuild --platform ios --no-install`: all
 four lines came back as 16.1.
 
-**Deferred cost, stated now:** no `pod install` has been run. Pods are still
-configured at 15.1, which builds correctly — a pod floor *below* the app's is
-fine; only the reverse is an error. Whenever someone next runs `pod install`,
-`ios/Podfile.lock` will change, and *that* file is `dependency_watch` trapped
-(`config/realtime-audio-protected-paths.json:510`). The declaration is owed at
-that point, not now.
+### What `pod install` actually does with this, and what it costs
+
+Run in a scratch copy of the repo, to answer this before it surprised someone:
+
+- **`Podfile.lock` did not change.** The floor is not part of the resolved
+  dependency graph. The `dependency_watch` trap on that file
+  (`config/realtime-audio-protected-paths.json:510`) is therefore **not**
+  triggered by this change — the deferred declaration this document originally
+  predicted does not exist.
+- **The individual pods stayed at 15.1** — 288 of them, with a handful lower.
+  That is not a failure of the setting. React Native's own `post_install` hook
+  overwrites each pod's target with
+  `max(min_ios_version_supported, existing)` (`react-native/scripts/cocoapods/utils.rb:352`),
+  and RN 0.81's minimum is 15.1. Only the four Pods-project aggregate configs
+  take 16.1.
+
+A pod floor *below* the app's is correct and supported; only the reverse is an
+error. So the end state is: app at 16.1, pods at 15.1, lockfile untouched, no
+declaration owed.
+
+### It compiles — verified, not assumed
+
+The commit that applied the floor said a build was still owed. It has now been
+run: a full Release `xcodebuild` of the `PulseSoc` scheme against
+`generic/platform=iOS Simulator`, in the warm rig at `~/Desktop/cpx-prefetch-iso`
+with the 16.1 patches applied and `pod install` re-run.
+
+**`** BUILD SUCCEEDED **`**, exit 0, zero compiler diagnostics. (A naive
+`grep -c "error:"` returns 1; that hit is the *source line* `setCategory:...
+error:&err` quoted inside an unrelated warning, not a diagnostic. Anchor the
+grep to the `file:line:col: error:` form before believing it.)
+
+The 39,464-line log also confirms the split described above, by counting the
+`-target` triples the compiler was actually invoked with:
+
+| Triple | Compile units |
+|---|---|
+| `apple-ios15.1-simulator` | 4,186 |
+| `apple-ios16.1-simulator` | 18 |
+
+That is the predicted end state observed directly: the app's own targets build
+at 16.1, the pods build at 15.1 because RN's `post_install` pins them there, and
+the mixed floor links cleanly. The rig was restored to its committed state
+afterwards.
+
+What this does **not** establish: that the app runs correctly on a 16.1 device.
+Compiling is necessary, not sufficient. A device install on the iPhone 16 Pro
+remains owed before the next store build — but the risk it is checking for is
+now runtime behaviour, not the floor change itself.
 
 ### What a non-clean prebuild does churn
 

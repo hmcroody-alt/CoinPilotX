@@ -45,9 +45,24 @@ Deploy: Railway, nixpacks (Python 3.11 + ffmpeg). Procfile runs gunicorn `web` p
 `undx_worker` and `email_worker`. Other workers (`alert_worker`, `media_worker`,
 `pulse_worker`, `telegram_worker`) exist but aren't in the Procfile.
 
-Integrations: Stripe, Telegram bot, LiveKit (calls/live), Mux (streaming), Brevo (email/SMS),
-Cloudflare R2 via boto3, Firebase/FCM + APNs + web push, Google Cloud Translation, CoinGecko,
-optional Redis. `.env.example` documents ~180 keys.
+Integrations: Stripe, Telegram bot, **Agora** (realtime calls + live ingest), **Mux**
+(live distribution, playback, VOD), Brevo (email/SMS), Cloudflare R2 via boto3,
+Firebase/FCM + APNs + web push, Google Cloud Translation, CoinGecko, optional Redis.
+`.env.example` documents ~180 keys.
+
+**Realtime media is Agora → Mux. It is not LiveKit.** The host publishes over Agora RTC
+(`react-native-agora@4.6.2`); the server bridges that to Mux over RTMP for distribution —
+`services/agora_media_push_service.py:1` says so in its own first line ("Server-only Agora
+Media Push bridge for PulseSoc Live -> Mux"), with `services/mux_live_service.py` and
+`services/agora_cloud_recording_service.py` either side of it. Mux is the primary delivery
+path: ingest at `rtmp://global-live.mux.com:5222/app` (`mux_live_service.py:17`).
+
+LiveKit was **retired**. `config/realtime-audio-protected-paths.json:434` records the
+migration in as many words ("The retired LiveKit adapters held JavaScript audio leases.
+Agora session ownership is enforced by its native call/live implementations"), there is no
+`@livekit` package installed, and no LiveKit reference survives in `services/`,
+`mobile-native/src/` or `bot.py` outside of test fixtures and historical `*_REPORT.md`
+writeups. Those writeups are stale; do not treat them as current architecture.
 
 ## UNDX
 
@@ -69,10 +84,18 @@ API layer: `src/api/` with a shared `pulseApi()` wrapper over `PULSE_API_BASE_UR
 (default `https://pulsesoc.com`). Bearer token + session cookie, refresh via
 `POST /api/mobile/auth/refresh`, tokens in expo-secure-store.
 
-Native bits: `modules/pulse-now-playing/` (iOS lock-screen controls, Swift) and two
-`patches/` — a Hermes build fix, and a LiveKit WebRTC patch that stops the camera from
-reconfiguring the shared `AVAudioSession`. Both are load-bearing; `patch-package` runs
-postinstall.
+Native bits: `modules/pulse-now-playing/` (iOS lock-screen controls, Swift) and **one**
+patch — `patches/react-native+0.81.5.patch`, a Hermes build fix adding `<atomic>`/`<thread>`
+includes to `HermesExecutorFactory.cpp`. `patch-package` runs postinstall.
+
+The LiveKit WebRTC patch this file used to describe **no longer exists** — it went with the
+Agora migration. `config/realtime-audio-protected-paths.json:445` still names
+`patches/@livekit+react-native-webrtc+144.1.1.patch` under a `patch_files` key, but that
+file is absent, `@livekit/react-native-webrtc` is not installed, and **nothing reads
+`patch_files` or `patch_must_contain`** — grep across `scripts/`, `tests/` and `.github/`
+returns zero call sites. So it is a stale declaration, not a failing gate. The JS half of
+that rule (`must_contain: initNativePlayout` over `src/live-audio/liveAudioNative.ts` and
+`liveAudioEngine.ts`) still matches real code, so the surviving half is live.
 
 Verify with `npm run verify` (typecheck + i18n + jest). i18n is gated — hardcoded strings
 fail CI.
@@ -86,7 +109,7 @@ screen calling `Audio.setAudioModeAsync` or `AVAudioSession.setCategory` and ste
 session from a live call — build stays green, tests pass, production goes silent.
 
 Forbidden regardless of justification: screen-level AVAudioSession setup, a second
-microphone track, a second LiveKit publication path, a new global audio singleton, bypassing
+microphone track, a second Agora publication path, a new global audio singleton, bypassing
 ownership arbitration, or copying the audio-call implementation into another screen. The
 `expo-av` legacy allowlist is capped at six files; a seventh call site fails CI.
 
