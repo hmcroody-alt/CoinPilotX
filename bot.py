@@ -3255,7 +3255,18 @@ def interactive_security_guard():
             # produce the specific error the client knows how to show.
             max_request_mb = messenger_media_foundation.max_request_mb()
         elif request.path == "/api/pulse/media/upload":
-            max_request_mb = float(os.getenv("PULSE_MEDIA_MAX_REQUEST_MB", os.getenv("MEDIA_UPLOAD_MAX_VIDEO_MB", "150")))
+            # How many bytes may ride in one proxied request is a different
+            # question from how large a stored video may be, and this used to
+            # fall back to MEDIA_UPLOAD_MAX_VIDEO_MB for the answer. Production
+            # sets that to 700, which admitted a 700 MB multipart POST onto a
+            # worker with a 120s timeout -- surviving it needs 5.8 MB/s sustained
+            # for two minutes, so every upload in that band bought a long wait
+            # and then a killed worker. Nothing legitimate is in the band: native
+            # uploads go direct to R2 and web hands video over to Mux well under
+            # 150 MB, so the ceiling only ever caught requests that could not
+            # finish. Operators who really do want a larger proxied body still
+            # have PULSE_MEDIA_MAX_REQUEST_MB, which now means only that.
+            max_request_mb = float(os.getenv("PULSE_MEDIA_MAX_REQUEST_MB", "150"))
         max_request_bytes = int(max_request_mb * 1024 * 1024)
         if request.content_length > max_request_bytes:
             security_monitor.record("oversized_request_blocked", "high", account_user_id() or 0, client_ip_hash(), request.path, {"content_length": request.content_length, "max_request_mb": max_request_mb})
