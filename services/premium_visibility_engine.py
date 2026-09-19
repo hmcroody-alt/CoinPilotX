@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import premium_capability_engine
+from . import premium_identity_engine
 
 
 SURFACE_PROMPTS = {
@@ -22,17 +23,54 @@ def feature_flags():
     return premium_capability_engine.premium_feature_flags()
 
 
+#: Status words that describe a membership with no end date. A recorded expiry
+#: alongside one of these is meaningless, so the clock is not consulted for them.
+_UNBOUNDED_STATUS = {"founder", "lifetime"}
+#: Status words that describe a membership with a TERM. These are only worth
+#: anything while the term is open.
+_TERM_STATUS = {"active", "trial"}
+_TERM_SUBSCRIPTION_STATUS = {"active", "trialing"}
+_PREMIUM_PLANS = {"pulse-premium", "premium", "creator-pro"}
+
+
 def is_premium_user(user):
+    """Row-level premium read for placement/prestige surfaces.
+
+    The status-word branches used to answer from the WORD ALONE, with no clock
+    check: a row whose ``premium_status`` was left at 'active' by a provider
+    webhook that never arrived — or by any writer of a time-boxed grant — read
+    as Premium forever, because nothing here ever looked at the period end.
+
+    Its sibling reader ``premium_identity_engine.has_active_premium`` already
+    refuses that ("a status frozen at 'active' by a missed provider webhook must
+    not keep premium alive past the recorded period end"), and the two are fed
+    the SAME row by the same feed and profile queries. One of them honouring the
+    clock and the other not is how a member ends up with the placement of
+    Premium and none of the badge, or keeps both after paying for neither.
+
+    Both now share ``row_period_ended`` — one definition of "has the term
+    ended", so the two row readers cannot disagree about what time it is.
+
+    Unbounded grants are untouched: ``lifetime_premium`` and
+    ``premium_glow_manual_grant`` are deliberate, permanent, manually-issued
+    marks, and 'founder'/'lifetime' say in the word itself that there is no
+    term to end.
+    """
     if not user:
         return False
     if int(user.get("lifetime_premium") or 0) == 1:
         return True
     if int(user.get("premium_glow_manual_grant") or 0) == 1:
         return True
-    if str(user.get("premium_status") or "").lower() in {"active", "founder", "lifetime", "trial"}:
+    status = str(user.get("premium_status") or "").lower()
+    if status in _UNBOUNDED_STATUS:
         return True
-    if str(user.get("subscription_plan") or "").lower() in {"pulse-premium", "premium", "creator-pro"} and str(user.get("subscription_status") or "").lower() in {"active", "trialing"}:
-        return True
+    term_ended = premium_identity_engine.row_period_ended(user)
+    if status in _TERM_STATUS:
+        return not term_ended
+    if (str(user.get("subscription_plan") or "").lower() in _PREMIUM_PLANS
+            and str(user.get("subscription_status") or "").lower() in _TERM_SUBSCRIPTION_STATUS):
+        return not term_ended
     return False
 
 
