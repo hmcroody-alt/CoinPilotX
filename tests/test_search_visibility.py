@@ -395,3 +395,128 @@ def test_sitemap_gate_requires_both_the_path_and_the_record():
     assert sv.sitemap_eligible("/pulse/post/5", _good_record()) is True
     assert sv.sitemap_eligible("/pulse/post/5", _good_record(visibility="private")) is False
     assert sv.sitemap_eligible("/dashboard", _good_record()) is False
+
+
+# ---------------------------------------------------------------------------
+# The system account
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("record", [
+    {"user_id": 0},
+    {"user_id": -1},
+    {"user_id": "0"},
+    {"author_user_id": 0},
+    {"account_type": "PULSESOC_AUTOMATED"},
+    {"automated": True},
+    {"official_system_account": True},
+    {"author": {"user_id": 0, "automated": True}},
+    {"author": {"account_type": "PULSESOC_AUTOMATED"}},
+])
+def test_the_system_account_is_not_offered_to_search(record):
+    """1,784 of production's 1,806 public posts are this account's template
+    output. They are legitimate product content and stay served; they are not
+    what this domain should be asking to be ranked on.
+
+    Every shape here is one the record actually arrives in -- the raw
+    ``pulse_posts`` row, the ``get_post`` payload with its nested author, and
+    the flattened variant. All of them pass every other check in the policy, so
+    each is excluded for authorship or not at all.
+    """
+
+    decision = sv.content_eligibility(_good_record(**record))
+    assert decision.indexable is False
+    assert decision.sitemap_eligible is False
+    assert "automated" in decision.reason
+    # `follow`: the pages stay crawl paths to profiles, topics and comments.
+    assert decision.directive == sv.NOINDEX_FOLLOW
+
+
+@pytest.mark.parametrize("record", [
+    {"user_id": 1},
+    {"user_id": "42"},
+    {"author_user_id": 7},
+    {"account_type": "PERSON"},
+    {"automated": False},
+    {"author": {"user_id": 5, "automated": False, "account_type": "PERSON"}},
+    {},
+])
+def test_a_person_is_still_offered_to_search(record):
+    """The paired allow test. A rule that excluded 1,784 posts and also the
+    remaining 22 would satisfy the test above and remove the only pulse content
+    worth indexing."""
+
+    assert sv.content_eligibility(_good_record(**record)).indexable is True
+
+
+@pytest.mark.parametrize("value", ["", "abc", None, [1]])
+def test_an_unreadable_author_id_is_not_treated_as_the_system_account(value):
+    """Unknown is not automated. Guessing "automated" on a malformed id would
+    de-index real writing on a parsing accident."""
+
+    assert sv.content_eligibility(_good_record(user_id=value)).indexable is True
+
+
+def test_the_feed_and_the_policy_cannot_disagree_about_who_is_automated():
+    """These are two copies of one rule, in modules that cannot import each
+    other, and they are not identical on purpose.
+
+    ``_public_author`` badges a row "Official PulseSoc System Account" when
+    ``user_id <= 0`` *and* the row has no name of its own. This policy asks
+    only about the id, so it is the broader of the two. That asymmetry has to
+    run in this direction: a post the feed badges as automated while the
+    sitemap hands it to Google as a person's writing is the failure that
+    matters. The containment below is what forbids it. The converse is allowed
+    and costs at most one URL.
+    """
+
+    from services import pulse_feed_engine
+
+    rows = [
+        {"user_id": 0},
+        {"user_id": -1},
+        {"user_id": 0, "username": "someone"},
+        {"user_id": 0, "display_name": "Someone"},
+        {"user_id": 1, "username": "someone"},
+        {"user_id": 42, "display_name": "A Person"},
+    ]
+
+    labelled_automated = 0
+    for row in rows:
+        author = pulse_feed_engine._public_author(dict(row))
+        if author.get("automated"):
+            labelled_automated += 1
+            assert sv.is_automated_author(row) is True, (
+                f"the feed badges {row} as the system account but the policy "
+                f"would offer it to Google as a person's writing"
+            )
+    assert labelled_automated >= 2, "the feed labelled nothing automated; vacuous"
+
+
+@pytest.mark.parametrize("title", [
+    "Me and my best",          # 14, under the headline bar
+    "Me and my best friend",   # 21, over it
+    "A genuinely long and descriptive headline about something",
+])
+def test_an_empty_body_is_never_rescued_by_its_title(title):
+    """The exemption below it is the whole reason this exists.
+
+    A real headline is allowed to rescue a short body, and should be. It must
+    not rescue a body that is not there, because then the headline *is* the
+    page and the bar for a whole page has quietly become fifteen characters.
+
+    Production had one: a photo post, zero-length body, seventeen-character
+    title, sitting in the posts sitemap as a search destination.
+    """
+
+    record = _good_record(title=title)
+    record["body"] = ""
+    decision = sv.content_eligibility(record)
+    assert decision.indexable is False
+    assert decision.sitemap_eligible is False
+    assert decision.directive == sv.NOINDEX_FOLLOW
+
+    # The paired allow: the same title over a body of any real length is fine.
+    record["body"] = "Two short lines, but written by a person."
+    if len(title) >= 15:
+        assert sv.content_eligibility(record).indexable is True

@@ -30008,7 +30008,10 @@ def pulse_public_entries(limit=200):
     `content_eligibility` treats a missing key as its permissive default, so an
     unselected column reads as "no objection" rather than as "unknown" -- which
     is how `status` came to be omitted here and draft posts came to be
-    submitted to Google. Any field the policy consults must be selected.
+    submitted to Google. Any field the policy consults must be selected --
+    including `deleted_at`, which the WHERE clause already excludes. Leaving it
+    out would work today and stop working the moment someone relaxes the WHERE,
+    and the policy would waive it rather than complain.
 
     `lastmod` is the post's own `updated_at`, falling back to `created_at`, and
     is omitted entirely when neither exists. It is never today's date: a
@@ -30021,7 +30024,8 @@ def pulse_public_entries(limit=200):
         cur = conn.cursor()
         cur.execute(
             """
-            SELECT id, title, body, visibility, moderation_status, status, updated_at, created_at
+            SELECT id, user_id, title, body, visibility, moderation_status, status,
+                   deleted_at, updated_at, created_at
             FROM pulse_posts
             WHERE visibility='public' AND moderation_status='approved' AND deleted_at IS NULL
             ORDER BY engagement_score DESC, created_at DESC

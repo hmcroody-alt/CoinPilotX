@@ -28,9 +28,11 @@ back through `classify()`. It covers paths that do not exist yet, which is the
 point: a route added next year enters the sitemap through these same helpers.
 """
 
+import inspect
 import os
 import re
 import sys
+import textwrap
 
 import pytest
 
@@ -216,7 +218,7 @@ def test_indexnow_submits_only_what_the_sitemap_would(client):
 
 @pytest.fixture
 def seeded_posts():
-    """Six posts covering the states the policy must separate.
+    """Seven posts covering the states the policy must separate.
 
     Seeded through the real table rather than a stub because the thing under
     test is whether `pulse_public_entries` passes its rows to the policy at
@@ -240,21 +242,25 @@ def seeded_posts():
         os.environ.pop("FORCE_INIT_DB", None)
     body = "A real post about something, long enough to be a destination. " * 5
     rows = [
-        (9900001, "public", "approved", None, "published", body),
-        (9900002, "private", "approved", None, "published", body),
-        (9900003, "public", "pending", None, "published", body),
-        (9900004, "public", "approved", "2026-09-01", "published", body),
-        (9900005, "public", "approved", None, "draft", body),
-        (9900006, "public", "approved", None, "published", "Short."),
+        (9900001, 1, "public", "approved", None, "published", body),
+        (9900002, 1, "private", "approved", None, "published", body),
+        (9900003, 1, "public", "pending", None, "published", body),
+        (9900004, 1, "public", "approved", "2026-09-01", "published", body),
+        (9900005, 1, "public", "approved", None, "draft", body),
+        (9900006, 1, "public", "approved", None, "published", "Short."),
+        # Written by the system account. Passes every other check above -- public,
+        # approved, published, long enough -- so it is excluded for authorship or
+        # not at all.
+        (9900007, 0, "public", "approved", None, "published", body),
     ]
     conn = bot.db()
     cur = conn.cursor()
-    for post_id, visibility, moderation, deleted, status, text in rows:
+    for post_id, user_id, visibility, moderation, deleted, status, text in rows:
         cur.execute(
             "INSERT INTO pulse_posts (id, user_id, post_type, body, title, visibility,"
             " moderation_status, deleted_at, status, created_at, updated_at, engagement_score)"
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (post_id, 1, "text", text, "", visibility, moderation, deleted, status,
+            (post_id, user_id, "text", text, "", visibility, moderation, deleted, status,
              "2026-09-10T00:00:00", "2026-09-11T00:00:00", 0),
         )
     conn.commit()
@@ -263,7 +269,7 @@ def seeded_posts():
         yield [r[0] for r in rows]
     finally:
         conn = bot.db()
-        conn.cursor().execute("DELETE FROM pulse_posts WHERE id >= 9900001 AND id <= 9900006")
+        conn.cursor().execute("DELETE FROM pulse_posts WHERE id >= 9900001 AND id <= 9900007")
         conn.commit()
         conn.close()
 
@@ -275,9 +281,88 @@ def test_only_the_eligible_post_is_submitted(seeded_posts):
         assert f"/pulse/post/{excluded}" not in paths, excluded
 
 
+def test_every_column_the_policy_reads_is_in_the_query(seeded_posts):
+    """The failure this exists for is silent in both directions.
+
+    `content_eligibility` reads its record as a mapping and treats an absent key
+    as its permissive default, so a column the SELECT omits is not "unknown" --
+    it is waived. `status` was in the policy and not in the query, and draft
+    posts went to Google for it. Nothing about that looks wrong: the query
+    succeeds, the policy runs, the sitemap is well-formed XML.
+
+    The fixture above catches it only for the states someone thought to seed.
+    This catches it structurally, by taking every string literal in the two
+    policy functions, keeping the ones that are really `pulse_posts` columns,
+    and requiring the query to fetch them. Names that are not columns
+    (`content`, `hide_from_search`, `author`, `account_type`) drop out on their
+    own, so there is no allowlist here to go stale.
+    """
+
+    import ast
+
+    columns = set()
+    conn = bot.db()
+    try:
+        for row in conn.cursor().execute("PRAGMA table_info(pulse_posts)").fetchall():
+            columns.add(row[1] if not isinstance(row, dict) else row["name"])
+    finally:
+        conn.close()
+    assert {"user_id", "status", "visibility"} <= columns, "read the wrong table"
+
+    consulted = set()
+    for func in (sv.content_eligibility, sv.is_automated_author):
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                consulted.add(node.value)
+    consulted &= columns
+    assert "user_id" in consulted, "the AST walk found nothing; the test is vacuous"
+
+    selected = _selected_columns(bot.pulse_public_entries)
+    missing = consulted - selected
+    assert not missing, (
+        f"pulse_public_entries does not SELECT {sorted(missing)}, which "
+        f"content_eligibility reads. A column left out of the SELECT list is a "
+        f"permission silently granted."
+    )
+
+
+def _selected_columns(func):
+    source = textwrap.dedent(inspect.getsource(func))
+    match = re.search(r"SELECT\s+(.*?)\s+FROM\s+pulse_posts", source, re.I | re.S)
+    assert match, "could not find the pulse_posts SELECT list"
+    return {c.strip().split()[-1].lower() for c in match.group(1).split(",")}
+
+
 def test_the_submitted_post_carries_its_own_updated_at(seeded_posts):
     entries = dict(bot.pulse_public_entries(limit=500))
     assert entries["/pulse/post/9900001"].startswith("2026-09-11")
+
+
+def test_the_rendered_post_page_agrees_with_the_sitemap(client, seeded_posts):
+    """Dropping a URL from the sitemap is not the same as declining to be
+    ranked for it.
+
+    Google indexes what it finds by crawling, and every one of these posts is
+    linked from the feed. So the page itself has to carry the directive, and it
+    has to be the same directive -- a page that says `index` while the sitemap
+    omits it is not a policy, it is a disagreement Google resolves in favour of
+    the page.
+
+    Both routes call `content_eligibility`, which is the point. This asserts
+    they still do, through two records that differ in one column.
+    """
+
+    human = client.get("/pulse/post/9900001").get_data(as_text=True)
+    automated = client.get("/pulse/post/9900007").get_data(as_text=True)
+
+    robots = r"""name=['"]robots['"]\s+content=['"]([^'"]+)['"]"""
+    control = re.search(robots, human)
+    assert control and control.group(1) == sv.INDEX_DIRECTIVE, \
+        "the control post is not indexable either; this test proves nothing"
+    match = re.search(robots, automated)
+    assert match, "the system account's post page declares no robots directive"
+    assert match.group(1) == sv.NOINDEX_FOLLOW, match.group(1)
 
 
 def test_a_failed_query_is_logged_rather_than_passed_off_as_no_content(monkeypatch, caplog):

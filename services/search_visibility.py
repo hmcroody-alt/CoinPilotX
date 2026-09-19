@@ -26,6 +26,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .pulse_ai.content_policy import is_automated_author
+
 
 CANONICAL_HOST = "pulsesoc.com"
 CANONICAL_ORIGIN = f"https://{CANONICAL_HOST}"
@@ -310,8 +312,42 @@ def content_eligibility(record, *, min_body_chars=MIN_INDEXABLE_BODY_CHARS):
     if _truthy(get("search_opt_out", "noindex", "hide_from_search")):
         return _d(NOINDEX_FOLLOW, False, "creator opted out of search")
 
+    # Posts written by the PulseSoc system account do not ask to be ranked.
+    #
+    # Measured against production on 2026-09-18: of 1,806 public, approved,
+    # undeleted posts, 1,784 belong to user 0 and 22 to people. The automated
+    # ones are template output -- the 446 "Trend Explainer" posts average 0.948
+    # pairwise body similarity and differ only in a substituted noun, which is
+    # the same shape as the 108 templated pages this module already excludes.
+    # Other families are far more varied ("Hot Take" averages 0.097), so a
+    # similarity threshold would have split one account down the middle and
+    # invited a future generator to write around the number.
+    #
+    # Authorship is the honest criterion and the stable one. The pages stay
+    # served exactly as they are and stay useful inside the product; they simply
+    # stop being submitted as work this domain should be ranked on. `follow` is
+    # load-bearing as always -- their links to profiles, topics and comments are
+    # crawl paths worth keeping.
+    if is_automated_author(r):
+        return _d(NOINDEX_FOLLOW, False, "automated system account")
+
     body = str(get("body", "content", "description", default="") or "").strip()
     title = str(get("title", default="") or "").strip()
+
+    # A title alone is not a page. The rule below lets a real headline rescue a
+    # short body, which is right -- a two-line post under a written headline is
+    # a destination. It is not right when the body is empty, because then the
+    # title is the entire text of the page and "a real headline" is measured at
+    # fifteen characters.
+    #
+    # Not theoretical. Running the finished policy over production on
+    # 2026-09-18 left a posts sitemap of exactly two URLs, and one of them was a
+    # photo post with a zero-length body whose seventeen-character title
+    # cleared the bar. That is the thin-content problem this rule exists for,
+    # arriving through its own exemption.
+    if not body:
+        return _d(NOINDEX_FOLLOW, False, "no body text")
+
     if len(body) < min_body_chars and len(title) < 15:
         return _d(NOINDEX_FOLLOW, False, "insufficient original content")
 
