@@ -9,6 +9,13 @@ quoted. Where a claim could not be verified it is marked UNVERIFIED rather than 
 **This work targets a future build.** `CFBundleVersion` 28 / `CFBundleShortVersionString`
 1.0.2 is under App Store review. Nothing in this audit changes a shipping file.
 
+> **The mission this audit opened is closed — see `APPLE_NATIVE_FINAL_REPORT.md`.** Read that
+> first if you are arriving cold: it carries the findings that *changed* the plan rather than
+> confirmed it, the architecture rule the capability designs converged on, the consolidated
+> device-validation debt, and the twenty-one dated corrections now embedded below. Sections
+> in this file that were superseded say so inline, but the report is the shorter route to
+> knowing which ones.
+
 ---
 
 ## The two structural facts that govern everything below
