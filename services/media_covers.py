@@ -46,7 +46,7 @@ def _run(command: list[str], timeout: int = _FFMPEG_TIMEOUT) -> subprocess.Compl
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
 
 
-def video_duration_seconds(source: Path) -> float:
+def video_duration_seconds(source: Path | str) -> float:
     """Read a stored video's real length off the container, in seconds.
 
     0.0 means unmeasurable, not zero-length: no ffprobe on the box, an unreadable
@@ -83,7 +83,7 @@ def _frame_luma(image_path: Path) -> float:
         return -1.0
 
 
-def _extract_frame(source: Path, target: Path, seek_seconds: float | None) -> bool:
+def _extract_frame(source: Path | str, target: Path, seek_seconds: float | None) -> bool:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         return False
@@ -103,8 +103,13 @@ def _extract_frame(source: Path, target: Path, seek_seconds: float | None) -> bo
     return result.returncode == 0 and target.exists() and target.stat().st_size > 0
 
 
-def extract_video_poster_frame(source: Path, tmp_dir: Path) -> Path | None:
-    """Best usable frame: representative first, brighter seeks if it is dark."""
+def extract_video_poster_frame(source: Path | str, tmp_dir: Path) -> Path | None:
+    """Best usable frame: representative first, brighter seeks if it is dark.
+
+    `source` may be a remote manifest URL as well as a local path. Pass such a
+    URL as a plain string -- `Path("https://host/x.m3u8")` collapses the double
+    slash into `https:/host/x.m3u8`, which ffmpeg cannot open.
+    """
     duration = video_duration_seconds(source)
     attempts: list[tuple[str, float | None]] = [("representative", None)]
     if duration > 2:
@@ -155,6 +160,38 @@ def _cover_key(storage_key: str, size_name: str) -> str:
     base = str(storage_key or "").strip().replace("\\", "/").lstrip("/")
     stem = base.rsplit(".", 1)[0] if "." in base.rsplit("/", 1)[-1] else base
     return f"{stem}-cover-{size_name}.jpg"
+
+
+_UNSAFE_KEY_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+
+
+def _mux_playback_source(row: dict) -> str:
+    """Public HLS manifest for a row whose original upload was never retained.
+
+    Videos ingested straight to Mux keep no local or R2 object: `storage_key`,
+    `object_key` and every `*_url` source column are empty, so there is no file
+    to read a frame out of. ffmpeg opens the manifest directly, which is what
+    lets the poster stay a stored JPEG of ours instead of a live
+    `image.mux.com` URL the apps would have to fetch on every render.
+
+    Only a `ready` asset is offered: an earlier status means Mux has not
+    finished producing the manifest.
+    """
+    if str(row.get("mux_status") or "").strip().lower() != "ready":
+        return ""
+    # Keep the stored URL verbatim when it is already a Mux manifest -- a signed
+    # asset carries its token in the query string.
+    playback_url = str(row.get("playback_url") or "").strip()
+    if playback_url.startswith("https://stream.mux.com/"):
+        return playback_url
+    playback_id = str(row.get("mux_playback_id") or "").strip()
+    return f"https://stream.mux.com/{playback_id}.m3u8" if playback_id else ""
+
+
+def _mux_cover_base_key(row: dict) -> str:
+    """Storage key to hang Mux-sourced covers off, for rows that have none."""
+    playback_id = _UNSAFE_KEY_CHARS.sub("", str(row.get("mux_playback_id") or "").strip())
+    return f"pulse_media/covers/mux/{playback_id}.jpg" if playback_id else ""
 
 
 def _publish(local_file: Path, storage_key: str) -> str:
@@ -231,6 +268,11 @@ def row_needs_covers(row: dict) -> bool:
     media_type = str(row.get("media_type") or "").lower()
     if media_type not in {"image", "gif", "video"}:
         return False
+    # Voice notes were stored as media_type='video' with an audio mime. There is
+    # no frame to extract, so asking for one only burns the retry budget --
+    # clients render a designed card for audio.
+    if str(row.get("mime_type") or "").lower().startswith("audio/"):
+        return False
     media_url = str(row.get("media_url") or "")
     small = str(row.get("small_url") or "")
     if not small or small == media_url:
@@ -270,10 +312,27 @@ def ensure_covers_for_row(row: dict) -> dict:
                     if callable(close):
                         close()
                 return generate_covers(source, media_type, storage_key)
+        if media_type == "video":
+            return _covers_from_mux_playback(row)
         return {}
     except Exception as exc:
         logging.warning("MEDIA_COVER_BACKFILL_FAILED media_id=%s error=%s", row.get("id"), exc)
         return {}
+
+
+def _covers_from_mux_playback(row: dict) -> dict:
+    """Cover a video whose only surviving copy is its Mux asset."""
+    hls = _mux_playback_source(row)
+    cover_base = str(row.get("storage_key") or "").strip().replace("\\", "/").lstrip("/") or _mux_cover_base_key(row)
+    if not hls or not cover_base:
+        return {}
+    with tempfile.TemporaryDirectory(prefix="coinpilotx-cover-hls-") as tmp:
+        still = extract_video_poster_frame(hls, Path(tmp))
+        if still is None:
+            return {}
+        # The frame is a local JPEG by now, so the scale-and-publish half of the
+        # pipeline runs exactly as it does for a still image.
+        return generate_covers(still, "image", cover_base)
 
 
 def apply_cover_updates(cur, media_id: int, covers: dict) -> bool:

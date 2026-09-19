@@ -586,6 +586,7 @@ def process_cover_backlog(limit: int = 4) -> dict:
         WHERE deleted_at IS NULL
           AND media_type IN ('image', 'gif', 'video')
           AND COALESCE(is_available, 1)=1
+          AND COALESCE(mime_type, '') NOT LIKE 'audio/%'
           AND COALESCE(cover_attempts, 0) < ?
           AND COALESCE(cover_generated_at, '')=''
           AND (
@@ -623,6 +624,71 @@ def process_cover_backlog(limit: int = 4) -> dict:
     conn.commit()
     conn.close()
     return {"checked": len(rows), "processed": processed, "failed": failed}
+
+
+def process_media_asset_cover_sync(limit: int = 25) -> dict:
+    """Copy generated covers onto the Pulse feed's mirror table.
+
+    `pulse_media_assets` is populated once, at upload, from the upload result --
+    and for a video that result's `thumbnail_url` is the video's own URL,
+    because covers are generated afterwards. The only other writers are the Mux
+    webhooks, which touch the `mux_*` columns and never the cover ones. So a
+    cover that lands on `chat_media_uploads` has never reached the mirror the
+    feed actually reads.
+
+    A `image.mux.com` poster counts as fillable here: it is a machine fallback
+    the apps must fetch live, not a cover anyone chose, and a stored JPEG of
+    ours is strictly better. Anything else is left alone.
+    """
+    conn = bot.db()
+    conn.row_factory = bot.sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT p.id AS asset_id, c.thumbnail_url AS cover_thumbnail, c.poster_url AS cover_poster
+        FROM pulse_media_assets p
+        JOIN chat_media_uploads c ON c.id = p.media_id
+        WHERE COALESCE(c.thumbnail_url, '') LIKE '%-cover-%'
+          AND (
+            COALESCE(p.thumbnail_url, '')='' OR p.thumbnail_url=COALESCE(p.public_url, '')
+            OR COALESCE(p.poster_url, '')='' OR p.poster_url=COALESCE(p.public_url, '')
+            OR COALESCE(p.poster_url, '') LIKE '%image.mux.com%'
+          )
+        ORDER BY p.id DESC
+        LIMIT ?
+        """,
+        (max(1, min(int(limit or 25), 200)),),
+    )
+    rows = [dict(row) for row in cur.fetchall()]
+    synced = 0
+    for row in rows:
+        thumbnail = str(row.get("cover_thumbnail") or "")
+        cur.execute(
+            """
+            UPDATE pulse_media_assets
+            SET thumbnail_url=CASE
+                    WHEN COALESCE(thumbnail_url, '')='' OR thumbnail_url=COALESCE(public_url, '') THEN ?
+                    ELSE thumbnail_url
+                END,
+                poster_url=CASE
+                    WHEN COALESCE(poster_url, '')='' OR poster_url=COALESCE(public_url, '')
+                         OR COALESCE(poster_url, '') LIKE '%image.mux.com%' THEN ?
+                    ELSE poster_url
+                END,
+                updated_at=?
+            WHERE id=?
+            """,
+            (
+                thumbnail,
+                str(row.get("cover_poster") or "") or thumbnail,
+                _now(),
+                int(row.get("asset_id") or 0),
+            ),
+        )
+        synced += 1
+    conn.commit()
+    conn.close()
+    return {"checked": len(rows), "synced": synced}
 
 
 def _fail_or_retry_job(cur, job, error: Exception) -> None:
@@ -1290,9 +1356,10 @@ def run_cycle() -> dict:
     jobs = process_media_jobs(BATCH_SIZE)
     playback = process_playback_backlog(int(os.getenv("MEDIA_WORKER_PLAYBACK_BACKLOG_BATCH", "2")))
     covers = process_cover_backlog(int(os.getenv("MEDIA_WORKER_COVER_BACKLOG_BATCH", "4")))
+    cover_sync = process_media_asset_cover_sync(int(os.getenv("MEDIA_WORKER_COVER_SYNC_BATCH", "25")))
     durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
     availability = reconcile_media_availability(int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECONCILE_BATCH", "10")))
-    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "durations": durations, "availability": availability}
+    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "cover_sync": cover_sync, "durations": durations, "availability": availability}
 
 
 def main() -> None:
