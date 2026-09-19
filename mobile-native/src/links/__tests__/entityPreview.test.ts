@@ -78,6 +78,59 @@ describe("where the preview comes from", () => {
     expect(state.status === "ready" && state.preview.video).toBe(true);
   });
 
+  /**
+   * The picture on the card, which for months was a black rectangle.
+   *
+   * Every shared video post rendered an empty media frame with a "Video" badge
+   * on it. The resolver was asking `mediaDisplayUrl` -- "where does this media
+   * live" -- and for a video that is the video, so an `.m3u8` was handed to an
+   * `<Image>`. Nothing threw, `onError` never fired, and the card went on
+   * believing it had a thumbnail; the badge only draws inside the branch that
+   * has one, which is why the screenshot showed a badge floating on nothing.
+   *
+   * So these assert on the *shape* of the URL, not merely that one exists. A
+   * test that checked `thumbnailUrl` was non-empty passed throughout the bug.
+   */
+  it("shows a video post's still frame, not its playback URL", async () => {
+    feed.getPostDetail.mockResolvedValue(
+      postDetail({
+        media: [
+          {
+            media_type: "video",
+            media_url: "https://cdn/v.mp4",
+            playback_url: "https://stream.mux.com/PLAY123.m3u8",
+            thumbnail_url: "https://image.mux.com/PLAY123/thumbnail.jpg"
+          }
+        ]
+      })
+    );
+    const state = await resolveEntityPreview(REF);
+    const thumbnail = state.status === "ready" ? state.preview.thumbnailUrl : "";
+    expect(thumbnail).toBe("https://image.mux.com/PLAY123/thumbnail.jpg");
+  });
+
+  it("draws no picture at all for a video with no still, rather than a black box", async () => {
+    // The old fallback produced the mp4 here, and an <Image> pointed at an mp4
+    // is a filled aspect box that never draws. An empty string is the honest
+    // answer: the card renders its text and skips the media frame entirely.
+    feed.getPostDetail.mockResolvedValue(
+      postDetail({ media: [{ media_type: "video", media_url: "https://cdn/v.mp4" }] })
+    );
+    const state = await resolveEntityPreview(REF);
+    expect(state.status === "ready" && state.preview.thumbnailUrl).toBe("");
+  });
+
+  it("still uses a photo itself when the server sent no separate thumbnail", async () => {
+    // Strictness about stills is about video. A photo is its own poster, and a
+    // resolver that refused to say so would have traded one blank card for
+    // another.
+    feed.getPostDetail.mockResolvedValue(
+      postDetail({ media: [{ media_type: "image", media_url: "https://cdn/x.jpg" }] })
+    );
+    const state = await resolveEntityPreview(REF);
+    expect(state.status === "ready" && state.preview.thumbnailUrl).toBe("https://cdn/x.jpg");
+  });
+
   it("shortens a long caption rather than letting it set the card's height", async () => {
     feed.getPostDetail.mockResolvedValue(postDetail({ body: "word ".repeat(80) }));
     const state = await resolveEntityPreview(REF);

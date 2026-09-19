@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Animated, AppState, Image, Modal, PanResponde
 import { Audio, ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Ionicons } from "@expo/vector-icons";
-import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
+import { feedRenderableMedia, getPostDetail, mediaDisplayUrl, mediaKind, mediaPosterUrl, PulseMedia, PulsePost, pulsePostUrl, savablePostId } from "../api/feed";
 import { getLiveState } from "../api/live";
 import { mediaViewerItemFromPulseMedia, NativeMediaViewer } from "./NativeMediaViewer";
 import { claimMediaPlayback, releaseMediaPlayback } from "../core/mediaPlaybackCoordinator";
@@ -829,13 +829,6 @@ function clampedMediaAspect(media: PulseMedia) {
   const raw = explicit > 0 ? explicit : width > 0 && height > 0 ? width / height : 0;
   if (!Number.isFinite(raw) || raw <= 0) return 4 / 5;
   return Math.min(MEDIA_ASPECT_MAX, Math.max(MEDIA_ASPECT_MIN, raw));
-}
-
-function mediaPosterUrl(media: PulseMedia) {
-  return mediaDisplayUrl({
-    ...media,
-    media_url: media.thumbnail_url || media.poster_url || media.valid_url || media.media_url || media.url || ""
-  });
 }
 
 function MediaStrip({ post, active, motionEnabled, onReact, onMediaError }: { post: PulsePost; active: boolean; motionEnabled: boolean; onReact?: (post: PulsePost, reactionType: string) => void; onMediaError?: () => void }) {
