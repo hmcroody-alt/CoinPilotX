@@ -50,18 +50,22 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SoftwareApplication",
-    "name": "PulseSoc",
-    "applicationCategory": "SocialNetworkingApplication",
-    "operatingSystem": "Web, iOS, Android, PWA",
-    "description": "PulseSoc is a creator, video, live, messaging, Roast Battle, premium intelligence, and safety platform.",
-    "url": "https://pulsesoc.com/",
-    "image": "https://pulsesoc.com/static/brand/pulsesoc-logo-20260913.png",
-    "publisher": {
-      "@type": "Organization",
-      "name": "CoinPlotXAI Inc.",
-      "url": "https://pulsesoc.com/"
-    }
+    "@graph": [
+      {{ organization_ld | safe }},
+      {{ mobile_app_ld | safe }},
+      {
+        "@type": "WebApplication",
+        "@id": "https://pulsesoc.com/#webapp",
+        "name": "PulseSoc",
+        "applicationCategory": "SocialNetworkingApplication",
+        "browserRequirements": "Requires JavaScript",
+        "operatingSystem": "Web",
+        "description": "PulseSoc is a creator, video, live, messaging, Roast Battle, premium intelligence, and safety platform.",
+        "url": "https://pulsesoc.com/",
+        "image": "https://pulsesoc.com/static/brand/pulsesoc-logo-20260913.png",
+        "publisher": { "@id": "https://pulsesoc.com/#organization" }
+      }
+    ]
   }
   </script>
   <link rel="stylesheet" href="/static/css/pulsesoc-tokens.css?v=parity-20260806a" />

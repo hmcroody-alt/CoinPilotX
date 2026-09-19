@@ -1556,7 +1556,13 @@ def home():
     if user:
         return redirect("/pulse")
     greeting = "Welcome to PulseSoc — your AI intelligence command center."
-    response = render_template("index.html", current_user=user or {}, homepage_greeting=greeting)
+    response = render_template(
+        "index.html",
+        current_user=user or {},
+        homepage_greeting=greeting,
+        organization_ld=organization_ld(),
+        mobile_app_ld=mobile_app_ld(),
+    )
     response_obj = webhook_app.make_response(response)
     return response_obj
 
@@ -1655,13 +1661,22 @@ def render_ads_landing_page(slug):
     else:
         signup_url = f"/signup?next={quote(page['next'], safe='')}&utm_source=google_ads&utm_medium=cpc&utm_campaign={slug}&utm_content=hero_{variant}"
     secondary_url = page["next"] if slug != "crypto-scam-scanner" else "/learn/crypto-scams"
+    # One builder renders four paid landing pages, so the anonymous publisher
+    # here was four orphan Organization nodes, not one. `publisher` is now a
+    # reference, and the node it refers to travels with it -- a reference to an
+    # `@id` that appears nowhere in the same graph resolves to nothing.
     schema = {
         "@context": "https://schema.org",
-        "@type": page["schema_type"],
-        "name": page["title"].split("|")[0].strip(),
-        "url": canonical,
-        "description": page["description"],
-        "publisher": {"@type": "Organization", "name": "CoinPlotXAI Inc.", "url": "https://pulsesoc.com"},
+        "@graph": [
+            seo_schema.organization_schema(),
+            {
+                "@type": page["schema_type"],
+                "name": page["title"].split("|")[0].strip(),
+                "url": canonical,
+                "description": page["description"],
+                "publisher": {"@id": f"{seo_schema.SITE_URL}/#organization"},
+            },
+        ],
     }
     proof = "".join(f"<span>{html_escape(clean_html(item))}</span>" for item in page["proof"])
     related = "".join(
@@ -1907,7 +1922,7 @@ def api_support_ticket():
 def security_page():
     return simple_public_page(
         "security",
-        "Security Reporting | CoinPlotXAI Inc.",
+        "Security Reporting | PulseSoc",
         "PulseSoc Security Reporting",
         "Report scams, suspicious wallets, phishing, abusive users, or account compromise to PulseSoc.",
         "Security reports are routed to support@pulsesoc.com. PulseSoc never asks for seed phrases, private keys, recovery phrases, wallet passwords, or exchange passwords.",
@@ -2005,14 +2020,38 @@ def scam_shield_scan_page():
     return response
 
 
+def organization_ld():
+    """The Organization node, rendered for templates that embed a `@graph`.
+
+    Passed in rather than written into each template so there is one definition
+    of who this domain belongs to. Both legal pages used to carry their own
+    copy under the same `@id`, naming the company where the others name the
+    brand; the home page carried a third with no `@id` at all, which joins
+    nothing.
+    """
+
+    return json.dumps(seo_schema.organization_schema(), indent=2)
+
+
+def mobile_app_ld():
+    """The iPhone app node, for templates that show an App Store badge.
+
+    The home page shows the badge and said nothing about the app in structured
+    data, while claiming an Android build that does not exist. This is the
+    truthful version of that claim and `seo.schema` owns it.
+    """
+
+    return json.dumps(seo_schema.mobile_app_schema(), indent=2)
+
+
 @webhook_app.route("/privacy", methods=["GET"])
 def privacy_page():
-    return render_template("privacy.html")
+    return render_template("privacy.html", organization_ld=organization_ld())
 
 
 @webhook_app.route("/terms", methods=["GET"])
 def terms_page():
-    return render_template("terms.html")
+    return render_template("terms.html", organization_ld=organization_ld())
 
 
 def legal_money_page(title, body):
@@ -2036,14 +2075,18 @@ def legal_seller_terms_page():
 
 @webhook_app.route("/about", methods=["GET"])
 def about_page():
-    schema = {
-        "@context": "https://schema.org",
-        "@type": "Organization",
-        "name": "CoinPlotXAI Inc.",
-        "url": "https://pulsesoc.com/about",
-        "sameAs": ["https://pulsesoc.com/arena-preview"],
-        "description": "CoinPlotXAI is an educational AI crypto intelligence, scam protection, market awareness, and simulation training platform.",
-    }
+    # The canonical node, not a local copy of one. What was here named the
+    # company where every other page names the brand, carried no `@id` so it
+    # joined nothing, gave `url` as /about rather than the site root, and listed
+    # a page on this same domain under `sameAs` -- a field for profiles that
+    # identify this entity somewhere else.
+    #
+    # Its `description` is the reason to take the whole node rather than patch
+    # the name: it described an educational crypto simulation platform. Under
+    # the canonical `@id` that description would not sit beside the WebSite's,
+    # it would merge with it, and Google would resolve the contradiction by
+    # crawl order.
+    schema = dict(seo_schema.organization_schema(), **{"@context": "https://schema.org"})
     sections = [
         ("Mission", "CoinPlotXAI helps people train discipline, understand risk, practice decision-making, improve market awareness, and protect themselves from crypto scams in a simulation-first environment."),
         ("AI + Human Psychology", "The platform combines live/cached market context, AI tactical summaries, psychology checks, and risk education so users can slow down, recognize pressure, and make clearer educational decisions."),
@@ -2560,7 +2603,8 @@ def reset_pwa_page():
     <head>
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width, initial-scale=1">
-      <title>Reset CoinPlotXAI App Cache</title>
+      <title>Reset PulseSoc App Cache</title>
+      <meta name="robots" content="noindex,follow">
       <style>
         body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:#050b14;color:#f2fbff;font-family:Inter,system-ui,Arial,sans-serif}
         main{width:min(100%,560px);padding:28px;border:1px solid rgba(0,229,255,.22);border-radius:14px;background:#0d1627;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.35)}
@@ -100691,9 +100735,12 @@ def pro_page():
         ("Future Creator Economy", ["creator prestige upgrades", "teacher and merchant enhancements", "optional discovery boosts", "future monetization tools after trust review"]),
     ]
     cards = "".join(f"<article class='card'><h2>{html_escape(clean_html(name))}</h2><ul>{''.join(f'<li>{html_escape(clean_html(item))}</li>' for item in items)}</ul><a class='button primary' href='/pulse/premium'>Explore PulseSoc Premium</a></article>" for name, items in packages)
-    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core CoinPlotXAI ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
+    trust = "<article class='card'><h2>Growth-First Access</h2><p>The core PulseSoc ecosystem is free for authenticated users. Premium is aspirational: identity, prestige, creator enhancement, cosmetics, and deeper creator intelligence.</p></article>"
     body = f"<section class='grid'>{cards}{trust}</section>"
-    return trust_public_page("CoinPlotXAI Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
+    # "PulseSoc Premium" is what the page's own three cards call it and what
+    # `seo.schema.product_schema` offers Google at $14.99. The heading was the
+    # only place on the domain that named it after the company.
+    return trust_public_page("PulseSoc Premium", "Free core ecosystem with PulseSoc Premium prestige and creator enhancements.", body, "/pulse/premium")
 
 
 def pulse_admin_user_row(cur, user_id):

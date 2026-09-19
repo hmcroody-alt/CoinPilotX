@@ -24,6 +24,25 @@ APP_CONTENT_RATING = "4+"
 
 
 def organization_schema():
+    """The one Organization node this domain publishes.
+
+    `@id` is what makes it one node. Google consolidates nodes that share an
+    `@id`, so two pages describing `#organization` differently do not produce
+    two entities -- they produce one entity with contradictory properties, and
+    the contradiction is resolved by whichever page was crawled last.
+
+    That was the state before this became the single source. `/terms` and
+    `/privacy` each declared this exact `@id` with `name: "CoinPlotXAI Inc."`,
+    while `/app`, `/features/*` and `/pricing` declared it with `name:
+    "PulseSoc"`. Separately, `/` and `/about` published Organization nodes with
+    no `@id` at all, which join nothing and corroborate nothing.
+
+    `name` is the brand a person searches for. `legalName` is the company that
+    signs things. Both are true, they are different fields, and the split is
+    corroborated outside this repo: Apple records the App Store seller as
+    COINPLOTXAI INC.
+    """
+
     return {
         "@type": "Organization",
         "@id": f"{SITE_URL}/#organization",
