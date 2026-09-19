@@ -49990,6 +49990,108 @@ def pulse_reel_payload(reel_id=0, post_id=0, viewer_user_id=0, include_preview_c
     return reel_prioritize_video_media(merged)
 
 
+# Fields of a media record that are a way to *fetch the video*, as opposed to a
+# way to describe it. A share preview is shown inside other people's
+# conversations and is forwarded onward, so none of these may appear in one:
+# `mux_asset_id` and `mux_playback_id` address the asset at Mux directly,
+# `storage_key` and `storage_provider` name its object in the bucket, and the
+# url fields are the CDN or signed origins a player is handed once it has been
+# authorized.
+#
+# Written down rather than inferred so the leak test can assert on it by name.
+# It is the deny half; `pulse_reel_share_preview` is an allowlist and would not
+# emit these anyway -- the pair is deliberate, because an allowlist that
+# quietly grows a field is exactly how the first of these gets back in.
+PULSE_REEL_PREVIEW_FORBIDDEN_FIELDS = (
+    "media_url",
+    "valid_url",
+    "cdn_url",
+    "playback_url",
+    "mux_playback_id",
+    "mux_asset_id",
+    "mux_hls_url",
+    "storage_key",
+    "storage_provider",
+    "source_url",
+    "fallback_url",
+    "attached_audio_url",
+    "audio_url",
+    "preview_url",
+)
+
+
+def pulse_reel_share_preview(reel):
+    """The little a rich share card needs, and nothing else.
+
+    ## Why this is a projection and not a query
+
+    It takes an already-built `pulse_reel_payload` rather than a reel id, and
+    that is the whole security argument. `pulse_reel_payload` is the read the
+    Reels experience itself performs: it drops deleted reels, drops blocked
+    ones, and hands the post through `pulse_feed_engine.get_post(...,
+    include_private=False)` so a reel the viewer may not see never
+    materialises. A preview built from its output cannot be more permissive
+    than that, because it is not a second read -- there is no query here at all.
+
+    Had this taken a reel id it would have had to fetch, and a fetch is a place
+    where someone eventually writes a slightly different WHERE clause. The
+    caller authorizes; this only forgets things.
+
+    ## What it forgets
+
+    Everything that is a means of playback. A card shows a still frame, a name,
+    an avatar and a line of caption -- it never plays, so it has no use for a
+    playback url, a Mux id or a storage key, and shipping one would put a
+    durable handle on the asset inside a message that can be forwarded to
+    anyone. `PULSE_REEL_PREVIEW_FORBIDDEN_FIELDS` above names them.
+
+    The poster is chosen from the still fields only, in the order the feed
+    renderer uses, and a candidate that is itself a video url is skipped: an
+    `<Image>` handed an `.m3u8` draws a black rectangle and reports no error,
+    which is how a video badge once sat over nothing at all.
+    """
+    reel = dict(reel or {})
+    author = dict(reel.get("author") or {})
+    reel_id = safe_int(reel.get("reel_id") or reel.get("id"), 0)
+    poster = ""
+    for item in (reel.get("media") or []):
+        item = dict(item or {})
+        for field in ("poster_url", "thumbnail_url", "mux_thumbnail_url"):
+            candidate = str(item.get(field) or "").strip()
+            if candidate and not media_service.is_video_url(candidate):
+                poster = candidate
+                break
+        if poster:
+            break
+    if not poster:
+        candidate = str(reel.get("thumbnail_url") or reel.get("cover_url") or reel.get("image_url") or "").strip()
+        poster = "" if media_service.is_video_url(candidate) else candidate
+    # The handle is the identity and the display name the courtesy, so both go
+    # and the card decides. `public_player_id` backs up `username` because an
+    # account that never chose a handle still has the machine one, and a card
+    # with an empty author row reads as a rendering fault.
+    handle = str(author.get("username") or author.get("public_player_id") or "").strip().lstrip("@")
+    return {
+        "reel_id": reel_id,
+        # Absolute, because this is also what an external share sends. A
+        # site-relative path in somebody's SMS is not a link.
+        "canonical_url": f"{APP_BASE_URL}/pulse/reels/{reel_id}",
+        "path": f"/pulse/reels/{reel_id}",
+        "caption": clean_html(reel.get("caption") or reel.get("body") or reel.get("title") or "")[:280],
+        "poster_url": clean_html(poster),
+        # Constant rather than read off the media record: a reel is a reel. A
+        # record whose type is missing or wrong must not make the card stop
+        # drawing its play indicator over a video that is really there.
+        "media_type": "video",
+        "duration_seconds": round(float(reel.get("duration_seconds") or reel.get("duration") or 0) or 0, 2),
+        "author": {
+            "display_name": clean_html(author.get("display_name") or "")[:80],
+            "username": clean_html(handle)[:64],
+            "avatar_url": clean_html(author.get("avatar_url") or ""),
+        },
+    }
+
+
 def pulse_reel_comment_payload(post_id, viewer_user_id=0, owner_user_id=0, limit=80):
     base = pulse_feed_engine.list_comments(post_id, limit=limit)
     comments = [dict(item) for item in (base.get("comments") or [])]
@@ -91008,9 +91110,34 @@ def api_pulse_reel_comments_by_id(reel_id):
     return jsonify({**result, "reel_id": reel_id}), status
 
 
-@webhook_app.route("/api/reels/<int:reel_id>", methods=["PATCH", "DELETE"])
-@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["PATCH", "DELETE"])
+@webhook_app.route("/api/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"])
+@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"])
 def api_pulse_reel_manage(reel_id):
+    """Read one reel, or manage it. The GET arm is new and is read-only.
+
+    Until now a reel had no by-id read of any kind over JSON -- the only way to
+    obtain one was `/api/pulse/reels/feed`, which returns whatever page the
+    ranker felt like and may simply not contain the reel you asked about. That
+    is why a reel link pasted into Messenger rendered as a naked url while a
+    post link rendered as a card: the card is not allowed to exist unless the
+    preview can be fetched with *the same request a tap makes*, and for reels
+    there was no such request to make.
+
+    GET is deliberately placed above the `can_manage` gate and below the 404.
+    Reading a reel is not managing it, so the owner check must not apply; but
+    every reel that reaches this line has already been through
+    `pulse_reel_payload`, which is the same viewer-scoped read the Reels
+    surface performs. Deleted, blocked and viewer-invisible reels are all
+    already gone by here, and they leave as an indistinguishable 404 -- "no
+    such reel" and "not yours to see" are the same sentence on purpose, since
+    telling them apart would confirm the reel exists.
+
+    It answers a *preview*, not the reel. `pulse_reel_share_preview` drops
+    every playback url, Mux id and storage key, because this payload's
+    destination is a chat bubble that can be forwarded onward and a still frame
+    is all a card has ever drawn. The full payload stays behind the surfaces
+    that actually play video.
+    """
     init_db()
     user = api_account_user()
     if not user:
@@ -91019,6 +91146,8 @@ def api_pulse_reel_manage(reel_id):
     reel = pulse_reel_payload(reel_id=reel_id, viewer_user_id=user["user_id"])
     if not reel:
         return api_error("Reel not found.", 404, trace_id)
+    if request.method == "GET":
+        return jsonify({"ok": True, "reel": pulse_reel_share_preview(reel), "trace_id": trace_id})
     if not reel.get("can_manage"):
         return api_error("Only the Reel owner can manage this Reel.", 403, trace_id)
     if request.method == "DELETE":

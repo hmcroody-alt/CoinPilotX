@@ -1,5 +1,20 @@
 /**
- * A PulseSoc post, rendered inside a message as the object it is.
+ * A PulseSoc object, rendered inside a message as the thing it is.
+ *
+ * ## One card, several kinds
+ *
+ * Posts and profiles share this component rather than getting one each. They
+ * are the same card — a picture, a name, a line, a way in — and the parts that
+ * are easy to get wrong are the parts they share: the shell that must not
+ * reflow when it resolves, the unavailable state that must stop being
+ * tappable, the accessibility label, the video badge that may only be drawn
+ * over a thumbnail that actually exists. Two components would mean fixing each
+ * of those twice, and the second fix is the one that gets forgotten.
+ *
+ * Only the *words* differ by kind, and they are chosen in `cardCopy` below,
+ * where every translation key is a literal. A composed key such as
+ * `messaging:${kind}Card.cta` would read more cleverly and would be invisible
+ * to the i18n extractor, so it would ship English to eleven locales.
  *
  * ## It is derived, never stored
  *
@@ -42,7 +57,79 @@ import { chatGraphite } from "../../theme/chatGraphite";
 import { PulseEntityRef } from "../../links/pulseEntity";
 import { useEntityPreview } from "../../links/entityPreview";
 
-export function PulsePostLinkCard({
+type CardCopy = {
+  eyebrow: string;
+  cta: string;
+  loading: string;
+  forbidden: string;
+  missing: string;
+  unavailable: string;
+  /**
+   * The word over the corner of the thumbnail. A post says "Video" because the
+   * badge is *news* — most posts are not video, so the badge is what tells you
+   * this one is. A reel says "Play" because every reel is video and repeating
+   * that over a card whose eyebrow already reads REEL would say nothing; what
+   * the reader does not yet know is that the still is a clip they can start.
+   */
+  mediaBadge: string;
+  a11yGeneric: string;
+  a11yFor: (author: string) => string;
+};
+
+/**
+ * The words for one kind. Every key spelled out, for the extractor's sake.
+ *
+ * The card's kind comes from the *resolved* entity, not from the preview, so
+ * the loading and unavailable states are already kind-specific: a profile link
+ * that is still resolving says "Loading profile…", and one that has been
+ * deleted says so about a profile. Falling back to the post wording while the
+ * kind was unknown would have been a small lie told at the most visible moment.
+ */
+function cardCopy(kind: PulseEntityRef["kind"], t: (key: string, vars?: Record<string, unknown>) => string): CardCopy {
+  if (kind === "profile") {
+    return {
+      eyebrow: t("messaging:profileCard.eyebrow"),
+      cta: t("messaging:profileCard.cta"),
+      loading: t("messaging:profileCard.loading"),
+      forbidden: t("messaging:profileCard.forbidden"),
+      missing: t("messaging:profileCard.missing"),
+      unavailable: t("messaging:profileCard.unavailable"),
+      // A profile has no clip to start, and `previewFromProfile` sets
+      // `video: false`, so this is never read. It is spelled anyway rather
+      // than left to a `?? ""`: the next kind added should have to answer the
+      // question, not inherit a blank.
+      mediaBadge: t("messaging:postCard.video"),
+      a11yGeneric: t("messaging:profileCard.a11yOpenGeneric"),
+      a11yFor: (author: string) => t("messaging:profileCard.a11yOpen", { author })
+    };
+  }
+  if (kind === "reel") {
+    return {
+      eyebrow: t("messaging:reelCard.eyebrow"),
+      cta: t("messaging:reelCard.cta"),
+      loading: t("messaging:reelCard.loading"),
+      forbidden: t("messaging:reelCard.forbidden"),
+      missing: t("messaging:reelCard.missing"),
+      unavailable: t("messaging:reelCard.unavailable"),
+      mediaBadge: t("messaging:reelCard.play"),
+      a11yGeneric: t("messaging:reelCard.a11yOpenGeneric"),
+      a11yFor: (author: string) => t("messaging:reelCard.a11yOpen", { author })
+    };
+  }
+  return {
+    eyebrow: t("messaging:postCard.eyebrow"),
+    cta: t("messaging:postCard.cta"),
+    loading: t("messaging:postCard.loading"),
+    forbidden: t("messaging:postCard.forbidden"),
+    missing: t("messaging:postCard.missing"),
+    unavailable: t("messaging:postCard.unavailable"),
+    mediaBadge: t("messaging:postCard.video"),
+    a11yGeneric: t("messaging:postCard.a11yOpenGeneric"),
+    a11yFor: (author: string) => t("messaging:postCard.a11yOpen", { author })
+  };
+}
+
+export function PulseEntityLinkCard({
   entity,
   onOpen,
   onLongPress
@@ -54,6 +141,7 @@ export function PulsePostLinkCard({
   const { t } = useTranslation();
   const state = useEntityPreview(entity);
   const preview = state.status === "ready" ? state.preview : null;
+  const copy = cardCopy(entity.kind, t);
   /**
    * The handle is the identity; the display name is the courtesy. When the
    * server sends only one of them the card shows that one rather than an empty
@@ -65,19 +153,17 @@ export function PulsePostLinkCard({
   const unavailableLine =
     state.status === "unavailable"
       ? state.reason === "forbidden"
-        ? t("messaging:postCard.forbidden")
+        ? copy.forbidden
         : state.reason === "missing"
-          ? t("messaging:postCard.missing")
-          : t("messaging:postCard.unavailable")
+          ? copy.missing
+          : copy.unavailable
       : "";
 
   return (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel={
-        preview
-          ? t("messaging:postCard.a11yOpen", { author: authorLine || t("common:identity.member") })
-          : t("messaging:postCard.a11yOpenGeneric")
+        preview ? copy.a11yFor(authorLine || t("common:identity.member")) : copy.a11yGeneric
       }
       // A card for a post that cannot be loaded is not tappable. Sending someone
       // to a screen that will show them the same refusal, one navigation later,
@@ -90,9 +176,12 @@ export function PulsePostLinkCard({
       {preview?.thumbnailUrl ? (
         <View style={styles.mediaFrame}>
           <Image source={{ uri: preview.thumbnailUrl }} style={styles.media} resizeMode="cover" />
+          {/* Only ever over a picture that exists. A badge floating on the
+              empty frame would be the black-rectangle bug again, wearing a
+              label that says the rectangle is fine. */}
           {preview.video ? (
             <View style={styles.videoBadge}>
-              <Text style={styles.videoBadgeText}>{t("messaging:postCard.video")}</Text>
+              <Text style={styles.videoBadgeText}>{copy.mediaBadge}</Text>
             </View>
           ) : null}
         </View>
@@ -114,7 +203,7 @@ export function PulsePostLinkCard({
               </Text>
             ) : (
               <Text style={styles.eyebrow} numberOfLines={1}>
-                {t("messaging:postCard.eyebrow")}
+                {copy.eyebrow}
               </Text>
             )}
             {/* The handle repeats under the name only when both exist, so a post
@@ -129,7 +218,7 @@ export function PulsePostLinkCard({
 
         {state.status === "loading" ? (
           <Text style={styles.caption} numberOfLines={2}>
-            {t("messaging:postCard.loading")}
+            {copy.loading}
           </Text>
         ) : unavailableLine ? (
           <Text style={styles.unavailable} numberOfLines={2}>
@@ -142,8 +231,8 @@ export function PulsePostLinkCard({
         ) : null}
 
         <View style={styles.footerRow}>
-          <Text style={styles.brand}>{t("messaging:postCard.eyebrow")}</Text>
-          {state.status === "unavailable" ? null : <Text style={styles.cta}>{t("messaging:postCard.cta")}</Text>}
+          <Text style={styles.brand}>{copy.eyebrow}</Text>
+          {state.status === "unavailable" ? null : <Text style={styles.cta}>{copy.cta}</Text>}
         </View>
       </View>
     </Pressable>

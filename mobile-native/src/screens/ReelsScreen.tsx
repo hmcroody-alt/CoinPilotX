@@ -71,6 +71,7 @@ import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { useAuth } from "../session/auth";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { buildReelShareMetadata } from "../sharing/reelShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { takeReelTransfer } from "../discovery/reelTransfer";
 import { spatialReelsEnabled } from "../spatial/flags";
@@ -635,23 +636,17 @@ export function ReelsScreen({ route, navigation }: Props) {
         return;
       }
       const result = await shareReel(reel.id);
-      await sharePulseObject({
-        kind: "reel",
-        url: result.share_url || reelWebUrl(reel.id),
-        title: reel.title || "PulseSoc Reel",
-        description: reel.caption || reel.body,
-        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
-        previewImageUrl: reel.poster_url
-      });
+      // The caption, the title, the creator's name and the poster all leave the
+      // app here, into a share sheet that hands them to whatever the person
+      // picks. `buildReelShareMetadata` is what decides whether they may -- this
+      // used to pass them unconditionally, so a private Reel's caption went out
+      // with every share. The url stays the caller's: `shareReel` mints one
+      // carrying the share source and that is the link the recipient should tap.
+      await sharePulseObject(buildReelShareMetadata(reel, result.share_url || reelWebUrl(reel.id)));
     } catch {
-      await sharePulseObject({
-        kind: "reel",
-        url: reelWebUrl(reel.id),
-        title: reel.title || "PulseSoc Reel",
-        description: reel.caption || reel.body,
-        author: reel.author?.display_name || reel.author?.name || reel.author?.username,
-        previewImageUrl: reel.poster_url
-      }).catch(() => undefined);
+      // The share route failing must not quietly restore the unguarded share.
+      // Same metadata builder, only the url is rebuilt locally.
+      await sharePulseObject(buildReelShareMetadata(reel, reelWebUrl(reel.id))).catch(() => undefined);
     } finally {
       setShareOpen(false);
     }

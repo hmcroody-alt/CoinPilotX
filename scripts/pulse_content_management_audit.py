@@ -60,7 +60,7 @@ def main():
         '"can_delete": is_owner',
         "pulse_status_updated",
         "pulse_status_deleted",
-        '@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["PATCH", "DELETE"])',
+        '@webhook_app.route("/api/pulse/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"])',
         '@webhook_app.route("/api/pulse/videos/<int:video_id>", methods=["PATCH", "DELETE"])',
         '@webhook_app.route("/api/pulse/posts/<int:post_id>", methods=["GET", "PATCH", "DELETE"])',
     ]:

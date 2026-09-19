@@ -46,14 +46,58 @@ def payload_for(item):
     return pulse_feed_engine._canonical_media_payload(item, media_service.resolve_media(item))
 
 
+# The extensions this file refuses to see in a still field, spelled out here
+# rather than asked of `media_service`.
+#
+# Asking the module was the original shape of `assert_no_video_in_stills`, and
+# it made every assertion in this class conditional on the very predicate the
+# class exists to guard. When `_is_video_url` turned out not to know about
+# `.m3u8`, `test_an_hls_manifest_is_not_a_still_either` was serving
+# `https://stream.mux.com/PLAY123.m3u8` as `thumbnail_url` and calling it a
+# picture -- a test named for the case, exercising the case, and agreeing with
+# the bug, because it asked the bug.
+#
+# So the list is duplicated on purpose. Two copies that can disagree are the
+# point: the module's copy decides what ships and this one decides what passes,
+# and a hole in either is now visible from the other. It matches
+# `stillCandidate` in `mobile-native/src/api/feed.ts`, which is the third copy
+# and the one the renderer actually obeys.
+NEVER_A_STILL = (".mp4", ".mov", ".m3u8", ".webm", ".m4v", ".qt")
+
+
 class StillFieldsNeverCarryTheVideo(unittest.TestCase):
     def assert_no_video_in_stills(self, payload):
         for field in STILL_FIELDS:
             value = str(payload.get(field) or "")
+            bare = value.split("?", 1)[0].split("#", 1)[0].lower()
+            self.assertFalse(
+                bare.endswith(NEVER_A_STILL),
+                f"{field} carries the asset ({value!r}) instead of a picture of it",
+            )
+            # Kept as well as, not instead of. The literal check above is the
+            # one that cannot be fooled; this one fails when the module's
+            # notion of a video URL has grown past this file's, which is a
+            # weaker signal but points at the right place when it fires.
             self.assertFalse(
                 media_service.is_video_url(value),
                 f"{field} carries the asset ({value!r}) instead of a picture of it",
             )
+
+    def test_the_module_and_this_file_agree_about_what_a_video_url_is(self):
+        """Guard the guard's guard.
+
+        `NEVER_A_STILL` above exists because the module's list had a hole. A
+        duplicated list only helps while both are maintained, and the failure
+        mode of a stale duplicate is silence -- it agrees with everything.
+        """
+        disagreements = [ext for ext in NEVER_A_STILL if not media_service.is_video_url(f"https://x/a{ext}")]
+        self.assertEqual(
+            disagreements,
+            [],
+            f"media_service does not consider {disagreements} to be video URLs, so "
+            "every still-frame guard in the codebase will let them through. The "
+            "renderer will draw a blank box and report no error.",
+        )
 
     def test_video_with_a_mux_asset_resolves_to_its_mux_frame(self):
         # The common case in production: nothing stored on the row, but the
