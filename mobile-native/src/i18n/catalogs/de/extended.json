@@ -3549,7 +3549,16 @@
       "copied": "Kopiert",
       "share": "Teilen",
       "unavailable": "Dein Einladungslink ist noch nicht bereit.",
-      "fairness": "Lade Menschen ein, die du wirklich kennst. Qualität zählt mehr als Menge."
+      "fairness": "Lade Menschen ein, die du wirklich kennst. Qualität zählt mehr als Menge.",
+      "message": {
+        "default": "Hey! Ich bin bei PulseSoc. Lass uns dort vernetzen und in Kontakt bleiben.\n\nKomm zu mir auf PulseSoc:",
+        "casual": "Hey – ich bin jetzt bei PulseSoc. Komm doch auch vorbei.\n\nHier entlang:",
+        "network": "Ich baue mein Netzwerk auf PulseSoc auf und würde mich dort gern mit dir vernetzen.\n\nKomm zu mir auf PulseSoc:",
+        "discovery": "Auf PulseSoc finde ich Leute und Beiträge, denen zu folgen sich lohnt. Ich glaube, das wäre etwas für dich.\n\nSchau es dir an:",
+        "short": "Komm zu mir auf PulseSoc:",
+        "handle": "Ich bin dort @{{username}}.",
+        "subject": "Komm zu mir auf PulseSoc"
+      }
     },
     "missions": {
       "heading": "Missionen",

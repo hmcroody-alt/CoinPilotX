@@ -3526,7 +3526,16 @@
       "copied": "복사됨",
       "share": "공유",
       "unavailable": "초대 링크가 아직 준비되지 않았어요.",
-      "fairness": "실제로 아는 사람을 초대해 주세요. 수보다 질이 중요해요."
+      "fairness": "실제로 아는 사람을 초대해 주세요. 수보다 질이 중요해요.",
+      "message": {
+        "default": "안녕하세요! 저는 PulseSoc을 사용하고 있어요. 거기서 연결해서 계속 연락해요.\n\nPulseSoc에서 함께해요:",
+        "casual": "안녕 — 나 이제 PulseSoc 해. 너도 같이 하자.\n\n여기로 들어와:",
+        "network": "PulseSoc에서 네트워크를 넓히고 있어요. 거기서도 연결되면 좋겠어요.\n\nPulseSoc에서 함께해요:",
+        "discovery": "PulseSoc에서 팔로우할 만한 사람과 게시물을 찾고 있어요. 마음에 드실 것 같아요.\n\n한번 둘러보세요:",
+        "short": "PulseSoc에서 함께해요:",
+        "handle": "거기서는 @{{username}}이에요.",
+        "subject": "PulseSoc에서 함께해요"
+      }
     },
     "missions": {
       "heading": "미션",

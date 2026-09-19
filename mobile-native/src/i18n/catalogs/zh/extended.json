@@ -3526,7 +3526,16 @@
       "copied": "已复制",
       "share": "分享",
       "unavailable": "你的邀请链接还没准备好。",
-      "fairness": "邀请你真正认识的人。质量比数量更重要。"
+      "fairness": "邀请你真正认识的人。质量比数量更重要。",
+      "message": {
+        "default": "你好！我在用 PulseSoc。我们在那里联系，保持联络吧。\n\n来 PulseSoc 找我：",
+        "casual": "嘴——我现在在 PulseSoc 上。一起来玩吧。\n\n从这里加入：",
+        "network": "我正在 PulseSoc 上拓展人脉，希望能在那里和你联系。\n\n来 PulseSoc 找我：",
+        "discovery": "在 PulseSoc 上我发现了不少值得关注的人和内容。我想你会喜欢。\n\n来看看：",
+        "short": "来 PulseSoc 找我：",
+        "handle": "我在那里是 @{{username}}。",
+        "subject": "来 PulseSoc 找我"
+      }
     },
     "missions": {
       "heading": "任务",

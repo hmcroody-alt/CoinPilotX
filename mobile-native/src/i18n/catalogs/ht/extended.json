@@ -3527,7 +3527,16 @@
       "copied": "Kopye",
       "share": "Pataje",
       "unavailable": "Lyen envitasyon ou poko pare.",
-      "fairness": "Envite moun ou konnen vre. Kalite konte plis pase kantite."
+      "fairness": "Envite moun ou konnen vre. Kalite konte plis pase kantite.",
+      "message": {
+        "default": "Alo! M ap itilize PulseSoc. Ann konekte la pou nou rete an kontak.\n\nVin jwenn mwen sou PulseSoc:",
+        "casual": "Alo — mwen sou PulseSoc kounye a. Vin pase yon ti tan la.\n\nAntre isit la:",
+        "network": "M ap bati rezo m sou PulseSoc e mwen ta renmen konekte avè w la.\n\nVin jwenn mwen sou PulseSoc:",
+        "discovery": "Se sou PulseSoc m ap jwenn moun ak piblikasyon ki merite swiv. Mwen kwè w ta renmen l.\n\nGade yon ti kou:",
+        "short": "Vin jwenn mwen sou PulseSoc:",
+        "handle": "Se @{{username}} mwen ye la.",
+        "subject": "Vin jwenn mwen sou PulseSoc"
+      }
     },
     "missions": {
       "heading": "Misyon",

@@ -3519,7 +3519,16 @@
       "copied": "コピーしました",
       "share": "シェア",
       "unavailable": "招待リンクはまだ準備中です。",
-      "fairness": "実際に知っている人を招待しましょう。数より質が大切です。"
+      "fairness": "実際に知っている人を招待しましょう。数より質が大切です。",
+      "message": {
+        "default": "こんにちは！PulseSoc を使っています。こちらでつながって、これからも連絡を取り合いましょう。\n\nPulseSoc で一緒に：",
+        "casual": "やあ、PulseSoc を始めました。よかったら一緒にどうぞ。\n\nこちらから：",
+        "network": "PulseSoc でつながりを広げています。ぜひあちらでもつながりましょう。\n\nPulseSoc で一緒に：",
+        "discovery": "PulseSoc では、フォローする価値のある人や投稿に出会えます。きっと気に入ると思います。\n\n見てみてください：",
+        "short": "PulseSoc で一緒に：",
+        "handle": "向こうでは @{{username}} です。",
+        "subject": "PulseSoc で一緒に"
+      }
     },
     "missions": {
       "heading": "ミッション",

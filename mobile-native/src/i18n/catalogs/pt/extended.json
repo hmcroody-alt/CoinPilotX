@@ -3549,7 +3549,16 @@
       "copied": "Copiado",
       "share": "Compartilhar",
       "unavailable": "Seu link de convite ainda não está pronto.",
-      "fairness": "Convide pessoas que você conhece de verdade. Qualidade importa mais que quantidade."
+      "fairness": "Convide pessoas que você conhece de verdade. Qualidade importa mais que quantidade.",
+      "message": {
+        "default": "Olá! Estou usando o PulseSoc. Vamos nos conectar lá e manter contato.\n\nJunte-se a mim no PulseSoc:",
+        "casual": "Oi — já estou no PulseSoc. Aparece lá.\n\nEntra por aqui:",
+        "network": "Estou construindo minha rede no PulseSoc e gostaria de me conectar com você lá.\n\nJunte-se a mim no PulseSoc:",
+        "discovery": "No PulseSoc tenho encontrado pessoas e publicações que valem a pena seguir. Acho que você ia gostar.\n\nDá uma olhada:",
+        "short": "Junte-se a mim no PulseSoc:",
+        "handle": "Sou @{{username}} por lá.",
+        "subject": "Junte-se a mim no PulseSoc"
+      }
     },
     "missions": {
       "heading": "Missões",

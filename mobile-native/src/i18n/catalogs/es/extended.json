@@ -3549,7 +3549,16 @@
       "copied": "Copiado",
       "share": "Compartir",
       "unavailable": "Tu enlace de invitación aún no está listo.",
-      "fairness": "Invita a personas que conoces de verdad. La calidad importa más que la cantidad."
+      "fairness": "Invita a personas que conoces de verdad. La calidad importa más que la cantidad.",
+      "message": {
+        "default": "¡Hola! Estoy usando PulseSoc. Conectemos ahí y mantengamos el contacto.\n\nÚnete a mí en PulseSoc:",
+        "casual": "Hola — ya estoy en PulseSoc. Vénte para acá.\n\nÚnete aquí:",
+        "network": "Estoy construyendo mi red en PulseSoc y me gustaría conectar contigo ahí.\n\nÚnete a mí en PulseSoc:",
+        "discovery": "En PulseSoc he estado encontrando gente y publicaciones que vale la pena seguir. Creo que te gustaría.\n\nÉchale un vistazo:",
+        "short": "Únete a mí en PulseSoc:",
+        "handle": "Soy @{{username}} ahí.",
+        "subject": "Únete a mí en PulseSoc"
+      }
     },
     "missions": {
       "heading": "Misiones",

@@ -3549,7 +3549,16 @@
       "copied": "Copied",
       "share": "Share",
       "unavailable": "Your invite link isn't ready yet.",
-      "fairness": "Invite people you actually know. Quality matters more than volume."
+      "fairness": "Invite people you actually know. Quality matters more than volume.",
+      "message": {
+        "default": "Hey! I'm using PulseSoc. Let's connect there and stay in touch.\n\nJoin me on PulseSoc:",
+        "casual": "Hey — I'm on PulseSoc now. Come hang out with me there.\n\nJoin me here:",
+        "network": "I'm building my network on PulseSoc and I'd like to connect with you there.\n\nJoin me on PulseSoc:",
+        "discovery": "PulseSoc is where I've been finding people and posts worth following. I think you'd like it.\n\nTake a look:",
+        "short": "Join me on PulseSoc:",
+        "handle": "I'm @{{username}} there.",
+        "subject": "Join me on PulseSoc"
+      }
     },
     "missions": {
       "heading": "Missions",

@@ -61,6 +61,7 @@ import {
 } from "../api/progress";
 import { useFormatters, useTranslation } from "../i18n";
 import { copyToClipboard } from "../native/clipboard";
+import { buildInviteSharePayload } from "../sharing/inviteMessage";
 import { RootStackParamList } from "../navigation/types";
 import { PRIVATE_CONTENT_MESSAGE, resolveRouteProfileContext } from "../profile/profileContext";
 import { useAuth } from "../session/auth";
@@ -182,11 +183,24 @@ export function ProgressCenterScreen({ navigation, route }: Props) {
     setTimeout(() => setCopied(false), 2000);
   }, [invite?.referral_link]);
 
+  // Share carries a sentence; Copy carries the bare URL. The two are
+  // deliberately different. A shared invite lands in someone else's inbox with
+  // nothing around it, so it has to explain itself. A copied link is about to
+  // be pasted somewhere the member is already writing their own words, and
+  // putting a canned message into the clipboard would fight what they are
+  // typing. `onCopy` above is therefore unchanged on purpose.
   const onShare = useCallback(async () => {
-    const link = invite?.referral_link;
-    if (!link) return;
-    await Share.share({ message: link }).catch(() => undefined);
-  }, [invite?.referral_link]);
+    const payload = buildInviteSharePayload({
+      link: invite?.referral_link || "",
+      t,
+      username: authState.user?.username
+    });
+    if (!payload) return;
+    await Share.share(
+      { message: payload.message },
+      { subject: payload.subject }
+    ).catch(() => undefined);
+  }, [invite?.referral_link, t, authState.user?.username]);
 
   // Both routes already exist and are reachable from Creator Studio and the
   // Live tab today. The card below is only ever rendered once the server has
