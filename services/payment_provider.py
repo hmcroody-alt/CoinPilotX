@@ -13,6 +13,7 @@ from typing import Any
 
 import stripe
 
+from services import stripe_mode
 from services.marketplace_payment_errors import (
     classify_provider_exception,
     stripe_response_dict,
@@ -48,7 +49,10 @@ def provider_status() -> dict[str, Any]:
         "webhook_secret_loaded": bool(os.getenv("STRIPE_WEBHOOK_SECRET")),
         "connect_client_id_loaded": bool(os.getenv("STRIPE_CONNECT_CLIENT_ID")),
         "base_url": _base_url(),
-        "mode": "live" if (os.getenv("STRIPE_SECRET_KEY") or "").startswith("sk_live_") else "test" if (os.getenv("STRIPE_SECRET_KEY") or "").startswith("sk_test_") else "not_configured",
+        # Asked rather than re-derived. The copy that lived here reported a
+        # restricted live key as "not_configured", which is the one misreading
+        # that costs money.
+        "mode": stripe_mode.mode(),
     }
 
 

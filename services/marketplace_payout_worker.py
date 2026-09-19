@@ -13,6 +13,12 @@ Three things have to be true before a cent moves:
 2. ``MARKETPLACE_PAYOUT_WORKER_DRY_RUN`` set false — it may mutate.
 3. ``MARKETPLACE_PAYOUT_WORKER_OWNER_AUTHORIZED`` — the owner authorised it.
 
+Those three are the owner's decision. Two further conditions are the
+deployment's, and are checked rather than decided: the run has to be on Postgres
+(see ``_mutation_preconditions``), and the Stripe key has to say which
+environment it belongs to. The switches can record that the owner authorised a
+payout run; they cannot record that the owner knew which Stripe it would reach.
+
 Two independent switches guard mutation rather than one because the blast radius
 is irreversible: a Stripe transfer to a connected account cannot be taken back by
 this platform, only requested back from the seller. One mistyped Railway variable
@@ -39,6 +45,7 @@ from typing import Any, Callable, Iterator, Mapping
 from services import db
 from services import marketplace_payout_scheduler as scheduler
 from services import marketplace_settlement_service as settlements
+from services import stripe_mode
 
 ENABLED_ENV_VAR = "MARKETPLACE_PAYOUT_WORKER_ENABLED"
 DRY_RUN_ENV_VAR = "MARKETPLACE_PAYOUT_WORKER_DRY_RUN"
@@ -216,6 +223,15 @@ def _mutation_preconditions() -> str:
         # money while pointed at a local SQLite file is a misconfiguration, and
         # it is also the only engine where `leader_lock` can actually lock.
         return "no_leader_lock_off_postgres"
+    if stripe_mode.mode() == stripe_mode.UNCONFIGURED:
+        # Nothing to call. Reported rather than discovered one settlement at a
+        # time, since every row in the batch would fail identically.
+        return "stripe_not_configured"
+    if stripe_mode.mode() == stripe_mode.UNRECOGNIZED:
+        # A key whose environment cannot be read is treated as live. The three
+        # switches above say the owner authorised *a* payout run; they cannot
+        # say the owner knew which Stripe it would reach.
+        return "stripe_mode_unrecognized"
     return ""
 
 
@@ -422,5 +438,8 @@ def heartbeat_metadata(state: dict) -> dict:
         # The honest headline: enabled does not mean paying.
         "payout_worker_may_move_money": not _mutation_preconditions(),
         "payout_worker_blocked_by": _mutation_preconditions() or None,
+        # Which Stripe the money would go to. An operator reading a heartbeat
+        # that says it is paying should not have to look up a key to find out.
+        "payout_worker_stripe_mode": stripe_mode.mode(),
         **state.get("payout_cycle_last", {}),
     }

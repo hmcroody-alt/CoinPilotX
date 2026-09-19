@@ -34,11 +34,16 @@ from services import db  # noqa: E402
 from services import marketplace_payout_worker as worker  # noqa: E402
 from services import marketplace_payout_scheduler as scheduler  # noqa: E402
 from services import marketplace_settlement_service as settlements  # noqa: E402
+from services import stripe_mode  # noqa: E402
 from services.business_os.ledger import ledger  # noqa: E402
 
 ALL_FLAGS = (worker.ENABLED_ENV_VAR, worker.DRY_RUN_ENV_VAR,
              worker.OWNER_AUTHORIZED_ENV_VAR, worker.INTERVAL_ENV_VAR,
-             worker.BATCH_ENV_VAR)
+             worker.BATCH_ENV_VAR,
+             # Not a switch the owner throws, but it is now one of the things
+             # standing between this worker and a transfer, so a test that
+             # inherits a developer's real key is a test proving nothing.
+             stripe_mode.SECRET_KEY_ENV_VAR)
 
 
 @pytest.fixture(autouse=True)
@@ -70,10 +75,16 @@ def _eligible_settlement(tx_id: int, seller_id: int, net_minor: int = 9000) -> N
 
 
 def _open_every_gate(monkeypatch):
-    """Both mutation switches plus the Postgres precondition."""
+    """Both mutation switches plus the two deployment preconditions.
+
+    A test key, not a live one. The precondition it satisfies is "the deployment
+    can say which Stripe this is", and a test key says so. Nothing in this file
+    reaches a provider, so the value only has to be classifiable.
+    """
     monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
     monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false")
     monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true")
+    monkeypatch.setenv(stripe_mode.SECRET_KEY_ENV_VAR, "sk_test_payout_worker_suite")
     monkeypatch.setattr(db, "IS_POSTGRES", True)
 
 
@@ -601,10 +612,23 @@ def test_the_heartbeat_says_enabled_is_not_the_same_as_paying(monkeypatch):
     monkeypatch.setattr(db, "IS_POSTGRES", False)
     assert worker.heartbeat_metadata({})["payout_worker_blocked_by"] == "no_leader_lock_off_postgres"
 
+    # Every switch the owner throws is now open, and the worker still will not
+    # pay: it has no Stripe to pay through, and then one it cannot classify.
     monkeypatch.setattr(db, "IS_POSTGRES", True)
+    assert worker.heartbeat_metadata({})["payout_worker_blocked_by"] == "stripe_not_configured"
+
+    monkeypatch.setenv(stripe_mode.SECRET_KEY_ENV_VAR, "some-key-of-unknown-provenance")
+    beat = worker.heartbeat_metadata({})
+    assert beat["payout_worker_blocked_by"] == "stripe_mode_unrecognized"
+    assert beat["payout_worker_stripe_mode"] == stripe_mode.UNRECOGNIZED
+
+    monkeypatch.setenv(stripe_mode.SECRET_KEY_ENV_VAR, "sk_test_abc")
     beat = worker.heartbeat_metadata({})
     assert beat["payout_worker_may_move_money"] is True
     assert beat["payout_worker_blocked_by"] is None
+    # An operator reading a heartbeat that says it is paying should not have to
+    # go and look up a key to find out which Stripe it is paying through.
+    assert beat["payout_worker_stripe_mode"] == stripe_mode.TEST
 
 
 def test_the_heartbeat_keeps_the_last_cycle_between_runs(monkeypatch):
