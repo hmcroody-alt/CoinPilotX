@@ -4,6 +4,21 @@ Date: 2026-09-17
 Platform account: COINPLOTXAI INC (`acct_1TTVo7FP8qvvGWBI`)
 Repository: `/Users/hmcherie/Desktop/CoinPilotX`, branch `main`
 
+> **Superseded in part.** This report describes the money-movement layer as
+> built on 2026-09-17. Two things have changed since:
+>
+> - The notification and email layer it lists as absent now exists. See
+>   `PAYMENTS_NOTIFICATION_MATRIX.md` and
+>   `TRANSACTIONAL_EMAIL_DESIGN_SYSTEM.md`.
+> - The go-live blockers in §11 were re-verified against the tree on
+>   2026-09-19 and one conclusion changed: there is no
+>   `MARKETPLACE_CARD_PAYMENTS_ENABLED` variable.
+>   `marketplace_card_payments_paused()` returns a hardcoded `True`, so
+>   enabling card payments is a code change and a deploy, not a configuration
+>   edit. `PAYMENTS_PRODUCTION_ACTIVATION_CHECKLIST.md` is the current list.
+>
+> Everything else below still holds.
+
 ---
 
 ## 1. Headline
