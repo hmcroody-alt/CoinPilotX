@@ -257,6 +257,39 @@ already has too many activities", which must never be able to reach the call pat
   annoyance on the user's lock screen. Dismissal policy must be designed before any code.
 - **Prerequisites** — Wave 2 extension foundation; deployment-target decision.
 
+> **Corrected 2026-09-19 — the entitlement line above is wrong twice, and the second error is
+> the expensive one.** `LIVE_ACTIVITIES.md` Finding 7 re-examined this capability against the
+> architecture rule the later documents converged on (*the app owns the network; the
+> out-of-process surface owns only a file in the shared container*).
+>
+> **1. Not "plus an App Group to share state with the widget extension."** A Live Activity
+> shares no state through a container. `ActivityViewContext`
+> (`WidgetKit.swiftinterface:305-313`) has exactly four members — `activityID`, `attributes`,
+> `state`, `isStale` — and that is the entire input to the rendering closure.
+> `ActivityConfiguration.init(for:content:dynamicIsland:)` (`:369`) takes **no provider**,
+> where a widget's `StaticConfiguration.init(kind:provider:content:)` (`:148`) requires one.
+> The extension is handed its content by the system and has no API with which to fetch.
+>
+> The App Group is still paid, because the same widget-extension target will host WidgetKit
+> widgets, which *do* need it. The correction matters because a reader who believes the
+> activity reads shared state will design it to, importing a stale snapshot, a fourth purge
+> consumer, and a second writer racing `ContentState`. **A Live Activity's content has exactly
+> one writer, and it is always the app or the backend.**
+>
+> **2. It needs no keychain access group — and it was the last capability that might have.**
+> `SHARE_EXTENSION.md` Finding 4 retired `keychain-access-groups` from the extension
+> foundation on three of the four capabilities that cited it, leaving this one unchecked. It
+> is now checked, and it is the strictest of the four: the surface owns not even a file. **No
+> audited capability requires that entitlement**, so the app never takes one that would let
+> another binary read the user's refresh token. See `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`,
+> whose migration analysis and owed hardware experiment both survive the decision's removal.
+>
+> Two further corrections from the same document: the 15.1 floor above is stale — it is
+> **16.1** since `c8f05637`, so ActivityKit is now exactly at the floor, though `staleDate`
+> and `ActivityContent` are 16.2. And the first Live Activity should be a **media upload**,
+> not a call: `Activity.request` *throws*, and `globalMaximumExceeded` — the user's phone
+> already has too many activities from other apps — must never be able to reach the call path.
+
 ## 3. App Intents / Siri / Shortcuts
 
 - **Status** — NOT IMPLEMENTED. Detail in **`APP_INTENTS_SIRI_SHORTCUTS.md`**.
@@ -770,14 +803,27 @@ Ordered by dependency first, value second. Feature flags default **OFF** through
 
 **Wave 2 — the two foundations everything else waits on.**
 - **Sign in with Apple** (#6). Highest value, no target work, no lock interaction.
-- **Extension foundation**: one App Group, `keychain-access-groups`, a second App ID, and a
-  target-generation strategy. ~~Prebuild-safe generation was the open unknown.~~
+- **Extension foundation**: one App Group, ~~`keychain-access-groups`~~, a second App ID, and
+  a target-generation strategy. ~~Prebuild-safe generation was the open unknown.~~
   **DECIDED 2026-09-19: the Xcode project is committed, so extensions are committed
   targets.** That removes the hard part and replaces it with one obligation — a protection
   test pinning the `PBXNativeTarget` count and names, so a stray `expo prebuild` cannot
   delete every extension at once. Ship the foundation with a trivial placeholder widget to
   prove the pipeline end to end. Four later capabilities depend on this and it should be
   built once, on purpose, rather than four times accidentally.
+
+  > **`keychain-access-groups` struck from this list, 2026-09-19 — and the foundation is
+  > now two items, not three.** All four capabilities that cited it were re-examined one at
+  > a time and none reads the session: #3 goes to the app target as a deep link
+  > (`APP_INTENTS_SIRI_SHORTCUTS.md` F1), #12 renders an app-written snapshot
+  > (`WIDGETKIT.md` F2), #13 stages bytes and never uploads (`SHARE_EXTENSION.md` F2–F4),
+  > and #2 is handed its content by the system with no API through which it could fetch
+  > (`LIVE_ACTIVITIES.md` F7). The App Group is genuinely shared and carries no credential;
+  > the keychain entitlement is shared by nothing and carries the refresh token. It is
+  > deferred to whichever capability first needs a credential outside the app process, and
+  > that capability carries the migration and its own release —
+  > `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`, whose documented failure mode is a **silent mass
+  > sign-out**. The cheapest way to not have that failure mode is not to make the change.
 
 **Wave 3 — cheap, self-contained wins.**
 - Core Spotlight (#4) — best value-per-effort, gated on a written indexing policy.

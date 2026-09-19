@@ -205,7 +205,7 @@ the OS, not by taste:
 | # | Capability | Mechanism | Notes |
 |---|---|---|---|
 | 1 | App Attest / DeviceCheck | new Expo module | Backend verification is the real work; the module is thin |
-| 2 | Live Activities | extension target + module | Module starts/updates; extension renders. Call state **read-only** |
+| 2 | Live Activities | extension target + module | `LIVE_ACTIVITIES.md`. Module starts/updates; extension renders. Call state **read-only**. **Needs neither the keychain access group nor the App Group** — `ActivityConfiguration` takes no provider and `ActivityViewContext` is handed everything it renders (Finding 7); the App Group belongs to the WidgetKit widgets sharing the target. First activity should be a **media upload**, not a call — `Activity.request` throws, and `globalMaximumExceeded` must never reach the call path |
 | 3 | App Intents | **app target** (corrected 2026-09-19) | `APP_INTENTS_SIRI_SHORTCUTS.md`. All intents `openAppWhenRun = true` — `perform()` has no RN bridge. Explicit `authenticationPolicy` per intent. **No conformance to `AudioPlaybackIntent`/`AudioStartingIntent`**; no call intents. An extension target would forfeit `ForegroundContinuableIntent` (Finding 4) |
 | 4 | Core Spotlight | new Expo module | Policy: `DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`. Mechanism: `CORE_SPOTLIGHT.md`. Needs **no** Info.plist key — the blocker is the AppDelegate activity-type switch |
 | 5 | BackgroundTasks | app target | Registration must happen in `didFinishLaunching`. Not currently planned |
@@ -244,10 +244,16 @@ rather than four times accidentally.
 > upload. An App Intent hands the app a destination. None of them authenticate, so none of
 > them needs a credential, so none of them needs `keychain-access-groups`.
 >
-> #2 Live Activities is the one row not yet re-examined against this rule, and it is the
-> only thing keeping the keychain access group on the foundation list at all. On the
-> evidence of the other three the prior should be that it does not need it either — a Live
-> Activity is a rendering surface fed by push and by the app, which is the same shape again.
+> ~~#2 Live Activities is the one row not yet re-examined against this rule~~ — **checked
+> 2026-09-19 and it is the strictest case of all four** (`LIVE_ACTIVITIES.md` Finding 7).
+> `ActivityViewContext` is four members handed to the rendering closure, and
+> `ActivityConfiguration`'s initialiser takes **no provider**, where a widget's
+> `StaticConfiguration` requires one. The Live Activity extension owns not even a file: it
+> cannot fetch because no API exists through which it could. Every mutation enters through
+> `Activity.request`/`update` in the app process, or through APNs from the backend.
+>
+> **So the rule holds for all four out-of-process surfaces, and no audited capability needs
+> `keychain-access-groups`.** The entitlement leaves the foundation list entirely.
 
 ---
 

@@ -188,11 +188,17 @@ with a hard device dependency before it can be called done.
 > | #3 App Intents | `perform()` has no RN bridge, so the recommended shape is a Siri-addressable deep link; the app does the work in-process (`APP_INTENTS_SIRI_SHORTCUTS.md` F1) |
 > | #12 WidgetKit | `TimelineProvider` cannot report failure, so the widget should never fetch — the app writes a snapshot into the App Group and calls `reloadTimelines` (`WIDGETKIT.md` F2) |
 > | #13 Share Extensions | the extension's post-completion work is a system-cancellable background task, so it must not upload at all — it stages bytes and the app uploads (`SHARE_EXTENSION.md` F2–F3) |
+> | #2 Live Activities | `ActivityViewContext` is four members handed to the renderer and `ActivityConfiguration` takes **no provider**; every mutation enters via `Activity.request`/`update` in the app, or via APNs (`LIVE_ACTIVITIES.md` F7) |
 >
 > The common shape — **the app owns the network; the out-of-process surface owns only a
 > file in the shared container** — was arrived at independently three times, which is
-> better evidence than any one of them alone. Only #2 Live Activities has not been
-> re-examined against it.
+> better evidence than any one of them alone.
+>
+> **All four rows are now filled in (updated 2026-09-19).** The fourth was added after the
+> other three and is the strictest of them: a Live Activity extension does not own even a
+> file, because there is no API through which it could fetch one. So the third reason above
+> — "four capabilities need it" — is false for four of four, not three of four. **Nothing
+> in the audited set requires this entitlement.**
 >
 > **Recommendation: do not build this as a foundation item.** Build the App Group, which
 > every extension genuinely shares and which carries no credential. Leave

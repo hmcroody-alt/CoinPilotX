@@ -146,12 +146,20 @@ That reason is now false, and the evidence accumulated one capability at a time:
 | #3 App Intents | App Group + keychain access group | recommended shape is a Siri-addressable deep link; the app does the work in-process (`APP_INTENTS_SIRI_SHORTCUTS.md` Finding 1) |
 | #12 WidgetKit | App Group + keychain access group | the app writes a snapshot and calls `reloadTimelines`; the widget never fetches (`WIDGETKIT.md` Finding 2) |
 | #13 Share Extensions | App Group + keychain access group | the extension stages bytes and completes; it never fetches (this document, Findings 2–3) |
-| #2 Live Activities | App Group + keychain access group | **not yet re-examined.** `LIVE_ACTIVITIES.md` predates this pattern |
+| #2 Live Activities | App Group + keychain access group | the extension is handed its content and has no API with which to fetch (`LIVE_ACTIVITIES.md` Finding 7, added after this table) |
 
-Three of the four need the App Group and not the keychain. The fourth has not been checked
-against the pattern, and on the evidence of the other three the prior should be that it does
-not need it either — a Live Activity is a rendering surface fed by push and by the app, which
-is the same shape again.
+> **Closed 2026-09-19.** The fourth row was written as "not yet re-examined," with the
+> prediction that it would land the same way. It did, and more strictly than predicted:
+> `ActivityViewContext` has four members — id, attributes, state, staleness — and
+> `ActivityConfiguration`'s initialiser has **no provider parameter**, where a widget's
+> `StaticConfiguration` requires one. The Live Activity extension does not own even a file;
+> it cannot fetch because there is no API through which it could. `LIVE_ACTIVITIES.md`
+> Finding 7 also corrects the audit's claim that #2 needs an App Group — it does not; only
+> the WidgetKit widgets sharing the same target do.
+>
+> So **all four** of the capabilities `DECISIONS_KEYCHAIN_ACCESS_GROUP.md` cited need the
+> App Group and none needs the keychain. The recommendation below now rests on a complete
+> enumeration rather than three-of-four plus a prior.
 
 **Recommendation: do not build the keychain access group as a foundation item.** Build the
 App Group as the foundation — it is genuinely shared by every extension, it carries no
@@ -312,8 +320,8 @@ cost is entirely in the target, the container, and the purge.
 | Device-verify the actual extension memory budget with a 4K video | Finding 2. The ~120 MB figure is unverified here. The design does not depend on it, but the staging copy's buffer size does. |
 | The App Group container purge, inside `clearUserScopedMediaState()` | Finding 5. Shared with WidgetKit and Core Spotlight — one purge, three consumers, written once when the first of the three lands. |
 | The signed-in boolean in App Group `UserDefaults` | Findings 3 and 5. It is the enforcement point for the retention rule, not a UX nicety. |
-| Re-examine #2 Live Activities against the "the app owns the network" pattern | Finding 4. It is the one of the four not yet checked, and it is the last thing keeping the keychain access group on the foundation list. |
-| Revisit `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`'s "build it before the first extension" decision | Finding 4. Its third reason no longer holds for three of its four capabilities. The document's migration analysis and its owed hardware experiment both survive the revisit. |
+| ~~Re-examine #2 Live Activities against the "the app owns the network" pattern~~ | **Done 2026-09-19** — `LIVE_ACTIVITIES.md` Finding 7. It satisfies the rule strictly, and nothing now keeps the keychain access group on the foundation list. |
+| Revisit `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`'s "build it before the first extension" decision | Finding 4. Its third reason no longer holds for **any** of its four capabilities. The document's migration analysis and its owed hardware experiment both survive the revisit. |
 | Assert the extension target does not `use_expo_modules!` | Plumbing. Natural home is `test_ios_native_target_inventory.py`, which already parses committed native project state. |
 | A `NSExtensionActivationRule` decision — which UTTypes PulseSoc claims in the share sheet | Not researched here. Claiming too much puts PulseSoc in share sheets where it cannot help, which users read as a broken app. |
 

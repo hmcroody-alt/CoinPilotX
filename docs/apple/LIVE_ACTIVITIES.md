@@ -213,6 +213,93 @@ by whoever writes the first `@available` guard.
 
 ---
 
+## Finding 7 — the Live Activity extension cannot fetch, and that closes the keychain question for all four capabilities
+
+*Added 2026-09-19, after `SHARE_EXTENSION.md` Finding 4 left this as the last open row.*
+
+Three later documents converged, independently, on the same architectural rule:
+
+> **On every Apple surface that runs outside the app process, the app owns the network and
+> the out-of-process surface owns only a file in the shared container.**
+
+App Intents got there because `perform()` has no RN bridge (`APP_INTENTS_SIRI_SHORTCUTS.md`
+Finding 1). WidgetKit got there because `TimelineProvider` cannot report failure
+(`WIDGETKIT.md` Finding 2). The Share Extension got there because its post-completion work is
+a system-cancellable background task (`SHARE_EXTENSION.md` Findings 2–3). Each arrived at the
+shape for its own reason, which is stronger evidence than any one of them alone.
+
+`SHARE_EXTENSION.md` Finding 4 then used that to retire the keychain access group from the
+extension foundation — and named Live Activities as the one capability of the four not yet
+tested against the rule. This finding tests it.
+
+**Live Activities do not merely satisfy the rule. They are its strictest instance: the
+out-of-process surface owns nothing at all, not even a file.**
+
+The evidence is a type with four members. `WidgetKit.swiftinterface:305-313`:
+
+```swift
+public struct ActivityViewContext<Attributes> where Attributes : ActivityKit.ActivityAttributes {
+  public let activityID: Swift.String
+  public let attributes: Attributes
+  public let state: Attributes.ContentState
+  public let isStale: Swift.Bool   // 16.2+
+}
+```
+
+That is the entire input to the rendering closure. An id, the immutable attributes, the
+current content state, and a staleness flag. There is no fetch, no provider, no snapshot
+read, nothing the extension supplies for itself.
+
+The contrast is in the same file, 220 lines apart, and it is the cleanest statement of the
+difference between a widget and a Live Activity:
+
+| | Initialiser | Takes a provider? |
+|---|---|---|
+| `StaticConfiguration` (a widget) | `init(kind:provider:content:)` (`:148`) | **yes** — `Provider : TimelineProvider`, and producing entries is the extension's job |
+| `ActivityConfiguration` (a Live Activity) | `init(for:content:dynamicIsland:)` (`:369`) | **no** — there is no provider parameter to pass one to |
+
+A widget extension *must* be given something to produce entries, which is why `WIDGETKIT.md`
+has to argue about where those entries come from and lands on an App-Group snapshot written
+by the app. A Live Activity extension is never asked. Every mutation enters through
+`Activity.request` (`ActivityKit.swiftinterface:46-73`) and `Activity.update`
+(`:147-171`) — static and instance methods on `Activity`, called in the app process — or,
+in the push variant, through APNs from the backend. In neither path does the extension
+originate anything.
+
+### Two consequences
+
+**1. #2 does not need the keychain access group, and the fourth row closes.** The table in
+`SHARE_EXTENSION.md` Finding 4 can be completed: all four of the capabilities
+`DECISIONS_KEYCHAIN_ACCESS_GROUP.md` cited as needing the entitlement turn out not to. Its
+load-bearing third reason — "it is genuinely shared, four capabilities need it" — is now
+false for all four rather than for three. The recommendation not to build it as a foundation
+item stands on a complete argument rather than an extrapolation, and the app never takes an
+entitlement that lets another binary read the user's refresh token.
+
+The two things `SHARE_EXTENSION.md` preserved are still preserved: the read-old/write-new
+migration analysis, and the owed hardware experiment proving a read with
+`kSecAttrAccessGroup` set does not match an item written without one. Both belong to whoever
+eventually needs the entitlement.
+
+**2. The audit's stated prerequisite for #2 is wrong, and the error is the kind that costs
+design time rather than a release.** §2 lists the entitlement as "`NSSupportsLiveActivities`
+in Info.plist, plus an App Group to share state with the widget extension." The App Group
+half does not apply to Live Activities. `ActivityViewContext.state` is delivered by the
+system; nothing needs to be written to a shared container for a Live Activity to render.
+
+This is not a saving — the same widget-extension target will ship WidgetKit widgets, which
+*do* need the App Group, so the foundation cost is paid regardless. It matters because a
+reader who believes the Live Activity reads shared state will design it to, and will
+thereby import problems it does not have: a snapshot that can be stale, a purge obligation
+(`DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`'s three consumers would become four), and a
+second source of truth racing `ContentState`. The correct mental model is that a Live
+Activity's content has exactly one writer and it is always the app or the backend.
+
+That also makes Finding 5's `staleDate` the *only* staleness mechanism in play, rather than
+one of two — which is a good thing, because it is the one the system understands.
+
+---
+
 ## Recommendation: the first Live Activity should be a media upload, not a call
 
 The extension target, the App Group, the new App ID and provisioning profile, and the
@@ -254,6 +341,8 @@ activity under Findings 1 and 2.
 | 4 | If push updates are ever adopted: separate token store + classifier | Finding 4 |
 | 5 | If push updates are ever adopted: topic via the `known_bundle_ids()` allowlist pattern, never a bare bundle id | Finding 3 |
 | 6 | Call activity only: assert the `ContentState` is a projection of existing `CallSessionSnapshot` fields | Finding 2 |
+| 7 | Correct audit §2's "plus an App Group to share state" — a Live Activity needs no shared container | Finding 7. Done in the same commit. |
+| — | ~~Re-examine #2 against the "the app owns the network" rule~~ | **Closed by Finding 7.** It satisfies the rule more strictly than the other three, and no capability now needs `keychain-access-groups`. |
 
 ---
 
@@ -270,7 +359,17 @@ the `invalid_device` computation (`:766`) and the revoke call (`:843-845`);
 `mobile-native/src/media/` appearing in no protected category.
 
 **Verified against the ActivityKit Swift interface:** every API name, availability
-annotation and enum case cited above, with the line numbers given.
+annotation and enum case cited above, with the line numbers given. Also that `request`
+(`:46`, `:52`, `:59`, `:66`, `:73`) and `update` (`:147`, `:153`, `:159`, `:165`, `:171`)
+are declared on `Activity<Attributes>` and nowhere else — Finding 7's claim that every
+mutation enters through the app process is a claim about where the API lives, and it is
+visible in the interface.
+
+**Verified against the WidgetKit Swift interface:** `ActivityViewContext`'s complete member
+list (`:305-313`); `ActivityConfiguration.init(for:content:dynamicIsland:)` taking no
+provider (`:369`); and `StaticConfiguration.init(kind:provider:content:)` taking one
+(`:148`). Finding 7 rests on the absence of a parameter, so it was checked by reading the
+whole `ActivityConfiguration` declaration (`:368-379`) rather than by grepping for one name.
 
 **Not verified.** Everything runtime. In particular: the `.push-type.liveactivity` topic
 suffix and the 17.2 floor for push-updated activities are stated from documented behaviour —
