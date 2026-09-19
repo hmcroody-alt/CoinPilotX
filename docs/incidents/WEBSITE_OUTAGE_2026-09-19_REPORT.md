@@ -155,10 +155,26 @@ before, 0 after.
   checkout because of unrelated uncommitted `.env.example` and entitlements edits belonging
   to other work — they pass on the deploy candidate.)
 
-## Follow-ups (not done here)
+## Follow-ups
 
-- Alert on `pg_stat_database.deadlocks` rate and on `pg_stat_activity` lock waits. The
-  signal was present and unwatched for the entire outage.
+**Done — `f653f0d6`, `services/pg_lock_health.py`.** Alerting on the
+`pg_stat_database.deadlocks` rate and on `pg_stat_activity` lock waits. The signal was
+present and unwatched for the entire outage. It samples from `alert_worker`, the one
+process still running while every web thread was blocked in libpq, and it opens its own
+connection rather than borrowing a pool a convoy would already have drained. Thresholds
+are the `PG_LOCK_*` / `PG_DEADLOCKS_*` variables in `.env.example`; `PG_LOCK_ALERT_EMAIL`
+falls back to `OWNER_ADMIN_EMAIL`, and with neither set the monitor still logs
+`PG_LOCK_HEALTH_ALERT` at ERROR every cycle the condition holds.
+
+One note for whoever reads this next. The first version of that probe asked
+`pg_stat_activity` for `wait_start` — a column that exists in no PostgreSQL version. All
+nineteen unit tests passed against it, because a recording cursor accepts any string.
+Running it once against production is what found it. That is the same blind spot which
+produced this incident in the first place: the test suite runs on SQLite, and SQLite has
+neither the lock that caused the outage nor the catalog that reveals it.
+
+### Still outstanding
+
 - Extend the reachability check to the other guarded DDL functions; this one was fixed
   because it caused an outage, not because it was uniquely exposed.
 - `HOT_CALL_SITES` audits `services.*` only. `bot.py` holds the hot auth paths.
