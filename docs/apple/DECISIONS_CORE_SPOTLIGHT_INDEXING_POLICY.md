@@ -61,6 +61,32 @@ the default had to be *deletion*; here, the default has to be *non-publication*.
 Only three things, and each earns its place by being content the user themselves authored or
 deliberately collected, whose exposure is not revocable by a third party.
 
+> **Scope widened 2026-09-19 — this allowlist is no longer only about Spotlight.**
+>
+> Two later capabilities turned out to raise the identical question, and re-deriving the
+> answer for each would be three chances to get it differently:
+>
+> | Capability | The surface | Source |
+> |---|---|---|
+> | Core Spotlight (#4) | an index entry readable from the home screen | this document |
+> | App Intents (#3) | `authenticationPolicy` defaults to `alwaysAllowed`, so an intent runs on a locked phone | `APP_INTENTS_SIRI_SHORTCUTS.md` Finding 3 |
+> | WidgetKit (#12) | an `accessory*` widget renders on the **lock screen**, continuously | `WIDGETKIT.md` Finding 3 |
+>
+> **Decision: the allowlist and denylist below govern all three.** Nothing goes into a
+> Spotlight index, an intent's user-visible result, or a widget's rendered content unless it
+> appears in the table beneath this note.
+>
+> This is not a widening of what may be exposed — it is the same three rows applied to two
+> more surfaces. It has one immediate consequence worth naming, because it decides a product
+> question without a new argument: an **unread-message count** is a derived signal about the
+> denied "direct messages and conversations" row, so the unread-count widget is denied by a
+> policy that already existed. The reasoning for denying DMs — authored by someone who
+> consented to one reader inside one app — applies at least as strongly to a count on a lock
+> screen as to message text in a search index.
+>
+> The three purge triggers below also apply per-surface; `WIDGETKIT.md` Finding 4 records the
+> widget-specific trap, which is that deleting the data does not clear the rendered surface.
+
 | May be indexed | Why it is safe | Constraint |
 |---|---|---|
 | The signed-in user's **own** profile | Their own content. No third party can revoke it, and it is already public-by-default (`profile_visibility` defaults to `'public'`, `bot.py:115653`). | Only while `profile_visibility = 'public'`. Purge the entry the moment it flips to `private`. |

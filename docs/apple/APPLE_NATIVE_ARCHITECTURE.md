@@ -215,7 +215,7 @@ the OS, not by taste:
 | 9 | MapKit | — | Not recommended; blocked on data that does not exist |
 | 10 | Handoff | app target + Spotlight module | Same `continue userActivity` entry point as #7 |
 | 11 | Keychain / Secure Enclave | `expo-secure-store` + new module | Access group is a pbxproj + entitlement change; see `DECISIONS_KEYCHAIN_ACCESS_GROUP.md` |
-| 12 | WidgetKit | extension target | First extension; ships with the App Group foundation |
+| 12 | WidgetKit | extension target | `WIDGETKIT.md`. First extension; ships with the App Group foundation. **Needs the App Group but not the keychain access group** — the app writes a snapshot, the widget never fetches. Static configuration only (the modern configurable path is 17.0). Content governed by the Core Spotlight allowlist |
 | 13 | Share Extension | extension target | Memory-limited; must not publish silently |
 | 14 | Action Button / Control Center | extension target | Blocked on #3 and an 18.0 floor |
 

@@ -561,12 +561,37 @@ already has too many activities", which must never be able to reach the call pat
 
 ## 12. WidgetKit
 
-- **Status** — NOT IMPLEMENTED
+- **Status** — NOT IMPLEMENTED. Detail in **`WIDGETKIT.md`**.
 - **Evidence** — no `WidgetKit`, no `TimelineProvider`, no widget target, no App Group.
 - **Minimum iOS** — satisfied at 15.1 for home-screen widgets (lock-screen widgets need
   16.0; interactive widgets need 17.0).
+
+  > **Updated 2026-09-19.** At the 16.1 floor the parenthetical is moot: **lock-screen
+  > accessory widgets are available.** That turns a deferred question into a live one — an
+  > accessory widget renders user-scoped content on a locked device continuously, which is
+  > the third appearance of the property Core Spotlight and App Intents each raised. The
+  > allowlist in `DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md` should govern widget content
+  > too, and applied as written it denies the unread-count widget. `WIDGETKIT.md` Finding 3.
+  >
+  > Configurable widgets on the modern path (`AppIntentConfiguration`) are 17.0 and therefore
+  > **above** the floor; the legacy `IntentConfiguration` route is built on
+  > `Intents.framework`, which this mission has ruled out. The first widget must be static.
+
 - **New target** — **yes**, plus App Group, plus the keychain-access-group problem in
   §"Two structural facts" — a widget showing personalised content must read the session.
+
+  > **Disputed 2026-09-19** (`WIDGETKIT.md` Finding 2). The last clause is avoidable, and
+  > avoiding it is the better design. A widget extension has no RN bridge and no
+  > `pulseApi()`, so a fetching widget is a parallel native HTTP client with duplicated auth —
+  > the shape App Intents rejected, except that a widget has no `openAppWhenRun` fallback.
+  > Instead: **the app writes a rendered summary to the App Group container and calls
+  > `reloadTimelines`; the widget makes no network calls at all.** The App Group is still
+  > required; the keychain access group is not, and WidgetKit stops waiting on it.
+  >
+  > The cost is that the widget is only as fresh as the last app launch — which is a
+  > structural argument for the Progress widget over the unread count, agreeing with the
+  > "user value" bullet below for a different reason. Apple's own fix for the staleness is
+  > `WidgetPushHandler`, at **iOS 26.0**.
 - **Backend dependency** — a small, cheap, cacheable summary endpoint. A widget must not
   call a heavy feed endpoint on a timeline refresh.
 - **Protection-lock interaction** — none, provided the widget never touches audio.
@@ -578,6 +603,20 @@ already has too many activities", which must never be able to reach the call pat
 - **Risk if wrong** — a widget stuck showing stale or logged-out state is visible on the
   home screen indefinitely. Timeline refresh budget is enforced by iOS and is stingier than
   most implementations assume.
+
+  > **Two specific shapes of that risk, 2026-09-19.**
+  >
+  > `TimelineProvider` has **no error channel** — `getTimeline` returns a `Timeline`, not a
+  > `Result`, and the iOS 17 `async` successor is not `async throws` either. A widget cannot
+  > decline to render, so a failed fetch becomes whatever the default entry says. `unread: 0`
+  > on a failure tells the user nobody has written to them. The `Entry` type must carry an
+  > explicit state.
+  >
+  > On sign-out, deleting the App Group snapshot is **not sufficient** — the system keeps
+  > showing the last timeline it was handed. It takes a delete *and* a
+  > `reloadAllTimelines()`, both inside `clearUserScopedMediaState()`. The App Group container
+  > is a third storage tier that neither `accountScopedKeys` nor `clearAllMediaCaches` can
+  > see. `WIDGETKIT.md` Findings 1 and 4.
 
 ## 13. Share Extensions
 
