@@ -19,6 +19,7 @@ could not be kept in step with CI. Everything is now manifest-derived.
 from __future__ import annotations
 
 import json
+import plistlib
 import re
 import unittest
 from pathlib import Path
@@ -310,13 +311,40 @@ class DependencyLockTests(unittest.TestCase):
             self.assertEqual(deps.get(name), watch["baseline_versions"][name], f"{name} moved off the baseline")
 
     def test_ios_microphone_and_background_audio_configuration_is_intact(self) -> None:
-        app = json.loads((ROOT / "mobile-native" / "app.json").read_text(encoding="utf-8"))
-        info_plist = app.get("expo", {}).get("ios", {}).get("infoPlist", {})
-        # Without the usage description iOS denies the microphone outright;
-        # without the audio background mode a backgrounded call goes silent.
-        # Neither failure is visible in a simulator run or a unit test.
-        self.assertTrue(str(info_plist.get("NSMicrophoneUsageDescription", "")).strip())
-        self.assertIn("audio", info_plist.get("UIBackgroundModes", []))
+        # Until 2026-09-19 this test read app.json alone. app.json is the Expo
+        # declaration; mobile-native/ios/ is committed and is what Xcode builds,
+        # so ios/PulseSoc/Info.plist is the artefact that reaches the device.
+        # Deleting <string>audio</string> from it left every gate green and
+        # killed background call audio. Both files are asserted now, and the
+        # rules come from the manifest rather than being restated here.
+        spec = MANIFEST["dependency_watch"]["required_ios_configuration"]
+
+        declared = json.loads((ROOT / spec["declared_source"]).read_text(encoding="utf-8"))
+        for key in spec["declared_pointer"]:
+            declared = declared.get(key, {})
+        built = plistlib.loads((ROOT / spec["built_source"]).read_bytes())
+
+        for name, plist in ((spec["declared_source"], declared), (spec["built_source"], built)):
+            for key in spec["must_be_present_and_non_empty"]:
+                self.assertTrue(str(plist.get(key, "")).strip(), f"{name} is missing {key}")
+            modes = plist.get("UIBackgroundModes", [])
+            for mode in spec["background_modes_must_contain"]:
+                self.assertIn(mode, modes, f"{name} UIBackgroundModes no longer contains '{mode}'")
+
+        if spec["sources_must_agree_on_declared_keys"]:
+            # Only over the keys app.json declares: the built plist legitimately
+            # carries many more that Expo supplies from elsewhere.
+            diverged = {
+                key: {"app.json": value, "Info.plist": built.get(key)}
+                for key, value in declared.items()
+                if built.get(key) != value
+            }
+            self.assertEqual(
+                diverged,
+                {},
+                "app.json and the committed Info.plist disagree; the built plist is the one that "
+                f"ships:\n{json.dumps(diverged, indent=2, sort_keys=True)}",
+            )
 
     def test_the_critical_test_script_covers_the_declared_command(self) -> None:
         pkg = json.loads((ROOT / "mobile-native" / "package.json").read_text(encoding="utf-8"))

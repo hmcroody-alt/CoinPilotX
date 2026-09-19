@@ -4469,3 +4469,181 @@ claim otherwise. The specific thing to confirm on device is the one grant this
 change is adjacent to: **background audio continuity** — start a call, background
 the app, confirm audio continues; then repeat for a livestream. That is owed
 before the next store build, not before merge of a two-line config deletion.
+
+---
+
+## Protected-boundary addendum (2026-09-19): the guard was on `app.json`; the build reads `Info.plist`
+
+Base: `c22383a46c44736c4d3c60d209cf30830e17c1c7` (`docs(apple): a share extension
+must never upload…`)
+Required label: `audio-critical-change`
+
+This is an audio-mission change. Its entire subject is the real-time audio
+protected boundary; it changes no runtime code.
+
+### Why the change is required
+
+The addendum immediately above this one contains the sentence that motivates it:
+
+> `mobile-native/ios/PulseSoc/Info.plist` changed identically (one
+> `<string>fetch</string>` removed) and is **not** a protected path.
+
+That was accurate, and it was the exposure.
+`test_ios_microphone_and_background_audio_configuration_is_intact` reads
+`mobile-native/app.json`. Its local variable is named `info_plist`; it is
+`app.json`. `mobile-native/ios/` is committed and, per
+`docs/apple/DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`, stays
+committed-and-defended — so `ios/PulseSoc/Info.plist` is the file Xcode reads
+and the array that ships. It appeared in no `categories[].paths` entry, in no
+`dependency_watch.files` entry, and in no test.
+
+**The exploit was performed on this branch**, which the Apple audit
+(`docs/apple/BACKGROUND_TASKS.md`, Finding 1) explicitly recorded as *not*
+attempted because attempting it is a protected-path edit. With
+`<string>audio</string>` deleted from the shipped plist and `app.json` left
+untouched:
+
+| Gate | Result before this change |
+|---|---|
+| `test_ios_microphone_and_background_audio_configuration_is_intact` | **passed** |
+| Whole backend architecture suite | **19/19 passed** |
+| `realtime_audio_change_gate.py` | no protected path changed |
+
+Background call audio and background radio playback would have been dead on
+device with every gate green. `voip` carried the identical exposure: deleting it
+breaks the PushKit wake that makes `services/pulsesoc_voip_push.py`'s
+`apns-push-type: voip` deliverable, and nothing checked it either.
+
+`mobile-native/docs/LOCALIZATION.md:402-404` already states the rule — *"Future
+native configuration changes must be applied in both Expo config and the
+committed native project"* — as prose. Nothing enforced it.
+
+### Which feature required it
+
+None. No product feature. The mission is the protection boundary itself, which
+is why it can edit `categories[].paths` at all: `unrelated_mission_policy`
+forbids a non-audio mission from doing this, and that rule is precisely why the
+Apple-capabilities mission that found the gap recorded it as owed instead of
+closing it.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `config/realtime-audio-protected-paths.json` | `audio_governance` — the lock itself | Added `mobile-native/ios/PulseSoc/Info.plist` to `dependency_watch.files`. Replaced the prose `required_ios_configuration` block with an executable one. |
+| `tests/protection/test_realtime_audio_architecture.py` | `critical_audio_tests` | `test_ios_microphone_and_background_audio_configuration_is_intact` now parses the committed plist with `plistlib`, asserts every rule against **both** files, and asserts the two agree. Rules are read from the manifest instead of restated. |
+| `.github/CODEOWNERS` | `audio_governance` | One line adding `/mobile-native/ios/PulseSoc/Info.plist` to the native build-surface block, so the new protected path has an explicit owner rather than inheriting `*`. |
+
+`mobile-native/ios/PulseSoc/Info.plist` itself is **unchanged by this range**. It
+is named here because it is what the range protects, and because it is now a
+protected path for every range after this one.
+
+The secondary half: `dependency_watch.required_ios_configuration` stated both
+assertions in a machine-readable-looking form that nothing read —
+`grep -rn required_ios_configuration scripts tests mobile-native/src` returned
+nothing, and the enforcement was a hardcoded test that happened to agree with
+it. The manifest's own description says *"It is not documentation: editing it
+changes what CI enforces."* That block was documentation. It is now the source
+the test executes:
+
+```json
+"required_ios_configuration": {
+  "declared_source": "mobile-native/app.json",
+  "declared_pointer": ["expo", "ios", "infoPlist"],
+  "built_source": "mobile-native/ios/PulseSoc/Info.plist",
+  "must_be_present_and_non_empty": ["NSMicrophoneUsageDescription"],
+  "background_modes_must_contain": ["audio", "voip"],
+  "sources_must_agree_on_declared_keys": true
+}
+```
+
+Equality is checked only over the keys `app.json` declares. The built plist
+legitimately carries many more — `CFBundle*`, `NSAppTransportSecurity`, launch
+configuration — that Expo supplies from elsewhere, so a both-ways comparison
+would be permanently red and would be deleted by the first person it obstructed.
+
+### Expected behavior change
+
+No runtime behavior change of any kind. No file under `mobile-native/src/`,
+`mobile-native/ios/`, `mobile-native/modules/` or `services/` is in this range;
+the diff is one manifest, one test and one CODEOWNERS line.
+
+The CI behavior change is intended and has a cost worth naming: a change to
+`ios/PulseSoc/Info.plist` now requires a declaration. `CFBundleVersion` lives in
+that file, so every build-number bump is now a declared change — but `app.json`
+carries `buildNumber` and has been in `dependency_watch.files` all along, so
+build bumps already required one (see the build 25, 26 and 27 addenda above).
+The obligation is not new; it is now consistent across the two files that have
+to move together anyway.
+
+### Regression risk
+
+Low, and confined to CI rather than to the device.
+
+The one real risk is a **false red**: if `app.json` ever declares a key whose
+value Expo legitimately transforms on the way into the plist, the agreement
+assertion would fail on a correct repository. Every key currently declared is
+carried through verbatim — five usage-description strings, one boolean, and the
+`UIBackgroundModes` array — and the assertion was run against the tree unmodified
+to confirm it is green today. If such a key does appear, the fix is to name the
+exception in the manifest, not to delete the rule.
+
+The opposite risk — that the agreement check makes the individual key rules
+redundant — does not hold, and the two compose deliberately. Agreement alone
+would pass if `UIBackgroundModes` were deleted from *both* files;
+`background_modes_must_contain` is asserted against each file independently and
+catches that.
+
+### Tests run
+
+| Check | Result |
+|---|---|
+| `python -m unittest tests.protection.test_realtime_audio_architecture` | **19 tests, OK** |
+| `pytest tests/protection/test_realtime_audio_gate_coverage.py test_agora_token_generation.py test_agora_rtc_provider_contract.py test_agora_direct_live_contract.py` | **37 passed, 27 subtests passed** |
+| `npm run test:realtime-audio-architecture` | **1 suite / 22 tests passed** |
+| `npm run test:realtime-audio-critical` | **11 suites / 191 tests passed** |
+| `npm run test:realtime-audio` | **21 suites / 377 tests passed** |
+| `scripts/realtime_audio_change_gate.py --base origin/main --head HEAD` | protected change detected, declaration accepted |
+
+**Discrimination proof.** A protection test that has never failed is not known to
+work, so each rule was driven red against the shipped plist and reverted:
+
+| Mutation to `ios/PulseSoc/Info.plist` | Old test | New test |
+|---|---|---|
+| delete `<string>audio</string>` | **passed** (19/19 suite green) | **FAILED** — background modes |
+| delete `<string>voip</string>` | passed | **FAILED** — background modes |
+| blank `NSMicrophoneUsageDescription` | passed | **FAILED** — present-and-non-empty |
+| flip `ITSAppUsesNonExemptEncryption` to `<true/>` (divergence only; both files individually valid) | passed | **FAILED** — sources disagree |
+
+The three failures land on three distinct assertions, so the rules discriminate
+between each other and not merely between green and red. The tree was confirmed
+clean after each revert.
+
+### Physical validation required
+
+**Not required for this range**, and the reason is structural rather than a
+judgement call: the range contains no runtime code. Nothing that executes on a
+device changed, so there is no audible behavior for a human to regress.
+
+What this change *does* is make the next person's audible regression impossible
+to ship silently. The background-audio validation owed by the addendum above —
+start a call, background the app, confirm audio continues; repeat for a
+livestream — remains owed against that range, on an iPhone 16 Pro or P3r7or, and
+is not discharged here.
+
+Worth stating plainly, because the whole boundary exists around this gap: this
+change adds no evidence that anyone heard anything. It adds evidence that the
+configuration which makes hearing possible in the background cannot now be
+deleted without someone saying so.
+
+### Rollback procedure
+
+`git revert` the commit. It restores the previous `required_ios_configuration`
+block, removes `ios/PulseSoc/Info.plist` from `dependency_watch.files` and from
+CODEOWNERS, and restores the `app.json`-only assertion. Nothing on a device
+changes, because nothing on a device changed going in.
+
+Rolling this back reopens Finding 1 in full. If it is reverted because the
+agreement assertion produced a false red, the narrower repair is to exempt the
+offending key in the manifest and keep `background_modes_must_contain` — the rule
+that closes the live exposure — in force.
