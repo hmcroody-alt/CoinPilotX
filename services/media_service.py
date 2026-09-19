@@ -117,6 +117,17 @@ def _is_video_url(value):
     return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | {"m4v", "qt"})
 
 
+def is_video_url(value):
+    """Public name for the video-extension test.
+
+    Feed serializers build their own still-frame fallbacks on top of
+    `resolve_media`, so they need the same notion of "this URL is the asset, not
+    a picture of it". Re-spelling the extension list at each call site is how the
+    two drift apart.
+    """
+    return _is_video_url(value)
+
+
 def _is_image_url(value):
     lowered = str(value or "").split("?", 1)[0].split("#", 1)[0].lower()
     return any(lowered.endswith(f".{ext}") for ext in IMAGE_EXTS | GIF_EXTS | {"avif"})
@@ -836,6 +847,20 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     poster_value = (poster or thumb or source)
     if kind == "video" and _is_video_url(poster_value):
         poster_value = ""
+    # The same guard, one field over. It was missing here for as long as it has
+    # been present above, and the asymmetry is the whole bug: a video with no
+    # stored still had `thumb` correctly blanked further up, fell back to
+    # `source`, and was served as `thumbnail_url` -- the asset itself, under the
+    # name of its own thumbnail. Every client that pointed an <img>/<Image> at
+    # that field drew an empty box, silently, because a video URL is a valid URL
+    # and image renderers do not report a decode that never starts.
+    #
+    # `poster` is preferred over `source` as the fallback, because by this point
+    # `poster` already holds the Mux thumbnail for any asset that has a playback
+    # id -- so the common case resolves to a real frame rather than to nothing.
+    thumb_value = (thumb or poster or source)
+    if kind == "video" and _is_video_url(thumb_value):
+        thumb_value = ""
     mux_playback_url = mux_urls["hls_url"] if kind == "video" else ""
     mux_processing = bool(kind == "video" and mux_playback_url and mux_status and mux_status not in {"ready", "asset_ready", "available"})
     return {
@@ -844,7 +869,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
         "playback_url": mux_playback_url or saved_playback_url or first_party_stream or source,
-        "thumbnail_url": thumb or source,
+        "thumbnail_url": thumb_value,
         "poster_url": poster_value,
         "mux_playback_id": mux_playback_id,
         "mux_asset_id": item.get("mux_asset_id") or "",
