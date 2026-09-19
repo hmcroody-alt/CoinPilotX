@@ -183,6 +183,29 @@ describe("the ceiling refuses to be widened", () => {
     expect(slots.some((slot) => slot.role === "active")).toBe(true);
   });
 
+  /**
+   * Pinned to literals, not to the constants themselves.
+   *
+   * Every other test in this block spends `MAX_IMMERSIVE_AHEAD` as a symbol, so
+   * raising the constant moves those assertions along with it and the ceiling
+   * can be widened without a single test going red -- which a mutation pass
+   * found by doing exactly that. The bound is a number a human chose against
+   * real hardware, so the number is the contract. Changing it should require
+   * changing this line, deliberately, in review.
+   */
+  it("bounds itself at six decoders: three ahead, two behind, one playing", () => {
+    expect(MAX_IMMERSIVE_AHEAD).toBe(3);
+    expect(MAX_IMMERSIVE_BEHIND).toBe(2);
+    expect(MAX_IMMERSIVE_MOUNTED).toBe(6);
+    expect(DEFAULT_IMMERSIVE_AHEAD).toBe(2);
+    expect(DEFAULT_IMMERSIVE_BEHIND).toBe(1);
+  });
+
+  it("mounts at most six items however hard it is pushed", () => {
+    expect(immersiveWindow(session(500, 250), { ahead: 999, behind: 999 })).toHaveLength(6);
+    expect(immersiveWindow(session(500, 250))).toHaveLength(4);
+  });
+
   it("holds the ceiling it advertises", () => {
     expect(MAX_IMMERSIVE_MOUNTED).toBe(MAX_IMMERSIVE_AHEAD + MAX_IMMERSIVE_BEHIND + 1);
     expect(DEFAULT_IMMERSIVE_AHEAD).toBeLessThanOrEqual(MAX_IMMERSIVE_AHEAD);
@@ -250,5 +273,28 @@ describe("moving the cursor", () => {
 
   it("is stable: the same session produces the same window twice", () => {
     expect(immersiveWindow(session(10, 5))).toEqual(immersiveWindow(session(10, 5)));
+  });
+
+  /**
+   * The case §35 creates and nothing else does.
+   *
+   * `moveImmersiveCursor` clamps, so a cursor cannot walk off the end on its
+   * own. Recycling is what strands it: the queue is trimmed and the cursor is
+   * left describing an index the queue no longer reaches. An unclamped window
+   * would then compute a slice entirely past the end, mount nothing, and report
+   * nothing active -- a black screen with no error and no failing test, which is
+   * this engine's whole failure profile. A mutation pass found this uncovered.
+   */
+  it("still shows something when recycling has stranded the cursor past the end", () => {
+    const full = session(10, 8);
+    const trimmed = { ...full, queue: full.queue.slice(0, 3) };
+    const slots = immersiveWindow(trimmed);
+    expect(slots.map((slot) => slot.key)).toEqual(["post:2", "post:3"]);
+    expect(activeImmersiveSlot(trimmed)?.key).toBe("post:3");
+  });
+
+  it("shows the first item when the cursor is stranded before the start", () => {
+    const stranded = { ...session(10, 0), cursor: -4 };
+    expect(activeImmersiveSlot(stranded)?.key).toBe("post:1");
   });
 });
