@@ -102,6 +102,12 @@ by: *a mission whose subject is not real-time audio must not edit any path in
 `categories[].paths`*. An Apple-capabilities mission is not an audio mission.
 Recorded as owed, with the exact patch, below.
 
+**Closed 2026-09-19** by a subsequent audio mission — see "What is owed". The
+two "not verified" caveats at the end of this document stand as written: they
+record what *this* commit did and did not do. The exploit was performed there,
+not here, and it confirmed the prediction — the old suite passed 19/19 with
+`<string>audio</string>` deleted from the shipped plist.
+
 ### A smaller one alongside it
 
 `dependency_watch.required_ios_configuration` (`:523-526`) states both
@@ -247,9 +253,9 @@ work happened to find, and it is live today.
 
 | Item | Where | Trigger |
 |---|---|---|
-| **Protect `ios/PulseSoc/Info.plist`** — add it to `dependency_watch.files`, and extend `test_realtime_audio_architecture.py:312` to assert `audio` in **both** files | `config/realtime-audio-protected-paths.json`, `tests/protection/test_realtime_audio_architecture.py` | **audio mission + change declaration + CODEOWNERS.** Live exposure today, not a future one |
+| ~~**Protect `ios/PulseSoc/Info.plist`**~~ | `config/realtime-audio-protected-paths.json`, `tests/protection/test_realtime_audio_architecture.py`, `.github/CODEOWNERS` | **DONE 2026-09-19**, by an audio mission under the "Protected-boundary addendum" in `reports/realtime_audio_change_declaration.md`. The plist is in `dependency_watch.files`; the test asserts `audio` and `voip` in both files and that the two agree. Finding 1's exploit *was* performed there — the old suite passed 19/19 with `audio` deleted |
 | Correct audit §5's resolution note to say `fetch` (or `processing`) must return alongside `BGTaskSchedulerPermittedIdentifiers` | `PULSESOC_APPLE_NATIVE_CAPABILITY_AUDIT.md` | done in this commit |
-| Decide whether `required_ios_configuration` should be read by the test rather than duplicated in it | `config/realtime-audio-protected-paths.json` | same audio-mission gate as row 1 |
+| ~~Decide whether `required_ios_configuration` should be read by the test~~ | `config/realtime-audio-protected-paths.json` | **DONE 2026-09-19** — decided *read*, not delete. The key is now `declared_source` / `built_source` / `background_modes_must_contain` / `sources_must_agree_on_declared_keys`, and the test executes it |
 | Device validation of any background task | iPhone 16 Pro | **owed by construction** — the simulator returns `Unavailable` (Finding 4) |
 
 ---
