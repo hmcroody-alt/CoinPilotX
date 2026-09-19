@@ -4619,6 +4619,19 @@ The three failures land on three distinct assertions, so the rules discriminate
 between each other and not merely between green and red. The tree was confirmed
 clean after each revert.
 
+**Gate discrimination, A/B on one variable.** A scratch commit deleting
+`<string>audio</string>` from the shipped plist was gated twice with the same
+`scripts/realtime_audio_change_gate.py` and the same commit range, changing only
+which manifest was in the tree:
+
+| Manifest in tree | Gate verdict on the identical commit |
+|---|---|
+| `origin/main` (`c22383a4`) | `No protected real-time audio path changed (1 file(s) inspected). Audio validation is not required for this change.` |
+| this branch | `PROTECTED REAL-TIME AUDIO PATHS CHANGED — mobile-native/ios/PulseSoc/Info.plist, protected by: dependency_watch` |
+
+The probe commit was left unreferenced and the working tree verified clean and
+green afterwards.
+
 ### Physical validation required
 
 **Not required for this range**, and the reason is structural rather than a
