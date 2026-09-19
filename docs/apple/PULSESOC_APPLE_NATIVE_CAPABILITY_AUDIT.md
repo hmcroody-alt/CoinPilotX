@@ -20,23 +20,38 @@ and they do it before any product judgement gets made.
 > reasoning below is what the decisions answer. The answers — raise the floor to **16.1**,
 > and add extension targets to the **committed** Xcode project rather than generating them —
 > are in `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`, with the production numbers and
-> the `git ls-files` evidence behind each. Nothing has been implemented yet.
+> the `git ls-files` evidence behind each. ~~Nothing has been implemented yet.~~
+>
+> **Correction 2026-09-19:** the floor decision has *shipped*. `c8f05637` ("build(ios):
+> raise the deployment floor from 15.1 to 16.1") set `IPHONEOS_DEPLOYMENT_TARGET = 16.1`
+> project-wide and `"ios.deploymentTarget": "16.1"` in `Podfile.properties.json`. The *app*
+> target moved; RN's `post_install` keeps the individual pods at 15.1, which
+> `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md:135-143` documents as deliberate. The
+> section below and the "Minimum iOS" column of the summary table are left as
+> written but must be read against a **16.1** floor, not 15.1. Every row marked `15.1 ✅` is
+> still satisfied; the two rows that were *above* the floor no longer are.
 
-### 1. The iOS deployment target is 15.1
+### 1. The iOS deployment target is 15.1 — **now 16.1, see the correction above**
+
+As found (before `c8f05637`):
 
 ```
 $ grep -o "IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*" mobile-native/ios/PulseSoc.xcodeproj/project.pbxproj | sort -u
 IPHONEOS_DEPLOYMENT_TARGET = 15.1
 ```
 
-One value, project-wide. Several requested capabilities have a minimum OS above it:
+One value, project-wide. Several requested capabilities had a minimum OS above it:
 
-| Capability | Minimum iOS | Above 15.1 by |
-|---|---|---|
-| App Intents | 16.0 | 0.9 |
-| Live Activities | 16.1 | 1.0 |
-| ActivityKit push updates | 17.2 | 2.1 |
-| Control Center controls (`ControlWidget`) | 18.0 | 2.9 |
+| Capability | Minimum iOS | Above the old 15.1 by | vs. the 16.1 floor today |
+|---|---|---|---|
+| App Intents | 16.0 | 0.9 | satisfied |
+| Live Activities | 16.1 | 1.0 | satisfied, exactly at the floor |
+| ActivityKit `ActivityContent` / `staleDate` | 16.2 | 1.1 | **still above the floor** |
+| ActivityKit push updates | 17.2 | 2.1 | **still above the floor** |
+| Control Center controls (`ControlWidget`) | 18.0 | 2.9 | **still above the floor** |
+
+The 16.2 row is new: `LIVE_ACTIVITIES.md` Finding 6 argues that the 16.1-era ActivityKit API
+has no stale-content handling, which matters for an activity that can outlive its updater.
 
 Raising the target is a product decision with a user cost, not a build setting — it drops
 every device that cannot run the new floor. It is also not a prerequisite for *all* of
@@ -108,8 +123,8 @@ both are constrained to *observing* state, never driving it.
 
 | # | Capability | Status | Min iOS | New target | Wave |
 |---|---|---|---|---|---|
-| 1 | App Attest + DeviceCheck | NOT IMPLEMENTED | 14.0 | No | 3 |
-| 2 | Live Activities + Dynamic Island | NOT IMPLEMENTED | 16.1 | **Yes** | 4 |
+| 1 | App Attest + DeviceCheck | NOT IMPLEMENTED | 14.0 ✅ | No | 3 |
+| 2 | Live Activities + Dynamic Island | NOT IMPLEMENTED | 16.1 ✅ (16.2 for the API worth using) | **Yes** | 4 |
 | 3 | App Intents / Siri / Shortcuts | NOT IMPLEMENTED | 16.0 | No | 4 |
 | 4 | Core Spotlight | NOT IMPLEMENTED | 15.1 ✅ | No | 3 |
 | 5 | BackgroundTasks | NOT IMPLEMENTED (unused `fetch` declaration removed 2026-09-19) | 16.1 ✅ (device-only to test) | No | 3 |
@@ -181,6 +196,12 @@ Full treatment in **`APP_ATTEST_DEVICECHECK.md`**.
   deferral with evidence.
 
 ## 2. Live Activities + Dynamic Island
+
+Full treatment in **`LIVE_ACTIVITIES.md`**, which disagrees with this entry on one point:
+the first Live Activity should be a **media upload**, not a call. The call one is where
+everybody's instinct goes, and it is the worst venue for shaking out a brand-new extension
+target — `Activity.request` *throws*, and one of the things it throws for is "this device
+already has too many activities", which must never be able to reach the call path.
 
 - **Status** — NOT IMPLEMENTED
 - **Evidence** — no `ActivityKit`, `ActivityAttributes`, `Activity<`, or
