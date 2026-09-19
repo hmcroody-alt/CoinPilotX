@@ -32,8 +32,13 @@ jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");
   return {
-    ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
-      ReactActual.createElement(Text, { style: textStyle }, text)
+    // `renderText` is honoured rather than ignored: the bubble passes one so
+    // URLs in the body become link segments, and dropping it would render a
+    // body of `undefined` while still reporting green.
+    ContentTranslation: ({ text, textStyle, renderText }: { text?: string; textStyle?: unknown; renderText?: (value: string, translated: boolean) => unknown }) =>
+      renderText
+        ? renderText(String(text ?? ""), false)
+        : ReactActual.createElement(Text, { style: textStyle }, text)
   };
 });
 

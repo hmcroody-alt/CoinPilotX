@@ -106,6 +106,9 @@ import {
 import { translate, useTranslation } from "../i18n";
 import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
+import { LinkedText } from "../links/LinkedText";
+import { detectLinks } from "../links/messageLinks";
+import { openMessageLink } from "../links/openMessageLink";
 import { presenceActivityText } from "../api/presence";
 import { reportPresenceActivity } from "../api/presenceSession";
 import { useAuth } from "../session/auth";
@@ -471,6 +474,19 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       setStatusMessage("This result could not be opened. Try again from the PulseSoc website.");
     }
   }, [navigation, t]);
+
+  /**
+   * A link tapped inside a message bubble.
+   *
+   * Deliberately thin: the decision of where a URL goes lives in
+   * `links/openMessageLink`, which asks `navigation/linking` — the same table
+   * that answers a Universal Link from Safari. Messenger contributes the
+   * navigator and nothing else, so there is no second deep-link system here to
+   * drift out of step with the first one.
+   */
+  const openLinkFromMessage = useCallback((url: string) => {
+    openMessageLink(navigation, url);
+  }, [navigation]);
 
   useEffect(() => () => {
     stopVoiceMessagePlayback("conversation_closed").catch(() => undefined);
@@ -1330,6 +1346,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
               onRetry={() => retryMessage(item)}
               onReact={() => react(item)}
               onLongPress={() => setSelectedMessage(item)}
+              onLinkPress={openLinkFromMessage}
             />
           )}
         />
@@ -2130,12 +2147,14 @@ function MessageBubble({
   message,
   onRetry,
   onReact,
-  onLongPress
+  onLongPress,
+  onLinkPress
 }: {
   message: MessengerMessage;
   onRetry: () => void;
   onReact: () => void;
   onLongPress: () => void;
+  onLinkPress: (url: string) => void;
 }) {
   const { t } = useTranslation();
   const mine = Boolean(message.is_mine);
@@ -2155,8 +2174,19 @@ function MessageBubble({
    * because there the padding is doing its job.
    */
   const mediaOnly = !deleted && !moderated && !body && isVisualMediaMessage(message);
+  /**
+   * A bubble with a link in it must not be one accessibility element.
+   *
+   * `accessible` on this wrapper collapses everything inside it into a single
+   * VoiceOver node, which is right for a bubble whose content is one utterance.
+   * It is wrong the moment part of that utterance is actionable: the link would
+   * be read as part of the sentence and could not be activated on its own. The
+   * grouping is dropped for exactly those bubbles, so each link becomes its own
+   * `link`-role element, and every other bubble keeps the behaviour it had.
+   */
+  const bodyHasLink = !deleted && !moderated && Boolean(body) && detectLinks(body).length > 0;
   return (
-    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage} accessibilityLabel={messageAccessibilityLabel(message)}>
+    <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage && !bodyHasLink} accessibilityLabel={messageAccessibilityLabel(message)}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, mediaOnly && styles.mediaBubble, moderated && styles.moderatedBubble]}>
         {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : t("common:identity.member"))}</Text> : null}
         {message.reply_preview ? (
@@ -2181,7 +2211,18 @@ function MessageBubble({
                     ? ((message as Record<string, unknown>).language as string)
                     : "auto"
               }
-              textStyle={styles.body}
+              // The translated body is linkified too, not just the original:
+              // `renderText` receives whichever string is currently visible, so
+              // a URL that survives translation stays tappable and one that is
+              // mangled by it simply renders as prose.
+              renderText={(visible) => (
+                <LinkedText
+                  text={visible}
+                  style={styles.body}
+                  onLinkPress={onLinkPress}
+                  onLongPress={onLongPress}
+                />
+              )}
               controlsMode="compact"
             />
           )

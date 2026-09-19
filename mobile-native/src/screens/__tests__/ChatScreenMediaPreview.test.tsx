@@ -25,7 +25,7 @@
 
 import React from "react";
 import { Dimensions, Image } from "react-native";
-import { act, fireEvent, render, screen } from "@testing-library/react-native";
+import { act, fireEvent, render, screen, within } from "@testing-library/react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 jest.mock("expo-av", () => ({
@@ -50,8 +50,15 @@ jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");
   return {
-    ContentTranslation: ({ text, textStyle }: { text?: string; textStyle?: unknown }) =>
-      ReactActual.createElement(Text, { style: textStyle, testID: "bubble-body" }, text)
+    // `renderText` is honoured rather than ignored — the bubble passes one so
+    // that URLs in the body become link segments. The testID stays on the
+    // wrapper either way, so what this file identifies as the body is unchanged.
+    ContentTranslation: ({ text, textStyle, renderText }: { text?: string; textStyle?: unknown; renderText?: (value: string, translated: boolean) => unknown }) =>
+      ReactActual.createElement(
+        Text,
+        { style: textStyle, testID: "bubble-body" },
+        renderText ? renderText(String(text ?? ""), false) : text
+      )
   };
 });
 
@@ -457,8 +464,16 @@ describe("generated filenames stay out of the bubble", () => {
       photoMessage({ message_type: "file", body: "Everything we packed for Friday", mime_type: "application/pdf" })
     ]);
 
+    // Scoped to the body, because WHERE the caption renders is the whole point:
+    // the card title echoes the same string, so an unscoped text query would
+    // pass even if the bubble body were suppressed entirely.
+    //
+    // The body is segmented now — a URL in a caption becomes its own `<Text>` so
+    // it can be a tap target — so the caption is no longer necessarily one bare
+    // string child, and asserting on child identity would assert on the
+    // segmentation rather than on the caption.
     const body = await screen.findByTestId(BUBBLE_BODY_TEST_ID);
-    expect(body.props.children).toBe("Everything we packed for Friday");
+    expect(within(body).getByText("Everything we packed for Friday")).toBeTruthy();
   });
 });
 
