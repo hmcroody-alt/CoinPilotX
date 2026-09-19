@@ -178,6 +178,13 @@ neither the lock that caused the outage nor the catalog that reveals it.
 Delivery was wired up on 2026-09-19, after the code above had already been running blind
 for several hours: it was sampling correctly and had nowhere to send anything.
 
+**Confirmed delivered end to end on 2026-09-19** — a test alert sent from inside the
+`alert_worker` container arrived in the owner's inbox. Recording that explicitly because
+the two are not the same claim: Brevo returning `201` with a `messageId` only proves it
+accepted the message, and an address on a suppression list produces exactly that same
+`201`. Every link from the worker's own connection through to a human has now been
+observed, not inferred.
+
 | | |
 | --- | --- |
 | Monitor | `services/pg_lock_health.py`, called once per sweep from `alert_worker.py` (~48 s) |
