@@ -212,7 +212,8 @@ are finished, tested, and should be left alone.
 
 ## 4. Core Spotlight
 
-- **Status** — NOT IMPLEMENTED
+- **Status** — NOT IMPLEMENTED. Policy in **`DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`**;
+  mechanism in **`CORE_SPOTLIGHT.md`**.
 - **Evidence** — no `CSSearchableItem`, `CoreSpotlight`, or
   `NSUserActivity.isEligibleForSearch`.
 - **Minimum iOS** — satisfied at 15.1.
@@ -229,7 +230,15 @@ are finished, tested, and should be left alone.
   deny-by-default, must respect `users.profile_visibility` and `blocked_users`, and must be
   **fully purged on logout** — `CSSearchableIndex.deleteAllSearchableItems`.
 - **Prerequisites** — an explicit written policy on what is indexable. That policy is the
-  deliverable, not the code.
+  deliverable, not the code. **Added 2026-09-19:** there is a second prerequisite this entry
+  missed — the AppDelegate must switch on `userActivity.activityType` before any indexing
+  code ships, because a Spotlight tap arrives at
+  `application(_:continue:restorationHandler:)` and both existing handlers there ignore it
+  while the delegate returns `true`. See `CORE_SPOTLIGHT.md` Finding 2. This entry also said
+  "none" for protection-lock interaction, which is right for *audio* but understates the
+  coupling: the AppDelegate fix is shared with Handoff, Live Activities and App Intents, and
+  `AppDelegate.swift` is itself an unprotected file that the audio locks arguably should
+  cover.
 
 ## 5. BackgroundTasks
 

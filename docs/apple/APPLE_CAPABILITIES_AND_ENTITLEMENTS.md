@@ -150,11 +150,20 @@ account that cannot be done from the repo.
 | App Attest | `com.apple.developer.devicecheck.appattest-environment` | — | no | enable App Attest on the App ID |
 | Live Activities | — | `NSSupportsLiveActivities` | **yes** | new extension App ID + profile |
 | App Intents | — | Siri keys if SiriKit | no | enable Siri if SiriKit path |
-| Core Spotlight | — | `NSUserActivityTypes` | no | none |
+| Core Spotlight | — | **none** (see note) | no | none |
 | BackgroundTasks | — | `BGTaskSchedulerPermittedIdentifiers` | no | none |
 | Sign in with Apple | `com.apple.developer.applesignin` | — | no | **enable on App ID; configure Service ID + key for the web leg** |
 | WidgetKit | `com.apple.security.application-groups` | — | **yes** | new extension App ID + profile |
 | Share Extension | `com.apple.security.application-groups` | `NSExtension` (own plist) | **yes** | new extension App ID + profile |
+
+**Core Spotlight note (corrected 2026-09-19).** An earlier revision of this row listed
+`NSUserActivityTypes`. That is wrong for `CSSearchableItem` indexing:
+`CSSearchableItemActionType` is a `CORESPOTLIGHT_EXPORT` system constant, so there is no
+app-declared type to register, while `NSUserActivityTypes` gates *cross-device* continuation
+by Team ID and activity type (`NSUserActivity.h:22`). The only Info.plist key CoreSpotlight
+ever asks for is `CoreSpotlightContinuation`, and that is for continuing a Spotlight *query*
+into the app — a feature the indexing policy does not adopt. See `CORE_SPOTLIGHT.md`
+Finding 1.
 | Control Center | `com.apple.security.application-groups` | — | **yes** | new extension App ID + profile |
 | Secure Enclave signing | — | — | no | none |
 | Keychain sharing | `keychain-access-groups` | — | — | enable on App ID |

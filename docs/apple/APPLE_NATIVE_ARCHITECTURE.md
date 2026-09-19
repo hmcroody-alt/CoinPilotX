@@ -207,7 +207,7 @@ the OS, not by taste:
 | 1 | App Attest / DeviceCheck | new Expo module | Backend verification is the real work; the module is thin |
 | 2 | Live Activities | extension target + module | Module starts/updates; extension renders. Call state **read-only** |
 | 3 | App Intents | extension target | Read-only intents only; **no call intents** |
-| 4 | Core Spotlight | new Expo module | Policy is `DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`; needs `NSUserActivityTypes` and nothing else |
+| 4 | Core Spotlight | new Expo module | Policy: `DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`. Mechanism: `CORE_SPOTLIGHT.md`. Needs **no** Info.plist key — the blocker is the AppDelegate activity-type switch |
 | 5 | BackgroundTasks | app target | Registration must happen in `didFinishLaunching`. Not currently planned |
 | 6 | Sign in with Apple | `expo-apple-authentication` | Off-the-shelf; the work is server-side. See `DECISIONS_SIGN_IN_WITH_APPLE.md` |
 | 7 | Universal Links | **already in the app target** | `continue userActivity` exists and forwards to `RCTLinkingManager` |

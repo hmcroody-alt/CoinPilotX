@@ -170,9 +170,13 @@ Purging at sign-out is necessary and not sufficient. Also required:
 
 1. This document is the policy; the allowlist is enumerated in code as a single constant
    with each entry pointing back here, not spread across call sites.
-2. `NSUserActivityTypes` is added to `Info.plist` — the one Info.plist key this needs
-   (`APPLE_CAPABILITIES_AND_ENTITLEMENTS.md` lists it as absent). No entitlement, no App
-   Group, no portal work.
+2. ~~`NSUserActivityTypes` is added to `Info.plist` — the one Info.plist key this needs.~~
+   **Corrected 2026-09-19: no Info.plist key is required.** `CSSearchableItemActionType` is
+   a system-exported constant, and `NSUserActivityTypes` gates cross-device continuation,
+   not local Spotlight taps (`CORE_SPOTLIGHT.md` Finding 1). The rest of the original item
+   stands: no entitlement, no App Group, no portal work. The real prerequisite is the
+   AppDelegate activity-type switch — `CORE_SPOTLIGHT.md` Finding 2 — without which a
+   Spotlight tap foregrounds the app and navigates nowhere.
 3. The purge lives inside `clearUserScopedMediaState()`.
 4. A test asserts the denylist directly — that indexing a DM, another user's profile, or
    anything Office-scoped is rejected — rather than only asserting the allowlist works. A
