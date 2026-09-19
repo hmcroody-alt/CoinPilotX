@@ -47,6 +47,23 @@ jest.mock("../../api/pulseApi", () => {
 });
 
 /**
+ * A post link now draws a card, and a card resolves its post. Left unmocked the
+ * blanket `pulseApi` above answers `{ ok: true }` with no post, so every card
+ * would render its "no longer available" state — which is *disabled*, and a
+ * disabled card cannot be pressed. The link tests would then fail for a reason
+ * that has nothing to do with links.
+ */
+jest.mock("../../api/feed", () => {
+  const actual = jest.requireActual("../../api/feed");
+  return {
+    ...actual,
+    getPostDetail: jest.fn().mockResolvedValue({
+      post: { id: 2432, post_id: 2432, body: "Shipping the new upload engine today.", author: { display_name: "Ada Lovelace", username: "ada" }, media: [] }
+    })
+  };
+});
+
+/**
  * Every URL the screen asked the operating system to open, in order.
  *
  * The module is an ES module whose real export lives under `default` — a mock
@@ -167,13 +184,13 @@ beforeEach(() => {
 });
 
 describe("a URL inside a message bubble", () => {
-  it("renders as a link, not as prose", async () => {
-    await renderChat(["https://pulsesoc.com/pulse/post/2432"]);
-    const links = screen.queryAllByRole("link");
-    expect(links).toHaveLength(1);
-    expect(textOf(links[0])).toBe("https://pulsesoc.com/pulse/post/2432");
-  });
-
+  /**
+   * A bare post link used to render as a tappable copy of itself. It now
+   * renders as a card and the URL is not drawn at all, which is the behaviour
+   * `ChatScreenPostCard.test.tsx` owns. What is pinned here is the part that
+   * did not change and must not: whatever the bubble draws for a post link,
+   * pressing it lands on `PostDetail` in-app and never in a browser.
+   */
   it("opens the post in the app when pressed", async () => {
     const navigation = await renderChat(["https://pulsesoc.com/pulse/post/2432"]);
     await act(async () => {

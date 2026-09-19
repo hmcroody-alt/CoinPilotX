@@ -22,6 +22,7 @@ import { PulseQr } from "../native/PulseQr";
 import { ScanSheet } from "../native/ScanSheet";
 import { RootStackParamList } from "../navigation/types";
 import { buildNativeSharePayload, openSystemShare } from "../sharing/nativeShare";
+import { messengerShareBody } from "../sharing/postShare";
 import { saveShareComposerHandoff, ShareComposerMode } from "../sharing/shareComposerHandoff";
 import { colors } from "../theme/colors";
 import { createThemedStyles } from "../theme/themedStyles";
@@ -81,7 +82,7 @@ export function PulseShareScreen({ route, navigation }: Props) {
     try {
       const conversation = await openDirectConversation(person);
       await sendConversationMessage(conversation.conversation_id, {
-        body: payload.message,
+        body: messengerShareBody(metadata, payload.message),
         message_type: "text",
         client_message_id: messengerClientId(messengerClientIds.current, metadata.kind, metadata.url, person.user_id),
         local_created_at: new Date().toISOString()

@@ -108,6 +108,8 @@ import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { LinkedText } from "../links/LinkedText";
 import { detectLinks } from "../links/messageLinks";
+import { bodyIsOnlyLinks, messageEntity } from "../links/pulseEntity";
+import { PulsePostLinkCard } from "../components/messages/PulsePostLinkCard";
 import { openMessageLink } from "../links/openMessageLink";
 import { presenceActivityText } from "../api/presence";
 import { reportPresenceActivity } from "../api/presenceSession";
@@ -2184,7 +2186,26 @@ function MessageBubble({
    * grouping is dropped for exactly those bubbles, so each link becomes its own
    * `link`-role element, and every other bubble keeps the behaviour it had.
    */
-  const bodyHasLink = !deleted && !moderated && Boolean(body) && detectLinks(body).length > 0;
+  const linkTexts = useMemo(
+    () => (deleted || moderated || !body ? [] : detectLinks(body).map((token) => token.text)),
+    [body, deleted, moderated]
+  );
+  const bodyHasLink = linkTexts.length > 0;
+  /**
+   * The PulseSoc object this message is about, if it is about exactly one.
+   *
+   * Derived from the body on every render rather than stored on the message, so
+   * a link sent long before cards existed becomes a card the first time it is
+   * drawn — no resend, no backfill, nothing to migrate.
+   */
+  const entity = useMemo(() => messageEntity(body, linkTexts), [body, linkTexts]);
+  /**
+   * A body that is nothing but the link has no sentence worth keeping, so the
+   * card stands in for it and the raw URL is never drawn. A body with prose
+   * around the link keeps the prose: that part is the sender's.
+   */
+  const cardReplacesBody = Boolean(entity) && bodyIsOnlyLinks(body, linkTexts);
+  const showBodyText = Boolean(body) && !cardReplacesBody;
   return (
     <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage && !bodyHasLink} accessibilityLabel={messageAccessibilityLabel(message)}>
       <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, mediaOnly && styles.mediaBubble, moderated && styles.moderatedBubble]}>
@@ -2196,7 +2217,8 @@ function MessageBubble({
           </View>
         ) : null}
         {!deleted && !moderated ? <MessageMedia message={message} /> : null}
-        {body ? (
+        {entity ? <PulsePostLinkCard entity={entity} onOpen={onLinkPress} onLongPress={onLongPress} /> : null}
+        {showBodyText ? (
           deleted || moderated ? (
             <Text style={[styles.body, styles.systemBody]}>{body}</Text>
           ) : (

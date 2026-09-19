@@ -1058,6 +1058,17 @@
         "voiceReader": "Lektè Vokal",
         "wallpaper": "Fon Ekran"
       }
+    },
+    "postCard": {
+      "a11yOpen": "Ouvri piblikasyon PulseSoc {{author}} la",
+      "a11yOpenGeneric": "Ouvri piblikasyon PulseSoc sa a",
+      "cta": "Gade piblikasyon an →",
+      "eyebrow": "PIBLIKASYON PULSESOC",
+      "forbidden": "Kontni sa a pa disponib pou ou.",
+      "loading": "N ap chaje piblikasyon an…",
+      "missing": "Piblikasyon sa a pa disponib ankò.",
+      "unavailable": "Kontni an pa disponib",
+      "video": "Videyo"
     }
   },
   "commerce": {

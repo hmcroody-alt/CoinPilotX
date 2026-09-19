@@ -1058,6 +1058,17 @@
       "signInTitle": "登录后即可发起聊天",
       "subtitle": "搜索真实的 PulseSoc 网络。已有的单聊会自动重新打开。",
       "title": "发起对话"
+    },
+    "postCard": {
+      "a11yOpen": "打开 {{author}} 的 PulseSoc 帖子",
+      "a11yOpenGeneric": "打开此 PulseSoc 帖子",
+      "cta": "查看帖子 →",
+      "eyebrow": "PULSESOC 帖子",
+      "forbidden": "你无法查看此内容。",
+      "loading": "正在加载帖子…",
+      "missing": "此帖子已不可用。",
+      "unavailable": "内容不可用",
+      "video": "视频"
     }
   },
   "commerce": {

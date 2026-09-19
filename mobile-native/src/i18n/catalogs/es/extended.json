@@ -1072,6 +1072,17 @@
       "signInTitle": "Inicia sesión para empezar un chat",
       "subtitle": "Busca en la red real de PulseSoc. Los chats directos que ya existen se reabren solos.",
       "title": "Empieza una conversación"
+    },
+    "postCard": {
+      "a11yOpen": "Abrir la publicación de PulseSoc de {{author}}",
+      "a11yOpenGeneric": "Abrir esta publicación de PulseSoc",
+      "cta": "Ver publicación →",
+      "eyebrow": "PUBLICACIÓN DE PULSESOC",
+      "forbidden": "Este contenido no está disponible para ti.",
+      "loading": "Cargando publicación…",
+      "missing": "Esta publicación ya no está disponible.",
+      "unavailable": "Contenido no disponible",
+      "video": "Video"
     }
   },
   "commerce": {

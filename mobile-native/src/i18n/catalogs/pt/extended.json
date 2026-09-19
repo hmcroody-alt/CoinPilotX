@@ -1072,6 +1072,17 @@
       "signInTitle": "Entre para começar uma conversa",
       "subtitle": "Busque na rede real do PulseSoc. As conversas diretas já existentes reabrem automaticamente.",
       "title": "Comece uma conversa"
+    },
+    "postCard": {
+      "a11yOpen": "Abrir a publicação do PulseSoc de {{author}}",
+      "a11yOpenGeneric": "Abrir esta publicação do PulseSoc",
+      "cta": "Ver publicação →",
+      "eyebrow": "PUBLICAÇÃO DO PULSESOC",
+      "forbidden": "Este conteúdo não está disponível para você.",
+      "loading": "Carregando publicação…",
+      "missing": "Esta publicação não está mais disponível.",
+      "unavailable": "Conteúdo indisponível",
+      "video": "Vídeo"
     }
   },
   "commerce": {

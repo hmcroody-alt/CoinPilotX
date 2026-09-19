@@ -1058,6 +1058,17 @@
       "signInTitle": "ログインしてチャットを始める",
       "subtitle": "実際のPulseSocネットワークを検索します。既存のダイレクトチャットは自動的に再開されます。",
       "title": "会話を始める"
+    },
+    "postCard": {
+      "a11yOpen": "{{author}} の PulseSoc の投稿を開く",
+      "a11yOpenGeneric": "この PulseSoc の投稿を開く",
+      "cta": "投稿を見る →",
+      "eyebrow": "PULSESOC の投稿",
+      "forbidden": "このコンテンツは表示できません。",
+      "loading": "投稿を読み込んでいます…",
+      "missing": "この投稿は利用できなくなりました。",
+      "unavailable": "コンテンツを利用できません",
+      "video": "動画"
     }
   },
   "commerce": {

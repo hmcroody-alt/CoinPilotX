@@ -1072,6 +1072,17 @@
       "signInTitle": "Melde dich an, um zu chatten",
       "subtitle": "Durchsuche das echte PulseSoc-Netzwerk. Bestehende Einzelchats öffnen sich automatisch.",
       "title": "Unterhaltung starten"
+    },
+    "postCard": {
+      "a11yOpen": "PulseSoc-Beitrag von {{author}} öffnen",
+      "a11yOpenGeneric": "Diesen PulseSoc-Beitrag öffnen",
+      "cta": "Beitrag ansehen →",
+      "eyebrow": "PULSESOC-BEITRAG",
+      "forbidden": "Dieser Inhalt ist für dich nicht verfügbar.",
+      "loading": "Beitrag wird geladen…",
+      "missing": "Dieser Beitrag ist nicht mehr verfügbar.",
+      "unavailable": "Inhalt nicht verfügbar",
+      "video": "Video"
     }
   },
   "commerce": {

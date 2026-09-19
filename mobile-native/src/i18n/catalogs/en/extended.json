@@ -1072,6 +1072,17 @@
       "signInTitle": "Sign in to start a chat",
       "subtitle": "Search the real PulseSoc network. Existing direct chats reopen automatically.",
       "title": "Start a conversation"
+    },
+    "postCard": {
+      "a11yOpen": "Open the PulseSoc post by {{author}}",
+      "a11yOpenGeneric": "Open this PulseSoc post",
+      "cta": "View Post →",
+      "eyebrow": "PULSESOC POST",
+      "forbidden": "This content isn't available to you.",
+      "loading": "Loading post…",
+      "missing": "This post is no longer available.",
+      "unavailable": "Content unavailable",
+      "video": "Video"
     }
   },
   "commerce": {
