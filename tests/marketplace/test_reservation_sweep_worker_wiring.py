@@ -572,6 +572,7 @@ HOSTED_MARKETPLACE_SEAMS = {
     "services.marketplace_reservation_sweeper",
     "services.marketplace_release_cycle",
     "services.marketplace_payout_worker",
+    "services.payments_reconciliation_cycle",
 }
 
 
@@ -582,11 +583,11 @@ def test_17_the_worker_imports_no_settlement_surface_but_the_sweeper():
     bug today, but it is the first step of every drift: the import lands first,
     the direct call follows in a later change.
 
-    The release cycle and the payout worker joined the sweeper here under an
-    explicit owner authorization to host them. They are the same shape — a
-    ``run_*_if_due(state)`` and a ``heartbeat_metadata(state)``, no business
-    rule of their own — so what this test guards is unchanged. What it can no
-    longer say is "one seam", which is why the allowlist is now named.
+    The release cycle, the payout worker and the reconciliation cycle joined the
+    sweeper here under an explicit owner authorization to host them. They are the
+    same shape — a ``run_*_if_due(state)`` and a ``heartbeat_metadata(state)``,
+    no business rule of their own — so what this test guards is unchanged. What
+    it can no longer say is "one seam", which is why the allowlist is now named.
 
     Scoped to ``marketplace_`` rather than to the substring ``reservation``,
     because ``services.marketplace_cart_routes`` — which owns every write to a
@@ -607,7 +608,16 @@ def test_17_the_worker_imports_no_settlement_surface_but_the_sweeper():
         elif isinstance(node, ast.Import):
             modules.update(alias.name for alias in node.names)
 
-    marketplace_modules = {m for m in modules if "marketplace" in m or "reservation" in m}
+    # ``reconciliation`` joins the two substrings because the newest seam is not
+    # named ``marketplace_`` — it schedules the platform-wide payments engine,
+    # of which the marketplace chain is one check. Matching the word rather than
+    # the seam's own name is what makes a direct
+    # ``services.business_os.payments.reconciliation`` import fail here, which is
+    # the drift the seam exists to prevent.
+    marketplace_modules = {
+        m for m in modules
+        if "marketplace" in m or "reservation" in m or "reconciliation" in m
+    }
     assert marketplace_modules == HOSTED_MARKETPLACE_SEAMS, (
         "pulse_worker.py imports a marketplace module that is not one of the "
         "scheduling seams it is authorized to host"

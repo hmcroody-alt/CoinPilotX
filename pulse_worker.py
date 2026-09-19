@@ -12,6 +12,7 @@ from services import pulse_ai, pulse_feed_engine
 from services import marketplace_reservation_sweeper as reservation_sweeper
 from services import marketplace_release_cycle as release_cycle
 from services import marketplace_payout_worker as payout_worker
+from services import payments_reconciliation_cycle as reconciliation_cycle
 
 
 WORKER_NAME = "pulse_worker"
@@ -267,6 +268,11 @@ def main():
         payout_worker.interval_seconds(),
         payout_worker.batch_limit(),
     )
+    logging.info(
+        "PAYMENTS_RECONCILIATION_CONFIG enabled=%s interval=%s",
+        reconciliation_cycle.reconciliation_enabled(),
+        reconciliation_cycle.interval_seconds(),
+    )
     state: dict = {}
     while True:
         try:
@@ -294,6 +300,11 @@ def main():
             # deadline and its own gates; all three are off unless configured.
             release_cycle.run_release_cycle_if_due(state)
             payout_worker.run_payout_cycle_if_due(state)
+            # Last, and on its own much longer deadline: the sweep that checks
+            # whether the three above actually did what their metrics claim.
+            # After them rather than before, so a finding is about the state the
+            # chain settled into on this tick and not the one it started from.
+            reconciliation_cycle.run_reconciliation_cycle_if_due(state)
             bot.record_worker_heartbeat(
                 WORKER_NAME,
                 "healthy",
@@ -306,6 +317,7 @@ def main():
                     **sweep_heartbeat_metadata(state),
                     **release_cycle.heartbeat_metadata(state),
                     **payout_worker.heartbeat_metadata(state),
+                    **reconciliation_cycle.heartbeat_metadata(state),
                 },
             )
         except Exception as exc:

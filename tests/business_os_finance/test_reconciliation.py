@@ -293,10 +293,17 @@ class RunAllTests(BaseCase):
     def test_run_all_persists_summary_and_last_run_reads_it(self):
         self._post("runall-1", 500)
         summary = reconciliation.run_all()
+        # Exact rather than a superset: a check silently dropped from run_all is
+        # indistinguishable from one that found nothing, and the engine is only
+        # worth its cost if the list of what it looks at stays deliberate.
+        # ``marketplace_settlements`` joined under the Connect foundation work —
+        # it is the only check that can see a settlement stuck mid-chain, which
+        # from the ledger's point of view looks exactly like money at rest.
         self.assertEqual(
             sorted(summary["checks"]),
-            ["ad_wallets", "funding_sessions", "ledger_balances", "rewards",
-             "seller_payouts", "suspense", "webhook_inbox"],
+            ["ad_wallets", "funding_sessions", "ledger_balances",
+             "marketplace_settlements", "rewards", "seller_payouts", "suspense",
+             "webhook_inbox"],
         )
         self.assertEqual(summary["check_errors"], 0)
         self.assertEqual(summary["incidents_opened_or_refreshed"], 0)

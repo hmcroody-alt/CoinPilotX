@@ -1048,8 +1048,322 @@ def reconcile_rewards() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Marketplace settlement chain
+# ---------------------------------------------------------------------------
+
+#: A settlement that reached ``scheduled`` but carries no provider payout id is
+#: not merely slow. ``marketplace_payout_scheduler.apply_provider_event`` matches
+#: rows *by* ``provider_payout_id``, so until that column is filled no Stripe
+#: webhook can move the row out of ``scheduled`` — the seller's money is fenced
+#: with nothing left that would ever release it. Short window, because the gap
+#: between the ``scheduled`` transition and the id being written is two network
+#: calls wide, not hours.
+STUCK_SCHEDULED_HOURS = 6
+
+#: ``eligible`` means every gate has already opened and the only thing left is
+#: for the payout scheduler to pick the row up. A day of that means the scheduler
+#: is not running — which is precisely the defect the release cycle was built to
+#: end, so it is worth a standing alarm rather than a one-off fix.
+STALLED_ELIGIBLE_HOURS = 24
+
+#: A protection hold whose end has passed by this much, with nothing having
+#: advanced it, means the eligibility sweep is not running. Same reasoning.
+STALLED_HOLD_HOURS = 24
+
+#: Rows read per run for the arithmetic invariant, which is the one check here
+#: with no selective predicate. A table past this is reported as ``scan_truncated``
+#: rather than quietly half-checked: an unexamined row must not look like a clean
+#: one.
+SNAPSHOT_SCAN_LIMIT = 5000
+
+#: Rows reported per stuck-state category in a single run. A systemic stall would
+#: otherwise open one incident per order, which buries the finding it is trying
+#: to surface. The count is always exact; only the per-row detail is capped.
+MARKETPLACE_INCIDENT_CAP = 50
+
+
+def _marketplace_cutoff(hours: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(hours=int(hours))).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def reconcile_marketplace_settlements(
+    *,
+    stuck_scheduled_hours: int = STUCK_SCHEDULED_HOURS,
+    stalled_eligible_hours: int = STALLED_ELIGIBLE_HOURS,
+    stalled_hold_hours: int = STALLED_HOLD_HOURS,
+) -> dict:
+    """Check the marketplace settlement chain for rows nothing will ever move.
+
+    The chain — fulfillment, protection hold, eligibility, schedule, transfer,
+    payout — is a sequence of separately-governed steps, and every one of them
+    can be switched off independently. That is deliberate, but it means the
+    characteristic marketplace failure is not a wrong number; it is a row that
+    stopped somewhere with the seller's money still on the platform's side and
+    nothing running that would advance it. None of the other checks in this
+    module can see that, because from the ledger's point of view the money is
+    exactly where it should be.
+
+    Five findings, all detect-and-report (nothing here transitions a settlement):
+
+    1. ``scheduled`` with no provider payout id — unreachable by webhook, and so
+       permanently stuck. Critical regardless of amount.
+    2. ``protection_hold`` with no hold end — can never satisfy the hold, so it
+       can never become eligible. Critical.
+    3. ``protection_hold`` whose end has long passed — the eligibility sweep is
+       not running.
+    4. ``eligible``, ready, unblocked and untouched — the payout scheduler is not
+       running.
+    5. ``net != gross - reversed`` on either the fee or the seller's earnings —
+       the arithmetic invariant, asked via
+       :func:`marketplace_commercial_operations.snapshot_drift` so that the two
+       reconcilers that care about it cannot disagree.
+
+    A deployment with no marketplace tables returns ``tables_missing`` and opens
+    nothing: absent is not broken.
+    """
+    from services import marketplace_commercial_operations as commercial
+    from services import marketplace_settlement_service as settlements
+
+    conn = db.connect()
+    try:
+        if not _table_exists(conn, "marketplace_commercial_settlements"):
+            return {"tables_missing": True, "incidents": []}
+
+        def _rows(sql: str, params: tuple = ()) -> list:
+            return [_row_to_dict(r) for r in conn.execute(sql, params).fetchall()]
+
+        unreachable = _rows(
+            "SELECT seller_transaction_id, seller_id, order_id, currency, "
+            "net_seller_earnings_minor, updated_at "
+            "FROM marketplace_commercial_settlements "
+            "WHERE payout_state = 'scheduled' "
+            "AND (provider_payout_id IS NULL OR provider_payout_id = '') "
+            "AND updated_at < ? ORDER BY seller_transaction_id",
+            (_marketplace_cutoff(stuck_scheduled_hours),),
+        )
+        hold_end_unknown = _rows(
+            "SELECT seller_transaction_id, seller_id, order_id, currency, "
+            "net_seller_earnings_minor, updated_at "
+            "FROM marketplace_commercial_settlements "
+            "WHERE payout_state = 'protection_hold' "
+            "AND (protection_ends_at IS NULL OR protection_ends_at = '') "
+            "ORDER BY seller_transaction_id",
+        )
+        # The hold end is the deadline, so it is what the grace period is
+        # measured from — `updated_at` would restart the clock on any unrelated
+        # write and hide exactly the rows this is looking for.
+        hold_elapsed = _rows(
+            "SELECT seller_transaction_id, seller_id, order_id, currency, "
+            "net_seller_earnings_minor, protection_ends_at "
+            "FROM marketplace_commercial_settlements "
+            "WHERE payout_state = 'protection_hold' "
+            "AND protection_ends_at IS NOT NULL AND protection_ends_at != '' "
+            "AND protection_ends_at < ? ORDER BY seller_transaction_id",
+            (_marketplace_cutoff(stalled_hold_hours),),
+        )
+        # The scheduler's own selection predicate, so a row this reports is a row
+        # the scheduler would have taken had it run.
+        unscheduled = _rows(
+            "SELECT seller_transaction_id, seller_id, order_id, currency, "
+            "net_seller_earnings_minor, updated_at "
+            "FROM marketplace_commercial_settlements "
+            "WHERE payout_state = 'eligible' AND payout_ready = 1 "
+            "AND blocker_code IS NULL AND updated_at < ? "
+            "ORDER BY seller_transaction_id",
+            (_marketplace_cutoff(stalled_eligible_hours),),
+        )
+
+        total_rows = int(
+            (conn.execute(
+                "SELECT COUNT(*) AS c FROM marketplace_commercial_settlements"
+            ).fetchone() or [0])[0] or 0)
+        scanned = _rows(
+            "SELECT * FROM marketplace_commercial_settlements "
+            "ORDER BY seller_transaction_id LIMIT ?",
+            (SNAPSHOT_SCAN_LIMIT,),
+        )
+    finally:
+        conn.close()
+
+    drifting = []
+    for row in scanned:
+        try:
+            drift = commercial.snapshot_drift(row)
+        except (KeyError, TypeError, ValueError):
+            # A row too malformed to do arithmetic on is itself a finding, and a
+            # louder one than being a few cents out.
+            drifting.append({"row": row, "drift": None})
+            continue
+        if any(drift.values()):
+            drifting.append({"row": row, "drift": drift})
+
+    # Checked after the arithmetic scan rather than instead of it: a row in a
+    # state the state machine does not define is reported, not skipped.
+    known_states = set(settlements.PAYOUT_STATES)
+    unknown_state = [
+        row for row in scanned
+        if str(row.get("payout_state") or "") not in known_states
+    ]
+
+    incident_ids = []
+
+    def _report(rows, *, code, incident_type, severity, describe):
+        for row in rows[:MARKETPLACE_INCIDENT_CAP]:
+            tx_id = row.get("seller_transaction_id")
+            incident = incidents.open_incident(
+                incident_type,
+                domain="seller_payments",
+                severity=severity,
+                summary=describe(row),
+                details={
+                    "seller_transaction_id": tx_id,
+                    "seller_id": row.get("seller_id"),
+                    "order_id": row.get("order_id"),
+                    "currency": row.get("currency"),
+                    "net_seller_earnings_minor": row.get("net_seller_earnings_minor"),
+                    "code": code,
+                    "occurrences_this_run": len(rows),
+                },
+                related_object=f"marketplace_settlement:{tx_id}",
+                # Keyed on the row and the finding, not on the run, so a stall
+                # that persists for a week is one incident that keeps being
+                # refreshed rather than a week of duplicates.
+                incident_key=f"{incident_type}:marketplace_settlement:{tx_id}:{code}",
+            )
+            if incident.get("id"):
+                incident_ids.append(incident["id"])
+
+    _report(
+        unreachable,
+        code="payout_scheduled_without_provider_id",
+        incident_type=incidents.PAYOUT_STATE_CONFLICT,
+        severity="critical",
+        describe=lambda r: (
+            f"Marketplace settlement {r.get('seller_transaction_id')} has been "
+            f"'scheduled' since {r.get('updated_at')} with no provider payout id; "
+            "no Stripe webhook can match it, so it will never leave this state."
+        ),
+    )
+    _report(
+        hold_end_unknown,
+        code="protection_hold_without_end",
+        incident_type=incidents.PAYOUT_STATE_CONFLICT,
+        severity="critical",
+        describe=lambda r: (
+            f"Marketplace settlement {r.get('seller_transaction_id')} is in "
+            "protection_hold with no protection_ends_at; the hold can never "
+            "elapse, so the row can never become eligible."
+        ),
+    )
+    _report(
+        hold_elapsed,
+        code="protection_hold_not_released",
+        incident_type=incidents.PAYOUT_STATE_CONFLICT,
+        severity="warning",
+        describe=lambda r: (
+            f"Marketplace settlement {r.get('seller_transaction_id')} held past "
+            f"{r.get('protection_ends_at')} and still not eligible; the "
+            "eligibility sweep appears not to be running."
+        ),
+    )
+    _report(
+        unscheduled,
+        code="eligible_but_never_scheduled",
+        incident_type=incidents.PAYOUT_STATE_CONFLICT,
+        severity="warning",
+        describe=lambda r: (
+            f"Marketplace settlement {r.get('seller_transaction_id')} has been "
+            f"eligible and unblocked since {r.get('updated_at')} with no payout "
+            "scheduled; the payout scheduler appears not to be running."
+        ),
+    )
+    _report(
+        unknown_state,
+        code="payout_state_not_in_state_machine",
+        incident_type=incidents.PAYOUT_STATE_CONFLICT,
+        severity="critical",
+        describe=lambda r: (
+            f"Marketplace settlement {r.get('seller_transaction_id')} carries "
+            f"payout_state {r.get('payout_state')!r}, which the settlement state "
+            "machine does not define."
+        ),
+    )
+
+    for finding in drifting[:MARKETPLACE_INCIDENT_CAP]:
+        row, drift = finding["row"], finding["drift"]
+        tx_id = row.get("seller_transaction_id")
+        worst = max(abs(v) for v in drift.values()) if drift else CRITICAL_DRIFT_CENTS
+        incident = incidents.open_incident(
+            incidents.BALANCE_MISMATCH,
+            domain="seller_payments",
+            severity=_severity_for_drift(worst),
+            summary=(
+                f"Marketplace settlement {tx_id} does not satisfy "
+                "net == gross - reversed"
+                + (f" (off by {drift})" if drift else " and could not be read")
+            ),
+            details={
+                "seller_transaction_id": tx_id,
+                "seller_id": row.get("seller_id"),
+                "order_id": row.get("order_id"),
+                "currency": row.get("currency"),
+                "drift_minor": drift,
+                "code": "commercial_snapshot_mismatch",
+                "occurrences_this_run": len(drifting),
+            },
+            related_object=f"marketplace_settlement:{tx_id}",
+            incident_key=(
+                f"{incidents.BALANCE_MISMATCH}:marketplace_settlement:{tx_id}"
+            ),
+        )
+        if incident.get("id"):
+            incident_ids.append(incident["id"])
+
+    return {
+        "tables_missing": False,
+        "settlements_total": total_rows,
+        "settlements_scanned": len(scanned),
+        # True means the arithmetic invariant was checked on only part of the
+        # table. Named rather than inferred from the two counts, because a caller
+        # reading a clean report should not have to do that subtraction to learn
+        # the report is partial.
+        "scan_truncated": total_rows > len(scanned),
+        "scheduled_without_provider_id": len(unreachable),
+        "protection_hold_without_end": len(hold_end_unknown),
+        "protection_hold_not_released": len(hold_elapsed),
+        "eligible_but_never_scheduled": len(unscheduled),
+        "payout_state_unknown": len(unknown_state),
+        "snapshot_mismatches": len(drifting),
+        "incidents": incident_ids,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Orchestration + run history
 # ---------------------------------------------------------------------------
+
+def open_critical_incidents(domain: Optional[str] = None) -> int:
+    """How many critical financial incidents are open right now.
+
+    ``acknowledged`` counts as open: someone has seen it, nobody has fixed it,
+    and the money is still wherever it was. Only ``resolved`` and ``ignored``
+    stop counting, and both of those require a written note.
+    """
+    incidents.ensure_schema()
+    sql = ("SELECT COUNT(*) FROM financial_incidents "
+           "WHERE severity = 'critical' AND status IN ('open', 'acknowledged')")
+    params: tuple = ()
+    if domain:
+        sql += " AND domain = ?"
+        params = (domain,)
+    conn = db.connect()
+    try:
+        row = conn.execute(sql, params).fetchone()
+    finally:
+        conn.close()
+    return int((row or [0])[0] or 0)
+
 
 def run_all() -> dict:
     """Run every pure-local check once and persist the run summary.
@@ -1072,6 +1386,7 @@ def run_all() -> dict:
         ("suspense", reconcile_suspense),
         ("seller_payouts", reconcile_seller_payouts),
         ("rewards", reconcile_rewards),
+        ("marketplace_settlements", reconcile_marketplace_settlements),
     ):
         try:
             result = fn()
@@ -1100,6 +1415,11 @@ def run_all() -> dict:
         "checks": checks,
         "incidents_opened_or_refreshed": total_incidents,
         "check_errors": errors,
+        # Standing state, not this run's output. A run that opens nothing while
+        # yesterday's critical is still open is not a clean run, and an alerting
+        # caller that reads only `incidents_opened_or_refreshed` would call it
+        # one. Counted after the sweep so it includes anything just opened.
+        "open_critical_incidents": open_critical_incidents(),
     }
     conn = db.connect()
     try:

@@ -154,12 +154,31 @@ def economics(seller_id: Any | None = None) -> dict:
             "seller_liability_by_state": by_state, "processor_cost_minor": None,
             "net_platform_contribution_minor": None, "orders": rows}
 
+def snapshot_drift(row: Mapping[str, Any]) -> dict:
+    """How far a settlement's stored net columns sit from its own arithmetic.
+
+    One settlement row owes one invariant: ``net == gross - reversed``, separately
+    for the platform's fee and the seller's earnings. Returned as signed minor
+    units rather than a boolean, because a one-cent rounding scar and a whole
+    order's worth of drift deserve different handling; a caller that only wants
+    the boolean reads ``any(snapshot_drift(row).values())``.
+
+    Lifted out of :func:`reconcile` because a second reconciler
+    (``business_os.payments.reconciliation``) now asks the same question, and a
+    second copy of the expression would be free to drift from this one — which is
+    a poor failure mode for the function whose whole job is detecting drift.
+    """
+    return {
+        "platform_fee_minor": int(row["net_platform_fee_minor"]) - (
+            int(row["gross_platform_fee_minor"]) - int(row["fee_reversed_minor"])),
+        "seller_earnings_minor": int(row["net_seller_earnings_minor"]) - (
+            int(row["gross_seller_earnings_minor"]) - int(row["seller_reversed_minor"])),
+    }
+
 def reconcile() -> dict:
     data = economics(); findings = []
     for row in data["orders"]:
-        expected_fee = int(row["gross_platform_fee_minor"]) - int(row["fee_reversed_minor"])
-        expected_seller = int(row["gross_seller_earnings_minor"]) - int(row["seller_reversed_minor"])
-        if expected_fee != int(row["net_platform_fee_minor"]) or expected_seller != int(row["net_seller_earnings_minor"]):
+        if any(snapshot_drift(row).values()):
             findings.append({"seller_transaction_id": row["seller_transaction_id"], "code": "commercial_snapshot_mismatch"})
     ensure_schema(); conn = db.connect(); rid = "mktrc_" + uuid.uuid4().hex; now = _now()
     try:
