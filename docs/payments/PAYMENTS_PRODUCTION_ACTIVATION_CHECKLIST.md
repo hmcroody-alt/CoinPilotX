@@ -12,8 +12,10 @@ written on, not copied from an earlier report. Where a claim contradicts
 **Production card payments cannot be switched on today, and the blockers are
 not configuration.**
 
-Three of them are missing *code paths*, one is a missing credential, and one is
-a decision only the owner can make. None is a matter of setting a variable.
+Two are missing *code paths*, one is a built component with no runtime, one is a
+missing credential, and one is a decision only the owner can make. Only the
+third is anywhere near a matter of setting variables, and it needs a service
+created before the variables mean anything.
 
 ## 2. Blockers, in the order they must be cleared
 
@@ -51,13 +53,13 @@ This blocks B4 and B5 and cannot be worked around.
 
 ### B3 — Nothing releases a settlement from `pending_fulfillment`
 
-`marketplace_settlement_service.mark_delivered` (line 355) **has no caller.**
+`marketplace_settlement_service.mark_delivered` (line 424) **has no caller.**
 The only other references in the tree are its own definition and a comment at
-line 185. The two same-named functions in `services/command_center_worker/`
+line 254. The two same-named functions in `services/command_center_worker/`
 are unrelated — messaging and notification delivery, not settlements.
 
 Equally, nothing writes a shipped status. `"shipped"` exists only as a
-read-side status group derived in `bot.py:95677`; no `UPDATE` in the codebase
+read-side status group derived in `bot.py:97530`; no `UPDATE` in the codebase
 sets it.
 
 Consequence: a paid order enters `pending_fulfillment` and stays there. Money
@@ -69,15 +71,31 @@ delivery — the seller marking it, the buyer confirming, a carrier webhook, or 
 timer? Each answer implies a different dispute posture and a different refund
 window. It should not be guessed at in code.
 
-### B4 — The payout worker has no production caller
+### B4 — The payout worker exists, is gated off, and is not hosted
 
 `marketplace_payout_scheduler.run_once` is the only code that calls
-`stripe.Transfer.create` and `stripe.Payout.create`. Nothing calls it: not
-`bot.py`, not the Procfile, not another service.
+`stripe.Transfer.create` and `stripe.Payout.create`.
+
+`services/marketplace_payout_worker.py` is its entry point. It is deliberately
+**not wired into any process** — not `bot.py`, not the Procfile, not another
+service — and a test in `tests/marketplace/test_payout_worker_authority.py`
+asserts that, so hosting it fails loudly rather than quietly.
+
+Three gates gate it, each failing to the non-acting value when unset, blank or
+unparseable:
+
+```
+MARKETPLACE_PAYOUT_WORKER_ENABLED           the cycle runs at all
+MARKETPLACE_PAYOUT_WORKER_DRY_RUN=false     it may mutate
+MARKETPLACE_PAYOUT_WORKER_OWNER_AUTHORIZED  the owner authorised it
+```
 
 So even with B3 cleared and settlements reaching `eligible`, no transfer would
-execute. Authorizing this worker is an explicit owner action — it is the
-component that actually sends money.
+execute today: the worker has no runtime. Clearing B4 is two separate owner
+actions — giving it a Railway service with a start command (a Procfile line is
+not a deployment; see the CJ reconciliation precedent), and setting all three
+gates. It is the component that actually sends money, and neither leg can be
+taken back by this platform: money can only be *requested* back from a seller.
 
 ### B5 — No live transaction has ever been executed
 

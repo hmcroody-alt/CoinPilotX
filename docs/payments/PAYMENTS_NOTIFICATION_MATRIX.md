@@ -132,7 +132,7 @@ they would have arrived blank in emails about a seller's money.
 `order_shipped` has a template, a spec and a dedupe key, and nothing raises it.
 
 No route in the codebase writes a shipped status. `"shipped"` appears only as a
-*read-side* status group in `bot.py:95677`, derived from
+*read-side* status group in `bot.py:97530`, derived from
 `seller_transactions.status`, and no writer ever sets that value.
 `mark_delivered` likewise has no caller.
 
