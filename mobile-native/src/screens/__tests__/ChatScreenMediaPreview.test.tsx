@@ -50,6 +50,12 @@ jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");
   return {
+    // The module's other export, `offersTranslation`, is a pure predicate the
+    // bubble calls during render. It is kept real rather than stubbed: a stub
+    // would be this file choosing whether Translate is on offer, and this file
+    // is about media cards. Only the component needs replacing — it is the part
+    // that wants locale storage and a translation API.
+    ...jest.requireActual("../../components/ContentTranslation"),
     // `renderText` is honoured rather than ignored — the bubble passes one so
     // that URLs in the body become link segments. The testID stays on the
     // wrapper either way, so what this file identifies as the body is unchanged.

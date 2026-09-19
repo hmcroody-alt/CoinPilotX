@@ -22,7 +22,7 @@
  * start pulling a language model onto the device.
  */
 
-import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleProp, Text, TextStyle, View } from "react-native";
 import {
   peekTranslationPreference,
@@ -48,6 +48,20 @@ type ContentTranslationProps = {
   numberOfLines?: number;
   renderText?: (text: string, translated: boolean) => ReactNode;
   controlsMode?: "inline" | "compact";
+  /**
+   * Bumped by a surface outside this component -- the messenger's long-press
+   * menu -- to ask for the same toggle the inline control performs.
+   *
+   * A number rather than a boolean because the request is an event, not a
+   * state: someone may translate, show the original, then translate again,
+   * and a boolean that is already `true` cannot express the second ask.
+   *
+   * It routes through `toggleTranslation`, the identical path the inline
+   * button uses, so the menu cannot acquire its own translation behaviour --
+   * including its own idea of what counts as user-initiated, which is what
+   * decides whether a request lands on the billable path.
+   */
+  translateRequestId?: number;
 };
 
 const UNKNOWN_LANGUAGE = new Set(["", "auto", "unknown", "und", "undefined", "null"]);
@@ -94,6 +108,24 @@ function sameLanguage(left: string, right: string) {
   return a === b || a.split("-")[0] === b.split("-")[0];
 }
 
+/**
+ * Whether this text is worth offering to translate at all.
+ *
+ * Exported because the messenger's long-press menu has to answer the same
+ * question one level up -- it decides whether to *list* Translate before this
+ * component decides whether to *draw* its own control. Two answers to one
+ * question is how a menu ends up offering Translate on a message whose bubble
+ * shows no globe, so there is one function and both callers ask it.
+ *
+ * `compact` is part of the question rather than a rendering detail: chat
+ * bubbles are short and unlabelled, so an unknown source language is only
+ * treated as translatable there when the text itself looks foreign. Callers
+ * asking on behalf of a chat bubble must pass `true`.
+ */
+export function offersTranslation(text: string, sourceLanguage: string, targetLanguage: string, compact: boolean) {
+  return shouldOfferTranslation(text, sourceLanguage, targetLanguage, compact);
+}
+
 function shouldOfferTranslation(text: string, sourceLanguage: string, targetLanguage: string, compact: boolean) {
   if (!text.trim()) return false;
   const source = normalizeLanguageTag(sourceLanguage);
@@ -110,7 +142,8 @@ export function ContentTranslation({
   textStyle,
   numberOfLines,
   renderText,
-  controlsMode = "inline"
+  controlsMode = "inline",
+  translateRequestId
 }: ContentTranslationProps) {
   const { t } = useTranslation();
   const { locale } = useTimeZonePreference();
@@ -179,6 +212,26 @@ export function ContentTranslation({
     else if (hasTranslation) showTranslation();
     else void translate();
   }, [hasTranslation, showOriginal, showTranslated, showTranslation, translate]);
+
+  /**
+   * An outside request to translate, replayed through the inline control's own
+   * handler.
+   *
+   * The ref is the point. `toggleTranslation` is re-created whenever the
+   * translation state changes -- which it does *as a result of* toggling --
+   * so an effect that depended on the callback would translate, observe a new
+   * callback, and translate again. Reading it out of a ref means the only
+   * thing that can fire this is the id changing, which is the only thing that
+   * means "the user asked".
+   */
+  const toggleRef = useRef(toggleTranslation);
+  toggleRef.current = toggleTranslation;
+  useEffect(() => {
+    // Zero and undefined both mean "nobody has asked yet", so the mount of a
+    // bubble that has never been long-pressed does not translate it.
+    if (!translateRequestId) return;
+    toggleRef.current();
+  }, [translateRequestId]);
 
   const targetName = languageDisplayName(targetLanguage) || targetLanguage;
   const sourceName = detectedSourceLanguage ? languageDisplayName(detectedSourceLanguage) : "";

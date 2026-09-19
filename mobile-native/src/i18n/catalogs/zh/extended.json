@@ -1069,6 +1069,18 @@
       "missing": "此帖子已不可用。",
       "unavailable": "内容不可用",
       "video": "视频"
+    },
+    "messageActions": {
+      "openLink": "打开链接",
+      "copyLink": "复制链接",
+      "shareLink": "分享链接",
+      "saveToPhotos": "保存到照片",
+      "translate": "翻译",
+      "forward": "转发",
+      "info": "消息详情",
+      "chooseLink": "哪个链接？",
+      "closeMenu": "关闭消息菜单",
+      "reactWith": "用 {{emoji}} 回应"
     }
   },
   "commerce": {

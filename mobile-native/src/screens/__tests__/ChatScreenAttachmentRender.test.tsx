@@ -48,6 +48,11 @@ jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");
   return {
+    // Only the component is replaced. `offersTranslation`, the pure predicate
+    // the bubble calls during render to decide whether Translate is on offer,
+    // stays real — stubbing it would make this file the authority on a question
+    // it does not test.
+    ...jest.requireActual("../../components/ContentTranslation"),
     // `renderText` is honoured rather than ignored. The bubble passes one so
     // that URLs in the body become link segments; a mock that dropped it would
     // render a body of `undefined` and still report green.

@@ -1069,6 +1069,18 @@
       "missing": "この投稿は利用できなくなりました。",
       "unavailable": "コンテンツを利用できません",
       "video": "動画"
+    },
+    "messageActions": {
+      "openLink": "リンクを開く",
+      "copyLink": "リンクをコピー",
+      "shareLink": "リンクを共有",
+      "saveToPhotos": "写真に保存",
+      "translate": "翻訳",
+      "forward": "転送",
+      "info": "メッセージ情報",
+      "chooseLink": "どのリンク？",
+      "closeMenu": "メッセージメニューを閉じる",
+      "reactWith": "{{emoji}} でリアクション"
     }
   },
   "commerce": {

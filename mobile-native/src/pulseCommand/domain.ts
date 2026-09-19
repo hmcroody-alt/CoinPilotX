@@ -53,6 +53,26 @@ export type PulseCommandActionRule = {
   destructive?: boolean;
   confirmationRequired?: boolean;
   accessibilityLabel: string;
+  /**
+   * Ionicons glyph name, carried by the rule rather than looked up by the
+   * renderer. A lookup table beside the menu is one more place that has to
+   * learn about a new action, and the failure when it does not is a blank
+   * square rather than an error.
+   *
+   * Optional because the older rule sets here (rooms, members, providers)
+   * render as plain labels and have no icons to give.
+   */
+  icon?: string;
+  /**
+   * Catalog key for `label`, carried alongside it for the same reason as
+   * `icon`: so a new action arrives with its translation already attached,
+   * rather than needing a second edit in a table the renderer owns.
+   *
+   * `label` stays the English source of truth and is passed as the
+   * `defaultValue`, so a missing catalog entry degrades to readable English
+   * instead of rendering a raw key at someone.
+   */
+  i18nKey?: string;
 };
 
 /**
@@ -70,8 +90,15 @@ export type MessageActionContext = {
   links?: readonly string[];
   /** More than two participants, so "who has read this" is a real question. */
   group?: boolean;
-  /** Viewer owns or moderates the conversation and may unsend anyone's message. */
-  viewerModerates?: boolean;
+  /**
+   * Deliberately absent: a `viewerModerates` flag.
+   *
+   * It existed here briefly and widened Delete-for-everyone, on the assumption
+   * that a conversation owner could unsend anyone. The server does not agree --
+   * `comm_v2.delete_message` refuses any non-sender. A context field that only
+   * ever produces a 403 is worse than no field, because it reads like the power
+   * is wired.
+   */
   /** Viewer's locale differs from the message's, so translating says something. */
   translatable?: boolean;
 };
@@ -252,6 +279,35 @@ export function reactionIcon(reaction: string) {
 }
 
 /**
+ * Server-enforced windows, mirrored so the menu does not offer a button that
+ * is already guaranteed to fail. Both numbers live in
+ * `pulse_communications_v2/service.py` (`edit_message`, `delete_message`); if
+ * they move there, they move here.
+ */
+const EDIT_WINDOW_MINUTES = 15;
+const DELETE_FOR_EVERYONE_WINDOW_MINUTES = 30;
+
+/**
+ * Whether a message is still young enough for a time-limited action.
+ *
+ * Fails toward *offering* the action: a missing or unparseable `created_at`
+ * returns true. The server is the authority either way, so the two mistakes
+ * are not symmetric -- wrongly offering Edit ends in a clear server message
+ * the user can read, while wrongly hiding it leaves someone staring at a
+ * menu that has silently dropped an action they are entitled to, with no
+ * explanation and nothing to tap. Prefer the recoverable failure.
+ */
+function withinWindow(createdAt: unknown, minutes: number): boolean {
+  const raw = String(createdAt || "").trim();
+  if (!raw) return true;
+  // Naive timestamps are read as UTC, which is what the server writes.
+  const normalized = /(?:Z|[+-]\d{2}:?\d{2})$/.test(raw) ? raw : `${raw}Z`;
+  const sentAt = Date.parse(normalized);
+  if (!Number.isFinite(sentAt)) return true;
+  return Date.now() - sentAt <= minutes * 60_000;
+}
+
+/**
  * Which actions a long press offers, and in what order.
  *
  * ## The point is what is NOT here
@@ -283,6 +339,30 @@ export function reactionIcon(reaction: string) {
  * would be a change to audio behaviour arriving through a menu, which is
  * exactly how the session gets stolen.
  */
+
+/**
+ * Whether the reaction strip is worth drawing above this message.
+ *
+ * Reacting is deliberately **not** one of the rules below, and this function
+ * exists because pretending otherwise failed silently. The rules describe rows
+ * in a list; the strip is a different control in a different band. Asking
+ * `rules.some((rule) => rule.key === "react")` of a list that has never
+ * contained such a rule is a question whose answer is always `false` -- which
+ * is to say the strip never appeared, and nothing anywhere said so.
+ *
+ * The condition mirrors what reacting actually requires rather than restating
+ * the menu's: a server id to attach the reaction to, and a message still there
+ * to attach it to. A message still in flight has no id and the screen's own
+ * handler refuses it, so offering the strip would be six buttons that answer
+ * "not yet".
+ */
+export function canReactToMessage(message: MessengerMessage) {
+  const status = String(message.local_status || message.delivery_status || message.status || "").toLowerCase();
+  const deleted = Boolean(message.deleted_at || status === "deleted");
+  if (deleted || messageActionKind(message) === "unavailable") return false;
+  return Number(message.id || 0) > 0;
+}
+
 export function messageActionRules(
   message: MessengerMessage,
   context: MessageActionContext = {}
@@ -308,42 +388,56 @@ export function messageActionRules(
   return [
     {
       key: "reply",
+      i18nKey: "common:actions.reply",
+      icon: "arrow-undo-outline",
       label: "Reply",
       available: !gone,
       accessibilityLabel: "Reply to message"
     },
     {
       key: "openLink",
+      i18nKey: "messaging:messageActions.openLink",
+      icon: "open-outline",
       label: "Open Link",
       available: hasLink,
       accessibilityLabel: links.length > 1 ? "Choose a link to open" : "Open the link in this message"
     },
     {
       key: "copyLink",
+      i18nKey: "messaging:messageActions.copyLink",
+      icon: "link-outline",
       label: "Copy Link",
       available: hasLink,
       accessibilityLabel: links.length > 1 ? "Choose a link to copy" : "Copy the link in this message"
     },
     {
       key: "shareLink",
+      i18nKey: "messaging:messageActions.shareLink",
+      icon: "share-social-outline",
       label: "Share Link",
       available: hasLink,
       accessibilityLabel: links.length > 1 ? "Choose a link to share" : "Share the link in this message"
     },
     {
       key: "viewMedia",
+      i18nKey: "common:actions.view",
+      icon: "expand-outline",
       label: "View",
       available: kind === "media" && !gone,
       accessibilityLabel: "Open this attachment full screen"
     },
     {
       key: "saveMedia",
+      i18nKey: "messaging:messageActions.saveToPhotos",
+      icon: "download-outline",
       label: "Save to Photos",
       available: kind === "media" && !gone,
       accessibilityLabel: "Save this attachment to your device"
     },
     {
       key: "copy",
+      i18nKey: "common:actions.copy",
+      icon: "copy-outline",
       label: "Copy",
       // Copy is about text. A voice note has none, and a photo's caption is
       // covered by this same flag when it has one.
@@ -352,6 +446,8 @@ export function messageActionRules(
     },
     {
       key: "translate",
+      i18nKey: "messaging:messageActions.translate",
+      icon: "language-outline",
       label: "Translate",
       // Never offered on your own message: you wrote it.
       available: hasText && !mine && context.translatable !== false,
@@ -359,38 +455,50 @@ export function messageActionRules(
     },
     {
       key: "forward",
+      i18nKey: "messaging:messageActions.forward",
+      icon: "arrow-redo-outline",
       label: "Forward",
       available: addressable,
       accessibilityLabel: "Forward this message to another conversation"
     },
     {
       key: "share",
+      i18nKey: "common:actions.share",
+      icon: "share-outline",
       label: "Share",
       available: !gone && (hasText || kind === "media" || kind === "voice"),
       accessibilityLabel: "Share this message outside PulseSoc"
     },
     {
       key: "save",
+      i18nKey: "common:actions.save",
+      icon: "bookmark-outline",
       label: "Save",
       available: addressable,
       accessibilityLabel: "Save this message to your saved items"
     },
     {
       key: "edit",
+      i18nKey: "common:actions.edit",
+      icon: "create-outline",
       label: "Edit",
       // Own text only, and only once the server has a copy to amend. Editing
       // a message that has not landed would race the send.
-      available: mine && kind === "text" && hasText && addressable,
+      available: mine && kind === "text" && hasText && addressable && withinWindow(message.created_at, EDIT_WINDOW_MINUTES),
       accessibilityLabel: "Edit your message"
     },
     {
       key: "info",
+      i18nKey: "messaging:messageActions.info",
+      icon: "information-circle-outline",
       label: "Message Info",
       available: addressable,
       accessibilityLabel: context.group ? "See who has read this message" : "See delivery details for this message"
     },
     {
       key: "retry",
+      i18nKey: "messaging:chat.retry",
+      icon: "refresh-outline",
       label: "Retry",
       tone: "warning",
       available: failed,
@@ -398,6 +506,8 @@ export function messageActionRules(
     },
     {
       key: "report",
+      i18nKey: "common:actions.report",
+      icon: "flag-outline",
       label: "Report",
       tone: "warning",
       available: addressable && !mine,
@@ -406,6 +516,8 @@ export function messageActionRules(
     },
     {
       key: "safety",
+      i18nKey: "messaging:chat.muteBlock",
+      icon: "shield-half-outline",
       label: "Mute / Block",
       tone: "safety",
       available: !mine,
@@ -413,6 +525,8 @@ export function messageActionRules(
     },
     {
       key: "deleteSelf",
+      i18nKey: "messaging:chat.deleteForMe",
+      icon: "trash-outline",
       label: "Delete for me",
       tone: "danger",
       available: true,
@@ -422,16 +536,24 @@ export function messageActionRules(
     },
     {
       key: "deleteEveryone",
+      i18nKey: "messaging:chat.deleteForEveryone",
+      icon: "trash-bin-outline",
       label: "Delete for everyone",
       tone: "danger",
       /**
-       * Offered to the author, and to whoever moderates the conversation --
-       * which is what the server already enforces. The client asking for a
-       * wider set than the server will grant produces a button that fails;
-       * asking for a narrower one hides a power the user has. This mirrors
-       * the server check rather than inventing a second rule.
+       * Author only, inside the window -- because that is exactly what
+       * `comm_v2.delete_message` grants. It refuses a non-sender outright
+       * ("You can only delete your own message for everyone") and refuses
+       * anyone past 30 minutes, moderator or not.
+       *
+       * An earlier draft of this rule offered it to conversation moderators
+       * too. That was a guess about the server dressed up as a mirror of it,
+       * and it would have put a button in a moderator's menu that returns 403
+       * every time. `viewerModerates` therefore does NOT widen this; if the
+       * server ever grants moderators the power, this is the line to change,
+       * and the test named for it is the one that should fail first.
        */
-      available: (mine || Boolean(context.viewerModerates)) && !gone,
+      available: mine && !gone && withinWindow(message.created_at, DELETE_FOR_EVERYONE_WINDOW_MINUTES),
       destructive: true,
       confirmationRequired: serverAccepted,
       accessibilityLabel: "Delete message for everyone"

@@ -1083,6 +1083,18 @@
       "missing": "This post is no longer available.",
       "unavailable": "Content unavailable",
       "video": "Video"
+    },
+    "messageActions": {
+      "openLink": "Open Link",
+      "copyLink": "Copy Link",
+      "shareLink": "Share Link",
+      "saveToPhotos": "Save to Photos",
+      "translate": "Translate",
+      "forward": "Forward",
+      "info": "Message Info",
+      "chooseLink": "Which link?",
+      "closeMenu": "Close message menu",
+      "reactWith": "React with {{emoji}}"
     }
   },
   "commerce": {

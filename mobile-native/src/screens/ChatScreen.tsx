@@ -32,6 +32,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ChatWallpaper } from "../components/ChatWallpaper";
+import { useTimeZonePreference } from "../core/TimeZoneContext";
 import {
   cacheMessages,
   cancelPulseAiAction,
@@ -90,7 +91,8 @@ import {
 import { exceedsLimit, limitMessage, maxDurationSeconds } from "../media/storedVideoPolicy";
 import { openDocument } from "../media/mediaActions";
 import { ConversationControlCenter } from "../components/ConversationControlCenter";
-import { ContentTranslation } from "../components/ContentTranslation";
+import { ContentTranslation, offersTranslation } from "../components/ContentTranslation";
+import { MessageFocusOverlay } from "../components/MessageFocusOverlay";
 import { PulseCommandAvatar, PulseCommandPanel } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import {
@@ -114,7 +116,12 @@ import { openMessageLink } from "../links/openMessageLink";
 import { presenceActivityText } from "../api/presence";
 import { reportPresenceActivity } from "../api/presenceSession";
 import { useAuth } from "../session/auth";
+import { copyToClipboard, haptic } from "../native";
+import { openSystemShare } from "../sharing/nativeShare";
+import type { Rect } from "../pulseCommand/focusedMessageLayout";
+import type { PulseCommandActionKey } from "../pulseCommand/domain";
 import {
+  canReactToMessage,
   messageAccessibilityLabel,
   messageActionRules,
   messageDeliveryLabel,
@@ -128,6 +135,70 @@ import { colors } from "../theme/colors";
 import { EmojiPicker, QUICK_REACTIONS } from "../emoji";
 import { logiNexus } from "../theme/logiNexus";
 import { formatFileSize, formatShortTime } from "../utils/format";
+
+/**
+ * Everything the focused-message overlay needs, gathered at the moment of the
+ * press rather than looked up afterwards.
+ *
+ * `anchor` and `links` both have to be captured here: the rectangle only exists
+ * while the row is mounted, and the links are the result of the same
+ * `detectLinks` call that made them tappable. Re-parsing the body at the menu
+ * would be a second parser, and a second parser is a second answer.
+ */
+type MessageFocusRequest = {
+  message: MessengerMessage;
+  /** Window coordinates of the pressed bubble; null if it could not be measured. */
+  anchor: Rect | null;
+  links: readonly string[];
+  translatable: boolean;
+};
+
+/**
+ * Whether this screen can actually carry out each action.
+ *
+ * A `Record` over the entire key union rather than a list of the ones that
+ * work, so adding a rule to `messageActionRules` without deciding what it does
+ * is a compile error instead of a menu row that swallows the tap.
+ *
+ * The six `false` entries are not oversights. `forward` and `edit` have working
+ * server routes and no UI to drive them. `save` is refused by the saved-items
+ * contract outright -- `SavableContentType` has no member for a message.
+ * `info` has no delivery-details screen anywhere in the app.
+ *
+ * `viewMedia` and `saveMedia` are a different kind of absent, and the more
+ * interesting one: both need the *granted* media URL, which is a fifteen-minute
+ * credential minted inside the bubble's own media child and never lifted to
+ * this level. Reproducing it here would be a second copy of the grant-and-
+ * refresh protocol that `ConversationMediaGalleryHost` already runs correctly,
+ * and a second copy of a credential protocol is the kind of thing that works
+ * until the day it expires differently. Tapping the media opens the viewer,
+ * where Save already lives and already handles permissions and progress.
+ *
+ * Every one of them is filtered out of the menu rather than shown inert,
+ * because a row that does nothing is worse than an absent row: the user cannot
+ * tell it apart from a failure.
+ */
+const MESSAGE_ACTION_IMPLEMENTED: Record<PulseCommandActionKey, boolean> = {
+  reply: true,
+  react: true,
+  retry: true,
+  copy: true,
+  forward: false,
+  edit: false,
+  save: false,
+  share: true,
+  translate: true,
+  info: false,
+  openLink: true,
+  copyLink: true,
+  shareLink: true,
+  viewMedia: false,
+  saveMedia: false,
+  report: true,
+  safety: true,
+  deleteSelf: true,
+  deleteEveryone: true
+};
 
 const PAGE_SIZE = 40;
 const SYNC_INTERVAL_MS = 2500;
@@ -371,7 +442,26 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [recordingLevels, setRecordingLevels] = useState<number[]>(() => Array.from({ length: 24 }, () => 0.14));
   const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
-  const [selectedMessage, setSelectedMessage] = useState<MessengerMessage | null>(null);
+  /**
+   * The message under the finger, plus what was true about it when it was
+   * pressed. Null closes the overlay.
+   */
+  const [focused, setFocused] = useState<MessageFocusRequest | null>(null);
+  /**
+   * Per-message translation requests, keyed by the same ref the bubble hands
+   * `ContentTranslation`. A counter rather than a flag because asking twice is
+   * a real thing to do -- translate, read the original, translate again -- and
+   * the second ask has to be distinguishable from the first.
+   */
+  const [translateRequests, setTranslateRequests] = useState<Record<string, number>>({});
+  /**
+   * A link action chosen on a message carrying more than one link.
+   *
+   * The brief is explicit that the user selects; picking the first link would
+   * be a coin toss dressed as a decision. `run` is captured so the chooser does
+   * not need to know which of Open, Copy or Share is waiting on it.
+   */
+  const [linkChoice, setLinkChoice] = useState<{ links: readonly string[]; run: (url: string) => void } | null>(null);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -417,6 +507,16 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   // the card that was actually pressed. A rail can hold more than one card, and an
   // outcome with no owner would attach itself to whichever one rendered first.
   const [undxTapOutcome, setUndxTapOutcome] = useState<(UndxTapOutcome & { token: string }) | null>(null);
+  /**
+   * Whether this thread has more than two people in it.
+   *
+   * It changes only what Message Info's accessibility label promises -- "who
+   * has read this" is a question worth asking in a group and not in a pair --
+   * so it is read from whatever the conversation payload happens to carry and
+   * defaults to false. A wrong answer here costs a slightly off VoiceOver
+   * phrase, which is why it does not justify an extra request.
+   */
+  const [isGroupThread, setIsGroupThread] = useState(false);
   const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
   const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingAt = useRef(0);
@@ -514,7 +614,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
   useEffect(() => {
     if (!messages.length) return;
-    if (qaChatState === "context-menu") setSelectedMessage(messages.find((message) => !message.is_mine) || messages[0]);
+    if (qaChatState === "context-menu") {
+      const target = messages.find((message) => !message.is_mine) || messages[0];
+      // No anchor: the QA harness opens the overlay without a press, so there
+      // is no rectangle to measure. The layout centres it, which is the same
+      // path a message unmounted under the finger takes.
+      setFocused({ message: target, anchor: null, links: [], translatable: false });
+    }
     if (qaChatState === "attachment-sheet") setAttachmentSheetOpen(true);
     if (qaChatState === "reply-keyboard") setReplyTo(messages.find((message) => !message.is_mine) || messages[0]);
     if (qaChatState === "control-center") setControlCenterOpen(true);
@@ -615,6 +721,8 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       if (data.conversation) {
         const title = String(data.conversation.title || data.conversation.name || "").trim();
         if (title && title !== "[object Object]") setThreadTitle(title);
+        const record = data.conversation as Record<string, unknown>;
+        setIsGroupThread(record.is_group === true || Number(record.member_count || record.members || 0) > 2);
       }
       setMessages(nextMessages);
       setUsingCachedMessages(false);
@@ -1004,6 +1112,160 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [t]);
 
+  /**
+   * Run one action from the focused-message menu.
+   *
+   * Every branch either delegates to something that already existed or closes
+   * the overlay; none of them re-implements a capability. `copy` and the link
+   * actions go through `src/native`, the link destinations go through
+   * `openLinkFromMessage` (and so through the Universal Link table), media goes
+   * through the conversation gallery, and Translate goes through the same
+   * `ContentTranslation` toggle the inline globe drives.
+   *
+   * The switch has no `default`. `MESSAGE_ACTION_IMPLEMENTED` is a `Record` over
+   * the whole key union, so a new rule added in `messageActionRules` fails to
+   * compile here until someone decides what it does -- which is the only
+   * structural defence against a menu row that swallows the tap.
+   */
+  const runMessageAction = useCallback(
+    (key: PulseCommandActionKey, focus: MessageFocusRequest) => {
+      const { message, links } = focus;
+      const body = displayMessageBody(message);
+      // One link is the overwhelming case and needs no question asked. Several
+      // is a real ambiguity, so the user picks rather than the code guessing
+      // "the first one".
+      const soleLink = links.length === 1 ? links[0] : "";
+
+      const close = () => setFocused(null);
+      const withLink = (run: (url: string) => void) => {
+        if (soleLink) {
+          close();
+          run(soleLink);
+          return;
+        }
+        setLinkChoice({ links, run });
+        close();
+      };
+
+      switch (key) {
+        case "reply":
+          setReplyTo(message);
+          close();
+          return;
+        case "react":
+          // Reactions come from the strip above the bubble, never from a row
+          // in the list. `messageActionRules` emits no rule for this key at
+          // all, so nothing can dispatch it; the case exists only to keep the
+          // union exhaustive.
+          close();
+          return;
+        case "retry":
+          retryMessage(message).catch(() => undefined);
+          close();
+          return;
+        case "copy":
+          close();
+          void copyToClipboard(body, "text");
+          return;
+        case "share":
+          close();
+          void openSystemShare({ kind: "media", url: soleLink || PULSE_API_BASE_URL, message: body, title: threadTitle });
+          return;
+        case "translate":
+          setTranslateRequests((current) => {
+            const ref = messageTranslationRef(message);
+            return { ...current, [ref]: (current[ref] || 0) + 1 };
+          });
+          close();
+          return;
+        case "openLink":
+          withLink(openLinkFromMessage);
+          return;
+        case "copyLink":
+          withLink((url) => void copyToClipboard(url, "link"));
+          return;
+        case "shareLink":
+          withLink((url) => void openSystemShare({ kind: "media", url, title: threadTitle }));
+          return;
+        case "report":
+          report(message).catch(() => undefined);
+          close();
+          return;
+        case "safety":
+          close();
+          navigation.navigate("SafetyHub", { section: "blocks", title: t("common:screens.safetyHub") });
+          return;
+        case "deleteSelf":
+          removeMessage(message, "self").catch(() => undefined);
+          close();
+          return;
+        case "deleteEveryone":
+          removeMessage(message, "everyone").catch(() => undefined);
+          close();
+          return;
+        case "forward":
+        case "edit":
+        case "save":
+        case "info":
+        case "viewMedia":
+        case "saveMedia":
+          // Filtered out of the menu by `MESSAGE_ACTION_IMPLEMENTED`; listed
+          // here so the union stays exhaustive and the day one of them is
+          // implemented, this is where the compiler points.
+          close();
+          return;
+      }
+    },
+    [navigation, openLinkFromMessage, removeMessage, report, retryMessage, t, threadTitle]
+  );
+
+  /**
+   * The rows the menu will draw, in the order `messageActionRules` returned
+   * them.
+   *
+   * Two filters, for two different reasons. `available` is the rules' own
+   * answer about this message -- whether it is mine, whether the edit window
+   * has closed, whether it has been deleted. `MESSAGE_ACTION_IMPLEMENTED` is
+   * this screen's answer about itself. Keeping them separate matters: the day
+   * Message Info is built, nothing about the rules changes.
+   */
+  const focusedActions = useMemo(() => {
+    if (!focused) return [];
+    return messageActionRules(focused.message, {
+      links: focused.links,
+      group: isGroupThread,
+      translatable: focused.translatable
+    }).filter((rule) => rule.available && MESSAGE_ACTION_IMPLEMENTED[rule.key]);
+  }, [focused, isGroupThread]);
+
+  /**
+   * The strip is asked its own question rather than looked up among the rules.
+   *
+   * It used to be `rules.some((rule) => rule.key === "react")`, which read like
+   * a lookup and behaved like a constant: there is no such rule, so the strip
+   * never drew. Reactions are a different control in a different band, and
+   * `canReactToMessage` is where their condition lives.
+   */
+  const focusedCanReact = focused ? canReactToMessage(focused.message) : false;
+
+  /**
+   * A long press arrives twice: once immediately with no anchor, and again a
+   * beat later carrying the measured rectangle.
+   *
+   * The second call is a refinement, not a new press, so it is only allowed to
+   * land on the message it measured. Without that check a measurement that
+   * resolves after the user has already dismissed the overlay would reopen it
+   * on a message they are no longer looking at -- a menu appearing by itself,
+   * which is how a mis-tap becomes a deletion.
+   */
+  const focusMessage = useCallback((focus: MessageFocusRequest) => {
+    setFocused((current) => {
+      if (!focus.anchor) return focus;
+      if (!current || current.message !== focus.message) return current;
+      return focus;
+    });
+  }, []);
+
   const uploadAndSend = useCallback(async (input: { uri: string; name: string; mimeType: string; sizeBytes?: number; voice?: boolean; durationSeconds?: number }) => {
     if (assistantConversation) {
       setStatusMessage("UNDX can chat in text for now. Attachments work in chats with people, but not yet with UNDX.");
@@ -1347,8 +1609,9 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
               message={item}
               onRetry={() => retryMessage(item)}
               onReact={() => react(item)}
-              onLongPress={() => setSelectedMessage(item)}
+              onLongPress={focusMessage}
               onLinkPress={openLinkFromMessage}
+              translateRequestId={translateRequests[messageTranslationRef(item)]}
             />
           )}
         />
@@ -2003,36 +2266,34 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           setReactionPickerFor(null);
         }}
       />
-      <MessageActionSheet
-        message={selectedMessage}
-        onClose={() => setSelectedMessage(null)}
-        onReply={(message) => {
-          setReplyTo(message);
-          setSelectedMessage(null);
+      <MessageFocusOverlay
+        message={focused?.message || null}
+        anchor={focused?.anchor || null}
+        actions={focusedActions}
+        preview={focused ? messagePreview(focused.message) : ""}
+        canReact={focusedCanReact}
+        viewerReaction={focused?.message.viewer_reaction}
+        onAction={(key) => {
+          if (focused) runMessageAction(key, focused);
         }}
-        onReact={(message, reactionType) => {
-          react(message, reactionType).catch(() => undefined);
-          setSelectedMessage(null);
+        onReact={(reaction) => {
+          if (focused) react(focused.message, reaction).catch(() => undefined);
+          setFocused(null);
         }}
-        onReactMore={(message) => {
-          setSelectedMessage(null);
-          setReactionPickerFor(message);
+        onReactMore={() => {
+          const target = focused?.message;
+          setFocused(null);
+          if (target) setReactionPickerFor(target);
         }}
-        onRetry={(message) => {
-          retryMessage(message).catch(() => undefined);
-          setSelectedMessage(null);
-        }}
-        onDelete={(message, scope) => {
-          removeMessage(message, scope).catch(() => undefined);
-          setSelectedMessage(null);
-        }}
-        onReport={(message) => {
-          report(message).catch(() => undefined);
-          setSelectedMessage(null);
-        }}
-        onSafety={() => {
-          setSelectedMessage(null);
-          navigation.navigate("SafetyHub", { section: "blocks", title: t("common:screens.safetyHub") });
+        onClose={() => setFocused(null)}
+      />
+      <LinkChoiceSheet
+        choice={linkChoice}
+        onClose={() => setLinkChoice(null)}
+        onChoose={(url) => {
+          const run = linkChoice?.run;
+          setLinkChoice(null);
+          run?.(url);
         }}
       />
       <AttachmentActionSheet
@@ -2145,20 +2406,49 @@ function MediaSheetAction({ icon, label, detail, onPress, tone = "signal" }: { i
   );
 }
 
+/**
+ * The key a message's translation is filed under.
+ *
+ * It is the same expression `ContentTranslation` receives as `contentRef`, and
+ * it is a function for that reason: the screen keys its pending translate
+ * requests by this and the bubble keys the component by it, so if the two ever
+ * disagreed a request would be delivered to nobody.
+ */
+function messageTranslationRef(message: MessengerMessage) {
+  return String(message.message_id || message.id || message.client_message_id || "pending");
+}
+
+/**
+ * What the server said the message was written in, or "auto" to let the
+ * translator detect it. Lifted out of the JSX because two callers now need the
+ * same answer -- the translation control and the menu's decision to list
+ * Translate at all.
+ */
+function messageSourceLanguage(message: MessengerMessage) {
+  const record = message as Record<string, unknown>;
+  if (typeof record.source_language === "string") return record.source_language;
+  if (typeof record.language === "string") return record.language;
+  return "auto";
+}
+
 function MessageBubble({
   message,
   onRetry,
   onReact,
   onLongPress,
-  onLinkPress
+  onLinkPress,
+  translateRequestId
 }: {
   message: MessengerMessage;
   onRetry: () => void;
   onReact: () => void;
-  onLongPress: () => void;
+  onLongPress: (focus: MessageFocusRequest) => void;
   onLinkPress: (url: string) => void;
+  /** Bumped when the long-press menu's Translate is chosen for this message. */
+  translateRequestId?: number;
 }) {
   const { t } = useTranslation();
+  const { locale } = useTimeZonePreference();
   const mine = Boolean(message.is_mine);
   const status = message.local_status || message.delivery_status || "sent";
   const deleted = Boolean(message.deleted_at || status === "deleted");
@@ -2206,9 +2496,43 @@ function MessageBubble({
    */
   const cardReplacesBody = Boolean(entity) && bodyIsOnlyLinks(body, linkTexts);
   const showBodyText = Boolean(body) && !cardReplacesBody;
+  const sourceLanguage = messageSourceLanguage(message);
+  /**
+   * Whether Translate is worth listing, answered by the same predicate the
+   * inline globe uses. Asking it here rather than re-deriving it keeps the menu
+   * and the bubble from disagreeing about whether this message is foreign.
+   *
+   * `true` for the compact argument because a chat bubble is exactly the case
+   * that function's `compact` branch is about.
+   */
+  const translatable =
+    showBodyText && !deleted && !moderated && offersTranslation(body, sourceLanguage, locale.replace("_", "-").toLowerCase(), true);
+
+  /**
+   * The bubble measures itself so the overlay can draw the menu against it.
+   *
+   * The order here is the whole point: haptic, then open, then measure. Opening
+   * is not allowed to wait on `measureInWindow`, which is a round trip to the
+   * shadow tree and an answer that may never come -- a message unmounted under
+   * the finger, or any host that simply does not call the callback. A menu that
+   * silently fails to appear is the worst outcome of a long press, so the
+   * measurement refines a menu that is already on screen rather than gating it.
+   *
+   * The overlay knows how to centre itself with a null anchor, which is the
+   * same path the QA harness takes.
+   */
+  const bubbleRef = useRef<View>(null);
+  const handleLongPress = useCallback(() => {
+    void haptic("selection");
+    onLongPress({ message, anchor: null, links: linkTexts, translatable });
+    bubbleRef.current?.measureInWindow((x, y, width, height) => {
+      onLongPress({ message, anchor: { x, y, width, height }, links: linkTexts, translatable });
+    });
+  }, [linkTexts, message, onLongPress, translatable]);
+
   return (
     <View style={[styles.bubbleWrap, mine ? styles.mineWrap : styles.theirWrap]} accessible={!voiceMessage && !bodyHasLink} accessibilityLabel={messageAccessibilityLabel(message)}>
-      <Pressable onLongPress={onLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, mediaOnly && styles.mediaBubble, moderated && styles.moderatedBubble]}>
+      <Pressable ref={bubbleRef} onLongPress={handleLongPress} style={[styles.bubble, mine ? styles.mineBubble : styles.theirBubble, mediaOnly && styles.mediaBubble, moderated && styles.moderatedBubble]}>
         {!mine ? <Text style={styles.senderLabel}>{message.sender_display_name || (message.sender_trust_state === "intelligence" ? "UNDX" : t("common:identity.member"))}</Text> : null}
         {message.reply_preview ? (
           <View style={styles.replyBlock}>
@@ -2217,22 +2541,17 @@ function MessageBubble({
           </View>
         ) : null}
         {!deleted && !moderated ? <MessageMedia message={message} /> : null}
-        {entity ? <PulsePostLinkCard entity={entity} onOpen={onLinkPress} onLongPress={onLongPress} /> : null}
+        {entity ? <PulsePostLinkCard entity={entity} onOpen={onLinkPress} onLongPress={handleLongPress} /> : null}
         {showBodyText ? (
           deleted || moderated ? (
             <Text style={[styles.body, styles.systemBody]}>{body}</Text>
           ) : (
             <ContentTranslation
               contentType="chat"
-              contentRef={message.message_id || message.id || message.client_message_id || "pending"}
+              contentRef={messageTranslationRef(message)}
               text={body}
-              sourceLanguage={
-                typeof (message as Record<string, unknown>).source_language === "string"
-                  ? ((message as Record<string, unknown>).source_language as string)
-                  : typeof (message as Record<string, unknown>).language === "string"
-                    ? ((message as Record<string, unknown>).language as string)
-                    : "auto"
-              }
+              sourceLanguage={sourceLanguage}
+              translateRequestId={translateRequestId}
               // The translated body is linkified too, not just the original:
               // `renderText` receives whichever string is currently visible, so
               // a URL that survives translation stays tappable and one that is
@@ -2242,7 +2561,7 @@ function MessageBubble({
                   text={visible}
                   style={styles.body}
                   onLinkPress={onLinkPress}
-                  onLongPress={onLongPress}
+                  onLongPress={handleLongPress}
                 />
               )}
               controlsMode="compact"
@@ -2281,81 +2600,52 @@ function ReactionRow({ reactions, viewerReaction, onReact }: { reactions?: Recor
   );
 }
 
-function MessageActionSheet({
-  message,
+/**
+ * Which link, when a message carries several.
+ *
+ * Deliberately not a menu of actions: the action was already chosen -- Open,
+ * Copy or Share -- and the only open question is which URL it applies to. So
+ * the rows are the links themselves, and the caller's handler comes back in
+ * `run` rather than being re-derived here.
+ *
+ * The URLs are shown in full over two lines rather than prettified. A chooser
+ * whose job is to disambiguate must not hide the part that distinguishes them,
+ * and for links that differ only in their path a truncated host is no choice
+ * at all.
+ */
+function LinkChoiceSheet({
+  choice,
   onClose,
-  onReply,
-  onReact,
-  onReactMore,
-  onRetry,
-  onDelete,
-  onReport,
-  onSafety
+  onChoose
 }: {
-  message: MessengerMessage | null;
+  choice: { links: readonly string[] } | null;
   onClose: () => void;
-  onReply: (message: MessengerMessage) => void;
-  onReact: (message: MessengerMessage, reactionType: string) => void;
-  onReactMore: (message: MessengerMessage) => void;
-  onRetry: (message: MessengerMessage) => void;
-  onDelete: (message: MessengerMessage, scope: "self" | "everyone") => void;
-  onReport: (message: MessengerMessage) => void;
-  onSafety: () => void;
+  onChoose: (url: string) => void;
 }) {
   const { t } = useTranslation();
-  if (!message) return null;
-  const actions = messageActionRules(message);
-  const canReact = actions.find((action) => action.key === "react")?.available;
-  const actionIsAvailable = (key: ReturnType<typeof messageActionRules>[number]["key"]) => actions.find((action) => action.key === key)?.available;
+  if (!choice) return null;
   return (
     <Modal transparent animationType="fade" visible onRequestClose={onClose}>
       <Pressable style={styles.sheetBackdrop} onPress={onClose}>
         <PulseCommandPanel style={styles.sheet}>
-          <Text style={styles.sheetTitle}>{t("messaging:chat.messageControlsTitle")}</Text>
-          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
-          {canReact ? (
-            <View style={styles.reactionChoices}>
-              {QUICK_REACTIONS.map((reaction) => (
-                <Pressable
-                  key={reaction}
-                  accessibilityRole="button"
-                  accessibilityLabel={`React ${reaction}`}
-                  style={[styles.reactionChoice, message.viewer_reaction === reaction && styles.reactionActive]}
-                  onPress={() => onReact(message, reaction)}
-                >
-                  <Text style={styles.quickReactionGlyph} allowFontScaling={false}>{reaction}</Text>
-                </Pressable>
-              ))}
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="More reactions"
-                style={styles.reactionChoice}
-                onPress={() => onReactMore(message)}
-              >
-                <Text style={styles.quickReactionGlyph} allowFontScaling={false}>➕</Text>
-              </Pressable>
-            </View>
-          ) : null}
+          <Text style={styles.sheetTitle}>{t("messaging:messageActions.chooseLink", { defaultValue: "Which link?" })}</Text>
           <View style={styles.sheetGrid}>
-            {actionIsAvailable("reply") ? <SheetAction label={t("common:actions.reply")} onPress={() => onReply(message)} /> : null}
-            {actionIsAvailable("retry") ? <SheetAction label={t("messaging:chat.retry")} tone="warning" onPress={() => onRetry(message)} /> : null}
-            {actionIsAvailable("report") ? <SheetAction label={t("common:actions.report")} tone="warning" onPress={() => onReport(message)} /> : null}
-            {actionIsAvailable("safety") ? <SheetAction label={t("messaging:chat.muteBlock")} tone="safety" onPress={onSafety} /> : null}
-            {actionIsAvailable("deleteSelf") ? <SheetAction label={t("messaging:chat.deleteForMe")} tone="danger" onPress={() => onDelete(message, "self")} /> : null}
-            {actionIsAvailable("deleteEveryone") ? <SheetAction label={t("messaging:chat.deleteForEveryone")} tone="danger" onPress={() => onDelete(message, "everyone")} /> : null}
+            {choice.links.map((url) => (
+              <Pressable
+                key={url}
+                accessibilityRole="link"
+                accessibilityLabel={url}
+                style={({ pressed }) => [styles.linkChoiceRow, pressed && styles.pressed]}
+                onPress={() => onChoose(url)}
+              >
+                <Ionicons name="link-outline" size={16} color={colors.accent} />
+                <Text style={styles.linkChoiceText} numberOfLines={2}>{url}</Text>
+              </Pressable>
+            ))}
           </View>
         </PulseCommandPanel>
       </Pressable>
     </Modal>
-  );
-}
-
-function SheetAction({ label, onPress, tone = "default" }: { label: string; onPress: () => void; tone?: "default" | "warning" | "danger" | "safety" }) {
-  const textColor = tone === "danger" ? colors.danger : tone === "warning" ? colors.warning : tone === "safety" ? colors.accent : colors.text;
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} style={styles.sheetAction} onPress={onPress}>
-      <Text style={[styles.sheetActionText, { color: textColor }]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -3836,6 +4126,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
+  },
+  linkChoiceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    width: "100%",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.glass
+  },
+  linkChoiceText: {
+    flex: 1,
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18
   },
   sheetAction: {
     backgroundColor: "rgba(255,255,255,0.045)",

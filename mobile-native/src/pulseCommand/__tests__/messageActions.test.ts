@@ -19,12 +19,28 @@
  *   - offering Copy or Translate on a voice note must turn "voice" red;
  *   - dropping the link actions must turn "a message with a link" red;
  *   - returning every action regardless of message must turn ALL of them red,
- *     which is the property `toContain` would have missed.
+ *     which is the property `toContain` would have missed;
+ *   - making `canReactToMessage` a lookup in the rule list must turn every
+ *     case in "whether the reaction strip is offered" red, because there is
+ *     no rule keyed `react` and there never was.
  */
 
-import { messageActionKind, messageActionRules } from "../domain";
+import { canReactToMessage, messageActionKind, messageActionRules } from "../domain";
 import type { MessengerMessage } from "../../api/messenger";
 
+/** A timestamp `minutes` in the past, in the format the server writes. */
+function minutesAgo(minutes: number) {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
+}
+
+/**
+ * Default `created_at` is *now*, not a fixed date.
+ *
+ * Edit and Delete-for-everyone are time-limited, so a hard-coded timestamp
+ * would make most of this file pass or fail depending on the wall clock on
+ * the day it runs. Cases that care about age say so by passing `created_at`
+ * explicitly; every other case means "a message that just arrived".
+ */
 function message(overrides: Partial<MessengerMessage> = {}): MessengerMessage {
   return {
     id: 4100,
@@ -34,7 +50,7 @@ function message(overrides: Partial<MessengerMessage> = {}): MessengerMessage {
     message_type: "text",
     is_mine: false,
     delivery_status: "sent",
-    created_at: "2026-09-19T10:00:00Z",
+    created_at: minutesAgo(0),
     ...overrides
   } as MessengerMessage;
 }
@@ -144,12 +160,62 @@ describe("what a long press offers", () => {
     expect(keys).not.toContain("viewMedia");
   });
 
-  it("lets a moderator unsend a message they did not write", () => {
-    expect(menu(message(), { viewerModerates: true })).toContain("deleteEveryone");
-  });
-
   it("never offers Translate on your own message", () => {
     expect(menu(message({ is_mine: true }))).not.toContain("translate");
+  });
+});
+
+/**
+ * Edit and Delete-for-everyone expire. `comm_v2.edit_message` refuses past 15
+ * minutes and `comm_v2.delete_message` past 30, so a menu that kept offering
+ * them would be handing out buttons that answer 403.
+ */
+describe("the actions that expire", () => {
+  it("offers Edit on a message sent a moment ago", () => {
+    expect(menu(message({ is_mine: true, created_at: minutesAgo(2) }))).toContain("edit");
+  });
+
+  it("stops offering Edit once the server's fifteen minutes are up", () => {
+    const keys = menu(message({ is_mine: true, created_at: minutesAgo(16) }));
+    expect(keys).not.toContain("edit");
+    // The message is otherwise perfectly normal -- only Edit expired.
+    expect(keys).toContain("copy");
+    expect(keys).toContain("reply");
+  });
+
+  it("keeps Delete for everyone past the edit window but inside its own", () => {
+    const keys = menu(message({ is_mine: true, created_at: minutesAgo(20) }));
+    expect(keys).not.toContain("edit");
+    expect(keys).toContain("deleteEveryone");
+  });
+
+  it("drops Delete for everyone after thirty minutes, leaving Delete for me", () => {
+    const keys = menu(message({ is_mine: true, created_at: minutesAgo(31) }));
+    expect(keys).not.toContain("deleteEveryone");
+    expect(keys).toContain("deleteSelf");
+  });
+
+  it("offers both when it cannot tell how old the message is", () => {
+    // An unreadable timestamp must not silently strip actions. The server is
+    // the authority; let it answer rather than guessing "too old" here.
+    const keys = menu(message({ is_mine: true, created_at: "not a date" }));
+    expect(keys).toContain("edit");
+    expect(keys).toContain("deleteEveryone");
+  });
+});
+
+/**
+ * The server refuses to unsend a message for everyone unless you wrote it --
+ * moderator or not. This is the test that should fail first if that ever
+ * changes on the server, which is the point of naming it this way.
+ */
+describe("who may unsend a message for everyone", () => {
+  it("does not offer it on someone else's message, even to a conversation moderator", () => {
+    expect(menu(message({ is_mine: false }))).not.toContain("deleteEveryone");
+  });
+
+  it("offers it on your own", () => {
+    expect(menu(message({ is_mine: true }))).toContain("deleteEveryone");
   });
 });
 
@@ -212,5 +278,39 @@ describe("recognising what the press is on", () => {
     expect(messageActionKind(message({ message_type: "image", deleted_at: "2026-09-19T11:00:00Z" }))).toBe(
       "unavailable"
     );
+  });
+});
+
+/**
+ * The strip above the bubble, which is not one of the rows below it.
+ *
+ * These exist because the overlay originally asked the rule list whether
+ * reacting was available. No rule is keyed `react`, so the answer was always
+ * `false` and the strip never drew -- a whole control missing, with every test
+ * in this file green. The condition now has a name and this is where it is
+ * pinned.
+ */
+describe("whether the reaction strip is offered", () => {
+  it("offers it on an ordinary message from either side", () => {
+    expect(canReactToMessage(message())).toBe(true);
+    expect(canReactToMessage(message({ is_mine: true }))).toBe(true);
+  });
+
+  it("withholds it from a message the server has not accepted yet", () => {
+    // Mirrors the screen's own handler, which answers "not yet" for id <= 0.
+    // Six buttons that all decline are worse than no strip.
+    expect(canReactToMessage(message({ id: 0 }))).toBe(false);
+    expect(canReactToMessage(message({ id: -1 }))).toBe(false);
+  });
+
+  it("withholds it from a deleted message", () => {
+    expect(canReactToMessage(message({ deleted_at: minutesAgo(1) }))).toBe(false);
+    expect(canReactToMessage(message({ delivery_status: "deleted" }))).toBe(false);
+  });
+
+  it("offers it on a voice note without touching playback", () => {
+    // Voice is thin in the menu; that thinness is about text actions, not
+    // about reacting. A heart on a voice note is a reaction to a message.
+    expect(canReactToMessage(message({ message_type: "voice", body: "" }))).toBe(true);
   });
 });
