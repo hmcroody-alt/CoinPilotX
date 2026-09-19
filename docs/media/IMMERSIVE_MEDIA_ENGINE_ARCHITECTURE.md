@@ -196,3 +196,58 @@ audio-session behaviour, composer/posting logic, marketplace.
 
 §38 holds throughout: **a Post remains a Post and a Reel remains a Reel.** The
 engine unifies *presentation*, not identity.
+
+## What is built
+
+Five modules under `mobile-native/src/immersive/`, four of them pure. Each was
+mutation-tested against its own suite before the next was started, and the counts
+below are the surviving-mutant scores, not coverage percentages.
+
+| Module | What it owns | Mutants |
+| --- | --- | --- |
+| `immersiveSession.ts` | origin, queue, cursor, `seen` set, continuation flags (§1, §25, §28, §38) | — |
+| `immersiveContinuation.ts` | the only network in the engine: asks the *origin's own* endpoint for more | — |
+| `immersiveWindow.ts` | what is mounted and what is preloaded (§13, §35) | 17/19 |
+| `useImmersiveSession.ts` | the controller: three named races, plus the playback claim (§12) | 21/23 |
+| `immersiveGesture.ts` | which axis owns a drag, and what it means (§6) | 22/22 |
+
+The remaining escaped mutants are equivalents, recorded rather than papered over:
+two in the window (an unclamped bound that `entryKey` already rejects, and an
+empty-queue early return made redundant by the clamp arithmetic), and two in the
+controller (a `canContinue` check that the outer effect's guard already blocks,
+and a setState-after-unmount that React 18 no longer reports).
+
+### Three decisions worth stating outside the code
+
+**The axes are swapped relative to the existing viewer.** `NativeMediaViewer`
+spends the horizontal axis on the collection and the vertical on dismiss.
+Immersive media is the other way round, and the carousel is *contained*: at the
+last frame a further horizontal swipe resolves to nothing rather than falling
+through to the next post. A fall-through would make the boundary between "inside
+this post" and "on to the next" invisible — the same gesture would sometimes
+advance a frame and sometimes eject the user into somebody else's media,
+depending on a count they cannot see.
+
+**The bottom of the feed does not dismiss; the top does.** "Nothing below"
+describes the instant a continuation is in flight, not the feed, so dismissing on
+it would throw the user out because the network was slow. The top is different:
+the first entry *is* the thing they tapped, so pulling down off it is a return to
+the origin (§25), not a discard.
+
+**Identity preservation is a termination condition.** `appendImmersivePage`
+returns the *same object* for a page that adds no entries and moves neither the
+cursor nor the continuation flag. This is not a micro-optimisation — a React
+caller re-runs its "should I fetch more?" effect whenever session identity
+changes, so a session that is a new object after every all-duplicate page asks
+for another one immediately, forever. That presents as a feed which is
+permanently loading rather than as an error. It was found by the controller hook
+hanging, not by reasoning.
+
+### Not yet built
+
+The vertical screen that mounts the arbiter over `NativeMediaViewer` (§6/§12
+wiring), the feed player handoff (§37), and the §43/§44 device matrix.
+
+§28's dedupe is **client-side only, and that is the correctness guarantee** — no
+`seen_ids`/`exclude_ids` parameter exists anywhere in `src/api/`. A server-side
+contract would be a bandwidth optimisation on top, not a fix.
