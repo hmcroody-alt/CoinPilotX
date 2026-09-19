@@ -47,6 +47,7 @@ from services.marketplace_cart_routes import (
 )
 from services import marketplace_reservation_policy as reservation_policy
 from services import marketplace_fulfillment
+from services import marketplace_order_fulfillment
 from services.marketplace_payment_errors import (
     below_minimum_charge_error,
     classify_provider_exception,
@@ -624,6 +625,13 @@ def offer_checkout(offer_id: int):
              now, now),
         )
         tx_id = int(cur.lastrowid)
+        if cash_payment:
+            # Cash owes the buyer goods from this moment. A *card* order is still
+            # `created` and most abandoned Stripe sheets never become anything
+            # else, so its record opens when the payment lands.
+            marketplace_order_fulfillment.open_fulfillment(
+                cur, seller_transaction_id=tx_id, seller_id=seller_id,
+                buyer_user_id=buyer_id, fulfillment_kind=fulfillment_kind)
 
         if not cash_payment and not bot.STRIPE_SECRET_KEY:
             cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))

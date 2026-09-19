@@ -326,6 +326,7 @@ from services import (
     marketplace_fulfillment as marketplace_fulfillment,
     marketplace_listing_types as marketplace_listing_types_service,
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
+    marketplace_order_fulfillment as marketplace_order_fulfillment,
     marketplace_seller_identity as marketplace_seller_identity,
     media_service,
     media_storage,
@@ -1366,6 +1367,7 @@ _load_route_pack("pulse_mobile_settings", "services.pulse_settings_routes")
 _load_route_pack("pulse_marketplace_cart", "services.marketplace_cart_routes")
 _load_route_pack("pulse_marketplace_offers", "services.marketplace_offers_routes")
 _load_route_pack("pulse_marketplace_returns", "services.marketplace_returns_routes")
+_load_route_pack("pulse_marketplace_fulfillment", "services.marketplace_fulfillment_routes")
 # Business OS web surface (website parity milestone 3): serves the /business-os
 # dashboard page over the existing /api/business-os API — no new API routes.
 _load_route_pack("business_os_web", "services.business_os_web")
@@ -57685,6 +57687,20 @@ def pulse_finalize_marketplace_settlement(tx, provider_payment_id="", transfer_g
                             (payout or {}).get("charges_enabled"))
     finally:
         conn.close()
+    # The card lane's fulfillment record opens here rather than at checkout: a
+    # `created` transaction is an abandoned Stripe sheet more often than it is an
+    # order, and a record opened then would show the seller an obligation that
+    # never existed. Payment landing is the first moment the buyer is owed
+    # anything. Idempotent, so a redelivered webhook opens nothing twice.
+    marketplace_order_fulfillment.ensure_schema()
+    conn = db(); conn.row_factory = sqlite3.Row
+    try:
+        marketplace_order_fulfillment.open_from_transaction(conn.cursor(), tx)
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001 - never lose a settlement over this
+        log_error(f"marketplace fulfillment open failed for tx {tx.get('id')}: {exc}")
+    finally:
+        conn.close()
     from services import marketplace_settlement_service
     return marketplace_settlement_service.settle_paid_transaction(
         tx, payout_ready=payout_ready, provider_payment_id=provider_payment_id,
@@ -97006,6 +97022,15 @@ def api_pulse_payments_checkout():
         "status": initial_status,
     }
     pulse_emit_payment_checkout_event(cur, tx_event, "payment_pending", status=initial_status, actor_user_id=buyer["user_id"])
+    if marketplace_cash_payment:
+        # Cash owes the buyer goods from this moment: the order is real and the
+        # seller is expected to hand something over. A *card* order is not opened
+        # here — it is still `created`, and most abandoned checkouts never become
+        # anything else, so opening one now would fill every seller's dashboard
+        # with orders nobody paid for. The card lane opens its record when the
+        # payment webhook lands.
+        marketplace_order_fulfillment.open_from_transaction(
+            cur, {**tx_event, "metadata_json": {"fulfillment": {"kind": fulfillment_kind}}})
     if not marketplace_cash_payment and not STRIPE_SECRET_KEY:
         cur.execute("UPDATE seller_transactions SET status='blocked_stripe_not_configured', updated_at=? WHERE id=?", (now, tx_id))
         pulse_emit_payment_checkout_event(
@@ -118344,6 +118369,15 @@ def _init_db_impl():
         # missing supplier schema must not take down a web process that has 1,538
         # routes with nothing to do with variants.
         logging.getLogger(__name__).exception("SUPPLIER_SCHEMA_BOOTSTRAP_FAILED")
+    # Post-purchase fulfillment, for the same reason and by the same rule: the
+    # timeout sweeper runs in a worker that never serves a request, so the tables
+    # have to exist at boot rather than the first time a buyer confirms receipt.
+    # The statements live in the owning module; a second copy here is how the two
+    # would drift.
+    try:
+        marketplace_order_fulfillment.create_schema(cur)
+    except Exception:
+        logging.getLogger(__name__).exception("ORDER_FULFILLMENT_SCHEMA_BOOTSTRAP_FAILED")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_reports (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

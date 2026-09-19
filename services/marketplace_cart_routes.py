@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from services import marketplace_fulfillment
+from services import marketplace_order_fulfillment
 from services import marketplace_listing_lifecycle as listing_lifecycle
 from services import marketplace_seller_identity as seller_identity
 from services.marketplace_payment_errors import (
@@ -843,7 +844,7 @@ def cart_checkout():
         tx_ids = []
         initial_status = "cash_pending" if cash_payment else "created"
         payout_state = "cash_collect_in_person" if cash_payment else "pending_checkout"
-        for l, commercial_quote in zip(lines, line_quotes):
+        for l, commercial_quote, line_kind in zip(lines, line_quotes, line_kinds):
             line_amount = commercial_quote["buyer_total_minor"]
             line_fee = commercial_quote["platform_fee_minor"]
             cur.execute(
@@ -867,6 +868,14 @@ def cart_checkout():
                  now, now),
             )
             tx_ids.append(int(cur.lastrowid))
+            if cash_payment:
+                # Cash owes the buyer goods from this moment. A *card* line is
+                # still `created` and most abandoned Stripe sheets never become
+                # anything else, so its record opens when the payment lands.
+                marketplace_order_fulfillment.open_fulfillment(
+                    cur, seller_transaction_id=tx_ids[-1], seller_id=seller_user_id,
+                    buyer_user_id=buyer_id,
+                    fulfillment_kind=line_kind)
 
         if not cash_payment and not bot.STRIPE_SECRET_KEY:
             for tx_id in tx_ids:
