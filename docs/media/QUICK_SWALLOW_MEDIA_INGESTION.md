@@ -122,6 +122,27 @@ and `tests/test_media_request_ceiling.py` reads the ceiling expression out of
 `bot.py` and checks it against the Procfile's actual worker timeout, so raising a
 storage limit cannot quietly widen it again.
 
+### 4. The Post button was dead for the length of the upload
+
+The engine uploads media as soon as it is picked, which is the right shape —
+by the time someone has written a caption the bytes are usually already gone.
+The composer then threw that away: `validatePublish` refused to publish while
+`media.uploading`, so on a long video the person wrote their caption, pressed
+Post, was told to wait, and had to come back and press it again. The upload was
+fast and the wait was still there.
+
+Pressing Post now means "publish when the bytes land". The thing that made that
+unsafe was never the transport — `MediaUploadManager.upload` keys an in-flight
+table on `uri|size|contextType|contextId` and hands the same task back, so the
+bytes could not duplicate. It was `useComposerMediaQueue`, which had no
+corresponding join: a publish-time `uploadAll` re-entered the upload body,
+resetting the item to "Preparing media." at 1% while the bytes it described kept
+going forwards, and ran `pollNativeMediaProcessing` a second time. The queue now
+returns the promise already in flight.
+
+That hook had no tests at all, which is exactly why this survived: media
+mid-flight is the *common* state at publish time, and nothing exercised it.
+
 ## Limits
 
 | Thing | Where | Value |
@@ -185,3 +206,8 @@ the resumable foundation.
 - Check the jest mock actually models the API you are testing. Both upload suites'
   `expo-file-system` mocks lacked `open()`, so the ranged-read path would have
   been silently exercising the fallback while reporting green.
+- A dedupe at the transport is not a dedupe at the caller. `MediaUploadManager`
+  joining an in-flight task keeps the *bytes* correct and says nothing about
+  what the caller's UI does in the meantime; both layers need the join.
+- The state worth testing is the one that is common in practice. At publish time
+  media is usually still uploading, and that was the state with no coverage.
