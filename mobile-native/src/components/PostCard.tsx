@@ -18,6 +18,7 @@ import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { buildPostShareMetadata } from "../sharing/postShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { createThemedStyles } from "../theme/themedStyles";
 import { EmbeddedLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
@@ -47,16 +48,14 @@ export function computeMediaBleedStyle(
   return { marginHorizontal: -bleed, width: windowWidth };
 }
 
+/**
+ * The payload is built in `sharing/postShare.ts` rather than here, because what
+ * may appear in it depends on the post's visibility. This used to pass
+ * `post.body` unconditionally, which put a followers-only caption into whatever
+ * target the person picked out of the OS share sheet.
+ */
 function sharePostFromCard(post: PulsePost) {
-  const author = post.author || post.user || {};
-  return sharePulseObject({
-    kind: "post",
-    url: pulsePostUrl(post.id),
-    title: post.title || "PulseSoc post",
-    description: post.body || post.text || post.content,
-    author: author.display_name || author.name || author.username || post.author_name,
-    previewImageUrl: post.thumbnail_url || post.image_url
-  });
+  return sharePulseObject(buildPostShareMetadata(post));
 }
 
 const VISIBILITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {

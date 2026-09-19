@@ -19,6 +19,14 @@ export type PulseShareMetadata = {
   description?: string;
   author?: string;
   previewImageUrl?: string;
+  /**
+   * A fully composed share body, for objects whose share text is a decision
+   * rather than a concatenation. Posts use it (`sharing/postShare.ts`) because
+   * what may appear there depends on the post's visibility, and that judgement
+   * belongs next to the privacy rule rather than in the generic assembler here.
+   * Everything without an opinion keeps the title/author/description default.
+   */
+  message?: string;
 };
 
 export type NativeSharePayload = {
@@ -57,14 +65,14 @@ export function buildNativeSharePayload(metadata: PulseShareMetadata): NativeSha
   const author = cleanLine(metadata.author, 100);
   const description = cleanLine(metadata.description, 320);
   const url = String(metadata.url || "").trim();
-  const message = [
+  const composed = [
     title,
     author ? `By ${author}` : "",
     description && description !== title ? description : "",
     url
   ].filter(Boolean).join("\n");
 
-  return { title, message, url };
+  return { title, message: String(metadata.message || "").trim() || composed, url };
 }
 
 /**

@@ -54,6 +54,7 @@ import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { buildPostShareMetadata } from "../sharing/postShare";
 import { createThemedStyles } from "../theme/themedStyles";
 import { spatialHomeFeedEnabled } from "../spatial/flags";
 import { SpatialPager } from "../spatial/SpatialPager";
@@ -654,15 +655,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   }, [guard.run, updatePost]);
 
   const handleShare = useCallback(async (post: PulsePost) => {
-    const author = post.author || post.user || {};
-    await sharePulseObject({
-      kind: "post",
-      url: pulsePostUrl(post.id),
-      title: post.title || "PulseSoc post",
-      description: post.body || post.text || post.content,
-      author: author.display_name || author.name || author.username || post.author_name,
-      previewImageUrl: post.thumbnail_url || post.image_url
-    }).catch(() => undefined);
+    await sharePulseObject(buildPostShareMetadata(post)).catch(() => undefined);
   }, []);
 
   const handleInlineComment = useCallback(async (post: PulsePost, body: string) => {

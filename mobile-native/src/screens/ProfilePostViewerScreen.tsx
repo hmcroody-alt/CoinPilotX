@@ -7,6 +7,7 @@ import { PostCard } from "../components/PostCard";
 import { invalidateNativeSync } from "../core/eventSync";
 import { RootStackParamList } from "../navigation/types";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { buildPostShareMetadata } from "../sharing/postShare";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { peekSaveState } from "../social/savedStore";
 import { setSaved } from "../social/useSaveAction";
@@ -192,7 +193,7 @@ export function ProfilePostViewerScreen({ route, navigation }: Props) {
             onSave={save}
             onRepost={repost}
             onComment={(item) => navigation.navigate("PostDetail", { postId: item.id, title: "Comments" })}
-            onShare={(item) => sharePulseObject({ kind: "post", url: pulsePostUrl(item.id), title: item.title || "PulseSoc post", description: item.body || item.text, previewImageUrl: item.thumbnail_url || item.image_url }).catch(() => undefined)}
+            onShare={(item) => sharePulseObject(buildPostShareMetadata(item)).catch(() => undefined)}
             onDelete={route.params.owner ? remove : undefined}
           /> : <View style={styles.loading}><ActivityIndicator color={colors.accent} /><Text style={styles.loadingText}>Loading post…</Text></View>}</View>;
         }}

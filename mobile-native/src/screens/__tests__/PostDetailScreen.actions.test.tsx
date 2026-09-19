@@ -343,7 +343,9 @@ describe("PostDetailScreen reactions", () => {
 describe("PostDetailScreen share", () => {
   it("shares through the native sheet with a deep link, not a bare copied URL", async () => {
     await renderScreen();
-    await tap(() => card().onShare(post({ title: "Fixture title", thumbnail_url: "https://cdn.example/p.jpg" })));
+    await tap(() =>
+      card().onShare(post({ visibility: "public", title: "Fixture title", thumbnail_url: "https://cdn.example/p.jpg" }))
+    );
     expect(mockShare).toHaveBeenCalledTimes(1);
     const payload = mockShare.mock.calls[0][0];
     expect(payload.kind).toBe("post");
@@ -352,6 +354,26 @@ describe("PostDetailScreen share", () => {
     expect(payload.description).toBe("A post under test.");
     expect(payload.author).toBe("Fixture Author");
     expect(payload.previewImageUrl).toBe("https://cdn.example/p.jpg");
+  });
+
+  /**
+   * The reason the test above had to grow an explicit `visibility: "public"`.
+   *
+   * This fixture never carried one, and the share described the post anyway.
+   * A body preview is opt-in on that literal now, so a post whose visibility
+   * the client cannot read describes nothing — while the link still goes,
+   * because the recipient is meant to learn that a post exists.
+   */
+  it("says nothing about a post whose visibility it cannot read", async () => {
+    await renderScreen();
+    await tap(() => card().onShare(post({ title: "Fixture title", thumbnail_url: "https://cdn.example/p.jpg" })));
+    const payload = mockShare.mock.calls[0][0];
+    expect(payload.title).toBe("");
+    expect(payload.description).toBe("");
+    expect(payload.author).toBe("");
+    expect(payload.previewImageUrl).toBe("");
+    expect(payload.url).toMatch(new RegExp(`${POST_ID}$`));
+    expect(payload.message).not.toContain("A post under test.");
   });
 });
 

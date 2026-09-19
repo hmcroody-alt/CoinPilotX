@@ -38,6 +38,7 @@ import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { buildPostShareMetadata } from "../sharing/postShare";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
 import { CommentThread, commentAuthorLabel } from "../social/CommentThread";
 import { buildCommentTree, countCommentTree, flattenCommentTree, mergeFlatComments, toggleSetValue } from "../social/commentTree";
@@ -340,14 +341,7 @@ export function PostDetailScreen({ route, navigation }: Props) {
               onSave={handleSave}
               onRepost={handleRepost}
               onPromote={(item) => navigation.navigate("GrowthCenter", { contentType: "post", contentId: item.id, title: "Promote Post" })}
-              onShare={(item) => sharePulseObject({
-                kind: "post",
-                url: pulsePostUrl(item.id),
-                title: item.title || "PulseSoc post",
-                description: item.body || item.text || item.content,
-                author: item.author?.display_name || item.author?.name || item.author?.username || item.author_name,
-                previewImageUrl: item.thumbnail_url || item.image_url
-              }).catch(() => undefined)}
+              onShare={(item) => sharePulseObject(buildPostShareMetadata(item)).catch(() => undefined)}
               onDelete={isContentOwner(post, currentUserId) ? handleDelete : undefined}
               onAuthorPress={(item) => {
                 const params = profileNavigationParams(profileTargetFromPost(item), item.author?.display_name || "Profile");
