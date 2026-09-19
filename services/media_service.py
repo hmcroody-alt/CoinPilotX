@@ -126,13 +126,20 @@ def mux_playback_urls(playback_id):
     """Return safe public Mux playback URLs for a playback id, without secrets."""
     playback_id = str(playback_id or "").strip()
     if not playback_id:
-        return {"hls_url": "", "thumbnail_url": ""}
+        return {"hls_url": "", "thumbnail_url": "", "mp4_url": ""}
     safe_id = "".join(ch for ch in playback_id if ch.isalnum() or ch in {"_", "-"})
     if not safe_id:
-        return {"hls_url": "", "thumbnail_url": ""}
+        return {"hls_url": "", "thumbnail_url": "", "mp4_url": ""}
     return {
         "hls_url": f"https://stream.mux.com/{safe_id}.m3u8",
         "thumbnail_url": f"https://image.mux.com/{safe_id}/thumbnail.jpg",
+        # Assets are created with ``mp4_support="standard"`` (see
+        # create_mux_asset_from_url), which publishes low/medium/high renditions
+        # -- not the newer ``capped-1080p`` name, which 404s on these assets.
+        # This is the rendition to hand to a caller that wants a plain file URL
+        # rather than a manifest: ``media_url`` consumers include <img>-style
+        # code paths and downloaders that cannot parse HLS.
+        "mp4_url": f"https://stream.mux.com/{safe_id}/high.mp4",
     }
 
 
@@ -781,6 +788,29 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             kind = "audio"
         else:
             kind = "image"
+    # Mux is the primary delivery path for video. The R2 CDN hostname sits behind
+    # an edge rule that challenges video extensions -- a request for .mp4/.mov/.webm
+    # is answered 403 with an HTML interstitial before it ever reaches origin, while
+    # images and audio on that same host return 200. So a `media_url` pointing at the
+    # CDN hands every caller a URL that cannot play. `playback_url` already preferred
+    # Mux; this makes the plain-file fields agree with it, so a caller reading
+    # `media_url` is not left holding the one field that is still broken.
+    #
+    # The MP4 rendition is used rather than the HLS manifest because `media_url` is
+    # the field consumed by downloaders and by <video> tags with no HLS support;
+    # `playback_url` keeps serving HLS for players that prefer it.
+    #
+    # Two guards, both load-bearing:
+    #   * a signed playback id must never be served as a bare URL. Mux answers 403
+    #     without a token, and messenger records that policy per attachment, so the
+    #     absence of the column means public -- matching create_mux_asset_from_url's
+    #     documented default -- while an explicit "signed" opts out.
+    #   * an asset still ingesting has no rendition yet. Swapping a 403 for a 404 is
+    #     not an improvement, so the CDN copy stays until Mux reports ready.
+    mux_policy = str(item.get("mux_playback_policy") or "").strip().lower()
+    mux_ready = not mux_status or mux_status in {"ready", "asset_ready", "available"}
+    if kind == "video" and mux_urls["mp4_url"] and mux_policy != "signed" and mux_ready:
+        source = mux_urls["mp4_url"]
     if kind == "video":
         if _is_video_url(thumb):
             thumb = ""

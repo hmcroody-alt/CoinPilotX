@@ -272,30 +272,13 @@ Headers (lines 460-468):
 | Header | Value |
 | --- | --- |
 | `authorization` | `bearer <jwt>` |
-| `apns-topic` | `topic_for_bundle(device["app_bundle"])` |
+| `apns-topic` | `voip_topic()` |
 | `apns-push-type` | `voip` |
 | `apns-priority` | `10` |
 | `apns-expiration` | `0` |
 
-`voip_topic()`: `APNS_VOIP_BUNDLE_ID or APNS_BUNDLE_ID`, with `.voip` appended if
-absent. This is the **deployment-wide** topic, and is now only the fallback.
-
-`topic_for_bundle()` resolves the topic from the `app_bundle` the device reported at
-registration, so one deployment can address two build flavours. A bundle that is not
-`APNS_BUNDLE_ID`, `APNS_VOIP_BUNDLE_ID` or a member of `APNS_ALLOWED_BUNDLE_IDS` falls
-back to `voip_topic()` rather than being trusted: `app_bundle` is client-supplied, and
-an arbitrary topic earns `DeviceTokenNotForTopic`, which is classified `invalid_device`
-and — unlike `BadDeviceToken` — is **not** replayed, so the token is revoked
-permanently. A wrong host costs one request; a wrong topic costs the handset its
-ability to ring at all.
-
-The topic is resolved once per send and held fixed across the host replay. Varying
-both at once would make an accepted replay unattributable, and `environment_corrected`
-would then persist a host that was never at fault.
-
-Every `app_bundle` stored today is empty, because `mobile-native/src/api/calls.ts`
-does not yet report one. Every device therefore still resolves to `voip_topic()`, and
-this is a prerequisite rather than a live split.
+`voip_topic()` (147-152): `APNS_VOIP_BUNDLE_ID or APNS_BUNDLE_ID`, with `.voip`
+appended if absent.
 
 ### Call identity
 
@@ -342,29 +325,8 @@ literal, and this correction path is a compensation for that, not a replacement.
 
 `PulseSoc-Bridging-Header.h:8-9` — `RNCallKeep.h`, `RNVoipPushNotificationManager.h`.
 
-`PulseSoc.entitlements` — `aps-environment: $(PULSESOC_APS_ENVIRONMENT)`,
+`PulseSoc.entitlements` — `aps-environment: development`,
 `com.apple.developer.associated-domains: applinks:pulsesoc.com`.
-
-`PULSESOC_APS_ENVIRONMENT` is declared per build configuration in
-`project.pbxproj`: `development` for Debug, `production` for Release. A
-development-signed Release build — every local device build — overrides it back to
-`development` on the xcodebuild command line, which is what
-`scripts/install_pulsesoc_native_dev_iphone.sh` passes.
-
-**Which signing style is in use decides whether any of this is observable.** Under
-`CODE_SIGN_STYLE = Automatic`, which is what `project.pbxproj` sets and what local
-device builds use, Xcode rewrites `aps-environment` from the provisioning profile it
-selected and the entitlements file is advisory. Measured on an iPhone 16 Pro build:
-Release with no override, `ProcessProductPackaging` confirmed to have re-run,
-produced an `.xcent` reading `development` — the profile's value, not the
-configuration's. Under **manual** signing, which is how EAS builds preview and store
-binaries, the entitlements file is authoritative and a value the profile does not
-grant is a hard codesign failure. That is the path this wiring exists for, and it is
-the path that cannot be exercised without a distribution profile.
-
-Both configurations still build `PRODUCT_BUNDLE_IDENTIFIER = com.pulsesoc.app`. The
-`com.pulsesoc.nativeapp.dev` id in `app.config.js` is applied by prebuild only, and a
-committed `ios/` directory bypasses prebuild, so it does not reach the native project.
 
 ---
 
