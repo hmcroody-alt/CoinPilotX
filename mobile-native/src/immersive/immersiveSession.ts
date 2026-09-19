@@ -214,6 +214,24 @@ export function beginImmersiveSession(
  * empty page: a page can come back empty because everything in it was a
  * duplicate while more genuinely remains behind it, and treating that as the end
  * would truncate the session early.
+ *
+ * ## A page that changes nothing returns the same session
+ *
+ * Identity is preserved when a page adds no entries *and* moves neither the
+ * cursor nor the continuation flag — the same contract `moveImmersiveCursor`
+ * already holds for a move that does not move.
+ *
+ * This is not a micro-optimisation; it is a termination condition. A React
+ * caller re-runs its "should I fetch more?" effect whenever the session's
+ * identity changes, so a session that is a new object after every all-duplicate
+ * page asks for another one immediately, forever. That is a tight request loop
+ * against production, and it presents as a feed that is permanently loading
+ * rather than as an error. A server stuck re-serving the same page with the same
+ * cursor is exactly the condition that produces it.
+ *
+ * A page that adds nothing but *does* advance the cursor is a different thing
+ * and does return a new session: walking the offset forward through a stale
+ * region is how a ranked feed gets past it.
  */
 export function appendImmersivePage(
   session: ImmersiveSession,
@@ -231,12 +249,16 @@ export function appendImmersivePage(
   const nextCursor = Number.isFinite(Number(options.nextCursor))
     ? Math.trunc(Number(options.nextCursor))
     : session.nextCursor + page.length;
+  const canContinue = options.exhausted ? false : session.canContinue;
+  if (!added.length && nextCursor === session.nextCursor && canContinue === session.canContinue) {
+    return session;
+  }
   return {
     ...session,
     queue: added.length ? [...session.queue, ...added] : session.queue,
     seen,
     nextCursor,
-    canContinue: options.exhausted ? false : session.canContinue
+    canContinue
   };
 }
 
