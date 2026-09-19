@@ -627,13 +627,20 @@ def test_the_heartbeat_keeps_the_last_cycle_between_runs(monkeypatch):
 # The caller itself
 # ---------------------------------------------------------------------------
 
-def test_nothing_in_production_calls_the_cycle_yet():
-    """Adding a caller for this worker is the deployment step, and it is the
-    owner's to take. The module is importable and tested; wiring it into a
-    process is a separate, deliberate commit.
+def test_the_cycle_is_hosted_in_exactly_one_process():
+    """The owner authorised the caller; this now pins where it lives.
 
-    This asserts the module is not yet hosted anywhere, so that wiring it in
-    fails here and forces whoever does it to confirm the gates first.
+    Until this commit the assertion was the reverse — that nothing hosted the
+    module at all — because adding a caller is the step that makes real money
+    movement possible, and it was the owner's to take. It has been taken, so the
+    test's job changes rather than disappearing: from "nobody hosts this" to
+    "exactly one process does".
+
+    One host, not "at least one". Two processes running the cycle is not a
+    double-payout risk — the per-row idempotency keys underneath see to that —
+    but the loser of each leader-lock race spends its cycle generating `failed`
+    transitions on rows the winner is already handling, which in the logs is
+    indistinguishable from a Stripe outage.
     """
     import pathlib
 
@@ -644,7 +651,21 @@ def test_nothing_in_production_calls_the_cycle_yet():
             continue
         if "marketplace_payout_worker" in path.read_text(encoding="utf-8", errors="ignore"):
             hosts.append(path.name)
-    assert hosts == [], (
-        "the payout worker now has a host: " + ", ".join(hosts) + ". That is the commit "
-        "that turns on real money movement, so confirm the owner authorized it and "
-        "update this test deliberately.")
+    assert hosts == ["pulse_worker.py"], (
+        "expected the payout cycle to be hosted only by pulse_worker.py, found: "
+        + (", ".join(hosts) or "no host at all"))
+
+
+def test_the_host_cannot_pay_without_the_owners_two_switches():
+    """Hosting it is not switching it on.
+
+    The point of this commit is that the caller exists and still pays nobody.
+    `may_move_money` is the single expression the codebase uses to answer
+    "can this move money", and on an unconfigured deployment it is False.
+    """
+    for name in (worker.ENABLED_ENV_VAR, worker.DRY_RUN_ENV_VAR,
+                 worker.OWNER_AUTHORIZED_ENV_VAR):
+        os.environ.pop(name, None)
+    assert not worker.worker_enabled()
+    assert not worker.may_move_money()
+    assert worker.run_payout_cycle_if_due({}) is None

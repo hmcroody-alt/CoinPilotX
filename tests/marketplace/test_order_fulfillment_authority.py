@@ -24,6 +24,13 @@ TX = 9001
 SELLER_ID = "77"
 BUYER_ID = 31
 
+#: The lane literal a real order carries, taken from the module rather than
+#: spelled out here. A fixture is free to invent a kind no order has, and every
+#: authority assertion after it then passes for the wrong reason — the order was
+#: refused the shipped lane, not refused the actor. This fixture did exactly that
+#: with "shipped", which `order_kind` never returns.
+SHIPPING_KIND = sorted(fulfillment.SHIPPING_KINDS)[0]
+
 
 @pytest.fixture
 def cur():
@@ -33,7 +40,7 @@ def cur():
     fulfillment.create_schema(cursor)
     fulfillment.open_fulfillment(
         cursor, seller_transaction_id=TX, seller_id=SELLER_ID,
-        buyer_user_id=BUYER_ID, fulfillment_kind="shipped", order_id="ord_1")
+        buyer_user_id=BUYER_ID, fulfillment_kind=SHIPPING_KIND, order_id="ord_1")
     try:
         yield cursor
     finally:
@@ -224,7 +231,7 @@ def test_the_first_ready_timestamp_is_the_one_that_stands(cur):
 def test_opening_the_same_order_twice_does_not_reset_it(cur):
     _ship(cur)
     fulfillment.open_fulfillment(cur, seller_transaction_id=TX, seller_id=SELLER_ID,
-                                 buyer_user_id=BUYER_ID, fulfillment_kind="shipped")
+                                 buyer_user_id=BUYER_ID, fulfillment_kind=SHIPPING_KIND)
     assert _state(cur) == fulfillment.SHIPPED
 
 

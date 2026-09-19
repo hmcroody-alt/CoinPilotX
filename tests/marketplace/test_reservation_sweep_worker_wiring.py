@@ -564,12 +564,29 @@ def test_16_the_worker_calls_only_the_sweep_entry_point():
         )
 
 
+#: Every marketplace seam this worker is allowed to host. Each entry is a module
+#: that only *schedules* — the decisions stay in the modules they came from. The
+#: set is exact rather than a prefix, so adding a fourth still has to be argued
+#: for here.
+HOSTED_MARKETPLACE_SEAMS = {
+    "services.marketplace_reservation_sweeper",
+    "services.marketplace_release_cycle",
+    "services.marketplace_payout_worker",
+}
+
+
 def test_17_the_worker_imports_no_settlement_surface_but_the_sweeper():
-    """One seam, so there is one place to audit.
+    """Only scheduling seams, so there is one place to audit.
 
     Importing the reconciler or the cart routes into the worker would not be a
     bug today, but it is the first step of every drift: the import lands first,
     the direct call follows in a later change.
+
+    The release cycle and the payout worker joined the sweeper here under an
+    explicit owner authorization to host them. They are the same shape — a
+    ``run_*_if_due(state)`` and a ``heartbeat_metadata(state)``, no business
+    rule of their own — so what this test guards is unchanged. What it can no
+    longer say is "one seam", which is why the allowlist is now named.
 
     Scoped to ``marketplace_`` rather than to the substring ``reservation``,
     because ``services.marketplace_cart_routes`` — which owns every write to a
@@ -591,8 +608,9 @@ def test_17_the_worker_imports_no_settlement_surface_but_the_sweeper():
             modules.update(alias.name for alias in node.names)
 
     marketplace_modules = {m for m in modules if "marketplace" in m or "reservation" in m}
-    assert marketplace_modules == {"services.marketplace_reservation_sweeper"}, (
-        "pulse_worker.py imports a marketplace module other than the sweeper"
+    assert marketplace_modules == HOSTED_MARKETPLACE_SEAMS, (
+        "pulse_worker.py imports a marketplace module that is not one of the "
+        "scheduling seams it is authorized to host"
     )
 
     for forbidden in FORBIDDEN_SETTLEMENT_NAMES:
