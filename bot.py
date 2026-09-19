@@ -96142,9 +96142,12 @@ def api_pulse_seller_application_submit():
         notify_seller_review_admins(cur, application, target)
         conn.commit()
         application = seller_lifecycle.get_application_by_id(cur, application.get("id"))
+        submission_context = seller_application_email_context(cur, application)
         response = _seller_application_response(cur, application)
     finally:
         conn.close()
+    # After the connection is closed: the notification engine opens its own.
+    emit_seller_application_event(user["user_id"], target, submission_context)
     response["message"] = "Application sent for review."
     return jsonify(response)
 
@@ -96259,6 +96262,301 @@ def notify_seller_applicant(cur, application, status, message=""):
         )
     except Exception as exc:
         logging.warning("SELLER_APPLICATION_APPLICANT_NOTIFY_FAILED error=%s", exc)
+
+
+def seller_connect_status_context(cur, user_id):
+    """The three Stripe status rows a seller sees, read from their payout record.
+
+    Derived rather than stored, because the payout row already holds the only
+    facts that matter — whether Stripe gave us an account id, and whether it has
+    turned charges and payouts on. A separate stored status would be a fourth
+    thing to keep in sync with Stripe and the first to go stale.
+    """
+    row = {}
+    try:
+        cur.execute(
+            "SELECT connected_account_id, provider_account_id, charges_enabled, payouts_enabled, "
+            "onboarding_status FROM seller_payout_accounts WHERE user_id=? "
+            "ORDER BY updated_at DESC, id DESC LIMIT 1",
+            (int(user_id or 0),),
+        )
+        row = dict(cur.fetchone() or {})
+    except Exception as exc:
+        logging.warning("SELLER_CONNECT_STATUS_READ_FAILED user=%s error=%s", user_id, exc)
+
+    def _enabled(value):
+        return str(value).strip().lower() in {"1", "true", "yes", "t", "on"}
+
+    account_id = str(row.get("connected_account_id") or row.get("provider_account_id") or "").strip()
+    onboarding = str(row.get("onboarding_status") or "").strip().lower()
+    charges = _enabled(row.get("charges_enabled"))
+    payouts = _enabled(row.get("payouts_enabled"))
+
+    if not account_id:
+        connect_status = "not_started"
+    elif onboarding in {"restricted", "disabled", "rejected", "disconnected"}:
+        connect_status = "restricted"
+    elif charges and payouts:
+        connect_status = "payments_ready"
+    else:
+        connect_status = "onboarding"
+
+    return {
+        "stripe_connect_status": connect_status,
+        "card_payment_status": "enabled" if charges else "not_enabled",
+        "payout_status": "enabled" if payouts else "not_enabled",
+    }
+
+
+def stripe_timestamp_date(value):
+    """A Stripe unix timestamp as a readable date, or "" if there isn't one.
+
+    Returns "" rather than a placeholder because the fact blocks in payment
+    emails drop empty rows — an absent arrival date should show nothing, not a
+    date the seller could plan around.
+    """
+    try:
+        seconds = int(value or 0)
+    except (TypeError, ValueError):
+        return ""
+    if seconds <= 0:
+        return ""
+    try:
+        return datetime.utcfromtimestamp(seconds).strftime("%B %d, %Y")
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+#: Which applicant-facing statuses have an email of their own. A status absent
+#: here still gets its in-app notification from ``notify_seller_applicant``; it
+#: simply has no email yet, which is a gap rather than a silent failure.
+SELLER_APPLICATION_EVENTS = {
+    seller_lifecycle.SUBMITTED: "seller_application_received",
+    seller_lifecycle.RESUBMITTED: "seller_application_received",
+    seller_lifecycle.INFORMATION_REQUESTED: "seller_information_requested",
+    seller_lifecycle.APPROVED: "seller_approved",
+    seller_lifecycle.REJECTED: "seller_declined",
+}
+
+
+def seller_application_email_context(cur, application, message=""):
+    """Everything the applicant's email needs, gathered while the cursor is open."""
+    user_id = int((application or {}).get("user_id") or 0)
+    context = {
+        "application_id": str((application or {}).get("id") or ""),
+        "store_name": (application or {}).get("business_name") or (application or {}).get("store_name") or "",
+        "reviewer_message": message or "",
+        "seller_application_status": seller_lifecycle.normalize_status((application or {}).get("status") or ""),
+    }
+    try:
+        cur.execute("SELECT first_name, full_name, username FROM users WHERE id=? LIMIT 1", (user_id,))
+        user = dict(cur.fetchone() or {})
+        first = str(user.get("first_name") or "").strip()
+        if not first:
+            first = str(user.get("full_name") or "").strip().split(" ")[0]
+        context["seller_first_name"] = first or str(user.get("username") or "").strip()
+    except Exception as exc:
+        logging.warning("SELLER_APPLICATION_EMAIL_CONTEXT_FAILED user=%s error=%s", user_id, exc)
+    context.update(seller_connect_status_context(cur, user_id))
+    return context
+
+
+def emit_payment_notification(event, user_id, context=None, email_only=False):
+    """Send one marketplace payment notification. Call this AFTER the commit.
+
+    Never raises: a notification that fails to send must not fail the webhook,
+    because Stripe would then redeliver an event whose database effects have
+    already been applied.
+    """
+    if not event or not user_id:
+        return {"ok": False, "skipped": True}
+    try:
+        from services import payments_notifications
+
+        return payments_notifications.emit(event, int(user_id), context or {}, email_only=email_only)
+    except Exception as exc:
+        logging.warning("PAYMENT_NOTIFICATION_FAILED event=%s user=%s error=%s", event, user_id, exc)
+        return {"ok": False, "error": str(exc)}
+
+
+def emit_seller_application_event(user_id, status, context):
+    """Send the applicant's payment notification. Call this AFTER the commit.
+
+    ``payments_notifications.emit`` opens its own connection, so calling it
+    inside the reviewer's transaction would have a second writer wait on an
+    uncommitted row — a lock wait on Postgres, "database is locked" on SQLite.
+    """
+    event = SELLER_APPLICATION_EVENTS.get(seller_lifecycle.normalize_status(status) or "")
+    return emit_payment_notification(event, user_id, context)
+
+
+def marketplace_transaction_parties(tx_ids):
+    """Buyer, seller and amounts for settlement transactions, keyed by id.
+
+    Opens its own connection. Every caller reaches here after the webhook's
+    transaction is committed and closed, so there is nothing to join to.
+    """
+    ids = []
+    for value in tx_ids or []:
+        try:
+            ids.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    if not ids:
+        return {}
+    conn = db()
+    try:
+        placeholders = ",".join(["?"] * len(ids))
+        rows = conn.execute(
+            f"""SELECT id, buyer_user_id, seller_user_id, amount_cents, currency
+                FROM seller_transactions WHERE id IN ({placeholders})""",
+            tuple(ids),
+        ).fetchall()
+    except Exception as exc:
+        logging.warning("MARKETPLACE_TX_PARTIES_FAILED ids=%s error=%s", ids, exc)
+        return {}
+    finally:
+        conn.close()
+    return {int(dict(row)["id"]): dict(row) for row in rows or []}
+
+
+def seller_first_names(user_ids):
+    """First names for notification greetings, or "" where there isn't one."""
+    ids = sorted({int(value) for value in user_ids if value})
+    if not ids:
+        return {}
+    conn = db()
+    try:
+        placeholders = ",".join(["?"] * len(ids))
+        rows = conn.execute(
+            f"SELECT id, first_name, full_name, username FROM users WHERE id IN ({placeholders})",
+            tuple(ids),
+        ).fetchall()
+    except Exception as exc:
+        logging.warning("MARKETPLACE_NOTIFICATION_NAMES_FAILED ids=%s error=%s", ids, exc)
+        return {}
+    finally:
+        conn.close()
+    names = {}
+    for row in rows or []:
+        user = dict(row)
+        first = str(user.get("first_name") or "").strip()
+        if not first:
+            first = str(user.get("full_name") or "").strip().split(" ")[0]
+        names[int(user["id"])] = first or str(user.get("username") or "").strip()
+    return names
+
+
+def emit_marketplace_refund_notifications(results, refund_obj):
+    """Tell each buyer their refund is on the way. Call this AFTER the reversal.
+
+    Driven by the allocator's per-order results rather than the charge's
+    ``amount_refunded``: a charge can span several orders, and telling every
+    buyer the whole charge's figure would overstate what each is getting back.
+    """
+    obj = dict(refund_obj or {})
+    allocations = {}
+    for result in results or []:
+        settlement = dict((result or {}).get("settlement") or {})
+        tx_id = settlement.get("seller_transaction_id")
+        amount = int((result or {}).get("total_refund_minor") or 0)
+        if not tx_id or amount <= 0 or (result or {}).get("duplicate"):
+            continue
+        allocations[int(tx_id)] = allocations.get(int(tx_id), 0) + amount
+    if not allocations:
+        return
+    parties = marketplace_transaction_parties(allocations.keys())
+    names = seller_first_names([row.get("buyer_user_id") for row in parties.values()])
+    refunded_at = stripe_timestamp_date(obj.get("created"))
+    for tx_id, amount in allocations.items():
+        row = parties.get(tx_id) or {}
+        buyer_id = int(row.get("buyer_user_id") or 0)
+        if not buyer_id:
+            continue
+        emit_payment_notification("refund_completed", buyer_id, {
+            "order_id": str(tx_id),
+            "order_reference": f"#{tx_id}",
+            "amount_cents": amount,
+            "currency": row.get("currency") or "USD",
+            "refunded_at": refunded_at,
+            "buyer_first_name": names.get(buyer_id, ""),
+        })
+
+
+def emit_marketplace_paid_order_emails(paid_txs):
+    """Email the buyer their receipt and the seller their new order.
+
+    Email only: ``pulse_emit_payment_checkout_event`` and ``notify_user`` have
+    already written the in-app rows and sent the push for these same two facts.
+    Email was the channel neither of them had.
+
+    Call this AFTER the commit — the notification engine opens its own
+    connection, and a second writer inside the webhook's open transaction is a
+    lock wait on Postgres.
+    """
+    for tx in paid_txs or []:
+        tx = dict(tx or {})
+        tx_id = int(tx.get("id") or 0)
+        if not tx_id:
+            continue
+        try:
+            details = json.loads(tx.get("metadata_json") or "{}")
+        except Exception:
+            details = {}
+        currency = str(tx.get("currency") or "USD").upper()
+        shared = {
+            "order_id": str(tx_id),
+            "order_reference": f"#{tx_id}",
+            "item_summary": str(details.get("title") or "")[:160],
+            "amount_cents": int(tx.get("amount_cents") or 0),
+            "currency": currency,
+        }
+        buyer_id = int(tx.get("buyer_user_id") or 0)
+        if buyer_id:
+            emit_payment_notification("payment_succeeded", buyer_id, shared, email_only=True)
+        seller_id = int(tx.get("seller_user_id") or 0)
+        if seller_id:
+            emit_payment_notification("new_paid_order", seller_id, {
+                **shared,
+                "seller_net_cents": int(tx.get("seller_net_cents") or 0),
+            }, email_only=True)
+
+
+def emit_marketplace_dispute_notifications(tx_ids, dispute_obj, event_type):
+    """Tell the seller a payment is disputed. Call this AFTER the hold lands.
+
+    ``dispute_opened`` fires once, on creation, and already carries the evidence
+    deadline. ``dispute_action_required`` is reserved for a later update, so the
+    seller is not sent two emails about the same dispute in the same second.
+    """
+    obj = dict(dispute_obj or {})
+    status = str(obj.get("status") or "")
+    evidence = dict(obj.get("evidence_details") or {})
+    due_by = stripe_timestamp_date(evidence.get("due_by"))
+    if event_type == "charge.dispute.created":
+        event = "dispute_opened"
+    elif event_type == "charge.dispute.updated" and status == "needs_response" and due_by:
+        event = "dispute_action_required"
+    else:
+        return
+    parties = marketplace_transaction_parties(tx_ids)
+    if not parties:
+        return
+    names = seller_first_names([row.get("seller_user_id") for row in parties.values()])
+    for tx_id, row in parties.items():
+        seller_id = int(row.get("seller_user_id") or 0)
+        if not seller_id:
+            continue
+        emit_payment_notification(event, seller_id, {
+            "order_id": str(tx_id),
+            "order_reference": f"#{tx_id}",
+            "dispute_id": str(obj.get("id") or ""),
+            "amount_cents": int(obj.get("amount") or row.get("amount_cents") or 0),
+            "currency": str(obj.get("currency") or row.get("currency") or "USD").upper(),
+            "dispute_reason": str(obj.get("reason") or "").replace("_", " "),
+            "evidence_due_by": due_by,
+            "seller_first_name": names.get(seller_id, ""),
+        })
 
 
 def approved_marketplace_seller_for_user(cur, user_id):
@@ -102234,6 +102532,8 @@ def admin_seller_application_action(admin):
             return "Application not found."
 
         outcome = ""
+        # Gathered inside the transaction, emitted after it commits.
+        pending_notification = None
         # Assignment is not a decision and may happen on its own, so it is
         # handled first and independently of whether a decision was chosen.
         if reviewer_id >= 0:
@@ -102260,6 +102560,11 @@ def admin_seller_application_action(admin):
             # Re-read so downstream helpers see the row as it now is.
             application = seller_lifecycle.get_application_by_id(cur, app_id)
             notify_seller_applicant(cur, application, target, reason)
+            pending_notification = (
+                int(application.get("user_id") or 0),
+                target,
+                seller_application_email_context(cur, application, reason),
+            )
             if target in (
                 seller_lifecycle.APPROVED, seller_lifecycle.REJECTED, seller_lifecycle.SUSPENDED,
             ):
@@ -102277,6 +102582,8 @@ def admin_seller_application_action(admin):
             outcome = f"Application #{app_id} moved from {move['from']} to {move['to']}."
 
         conn.commit()
+        if pending_notification:
+            emit_seller_application_event(*pending_notification)
         if decision:
             # Audit metadata carries the decision and nothing the applicant
             # wrote: no names, no document filenames, no field values.
@@ -110592,6 +110899,7 @@ def stripe_webhook():
                 if buyer_id:
                     notify_user(cur, buyer_id, "purchase", "Marketplace order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
             conn.commit(); conn.close()
+            emit_marketplace_paid_order_emails(paid_marketplace_txs)
             for paid_tx in paid_marketplace_txs:
                 pulse_finalize_marketplace_settlement(paid_tx, intent_id, marketplace_transfer_group(metadata))
             resolved_event_user_id = safe_int(metadata.get("buyer_user_id"), 0) or None
@@ -110607,6 +110915,7 @@ def stripe_webhook():
             marketplace_cart_service._ensure_schema(cur)
             cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
             tx = dict(cur.fetchone() or {})
+            paid_marketplace_txs = []
             if tx and str(tx.get("status") or "") != "refunded":
                 # Conditional: a refund that already settled must not be undone
                 # by a duplicate delivery of the original success event.
@@ -110630,7 +110939,9 @@ def stripe_webhook():
                     notify_user(cur, int(tx.get("buyer_user_id") or 0), "purchase", "Order confirmed", "Your payment and order were confirmed.", "/pulse/orders")
                 resolved_event_user_id = int(tx.get("buyer_user_id") or 0) or None
                 conn.commit()
+                paid_marketplace_txs = [tx]
             conn.close()
+            emit_marketplace_paid_order_emails(paid_marketplace_txs)
             if tx:
                 pulse_finalize_marketplace_settlement(tx, intent_id, marketplace_transfer_group(metadata))
             record_stripe_event(event, "processed", resolved_event_user_id)
@@ -110850,10 +111161,14 @@ def stripe_webhook():
         obj = event["data"]["object"]
         now = datetime.utcnow().isoformat(timespec="seconds")
         connect_seller_id = ""
+        # (event, user_id, context) gathered here, emitted after the commit —
+        # the notification engine opens its own connection.
+        payment_notifications = []
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if event_type == "account.updated":
             acct = obj.get("id") or ""
             requirements = (obj.get("requirements") or {}).get("currently_due") or []
+            disabled_reason = str((obj.get("requirements") or {}).get("disabled_reason") or "")
             cur.execute(
                 """
                 UPDATE seller_payout_accounts
@@ -110862,14 +111177,38 @@ def stripe_webhook():
                 """,
                 ("complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due", 1 if obj.get("payouts_enabled") else 0, 1 if obj.get("charges_enabled") else 0, json.dumps(requirements, default=str), now, now, acct),
             )
-            if obj.get("payouts_enabled") and obj.get("charges_enabled"):
+            cur.execute("SELECT user_id FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
+            connect_user_id = safe_int(dict(cur.fetchone() or {}).get("user_id"), 0)
+            charges_on = bool(obj.get("charges_enabled"))
+            payouts_on = bool(obj.get("payouts_enabled"))
+            if payouts_on and charges_on:
                 # Sales made *before* the seller finished onboarding opened in
                 # `pending_onboarding` and nothing ever revisited them, so a
                 # seller who sold first and onboarded second stayed unpayable
                 # forever. Collected here and reconciled after the commit, off
                 # this connection.
-                cur.execute("SELECT user_id FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
-                connect_seller_id = str(dict(cur.fetchone() or {}).get("user_id") or "")
+                connect_seller_id = str(connect_user_id or "")
+            if connect_user_id:
+                connect_context = {
+                    "stripe_connect_status": (
+                        "restricted" if disabled_reason
+                        else "payments_ready" if (charges_on and payouts_on)
+                        else "onboarding"
+                    ),
+                    "card_payment_status": "enabled" if charges_on else "not_enabled",
+                    "payout_status": "enabled" if payouts_on else "not_enabled",
+                    "requirements": ", ".join(str(item) for item in requirements)[:400],
+                    "disabled_reason": disabled_reason,
+                }
+                if disabled_reason:
+                    payment_notifications.append(("seller_account_restricted", connect_user_id, connect_context))
+                elif charges_on and payouts_on:
+                    # Both dedupe on the seller alone, so Stripe's routine
+                    # `account.updated` traffic cannot re-send either one.
+                    payment_notifications.append(("stripe_account_ready", connect_user_id, connect_context))
+                    payment_notifications.append(("card_payments_enabled", connect_user_id, connect_context))
+                elif requirements:
+                    payment_notifications.append(("stripe_verification_required", connect_user_id, connect_context))
         elif event_type in {"payout.paid", "payout.failed"}:
             destination = obj.get("destination") or obj.get("account") or ""
             cur.execute("SELECT * FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (destination,))
@@ -110879,6 +111218,19 @@ def stripe_webhook():
                     "INSERT INTO seller_payouts (user_id, seller_type, amount_cents, currency, status, provider, provider_payout_id, failure_reason, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'stripe', ?, ?, ?, ?)",
                     (account.get("user_id"), account.get("seller_type"), int(obj.get("amount") or 0), (obj.get("currency") or "usd").upper(), "paid" if event_type == "payout.paid" else "failed", obj.get("id") or "", obj.get("failure_message") or "", now, now),
                 )
+                payment_notifications.append((
+                    "payout_paid" if event_type == "payout.paid" else "payout_failed",
+                    safe_int(account.get("user_id"), 0),
+                    {
+                        "amount_cents": int(obj.get("amount") or 0),
+                        "currency": (obj.get("currency") or "usd").upper(),
+                        "payout_id": obj.get("id") or "",
+                        "payout_reference": obj.get("id") or "",
+                        "arrival_date": stripe_timestamp_date(obj.get("arrival_date")),
+                        "failed_at": now if event_type == "payout.failed" else "",
+                        "failure_reason": obj.get("failure_message") or "",
+                    },
+                ))
             from services import marketplace_payout_scheduler
             marketplace_payout_scheduler.apply_provider_event(
                 obj.get("id") or "", paid=event_type == "payout.paid", event_id=event_id)
@@ -110945,6 +111297,10 @@ def stripe_webhook():
                         },
                     )
         conn.commit(); conn.close()
+        for _event_name, _event_user_id, _event_context in payment_notifications:
+            # Each is deduped on a stable key derived from the Stripe object, so
+            # a webhook redelivery re-enters here and sends nothing twice.
+            emit_payment_notification(_event_name, _event_user_id, _event_context)
         if connect_seller_id:
             # Outside the connection above: the settlement service opens its own,
             # and `ensure_schema(conn)` on a held connection is how a route
@@ -110959,13 +111315,17 @@ def stripe_webhook():
                 logging.exception("MARKETPLACE_ONBOARDING_RECONCILE_FAILED event_id=%s account=%s",
                                   event_id, obj.get("id") or "")
         if event_type == "charge.refunded":
-            pulse_apply_marketplace_charge_refund(obj)
+            emit_marketplace_refund_notifications(pulse_apply_marketplace_charge_refund(obj), obj)
         elif event_type.startswith("charge.dispute."):
             # Outside the connection above on purpose: the settlement service and
             # the ledger open their own, and holding this one across them is how
             # `ensure_schema(conn)` deadlocks a worker on Postgres.
             try:
                 pulse_apply_marketplace_dispute(obj, event_type, event_id)
+                # After the hold, never before: an email saying the payout is on
+                # hold must not go out ahead of the hold actually landing.
+                emit_marketplace_dispute_notifications(
+                    pulse_marketplace_reversal_transaction_ids(obj), obj, event_type)
             except Exception:
                 # A chargeback that does not place its hold is money about to be
                 # transferred to a seller who is losing it. Never silent.
