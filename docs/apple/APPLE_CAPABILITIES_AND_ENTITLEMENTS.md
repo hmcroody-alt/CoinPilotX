@@ -160,6 +160,22 @@ extension **cannot read the session token today**. Any widget or share extension
 personalised content is blocked on that entitlement, and adding it later means migrating
 existing keychain items — cheaper to decide up front.
 
+**Measured 2026-09-19 — see `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`.** Two corrections to the
+paragraph above, in opposite directions:
+
+- *Cheaper than implied.* `expo-secure-store@15.0.8` supports `accessGroup` natively at both
+  the TS (`SecureStore.d.ts:76-80`) and Swift (`SecureStoreModule.swift:187-188`) layers, so
+  no custom native module is needed — and `sessionStore.ts:21-38` already contains a
+  read-old/write-new keychain migration (the biometric v1→v2) to copy. The migration is one
+  options constant and a fallback branch, not a data migration.
+- *More dangerous than implied.* One shared query builder (`SecureStoreModule.swift:172`)
+  serves get, set **and** delete, so `accessGroup` filters *reads*. Items written today
+  cannot be found by an access-group-scoped read, and `getSessionCookie` degrades to `null`
+  by design (`sessionStore.ts:66-73`). The failure mode is therefore a **silent mass
+  sign-out** with no crash and no error — which is why that document concludes it should
+  ship as its own release rather than inside the first widget, and why it cannot be
+  validated on the simulator.
+
 ### Expo prebuild considerations
 
 `mobile-native/ios/` is committed, but `app.config.js` runs config plugins
