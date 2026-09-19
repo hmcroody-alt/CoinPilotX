@@ -193,12 +193,23 @@ describe("race 3: the retry storm", () => {
    * tight loop against production -- and it is invisible from the app, which
    * simply looks like it is still loading.
    */
+  /**
+   * A fresh `Error` per call, not one object reused.
+   *
+   * This distinction is the whole test. Handing back the *same* error object
+   * every time makes React bail out of the re-render, which stops the loop by
+   * accident and makes a missing latch look present -- a mutation pass caught
+   * this file doing exactly that. A real rejected request mints a new Error on
+   * every attempt, so the storm is only reproducible the realistic way.
+   */
   it("does not re-fire on its own after a failure", async () => {
-    mockFetch.mockResolvedValue(page([], { error: new Error("offline") }));
+    mockFetch.mockImplementation(async () => page([], { error: new Error("offline") }));
     const { result } = renderHook(() => useImmersiveSession({ origin: origin(), seed: [post(2)] }));
 
     await waitFor(() => expect(result.current.error).toBeTruthy());
     const attempts = mockFetch.mock.calls.length;
+    expect(attempts).toBeLessThanOrEqual(2);
+    await act(async () => undefined);
     await act(async () => undefined);
     await act(async () => undefined);
     expect(mockFetch).toHaveBeenCalledTimes(attempts);
