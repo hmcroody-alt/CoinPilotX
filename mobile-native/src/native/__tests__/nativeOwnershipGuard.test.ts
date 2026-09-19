@@ -65,8 +65,12 @@ const GUARDS: Guard[] = [
     baseline: new Set([])
   },
   {
+    // `session/sessionStore` and `api/push` were co-owners here, which made
+    // `native/secureStore`'s own docstring — "exactly one module in src/ names
+    // expo-secure-store" — false for as long as it has existed. Both now import
+    // through the owner, so this is a single-owner guard like the rest.
     module: "expo-secure-store",
-    owner: /^(native\/|session\/sessionStore|api\/push)/,
+    owner: /^native\//,
     baseline: new Set([])
   }
 ];

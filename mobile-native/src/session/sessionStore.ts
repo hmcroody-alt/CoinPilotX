@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "../native/secureStore";
 import { Platform } from "react-native";
 import { PULSE_API_BASE_URL } from "../api/config";
 
