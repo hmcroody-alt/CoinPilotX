@@ -28,6 +28,17 @@ requests==2.33.1
 stripe==15.1.0
 SQLAlchemy>=2.0,<3
 psycopg2-binary>=2.9
+# Signs the ES256 provider token for every APNs push
+# (services/pulsesoc_notification_system.py:2561). It was reaching production
+# only as a transitive dependency of firebase-admin, which requests
+# pyjwt[crypto]>=2.5.0 -- so the day firebase-admin drops or renames it, iOS
+# push stops working and says so misleadingly: the import sits inside a
+# try/except that returns "APNs credentials are not configured", pointing at the
+# environment rather than at the missing package. Same failure shape as the
+# Pillow comment above. The floor mirrors firebase-admin's own, so declaring it
+# cannot change what pip resolves -- verified with `pip install --dry-run`:
+# zero packages installed or upgraded.
+PyJWT[crypto]>=2.5,<3
 PyYAML>=6.0.2,<7
 pywebpush==2.3.0
 typing_extensions==4.15.0

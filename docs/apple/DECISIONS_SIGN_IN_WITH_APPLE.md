@@ -221,6 +221,31 @@ production APNs already depends on is a latent outage — the day `firebase-admi
 drops or renames it, push signing breaks, and nothing in the repo explains why.
 Declaring it is correct independent of SIWA; SIWA is just what surfaced it.
 
+**Done 2026-09-19** — `PyJWT[crypto]>=2.5,<3`, ahead of any SIWA code, since it
+fixes a live risk on its own.
+
+The failure it removes is worse than "push breaks", because the breakage lies
+about its own cause. The import sits inside a `try/except` that returns
+`{"status": "config_missing", "message": "APNs dependency missing: ..."}`
+(`services/pulsesoc_notification_system.py:2559-2562`) — which the caller
+surfaces alongside the genuine "APNs credentials are not configured" path. A
+missing *package* would therefore be investigated as a missing *environment
+variable*. There is direct precedent for the whole shape three lines up in the
+same file: the `Pillow` comment in `requirements.txt` records an undeclared
+import that failed on every deploy and silently discarded the dimensions of all
+318 uploaded images.
+
+The floor deliberately mirrors `firebase-admin`'s own `pyjwt[crypto]>=2.5.0`, so
+the declaration cannot narrow what pip already resolves. Verified rather than
+assumed — `pip install --dry-run --report` for `PyJWT[crypto]>=2.5,<3` reports
+**zero packages installed or upgraded**. The installed version is 2.13.0, and
+`pip show pyjwt` gives `Required-by: firebase-admin` and nothing else, which is
+the whole problem in one line.
+
+Note this does *not* also satisfy the JWKS half. `jwt.decode` can verify RS256
+given a key, but acquiring Apple's key by `kid`, caching it, and handling
+rotation is still unwritten.
+
 Note the CI consequence, which is mild: `requirements.txt` matches the
 "indirect audio-affecting changes" pattern at
 `.github/workflows/realtime-audio.yml:100`. That workflow is explicit in its own
