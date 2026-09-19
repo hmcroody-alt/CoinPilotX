@@ -43,7 +43,7 @@
 import { useEffect, useState } from "react";
 import { getPostDetail, loadCachedPostDetail, PulsePost } from "../api/feed";
 import { PulseApiError } from "../api/pulseApi";
-import { mediaDisplayUrl, feedRenderableMedia } from "../api/feed";
+import { mediaPosterUrl, feedRenderableMedia } from "../api/feed";
 import { PulseEntityRef } from "./pulseEntity";
 
 export type EntityPreview = {
@@ -97,11 +97,22 @@ function shortCaption(value: string) {
  * Only media the feed itself considers renderable is eligible, so the card and
  * the post agree about what the post looks like. A record the feed would skip
  * is skipped here too rather than producing a card with a broken image in it.
+ *
+ * It asks for the *poster*, not the display URL. Asking for the display URL is
+ * what made every shared video post draw a black rectangle with a "Video" badge
+ * over it: `mediaDisplayUrl` prefers `playback_url`, the card handed an `.m3u8`
+ * to an `<Image>`, and the image reported no error while drawing nothing. The
+ * badge was the giveaway -- it only renders inside the branch that has a
+ * thumbnail, so the card believed it had a picture the whole time.
+ *
+ * A video record with no still yields `""` and the loop moves on, which is why
+ * the post-level fallback below still matters: it is the last chance to find a
+ * picture before the card renders with none.
  */
 function previewImage(post: PulsePost) {
   const media = feedRenderableMedia(post.media || post.media_assets || post.attachments);
   for (const record of media) {
-    const url = flatten(mediaDisplayUrl(record));
+    const url = flatten(mediaPosterUrl(record));
     if (url) return url;
   }
   return flatten(post.thumbnail_url || post.image_url || "");

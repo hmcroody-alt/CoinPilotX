@@ -3,6 +3,7 @@ import { absoluteApiUrl, PULSE_API_BASE_URL } from "./config";
 import { pulseApi } from "./pulseApi";
 import { profileTargetFromAuthor } from "./profileTarget";
 import { CanonicalMediaRecord, hasRenderableImage, hasRenderableMediaUrl, mediaRecordForCache } from "../media/mediaContract";
+import { renditionUrl } from "../core/media/mediaIdentity";
 import { buildCommentTree } from "../social/commentTree";
 import { observeSavedState } from "../social/savedStore";
 import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
@@ -641,14 +642,50 @@ export function mediaDisplayUrl(media: PulseMedia) {
     media.mux_hls_url, media.cdn_url, media.valid_url, media.thumbnail_url, media.poster_url
   ];
   const url = candidates.find((value) => typeof value === "string" && value.trim().length > 0)?.trim() || "";
+  return absoluteMediaUrl(url);
+}
+
+/**
+ * Absolute URIs (http(s), plus local preview schemes: file:, content:, ph:,
+ * asset:, data:, blob:) are returned as-is. Only server-relative paths get the
+ * API base prefix. This lets pre-publish previews render local device media
+ * through the exact same renderers as published content.
+ */
+function absoluteMediaUrl(value: string) {
+  const url = value.trim();
   if (!url) return "";
-  // Absolute URIs (http(s), plus local preview schemes: file:, content:, ph:,
-  // asset:, data:, blob:) are returned as-is. Only server-relative paths get the
-  // API base prefix. This lets pre-publish previews render local device media
-  // through the exact same renderers as published content.
   if (/^[a-z][a-z0-9+.-]*:/i.test(url)) return url;
   if (url.startsWith("/")) return `${PULSE_API_BASE_URL}${url}`;
   return `${PULSE_API_BASE_URL}/${url}`;
+}
+
+/**
+ * The still frame for a record -- what an `<Image>` may be pointed at.
+ *
+ * This is a different question from `mediaDisplayUrl`, and conflating the two
+ * is what put a black rectangle in every shared-post card. That resolver answers
+ * "where does this media live", so for a video it answers with the video:
+ * `playback_url` and `hls_url` sit third and fourth in its candidate list, ahead
+ * of `thumbnail_url` and `poster_url`. Hand that to an `<Image>` and you get no
+ * error, no `onError`, and a filled aspect box that never draws -- the failure is
+ * invisible to the component and to any test that only checks a URL was produced.
+ *
+ * The still chain itself is not re-spelled here. `renditionUrl(media, "thumb")`
+ * is the app's existing answer, used by the prefetcher, and it is deliberately
+ * strict: it will not fall back from a poster to the full asset. A second
+ * ordering written locally would be a second answer to drift from.
+ *
+ * What is added on top of it is the kind-aware tail. A video with no still
+ * returns `""` so the caller draws no media at all, which is honest -- better a
+ * card with no picture than a black box captioned "Video". A still image with no
+ * separate thumbnail is its own poster, so it falls through to the display URL
+ * rather than losing its preview to a strictness that was only ever about video.
+ */
+export function mediaPosterUrl(media: PulseMedia) {
+  const still = renditionUrl(media, "thumb");
+  if (still && still.trim()) return absoluteMediaUrl(still);
+  if (mediaKind(media) === "video") return "";
+  return mediaDisplayUrl(media);
 }
 
 export function mediaKind(media: PulseMedia) {
