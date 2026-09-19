@@ -112,9 +112,27 @@ def _media_type(ext):
     return ""
 
 
+# Extensions this test knows about beyond the upload vocabulary in
+# `VIDEO_EXTS`. The two lists are deliberately different: `VIDEO_EXTS` answers
+# "what kind of file did somebody upload", while this answers "is this URL the
+# asset rather than a picture of it" -- and the second question has to cover
+# playback formats nobody ever uploads.
+#
+# `m3u8` is the one that matters and the one that was missing. Every Mux video
+# resolves to an HLS playlist, so the guard that exists to keep a video URL out
+# of a still field was letting through the exact URL almost every PulseSoc
+# video is served as. The native client's own copy of this test
+# (`mobile-native/src/api/feed.ts`, `stillCandidate`) lists `m3u8`; it was
+# fixed there after a shared video post drew a black rectangle with a "Video"
+# badge over it, and the server half was left behind. The two are supposed to
+# agree about what a still is -- when they do not, the one that is wrong
+# decides, because it is the one that puts the URL in the field.
+NON_UPLOAD_VIDEO_EXTS = {"m4v", "qt", "m3u8"}
+
+
 def _is_video_url(value):
     lowered = str(value or "").split("?", 1)[0].split("#", 1)[0].lower()
-    return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | {"m4v", "qt"})
+    return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | NON_UPLOAD_VIDEO_EXTS)
 
 
 def is_video_url(value):
