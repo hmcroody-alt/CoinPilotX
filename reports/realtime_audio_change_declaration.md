@@ -4474,9 +4474,14 @@ before the next store build, not before merge of a two-line config deletion.
 
 ## Protected-boundary addendum (2026-09-19): the guard was on `app.json`; the build reads `Info.plist`
 
-Base: `c22383a46c44736c4d3c60d209cf30830e17c1c7` (`docs(apple): a share extension
-must never upload…`)
+Base: `2bfcdbf0e52144c3983e83ff7e29dc641670ceef` (`docs(apple): live activities
+close the keychain question…`)
 Required label: `audio-critical-change`
+
+The validation below was first run at `c22383a4` and re-run in full on this base
+after `origin/main` advanced by two Apple-docs commits mid-change. Neither
+touches any file in this range — `git diff --stat c22383a4 2bfcdbf0` over the
+five files here is empty — so the rebase is a move, not a merge.
 
 This is an audio-mission change. Its entire subject is the real-time audio
 protected boundary; it changes no runtime code.
