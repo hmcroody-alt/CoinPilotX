@@ -7,9 +7,18 @@
  *     because the threshold would then exist in two places.
  *  2. The resume point is asked of the server. Nothing here tells the server
  *     which parts landed -- it reads its own storage.
- *  3. The bytes never enter JS. The blob is a native descriptor and each part is
- *     a zero-copy slice of it. Reading parts into buffers works on a short clip
- *     and runs a phone out of memory on a long one.
+ *  3. Only one part is in memory at a time. This rule used to read "the bytes never
+ *     enter JS -- the blob is a native descriptor and each part is a zero-copy slice
+ *     of it", which was half true and fatal on the half it got wrong. The slice is
+ *     genuinely zero-copy; obtaining the blob is not. `fetch(file://…)` reaches
+ *     RCTFileRequestHandler, which memory-maps the file, and then RCTNetworkTask does
+ *     an unconditional `[_data appendData:data]` into a fresh NSMutableData -- copying
+ *     every mapped page into dirty heap (RN has a `@catch` there for "Request's
+ *     received data too long"). So the old rule kept bytes out of the JS heap by
+ *     putting the entire file in the native one, and the 90-minute video this file is
+ *     named after was jetsammed before its first byte was uploaded. Ranged reads cost
+ *     one part in JS per part in flight, which is bounded and does not grow with
+ *     duration.
  *  4. A dropped part is re-sent on its own. Restarting the transfer is what makes
  *     a long upload impossible on a real network.
  */
@@ -27,6 +36,7 @@ jest.mock("../pulseApi", () => {
   return { PulseApiError, pulseApi: jest.fn() };
 });
 
+const fileHandles: Array<{ reads: Array<[number, number]>; closed: boolean }> = [];
 jest.mock("expo-file-system", () => ({
   File: class {
     uri: string;
@@ -37,6 +47,26 @@ jest.mock("expo-file-system", () => ({
     }
     slice() {
       throw new Error("expo File.slice must not be used for upload transport");
+    }
+    open() {
+      const record = { reads: [] as Array<[number, number]>, closed: false };
+      fileHandles.push(record);
+      let offset = 0;
+      return {
+        get offset() {
+          return offset;
+        },
+        set offset(value: number) {
+          offset = value;
+        },
+        readBytes(length: number) {
+          record.reads.push([offset, offset + length]);
+          return new Uint8Array(length);
+        },
+        close() {
+          record.closed = true;
+        }
+      };
     }
   }
 }));
@@ -66,7 +96,10 @@ class FakeXHR {
     return name.toLowerCase() === "etag" ? '"etag-1"' : null;
   }
   send(body: unknown) {
-    const slice = body as { size?: number; type?: string };
+    // A part body is a Uint8Array off the ranged reader, or a Blob view when the URI
+    // could not be opened as a file. The two spell their length differently.
+    const part = body as { size?: number; byteLength?: number; type?: string };
+    const size = Number(part?.byteLength ?? part?.size ?? 0);
     setTimeout(() => {
       if (FakeXHR.failOnce.has(this.url)) {
         FakeXHR.failOnce.delete(this.url);
@@ -75,8 +108,8 @@ class FakeXHR {
         this.onload?.();
         return;
       }
-      FakeXHR.sent.push({ url: this.url, size: Number(slice?.size || 0), type: String(slice?.type || "") });
-      this.upload.onprogress?.({ loaded: Number(slice?.size || 0) });
+      FakeXHR.sent.push({ url: this.url, size, type: String(part?.type || "") });
+      this.upload.onprogress?.({ loaded: size });
       this.readyState = FakeXHR.DONE;
       this.onload?.();
     }, 0);
@@ -185,6 +218,7 @@ describe("Messenger resumable upload transport", () => {
     calls = [];
     FakeXHR.sent = [];
     FakeXHR.failOnce = new Set();
+    fileHandles.length = 0;
     (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
     blob = {
       size: 0,
@@ -229,18 +263,24 @@ describe("Messenger resumable upload transport", () => {
     expect(FakeXHR.sent.reduce((total, item) => total + item.size, 0)).toBe(size);
   });
 
-  it("slices the native blob rather than reading bytes into JS", async () => {
+  it("reads one part at a time off disk and never the whole file", async () => {
     const size = 20 * MB;
     primeServer({ sizeBytes: size });
     await send(size);
-    expect(global.fetch).toHaveBeenCalledWith("file:///var/mobile/Containers/Data/clip-90m.mp4");
-    expect(blob.slice).toHaveBeenCalledWith(0, PART_SIZE, "video/mp4");
-    expect(blob.slice).toHaveBeenCalledWith(PART_SIZE, 2 * PART_SIZE, "video/mp4");
-    // The tail stops at the end of the file, not at the end of a part.
-    expect(blob.slice).toHaveBeenCalledWith(2 * PART_SIZE, size, "video/mp4");
-    expect(blob.slice).not.toHaveBeenCalledWith(2 * PART_SIZE, 3 * PART_SIZE, "video/mp4");
-    // Every body sent is a view produced by slice(), never a buffer.
-    expect(FakeXHR.sent.every((item) => item.type === "video/mp4")).toBe(true);
+    // `fetch` here would be the whole-file blob. Not reaching it at all is the
+    // assertion -- a size or byte-total check passes on either implementation.
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(blob.slice).not.toHaveBeenCalled();
+    expect(fileHandles).toHaveLength(1);
+    expect(fileHandles[0].reads.sort((a, b) => a[0] - b[0])).toEqual([
+      [0, PART_SIZE],
+      [PART_SIZE, 2 * PART_SIZE],
+      // The tail stops at the end of the file, not at the end of a part. Reading a
+      // full width past the end pads the object with zeros, and the byte total then
+      // disagrees with the declared size -- so the server refuses a complete upload.
+      [2 * PART_SIZE, size]
+    ]);
+    expect(fileHandles[0].closed).toBe(true);
   });
 
   it("resumes from what the server says is stored, not from part one", async () => {

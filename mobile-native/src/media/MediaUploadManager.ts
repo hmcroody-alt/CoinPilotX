@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { File } from "expo-file-system";
 import { pulseApi } from "../api/pulseApi";
 import type { NativeMediaAsset, NativeMediaUploadOptions, NativeMediaUploadResult, UploadProgress } from "./nativeMediaUpload";
-import { MAX_RETRIES, PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "./resumableUploadTransport";
+import { MAX_RETRIES, PARALLEL_PARTS, nativeBlobFromUri, openPartSource, uploadBlob, withRetry } from "./resumableUploadTransport";
 
 const STORAGE_PREFIX = "pulsesoc.media-upload.v2.";
 
@@ -127,10 +127,11 @@ export class MediaUploadManager {
       onProgress?.({ stage: "resuming", percent: Math.max(2, Math.round(([...uploadedByPart.values()].reduce((a, b) => a + b, 0) / actualSize) * 94)), message: `Upload interrupted. Retrying (${attempt}/${MAX_RETRIES})…` });
     };
     onProgress?.({ stage: "uploading", percent: 2, message: "Uploading media 0%." });
-    // Stream the finished (already-on-disk) media as a native-backed RN Blob. Created once
-    // and reused across retries and every multipart part, so the mix file is never re-read
-    // into JS memory. Only fetched when bytes still need to be sent.
-    const uploadBody = session.status !== "completed" ? await nativeBlobFromUri(asset.uri) : null;
+    // Single-part uploads are bounded by the server's multipart threshold (16 MB), so
+    // reading the whole file as one native-backed Blob is safe here and nowhere else --
+    // see `nativeBlobFromUri`, which costs the full file size in dirty native memory.
+    // Multipart opens a ranged reader below instead. Only read when bytes still need to go.
+    const uploadBody = session.status !== "completed" && session.strategy === "single" ? await nativeBlobFromUri(asset.uri) : null;
     if (session.status !== "completed" && session.strategy === "single") {
       await withRetry(async () => {
         let uploadUrl = state.session.upload_url;
@@ -158,6 +159,10 @@ export class MediaUploadManager {
       // persisted before this shipped) omits the field, so fall back to the previous
       // one-at-a-time behaviour rather than guessing a cap.
       const perRequest = Math.max(1, Number(session.max_parts_per_request || 0) || 1);
+      // One part at a time off disk. Reading the whole file first, which is what this used
+      // to do, put the entire video in dirty native memory before any byte was uploaded --
+      // survivable for a 30-second clip, an immediate jetsam for the 90-minute one.
+      const partSource = await openPartSource(asset.uri, asset.mimeType);
       const signedUrls = new Map<number, string>();
       const signParts = (numbers: number[]) =>
         withRetry(async () => {
@@ -178,7 +183,7 @@ export class MediaUploadManager {
                 if (!signedUrls.get(number)) await signParts([number]);
                 const url = signedUrls.get(number);
                 if (!url) throw Object.assign(new Error("Upload authorization expired."), { status: 410 });
-                return uploadBlob(url, (uploadBody as Blob).slice(start, end, asset.mimeType), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
+                return uploadBlob(url, await partSource.read(start, end), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
               };
               let result;
               try {
@@ -200,7 +205,13 @@ export class MediaUploadManager {
           }
         }
       };
-      await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
+      try {
+        await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
+      } finally {
+        // A cancel or a failed part must not leave the file handle open -- this upload is
+        // resumable, so the same file is very likely opened again in a moment.
+        partSource.close();
+      }
       await pulseApi(`/api/pulse/media/uploads/${session.upload_id}/complete`, { method: "POST", body: JSON.stringify({ parts: [...completed].map(([part_number, etag]) => ({ part_number, etag })).sort((a, b) => a.part_number - b.part_number) }) });
     }
     if (session.status !== "completed" && session.strategy === "single") await pulseApi(`/api/pulse/media/uploads/${session.upload_id}/complete`, { method: "POST", body: "{}" });

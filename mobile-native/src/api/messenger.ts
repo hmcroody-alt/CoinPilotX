@@ -15,7 +15,7 @@ import {
 // at runtime and this value import is safe.
 import { mintClientMessageId } from "./messengerOrdering";
 import { drainOutbox, enqueueMutation, registerOutboxHandler, outboxScope } from "../core/mutations/outbox";
-import { PARALLEL_PARTS, nativeBlobFromUri, uploadBlob, withRetry } from "../media/resumableUploadTransport";
+import { PARALLEL_PARTS, openPartSource, uploadBlob, withRetry } from "../media/resumableUploadTransport";
 
 const CONVERSATION_CACHE_KEY = "pulsesoc.native.messenger.v2.conversations";
 /**
@@ -1265,7 +1265,11 @@ async function uploadMessengerMediaInParts(input: {
     });
   };
 
-  const body = await nativeBlobFromUri(input.uri);
+  // One part at a time off disk rather than the whole attachment as a single native Blob.
+  // `nativeBlobFromUri` costs the full file size in dirty native memory before any byte is
+  // sent, which a long video does not survive -- and a multipart send is by definition
+  // already past the size where that starts to matter.
+  const source = await openPartSource(input.uri, mimeType);
   let cursor = 0;
   const worker = async () => {
     while (cursor < pending.length) {
@@ -1287,7 +1291,7 @@ async function uploadMessengerMediaInParts(input: {
         const end = Math.min(sizeBytes, start + partSize);
         await withRetry(
           async () => {
-            await uploadBlob(part.upload_url, body.slice(start, end, mimeType), mimeType, (loaded) => {
+            await uploadBlob(part.upload_url, await source.read(start, end), mimeType, (loaded) => {
               sentByPart.set(number, loaded);
               report();
             }, () => undefined);
@@ -1300,7 +1304,11 @@ async function uploadMessengerMediaInParts(input: {
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
+  try {
+    await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));
+  } finally {
+    source.close();
+  }
 
   return pulseApi<MediaUploadResult>("/api/messages/media/upload/finish", {
     method: "POST",

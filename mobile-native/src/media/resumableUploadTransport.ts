@@ -1,3 +1,4 @@
+import { File } from "expo-file-system";
 import { PulseApiError } from "../api/pulseApi";
 
 /**
@@ -27,13 +28,69 @@ export function toFetchableUri(uri: string) {
   return `file://${uri.startsWith("/") ? "" : "/"}${uri}`;
 }
 
-// Obtain a React Native native-backed Blob that streams from the filesystem. The blob is a
-// descriptor (blobId + offset + size) — the bytes stay in native memory and never enter JS,
-// so there is no ArrayBuffer/Uint8Array round-trip. `blob.slice()` returns a zero-copy view
-// over the same native data, which is what makes multipart part uploads memory-safe.
+// Obtain a React Native native-backed Blob for the whole file. The bytes never enter the JS
+// heap, but they are *entirely* resident in native memory: `fetch(file://…)` reaches
+// RCTFileRequestHandler, which memory-maps the file (`NSDataReadingMappedIfSafe`) and hands
+// it to RCTNetworkTask, which unconditionally does `[_data appendData:data]` into a fresh
+// NSMutableData — copying every mapped page into dirty heap. So the peak cost of this call
+// is the full file size, and RN has an explicit `@catch` there for "Request's received data
+// too long."
+//
+// That is fine below MULTIPART_THRESHOLD and fatal above it: a 90-minute video is gigabytes,
+// and iOS jetsams the app during this call, before a single byte has been uploaded. Use
+// `openPartSource` for anything multipart.
 export async function nativeBlobFromUri(uri: string): Promise<Blob> {
   const response = await fetch(toFetchableUri(uri));
   return response.blob();
+}
+
+export type PartSource = {
+  read: (start: number, end: number) => Promise<Blob | Uint8Array>;
+  close: () => void;
+};
+
+/**
+ * A reader that materializes one part at a time instead of the whole file.
+ *
+ * expo-file-system's `FileHandle` seeks and reads a byte range natively, so peak memory is
+ * one part (times the number of parts in flight) regardless of how long the video is. That
+ * is the only thing standing between this engine and a multi-gigabyte upload.
+ *
+ * The returned `Uint8Array` is base64-encoded by RN's `convertRequestBody` before it reaches
+ * the native networking layer, which costs ~1.33x the part size transiently and some CPU.
+ * At an 8 MB part against an upload measured in seconds that is noise, and it buys a bound
+ * that does not exist otherwise. The wire payload is unaffected — native decodes it back to
+ * NSData before sending.
+ *
+ * Falls back to the whole-file blob when the URI is not a plain file (`ph://` asset
+ * references, Android `content://`, remote URLs) because `FileHandle` cannot open those. The
+ * fallback carries the memory cost described above, so callers should prefer a file URI.
+ */
+export async function openPartSource(uri: string, mimeType: string): Promise<PartSource> {
+  const fetchable = toFetchableUri(uri);
+  if (fetchable.startsWith("file://")) {
+    try {
+      const handle = new File(fetchable).open();
+      return {
+        read: async (start, end) => {
+          handle.offset = start;
+          return handle.readBytes(end - start);
+        },
+        close: () => {
+          try {
+            handle.close();
+          } catch {
+            // An already-closed handle is not an upload failure.
+          }
+        },
+      };
+    } catch {
+      // Older runtime, unreadable path, or a URI the module declines. Fall through rather
+      // than failing the upload outright — the blob path still works, just not for huge files.
+    }
+  }
+  const blob = await nativeBlobFromUri(uri);
+  return { read: async (start, end) => blob.slice(start, end, mimeType), close: () => {} };
 }
 
 export function transientStatus(status: number) {
@@ -64,7 +121,7 @@ export async function withRetry<T>(
 
 export function uploadBlob(
   url: string,
-  blob: Blob,
+  blob: Blob | Uint8Array,
   mimeType: string,
   onBytes: (loaded: number) => void,
   register: (xhr: XMLHttpRequest | null) => void

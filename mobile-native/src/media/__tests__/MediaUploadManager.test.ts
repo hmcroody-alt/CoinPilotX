@@ -20,6 +20,10 @@ jest.mock("../../api/pulseApi", () => {
   return { PulseApiError, pulseApi: jest.fn() };
 });
 
+// Models enough of expo-file-system's real surface that the ranged-read path is the one
+// under test. The previous version of this mock had no `open()`, so `openPartSource` threw,
+// was caught, and every multipart assertion silently exercised the whole-file fallback.
+const fileHandles: Array<{ reads: Array<[number, number]>; closed: boolean }> = [];
 jest.mock("expo-file-system", () => ({
   File: class {
     uri: string;
@@ -29,6 +33,20 @@ jest.mock("expo-file-system", () => ({
     // If the transport ever falls back to expo's File.slice, fail loudly — that path is
     // exactly what produced the ArrayBuffer/Blob error on device.
     slice() { throw new Error("expo File.slice must not be used for upload transport"); }
+    open() {
+      const record = { reads: [] as Array<[number, number]>, closed: false };
+      fileHandles.push(record);
+      let offset = 0;
+      return {
+        get offset() { return offset; },
+        set offset(value: number) { offset = value; },
+        readBytes(length: number) {
+          record.reads.push([offset, offset + length]);
+          return new Uint8Array(length);
+        },
+        close() { record.closed = true; }
+      };
+    }
   }
 }));
 
@@ -87,6 +105,7 @@ describe("MediaUploadManager native-file transport", () => {
     FakeXHR.bodies = [];
     FakeXHR.urls = [];
     FakeXHR.rejectOnce = new Map();
+    fileHandles.length = 0;
     (global as unknown as { XMLHttpRequest: unknown }).XMLHttpRequest = FakeXHR;
     // A native-backed RN Blob descriptor — slice() returns a zero-copy view, never bytes.
     nativeBlob = {
@@ -175,22 +194,53 @@ describe("MediaUploadManager native-file transport", () => {
     expect(body.duration_ms).toBe(0);
   });
 
-  it("slices the native RN blob for multipart parts (zero-copy views)", async () => {
+  it("reads each multipart part off disk instead of loading the whole file", async () => {
+    // The bound this protects is memory, and it is the difference between a 90-minute
+    // video uploading and the app being jetsammed before the first byte leaves. A
+    // whole-file `fetch(file://…).blob()` is not a cheap descriptor: RCTFileRequestHandler
+    // memory-maps the file and RCTNetworkTask then copies every page into a fresh
+    // NSMutableData. So the assertion that matters is that `fetch` is never reached at
+    // all on the multipart path -- a size or progress assertion would pass either way.
     primePulseApi("multipart", 1024); // 2048 bytes -> 2 parts
     const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
 
-    const task = mediaUploadManager.upload({ ...asset, uri: "file:///tmp/pulsesoc-video-mix-M.mp4" }, { contextType: "post" });
-    await task.promise;
+    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/pulsesoc-video-mix-M.mp4" }, { contextType: "post" }).promise;
 
-    // Parts come from the RN blob's slice (a view), never from expo File.slice.
-    expect(nativeBlob.slice).toHaveBeenCalledTimes(2);
+    expect(global.fetch as jest.Mock).not.toHaveBeenCalled();
+    expect(nativeBlob.slice).not.toHaveBeenCalled();
+    expect(fileHandles).toHaveLength(1);
+    // Exactly the two part ranges, nothing wider.
+    expect(fileHandles[0].reads.sort((a, b) => a[0] - b[0])).toEqual([[0, 1024], [1024, 2048]]);
+    expect(fileHandles[0].closed).toBe(true);
     expect(FakeXHR.bodies).toHaveLength(2);
-    for (const sent of FakeXHR.bodies) {
-      expect(sent instanceof ArrayBuffer).toBe(false);
-      expect(ArrayBuffer.isView(sent as ArrayBufferView)).toBe(false);
-    }
-    // Already-scheme'd URI is passed through untouched (no double file:// prefix).
-    expect((global.fetch as jest.Mock)).toHaveBeenCalledWith("file:///tmp/pulsesoc-video-mix-M.mp4");
+    for (const sent of FakeXHR.bodies) expect((sent as Uint8Array).byteLength).toBe(1024);
+  });
+
+  it("closes the file handle when a part upload fails", async () => {
+    // Uploads are resumable, so the same file is very likely reopened moments later. A
+    // handle leaked on the failure path is the one that never gets closed.
+    primePulseApi("multipart", 1024);
+    FakeXHR.rejectOnce.set("https://storage.example/part/1", 500);
+    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
+
+    await mediaUploadManager.upload({ ...asset, uri: "file:///tmp/pulsesoc-retry.mp4" }, { contextType: "post" }).promise;
+
+    expect(fileHandles).toHaveLength(1);
+    expect(fileHandles[0].closed).toBe(true);
+  });
+
+  it("still uploads when the URI is not a plain file the handle can open", async () => {
+    // `ph://` asset references and Android `content://` URIs cannot be opened as files.
+    // Falling back to the whole-file blob costs memory, but refusing the upload outright
+    // would be worse, so the fallback has to stay reachable.
+    primePulseApi("multipart", 1024);
+    const { mediaUploadManager } = require("../MediaUploadManager") as typeof import("../MediaUploadManager");
+
+    await mediaUploadManager.upload({ ...asset, uri: "ph://ASSET-ID-1" }, { contextType: "post" }).promise;
+
+    expect(fileHandles).toHaveLength(0);
+    expect(global.fetch as jest.Mock).toHaveBeenCalledWith("ph://ASSET-ID-1");
+    expect(nativeBlob.slice).toHaveBeenCalledTimes(2);
   });
 
   it("signs parts in one batch per round trip, not one request per part", async () => {
