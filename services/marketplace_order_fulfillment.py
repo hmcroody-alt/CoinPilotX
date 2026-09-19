@@ -444,3 +444,60 @@ def due_for_auto_advance(cur, *, now: datetime | None = None, limit: int = 200) 
 
 def next_auto_state(state: str) -> str:
     return {SHIPPED: DELIVERED, DELIVERED: COMPLETED}.get(str(state), "")
+
+
+def sweep_auto_advance(*, now: datetime | None = None, limit: int = 200) -> dict:
+    """Advance every order whose timeout has elapsed. One cycle, own connection.
+
+    The switch for this is the timeout configuration itself, not a separate
+    enable flag. An unconfigured deployment stamps no ``auto_advance_at`` at
+    all, so :func:`due_for_auto_advance` returns nothing and this is a no-op —
+    a second flag would only create a state where the timeouts are set and
+    silently ignored.
+
+    Settlement calls are collected and made after the commit, for the reason
+    :func:`transition` documents: ``settle_delivery`` opens its own connection
+    and would otherwise read a delivery that has not landed yet.
+
+    A row the state machine refuses is counted and left where it is rather than
+    retried, because the refusal is about authority or lane and will not be
+    different next cycle. It stays visible in ``refused``.
+    """
+    ensure_schema()
+    conn = db.connect()
+    settling: list[tuple[int, str]] = []
+    metrics = {"considered": 0, "advanced": 0, "refused": 0, "settled": 0}
+    try:
+        cur = conn.cursor()
+        rows = due_for_auto_advance(cur, now=now, limit=limit)
+        metrics["considered"] = len(rows)
+        for row in rows:
+            target = next_auto_state(str(row.get("state") or ""))
+            if not target:
+                metrics["refused"] += 1
+                continue
+            transaction_id = int(row["seller_transaction_id"])
+            # Derived from the move, so a cycle that runs twice over the same
+            # row — a retry, an overlapping replica — is answered, not reapplied.
+            key = f"auto:{transaction_id}:{row['state']}:{target}"
+            try:
+                result = transition(cur, transaction_id, target, actor_role=SYSTEM,
+                                    actor="fulfillment_sweeper", idempotency_key=key,
+                                    reason="configured timeout elapsed")
+            except FulfillmentError:
+                metrics["refused"] += 1
+                continue
+            metrics["advanced"] += 1
+            if result["settles_delivery"]:
+                settling.append((transaction_id, key))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+    for transaction_id, key in settling:
+        if settle_delivery(transaction_id, actor="fulfillment_sweeper", idempotency_key=key):
+            metrics["settled"] += 1
+    return metrics
