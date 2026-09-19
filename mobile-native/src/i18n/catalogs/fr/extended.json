@@ -1126,6 +1126,17 @@
       "a11yOpen": "Ouvrir le profil PulseSoc de {{author}}",
       "a11yOpenGeneric": "Ouvrir ce profil PulseSoc"
     },
+    "reelCard": {
+      "eyebrow": "REEL PULSESOC",
+      "cta": "Voir le Reel →",
+      "loading": "Chargement du Reel…",
+      "forbidden": "Ce contenu ne vous est pas accessible.",
+      "missing": "Ce Reel n'est plus disponible.",
+      "unavailable": "Reel indisponible",
+      "play": "Lire",
+      "a11yOpen": "Ouvrir le Reel PulseSoc de {{author}}",
+      "a11yOpenGeneric": "Ouvrir ce Reel PulseSoc"
+    },
     "messageActions": {
       "openLink": "Ouvrir le lien",
       "copyLink": "Copier le lien",

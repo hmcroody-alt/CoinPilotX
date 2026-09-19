@@ -21,7 +21,7 @@ def main():
     for token, label in [
         ("preview_comments", "Reel payload includes actual comment previews"),
         ("pulse_reel_comment_payload", "Reel comments are enriched for replies and permissions"),
-        ('/api/pulse/reels/<int:reel_id>", methods=["PATCH", "DELETE"]', "Reel owner edit/delete endpoint exists"),
+        ('/api/pulse/reels/<int:reel_id>", methods=["GET", "PATCH", "DELETE"]', "Reel read/owner edit/delete endpoint exists"),
         ('/api/pulse/reels/<int:reel_id>/pin', "Reel owner pin endpoint exists"),
         ('/api/pulse/reels/comments/<int:comment_id>/react', "Comment reaction endpoint exists"),
         ('/api/pulse/reels/comments/<int:comment_id>", methods=["PATCH", "DELETE"]', "Comment edit/delete endpoint exists"),

@@ -1126,6 +1126,17 @@
       "a11yOpen": "Open {{author}}'s PulseSoc profile",
       "a11yOpenGeneric": "Open this PulseSoc profile"
     },
+    "reelCard": {
+      "eyebrow": "PULSESOC REEL",
+      "cta": "View Reel →",
+      "loading": "Loading Reel…",
+      "forbidden": "This content isn't available to you.",
+      "missing": "This Reel is no longer available.",
+      "unavailable": "Reel unavailable",
+      "play": "Play",
+      "a11yOpen": "Open the PulseSoc Reel by {{author}}",
+      "a11yOpenGeneric": "Open this PulseSoc Reel"
+    },
     "messageActions": {
       "openLink": "Open Link",
       "copyLink": "Copy Link",

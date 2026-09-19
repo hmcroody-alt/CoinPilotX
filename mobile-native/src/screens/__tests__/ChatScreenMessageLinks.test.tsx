@@ -232,20 +232,47 @@ describe("a URL inside a message bubble", () => {
     expect(textOf(links[0])).toBe("https://pulsesoc.com/");
   });
 
+  /**
+   * Two URLs, two inline links -- and, since the Reel became a thing the app can
+   * card, a third `link` node that is not inline text at all.
+   *
+   * The query is filtered to nodes whose glyph run is the URL rather than asked
+   * for a total, because a flat count conflates two unrelated guarantees. This
+   * test is about *segmentation*: the run of text between two URLs must not be
+   * swallowed into either of them. Whether the message also draws a card above
+   * itself is `PulseEntityLinkCard`'s question, and a count that answers both at
+   * once fails for the wrong reason the next time either one changes -- which is
+   * exactly what it did when reels started resolving.
+   */
   it("links each URL separately when a message has several", async () => {
     const navigation = await renderChat([
       "one https://pulsesoc.com/pulse/reels/12 two https://apple.com/x"
     ]);
-    const links = screen.queryAllByRole("link");
-    expect(links).toHaveLength(2);
+    const inline = screen.queryAllByRole("link").filter((link) => textOf(link).startsWith("http"));
+    expect(inline.map(textOf)).toEqual(["https://pulsesoc.com/pulse/reels/12", "https://apple.com/x"]);
     await act(async () => {
-      fireEvent.press(links[0]);
+      fireEvent.press(inline[0]);
     });
     expect(navigation.navigate).toHaveBeenCalledWith("ReelDetail", expect.objectContaining({ reelId: 12 }));
     await act(async () => {
-      fireEvent.press(links[1]);
+      fireEvent.press(inline[1]);
     });
     expect(mockOpenURL).toHaveBeenCalledWith("https://apple.com/x");
+  });
+
+  /**
+   * The other half of the split above, stated rather than implied.
+   *
+   * A message carrying one PulseSoc object and one outside link still reads as
+   * being *about* the PulseSoc object, so it cards -- the foreign link does not
+   * veto it. Pinning this here means the count in the test above can never
+   * quietly start passing because the card stopped rendering.
+   */
+  it("still cards the PulseSoc object in a message that also links elsewhere", async () => {
+    await renderChat([
+      "one https://pulsesoc.com/pulse/reels/12 two https://apple.com/x"
+    ]);
+    expect(screen.queryAllByRole("link").filter((link) => !textOf(link).startsWith("http"))).toHaveLength(1);
   });
 
   it("sends an invite link to the browser so deferred attribution survives", async () => {

@@ -1112,6 +1112,17 @@
       "a11yOpen": "{{author}}님의 PulseSoc 프로필 열기",
       "a11yOpenGeneric": "이 PulseSoc 프로필 열기"
     },
+    "reelCard": {
+      "eyebrow": "PULSESOC 릴스",
+      "cta": "릴스 보기 →",
+      "loading": "릴스를 불러오는 중…",
+      "forbidden": "이 콘텐츠는 볼 수 없습니다.",
+      "missing": "이 릴스는 더 이상 사용할 수 없습니다.",
+      "unavailable": "릴스를 사용할 수 없음",
+      "play": "재생",
+      "a11yOpen": "{{author}}님의 PulseSoc 릴스 열기",
+      "a11yOpenGeneric": "이 PulseSoc 릴스 열기"
+    },
     "messageActions": {
       "openLink": "링크 열기",
       "copyLink": "링크 복사",

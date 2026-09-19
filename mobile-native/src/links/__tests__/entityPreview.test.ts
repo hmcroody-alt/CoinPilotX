@@ -22,6 +22,11 @@ jest.mock("../../api/profile", () => {
   return { ...actual, getPublicProfile: jest.fn(), loadCachedProfile: jest.fn() };
 });
 
+jest.mock("../../api/reels", () => {
+  const actual = jest.requireActual("../../api/reels");
+  return { ...actual, getReelSharePreview: jest.fn(), loadCachedReelSharePreview: jest.fn() };
+});
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const feed = require("../../api/feed") as {
   getPostDetail: jest.Mock;
@@ -38,8 +43,29 @@ const profileApi = require("../../api/profile") as {
   loadCachedProfile: jest.Mock;
 };
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const reelsApi = require("../../api/reels") as {
+  getReelSharePreview: jest.Mock;
+  loadCachedReelSharePreview: jest.Mock;
+};
+
 const REF = resolvePulseEntity("https://pulsesoc.com/pulse/post/2432")!;
 const PROFILE_REF = resolvePulseEntity("https://pulsesoc.com/pulse/profile/roody")!;
+const REEL_REF = resolvePulseEntity("https://pulsesoc.com/pulse/reels/38?pulse_app=1&pulse_src=share")!;
+
+function reelPreview(overrides: Record<string, unknown> = {}) {
+  return {
+    reel_id: 38,
+    canonical_url: "https://pulsesoc.com/pulse/reels/38",
+    path: "/pulse/reels/38",
+    caption: "Sunrise over Jacmel.",
+    poster_url: "https://image.mux.com/PLAY123/thumbnail.jpg",
+    media_type: "video",
+    duration_seconds: 14.5,
+    author: { display_name: "Roody Cherie", username: "roody", avatar_url: "https://cdn/a.jpg" },
+    ...overrides
+  };
+}
 
 function publicProfile(overrides: Record<string, unknown> = {}) {
   return {
@@ -75,6 +101,9 @@ beforeEach(() => {
   profileApi.getPublicProfile.mockReset();
   profileApi.loadCachedProfile.mockReset();
   profileApi.loadCachedProfile.mockResolvedValue(null);
+  reelsApi.getReelSharePreview.mockReset();
+  reelsApi.loadCachedReelSharePreview.mockReset();
+  reelsApi.loadCachedReelSharePreview.mockResolvedValue(null);
 });
 
 describe("where the preview comes from", () => {
@@ -327,6 +356,136 @@ describe("a profile is the same card, read the same way", () => {
     expect(post.status === "ready" && post.preview.kind).toBe("post");
     expect(profile.status === "ready" && profile.preview.kind).toBe("profile");
     expect(profileApi.getPublicProfile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("a reel is the same card, read the same way", () => {
+  it("reads the reel through the same call that opening the reel makes", async () => {
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview());
+    await resolveEntityPreview(REEL_REF);
+    // `GET /api/pulse/reels/:id` is the read; `pulse_reel_payload` behind it is
+    // the same viewer-scoped read the Reels surface itself performs. The card
+    // has no route of its own that could be widened without widening the tap.
+    expect(reelsApi.getReelSharePreview).toHaveBeenCalledWith(38);
+  });
+
+  it("carries the creator, handle, caption and poster onto the card", async () => {
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview());
+    const state = await resolveEntityPreview(REEL_REF);
+    expect(state).toMatchObject({
+      status: "ready",
+      preview: {
+        kind: "reel",
+        authorName: "Roody Cherie",
+        authorHandle: "roody",
+        caption: "Sunrise over Jacmel.",
+        thumbnailUrl: "https://image.mux.com/PLAY123/thumbnail.jpg",
+        authorAvatarUrl: "https://cdn/a.jpg",
+        video: true
+      }
+    });
+  });
+
+  /**
+   * A reel with no still is a card with no picture, never a card with a clip.
+   *
+   * The server answers `""` rather than falling back to the playback url, and
+   * this is the client half of that promise: an empty poster must arrive as an
+   * empty `thumbnailUrl`, so the card skips the media frame entirely. A `||`
+   * fallback to `canonical_url` here would put a web page url into an `<Image>`,
+   * which is the same silent failure as putting an `.m3u8` there.
+   */
+  it("draws no picture rather than inventing one when the server had no still", async () => {
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview({ poster_url: "" }));
+    const state = await resolveEntityPreview(REEL_REF);
+    expect(state.status === "ready" && state.preview.thumbnailUrl).toBe("");
+    // Still a video, still a reel -- the missing poster is about the picture,
+    // not about what the object is.
+    expect(state.status === "ready" && state.preview.video).toBe(true);
+  });
+
+  /**
+   * `video: true` is unconditional in `previewFromReel`, and this pins why.
+   *
+   * A record whose `media_type` came back empty, or as "image", or as anything
+   * the transcoder was midway through deciding, is still a reel. Deriving the
+   * flag from the payload would make a play indicator disappear from a clip
+   * that is really there, for a reason no reader could see.
+   */
+  it("is a video even when the payload forgot to say so", async () => {
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview({ media_type: "" }));
+    const state = await resolveEntityPreview(REEL_REF);
+    expect(state.status === "ready" && state.preview.video).toBe(true);
+  });
+
+  it("opens what the sender sent rather than the server's canonical rewrite", async () => {
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview());
+    const state = await resolveEntityPreview(REEL_REF);
+    // `canonical_url` in the payload has no query on it. The sender's did.
+    expect(state.status === "ready" && state.preview.url).toContain("pulse_src=share");
+  });
+
+  it.each([
+    ["private", 403, "forbidden"],
+    ["signed out", 401, "forbidden"],
+    ["deleted", 404, "missing"],
+    ["taken down", 410, "missing"]
+  ])("reports a %s reel without drawing any of it", async (_label, status, reason) => {
+    reelsApi.getReelSharePreview.mockRejectedValue(new PulseApiError("nope", status));
+    expect(await resolveEntityPreview(REEL_REF)).toEqual({ status: "unavailable", reason });
+  });
+
+  it("never reaches the offline cache for a reel it was refused", async () => {
+    reelsApi.getReelSharePreview.mockRejectedValue(new PulseApiError("gone", 404));
+    reelsApi.loadCachedReelSharePreview.mockResolvedValue(reelPreview());
+    const state = await resolveEntityPreview(REEL_REF);
+    // A reel deleted after this device cached it must not keep showing its
+    // poster and its creator's name inside a conversation.
+    expect(state).toEqual({ status: "unavailable", reason: "missing" });
+    expect(reelsApi.loadCachedReelSharePreview).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the copy already on the device when the network drops", async () => {
+    reelsApi.getReelSharePreview.mockRejectedValue(new Error("offline"));
+    reelsApi.loadCachedReelSharePreview.mockResolvedValue(reelPreview());
+    const state = await resolveEntityPreview(REEL_REF);
+    expect(state.status === "ready" && state.preview.authorName).toBe("Roody Cherie");
+  });
+
+  it("treats a reel the server could not identify as missing", async () => {
+    // `normalizeReelSharePreview` returns null for a payload with no usable id,
+    // which is a 200 carrying nothing rather than an error to classify.
+    reelsApi.getReelSharePreview.mockResolvedValue(null);
+    expect(await resolveEntityPreview(REEL_REF)).toEqual({ status: "unavailable", reason: "missing" });
+  });
+
+  /**
+   * Reel 38 and post 38 are different objects with the same number.
+   *
+   * The post arm at the bottom of `fetchEntity` is unguarded, so a reel that
+   * failed to match its own branch would be fetched as a post -- and post 38
+   * very likely exists, so the card would render happily with another object's
+   * author, caption and picture on it. That is the worst available failure and
+   * it is invisible without this pair.
+   */
+  it("does not confuse a reel with the post that has the same id", async () => {
+    const post38 = resolvePulseEntity("https://pulsesoc.com/pulse/post/38")!;
+    feed.getPostDetail.mockResolvedValue(postDetail({ id: 38, post_id: 38 }));
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview());
+
+    const reel = await resolveEntityPreview(REEL_REF);
+    const post = await resolveEntityPreview(post38);
+
+    expect(reel.status === "ready" && reel.preview.kind).toBe("reel");
+    expect(post.status === "ready" && post.preview.kind).toBe("post");
+    expect(reelsApi.getReelSharePreview).toHaveBeenCalledTimes(1);
+    expect(feed.getPostDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it("never reads a reel through the post endpoint", async () => {
+    reelsApi.getReelSharePreview.mockResolvedValue(reelPreview());
+    await resolveEntityPreview(REEL_REF);
+    expect(feed.getPostDetail).not.toHaveBeenCalled();
   });
 });
 

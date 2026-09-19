@@ -19,6 +19,7 @@ import { ReelCarouselSurface } from "./reels/ReelCarouselSurface";
 import { ReelLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
+import { buildReelShareMetadata } from "../sharing/reelShare";
 import { ContentTranslation } from "./ContentTranslation";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -504,14 +505,14 @@ export function ReelPlayerCard({
           refreshAttempted.current = false;
           setFailed(false);
           recoverPlaybackUrl().catch(() => undefined);
-        }} onShare={() => sharePulseObject({
-          kind: "reel",
-          url: reelWebUrl(reel.id),
-          title: reel.title || "PulseSoc Reel",
-          description: reel.caption || reel.body,
-          author: reel.author?.display_name || reel.author?.name || reel.author?.username,
-          previewImageUrl: reel.poster_url
-        }).catch(() => undefined)} />
+        }}
+        // This surface is the one drawn *because* the Reel is removed,
+        // restricted or held for review -- and its "Share link" button used to
+        // send the caption, the title, the creator's name and the poster of
+        // exactly that Reel. The share sheet was a way around the refusal the
+        // screen behind it was displaying. `buildReelShareMetadata` reads the
+        // same availability the surface did and sends the link alone.
+        onShare={() => sharePulseObject(buildReelShareMetadata(reel, reelWebUrl(reel.id))).catch(() => undefined)} />
       )}
       {isVideoKind && contentState === "playable" ? <Pressable accessibilityRole="button" accessibilityLabel={muted ? "Reel muted. Tap to unmute, double tap to like." : "Reel sound on. Tap to mute, double tap to like."} style={styles.tapLayer} onPress={handleTap} onLongPress={() => onOpenReactions(reel)} /> : null}
       <View style={styles.scrim} pointerEvents="none" />

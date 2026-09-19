@@ -54,6 +54,7 @@ import { PulseApiError } from "../api/pulseApi";
 import { mediaPosterUrl, feedRenderableMedia } from "../api/feed";
 import { getPublicProfile, loadCachedProfile, PulseProfile } from "../api/profile";
 import { resolveProfileTarget } from "../api/profileTarget";
+import { getReelSharePreview, loadCachedReelSharePreview, PulseReelSharePreview } from "../api/reels";
 import { PulseEntityRef } from "./pulseEntity";
 
 /**
@@ -67,9 +68,15 @@ import { PulseEntityRef } from "./pulseEntity";
  * not. So the fields are named for their role in the card rather than for
  * their origin in the payload: `caption` is a post's body and a profile's bio,
  * `thumbnailUrl` is a post's first still and a profile's cover.
+ *
+ * A reel joined without widening the type, which is the test of whether the
+ * shape was right. Its poster is a `thumbnailUrl`, its creator is an author,
+ * its caption is a caption, and `video` is `true` — the flag that already
+ * existed to badge a post carrying video is the same flag that draws a reel's
+ * play indicator, because it is the same question being asked.
  */
 export type EntityPreview = {
-  kind: "post" | "profile";
+  kind: "post" | "profile" | "reel";
   url: string;
   path: string;
   /** Display name, already trimmed. Empty when the server sent none. */
@@ -191,6 +198,41 @@ export function previewFromProfile(profile: PulseProfile, ref: PulseEntityRef): 
 }
 
 /**
+ * A reel, in the same fields a post uses.
+ *
+ * There is no `previewImage` call here and no `feedRenderableMedia` walk,
+ * because there is no media list to walk: the server sends one already-chosen
+ * still and nothing else. That asymmetry with `previewFromPost` is deliberate
+ * rather than incomplete — a post preview is a projection this client performs
+ * over a payload built for a player, while a reel preview is a projection the
+ * *server* performs, precisely so the playback urls never cross the wire into
+ * a chat bubble that can be forwarded onward.
+ *
+ * `video` is unconditionally true. A reel is a video; a record that arrived
+ * with a missing or wrong media type must not make the card stop drawing its
+ * play indicator over a clip that is really there. The one thing that can
+ * suppress the indicator is the absence of a poster, and that is enforced in
+ * the card rather than here: the badge is only ever drawn over a picture that
+ * exists.
+ */
+export function previewFromReel(reel: PulseReelSharePreview, ref: PulseEntityRef): EntityPreview {
+  return {
+    kind: "reel",
+    // The *sender's* url, not the server's canonical one. Someone who pasted a
+    // link with a `?pulse_src=share` on it sent that link, and a tap should
+    // open what they sent rather than a tidier rewrite of it.
+    url: ref.url,
+    path: ref.path,
+    authorName: flatten(reel.author.display_name),
+    authorHandle: flatten(reel.author.username).replace(/^@/, ""),
+    authorAvatarUrl: flatten(reel.author.avatar_url),
+    thumbnailUrl: flatten(reel.poster_url),
+    caption: shortCaption(reel.caption),
+    video: true
+  };
+}
+
+/**
  * A terminal answer is cached; a transport failure is not.
  *
  * 401 is grouped with 403: from the card's point of view "you are not signed in
@@ -221,6 +263,14 @@ async function fetchEntity(ref: PulseEntityRef): Promise<EntityPreview | null> {
     // assumed away by the type.
     return profile?.user_id ? previewFromProfile(profile, ref) : null;
   }
+  if (ref.kind === "reel") {
+    // `GET /api/pulse/reels/:id` — the same route, the same viewer scoping and
+    // the same 404 a tap would meet. It answers a projection rather than the
+    // player payload, so the card cannot receive a playback url even by
+    // accident; see `pulse_reel_share_preview` in `bot.py`.
+    const reel = await getReelSharePreview(ref.id);
+    return reel ? previewFromReel(reel, ref) : null;
+  }
   const detail = await getPostDetail(ref.id);
   return detail.post ? previewFromPost(detail.post, ref) : null;
 }
@@ -239,6 +289,14 @@ async function cachedEntity(ref: PulseEntityRef): Promise<EntityPreview | null> 
     if (!target) return null;
     const profile = await loadCachedProfile(target).catch(() => null);
     return profile?.user_id ? previewFromProfile(profile, ref) : null;
+  }
+  if (ref.kind === "reel") {
+    // Written by `getReelSharePreview` on the way past, so a reel whose card
+    // has been drawn once this install survives the network going away. It is
+    // the preview that is cached, never the reel -- there is nothing playable
+    // in it to go stale.
+    const reel = await loadCachedReelSharePreview(ref.id).catch(() => null);
+    return reel ? previewFromReel(reel, ref) : null;
   }
   const cached = await loadCachedPostDetail(ref.id).catch(() => null);
   return cached?.post ? previewFromPost(cached.post, ref) : null;

@@ -64,6 +64,14 @@ type CardCopy = {
   forbidden: string;
   missing: string;
   unavailable: string;
+  /**
+   * The word over the corner of the thumbnail. A post says "Video" because the
+   * badge is *news* — most posts are not video, so the badge is what tells you
+   * this one is. A reel says "Play" because every reel is video and repeating
+   * that over a card whose eyebrow already reads REEL would say nothing; what
+   * the reader does not yet know is that the still is a clip they can start.
+   */
+  mediaBadge: string;
   a11yGeneric: string;
   a11yFor: (author: string) => string;
 };
@@ -86,8 +94,26 @@ function cardCopy(kind: PulseEntityRef["kind"], t: (key: string, vars?: Record<s
       forbidden: t("messaging:profileCard.forbidden"),
       missing: t("messaging:profileCard.missing"),
       unavailable: t("messaging:profileCard.unavailable"),
+      // A profile has no clip to start, and `previewFromProfile` sets
+      // `video: false`, so this is never read. It is spelled anyway rather
+      // than left to a `?? ""`: the next kind added should have to answer the
+      // question, not inherit a blank.
+      mediaBadge: t("messaging:postCard.video"),
       a11yGeneric: t("messaging:profileCard.a11yOpenGeneric"),
       a11yFor: (author: string) => t("messaging:profileCard.a11yOpen", { author })
+    };
+  }
+  if (kind === "reel") {
+    return {
+      eyebrow: t("messaging:reelCard.eyebrow"),
+      cta: t("messaging:reelCard.cta"),
+      loading: t("messaging:reelCard.loading"),
+      forbidden: t("messaging:reelCard.forbidden"),
+      missing: t("messaging:reelCard.missing"),
+      unavailable: t("messaging:reelCard.unavailable"),
+      mediaBadge: t("messaging:reelCard.play"),
+      a11yGeneric: t("messaging:reelCard.a11yOpenGeneric"),
+      a11yFor: (author: string) => t("messaging:reelCard.a11yOpen", { author })
     };
   }
   return {
@@ -97,6 +123,7 @@ function cardCopy(kind: PulseEntityRef["kind"], t: (key: string, vars?: Record<s
     forbidden: t("messaging:postCard.forbidden"),
     missing: t("messaging:postCard.missing"),
     unavailable: t("messaging:postCard.unavailable"),
+    mediaBadge: t("messaging:postCard.video"),
     a11yGeneric: t("messaging:postCard.a11yOpenGeneric"),
     a11yFor: (author: string) => t("messaging:postCard.a11yOpen", { author })
   };
@@ -149,9 +176,12 @@ export function PulseEntityLinkCard({
       {preview?.thumbnailUrl ? (
         <View style={styles.mediaFrame}>
           <Image source={{ uri: preview.thumbnailUrl }} style={styles.media} resizeMode="cover" />
+          {/* Only ever over a picture that exists. A badge floating on the
+              empty frame would be the black-rectangle bug again, wearing a
+              label that says the rectangle is fine. */}
           {preview.video ? (
             <View style={styles.videoBadge}>
-              <Text style={styles.videoBadgeText}>{t("messaging:postCard.video")}</Text>
+              <Text style={styles.videoBadgeText}>{copy.mediaBadge}</Text>
             </View>
           ) : null}
         </View>

@@ -1112,6 +1112,17 @@
       "a11yOpen": "{{author}} の PulseSoc のプロフィールを開く",
       "a11yOpenGeneric": "この PulseSoc のプロフィールを開く"
     },
+    "reelCard": {
+      "eyebrow": "PULSESOC のリール",
+      "cta": "リールを見る →",
+      "loading": "リールを読み込んでいます…",
+      "forbidden": "このコンテンツは表示できません。",
+      "missing": "このリールは利用できなくなりました。",
+      "unavailable": "リールを利用できません",
+      "play": "再生",
+      "a11yOpen": "{{author}} の PulseSoc のリールを開く",
+      "a11yOpenGeneric": "この PulseSoc のリールを開く"
+    },
     "messageActions": {
       "openLink": "リンクを開く",
       "copyLink": "リンクをコピー",

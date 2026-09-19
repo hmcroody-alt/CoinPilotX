@@ -1112,6 +1112,17 @@
       "a11yOpen": "Ouvri pwofil PulseSoc {{author}} la",
       "a11yOpenGeneric": "Ouvri pwofil PulseSoc sa a"
     },
+    "reelCard": {
+      "eyebrow": "REEL PULSESOC",
+      "cta": "Gade Reel la →",
+      "loading": "N ap chaje Reel la…",
+      "forbidden": "Kontni sa a pa disponib pou ou.",
+      "missing": "Reel sa a pa disponib ankò.",
+      "unavailable": "Reel la pa disponib",
+      "play": "Jwe",
+      "a11yOpen": "Ouvri Reel PulseSoc {{author}} la",
+      "a11yOpenGeneric": "Ouvri Reel PulseSoc sa a"
+    },
     "messageActions": {
       "openLink": "Louvri lyen an",
       "copyLink": "Kopye lyen an",
