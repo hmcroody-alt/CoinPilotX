@@ -29,7 +29,13 @@
  *     which is exactly the point of opening first and measuring second;
  *   - calling `translatePulseContent` from the menu instead of bumping
  *     `translateRequestId` must turn "translates through the bubble's own
- *     control" red, since the mocked router is the bubble's, not the menu's.
+ *     control" red, since the mocked router is the bubble's, not the menu's;
+ *   - collapsing `context.group ? ... : ...` on Info's `accessibilityLabel`
+ *     into either branch alone must turn one of "tells the truth about read
+ *     state in a group" / "never lists an action it cannot carry out" red.
+ *     Both sides are asserted on purpose: pinning one would let the branch
+ *     collapse toward whichever side was tested, and since the string is only
+ *     ever spoken by a screen reader, no visual pass would notice.
  */
 
 import React from "react";
@@ -261,6 +267,11 @@ describe("what a long press offers", () => {
     expect(screen.getByTestId("message-action-forward")).toBeTruthy();
     expect(screen.getByTestId("message-action-info")).toBeTruthy();
     expect(screen.queryByTestId("message-action-save")).toBeNull();
+    // The direct-thread half of Info's wording. Its group counterpart is
+    // pinned in "tells the truth about read state in a group"; asserting only
+    // one side would let the branch collapse into whichever side was tested.
+    expect(screen.getByTestId("message-action-info").props.accessibilityLabel)
+      .toBe("See delivery details for this message");
   });
 
   it("an incoming message is not offered the author's powers", async () => {
@@ -565,6 +576,16 @@ describe("the actions that used to be listed and inert", () => {
     );
 
     await longPressMessage("Morning from Port-au-Prince");
+
+    // The menu adapts its *wording* to thread size in exactly one place, and
+    // this is it: Info asks "who has read this" in a group and "delivery
+    // details" in a direct thread. The branch lives in `messageActionRules`
+    // and nothing asserted it, so either side was free to collapse into the
+    // other -- and because it is a screen-reader-only string, a sighted QA
+    // pass could not have caught it either.
+    expect(screen.getByTestId("message-action-info").props.accessibilityLabel)
+      .toBe("See who has read this message");
+
     await act(async () => {
       fireEvent.press(screen.getByTestId("message-action-info"));
     });
