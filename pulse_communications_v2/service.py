@@ -4515,6 +4515,9 @@ def set_reaction(user_id: int, message_id: int, reaction_type: str = "heart") ->
         conn.close()
 
 
+MESSAGE_EDIT_WINDOW = timedelta(minutes=15)
+
+
 def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> dict:
     disabled = _disabled("edit_message")
     if disabled:
@@ -4532,7 +4535,7 @@ def edit_message(user_id: int, message_id: int, payload: dict | None = None) -> 
         if int(message.get("sender_user_id") or 0) != int(user_id):
             return _err("You can only edit your own messages.", 403, "forbidden")
         created = datetime.fromisoformat(str(message.get("created_at") or _now()))
-        if datetime.now(timezone.utc) - created > timedelta(minutes=int(payload.get("edit_window_minutes") or 15)):
+        if datetime.now(timezone.utc) - created > MESSAGE_EDIT_WINDOW:
             return _err("This message can no longer be edited.", 403, "edit_window_expired")
         now = _now()
         metadata = _json_loads(message.get("metadata_json"), {}) or {}
