@@ -600,3 +600,26 @@ def test_the_ios_banner_is_not_gated_on_safari():
     # on iOS -- exactly the visitors who used to see nothing at all.
     assert "isSafariLike" not in PWA_JS
     assert "crios" not in PWA_JS
+
+
+def test_the_injected_script_tag_carries_the_app_store_url():
+    """The one source that is on every page the banner can run on.
+
+    `PULSE_APP_PROMOTION` is published by the promotion assets, which the
+    marketing shell does not render, and the Smart App Banner meta is scoped to
+    a path list -- so on /about the iOS surface had nothing to read and
+    suppressed itself. The URL rides on the script tag because the tag is the
+    thing `bot.py` guarantees is there.
+    """
+
+    source = (ROOT / "bot.py").read_text()
+    assert 'data-pulse-app-store-url="{store_url}"' in source
+    assert "app_links.app_store_url()" in source
+    assert "script[data-pulse-app-store-url]" in PWA_JS
+
+
+def test_the_injected_app_store_url_is_escaped_for_a_quoted_attribute():
+    # `html.escape` defaults to quote=False, which leaves `"` intact and would
+    # let a configured URL containing one break out of the attribute.
+    source = (ROOT / "bot.py").read_text()
+    assert "html_escape(app_links.app_store_url(), quote=True)" in source

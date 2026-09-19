@@ -87,20 +87,26 @@
    * would be corrected and this banner would keep sending people to the old
    * listing, with nothing failing.
    *
-   * Three server-emitted sources, most authoritative first:
-   *   - `window.PULSE_APP_PROMOTION.appStoreUrl` -- `app_links.app_store_url()`
-   *     verbatim, published by `app_promotion.runtime_config()`
+   * Four server-emitted sources, most authoritative first:
+   *   - this script's own `data-pulse-app-store-url` attribute, written by the
+   *     same `bot.py` hook that injects the tag
+   *   - `window.PULSE_APP_PROMOTION.appStoreUrl`, published by
+   *     `app_promotion.runtime_config()`
    *   - `a[data-app-link="app-store"]` -- the `app_store_badge()` macro
    *   - `<meta name="apple-itunes-app" content="app-id=...">` -- the Smart App
    *     Banner tag, on the paths `wants_smart_app_banner()` scopes it to
    *
-   * The two DOM readings are not redundancy for its own sake: this script is
-   * injected into every non-gateway page, and the promotion assets are not.
-   * Each of the three covers a different slice of the site, and a page carrying
-   * none of them gets no banner, which is the correct answer rather than a
-   * guess at the id.
+   * Only the first is guaranteed. The other three each cover a different slice
+   * of the site -- the promotion assets live on a shell the marketing pages do
+   * not use, and the meta is path-scoped -- and they are kept as fallbacks so
+   * an older cached copy of this file keeps working on the pages that have
+   * them. A page with none of the four gets no banner, which is the right
+   * answer rather than a guess at the id.
    */
   function appStoreUrl() {
+    const tag = document.querySelector("script[data-pulse-app-store-url]");
+    const tagged = tag ? String(tag.getAttribute("data-pulse-app-store-url") || "") : "";
+    if (tagged.indexOf("https://apps.apple.com/") === 0) return tagged;
     const configured = window.PULSE_APP_PROMOTION?.appStoreUrl;
     if (typeof configured === "string" && configured.indexOf("https://apps.apple.com/") === 0) return configured;
     const badge = document.querySelector('a[data-app-link="app-store"]');

@@ -2869,7 +2869,19 @@ def add_pwa_headers(response):
                 # change with the old query string reaches only first-time
                 # visitors -- everyone else keeps running the version they
                 # already have, and the deploy silently does nothing for them.
-                pwa_install_script = '<script src="/static/js/pulse_pwa_install.js?v=app-store-20260919" defer></script>'
+                # The App Store URL rides on the tag because the tag is the one
+                # thing guaranteed to be on every page this script runs on. The
+                # promotion assets that publish `PULSE_APP_PROMOTION` are on a
+                # shell the marketing pages do not use, and the Smart App Banner
+                # meta is scoped to a path list -- so on /about the iOS surface
+                # had no URL to read and correctly suppressed itself. Attaching
+                # it here removes the gap without giving the script its own copy
+                # of the listing: `app_links.app_store_url()` still decides it.
+                store_url = html_escape(app_links.app_store_url(), quote=True)
+                pwa_install_script = (
+                    '<script src="/static/js/pulse_pwa_install.js?v=app-store-20260919"'
+                    f' data-pulse-app-store-url="{store_url}" defer></script>'
+                )
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
