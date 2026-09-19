@@ -2904,7 +2904,7 @@
       "signOut": "Se déconnecter",
       "signOutSubtitle": "Se déconnecter sur cet appareil uniquement.",
       "signOutConfirmTitle": "Se déconnecter de PulseSoc ?",
-      "signOutConfirmBody": "Vous resterez connecté sur vos autres appareils. Vos brouillons et vos téléchargements sur cet appareil sont conservés.",
+      "signOutConfirmBody": "Vous resterez connecté sur vos autres appareils. Les brouillons non publiés et les médias téléchargés sur cet appareil sont supprimés.",
       "signOutEverywhere": "Se déconnecter de tous les appareils",
       "signOutEverywhereSubtitle": "Révoque toutes les sessions PulseSoc, y compris celle-ci.",
       "signOutEverywhereConfirmTitle": "Se déconnecter de tous les appareils ?",

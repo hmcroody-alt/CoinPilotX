@@ -2904,7 +2904,7 @@
       "signOut": "Cerrar sesión",
       "signOutSubtitle": "Cierra la sesión solo en este dispositivo.",
       "signOutConfirmTitle": "¿Cerrar sesión en PulseSoc?",
-      "signOutConfirmBody": "Seguirás con la sesión iniciada en tus otros dispositivos. Tus borradores y descargas de este dispositivo se conservan.",
+      "signOutConfirmBody": "Seguirás con la sesión iniciada en tus otros dispositivos. Los borradores sin publicar y los archivos descargados en este dispositivo se eliminan.",
       "signOutEverywhere": "Cerrar sesión en todos los dispositivos",
       "signOutEverywhereSubtitle": "Revoca todas las sesiones de PulseSoc, incluida esta.",
       "signOutEverywhereConfirmTitle": "¿Cerrar sesión en todos los dispositivos?",

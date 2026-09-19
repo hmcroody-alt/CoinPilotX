@@ -2904,7 +2904,7 @@
       "signOut": "Sair",
       "signOutSubtitle": "Sair apenas neste dispositivo.",
       "signOutConfirmTitle": "Sair do PulseSoc?",
-      "signOutConfirmBody": "Você continua conectado nos seus outros dispositivos. Seus rascunhos e downloads neste aparelho são mantidos.",
+      "signOutConfirmBody": "Você continua conectado nos seus outros dispositivos. Os rascunhos não publicados e as mídias baixadas neste aparelho são excluídos.",
       "signOutEverywhere": "Sair de todos os dispositivos",
       "signOutEverywhereSubtitle": "Encerra todas as sessões do PulseSoc, inclusive esta.",
       "signOutEverywhereConfirmTitle": "Sair de todos os dispositivos?",

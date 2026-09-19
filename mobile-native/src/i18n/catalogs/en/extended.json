@@ -2904,7 +2904,7 @@
       "signOut": "Sign out",
       "signOutSubtitle": "Sign out on this device only.",
       "signOutConfirmTitle": "Sign out of PulseSoc?",
-      "signOutConfirmBody": "You'll stay signed in on your other devices. Your drafts and downloads on this device are kept.",
+      "signOutConfirmBody": "You'll stay signed in on your other devices. Unsent drafts and downloaded media on this device are deleted.",
       "signOutEverywhere": "Sign out on all devices",
       "signOutEverywhereSubtitle": "Revokes every PulseSoc session, including this one.",
       "signOutEverywhereConfirmTitle": "Sign out of all devices?",
