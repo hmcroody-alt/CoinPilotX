@@ -122,6 +122,11 @@ def _public(row):
         "status": row.get("status"), "media_id": int(row.get("media_id") or 0),
         "retry_count": int(row.get("retry_count") or 0), "expires_at": row.get("expires_at"),
         "trace_id": row.get("trace_id"),
+        # Advertised so a client can sign a batch of parts per round trip instead of
+        # one. `sign_parts` silently drops anything past this cap, and a dropped part
+        # only surfaces much later as a failed `complete_upload`, so the cap has to be
+        # a published part of the contract rather than a number the client guesses.
+        "max_parts_per_request": MAX_PARTS_PER_SIGN,
     }
 
 

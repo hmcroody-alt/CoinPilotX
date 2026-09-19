@@ -16,6 +16,9 @@ type UploadSession = {
   completed_parts: Array<{ part_number: number; etag: string }>;
   status: string;
   trace_id?: string;
+  // How many part signatures the server will mint in one call. Optional because a
+  // session persisted before this field existed is resumed as-is.
+  max_parts_per_request?: number;
 };
 
 type PersistedUpload = {
@@ -147,20 +150,54 @@ export class MediaUploadManager {
       const completed = new Map((session.completed_parts || []).map((part) => [part.part_number, part.etag]));
       completed.forEach((_etag, number) => uploadedByPart.set(number, Math.min(session.part_size_bytes, actualSize - ((number - 1) * session.part_size_bytes))));
       const pending = Array.from({ length: totalParts }, (_, index) => index + 1).filter((number) => !completed.has(number));
+      // Signatures come back a batch per round trip. Signing one part at a time cost a
+      // request before every single part: a 350 MB status video at 8 MB parts spent 44
+      // extra sequential round trips that moved no bytes. The cap is whatever the server
+      // advertises -- `sign_parts` silently drops the overflow, and a dropped part would
+      // not surface until `complete` rejected the part list. An older server (or a session
+      // persisted before this shipped) omits the field, so fall back to the previous
+      // one-at-a-time behaviour rather than guessing a cap.
+      const perRequest = Math.max(1, Number(session.max_parts_per_request || 0) || 1);
+      const signedUrls = new Map<number, string>();
+      const signParts = (numbers: number[]) =>
+        withRetry(async () => {
+          const signed = await pulseApi<{ parts?: Array<{ part_number: number; upload_url: string }> }>(`/api/pulse/media/uploads/${session.upload_id}/parts/sign`, { method: "POST", body: JSON.stringify({ part_numbers: numbers }) });
+          for (const part of signed.parts || []) signedUrls.set(Number(part.part_number), String(part.upload_url || ""));
+        }, retry, isCancelled);
       let cursor = 0;
       const worker = async () => {
         while (cursor < pending.length) {
-          const number = pending[cursor++];
-          const start = (number - 1) * session.part_size_bytes;
-          const end = Math.min(actualSize, start + session.part_size_bytes);
-          await withRetry(async () => {
-            const signed = await pulseApi<{ parts: Array<{ part_number: number; upload_url: string }> }>(`/api/pulse/media/uploads/${session.upload_id}/parts/sign`, { method: "POST", body: JSON.stringify({ part_numbers: [number] }) });
-            const part = signed.parts[0];
-            const result = await uploadBlob(part.upload_url, (uploadBody as Blob).slice(start, end, asset.mimeType), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
-            if (!result.etag) throw Object.assign(new Error("Storage did not return part integrity metadata."), { status: 502 });
-            completed.set(number, result.etag); uploadedByPart.set(number, end - start);
-            state.session.completed_parts = [...completed].map(([part_number, etag]) => ({ part_number, etag })); state.updatedAt = Date.now(); await persist(state);
-          }, retry, isCancelled);
+          const batch = pending.slice(cursor, cursor + perRequest);
+          cursor += batch.length;
+          await signParts(batch);
+          for (const number of batch) {
+            const start = (number - 1) * session.part_size_bytes;
+            const end = Math.min(actualSize, start + session.part_size_bytes);
+            await withRetry(async () => {
+              const send = async () => {
+                if (!signedUrls.get(number)) await signParts([number]);
+                const url = signedUrls.get(number);
+                if (!url) throw Object.assign(new Error("Upload authorization expired."), { status: 410 });
+                return uploadBlob(url, (uploadBody as Blob).slice(start, end, asset.mimeType), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
+              };
+              let result;
+              try {
+                result = await send();
+              } catch (error) {
+                // A batched signature is minted before the whole batch is sent, so the
+                // last part of a batch can outlive its URL on a slow link. That reads as
+                // 401/403/410, which `transientStatus` deliberately does not retry, so
+                // re-sign this one part and send it once more. Only a second rejection is
+                // a genuine failure.
+                if (![401, 403, 410].includes(Number((error as { status?: number })?.status || 0))) throw error;
+                signedUrls.delete(number);
+                result = await send();
+              }
+              if (!result.etag) throw Object.assign(new Error("Storage did not return part integrity metadata."), { status: 502 });
+              completed.set(number, result.etag); uploadedByPart.set(number, end - start); signedUrls.delete(number);
+              state.session.completed_parts = [...completed].map(([part_number, etag]) => ({ part_number, etag })); state.updatedAt = Date.now(); await persist(state);
+            }, retry, isCancelled);
+          }
         }
       };
       await Promise.all(Array.from({ length: Math.min(PARALLEL_PARTS, pending.length) }, worker));

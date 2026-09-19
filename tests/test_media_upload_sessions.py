@@ -130,6 +130,37 @@ def test_multipart_owner_complete_and_finalize_are_idempotent(upload_env):
     assert duplicate_status == 200 and duplicate["media_id"] == finalized["media_id"] and duplicate["idempotent"] is True
 
 
+def test_the_session_advertises_the_batch_cap_it_actually_enforces(upload_env):
+    # The client batches part signatures using this number. `sign_parts` truncates an
+    # oversized request *silently*, so advertising a cap larger than the enforced one
+    # would make the client upload a subset of its parts and then fail much later at
+    # `complete_upload` with an unexplained gap in the part list. Asserting the two
+    # numbers against each other is the point -- asserting either one against a literal
+    # would let them drift apart.
+    result, status = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 200 * 1024 * 1024, "context_type": "pulse_post"})
+    assert status == 201 and result["strategy"] == "multipart"
+    advertised = result["max_parts_per_request"]
+    assert advertised >= 1
+
+    signed, signed_status = uploads.sign_parts(7, result["upload_id"], list(range(1, advertised + 1)))
+    assert signed_status == 200
+    assert len(signed["parts"]) == advertised, "the server signed fewer parts than it advertised"
+
+    over, over_status = uploads.sign_parts(7, result["upload_id"], list(range(1, advertised + 5)))
+    assert over_status == 200
+    assert len(over["parts"]) == advertised, "the enforced cap is lower than the advertised one"
+
+
+def test_a_resumed_session_still_learns_the_batch_cap(upload_env):
+    # The client re-reads the session on resume and merges it over what it persisted.
+    # If only the create response carried the cap, every resumed upload would silently
+    # fall back to one signature per part -- the slow path this replaced.
+    result, _ = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 200 * 1024 * 1024, "context_type": "pulse_post"})
+    # This is exactly what GET /api/pulse/media/uploads/<id> returns.
+    fetched = uploads._public(uploads._row(result["upload_id"], 7))
+    assert fetched["max_parts_per_request"] == result["max_parts_per_request"]
+
+
 def test_abort_is_owner_scoped(upload_env):
     result, _ = uploads.create_session(7, {"filename": "clip.mp4", "mime_type": "video/mp4", "file_size_bytes": 20 * 1024 * 1024, "context_type": "pulse_post"})
     denied, status = uploads.abort_upload(8, result["upload_id"])
