@@ -7,6 +7,18 @@ export type PulseCommandActionKey =
   | "reply"
   | "react"
   | "retry"
+  | "copy"
+  | "forward"
+  | "edit"
+  | "save"
+  | "share"
+  | "translate"
+  | "info"
+  | "openLink"
+  | "copyLink"
+  | "shareLink"
+  | "viewMedia"
+  | "saveMedia"
   | "report"
   | "safety"
   | "deleteSelf"
@@ -42,6 +54,50 @@ export type PulseCommandActionRule = {
   confirmationRequired?: boolean;
   accessibilityLabel: string;
 };
+
+/**
+ * What a long press is holding, beyond the message row itself.
+ *
+ * The message alone cannot answer "is there a link in this", because the
+ * answer has to come from the *same* parser that makes links tappable and
+ * builds post cards. Asking a second parser here would let the menu offer
+ * "Open Link" for something the tap handler refuses to open, which is the
+ * exact drift this context exists to prevent. So links arrive already
+ * extracted, by `detectLinks`, from the caller that already needed them.
+ */
+export type MessageActionContext = {
+  /** Links found in the body by `links/messageLinks.detectLinks`. */
+  links?: readonly string[];
+  /** More than two participants, so "who has read this" is a real question. */
+  group?: boolean;
+  /** Viewer owns or moderates the conversation and may unsend anyone's message. */
+  viewerModerates?: boolean;
+  /** Viewer's locale differs from the message's, so translating says something. */
+  translatable?: boolean;
+};
+
+export type MessageActionKind = "text" | "media" | "voice" | "unavailable";
+
+const VOICE_TYPES = ["voice", "audio", "voice_message", "audio_message"];
+const MEDIA_TYPES = ["image", "gif", "video", "document", "file", "media", "attachment"];
+
+/**
+ * What kind of thing the long press is on.
+ *
+ * Deliberately widened beyond `message_type`: a row can carry attachments with
+ * a type of `"text"` (that is how media sent with a caption arrives), and a
+ * menu that offered "Copy" and no "Save to Photos" for a photo would be wrong
+ * in the most visible possible way.
+ */
+export function messageActionKind(message: MessengerMessage): MessageActionKind {
+  if (message.deleted_at || message.moderated_at || message.moderation_state) return "unavailable";
+  const type = String(message.message_type || message.type || "").toLowerCase();
+  if (VOICE_TYPES.includes(type)) return "voice";
+  if (MEDIA_TYPES.includes(type)) return "media";
+  const attachments = (message as { attachments?: unknown[]; media?: unknown[] });
+  if ((attachments.attachments?.length || 0) > 0 || (attachments.media?.length || 0) > 0) return "media";
+  return "text";
+}
 
 export type PulseCommandCommunityActionRule = {
   key: PulseCommandCommunityActionKey;
@@ -195,23 +251,143 @@ export function reactionIcon(reaction: string) {
   return "❤️";
 }
 
-export function messageActionRules(message: MessengerMessage): PulseCommandActionRule[] {
+/**
+ * Which actions a long press offers, and in what order.
+ *
+ * ## The point is what is NOT here
+ *
+ * The menu is the feature. A press on someone else's photo and a press on your
+ * own voice note are different situations, and a single list that showed every
+ * action with most of them greyed out would be a worse answer than the old
+ * seven-item sheet: it would be longer, it would bury Reply under things that
+ * cannot happen, and it would teach nobody what applies to what.
+ *
+ * So availability is computed per action from the message and its context, and
+ * the renderer draws only `available` rules in the order returned here. Adding
+ * an action means adding one rule, not another branch in JSX -- which is what
+ * keeps the next action from being dropped in at the end of the list because
+ * that was the easy place to put it.
+ *
+ * ## Order is a claim about frequency, not about importance
+ *
+ * Reply is first everywhere because it is what most long presses are for.
+ * Link actions sit directly under Reply when there is a link, because a press
+ * on a message that is mostly a URL is usually about the URL. Destructive
+ * actions are last, always, and never adjacent to Reply.
+ *
+ * ## Voice is deliberately thin
+ *
+ * No Copy (there is no text), no Translate (same), no View. Nothing here
+ * touches playback, the waveform, or the audio session -- the menu reads
+ * `message_type` and stops. A voice action that paused playback to show a menu
+ * would be a change to audio behaviour arriving through a menu, which is
+ * exactly how the session gets stolen.
+ */
+export function messageActionRules(
+  message: MessengerMessage,
+  context: MessageActionContext = {}
+): PulseCommandActionRule[] {
   const status = String(message.local_status || message.delivery_status || message.status || "").toLowerCase();
   const serverAccepted = Number(message.id || 0) > 0;
   const failed = status === "failed";
   const deleted = Boolean(message.deleted_at || status === "deleted");
+  const kind = messageActionKind(message);
+  const gone = kind === "unavailable" || deleted;
+  const mine = Boolean(message.is_mine);
+  const links = context.links || [];
+  const hasLink = links.length > 0 && !gone;
+  const hasText = Boolean(String(message.body || "").trim()) && !gone;
+  /**
+   * A message still on its way has no server identity, so anything that names
+   * it to the server -- forwarding it, reporting it, asking who read it --
+   * has nothing to name. Those wait; Copy and Delete-for-me do not, because
+   * both are answerable entirely on this device.
+   */
+  const addressable = serverAccepted && !gone;
+
   return [
     {
       key: "reply",
       label: "Reply",
-      available: !deleted,
+      available: !gone,
       accessibilityLabel: "Reply to message"
     },
     {
-      key: "react",
-      label: "React",
-      available: serverAccepted && !deleted,
-      accessibilityLabel: "React to message"
+      key: "openLink",
+      label: "Open Link",
+      available: hasLink,
+      accessibilityLabel: links.length > 1 ? "Choose a link to open" : "Open the link in this message"
+    },
+    {
+      key: "copyLink",
+      label: "Copy Link",
+      available: hasLink,
+      accessibilityLabel: links.length > 1 ? "Choose a link to copy" : "Copy the link in this message"
+    },
+    {
+      key: "shareLink",
+      label: "Share Link",
+      available: hasLink,
+      accessibilityLabel: links.length > 1 ? "Choose a link to share" : "Share the link in this message"
+    },
+    {
+      key: "viewMedia",
+      label: "View",
+      available: kind === "media" && !gone,
+      accessibilityLabel: "Open this attachment full screen"
+    },
+    {
+      key: "saveMedia",
+      label: "Save to Photos",
+      available: kind === "media" && !gone,
+      accessibilityLabel: "Save this attachment to your device"
+    },
+    {
+      key: "copy",
+      label: "Copy",
+      // Copy is about text. A voice note has none, and a photo's caption is
+      // covered by this same flag when it has one.
+      available: hasText,
+      accessibilityLabel: "Copy message text"
+    },
+    {
+      key: "translate",
+      label: "Translate",
+      // Never offered on your own message: you wrote it.
+      available: hasText && !mine && context.translatable !== false,
+      accessibilityLabel: "Translate this message"
+    },
+    {
+      key: "forward",
+      label: "Forward",
+      available: addressable,
+      accessibilityLabel: "Forward this message to another conversation"
+    },
+    {
+      key: "share",
+      label: "Share",
+      available: !gone && (hasText || kind === "media" || kind === "voice"),
+      accessibilityLabel: "Share this message outside PulseSoc"
+    },
+    {
+      key: "save",
+      label: "Save",
+      available: addressable,
+      accessibilityLabel: "Save this message to your saved items"
+    },
+    {
+      key: "edit",
+      label: "Edit",
+      // Own text only, and only once the server has a copy to amend. Editing
+      // a message that has not landed would race the send.
+      available: mine && kind === "text" && hasText && addressable,
+      accessibilityLabel: "Edit your message"
+    },
+    {
+      key: "info",
+      label: "Message Info",
+      available: addressable,
+      accessibilityLabel: context.group ? "See who has read this message" : "See delivery details for this message"
     },
     {
       key: "retry",
@@ -224,7 +400,7 @@ export function messageActionRules(message: MessengerMessage): PulseCommandActio
       key: "report",
       label: "Report",
       tone: "warning",
-      available: serverAccepted && !message.is_mine,
+      available: addressable && !mine,
       confirmationRequired: true,
       accessibilityLabel: "Report message to Trust and Safety"
     },
@@ -232,7 +408,7 @@ export function messageActionRules(message: MessengerMessage): PulseCommandActio
       key: "safety",
       label: "Mute / Block",
       tone: "safety",
-      available: !message.is_mine,
+      available: !mine,
       accessibilityLabel: "Open safety controls"
     },
     {
@@ -248,7 +424,14 @@ export function messageActionRules(message: MessengerMessage): PulseCommandActio
       key: "deleteEveryone",
       label: "Delete for everyone",
       tone: "danger",
-      available: Boolean(message.is_mine),
+      /**
+       * Offered to the author, and to whoever moderates the conversation --
+       * which is what the server already enforces. The client asking for a
+       * wider set than the server will grant produces a button that fails;
+       * asking for a narrower one hides a power the user has. This mirrors
+       * the server check rather than inventing a second rule.
+       */
+      available: (mine || Boolean(context.viewerModerates)) && !gone,
       destructive: true,
       confirmationRequired: serverAccepted,
       accessibilityLabel: "Delete message for everyone"
