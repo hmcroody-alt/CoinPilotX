@@ -16,6 +16,12 @@ quoted. Where a claim could not be verified it is marked UNVERIFIED rather than 
 Read these first. Between them they decide the status of six of the fourteen capabilities,
 and they do it before any product judgement gets made.
 
+> **Both were resolved on 2026-09-19.** They are left stated as found, because the
+> reasoning below is what the decisions answer. The answers — raise the floor to **16.1**,
+> and add extension targets to the **committed** Xcode project rather than generating them —
+> are in `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`, with the production numbers and
+> the `git ls-files` evidence behind each. Nothing has been implemented yet.
+
 ### 1. The iOS deployment target is 15.1
 
 ```
@@ -466,7 +472,10 @@ are finished, tested, and should be left alone.
 Ordered by dependency first, value second. Feature flags default **OFF** throughout.
 
 **Wave 1 — decisions and no-cost corrections.** No new capability.
-- Decide the deployment-target question (stay at 15.1 with `@available` guards, or raise).
+- ~~Decide the deployment-target question.~~ **DECIDED 2026-09-19: raise to 16.1.** Zero
+  measured native sessions below iOS 18. Applying it is still Wave 1 work: four pbxproj
+  lines plus `expo-build-properties` in `app.json`, which trips the `dependency_watch`
+  gate and needs a declaration. See `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`.
 - Resolve the unused `UIBackgroundModes: fetch` declaration (#5).
 - Optionally add `webcredentials:pulsesoc.com` to the associated domains (#7) — additive,
   low-risk, and a prerequisite for any future passkey work.
@@ -474,7 +483,11 @@ Ordered by dependency first, value second. Feature flags default **OFF** through
 **Wave 2 — the two foundations everything else waits on.**
 - **Sign in with Apple** (#6). Highest value, no target work, no lock interaction.
 - **Extension foundation**: one App Group, `keychain-access-groups`, a second App ID, and a
-  prebuild-safe target-generation strategy. Ship it with a trivial placeholder widget to
+  target-generation strategy. ~~Prebuild-safe generation was the open unknown.~~
+  **DECIDED 2026-09-19: the Xcode project is committed, so extensions are committed
+  targets.** That removes the hard part and replaces it with one obligation — a protection
+  test pinning the `PBXNativeTarget` count and names, so a stray `expo prebuild` cannot
+  delete every extension at once. Ship the foundation with a trivial placeholder widget to
   prove the pipeline end to end. Four later capabilities depend on this and it should be
   built once, on purpose, rather than four times accidentally.
 

@@ -21,7 +21,7 @@ here has been changed.
 | Apple Team ID | `87ZC69AGSR` | live AASA response |
 | App Store Connect App ID | `6777591572` | `mobile-native/app.json` |
 | Version / build | 1.0.2 / 28 | `ios/PulseSoc/Info.plist` |
-| iOS deployment target | **15.1** | `PulseSoc.xcodeproj/project.pbxproj` |
+| iOS deployment target | **15.1** (decided 2026-09-19 to raise to 16.1; not yet applied) | `PulseSoc.xcodeproj/project.pbxproj` |
 | Native targets | **1** (no extensions) | `grep -c "isa = PBXNativeTarget"` |
 
 The Team ID is not hardcoded in the AASA source — `services/native_app_links.py` reads it
@@ -169,8 +169,14 @@ Two consequences for extension work:
 - Entitlements added by hand to `PulseSoc.entitlements` survive only as long as nobody runs
   a clean prebuild. Entitlement changes belong in `app.json` / a config plugin.
 - There is no first-party Expo support for generating extension targets. This needs a
-  custom config plugin or a committed-and-defended Xcode project. **Decide which before
-  Wave 2 starts** — it is the single largest unknown in the whole plan.
+  custom config plugin or a committed-and-defended Xcode project. ~~**Decide which before
+  Wave 2 starts** — it is the single largest unknown in the whole plan.~~
+  **DECIDED 2026-09-19: committed-and-defended.** `project.pbxproj` is tracked (confirmed
+  with `git ls-files --error-unmatch`), `mobile-native/docs/LOCALIZATION.md:403` already
+  mandates dual maintenance, and the only prebuild in CI runs in an ephemeral runner and
+  asserts nothing about targets. The "defended" half is not optional: a protection test
+  pinning target count and names ships with the first extension. Full reasoning in
+  `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`.
 
 Also relevant: `patch-package` runs postinstall and `npm ci` silently drops the patches in
 this repo. The current patch set is Hermes + Stripe.
