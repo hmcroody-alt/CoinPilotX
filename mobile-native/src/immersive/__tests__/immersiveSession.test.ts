@@ -134,6 +134,43 @@ describe("continuing", () => {
     expect(session.canContinue).toBe(true);
   });
 
+  /**
+   * A termination condition, not a micro-optimisation.
+   *
+   * A React caller re-runs its "should I fetch more?" effect whenever the
+   * session's identity changes. A session that is a new object after every
+   * all-duplicate page therefore asks for another one immediately, forever --
+   * a tight request loop against production that presents as a feed which is
+   * permanently loading rather than as an error. A server stuck re-serving the
+   * same page under the same cursor is exactly what produces it, and this was
+   * found by the controller hook hanging rather than by reasoning.
+   */
+  it("returns the same session for a page that changed nothing at all", () => {
+    const started = beginImmersiveSession(origin(), [post(1)]);
+    const again = appendImmersivePage(started, [post(1), post(38)], { nextCursor: started.nextCursor });
+    expect(again).toBe(started);
+  });
+
+  /**
+   * The other half of the rule. Walking the offset forward through a stale
+   * region is how a ranked feed gets past it, so a page that adds nothing but
+   * moves the cursor is real progress and must produce a new session.
+   */
+  it("is still progress when a duplicate page advances the cursor", () => {
+    const started = beginImmersiveSession(origin(), [post(1)]);
+    const advanced = appendImmersivePage(started, [post(1)], { nextCursor: started.nextCursor + 20 });
+    expect(advanced).not.toBe(started);
+    expect(advanced.queue).toEqual(started.queue);
+    expect(advanced.nextCursor).toBe(started.nextCursor + 20);
+  });
+
+  it("is a change when an unchanged page is also the last one", () => {
+    const started = beginImmersiveSession(origin(), [post(1)]);
+    const ended = appendImmersivePage(started, [post(1)], { nextCursor: started.nextCursor, exhausted: true });
+    expect(ended).not.toBe(started);
+    expect(ended.canContinue).toBe(false);
+  });
+
   it("stops when the server says there is no more", () => {
     const session = appendImmersivePage(beginImmersiveSession(origin(), []), [post(2)], { exhausted: true });
     expect(session.canContinue).toBe(false);
