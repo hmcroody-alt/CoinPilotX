@@ -2864,7 +2864,12 @@ def add_pwa_headers(response):
             spa_isolated = bool(getattr(g, "pulse_spa_response", False))
             gateway_isolated = request.path == "/admin/login" or spa_isolated
             if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
-                pwa_install_script = '<script src="/static/js/pulse_pwa_install.js?v=brand-20260813" defer></script>'
+                # Bumped when the script's behaviour changes, not on a schedule.
+                # The file is served with a long cache lifetime, so a content
+                # change with the old query string reaches only first-time
+                # visitors -- everyone else keeps running the version they
+                # already have, and the deploy silently does nothing for them.
+                pwa_install_script = '<script src="/static/js/pulse_pwa_install.js?v=app-store-20260919" defer></script>'
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
