@@ -109,6 +109,36 @@ describe("where the preview comes from", () => {
     expect(thumbnail).toBe("https://image.mux.com/PLAY123/thumbnail.jpg");
   });
 
+  it("does not trust a thumbnail_url that is really the video", async () => {
+    /**
+     * This is the payload the reporter's device actually had.
+     *
+     * `resolve_media` blanks a video URL out of `poster_url` and then returns
+     * `thumbnail_url: thumb or source` one line later, putting the asset
+     * straight back into the field named after the thumbnail;
+     * `_canonical_media_payload` repeats the same fallback onto `valid_url`.
+     * Both are fixed server-side now, but a payload cached before the fix is
+     * still on disk, so the client has to survive being handed one.
+     */
+    feed.getPostDetail.mockResolvedValue(
+      postDetail({
+        media: [
+          {
+            media_type: "video",
+            media_url: "https://stream.mux.com/PLAY123/high.mp4",
+            valid_url: "https://stream.mux.com/PLAY123/high.mp4",
+            thumbnail_url: "https://stream.mux.com/PLAY123/high.mp4",
+            mux_thumbnail_url: "https://image.mux.com/PLAY123/thumbnail.jpg",
+            poster_url: ""
+          }
+        ]
+      })
+    );
+    const state = await resolveEntityPreview(REF);
+    const thumbnail = state.status === "ready" ? state.preview.thumbnailUrl : "";
+    expect(thumbnail).toBe("https://image.mux.com/PLAY123/thumbnail.jpg");
+  });
+
   it("draws no picture at all for a video with no still, rather than a black box", async () => {
     // The old fallback produced the mp4 here, and an <Image> pointed at an mp4
     // is a filled aspect box that never draws. An empty string is the honest
