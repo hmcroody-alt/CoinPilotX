@@ -675,17 +675,57 @@ function absoluteMediaUrl(value: string) {
  * strict: it will not fall back from a poster to the full asset. A second
  * ordering written locally would be a second answer to drift from.
  *
- * What is added on top of it is the kind-aware tail. A video with no still
- * returns `""` so the caller draws no media at all, which is honest -- better a
- * card with no picture than a black box captioned "Video". A still image with no
- * separate thumbnail is its own poster, so it falls through to the display URL
- * rather than losing its preview to a strictness that was only ever about video.
+ * Two things are added on top of it.
+ *
+ * The first is that the still fields are not taken on trust. `thumbnail_url` is
+ * the first link in that chain and the server can put a video in it: both
+ * `media_service.resolve_media` and `pulse_feed_engine._canonical_media_payload`
+ * blank a video out of the *poster* and then fall the *thumbnail* back to the
+ * asset itself one line later. Both have been fixed, but a payload cached on
+ * this device from before the fix is still sitting in AsyncStorage and will be
+ * served to a card on the next cold start. A client that believes a field named
+ * `thumbnail_url` must be a thumbnail has no way to notice; the URL is a
+ * perfectly good URL, and an `<Image>` pointed at an `.m3u8` reports nothing at
+ * all. So a still candidate that is plainly a video is discarded and the chain
+ * moves on to `mux_thumbnail_url`, which is where the real frame lives.
+ *
+ * The second is the kind-aware tail. A video with no still returns `""` so the
+ * caller draws no media at all, which is honest -- better a card with no picture
+ * than a black box captioned "Video". A still image with no separate thumbnail
+ * is its own poster, so it falls through to the display URL rather than losing
+ * its preview to a strictness that was only ever about video.
  */
 export function mediaPosterUrl(media: PulseMedia) {
-  const still = renditionUrl(media, "thumb");
+  const still = renditionUrl(stillFieldsOf(media), "thumb");
   if (still && still.trim()) return absoluteMediaUrl(still);
   if (mediaKind(media) === "video") return "";
   return mediaDisplayUrl(media);
+}
+
+/**
+ * The record with anything video-shaped removed from its still fields.
+ *
+ * Deliberately not a filter over a candidate list: keeping the record whole is
+ * what lets `renditionUrl` stay the only place the still ordering is written
+ * down. Extension-sniffing is a weak test, but it is the same test the server
+ * uses (`media_service._is_video_url`) and it only ever *removes* a candidate,
+ * so its failure mode is falling through to the next still rather than drawing
+ * the wrong thing.
+ */
+function stillFieldsOf(media: PulseMedia) {
+  const record = media as PulseMedia & { mux_thumbnail_url?: string };
+  return {
+    ...record,
+    thumbnail_url: stillCandidate(record.thumbnail_url),
+    poster_url: stillCandidate(record.poster_url),
+    mux_thumbnail_url: stillCandidate(record.mux_thumbnail_url)
+  };
+}
+
+function stillCandidate(value: string | undefined | null) {
+  const url = String(value || "").trim();
+  if (!url) return "";
+  return /\.(mp4|mov|m3u8|webm|m4v|qt)(\?|#|$)/i.test(url) ? "" : url;
 }
 
 export function mediaKind(media: PulseMedia) {
