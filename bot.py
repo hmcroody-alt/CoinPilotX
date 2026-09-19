@@ -5430,7 +5430,7 @@ def save_reset_password_and_verify(cur, user_id, password, now):
     if not saved_hash or not check_password_hash(saved_hash, password):
         raise RuntimeError("password_update_verification_failed")
     try:
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         cur.execute(
             "UPDATE mobile_security_sessions SET status='revoked', revoked_at=?, last_seen_at=?, revoked_reason='password_changed' WHERE user_id=? AND status IN ('active','rotated')",
             (now, now, user_id),
@@ -31708,7 +31708,7 @@ def issue_mobile_security_tokens(user, payload=None, *, rotate_from=""):
     session_family_id = "pssf_" + secrets.token_urlsafe(18)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         if rotate_from:
             cur.execute(
                 "SELECT session_family_id FROM mobile_security_sessions WHERE refresh_token_hash=? AND user_id=? LIMIT 1",
@@ -31824,7 +31824,7 @@ def rotate_mobile_refresh_token(refresh_token, payload=None):
     context = mobile_security_device_context(payload)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         cur.execute(
             """
             SELECT s.*, u.*
@@ -31958,7 +31958,7 @@ def revoke_mobile_refresh_token(refresh_token, reason="user_logout"):
         return False
     conn = db(); cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         now = datetime.utcnow().isoformat(timespec="seconds")
         cur.execute(
             "UPDATE mobile_security_sessions SET status='revoked', revoked_at=?, last_seen_at=?, revoked_reason=? WHERE refresh_token_hash=? AND status='active'",
@@ -31981,7 +31981,7 @@ def revoke_all_mobile_security_sessions(user_id, reason="user_sign_out_all"):
         return 0
     conn = db(); cur = conn.cursor()
     try:
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         now = datetime.utcnow().isoformat(timespec="seconds")
         cur.execute(
             """
@@ -85812,7 +85812,7 @@ def account_security_payload(user_id):
     cur.execute("SELECT COUNT(*) AS total FROM user_security_events WHERE user_id=? AND event_type IN ('suspicious_login','failed_login_burst')", (user_id,))
     suspicious_count = int((dict(cur.fetchone() or {}).get("total") or 0))
     try:
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         cur.execute("SELECT COUNT(*) AS total FROM mobile_security_sessions WHERE user_id=? AND status='active' AND COALESCE(revoked_at,'')=''", (user_id,))
         active_session_count = int((dict(cur.fetchone() or {}).get("total") or 0))
     except Exception:
@@ -93085,7 +93085,7 @@ def messenger_media_cookie_user_id():
         conn = db()
         conn.row_factory = sqlite3.Row
         cur = conn.cursor()
-        ensure_mobile_security_session_schema(cur)
+        ensure_mobile_security_session_schema_once(cur)
         cur.execute(
             """
             SELECT user_id
