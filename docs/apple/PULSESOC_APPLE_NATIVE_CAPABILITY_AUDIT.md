@@ -44,6 +44,7 @@ One value, project-wide. Several requested capabilities had a minimum OS above i
 
 | Capability | Minimum iOS | Above the old 15.1 by | vs. the 16.1 floor today |
 |---|---|---|---|
+| Sign in with Apple | 13.0 | — (below it) | satisfied by a wide margin |
 | App Intents | 16.0 | 0.9 | satisfied |
 | Live Activities | 16.1 | 1.0 | satisfied, exactly at the floor |
 | ActivityKit `ActivityContent` / `staleDate` | 16.2 | 1.1 | **still above the floor** |
@@ -135,7 +136,7 @@ both are constrained to *observing* state, never driving it.
 | 3 | App Intents / Siri / Shortcuts | NOT IMPLEMENTED | 16.0 ✅ | No — app target, deliberately (Finding 4) | 4 |
 | 4 | Core Spotlight | NOT IMPLEMENTED | 15.1 ✅ | No | 3 |
 | 5 | BackgroundTasks | NOT IMPLEMENTED (unused `fetch` declaration removed 2026-09-19) | 16.1 ✅ (device-only to test) | No | 3 |
-| 6 | Sign in with Apple | NOT IMPLEMENTED | 15.1 ✅ | No | 2 |
+| 6 | Sign in with Apple | NOT IMPLEMENTED | **13.0** ✅ (the least constrained item here) | No | 2 |
 | 7 | Universal Links + Associated Domains | **FULLY IMPLEMENTED** | — | No | — |
 | 8 | StoreKit 2 | **FULLY IMPLEMENTED** | — | No | — |
 | 9 | MapKit | NOT APPROPRIATE (no data) | 15.1 ✅ | No | 5 |
@@ -295,6 +296,18 @@ already has too many activities", which must never be able to reach the call pat
   native work in a codebase whose only Swift files today are `AppDelegate.swift` and the
   `pulse-now-playing` module.
 
+  > **Corrected 2026-09-19.** That last clause is false, and it is the sentence this document
+  > leans on wherever it prices Swift work. There are **three** local Swift modules:
+  > `pulse-now-playing` (1 file), `pulse-video-mixer` (1), and `pulse-apple-translation`
+  > (8 implementation files plus a 6-file Swift test harness). The last is a fully worked
+  > example of what a new native capability looks like here — a podspec holding the floor
+  > below the feature's own requirement and weak-linking the framework, an
+  > `@available`-gated implementation, a typed error enum whose raw values are the wire
+  > contract with TypeScript, and tests that build as a plain host executable without an
+  > Xcode test target. Every Swift effort estimate in this document should be read against
+  > that, not against a codebase with one Swift file in it.
+  > See `APPLE_NATIVE_ARCHITECTURE.md` and `SIGN_IN_WITH_APPLE.md` Finding 6.
+
 ## 4. Core Spotlight
 
 - **Status** — NOT IMPLEMENTED. Policy in **`DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`**;
@@ -376,7 +389,8 @@ already has too many activities", which must never be able to reach the call pat
 
 ## 6. Sign in with Apple
 
-- **Status** — NOT IMPLEMENTED
+- **Status** — NOT IMPLEMENTED. Decisions in **`DECISIONS_SIGN_IN_WITH_APPLE.md`** (server,
+  schema, linking policy); client/framework detail in **`SIGN_IN_WITH_APPLE.md`**.
 - **Evidence** — no `expo-apple-authentication` in `package.json`; no
   `com.apple.developer.applesignin` entitlement; `usesAppleSignIn` absent from `app.json`;
   no Apple JWT verification route in `bot.py`; the PulseSoc users schema
@@ -395,6 +409,21 @@ already has too many activities", which must never be able to reach the call pat
   already exists. Apple's private-relay addresses must be handled — they are real,
   deliverable addresses but they are per-app and must not be treated as a stable human
   identity.
+
+  > **Corrected 2026-09-19** (`SIGN_IN_WITH_APPLE.md` Finding 6):
+  >
+  > - **RS256, not ES256.** Fetched live, `https://appleid.apple.com/auth/keys` returns three
+  >   RSA keys, all `alg: RS256`, with distinct `kid`s. The ES256 here is contamination from
+  >   the IAP verifier (`iap_apple.py`), which genuinely is ES256 — the third time this
+  >   mission has found one Apple verifier assumed to generalise to another. The three
+  >   concurrent keys are also why `kid` selection is mandatory: there is no "Apple's public
+  >   key" to pin.
+  > - **A table, not a column.** Superseded by `DECISIONS_SIGN_IN_WITH_APPLE.md` Decision 2 —
+  >   `user_external_identities`, because `users` is created twice and the second definition
+  >   wins, so a column can be added to the wrong one and silently discarded.
+  > - **The nonce needs a server-issued challenge or it is not a check.** Comparing a
+  >   client-supplied nonce against a client-supplied token proves nothing; no such
+  >   machinery exists in the repo (Finding 4).
 - **Protection-lock interaction** — none, but it touches the auth path, which has its own
   hazards: route-auth declaration gate, and login rate limits that leak across tests.
 - **User value** — high for conversion. One-tap signup with no password measurably lifts

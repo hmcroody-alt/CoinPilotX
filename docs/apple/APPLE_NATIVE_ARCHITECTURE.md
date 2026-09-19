@@ -209,7 +209,7 @@ the OS, not by taste:
 | 3 | App Intents | **app target** (corrected 2026-09-19) | `APP_INTENTS_SIRI_SHORTCUTS.md`. All intents `openAppWhenRun = true` — `perform()` has no RN bridge. Explicit `authenticationPolicy` per intent. **No conformance to `AudioPlaybackIntent`/`AudioStartingIntent`**; no call intents. An extension target would forfeit `ForegroundContinuableIntent` (Finding 4) |
 | 4 | Core Spotlight | new Expo module | Policy: `DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`. Mechanism: `CORE_SPOTLIGHT.md`. Needs **no** Info.plist key — the blocker is the AppDelegate activity-type switch |
 | 5 | BackgroundTasks | app target | Registration must happen in `didFinishLaunching`. Not currently planned |
-| 6 | Sign in with Apple | `expo-apple-authentication` | Off-the-shelf; the work is server-side. See `DECISIONS_SIGN_IN_WITH_APPLE.md` |
+| 6 | Sign in with Apple | `expo-apple-authentication` — **premise unverified** | Server/schema in `DECISIONS_SIGN_IN_WITH_APPLE.md`; client/framework in `SIGN_IN_WITH_APPLE.md`. "Off-the-shelf" rests on the package exposing `getCredentialState`, the revoked notification, `nonce`, `authorizedScopes` and `realUserStatus` — five open questions, not five answers. Check them before estimating |
 | 7 | Universal Links | **already in the app target** | `continue userActivity` exists and forwards to `RCTLinkingManager` |
 | 8 | StoreKit 2 | already implemented | `Configuration.storekit` is committed |
 | 9 | MapKit | — | Not recommended; blocked on data that does not exist |

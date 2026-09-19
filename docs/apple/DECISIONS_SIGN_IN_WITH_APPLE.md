@@ -126,7 +126,8 @@ Sketch, to be written idempotently in `init_db()` per project convention:
 ```
 user_external_identities
   provider          TEXT     -- 'apple'
-  provider_subject  TEXT     -- Apple's `sub`; stable, opaque, never reused
+  provider_subject  TEXT     -- Apple's `sub`; opaque, and stable per developer *team*
+                             -- (see the qualification below — it is not permanent)
   user_id           INTEGER
   email_at_link     TEXT     -- what Apple returned; may be a relay, may be NULL
   is_private_relay  INTEGER
@@ -159,7 +160,17 @@ question is answered once per user, permanently, on a single request.
 | private relay | none | create a new account, link |
 | private relay | exists (improbable) | **do not link — create a new account** |
 | no email (repeat sign-in) | n/a | resolve by `sub` only |
+| no email (**first** sign-in — scope declined) | n/a | create a new account with no email; **not an error** |
 | unverified | anything | **refuse to link; create new** |
+
+> **Row added 2026-09-19** (`SIGN_IN_WITH_APPLE.md` Finding 3). `authorizedScopes` on the
+> credential is what the user *granted*, not what was requested, and there are only two
+> scopes — the email one can be declined. A first sign-in with email declined produces the
+> same empty field as a repeat sign-in with none of the same context: there is no prior row
+> to resolve against. Without this row an implementer reading the table treats a declined
+> scope as a failed sign-in. The resulting account shape is already legal here — see the
+> `bot.py:7527` / `bot.py:7565` reading two sections up, which establishes that an account
+> with no email at all passes the login email gate.
 
 Auto-linking on a verified email is safe *specifically for Apple* because Apple
 is the authority for the address it is asserting and it tells you whether it
@@ -197,6 +208,23 @@ must verify it: RS256 signature against Apple's JWKS at
 `exp` and the nonce. **Never trust the client's claim of who it is** — the
 `user` field in the Apple credential is attacker-controlled; only the signature
 is not.
+
+> **Confirmed and sharpened 2026-09-19.** RS256 is right (the audit's §6 said ES256 and has
+> been corrected). Fetched live, that endpoint returns **three** RSA keys with distinct
+> `kid`s, all `alg: RS256` — which is the concrete reason `kid` selection is not optional:
+> there is no single "Apple public key" to pin, and pinning one breaks login on rotation day.
+>
+> **The nonce needs one more thing than this paragraph says.** Verifying a nonce means
+> comparing the token's claim against a value *the server already knew*. If the client
+> generates the nonce and posts it alongside the token, the server compares a client-supplied
+> value to a client-supplied value and a replayed token simply carries its matching nonce.
+> The check must be backed by a server-issued, single-use, short-TTL challenge — which is a
+> second piece of unwritten infrastructure beside the JWKS gap. If that is not built, **omit
+> the nonce check rather than ship a version of it that reads like replay protection and is
+> not.** `SIGN_IN_WITH_APPLE.md` Finding 4.
+>
+> Note also that `identityToken` is `nullable` on the credential. A nil token must fail loudly
+> on the client and never reach this route.
 
 Two things about this repo make it harder than it sounds.
 
@@ -278,6 +306,25 @@ needs a path to add a real email or phone later, or it is permanently
 unrecoverable if the user loses their Apple ID. That path does not exist today
 and should be scoped with the feature rather than after it.
 
+> **Qualified 2026-09-19** — `SIGN_IN_WITH_APPLE.md` Findings 1 and 2, from the
+> `ASAuthorizationAppleIDCredential` / `ASAuthorizationAppleIDProvider` headers.
+>
+> **The `sub` is not promised to be permanent.** The header says it "will be stable across
+> the 'developer team'" and that "the value may change upon user disconnecting from the
+> identity provider." So an app transfer to another Apple Developer team changes *every*
+> user's `sub` at once — the framework has a `Transferred` credential state for exactly this,
+> which the enum carries and its own docstring omits — and a revoke-then-return user is not
+> guaranteed the same string either.
+>
+> This does not change the decision: `(provider, provider_subject)` is still the right
+> identity and email is still worse. What it changes is the status of the paragraph above.
+> The alternative-credential path is not a nice-to-have for lost Apple IDs; it is the **only**
+> mitigation for a team transfer or a revoke-and-return, and it belongs inside the feature's
+> scope.
+>
+> **Revocation is not silent on the client.** See the correction under "not decided" below —
+> two iOS 13 mechanisms give the app a revocation signal with no backend work at all.
+
 ---
 
 ## Where the code goes
@@ -316,6 +363,16 @@ entitlement and the native module both have to be real.
 - **Server-to-server notifications** (Apple's revocation webhook). Real work,
   separate endpoint, and the feature is coherent without it — accounts just go
   stale silently rather than promptly.
+
+  > **Corrected 2026-09-19.** Right about the webhook, wrong about "silently."
+  > `ASAuthorizationAppleIDProviderCredentialRevokedNotification` and
+  > `getCredentialStateForUserID:completion:` are both **iOS 13.0** and need no backend at
+  > all: the first fires while the app is running, the second answers on demand at launch or
+  > foreground. This is not equivalent to the webhook — it only reaches a device that still
+  > has the app installed — but it closes most of the gap for a few lines of client code, so
+  > it should be *in* scope rather than deferred with the webhook. The handling of `Revoked`
+  > vs `NotFound` vs `Transferred` is not obvious and is specified in
+  > `SIGN_IN_WITH_APPLE.md` Finding 2. What stays open is only the webhook itself.
 - **Retro-fitting a unique index on `users.email`.** Named here because SIWA made
   it visible, explicitly *not* scoped into SIWA.
 - **Android parity.** SIWA on Android is a web flow and a different set of
