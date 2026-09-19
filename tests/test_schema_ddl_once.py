@@ -444,5 +444,52 @@ class GuardedHotPathsTest(unittest.TestCase):
             "these run schema DDL on a hot request path and lost their guard")
 
 
+class UnguardedSiblingIsNotReachableTest(unittest.TestCase):
+    """A guarded wrapper is worthless while call sites still reach around it.
+
+    `GuardedHotPathsTest` above asks whether the DDL function carries a guard. It
+    cannot see the failure that actually took the site down: the guarded wrapper
+    `ensure_mobile_security_session_schema_once` existed, was decorated, and
+    would have passed that check — while seven request-reachable call sites went
+    on calling the raw `ensure_mobile_security_session_schema` beside it. Every
+    mobile auth refresh re-issued three `CREATE INDEX IF NOT EXISTS` on
+    `mobile_security_sessions` and then UPDATEd the same row on the same open
+    transaction, so each request held a ShareLock that blocked every other
+    request's RowExclusiveLock. Production logged 69 deadlocks in fifteen
+    minutes and stopped answering for ten.
+
+    So the property here is reachability, not decoration: the unguarded function
+    may only be called by the wrapper that guards it, and by `_init_db_impl`,
+    which runs once at boot before any request is served.
+    """
+
+    ALLOWED_CALLERS = {"ensure_mobile_security_session_schema_once", "_init_db_impl"}
+
+    def test_the_raw_ddl_is_only_called_by_its_guard_and_init_db(self):
+        import ast
+
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        tree = ast.parse(open(os.path.join(root, "bot.py"), encoding="utf-8").read())
+
+        callers = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for inner in ast.walk(node):
+                if (
+                    isinstance(inner, ast.Call)
+                    and isinstance(inner.func, ast.Name)
+                    and inner.func.id == "ensure_mobile_security_session_schema"
+                ):
+                    callers.add(node.name)
+
+        self.assertEqual(
+            callers - self.ALLOWED_CALLERS,
+            set(),
+            "these call the unguarded DDL on a request path -- use "
+            "ensure_mobile_security_session_schema_once instead",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
