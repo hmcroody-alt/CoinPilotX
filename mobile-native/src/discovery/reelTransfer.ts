@@ -3,12 +3,13 @@
  *
  * ## The problem this exists to solve
  *
- * There is no endpoint that returns a single reel. `/api/pulse/reels/<id>`
- * exists for PATCH and DELETE only; `getReelDetail` reads the reel out of local
- * cache and fetches nothing but comments. So the player has exactly one way to
- * obtain reels — `/api/pulse/reels/feed` — and one way to honour a requested id:
- * `focusInitialReel`, which hoists the match to index 0 *if the id happens to be
- * on the page it just fetched*, and otherwise returns the page untouched.
+ * When this was written there was no endpoint that returned a single reel:
+ * `/api/pulse/reels/<id>` was PATCH and DELETE only, and `getReelDetail` read
+ * the reel out of local cache and fetched nothing but comments. So the player
+ * had exactly one way to obtain reels — `/api/pulse/reels/feed` — and one way to
+ * honour a requested id: `focusInitialReel`, which hoists the match to index 0
+ * *if the id happens to be on the page it just fetched*, and otherwise returns
+ * the page untouched.
  *
  * That "otherwise" is the bug the mission names. Two ways a user sees a reel
  * they did not tap:
@@ -19,6 +20,23 @@
  *   2. The tapped reel is not in the freshly fetched page — it was ranked in a
  *      different lane, or it has aged past the first page — and `focusInitialReel`
  *      silently gives up. The player opens on somebody else's reel with no error.
+ *
+ * ## The by-id read now exists, and this module still earns its place
+ *
+ * `d8fafe932` added GET to `/api/pulse/reels/<id>`, so the premise above no
+ * longer holds and the paragraph is kept as history rather than as fact. That
+ * does not make the slot redundant. The tap site is *holding the reel already*,
+ * so carrying it costs nothing and fetching it costs a round trip on the exact
+ * frame the user is watching for — the flash in failure mode (1) is a rendering
+ * race, and a network call cannot win a race against a cache read.
+ *
+ * What the new route does change is the *fallback*. Failure mode (2) above ends
+ * in "silently gives up", which was the only option when no by-id read existed.
+ * It no longer is: a miss can now be resolved rather than absorbed. That is left
+ * to the surface that owns the miss, not done here, because this module's
+ * contract is deliberately "a missing slot degrades to exactly today's
+ * behaviour" — turning a read into a fetch *inside* the slot would give the
+ * degrade path a network dependency it has never had.
  *
  * ## Why a module slot instead of a navigation param
  *
