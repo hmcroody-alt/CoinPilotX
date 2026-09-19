@@ -40,12 +40,17 @@ import {
   createLocalMessage,
   deleteMessage,
   drainMessengerQueue,
+  editMessage,
   enqueueMessengerMessage,
+  forwardMessage,
   getConversation,
   getPulseAiConversation,
   isRetryableMessengerSendError,
+  listConversations,
+  loadCachedConversations,
   loadCachedMessages,
   markConversationSeen,
+  MessengerConversation,
   MessengerMessage,
   MessengerPresence,
   PULSE_AI_CONVERSATION_ID,
@@ -123,6 +128,7 @@ import type { PulseCommandActionKey } from "../pulseCommand/domain";
 import {
   canReactToMessage,
   messageAccessibilityLabel,
+  messageActionKind,
   messageActionRules,
   messageDeliveryLabel,
   messagePreview,
@@ -160,39 +166,45 @@ type MessageFocusRequest = {
  * work, so adding a rule to `messageActionRules` without deciding what it does
  * is a compile error instead of a menu row that swallows the tap.
  *
- * The six `false` entries are not oversights. `forward` and `edit` have working
- * server routes and no UI to drive them. `save` is refused by the saved-items
- * contract outright -- `SavableContentType` has no member for a message.
- * `info` has no delivery-details screen anywhere in the app.
+ * The two remaining `false` entries are not oversights, and they are false for
+ * different reasons.
  *
- * `viewMedia` and `saveMedia` are a different kind of absent, and the more
- * interesting one: both need the *granted* media URL, which is a fifteen-minute
- * credential minted inside the bubble's own media child and never lifted to
- * this level. Reproducing it here would be a second copy of the grant-and-
- * refresh protocol that `ConversationMediaGalleryHost` already runs correctly,
- * and a second copy of a credential protocol is the kind of thing that works
- * until the day it expires differently. Tapping the media opens the viewer,
- * where Save already lives and already handles permissions and progress.
+ * `save` is refused by the saved-items contract outright: `SavableContentType`
+ * has no member for a message, so there is nowhere for a saved message to go.
+ * Adding one is a change to that contract and its storage, not to this screen.
  *
- * Every one of them is filtered out of the menu rather than shown inert,
- * because a row that does nothing is worse than an absent row: the user cannot
- * tell it apart from a failure.
+ * `saveMedia` needs the *granted* media URL -- a short-lived credential minted
+ * inside the bubble's own media child -- plus photo-library permission, a
+ * download with progress, and the handling of a Mux video whose playback URL is
+ * a manifest rather than a file. The viewer already does all four, correctly
+ * and in one place, so the route to Save is: open the media, save it from
+ * there. A second copy of a credential protocol is the kind of thing that works
+ * until the day it expires differently.
+ *
+ * `viewMedia` was in that same paragraph and did not belong there. It needs no
+ * credential at all: the gallery host resolves any seed whose URL is protected
+ * before the viewer loads it, so this screen can open on a message using
+ * nothing but the message.
+ *
+ * Both falses are filtered out of the menu rather than shown inert, because a
+ * row that does nothing is worse than an absent row: the user cannot tell it
+ * apart from a failure.
  */
 const MESSAGE_ACTION_IMPLEMENTED: Record<PulseCommandActionKey, boolean> = {
   reply: true,
   react: true,
   retry: true,
   copy: true,
-  forward: false,
-  edit: false,
+  forward: true,
+  edit: true,
   save: false,
   share: true,
   translate: true,
-  info: false,
+  info: true,
   openLink: true,
   copyLink: true,
   shareLink: true,
-  viewMedia: false,
+  viewMedia: true,
   saveMedia: false,
   report: true,
   safety: true,
@@ -443,6 +455,20 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   const [uploading, setUploading] = useState(false);
   const [replyTo, setReplyTo] = useState<MessengerMessage | null>(null);
   /**
+   * The message the composer is currently amending, and the draft it displaced.
+   *
+   * `restoreDraft` exists because Edit takes over the one composer on the
+   * screen. Someone who had half a sentence typed and then went back to fix a
+   * typo above it would otherwise lose the sentence to a menu row -- silently,
+   * with no way to get it back. Cancelling an edit puts it exactly where it was.
+   *
+   * Editing and replying are mutually exclusive by construction: both own the
+   * composer's meaning on submit, and a composer that is both amending an old
+   * message and quoting another one has no coherent send. Each setter clears
+   * the other rather than trusting call sites to remember.
+   */
+  const [editing, setEditing] = useState<{ message: MessengerMessage; restoreDraft: string } | null>(null);
+  /**
    * The message under the finger, plus what was true about it when it was
    * pressed. Null closes the overlay.
    */
@@ -462,6 +488,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
    * not need to know which of Open, Copy or Share is waiting on it.
    */
   const [linkChoice, setLinkChoice] = useState<{ links: readonly string[]; run: (url: string) => void } | null>(null);
+  /** The message waiting on a destination. Null closes the picker. */
+  const [forwarding, setForwarding] = useState<MessengerMessage | null>(null);
+  /** The message whose delivery details are on screen. */
+  const [infoFor, setInfoFor] = useState<MessengerMessage | null>(null);
   const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -510,11 +540,16 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
   /**
    * Whether this thread has more than two people in it.
    *
-   * It changes only what Message Info's accessibility label promises -- "who
-   * has read this" is a question worth asking in a group and not in a pair --
-   * so it is read from whatever the conversation payload happens to carry and
-   * defaults to false. A wrong answer here costs a slightly off VoiceOver
-   * phrase, which is why it does not justify an extra request.
+   * Read from whatever the conversation payload happens to carry, defaulting
+   * to false. That default is the weak direction and worth naming: a group this
+   * fails to recognise gets Message Info's plain "Read", which beside six
+   * participants is read as "all six" and means "at least one".
+   *
+   * It is still not worth an extra request -- the payload has carried one of
+   * these two fields for every thread seen in practice, and the cost of being
+   * wrong is an overclaim in a sheet rather than anything the user acts on. But
+   * if a server change ever drops both fields, this is the line that goes quiet
+   * rather than loud, and the overclaim is where it will surface.
    */
   const [isGroupThread, setIsGroupThread] = useState(false);
   const [threadTitle, setThreadTitle] = useState(assistantConversation ? PULSE_AI_DISPLAY_NAME : route.params.title || "Messenger");
@@ -1000,7 +1035,106 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
     }
   }, [assistantConversation, conversationId, acknowledgeLocalMessage, mergeMessages, messages, navigation, route.params.undxTaskId, sync]);
 
+  /**
+   * Hand the composer over to an existing message.
+   *
+   * The raw `body` is loaded, not `displayMessageBody`. The two agree for text,
+   * which is the only kind Edit is offered on, but they agree by coincidence
+   * rather than by contract: the display version deliberately *drops* text it
+   * judges to be a filename, and the day that heuristic touches a text message
+   * this would quietly PATCH the stored body down to nothing. An edit amends
+   * what is stored, so it has to start from what is stored.
+   */
+  const beginEdit = useCallback((message: MessengerMessage) => {
+    setReplyTo(null);
+    setEditing({ message, restoreDraft: draft });
+    setDraft(message.body || "");
+  }, [draft]);
+
+  const cancelEdit = useCallback(() => {
+    setEditing((current) => {
+      setDraft(current?.restoreDraft || "");
+      return null;
+    });
+  }, []);
+
+  /**
+   * Amend a sent message.
+   *
+   * Nothing is applied optimistically. Every other rule here -- whose message
+   * it is, whether the window has closed, whether the body is empty -- is the
+   * server's to enforce, and it enforces them on this exact request. Painting
+   * the new text first would show a successful edit for the length of a round
+   * trip and then take it back, which is worse than a moment's wait, and the
+   * case where it lies is exactly the case the user most needs told: the edit
+   * window closed while the keyboard was open.
+   *
+   * On success the server's row replaces the local one wholesale, so
+   * `edited_at` and any normalisation it applied arrive with the new body
+   * rather than being guessed at here.
+   */
+  const submitEdit = useCallback(async () => {
+    const target = editing?.message;
+    if (!target) return;
+    const body = draft.trim();
+    if (!body) {
+      setStatusMessage(t("messaging:chat.editEmpty"));
+      return;
+    }
+    if (body === (target.body || "").trim()) {
+      cancelEdit();
+      return;
+    }
+    try {
+      const result = await editMessage(target.id, body);
+      const updated = result.message;
+      setMessages((current) => {
+        const next = current.map((item) =>
+          item.id === target.id ? { ...item, ...(updated || {}), body, edited_at: updated?.edited_at || new Date().toISOString() } : item
+        );
+        cacheMessages(conversationId, next).catch(() => undefined);
+        return next;
+      });
+      setEditing(null);
+      setDraft("");
+      setStatusMessage(t("messaging:chat.editSaved"));
+    } catch (editError) {
+      setStatusMessage(editError instanceof Error ? editError.message : t("messaging:chat.editFailed"));
+    }
+  }, [cancelEdit, conversationId, draft, editing, t]);
+
+  /**
+   * Send the selected message on to other threads.
+   *
+   * The reported number is the server's `count`, never `conversationIds.length`.
+   * The two differ whenever a destination has gone away since the list was
+   * cached -- left, blocked, deleted -- and in that case the selection is a
+   * statement of intent while the count is a statement of fact. Reporting the
+   * intent would tell someone their message reached a thread it never entered.
+   *
+   * The picker closes on both paths. A sheet left open over a failure banner
+   * reads as "try again", and trying again is exactly what a duplicate forward
+   * is made of.
+   */
+  const forwardToConversations = useCallback(async (conversationIds: number[]) => {
+    const target = forwarding;
+    if (!target || conversationIds.length === 0) return;
+    try {
+      const result = await forwardMessage(target.id || target.message_id, conversationIds);
+      const count = Number(result.count ?? result.forwarded_message_ids?.length ?? 0);
+      setForwarding(null);
+      setStatusMessage(count > 0 ? t("messaging:chat.forwardSent", { total: count }) : t("messaging:chat.forwardFailed"));
+    } catch (forwardError) {
+      setForwarding(null);
+      setStatusMessage(forwardError instanceof Error ? forwardError.message : t("messaging:chat.forwardFailed"));
+    }
+  }, [forwarding, t]);
+
   const submitText = useCallback(async () => {
+    if (editing) {
+      await submitEdit();
+      return;
+    }
     const body = draft.trim();
     if (!body) return;
     setDraft("");
@@ -1016,7 +1150,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
       reply_to_message_id: currentReply?.message_id,
       reply_preview: currentReply ? messagePreview(currentReply) : undefined
     });
-  }, [assistantConversation, conversationId, draft, replyTo, sendPayload]);
+  }, [assistantConversation, conversationId, draft, editing, replyTo, sendPayload, submitEdit]);
 
   const retryMessage = useCallback(async (message: MessengerMessage) => {
     // A retry is the SAME logical message, so it must carry the same identity.
@@ -1149,6 +1283,10 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
 
       switch (key) {
         case "reply":
+          // An edit in progress owns the composer and would otherwise keep the
+          // amended text sitting there under a "Replying to" banner, ready to
+          // be sent as a new message.
+          cancelEdit();
           setReplyTo(message);
           close();
           return;
@@ -1203,11 +1341,53 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           removeMessage(message, "everyone").catch(() => undefined);
           close();
           return;
-        case "forward":
         case "edit":
-        case "save":
+          close();
+          beginEdit(message);
+          return;
+        case "forward":
+          close();
+          setForwarding(message);
+          return;
         case "info":
+          close();
+          setInfoFor(message);
+          return;
         case "viewMedia":
+          /**
+           * Open the gallery on this message without a granted URL in hand.
+           *
+           * The seed carries the protected API path straight off the message.
+           * That is safe here, and was not safe from the grid, because the two
+           * paths differ in who resolves it: a tile has already minted its own
+           * grant and hands the resolved URL up, whereas this menu row has
+           * nothing but the message. The host resolves any seed whose URL is
+           * protected before the viewer loads it -- so the protected path is
+           * never handed to the platform loader, it is only handed to the
+           * thing whose job is to exchange it.
+           *
+           * What is lost versus tapping the picture is the instant first paint:
+           * the tapped photo is already decoded, this one waits a grant. For a
+           * row in a menu that is the right trade against a second copy of the
+           * grant-and-refresh protocol living on this screen.
+           */
+          close();
+          mediaGallery.open(gallerySeedFromMessage({
+            messageId: Number(message.id || message.message_id || 0),
+            attachmentId: Number(message.attachment_id || message.media_upload_id || message.id || 0),
+            mediaUploadId: Number(message.media_upload_id || 0),
+            kind: (message.message_type || "").toLowerCase() === "video" ? "video" : "image",
+            url: String(message.media_url || ""),
+            downloadUrl: String(message.download_url || ""),
+            thumbnailUrl: String(message.thumbnail_url || ""),
+            mimeType: String(message.mime_type || ""),
+            durationSeconds: Number(message.duration_seconds || message.duration || 0),
+            senderId: Number(message.sender_user_id || message.sender_id || 0),
+            senderName: String(message.sender_display_name || ""),
+            createdAt: String(message.created_at || "")
+          }));
+          return;
+        case "save":
         case "saveMedia":
           // Filtered out of the menu by `MESSAGE_ACTION_IMPLEMENTED`; listed
           // here so the union stays exhaustive and the day one of them is
@@ -1216,7 +1396,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           return;
       }
     },
-    [navigation, openLinkFromMessage, removeMessage, report, retryMessage, t, threadTitle]
+    [beginEdit, cancelEdit, mediaGallery, navigation, openLinkFromMessage, removeMessage, report, retryMessage, t, threadTitle]
   );
 
   /**
@@ -2213,10 +2393,33 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
             <Text style={styles.statusBannerText}>{statusMessage}</Text>
           </Pressable>
         ) : null}
+        {editing ? (
+          /*
+            The same band the reply banner uses, for the same reason: it is the
+            only thing on screen that says what pressing Send will now do.
+            Without it the composer is just a box with text in it that will
+            silently replace a message somewhere up the thread instead of
+            adding one to the end.
+
+            Cancel is not decoration here. Edit is the only action in the menu
+            that takes the composer away from whatever was already being typed,
+            so the way back has to be a visible control rather than a
+            back-gesture people are expected to guess at.
+          */
+          <View style={styles.replyComposer}>
+            <View style={styles.replyCopy}>
+              <Text style={styles.replyTitle}>{t("messaging:chat.editingMessage")}</Text>
+              <Text style={styles.replyPreview} numberOfLines={1}>{messagePreview(editing.message)}</Text>
+            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCancelEdit")} style={styles.replyCancel} onPress={cancelEdit}>
+              <Text style={styles.replyCancelText}>{t("common:actions.cancel")}</Text>
+            </Pressable>
+          </View>
+        ) : null}
         {replyTo ? (
           <View style={styles.replyComposer}>
             <View style={styles.replyCopy}>
-              <Text style={styles.replyTitle}>{t("messaging:chat.replyingTo", { name: replyTo.is_mine ? t("messaging:chat.yourMessage") : replyTo.sender_display_name || t("messaging:chat.unknownSender") })}</Text>
+              <Text style={styles.replyTitle}>{t("messaging:chat.replyingTo",{ name: replyTo.is_mine ? t("messaging:chat.yourMessage") : replyTo.sender_display_name || t("messaging:chat.unknownSender") })}</Text>
               <Text style={styles.replyPreview} numberOfLines={1}>{messagePreview(replyTo)}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCancelReply")} style={styles.replyCancel} onPress={() => setReplyTo(null)}>
@@ -2246,7 +2449,7 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           />
           <SignalIconButton accessibilityLabel="Add emoji" icon="happy-outline" size={42} onPress={() => setEmojiPickerOpen(true)} />
           <SignalIconButton accessibilityLabel={assistantConversation ? "UNDX voice messages unavailable" : "Record voice message"} icon="mic-outline" disabled={uploading || assistantConversation} size={42} onPress={() => assistantConversation ? setStatusMessage("UNDX cannot receive voice messages yet.") : toggleVoiceRecording().catch(() => undefined)} />
-          <Pressable accessibilityRole="button" accessibilityLabel="Send message" disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
+          <Pressable accessibilityRole="button" accessibilityLabel={editing ? t("messaging:chat.a11ySaveEdit") : "Send message"} disabled={!draft.trim()} style={({ pressed }) => [styles.sendButton, !draft.trim() && styles.sendDisabled, pressed && styles.pressed]} onPress={submitText}>
             <Text style={styles.sendText}>➤</Text>
           </Pressable>
         </View>}
@@ -2295,6 +2498,13 @@ export function ChatScreen({ route, navigation }: NativeStackScreenProps<RootSta
           setLinkChoice(null);
           run?.(url);
         }}
+      />
+      <MessageInfoSheet message={infoFor} group={isGroupThread} onClose={() => setInfoFor(null)} />
+      <ForwardSheet
+        message={forwarding}
+        currentConversationId={conversationId}
+        onClose={() => setForwarding(null)}
+        onForward={(conversationIds) => void forwardToConversations(conversationIds)}
       />
       <AttachmentActionSheet
         visible={attachmentSheetOpen}
@@ -2643,6 +2853,207 @@ function LinkChoiceSheet({
               </Pressable>
             ))}
           </View>
+        </PulseCommandPanel>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/**
+ * When a message happened, and how far it got.
+ *
+ * Every line here is read off the message the thread already holds. That is a
+ * deliberate ceiling, not a shortcut: the server aggregates read state to one
+ * of sent/delivered/seen for the whole message and exposes no per-person
+ * breakdown, so a screen promising "Read by Ana, Ben" would have to invent two
+ * of those three words. What it can say truthfully, it says.
+ *
+ * In a group that ceiling has to be stated rather than implied, which is why
+ * `deliveryDetail` differs by thread kind. "Read" next to six participants
+ * reads as "all six", and it means "at least one". A one-line qualifier is the
+ * difference between a fact and a wrong impression.
+ */
+function MessageInfoSheet({
+  message,
+  group,
+  onClose
+}: {
+  message: MessengerMessage | null;
+  group: boolean;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  if (!message) return null;
+
+  const stamp = (value?: string) => {
+    if (!value) return "";
+    const at = new Date(value);
+    // An unparseable timestamp is shown as nothing rather than as "Invalid
+    // Date", which is a string the user cannot act on and cannot report.
+    return Number.isNaN(at.getTime()) ? "" : at.toLocaleString();
+  };
+
+  const status = String(message.delivery_status || message.status || "").toLowerCase();
+  const seen = status === "seen" || status === "read" || Boolean(message.seen_at);
+  const delivered = seen || status === "delivered" || Boolean(message.delivered_at);
+  const deliveryDetail = seen
+    ? (group ? t("messaging:chat.infoReadGroup") : t("messaging:chat.infoRead"))
+    : delivered
+      ? t("messaging:chat.infoDelivered")
+      : t("messaging:chat.infoSent");
+
+  // Written out rather than built as `infoType_${kind}`. A composed key is
+  // invisible to the i18n extractor, so a locale missing one of the four would
+  // ship the raw key as the value and nobody would find out until a user in
+  // that locale opened this sheet.
+  const kind = messageActionKind(message);
+  const kindLabel = kind === "voice"
+    ? t("messaging:chat.infoTypeVoice")
+    : kind === "media"
+      ? t("messaging:chat.infoTypeMedia")
+      : kind === "unavailable"
+        ? t("messaging:chat.infoTypeUnavailable")
+        : t("messaging:chat.infoTypeText");
+  const bytes = Number(message.file_size || 0);
+  const seconds = Number(message.duration_seconds || message.duration || 0);
+
+  const rows: Array<{ label: string; value: string }> = [
+    { label: t("messaging:chat.infoFrom"), value: message.is_mine ? t("messaging:chat.yourMessage") : message.sender_display_name || t("messaging:chat.unknownSender") },
+    { label: t("messaging:chat.infoSentAt"), value: stamp(message.created_at) },
+    { label: t("messaging:chat.infoStatus"), value: deliveryDetail },
+    { label: t("messaging:chat.infoDeliveredAt"), value: stamp(message.delivered_at) },
+    { label: t("messaging:chat.infoReadAt"), value: stamp(message.seen_at) },
+    { label: t("messaging:chat.infoEditedAt"), value: stamp(message.edited_at) },
+    { label: t("messaging:chat.infoForwarded"), value: message.forwarded ? t("messaging:chat.infoForwardedYes") : "" },
+    { label: t("messaging:chat.infoType"), value: kindLabel },
+    { label: t("messaging:chat.infoDuration"), value: seconds > 0 ? formatDuration(seconds) : "" },
+    { label: t("messaging:chat.infoSize"), value: bytes > 0 ? formatFileSize(bytes) : "" },
+    { label: t("messaging:chat.infoId"), value: String(message.id || message.message_id || "") }
+    // Empty values are dropped below rather than shown as a dash. A blank row
+    // invites the reading that the fact is missing; an absent row says the
+    // fact does not apply, which for "Edited" or "Duration" is the truth.
+  ].filter((row) => row.value);
+
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCloseInfo")} style={styles.sheetBackdrop} onPress={onClose}>
+        <PulseCommandPanel style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>{t("messaging:messageActions.info")}</Text>
+          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
+          <View style={styles.infoRows}>
+            {rows.map((row) => (
+              <View key={row.label} style={styles.infoRow}>
+                <Text style={styles.infoLabel}>{row.label}</Text>
+                <Text style={styles.infoValue} numberOfLines={2}>{row.value}</Text>
+              </View>
+            ))}
+          </View>
+        </PulseCommandPanel>
+      </Pressable>
+    </Modal>
+  );
+}
+
+/**
+ * Where to send it.
+ *
+ * The list is the conversations already cached for this account, read once when
+ * the sheet opens. Cached rather than fetched because a picker that spins is a
+ * picker people close, and the cache is exactly the list they just came from.
+ * A refresh is attempted alongside, and only replaces the rows if it lands.
+ *
+ * The current conversation is excluded. Forwarding a message back into the
+ * thread it is already in is a copy of itself directly beneath itself, which is
+ * never the intent and is confusing enough to be worth one line to prevent.
+ *
+ * Multi-select, capped by the API wrapper at ten. The count that comes back is
+ * what actually happened and may be smaller than the selection -- a thread the
+ * account was removed from between the cache write and the send is a silent
+ * drop otherwise -- so the caller reports the server's number, not its own.
+ */
+function ForwardSheet({
+  message,
+  currentConversationId,
+  onClose,
+  onForward
+}: {
+  message: MessengerMessage | null;
+  currentConversationId: number;
+  onClose: () => void;
+  onForward: (conversationIds: number[]) => void;
+}) {
+  const { t } = useTranslation();
+  const [conversations, setConversations] = useState<MessengerConversation[]>([]);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const open = Boolean(message);
+
+  useEffect(() => {
+    if (!open) {
+      setSelected([]);
+      return;
+    }
+    let active = true;
+    const keep = (list: MessengerConversation[]) =>
+      list.filter((item) => Number(item.conversation_id || item.id) !== currentConversationId);
+    loadCachedConversations()
+      .then((cached) => { if (active) setConversations(keep(cached)); })
+      .catch(() => undefined);
+    listConversations()
+      .then((fresh) => { if (active) setConversations(keep(fresh)); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [currentConversationId, open]);
+
+  if (!message) return null;
+
+  const toggle = (id: number) => {
+    setSelected((current) => (current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]));
+  };
+
+  return (
+    <Modal transparent animationType="fade" visible onRequestClose={onClose}>
+      <Pressable accessibilityRole="button" accessibilityLabel={t("messaging:chat.a11yCloseForward")} style={styles.sheetBackdrop} onPress={onClose}>
+        <PulseCommandPanel style={styles.sheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>{t("messaging:messageActions.forward")}</Text>
+          <Text style={styles.sheetPreview} numberOfLines={2}>{messagePreview(message)}</Text>
+          {conversations.length === 0 ? (
+            <Text style={styles.sheetPreview}>{t("messaging:chat.forwardNoConversations")}</Text>
+          ) : (
+            <ScrollView style={styles.forwardList} keyboardShouldPersistTaps="handled">
+              {conversations.slice(0, 60).map((item) => {
+                const id = Number(item.conversation_id || item.id);
+                const picked = selected.includes(id);
+                return (
+                  <Pressable
+                    key={id}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: picked }}
+                    accessibilityLabel={item.title || item.name || t("messaging:chat.defaultConversationTitle")}
+                    style={({ pressed }) => [styles.forwardRow, picked && styles.forwardRowPicked, pressed && styles.pressed]}
+                    onPress={() => toggle(id)}
+                  >
+                    <Ionicons name={picked ? "checkmark-circle" : "ellipse-outline"} size={20} color={picked ? colors.accent : colors.muted} />
+                    <Text style={styles.forwardRowText} numberOfLines={1}>{item.title || item.name || t("messaging:chat.defaultConversationTitle")}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("messaging:messageActions.forward")}
+            disabled={selected.length === 0 || busy}
+            style={({ pressed }) => [styles.sendButton, styles.forwardSend, (selected.length === 0 || busy) && styles.sendDisabled, pressed && styles.pressed]}
+            onPress={() => {
+              setBusy(true);
+              onForward(selected);
+            }}
+          >
+            {busy ? <ActivityIndicator color="#06101b" /> : <Text style={styles.forwardSendText}>{t("messaging:chat.forwardSend", { total: selected.length })}</Text>}
+          </Pressable>
         </PulseCommandPanel>
       </Pressable>
     </Modal>
@@ -4126,6 +4537,64 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8
+  },
+  infoRows: {
+    gap: 2,
+    width: "100%"
+  },
+  infoRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    paddingVertical: 9
+  },
+  infoLabel: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  infoValue: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    textAlign: "right"
+  },
+  // Bounded rather than free-growing: a hundred conversations would push the
+  // send button off the bottom of a sheet that has no other way to reach it.
+  forwardList: {
+    maxHeight: 320,
+    width: "100%"
+  },
+  forwardRow: {
+    alignItems: "center",
+    borderRadius: logiNexus.radius.medium,
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    width: "100%"
+  },
+  forwardRowPicked: {
+    backgroundColor: "rgba(255,255,255,0.06)"
+  },
+  forwardRowText: {
+    color: colors.text,
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: "700"
+  },
+  forwardSend: {
+    alignItems: "center",
+    height: 46,
+    justifyContent: "center",
+    width: "100%"
+  },
+  forwardSendText: {
+    color: "#06101b",
+    fontSize: 15,
+    fontWeight: "900"
   },
   linkChoiceRow: {
     flexDirection: "row",
