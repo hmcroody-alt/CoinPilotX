@@ -209,8 +209,59 @@ class CooldownTest(unittest.TestCase):
 
     def test_kinds_are_throttled_independently(self):
         store = {}
-        pg_lock_health.should_escalate("lock_health", 1000.0, LIMITS, store)
+        pg_lock_health.should_escalate("lock_contention", 1000.0, LIMITS, store)
         self.assertTrue(pg_lock_health.should_escalate("sample_failed", 1000.0, LIMITS, store))
+
+    def test_a_failed_sample_and_a_real_convoy_do_not_share_a_throttle(self):
+        # The defect this pins: with one cooldown key for everything, a blip
+        # that stopped the probe for a single cycle would silently swallow the
+        # email for a genuine convoy arriving four minutes later — the exact
+        # event the monitor exists to report.
+        blip = pg_lock_health.evaluate(
+            {"ok": False, "supported": True, "reason": "sample_failed", "error": "timeout"},
+            {"deadlocks": None, "at": None},
+            now=1000.0,
+            limits=LIMITS,
+        )
+        convoy = pg_lock_health.evaluate(
+            healthy(lock_waiters=14, longest_lock_wait_seconds=200.0),
+            {"deadlocks": None, "at": None},
+            now=1240.0,
+            limits=LIMITS,
+        )
+        self.assertNotEqual(blip["kind"], convoy["kind"])
+
+        store = {}
+        self.assertTrue(pg_lock_health.should_escalate(blip["kind"], 1000.0, LIMITS, store))
+        self.assertTrue(pg_lock_health.should_escalate(convoy["kind"], 1240.0, LIMITS, store))
+
+    def test_both_shapes_of_contention_share_one_throttle(self):
+        # The flip side: many-brief-waiters and one-long-waiter describe the
+        # same database, so they must not produce two emails about it.
+        many = pg_lock_health.evaluate(
+            healthy(lock_waiters=9, longest_lock_wait_seconds=2.0),
+            {"deadlocks": None, "at": None},
+            now=1000.0,
+            limits=LIMITS,
+        )
+        one_long = pg_lock_health.evaluate(
+            healthy(lock_waiters=1, longest_lock_wait_seconds=140.0),
+            {"deadlocks": None, "at": None},
+            now=1045.0,
+            limits=LIMITS,
+        )
+        self.assertEqual(many["kind"], one_long["kind"])
+
+        store = {}
+        self.assertTrue(pg_lock_health.should_escalate(many["kind"], 1000.0, LIMITS, store))
+        self.assertFalse(pg_lock_health.should_escalate(one_long["kind"], 1045.0, LIMITS, store))
+
+    def test_a_healthy_verdict_carries_no_kind(self):
+        verdict = pg_lock_health.evaluate(
+            healthy(), {"deadlocks": None, "at": None}, now=1000.0, limits=LIMITS
+        )
+        self.assertFalse(verdict["alert"])
+        self.assertIsNone(verdict["kind"])
 
 
 class ProbeIsReadOnlyTest(unittest.TestCase):

@@ -220,6 +220,11 @@ def evaluate(signals, previous, now, limits=None):
     limits = limits or thresholds()
     verdict = {
         "alert": False,
+        # Also the cooldown key. "the probe could not run" and "the database is
+        # in a convoy" are different findings and must not share a throttle: on
+        # one shared key a transient sample failure would mute the email for a
+        # real convoy arriving minutes later.
+        "kind": None,
         "reasons": [],
         "deadlocks_per_min": None,
         "lock_waiters": signals.get("lock_waiters", 0),
@@ -230,6 +235,7 @@ def evaluate(signals, previous, now, limits=None):
     if not signals.get("ok"):
         if signals.get("supported"):
             verdict["alert"] = True
+            verdict["kind"] = "sample_failed"
             verdict["reasons"].append(
                 "could not sample database health (%s)" % (signals.get("error") or signals.get("reason"))
             )
@@ -249,6 +255,7 @@ def evaluate(signals, previous, now, limits=None):
             verdict["deadlocks_per_min"] = round(rate, 2)
             if rate >= limits["deadlocks_per_min"]:
                 verdict["alert"] = True
+                verdict["kind"] = "lock_contention"
                 verdict["reasons"].append(
                     "deadlocks %.2f/min (threshold %s/min, +%d since last check)"
                     % (rate, limits["deadlocks_per_min"], delta)
@@ -258,6 +265,7 @@ def evaluate(signals, previous, now, limits=None):
     longest = signals.get("longest_lock_wait_seconds", 0)
     if waiters >= limits["lock_waiters"]:
         verdict["alert"] = True
+        verdict["kind"] = "lock_contention"
         verdict["reasons"].append(
             "%d sessions waiting on locks (threshold %s), longest %.1fs"
             % (waiters, limits["lock_waiters"], longest)
@@ -265,7 +273,11 @@ def evaluate(signals, previous, now, limits=None):
     elif waiters and longest >= limits["lock_wait_seconds"]:
         # One session stuck for a long time is a different failure from many
         # stuck briefly, and the count threshold alone would never see it.
+        # Shares the "lock_contention" throttle with the branch above on
+        # purpose: both describe the same database, and an operator reading one
+        # email does not need a second one describing it differently.
         verdict["alert"] = True
+        verdict["kind"] = "lock_contention"
         verdict["reasons"].append(
             "a session has waited %.1fs on a lock (threshold %ss)"
             % (longest, limits["lock_wait_seconds"])
@@ -380,6 +392,6 @@ def run_once(now=None):
     )
 
     delivery = {"sent": False, "reason": "cooldown"}
-    if should_escalate("lock_health", now):
+    if should_escalate(verdict["kind"] or "lock_contention", now):
         delivery = _escalate(verdict, signals)
     return {"ok": True, "alert": True, "verdict": verdict, "delivery": delivery}
