@@ -1276,8 +1276,35 @@ if not STRIPE_SECRET_KEY:
     logging.error("Railway Stripe ERROR: STRIPE_SECRET_KEY is missing. Checkout session creation and success-page confirmation will fail.")
 if not STRIPE_PUBLISHABLE_KEY:
     logging.warning("Railway Stripe warning: STRIPE_PUBLISHABLE_KEY is missing. Frontend publishable-key integrations may not work.")
+def _process_serves_stripe_webhook() -> bool:
+    """Whether this process could ever verify a Stripe webhook signature.
+
+    The webhook route lives in this module, but so do ``db`` and ``init_db``,
+    which is why every background worker imports ``bot``. The secret is only
+    meaningful in the process actually serving HTTP; a worker that never
+    receives a request has nothing to verify and no use for it.
+
+    Unknown entry points answer **True**. A false alarm costs attention, a
+    missed one costs an unverified live webhook, so the doubt goes to the
+    louder side -- and only the ``*_worker.py`` family is positively
+    recognised as not serving.
+    """
+    entry = os.path.basename(str((sys.argv or [""])[0] or ""))
+    return not entry.endswith("_worker.py")
+
+
 if not STRIPE_WEBHOOK_SECRET:
-    logging.error("Railway Stripe ERROR: STRIPE_WEBHOOK_SECRET is missing. Live Stripe webhooks cannot be verified.")
+    # Unconditional, this fired on every worker service that imports bot and
+    # trained readers to scroll past the line on the one service where it is
+    # real. The enforcement that matters is not here anyway: the route itself
+    # refuses an unsigned webhook with a 503 regardless of what this logs.
+    if _process_serves_stripe_webhook():
+        logging.error("Railway Stripe ERROR: STRIPE_WEBHOOK_SECRET is missing. Live Stripe webhooks cannot be verified.")
+    else:
+        logging.info(
+            "Stripe webhook secret not configured; this process (%s) does not serve the webhook route, so it does not need one.",
+            os.path.basename(str((sys.argv or [""])[0] or "")) or "unknown",
+        )
 if not STRIPE_PRICE_ID:
     logging.warning("Railway Stripe warning: STRIPE_PRICE_ID is missing. Website checkout will be disabled until the Railway variable is configured.")
 if PAYMENT_PROVIDER_ENABLED and not STRIPE_FOUNDER_PRICE_ID:

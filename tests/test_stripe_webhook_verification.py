@@ -172,3 +172,45 @@ def test_health_description_reports_an_unconfigured_deployment():
         "webhook_secret_configured": False,
         "webhook_secret_count": 0,
     }
+
+
+# --- who is entitled to complain that the secret is absent ---------------------
+#
+# `bot` is imported by every background worker for `db` and `init_db`, so the
+# unconditional boot-time ERROR about a missing webhook secret fired on services
+# that never receive a webhook. Nine copies of a false alarm is how a real one
+# stops being read.
+#
+# The property worth pinning is not the silence -- it is the direction the
+# doubt runs. Only the `*_worker.py` family is positively recognised as not
+# serving; anything unrecognised must stay loud.
+
+
+def _serves(monkeypatch, argv0):
+    import bot
+
+    monkeypatch.setattr("sys.argv", [argv0])
+    return bot._process_serves_stripe_webhook()
+
+
+@pytest.mark.parametrize("entry", [
+    "pulse_worker.py", "email_worker.py", "telegram_worker.py",
+    "pulse_ads_worker.py", "alert_worker.py", "supplier_worker.py",
+    "media_worker.py", "undx_worker.py", "/app/pulse_worker.py",
+])
+def test_worker_entrypoints_do_not_warn_about_a_secret_they_cannot_use(monkeypatch, entry):
+    assert _serves(monkeypatch, entry) is False
+
+
+@pytest.mark.parametrize("entry", [
+    "/app/.venv/bin/gunicorn",          # how the web service actually boots
+    "bot.py",                           # running the app directly
+    "/usr/bin/pytest",
+    "worker.py",                        # near-miss: not the _worker.py family
+    "my_worker.pyc",                    # near-miss: wrong suffix
+    "",                                 # argv unavailable
+])
+def test_anything_not_provably_a_worker_stays_loud(monkeypatch, entry):
+    # The asymmetry is the point. A false ERROR costs attention; a missed one
+    # costs an unverified live webhook.
+    assert _serves(monkeypatch, entry) is True
