@@ -180,6 +180,20 @@ to sign out." Identical reasoning applies: a domain-scoped delete leaves the fir
 accounts' entries indexed forever, since nothing will ever again run cleanup on their
 behalf.
 
+> **The purge placement now has three consumers — 2026-09-19.** The decision above is about
+> the Spotlight index, but the reasoning ("inside `clearUserScopedMediaState()`, not beside
+> it, so it inherits every session-end path added later") applies unchanged to two more
+> things that did not exist when it was written: the widget's App Group snapshot
+> (`WIDGETKIT.md` Finding 4) and the Share Extension's staging directory
+> (`SHARE_EXTENSION.md` Finding 5). All three should be purged from the same place, and it
+> should be written once when the first of the three lands.
+>
+> The staging directory adds one obligation the other two do not have, and it is worth
+> naming here because it is a retention rule rather than a placement detail: **the Share
+> Extension must refuse to stage while signed out.** It can write to the shared container
+> when no session exists and no purge path can possibly run, which would create original
+> user media that nothing in the app's lifecycle is responsible for.
+
 ### The other purge triggers
 
 Purging at sign-out is necessary and not sufficient. Also required:

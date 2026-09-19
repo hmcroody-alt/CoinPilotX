@@ -214,9 +214,9 @@ the OS, not by taste:
 | 8 | StoreKit 2 | already implemented | `Configuration.storekit` is committed |
 | 9 | MapKit | — | Not recommended; blocked on data that does not exist |
 | 10 | Handoff | app target + Spotlight module | Same `continue userActivity` entry point as #7 |
-| 11 | Keychain / Secure Enclave | `expo-secure-store` + new module | Access group is a pbxproj + entitlement change; see `DECISIONS_KEYCHAIN_ACCESS_GROUP.md` |
+| 11 | Keychain / Secure Enclave | `expo-secure-store` + new module | Access group is a pbxproj + entitlement change; see `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`. **Its "build it before the first extension" decision is now in question (2026-09-19)** — three of the four capabilities it cited turned out not to need it (`SHARE_EXTENSION.md` Finding 4) |
 | 12 | WidgetKit | extension target | `WIDGETKIT.md`. First extension; ships with the App Group foundation. **Needs the App Group but not the keychain access group** — the app writes a snapshot, the widget never fetches. Static configuration only (the modern configurable path is 17.0). Content governed by the Core Spotlight allowlist |
-| 13 | Share Extension | extension target | Memory-limited; must not publish silently |
+| 13 | Share Extension | extension target | `SHARE_EXTENSION.md`. **Needs the App Group but not the keychain access group** — it performs no network I/O at all. Copies the item into the container inside the load completion handler (the shared file dies when that returns), writes a manifest, completes. **Must refuse to stage while signed out**, or it creates user media no purge path can see. A second Podfile target that must *not* `use_expo_modules!` |
 | 14 | Action Button / Control Center | extension target | Blocked on #3 and an 18.0 floor |
 
 Four rows — #2, #12, #13, and #14 — need the App Group and a second App ID. That is the
@@ -228,6 +228,26 @@ rather than four times accidentally.
 > Group nor a second App ID — which makes App Intents the one capability in this group that
 > is *not* gated on Wave 2. #14 stays in the list: an Action Button assignment is an App
 > Intent, but a Control Center control is a `ControlWidget`, which is an extension.
+
+> **Sharpened 2026-09-19 — "the App Group and a second App ID" is now the whole of Wave 2.**
+>
+> The audit's Wave 2 was three things: App Group, keychain access group, and a
+> target-generation strategy. The third is settled (`DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`
+> Decision 2, guarded by `tests/protection/test_ios_native_target_inventory.py`). The second
+> is needed by none of #3, #12 or #13 as designed — each arrived independently at the same
+> shape, which is worth stating as the architecture rule it has become:
+>
+> **On every Apple surface that runs outside the app process, the app owns the network and
+> the out-of-process surface owns only a file in the shared container.**
+>
+> A widget renders a snapshot the app wrote. A share extension stages bytes for the app to
+> upload. An App Intent hands the app a destination. None of them authenticate, so none of
+> them needs a credential, so none of them needs `keychain-access-groups`.
+>
+> #2 Live Activities is the one row not yet re-examined against this rule, and it is the
+> only thing keeping the keychain access group on the foundation list at all. On the
+> evidence of the other three the prior should be that it does not need it either — a Live
+> Activity is a rendering surface fed by push and by the app, which is the same shape again.
 
 ---
 

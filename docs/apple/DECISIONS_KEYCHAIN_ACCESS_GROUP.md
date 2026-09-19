@@ -177,6 +177,46 @@ with a hard device dependency before it can be called done.
 
 **Do it as its own piece of work, before the first extension, not as part of it.**
 
+> **Challenged 2026-09-19 — the third reason below no longer holds, and it was the
+> load-bearing one.**
+>
+> This decision was written before any extension had a concrete design. Three now do,
+> and none of them reads the session:
+>
+> | Capability | Why it does not need the access group |
+> |---|---|
+> | #3 App Intents | `perform()` has no RN bridge, so the recommended shape is a Siri-addressable deep link; the app does the work in-process (`APP_INTENTS_SIRI_SHORTCUTS.md` F1) |
+> | #12 WidgetKit | `TimelineProvider` cannot report failure, so the widget should never fetch — the app writes a snapshot into the App Group and calls `reloadTimelines` (`WIDGETKIT.md` F2) |
+> | #13 Share Extensions | the extension's post-completion work is a system-cancellable background task, so it must not upload at all — it stages bytes and the app uploads (`SHARE_EXTENSION.md` F2–F3) |
+>
+> The common shape — **the app owns the network; the out-of-process surface owns only a
+> file in the shared container** — was arrived at independently three times, which is
+> better evidence than any one of them alone. Only #2 Live Activities has not been
+> re-examined against it.
+>
+> **Recommendation: do not build this as a foundation item.** Build the App Group, which
+> every extension genuinely shares and which carries no credential. Leave
+> `keychain-access-groups` unbuilt until a capability's design actually requires a
+> credential outside the app process, and make that capability carry the justification,
+> the migration and the release.
+>
+> The argument for building up front was "four capabilities need it, so decide it once
+> rather than four times." The better outcome is that nothing needs it, so it is decided
+> zero times — and the app never holds an entitlement that lets another binary read the
+> user's refresh token. Note that this *strengthens* the reasoning below rather than
+> contradicting it: the reason to hesitate was always that the failure mode is a silent
+> mass sign-out, and the cheapest way to not have that failure mode is to not make the
+> change.
+>
+> **Two things here survive the challenge and must not be lost.** The migration analysis
+> (read-old/write-new, step 4 strictly before step 5) is still exactly right if the
+> entitlement is ever adopted, and re-deriving it under deadline is how the mass sign-out
+> happens. And the hardware experiment flagged below as this document's load-bearing gap
+> stays owed — by whoever eventually needs the entitlement, not by the extension
+> foundation.
+>
+> Full argument: `SHARE_EXTENSION.md` Finding 4.
+
 Three reasons:
 
 - The failure mode is a silent mass sign-out, and it should not be discovered

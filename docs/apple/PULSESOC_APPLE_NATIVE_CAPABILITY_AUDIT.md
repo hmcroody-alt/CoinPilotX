@@ -84,6 +84,29 @@ are gated behind the same three-part prerequisite — App Group, keychain access
 target-generation strategy that survives `expo prebuild` — and that prerequisite should be
 built **once**, deliberately, as its own piece of work. See Wave 2.
 
+> **Revised 2026-09-19 — the three-part prerequisite is down to one part, and the removed
+> parts are the two that carried the risk.**
+>
+> Each capability was designed in detail after this paragraph was written, and each one
+> dissolved a different piece of it:
+>
+> | Part | Status |
+> |---|---|
+> | **Target-generation strategy** | **Settled.** `ios/` is a committed bare workflow, so an extension target is ordinary Xcode work, not a config plugin that synthesizes targets (`DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md` Decision 2). `tests/protection/test_ios_native_target_inventory.py` already guards it. |
+> | **Keychain access group** | **Not needed by anything currently recommended.** App Intents use a deep link (`APP_INTENTS_SIRI_SHORTCUTS.md` F1); the widget renders a snapshot the app writes (`WIDGETKIT.md` F2); the Share Extension stages bytes and never calls the API (`SHARE_EXTENSION.md` F3). Only #2 Live Activities has not been re-examined against the pattern. |
+> | **App Group** | **Still real, still shared, still should be built once.** |
+>
+> The pattern all three arrived at independently is worth stating once here: **on every
+> Apple surface that runs outside the app process, the app owns the network and the
+> out-of-process surface owns only a file in the shared container.** That is why the App
+> Group survives and the keychain access group does not.
+>
+> The consequence for planning is larger than it looks. `DECISIONS_KEYCHAIN_ACCESS_GROUP.md`
+> argued for building the access group as its own release *before* the first extension,
+> because its failure mode is a silent mass sign-out of every existing user. If no
+> recommended capability needs it, that release — and that risk — comes off the plan
+> entirely. See `SHARE_EXTENSION.md` Finding 4.
+
 The current entitlements file is two keys, total:
 
 `mobile-native/ios/PulseSoc/PulseSoc.entitlements`
@@ -620,6 +643,8 @@ already has too many activities", which must never be able to reach the call pat
 
 ## 13. Share Extensions
 
+Full treatment in **`SHARE_EXTENSION.md`**.
+
 - **Status** — NOT IMPLEMENTED
 - **Evidence** — no `NSExtension` targets; one native target total.
 - **Minimum iOS** — satisfied.
@@ -635,6 +660,38 @@ already has too many activities", which must never be able to reach the call pat
   to copy the item into the App Group container and let the main app do the work.
 - **Risk if wrong** — extension crashes appear to the user as the *system* share sheet
   failing, which reflects badly and is hard to diagnose from crash logs.
+
+> **Corrected 2026-09-19 — "plus keychain access" is wrong, and the memory limit is the
+> second reason, not the first.**
+>
+> Two changes, both from `SHARE_EXTENSION.md`:
+>
+> **1. No keychain access group.** The line above assumes the extension reads the session.
+> It does not need to, because it makes no network calls (see 2). It stages bytes into the
+> App Group container and completes; the app uploads. The only state it needs is a
+> signed-in boolean, which is not a credential and belongs in App Group `UserDefaults`.
+> This is the same conclusion `WIDGETKIT.md` Finding 2 reached for widgets, and it retires
+> the keychain half of the "three-part prerequisite" for a third of the four capabilities
+> that were said to need it — see the note in §0.
+>
+> **2. The ~120 MB figure is not the constraint that decides the design, and this session
+> could not verify it from any first-party source.** The constraint that does decide it is
+> stated in the SDK. `NSExtensionContext.h:18` says post-completion work runs "as a
+> background-priority task" and that the `expired` flag will be YES "if the system decides
+> to prematurely terminate" it. Uploading from an extension is therefore lifecycle-unsafe
+> *at any payload size*, not just at video size. The distinction matters because a team
+> told the obstacle is memory will reasonably conclude that a 200 KB JPEG may be uploaded
+> inline — and will ship a path that silently loses items on a busy device.
+>
+> Related and load-bearing: `NSItemProvider.h:119` — the shared file "will be deleted when
+> the completion handler returns." The copy into the container is not an optimisation; it
+> is the only correct use of the API.
+>
+> The **Effort — Large** rating stands, but the largest single unknown is not engineering:
+> `SHARE_EXTENSION.md` Finding 7 shows the product shape turns on whether
+> `NSExtensionContext.openURL:` works from a share extension, which the header permits and
+> Apple's prose has historically restricted. That must be settled on device before the
+> target is created.
 
 ## 14. Action Button + Control Center
 
