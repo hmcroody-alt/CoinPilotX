@@ -453,6 +453,56 @@ async function refreshNativeSession(
   return refreshPromise;
 }
 
+/**
+ * The session is over and it ended here, not at a sign-out button.
+ *
+ * Every `"invalid"` return below used to clear the credentials and stop. That is
+ * half of what a sign-out does. `session/auth` pairs the same credential clear
+ * with `clearUserScopedMediaState()`, and the reason is not housekeeping: most
+ * of what this app caches is stored under a BARE key, so it is not isolated by
+ * account at rest and the sweep is the only thing keeping one person's data away
+ * from the next one. `core/storageScope` says so in as many words — profiles,
+ * the activity inbox, the saved library, recent searches and every composer
+ * draft "survived a sign-out under a bare key and were read straight back by the
+ * next account."
+ *
+ * So a session that dies on this path left all of it behind. That mattered most
+ * at the third call site: a refreshed `userId` that disagrees with the stored
+ * envelope IS an account switch, which is the exact scenario the sweep was
+ * written for, and it was the one place the sweep did not run. The 401/403 site
+ * matters too, because refresh-reuse detection revokes a whole token family on
+ * benign desync — that path is reached in ordinary use, not only under attack.
+ *
+ * WHY NOT ROUTE IT THROUGH `sessionInvalidationHandler`
+ *
+ * This file already has a session-invalidation hook and `App.tsx:144` does
+ * register it, so "nobody would wire it up" is not the objection. The real one
+ * is visible in what that handler does: it calls `requestReauthentication`,
+ * which sets the auth state to `expiredState()`. That is a UI transition — it
+ * neither signs out nor sweeps, which is exactly why this leak survived while a
+ * hook for session invalidation existed and fired. Putting a privacy boundary
+ * there would make it depend on a React effect being mounted and on a handler
+ * whose job is something else. The sweep belongs at the moment the session is
+ * known to be dead, unconditionally.
+ *
+ * ON THE LAZY REQUIRE
+ *
+ * `media/mediaSessionCleanup` reaches `media/messengerMediaAccess`, which
+ * imports this module, so a static import here is a real require cycle.
+ * Resolving it at call time is the cycle-break `screens/BusinessHubRoute` uses.
+ */
+async function abandonInvalidSession(): Promise<RefreshResult> {
+  await clearNativeSessionCredentials();
+  await setCachedSessionUser(null);
+  const { clearUserScopedMediaState } = require("../media/mediaSessionCleanup") as typeof import("../media/mediaSessionCleanup");
+  // Guarded because this runs inside an ordinary request's refresh, not a
+  // user-initiated sign-out: a cleanup fault must not turn "your session
+  // expired" into a thrown error the caller never expected. Each step inside is
+  // already individually guarded; this is the outer belt.
+  await clearUserScopedMediaState().catch(() => undefined);
+  return "invalid";
+}
+
 async function performNativeSessionRefresh(cookie: string, serverConfirmedSession: boolean): Promise<RefreshResult> {
   // Declared out here so the catch below can see it: a network fault on a
   // cookie-only attempt has to arm the backoff too, and that is precisely the
@@ -488,9 +538,7 @@ async function performNativeSessionRefresh(cookie: string, serverConfirmedSessio
     }, PULSE_API_REFRESH_TIMEOUT_MS);
     if (!response.ok) {
       if (response.status === 401 || response.status === 403) {
-        await clearNativeSessionCredentials();
-        await setCachedSessionUser(null);
-        return "invalid";
+        return abandonInvalidSession();
       }
       return temporary();
     }
@@ -499,14 +547,11 @@ async function performNativeSessionRefresh(cookie: string, serverConfirmedSessio
     const userId = Number(user?.user_id ?? user?.id ?? 0);
     if (data.authenticated !== true || userId <= 0 || !data.refresh_token) return temporary();
     if (shouldRejectTemporaryQaUser(user)) {
-      await clearNativeSessionCredentials();
-      await setCachedSessionUser(null);
-      return "invalid";
+      return abandonInvalidSession();
     }
+    // An account switch, discovered mid-flight. See `abandonInvalidSession`.
     if (envelope?.userId && envelope.userId !== userId) {
-      await clearNativeSessionCredentials();
-      await setCachedSessionUser(null);
-      return "invalid";
+      return abandonInvalidSession();
     }
     const now = Date.now();
     const nextEnvelope: NativeSessionEnvelope = {

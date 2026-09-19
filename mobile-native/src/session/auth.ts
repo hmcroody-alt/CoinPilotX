@@ -380,5 +380,10 @@ async function restoreCachedSession(): Promise<AuthState> {
 async function clearTemporaryQaSession(): Promise<AuthState> {
   await clearNativeSessionCredentials();
   await setCachedSessionUser(null);
+  // Same reason as every other session end: the credential clear is only half of
+  // a sign-out, and the caches this leaves behind are stored under bare keys that
+  // the next account reads straight back. A QA account's leftovers reaching a
+  // real one is a smaller blast radius than the reverse, not a different bug.
+  await clearUserScopedMediaState();
   return unauthenticatedState();
 }
