@@ -238,6 +238,14 @@ def runtime_config() -> dict:
     return {
         "storagePrefix": STORAGE_PREFIX,
         "sessionStoragePrefix": SESSION_STORAGE_PREFIX,
+        # Published for `static/js/pulse_pwa_install.js`, whose iOS surface is a
+        # link to the App Store and therefore needs the same URL these cards
+        # use. Handing it over here rather than letting that script spell out
+        # the id keeps `app_links` the only place the listing is decided:
+        # correcting `PULSESOC_APP_STORE_URL` moves every surface at once,
+        # where a script holding its own copy would go on sending iPhone
+        # visitors to the old listing with nothing failing anywhere.
+        "appStoreUrl": app_links.app_store_url(),
         "dismissMemoryMs": DISMISS_MEMORY_MS,
         "dismissMemoryDays": DISMISS_MEMORY_DAYS,
         "surfaces": {key: dict(SURFACE_POLICY[key]) for key in ARBITRATED_SURFACES},

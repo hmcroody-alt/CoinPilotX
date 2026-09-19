@@ -503,3 +503,100 @@ def test_mutation_the_qr_block_really_comes_from_app_links(monkeypatch):
 def test_mutation_the_card_copy_really_comes_from_the_constants(monkeypatch):
     monkeypatch.setattr(app_promotion, "CARD_TITLE", "Sentinel Title")
     assert "Sentinel Title" in card()
+
+
+# ---------------------------------------------------------------------------
+# On iOS the install surfaces promote the App Store app, not a bookmark
+# ---------------------------------------------------------------------------
+#
+# A home-screen shortcut on iOS is Safari wearing an app icon. It gets no push
+# notifications, is not a share-sheet target, cannot hold an audio session and
+# cannot answer a call -- which is most of what PulseSoc is. So an iPhone
+# visitor shown "Tap Share, then Add to Home Screen" is being sent to the
+# weaker of the two products we have, and the install is spent.
+#
+# These render identically in a screenshot to the version that promotes the
+# app, which is why they are pinned here.
+
+ACCOUNT_HTML = (ROOT / "templates" / "account.html").read_text()
+
+HOME_SCREEN_PHRASES = (
+    "Add to Home Screen",
+    "add to home screen",
+    "home screen",
+    "Home Screen",
+)
+
+
+def ios_arms():
+    """Every `kind === "ios" ? <this> : ...` branch in the PWA banner.
+
+    Scoped to the iOS arms rather than to the whole file on purpose. On Android
+    and desktop `beforeinstallprompt` installs a real standalone app, so "add
+    to your home screen" is an accurate description of what that button does
+    and has to stay. It is only on iOS that the same sentence describes a
+    Safari bookmark, and only the iOS arms are pinned here.
+    """
+
+    arms = re.findall(r'kind === "ios"\s*\?\s*(.+?)\s*:\s*', PWA_JS, flags=re.S)
+    assert arms, "the iOS branch is gone -- this test no longer checks anything"
+    return arms
+
+
+def test_the_ios_banner_never_teaches_the_add_to_home_screen_gesture():
+    for arm in ios_arms():
+        for phrase in HOME_SCREEN_PHRASES:
+            assert phrase not in arm, f"the iOS banner still says {phrase!r}"
+
+
+def test_the_account_page_never_teaches_the_add_to_home_screen_gesture():
+    rendered = re.sub(r"\{#.*?#\}", "", ACCOUNT_HTML, flags=re.S)
+    rendered = re.sub(r"^\s*//.*$", "", rendered, flags=re.M)
+    for phrase in HOME_SCREEN_PHRASES:
+        assert phrase not in rendered, f"the account page still says {phrase!r}"
+
+
+def test_the_ios_banner_offers_a_real_link_to_the_app_store():
+    # An `<a href>` and not a button that navigates: only an anchor lets iOS
+    # hand the tap to the App Store app instead of loading apps.apple.com in a
+    # web view, and only an anchor is long-pressable and reads as a link to
+    # VoiceOver.
+    assert "data-pulse-pwa-app-store" in PWA_JS
+    assert '<a class="pulse-pwa-install__primary" href=' in PWA_JS
+
+
+def test_the_account_page_offers_a_real_link_to_the_app_store():
+    assert 'data-app-store-app href="{{ app_store_url() }}"' in ACCOUNT_HTML
+
+
+def test_no_install_surface_spells_out_the_app_store_listing_itself():
+    # `services/app_links.py` validates `PULSESOC_APP_STORE_URL` and is the one
+    # place the listing is decided. A second copy in a script would keep
+    # sending iPhone visitors to the old app after the server was corrected,
+    # with nothing failing anywhere.
+    for name, source in (("pulse_pwa_install.js", PWA_JS), ("account.html", ACCOUNT_HTML)):
+        assert not re.search(r"id\d{6,}", source), f"{name} hard-codes an App Store id"
+
+
+def test_the_runtime_config_publishes_the_app_store_url_from_app_links():
+    assert app_promotion.runtime_config()["appStoreUrl"] == app_links.app_store_url()
+
+
+def test_mutation_the_published_app_store_url_really_comes_from_app_links(monkeypatch):
+    monkeypatch.setattr(app_links, "app_store_url", lambda: "https://apps.apple.com/sentinel")
+    assert app_promotion.runtime_config()["appStoreUrl"] == "https://apps.apple.com/sentinel"
+
+
+def test_the_ios_banner_shows_nothing_rather_than_guessing_the_listing():
+    # Fails closed. With no server-supplied URL the banner is suppressed
+    # entirely, because a promo whose button goes nowhere is worse than no
+    # promo -- and worse than the bookmark copy it replaced.
+    assert "Boolean(appStoreUrl())" in PWA_JS
+
+
+def test_the_ios_banner_is_not_gated_on_safari():
+    # The gesture needed Safari because only Safari can add to the home screen.
+    # A link to the App Store works in Chrome, Firefox and every in-app browser
+    # on iOS -- exactly the visitors who used to see nothing at all.
+    assert "isSafariLike" not in PWA_JS
+    assert "crios" not in PWA_JS

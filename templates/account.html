@@ -711,7 +711,14 @@
         {% endif %}
 
         <div class="notice">CoinPlotXAI Inc. never asks for seed phrases, private keys, or wallet passwords. Educational AI intelligence only, not financial, betting, investment, or legal advice.</div>
+        {# Two controls because they are two different things. The button is the
+           only way to start a browser-owned install (`beforeinstallprompt`), and
+           the anchor is the only way to hand a tap to the App Store app rather
+           than loading apps.apple.com in a web view. The script below reveals
+           exactly one. The href comes from `app_store_url()`, the context
+           processor over `services/app_links.py` -- never spelled out here. #}
         <button class="button gold install-app-button" type="button" data-install-app hidden>Install PulseSoc App</button>
+        <a class="button gold install-app-button" data-app-store-app href="{{ app_store_url() }}" data-app-link="app-store" hidden>Get the PulseSoc app</a>
       </article>
     </div>
   </main>
@@ -825,9 +832,10 @@
     (function () {
       var installPrompt = null;
       var button = document.querySelector("[data-install-app]");
+      var appStoreLink = document.querySelector("[data-app-store-app]");
       var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
       var ua = window.navigator.userAgent || "";
-      var iosSafari = /iphone|ipad|ipod/i.test(ua) && /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+      var isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", function () {
@@ -835,14 +843,25 @@
         });
       }
 
-      if (button && !standalone && iosSafari) {
-        button.hidden = false;
-        button.textContent = "Add to Home Screen";
+      // On iPhone the product is the App Store app, not a Safari shortcut
+      // wearing an app icon. A home-screen bookmark on iOS gets no push
+      // notifications, is not a share-sheet target, and cannot hold an audio
+      // session -- so teaching the Share -> Add to Home Screen gesture here
+      // spent the visitor's attention on the weaker of the two things we have.
+      //
+      // Deliberately every iOS browser, not just Safari. The old gesture
+      // needed Safari because only Safari can add to the home screen; a link
+      // to the App Store works in Chrome, Firefox and every in-app browser,
+      // and those visitors previously saw no control at all.
+      if (appStoreLink && isIOS && appStoreLink.getAttribute("href")) {
+        appStoreLink.hidden = false;
       }
 
       window.addEventListener("beforeinstallprompt", function (event) {
         event.preventDefault();
         installPrompt = event;
+        // Android and desktop only: iOS never fires this, so the two controls
+        // cannot both be showing.
         if (button && !standalone) {
           button.hidden = false;
         }
@@ -850,8 +869,11 @@
 
       if (button) {
         button.addEventListener("click", async function () {
+          // Reachable only after `beforeinstallprompt` revealed the button, so
+          // a missing prompt here means the event was consumed already rather
+          // than that this is iOS.
           if (!installPrompt) {
-            alert("On iPhone Safari, tap Share, then Add to Home Screen.");
+            button.hidden = true;
             return;
           }
           installPrompt.prompt();
