@@ -1,5 +1,7 @@
 /**
- * Delivery countries for the checkout's country picker.
+ * `GET /api/pulse/marketplace/cart/checkout-options` — the deployment facts the
+ * checkout form cannot invent for itself: the delivery-country allowlist, and
+ * whether the Marketplace card rail is switched on.
  *
  * The address country used to be a two-character text box: the buyer typed
  * `US`, and anything else — `USA`, `United States`, a lowercase `gb` — was
@@ -22,6 +24,13 @@
  * `services/marketplace_fulfillment._COUNTRY_NAMES`, and
  * `test_country_names_match_the_picker` pins the two together. Adding a country
  * here alone is a checkout that completes into an order no supplier can fill.
+ *
+ * The card verdict is here for the same reason as the countries: it is
+ * deployment configuration. The screen used to hold its own
+ * `MARKETPLACE_CARD_PAYMENTS_PAUSED = true`, which was harmless only while the
+ * server's pause was also a hard-coded `true`. Now that the server reads
+ * `MARKETPLACE_CARD_PAYMENTS_ENABLED`, a second copy in a shipped binary is a
+ * copy that cannot be corrected without an App Store release.
  */
 
 import { pulseApi } from "./pulseApi";
@@ -72,22 +81,53 @@ export function toCountryOptions(codes: readonly string[]): CheckoutCountry[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/**
- * Countries this deployment will deliver to.
+export type CheckoutOptions = {
+  countries: CheckoutCountry[];
+  cardPaymentsAvailable: boolean;
+  cardBadge: string;
+  cardUnavailableMessage: string;
+};
+
+/** What the checkout assumes when the server could not be asked.
  *
- * Fails soft to the default: a checkout that cannot read its options should
- * still be completable by the US buyers who are the configured default, rather
- * than presenting an empty picker and blocking the order entirely.
+ * The two halves fail in opposite directions on purpose. The country list fails
+ * *soft* to the configured default, because an empty picker blocks an order the
+ * deployment would have accepted. The card rail fails *closed*, because the
+ * cost of guessing wrong is a buyer sent into a card checkout the server is
+ * about to refuse — and cash, which is the lane that actually works, stays open
+ * either way.
  */
-export async function fetchShippingCountries(): Promise<CheckoutCountry[]> {
+export const CHECKOUT_OPTIONS_FALLBACK: CheckoutOptions = {
+  countries: toCountryOptions(DEFAULT_SHIPPING_COUNTRIES),
+  cardPaymentsAvailable: false,
+  cardBadge: "Temporarily Unavailable",
+  cardUnavailableMessage:
+    "Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment."
+};
+
+/** Ask the server what this checkout may offer. Never throws. */
+export async function fetchCheckoutOptions(): Promise<CheckoutOptions> {
   try {
     const data = (await pulseApi("/api/pulse/marketplace/cart/checkout-options")) as {
       shipping_countries?: string[];
+      card_payments_available?: boolean;
+      payment_badge?: string;
+      payment_unavailable_message?: string;
     };
     const codes = Array.isArray(data.shipping_countries) ? data.shipping_countries : [];
     const options = toCountryOptions(codes);
-    return options.length ? options : toCountryOptions(DEFAULT_SHIPPING_COUNTRIES);
+    // `=== true` rather than a truthiness test: a response that omits the field
+    // is an older server, or one that answered something else entirely, and
+    // neither of those said yes.
+    const available = data.card_payments_available === true;
+    return {
+      countries: options.length ? options : CHECKOUT_OPTIONS_FALLBACK.countries,
+      cardPaymentsAvailable: available,
+      cardBadge: data.payment_badge || CHECKOUT_OPTIONS_FALLBACK.cardBadge,
+      cardUnavailableMessage:
+        data.payment_unavailable_message || CHECKOUT_OPTIONS_FALLBACK.cardUnavailableMessage
+    };
   } catch {
-    return toCountryOptions(DEFAULT_SHIPPING_COUNTRIES);
+    return CHECKOUT_OPTIONS_FALLBACK;
   }
 }

@@ -36,11 +36,25 @@ jest.mock("../../api/marketplaceCommerce", () => ({
   getMarketplacePaymentOrder: jest.fn(),
   validateCart: (...args: unknown[]) => mockValidateCart(...args)
 }));
-jest.mock("../../api/checkoutCountries", () => ({ fetchShippingCountries: jest.fn(async () => []) }));
-// Only the cash lane is reachable: `MARKETPLACE_CARD_PAYMENTS_PAUSED` returns
-// before the card lane's call site, so no test that drives this screen can get
-// there. That lane is covered structurally instead, by the call-site count in
-// `MarketplaceCheckoutInformationOrder.test.ts`.
+// The closed default, which is both what the real module falls back to offline
+// and what production still ships. Stated as a literal rather than pulled from
+// the real module so this mock does not drag `pulseApi` and expo-secure-store
+// into a test that never makes a request.
+const CLOSED_OPTIONS = {
+  countries: [],
+  cardPaymentsAvailable: false,
+  cardBadge: "Temporarily Unavailable",
+  cardUnavailableMessage:
+    "Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment."
+};
+jest.mock("../../api/checkoutCountries", () => ({
+  CHECKOUT_OPTIONS_FALLBACK: CLOSED_OPTIONS,
+  fetchCheckoutOptions: jest.fn(async () => CLOSED_OPTIONS)
+}));
+// Only the cash lane is reachable: the server says the card rail is closed, so
+// the screen returns before the card lane's call site and no test that drives
+// this screen can get there. That lane is covered structurally instead, by the
+// call-site count in `MarketplaceCheckoutInformationOrder.test.ts`.
 jest.mock("../../api/stripePaymentSheet", () => ({
   isPaymentSheetAvailable: () => false,
   presentPaymentSheet: jest.fn()

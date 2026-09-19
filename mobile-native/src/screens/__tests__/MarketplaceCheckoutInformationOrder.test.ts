@@ -32,8 +32,9 @@ describe("checkout asks before it charges", () => {
 
   it("sends how many the buyer chose to every buy-now lane", () => {
     // Counted the same way, and for the same reason. The card lane is currently
-    // unreachable — `MARKETPLACE_CARD_PAYMENTS_PAUSED` returns before it — so no
-    // test that drives the UI can reach its call site, and a quantity added to
+    // unreachable while the server says the rail is closed — the screen returns
+    // before it — so no test that drives the UI can reach its call site through
+    // the default options, and a quantity added to
     // the cash lane alone would look complete right up until card payments
     // resume. Buy Now is the only lane that carries a quantity as an argument:
     // the cart's quantities live on the cart lines.

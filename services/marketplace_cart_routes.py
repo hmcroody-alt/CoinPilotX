@@ -410,17 +410,39 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
 def cart_checkout_options():
     """What the checkout form may offer, as the server defines it.
 
-    Only the delivery-country allowlist today. It exists because the country
-    field is a picker rather than free text, and a picker built from a list the
-    client invented would show the buyer countries that
-    :func:`marketplace_fulfillment.validate_details` then refuses — a rejection
-    after the form is filled, for a choice the form itself offered.
+    Two deployment facts, both of which the client would otherwise have to
+    invent:
 
-    Read-only, no user state, and deliberately the same source Stripe's
-    ``allowed_countries`` reads, so the picker cannot drift from the payment
-    step. Unauthenticated on purpose: it is configuration, not anyone's data.
+    * The delivery-country allowlist. The country field is a picker rather than
+      free text, and a picker built from a list the client invented would show
+      the buyer countries that :func:`marketplace_fulfillment.validate_details`
+      then refuses — a rejection after the form is filled, for a choice the form
+      itself offered. It is the same source Stripe's ``allowed_countries``
+      reads, so the picker cannot drift from the payment step.
+
+    * Whether the Marketplace card rail is switched on at all. The native
+      checkout used to carry its own ``MARKETPLACE_CARD_PAYMENTS_PAUSED = true``
+      and disable the card row from that. While the server's pause was itself a
+      hard-coded ``True`` the two could not disagree; now that it is an
+      environment flag, a shipped build would go on showing "Temporarily
+      Unavailable" after an operator turned the rail on, and the only way to
+      correct it would be an App Store release. One answer, served.
+
+    This is the **platform** answer and deliberately not a per-seller one. The
+    route is unauthenticated configuration, and whether a given seller has
+    finished Connect onboarding is that seller's business — asked later, on the
+    checkout lanes, where the buyer is known and the verdict is
+    :func:`marketplace_card_capability.buyer_view`-shaped.
     """
-    return _json({"ok": True, "shipping_countries": list(marketplace_fulfillment.shipping_countries())})
+    card_available = not marketplace_payment_pause.marketplace_card_payments_paused()
+    return _json({
+        "ok": True,
+        "shipping_countries": list(marketplace_fulfillment.shipping_countries()),
+        "card_payments_available": card_available,
+        "payment_badge": "" if card_available else marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_BADGE,
+        "payment_unavailable_message": (
+            "" if card_available else marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE),
+    })
 
 
 @cart_blueprint.route(API_PREFIX, methods=["GET"])
@@ -695,6 +717,21 @@ def cart_checkout():
             return _error("Prices changed since you added these items. Confirm the new prices first.", 409,
                           code="PRICE_CHANGED",
                           price_changed_line_ids=[l["line_id"] for l in unconfirmed])
+
+        # The global flag says the card rail exists; this says this seller may
+        # use it. A cart checkout is single-seller by construction, so one
+        # verdict covers the whole basket. Asked on the handler's cursor, inside
+        # the transaction the charge will be created in.
+        if payment_mode == "card":
+            from services import marketplace_card_capability
+            card_decision = marketplace_card_capability.evaluate(cur, seller_user_id=seller_user_id)
+            if not card_decision["card_payments_available"]:
+                buyer_decision = marketplace_card_capability.buyer_view(card_decision)
+                return _error(
+                    buyer_decision["message"], 503,
+                    code=buyer_decision["reason_code"],
+                    **marketplace_payment_pause.card_unavailable_payload(),
+                )
 
         currency = lines[0]["currency"]
         if any(l["currency"] != currency for l in lines):

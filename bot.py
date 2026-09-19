@@ -96839,6 +96839,24 @@ def api_pulse_payments_checkout():
     if not approved:
         conn.close()
         return api_error("Seller is not approved for payments.", 403)
+    # The global flag above says the card rail exists. This says *this seller*
+    # may use it. Both have to pass, and this one can only be asked here, where
+    # the seller is finally known — the flag check runs before any connection is
+    # open. Asked on the open cursor so the state consulted is the state this
+    # request is about to charge against.
+    if item_type == "marketplace_product" and marketplace_payment_mode == "card":
+        from services import marketplace_card_capability
+        card_decision = marketplace_card_capability.evaluate(cur, seller_user_id=seller_user_id)
+        if not card_decision["card_payments_available"]:
+            conn.close()
+            buyer_decision = marketplace_card_capability.buyer_view(card_decision)
+            return api_error(
+                buyer_decision["message"],
+                503,
+                error_code=buyer_decision["reason_code"],
+                error=buyer_decision["reason_code"],
+                **marketplace_payment_pause.card_unavailable_payload(),
+            )
     payout = seller_payout_account(cur, seller_user_id, seller_type)
     fee_bps = seller_fee_bps(cur, seller_type)
     if item_type == "marketplace_product" and marketplace_payment_pause is not None:

@@ -23,7 +23,12 @@ import {
   validateCart
 } from "../api/marketplaceCommerce";
 import { buyerErrorCopy } from "../api/marketplaceErrors";
-import { fetchShippingCountries, type CheckoutCountry } from "../api/checkoutCountries";
+import {
+  CHECKOUT_OPTIONS_FALLBACK,
+  fetchCheckoutOptions,
+  type CheckoutCountry,
+  type CheckoutOptions
+} from "../api/checkoutCountries";
 import {
   deviceTimezone,
   formatDateLabel,
@@ -63,8 +68,12 @@ type Stage = "details" | "review" | "opening" | "processing" | "confirmed" | "fa
 type MarketplaceCheckoutPaymentMethod = "cash" | "card";
 
 const POLL_INTERVAL_MS = 2500;
-const MARKETPLACE_CARD_PAYMENTS_PAUSED = true;
-const MARKETPLACE_CARD_PAUSE_BADGE = "Temporarily Unavailable";
+
+// Whether Marketplace card checkout is open is the server's answer, fetched
+// with the rest of the checkout options. This screen used to hold its own
+// `MARKETPLACE_CARD_PAYMENTS_PAUSED = true`; see `api/checkoutCountries` for
+// why a second copy stopped being safe the moment the server's pause became an
+// environment flag. The offline default lives there too, and it is *closed*.
 
 /** Older navigations carry only the four physical lanes. Read them as kinds so
  * a screen opened before this build shipped still lands somewhere coherent. */
@@ -190,20 +199,22 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // retry re-presents the same PaymentIntent rather than minting a second one.
   const [sheet, setSheet] = useState<PaymentSheetBootstrap | null>(null);
   const [message, setMessage] = useState("");
-  const [countries, setCountries] = useState<CheckoutCountry[]>([]);
+  const [options, setOptions] = useState<CheckoutOptions>(CHECKOUT_OPTIONS_FALLBACK);
   const checking = useRef(false);
 
   const needsAddress = fulfillmentNeedsAddress(kind);
+  const countries = options.countries;
 
-  // Only fetched when an address is actually going to be asked for. A digital
-  // download has no country field, so the request would be pure overhead on the
-  // step that most needs to feel instant.
+  // Asked on every checkout, not only the ones that collect an address. The
+  // country list is still used only when there is a country field, but the same
+  // response carries whether the card rail is open — and a digital download has
+  // to answer that question too. Never throws and never leaves the screen
+  // waiting: an unreachable server resolves to the closed default.
   useEffect(() => {
-    if (!needsAddress || countries.length) return;
     let alive = true;
-    void fetchShippingCountries().then((list) => { if (alive) setCountries(list); });
+    void fetchCheckoutOptions().then((next) => { if (alive) setOptions(next); });
     return () => { alive = false; };
-  }, [countries.length, needsAddress]);
+  }, []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -307,9 +318,13 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
     setStage("opening");
     setMessage("");
     try {
-      if (paymentMethod === "card" && MARKETPLACE_CARD_PAYMENTS_PAUSED) {
+      // Courtesy, not enforcement. The card row is already disabled when the
+      // rail is closed, and the three server lanes refuse a card start on their
+      // own — twice, once on this flag and once on the seller's Connect state.
+      // This only spares a buyer whose options load raced the tap.
+      if (paymentMethod === "card" && !options.cardPaymentsAvailable) {
         setStage("review");
-        setMessage("Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment.");
+        setMessage(options.cardUnavailableMessage);
         return;
       }
       if (paymentMethod === "cash") {
@@ -598,15 +613,20 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           trailing="$0 fee"
           onPress={() => { setPaymentMethod("cash"); setMessage(""); }}
         />
+        {/* Visible either way. A payment method that disappears when it is
+            unavailable reads as a method the product does not have, and the
+            buyer is left wondering whether they are on the wrong screen. */}
         <RadioRow
-          selected={false}
+          selected={options.cardPaymentsAvailable && paymentMethod === "card"}
           title="Card / Stripe"
-          detail="Card checkout is temporarily paused. Marketplace orders settle with cash, local pickup, or in person."
-          trailing={MARKETPLACE_CARD_PAUSE_BADGE}
-          disabled
+          detail={options.cardPaymentsAvailable
+            ? "Pay by card now. The seller is paid after the order completes."
+            : "Card checkout is temporarily paused. Marketplace orders settle with cash, local pickup, or in person."}
+          trailing={options.cardPaymentsAvailable ? "" : options.cardBadge}
+          disabled={!options.cardPaymentsAvailable}
           onPress={() => {
             setPaymentMethod("card");
-            setMessage("Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment.");
+            setMessage(options.cardPaymentsAvailable ? "" : options.cardUnavailableMessage);
           }}
         />
       </Section>
@@ -621,7 +641,14 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
             the buyer brace for a charge that never comes — and would have hidden
             a real one if it ever did. */}
         <SummaryRow label="Delivery" value={kind === "pickup" ? "Free — you collect" : "No delivery charge"} />
-        <SummaryRow label="PulseSoc platform fee" value={paymentMethod === "cash" ? "$0.00" : "Temporarily unavailable"} />
+        {/* Cash carries no platform fee and that is worth stating. The card fee
+            is a rate this screen was never handed, so on the card lane the row
+            is omitted rather than printed with prose where a figure belongs —
+            the same rule the item total and the total row already follow. It
+            used to read "Temporarily unavailable", which described the *rail*
+            in the slot reserved for the *fee*, and would have gone on saying so
+            after the rail opened. */}
+        {paymentMethod === "cash" ? <SummaryRow label="PulseSoc platform fee" value="$0.00" /> : null}
         <View style={styles.rule} />
         {/* The label used to soften to a bare "Total" when the amount was
             unknown while the value went on printing prose beside it — the row

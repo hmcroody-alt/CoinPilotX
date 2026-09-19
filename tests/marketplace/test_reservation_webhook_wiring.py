@@ -241,15 +241,25 @@ def test_the_settled_guard_is_defined_once_and_used_by_the_shared_path(cart_sour
         "both the metadata and no-metadata update paths must carry the guard")
 
 
-def test_the_payment_pause_is_untouched():
-    """This mission is explicitly forbidden from enabling real payments.
+def test_the_payment_pause_still_holds_unless_somebody_opens_it_on_purpose(monkeypatch):
+    """No code change may quietly enable real payments.
 
-    Asserted here so that the guarantee is checked by CI on every run rather
-    than resting on a claim in a report.
+    This used to read the source for a hardcoded ``return True``. The pause is
+    now a flag, so the guarantee worth holding is no longer "the literal is
+    still there" but "the absent and the malformed cases are still off" — which
+    is what an accidental enable would actually look like.
+
+    Asserted here so the guarantee is checked by CI on every run rather than
+    resting on a claim in a report.
     """
-    pause = (REPO_ROOT / "services" / "marketplace_payment_pause.py").read_text(encoding="utf-8")
-    body = pause.split("def marketplace_card_payments_paused", 1)[1].split("\ndef ", 1)[0]
-    assert "return True" in body
+    from services import marketplace_payment_pause
+
+    for value in (None, "", "false", "0", "yes please"):
+        if value is None:
+            monkeypatch.delenv(marketplace_payment_pause.CARD_PAYMENTS_ENABLED_ENV_VAR, raising=False)
+        else:
+            monkeypatch.setenv(marketplace_payment_pause.CARD_PAYMENTS_ENABLED_ENV_VAR, value)
+        assert marketplace_payment_pause.marketplace_card_payments_paused() is True, value
 
 
 # --------------------------------------------------------------------------

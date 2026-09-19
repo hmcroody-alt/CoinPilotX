@@ -39,7 +39,20 @@ jest.mock("../../api/marketplaceCommerce", () => ({
   getMarketplacePaymentOrder: jest.fn(),
   validateCart: jest.fn()
 }));
-jest.mock("../../api/checkoutCountries", () => ({ fetchShippingCountries: jest.fn(async () => []) }));
+// The card rail closed, which is what the real module falls back to offline and
+// what production still ships. A literal rather than the real constant so this
+// mock does not pull `pulseApi` into a test that makes no request.
+const CLOSED_OPTIONS = {
+  countries: [],
+  cardPaymentsAvailable: false,
+  cardBadge: "Temporarily Unavailable",
+  cardUnavailableMessage:
+    "Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment."
+};
+jest.mock("../../api/checkoutCountries", () => ({
+  CHECKOUT_OPTIONS_FALLBACK: CLOSED_OPTIONS,
+  fetchCheckoutOptions: jest.fn(async () => CLOSED_OPTIONS)
+}));
 jest.mock("../../api/stripePaymentSheet", () => ({
   isPaymentSheetAvailable: () => false,
   presentPaymentSheet: jest.fn()

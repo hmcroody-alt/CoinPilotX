@@ -530,6 +530,20 @@ def offer_checkout(offer_id: int):
         approved = bot.approved_marketplace_seller_for_user(cur, seller_id)
         if not approved:
             return _error("Seller is not approved for payments.", 403)
+        # The global flag says the card rail exists; this says this seller may
+        # use it. Both have to pass. Asked on the open cursor so the state
+        # consulted is the state this checkout is about to charge against.
+        if payment_mode == "card":
+            from services import marketplace_card_capability
+            card_decision = marketplace_card_capability.evaluate(cur, seller_user_id=seller_id)
+            if not card_decision["card_payments_available"]:
+                buyer_decision = marketplace_card_capability.buyer_view(card_decision)
+                return _error(
+                    buyer_decision["message"], 503,
+                    error_code=buyer_decision["reason_code"],
+                    error=buyer_decision["reason_code"],
+                    **marketplace_payment_pause.card_unavailable_payload(),
+                )
         payout = bot.seller_payout_account(cur, seller_id, "merchant")
         fee_bps = marketplace_payment_pause.platform_fee_bps_for_marketplace_payment(
             bot.seller_fee_bps(cur, "merchant"),

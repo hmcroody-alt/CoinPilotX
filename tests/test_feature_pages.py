@@ -294,9 +294,9 @@ def test_the_calls_page_does_not_offer_group_calling(bodies):
 
 
 def test_the_marketplace_page_leads_with_the_payment_pause(bodies):
-    """`marketplace_card_payments_paused()` returns True unconditionally. A
-    buyer cannot start a card checkout, so a page that promises one sends
-    somebody to a dead end with their wallet out."""
+    """`MARKETPLACE_CARD_PAYMENTS_ENABLED` is unset in production, and the flag
+    fails closed, so a buyer cannot start a card checkout. A page that promises
+    one sends somebody to a dead end with their wallet out."""
 
     text = _visible(bodies["/features/marketplace"]).lower()
     assert "temporarily" in text and "card" in text
