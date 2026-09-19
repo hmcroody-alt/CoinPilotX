@@ -173,6 +173,55 @@ Running it once against production is what found it. That is the same blind spot
 produced this incident in the first place: the test suite runs on SQLite, and SQLite has
 neither the lock that caused the outage nor the catalog that reveals it.
 
+### Alerting runbook
+
+Delivery was wired up on 2026-09-19, after the code above had already been running blind
+for several hours: it was sampling correctly and had nowhere to send anything.
+
+| | |
+| --- | --- |
+| Monitor | `services/pg_lock_health.py`, called once per sweep from `alert_worker.py` (~48 s) |
+| Host service | Railway `python alert_worker.py` — chosen because it is not serving requests |
+| Destination | `PG_LOCK_ALERT_EMAIL`, falling back to `OWNER_ADMIN_EMAIL` |
+| Provider | Brevo, via `services/email_service.send_email` → HTTPS. No database involvement |
+| Sender | `BREVO_SENDER_EMAIL` (`support@pulsesoc.com`) |
+| Cooldown | `PG_LOCK_ALERT_COOLDOWN_SECONDS`, default 900 s, **per alert kind** |
+
+**Fires when** the deadlock *rate* exceeds `PG_DEADLOCKS_PER_MIN_THRESHOLD` (3/min), or
+lock waiters reach `PG_LOCK_WAITERS_THRESHOLD` (5), or the longest waiter reaches
+`PG_LOCK_WAIT_SECONDS_THRESHOLD` (30 s), or the probe itself cannot sample. The first
+three share the kind `lock_contention`; the last is `sample_failed` and throttles
+separately, because "the database is in a convoy" and "the monitor is blind" are different
+findings and must not silence each other.
+
+The ERROR-level `PG_LOCK_HEALTH_ALERT` log line is written every cycle the condition
+holds and is deliberately *not* cooldown-suppressed. Only the email is throttled. The log
+is the forensic record — during this incident its absence is what made the timeline hard
+to rebuild.
+
+**When an alert fires,** read the log line first: it carries the rate, waiter count,
+longest wait and the top contended relations. A relation name there usually identifies the
+statement. Then check whether anything has deployed recently, since the cause here was
+per-request DDL taking a `ShareLock`. `waiters` climbing with `deadlocks_per_min` flat is
+a convoy, not a deadlock storm — nothing will resolve it on its own, and Postgres will not
+break it for you the way it breaks a deadlock.
+
+Three traps for whoever maintains this:
+
+- **Railway injects variables at container start.** Setting `PG_LOCK_ALERT_EMAIL` does not
+  reach the running process; the service must redeploy. Verify from inside the container,
+  not from the dashboard.
+- **The `OWNER_ADMIN_EMAIL` fallback is inert by default.** `bot.py:545` defines
+  `OWNER_ADMIN_EMAIL` as a Python literal, not an environment read, so nothing sets the
+  variable that `_escalate` looks for. Treat `PG_LOCK_ALERT_EMAIL` as required.
+- **The worker has no Brevo key of its own.** `BREVO_API_KEY` there is a Railway reference
+  to the web service's variable, so there is exactly one key to rotate — but a rotation
+  that replaces the variable rather than its value would silently unhook the alert.
+
+To re-verify delivery without manufacturing contention, call `email_service.send_email`
+directly with the resolved recipient and an obviously-marked test subject. Do not create a
+deadlock in production to test a deadlock alert.
+
 ### Still outstanding
 
 - Extend the reachability check to the other guarded DDL functions; this one was fixed
