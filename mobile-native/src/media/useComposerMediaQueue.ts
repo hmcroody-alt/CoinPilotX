@@ -36,6 +36,7 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
   const controllers = useRef(new Map<string, UploadController>());
   const uploading = useMemo(() => items.some((item) => ["validating", "uploading", "waiting", "resuming", "finalizing", "processing"].includes(item.progress.stage)), [items]);
   const autoStarted = useRef(new Set<string>());
+  const inFlight = useRef(new Map<string, Promise<NativeMediaUploadResult>>());
 
   const addAssets = useCallback((assets: NativeMediaAsset[]) => {
     setItems((current) => {
@@ -70,8 +71,7 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...update } : item));
   }, []);
 
-  const uploadItem = useCallback(async (item: ComposerMediaItem, overrideOptions: Partial<NativeMediaUploadOptions> = {}) => {
-    if (item.result && uploadResultMediaId(item.result)) return item.result;
+  const runUpload = useCallback(async (item: ComposerMediaItem, overrideOptions: Partial<NativeMediaUploadOptions> = {}) => {
     const options = { ...defaultOptions, ...overrideOptions };
     const validation = validateNativeMedia(item.asset, options.contextType);
     if (validation) {
@@ -111,6 +111,29 @@ export function useComposerMediaQueue(defaultOptions: NativeMediaUploadOptions) 
       controllers.current.delete(item.id);
     }
   }, [defaultOptions, updateItem]);
+
+  /**
+   * Join an upload that is already running for this item rather than starting a
+   * second pass over it.
+   *
+   * Media starts uploading the moment it is selected, so by the time anyone
+   * publishes, the item is usually mid-flight. Without this, `uploadAll` would
+   * call straight back into `runUpload`, which resets the item to
+   * "Preparing media." at 1% -- a progress bar that walks backwards while the
+   * bytes it is describing keep going forwards -- and would run the
+   * post-upload processing poll a second time. The bytes themselves were never
+   * at risk: `MediaUploadManager` keys its own in-flight table on
+   * `uri|size|contextType|contextId` and hands back the same task. This is
+   * about the hook's view of the upload matching the transport's.
+   */
+  const uploadItem = useCallback((item: ComposerMediaItem, overrideOptions: Partial<NativeMediaUploadOptions> = {}) => {
+    if (item.result && uploadResultMediaId(item.result)) return Promise.resolve(item.result);
+    const running = inFlight.current.get(item.id);
+    if (running) return running;
+    const promise = runUpload(item, overrideOptions).finally(() => { inFlight.current.delete(item.id); });
+    inFlight.current.set(item.id, promise);
+    return promise;
+  }, [runUpload]);
 
   const uploadAll = useCallback(async (overrideOptions: Partial<NativeMediaUploadOptions> = {}) => {
     const snapshot = items;

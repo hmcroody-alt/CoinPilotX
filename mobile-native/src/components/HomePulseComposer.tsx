@@ -257,9 +257,13 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     if (!cleanBody && !media.items.length && !musicTrack) {
       return { error: "Add text or media before publishing.", note: "Transmission validation blocked an empty signal." };
     }
-    if (media.uploading) {
-      return { error: "Wait for the current media upload or cancel it before publishing.", note: "Upload queue is active. PulseSoc will publish after media is ready." };
-    }
+    // An upload still in flight is deliberately not a refusal. Media starts
+    // uploading the moment it is picked, so on a long video this check kept the
+    // Post button dead for the whole upload and made the person come back and
+    // press it a second time. `uploadAll` joins the run that is already going
+    // rather than starting another, so pressing Post early now means "publish
+    // when the bytes land" -- which is what pressing it was always meant to
+    // mean. A failed upload still fails the publish and preserves the draft.
     if (mode === "poll" && cleanBody && !cleanBody.endsWith("?")) {
       return { error: "Polls and questions must end with a question mark.", note: "Finish the question before transmitting." };
     }
@@ -286,7 +290,10 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   async function runPublish(): Promise<PreviewPublishResult> {
     setPublishing(true);
     setError("");
-    setNote("Sending your post.");
+    // Say which of the two waits this is. Pressing Post while media is still
+    // uploading is allowed, and "Sending your post." on its own would look
+    // stalled for as long as the upload has left to run.
+    setNote(media.uploading ? "Finishing your upload, then sending your post." : "Sending your post.");
     try {
       const uploaded = media.items.length
         ? await media.uploadAll({
