@@ -458,10 +458,14 @@ are finished, tested, and should be left alone.
 
 ## 14. Action Button + Control Center
 
-- **Status** — NOT IMPLEMENTED
+- **Status** — NOT IMPLEMENTED *for Action Button and Control Center.* Note, added
+  2026-09-19: the app **does** already ship a full lock-screen / Control Centre / CarPlay
+  transport control set via `modules/pulse-now-playing`
+  (`MPNowPlayingInfoCenter` + `MPRemoteCommandCenter`), which this entry did not mention.
+  See `SYSTEM_CONTROLS.md` — it covers both halves.
 - **Evidence** — no `ControlWidget`, no App Intents (which both of these are built on).
-- **Minimum iOS** — Control Center controls require **18.0**, well above the 15.1 floor.
-  The Action Button (iPhone 15 Pro+) is configured by the *user* and routes through
+- **Minimum iOS** — Control Center controls require **18.0**, two majors above the 16.1
+  floor. The Action Button (iPhone 15 Pro+) is configured by the *user* and routes through
   Shortcuts, so it needs App Intents (#3) rather than anything Action Button-specific.
 - **New target** — yes for Control Center (widget extension).
 - **Dependency** — **hard-blocked on #3 App Intents.** There is no Action Button API; you

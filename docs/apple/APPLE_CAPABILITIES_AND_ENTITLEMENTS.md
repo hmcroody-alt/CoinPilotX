@@ -21,7 +21,7 @@ here has been changed.
 | Apple Team ID | `87ZC69AGSR` | live AASA response |
 | App Store Connect App ID | `6777591572` | `mobile-native/app.json` |
 | Version / build | 1.0.2 / 28 | `ios/PulseSoc/Info.plist` |
-| iOS deployment target | **15.1** (decided 2026-09-19 to raise to 16.1; not yet applied) | `PulseSoc.xcodeproj/project.pbxproj` |
+| iOS deployment target | **16.1** (raised from 15.1 and **applied** 2026-09-19 — 4 occurrences, zero 15.1 left) | `PulseSoc.xcodeproj/project.pbxproj` |
 | Native targets | **1** (no extensions) | `grep -c "isa = PBXNativeTarget"` |
 
 The Team ID is not hardcoded in the AASA source — `services/native_app_links.py` reads it
