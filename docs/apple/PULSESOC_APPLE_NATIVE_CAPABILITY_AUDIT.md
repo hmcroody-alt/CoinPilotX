@@ -132,6 +132,8 @@ are finished, tested, and should be left alone.
 
 ## 1. App Attest + DeviceCheck
 
+Full treatment in **`APP_ATTEST_DEVICECHECK.md`**.
+
 - **Status** — NOT IMPLEMENTED
 - **Evidence** — repo-wide grep for `DCAppAttest|DCDevice|app-attest|appattest` across
   `*.swift *.ts *.tsx *.py *.entitlements` returns zero hits.
@@ -141,8 +143,12 @@ are finished, tested, and should be left alone.
   replaying a token on another device fails the device binding.
 - **What is missing** — hardware attestation. Nothing today proves the client is a genuine,
   unmodified PulseSoc build on real Apple hardware. `device_hash` is client-asserted.
-- **Entitlement** — `com.apple.developer.devicecheck.appattest-environment`.
-- **Minimum iOS** — 14.0. Below the current floor; no target change needed.
+- **Entitlement** — `com.apple.developer.devicecheck.appattest-environment`. Its
+  `development`/`production` split is the APNs environment trap again and must be a build
+  setting, not a literal — `PulseSoc.entitlements` already does this for `aps-environment`.
+- **Minimum iOS** — 14.0. Below the current floor; no target change needed. But
+  `DCAppAttestService.supported` is `false` on Mac/Catalyst/Apple silicon, and `generateKey`
+  fails in app extensions regardless — so the floor is not the whole availability story.
 - **New target** — no.
 - **Backend dependency** — substantial and the real cost. A challenge endpoint, Apple's
   attestation-object verification (x5c chain to Apple's App Attest root, receipt parsing,
@@ -150,6 +156,11 @@ are finished, tested, and should be left alone.
   machinery as the StoreKit JWS verifier in
   `services/business_os/entitlements/iap_apple.py:74-159`, which is a good template — that
   code already does x5c chain validation against an injected trust anchor.
+  **Corrected 2026-09-19:** "same machinery" overstates it. The chain/trust-anchor half
+  transfers; the envelope does not — a StoreKit payload is a JWS (`_split_jws` requires
+  three dot-separated segments) while an App Attest attestation is CBOR, and
+  `requirements.txt` has no CBOR library. New dependency, new parsing layer. Full treatment
+  in **`APP_ATTEST_DEVICECHECK.md`**.
 - **Protection-lock interaction** — none.
 - **User value** — invisible to users. Value is anti-abuse: it raises the cost of scripted
   signup, referral farming, and ad-credit fraud.
@@ -161,6 +172,13 @@ are finished, tested, and should be left alone.
   signup, referral claim, and IAP is defensible.
 - **Open question** — does this earn its cost at 39 users / 11 MAU? Documented for
   completeness; recommended **deferred** until abuse is observed rather than anticipated.
+  **Resolved 2026-09-19 (`APP_ATTEST_DEVICECHECK.md`):** still deferred, but the question is
+  now answerable instead of a judgement call. The device tier of the rate limiter keys on
+  `device_fingerprint(user_agent, X-PulseSoc-Device-Id)` — a client-supplied header
+  (`bot.py:3155-3158`, `pulse_security_core.py:107-111`, `:150`) — so rotating one header
+  mints a fresh device bucket. Counting distinct `device_hash` per `ip_hash` per window
+  measures exactly the behaviour attestation would block, costs nothing, and decides the
+  deferral with evidence.
 
 ## 2. Live Activities + Dynamic Island
 
