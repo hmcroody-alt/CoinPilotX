@@ -206,7 +206,7 @@ the OS, not by taste:
 |---|---|---|---|
 | 1 | App Attest / DeviceCheck | new Expo module | Backend verification is the real work; the module is thin |
 | 2 | Live Activities | extension target + module | Module starts/updates; extension renders. Call state **read-only** |
-| 3 | App Intents | extension target | Read-only intents only; **no call intents** |
+| 3 | App Intents | **app target** (corrected 2026-09-19) | `APP_INTENTS_SIRI_SHORTCUTS.md`. All intents `openAppWhenRun = true` — `perform()` has no RN bridge. Explicit `authenticationPolicy` per intent. **No conformance to `AudioPlaybackIntent`/`AudioStartingIntent`**; no call intents. An extension target would forfeit `ForegroundContinuableIntent` (Finding 4) |
 | 4 | Core Spotlight | new Expo module | Policy: `DECISIONS_CORE_SPOTLIGHT_INDEXING_POLICY.md`. Mechanism: `CORE_SPOTLIGHT.md`. Needs **no** Info.plist key — the blocker is the AppDelegate activity-type switch |
 | 5 | BackgroundTasks | app target | Registration must happen in `didFinishLaunching`. Not currently planned |
 | 6 | Sign in with Apple | `expo-apple-authentication` | Off-the-shelf; the work is server-side. See `DECISIONS_SIGN_IN_WITH_APPLE.md` |
@@ -219,9 +219,15 @@ the OS, not by taste:
 | 13 | Share Extension | extension target | Memory-limited; must not publish silently |
 | 14 | Action Button / Control Center | extension target | Blocked on #3 and an 18.0 floor |
 
-Four rows (#2, #3, #12, #13, and #14 behind #3) need the App Group and a second
-App ID. That is the Wave 2 "extension foundation," and the reason the audit
-insists it be built once on purpose rather than four times accidentally.
+Four rows — #2, #12, #13, and #14 — need the App Group and a second App ID. That is the
+Wave 2 "extension foundation," and the reason the audit insists it be built once on purpose
+rather than four times accidentally.
+
+> **Corrected 2026-09-19.** This paragraph previously counted #3 among them and said "four"
+> while listing five. #3 moved to the app target (see its row), so it needs neither the App
+> Group nor a second App ID — which makes App Intents the one capability in this group that
+> is *not* gated on Wave 2. #14 stays in the list: an Action Button assignment is an App
+> Intent, but a Control Center control is a `ControlWidget`, which is an extension.
 
 ---
 

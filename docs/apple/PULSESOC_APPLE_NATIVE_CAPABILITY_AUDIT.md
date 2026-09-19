@@ -117,6 +117,13 @@ Two capabilities below have a genuine adjacency to the locked surfaces — Live 
 (wants call state) and App Intents (could be asked to start a call). Both are marked and
 both are constrained to *observing* state, never driving it.
 
+> **Amended 2026-09-19.** App Intents' adjacency is not only "could be asked to start a
+> call." `AudioPlaybackIntent` is a framework protocol whose entire purpose is to grant an
+> intent the right to begin audio from the background or lock screen; the intent that would
+> use it is "play PulseSoc radio", not a call. The constraint is therefore a named
+> conformance ban, not a judgement about subject matter — see §3 and
+> `APP_INTENTS_SIRI_SHORTCUTS.md` Finding 2.
+
 ---
 
 ## Capability matrix
@@ -125,7 +132,7 @@ both are constrained to *observing* state, never driving it.
 |---|---|---|---|---|---|
 | 1 | App Attest + DeviceCheck | NOT IMPLEMENTED | 14.0 ✅ | No | 3 |
 | 2 | Live Activities + Dynamic Island | NOT IMPLEMENTED | 16.1 ✅ (16.2 for the API worth using) | **Yes** | 4 |
-| 3 | App Intents / Siri / Shortcuts | NOT IMPLEMENTED | 16.0 | No | 4 |
+| 3 | App Intents / Siri / Shortcuts | NOT IMPLEMENTED | 16.0 ✅ | No — app target, deliberately (Finding 4) | 4 |
 | 4 | Core Spotlight | NOT IMPLEMENTED | 15.1 ✅ | No | 3 |
 | 5 | BackgroundTasks | NOT IMPLEMENTED (unused `fetch` declaration removed 2026-09-19) | 16.1 ✅ (device-only to test) | No | 3 |
 | 6 | Sign in with Apple | NOT IMPLEMENTED | 15.1 ✅ | No | 2 |
@@ -228,18 +235,57 @@ already has too many activities", which must never be able to reach the call pat
 
 ## 3. App Intents / Siri / Shortcuts
 
-- **Status** — NOT IMPLEMENTED
+- **Status** — NOT IMPLEMENTED. Detail in **`APP_INTENTS_SIRI_SHORTCUTS.md`**.
 - **Evidence** — no `AppIntent`, `INIntent`, SiriKit, `.intentdefinition`, or Siri
   entitlement. No `NSUserActivityTypes` in Info.plist.
 - **Minimum iOS** — 16.0 for App Intents (15.1 floor is below it). SiriKit's older
   `INIntent` works at 15.1 but is the legacy path and should not be chosen for new work.
+
+> **Resolved 2026-09-19:** the floor question is moot. The project floor is **16.1** since
+> `c8f05637`, above App Intents' 16.0, so `Intents.framework` need not be considered at all.
+>
+> **Two things this section did not say**, both from reading the AppIntents Swift interface
+> (`APP_INTENTS_SIRI_SHORTCUTS.md` Findings 1–3):
+>
+> 1. `AppIntent.openAppWhenRun` **defaults to `false`**, so `perform()` runs without
+>    foregrounding the app — in a Swift context with no Hermes runtime, no bridge, and no
+>    `pulseApi()`. Every intent is therefore either a Siri-addressable deep link
+>    (`openAppWhenRun = true`) or a parallel native client with its own auth, which needs a
+>    keychain access group that does not exist yet. There is no cheap middle. This is a
+>    larger constraint than "React Native ↔ Swift plumbing that does not exist yet" implies:
+>    it bounds what an intent can *be*, not how much work it is.
+> 2. `AppIntent.authenticationPolicy` **defaults to `alwaysAllowed`**, so an intent surfacing
+>    user-scoped data runs on a locked phone unless someone remembers to say otherwise. Same
+>    default-is-permissive shape as the route-auth gate; same remedy.
+>
+> The protection-lock bullet below is right but under-specified — see the correction attached
+> to it.
 - **New target** — not strictly (App Intents can live in the app target), but Shortcuts
   discoverability is much better from an extension.
+
+  > **Priced 2026-09-19.** `ForegroundContinuableIntent` — the protocol that lets a
+  > background intent escalate into the foreground mid-run — is
+  > `@available(iOSApplicationExtension, unavailable)`. So the extension choice buys
+  > discoverability and sells the only escape hatch out of the no-JavaScript box in Finding 1.
+  > If every intent is `openAppWhenRun = true` the trade does not bite, which is one more
+  > argument for that ceiling. `APP_INTENTS_SIRI_SHORTCUTS.md` Finding 4 has the table.
 - **Backend dependency** — none beyond existing APIs.
 - **Protection-lock interaction** — **constrain deliberately.** "Hey Siri, call X on
   PulseSoc" is the intent users will expect and it is the one that must not be built in
   Wave 1: it would drive the locked call path from a new entry point. Safe first intents
   are read-only or compose-only — open a profile, search, start a post draft.
+
+  > **Sharpened 2026-09-19.** "No call intents" is a rule about intent *subject matter*, and
+  > it depends on someone recognising a call intent as one. The framework has a hazard with
+  > an actual name: conforming a type to `AudioPlaybackIntent` (or its deprecated predecessor
+  > `AudioStartingIntent`) is how you tell the system "running this begins audio playback",
+  > which grants it the right to start audio from the background or the lock screen — a new
+  > audio-session entry point outside the app's ownership arbitration. The intent that would
+  > reach for it is "play PulseSoc radio", which nobody would classify as a call intent.
+  >
+  > **The rule to assert in a test: no type in this codebase conforms to
+  > `AudioPlaybackIntent` or `AudioStartingIntent`.** One grep, and it covers the case nobody
+  > was thinking about. See `APP_INTENTS_SIRI_SHORTCUTS.md` Finding 2.
 - **User value** — moderate. Real value needs React Native ↔ Swift plumbing that does not
   exist yet.
 - **Effort** — Medium per intent, Large for the first one.
@@ -581,7 +627,16 @@ Ordered by dependency first, value second. Feature flags default **OFF** through
 
 **Wave 4 — extension-dependent and OS-gated.**
 - WidgetKit (#12) — start with Progress/referral status.
-- App Intents (#3) — read-only intents only; **no call intents**.
+- App Intents (#3) — read-only intents only; **no call intents**, and **no conformance to
+  `AudioPlaybackIntent` / `AudioStartingIntent`**. All intents `openAppWhenRun = true` with
+  an explicit `authenticationPolicy` (`APP_INTENTS_SIRI_SHORTCUTS.md`).
+
+  > **Note 2026-09-19:** #3 is in this wave for sequencing reasons, not extension ones. With
+  > the app-target decision it needs neither the App Group nor a second App ID, so it is the
+  > one item here that Wave 2 does not gate. It could move earlier if the device check in its
+  > Owed table (can an `openAppWhenRun` intent open its own `pulsesoc://` URL?) comes back
+  > clean.
+
 - Live Activities (#2) — only if the target moves to 16.1; call state read-only.
 - Handoff sending half (#10), as a by-product of Spotlight.
 
