@@ -25,6 +25,7 @@ INVENTORY_RESERVATION_TTL_SECONDS = 15 * 60
 OFFER_PRICE_LOCK_SECONDS = 24 * 60 * 60
 STANDARD_RETURN_WINDOW_DAYS = 14
 STANDARD_PAYOUT_PROTECTION_DAYS = 2
+SETTLEMENT_HOLD_HOURS_ENV_VAR = "MARKETPLACE_SETTLEMENT_HOLD_HOURS"
 
 PROHIBITED_CATEGORY_KEYS = frozenset({
     "illegal_goods", "stolen_goods", "counterfeit_goods", "weapons",
@@ -130,6 +131,40 @@ def return_window_open(*, delivered_at: Any = None, purchased_at: Any = None,
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
     return moment <= anchor + timedelta(days=STANDARD_RETURN_WINDOW_DAYS)
+
+
+def settlement_hold_hours() -> int:
+    """How long a confirmed delivery waits before the seller's money is released.
+
+    Configurable because the right answer is a business decision, not a constant:
+    it moves with dispute rates, category risk and whatever a card network asks
+    for next. `STANDARD_PAYOUT_PROTECTION_DAYS` remains the documented default so
+    an unconfigured deployment behaves exactly as it did before this was a knob.
+
+    A bad value falls back to that default rather than to zero. This is the
+    opposite of how the fulfillment timeouts fail, and deliberately so: there,
+    doing nothing leaves an order sitting where it is, while here doing nothing
+    would mean releasing the money the instant delivery is confirmed — a typo in
+    a deployment variable must not be able to pay a seller early.
+
+    An explicit zero is honoured. Waiving the hold is a decision the owner is
+    entitled to make, and silently overriding it would make the variable a lie.
+    """
+    raw = str(os.getenv(SETTLEMENT_HOLD_HOURS_ENV_VAR) or "").strip()
+    if not raw:
+        return STANDARD_PAYOUT_PROTECTION_DAYS * 24
+    try:
+        hours = int(raw)
+    except ValueError:
+        return STANDARD_PAYOUT_PROTECTION_DAYS * 24
+    if hours < 0:
+        return STANDARD_PAYOUT_PROTECTION_DAYS * 24
+    return hours
+
+
+def settlement_hold_ends_at(delivered_at: datetime) -> datetime:
+    """The moment a delivery confirmed at ``delivered_at`` clears its hold."""
+    return delivered_at + timedelta(hours=settlement_hold_hours())
 
 
 def fee_policy_active() -> bool:

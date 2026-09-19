@@ -8,7 +8,7 @@ quote; the current fee policy is never consulted during a refund.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Mapping
 
 from services import db
@@ -425,7 +425,7 @@ def mark_delivered(transaction_id: Any, *, actor: str, idempotency_key: str) -> 
     result = transition_payout(transaction_id, "protection_hold", actor=actor,
                                reason="delivery confirmed", idempotency_key=idempotency_key)
     now = datetime.now(timezone.utc)
-    ends = (now + timedelta(days=policy.STANDARD_PAYOUT_PROTECTION_DAYS)).isoformat()
+    ends = policy.settlement_hold_ends_at(now).isoformat()
     conn = db.connect()
     try:
         # COALESCE so a repeated delivery confirmation cannot restart the buyer's
@@ -517,21 +517,106 @@ def release_hold(transaction_id: Any, *, to_state: str, actor: str, reason: str,
     return transition_payout(transaction_id, to_state, actor=actor, reason=reason,
                              idempotency_key=idempotency_key)
 
+#: Why a settlement was refused release. Returned rather than logged, because the
+#: question "where is my money" is asked by a seller, answered by support, and
+#: audited by finance — three readers who cannot all be expected to read a log.
+ELIGIBLE = ""
+NOT_IN_PROTECTION_HOLD = "SETTLEMENT_NOT_IN_PROTECTION_HOLD"
+PAYOUT_BLOCKED = "SETTLEMENT_PAYOUT_BLOCKED"
+SELLER_NOT_PAYOUT_READY = "SETTLEMENT_SELLER_NOT_PAYOUT_READY"
+HOLD_NOT_ELAPSED = "SETTLEMENT_HOLD_NOT_ELAPSED"
+HOLD_END_UNKNOWN = "SETTLEMENT_HOLD_END_UNKNOWN"
+
+
+def eligibility_blockers(settlement: Mapping[str, Any], *,
+                         now: datetime | None = None) -> list[str]:
+    """Every reason this settlement may not be released, not just the first.
+
+    All of them, because a seller told to fix one thing and then refused again
+    for a second has been told the truth twice and helped neither time.
+    """
+    blockers: list[str] = []
+    if str(settlement.get("payout_state") or "") != "protection_hold":
+        blockers.append(NOT_IN_PROTECTION_HOLD)
+    if settlement.get("blocker_code"):
+        blockers.append(PAYOUT_BLOCKED)
+    if not settlement.get("payout_ready"):
+        blockers.append(SELLER_NOT_PAYOUT_READY)
+    due = _parse_hold_end(settlement)
+    if due is None:
+        # A settlement can reach protection_hold without a delivery — releasing a
+        # hold targets that state directly — and the old code read the missing
+        # timestamp straight into fromisoformat, so one such row raised
+        # ValueError out of the scheduler and stopped every settlement behind it.
+        # Unknown is not the same as elapsed: the money stays put and says why.
+        blockers.append(HOLD_END_UNKNOWN)
+    elif (now or datetime.now(timezone.utc)) < due:
+        blockers.append(HOLD_NOT_ELAPSED)
+    return blockers
+
+
+def _parse_hold_end(settlement: Mapping[str, Any]) -> datetime | None:
+    raw = str(settlement.get("protection_ends_at") or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
 def evaluate_eligibility(transaction_id: Any, *, now: datetime | None = None,
                          idempotency_key: str | None = None) -> dict:
     current = get_settlement(transaction_id)
     if not current:
         raise SettlementError("settlement not found")
-    if current["payout_state"] != "protection_hold" or current.get("blocker_code") or not current.get("payout_ready"):
-        return {"eligible": False, "settlement": current}
-    due = datetime.fromisoformat(str(current.get("protection_ends_at") or "").replace("Z", "+00:00"))
-    check = now or datetime.now(timezone.utc)
-    if check < due:
-        return {"eligible": False, "settlement": current}
+    blockers = eligibility_blockers(current, now=now)
+    if blockers:
+        return {"eligible": False, "settlement": current,
+                "reason_code": blockers[0], "blockers": blockers}
     result = transition_payout(transaction_id, "eligible", actor="payout_scheduler",
                                reason="versioned protection window satisfied",
                                idempotency_key=idempotency_key or f"eligible:{transaction_id}:{current['protection_ends_at']}")
-    return {"eligible": True, **result}
+    return {"eligible": True, "reason_code": ELIGIBLE, "blockers": [], **result}
+
+
+def sweep_eligibility(*, now: datetime | None = None, limit: int = 200) -> dict:
+    """Promote every settlement whose hold has elapsed. The missing caller.
+
+    `evaluate_eligibility` existed and was correct, and nothing in production had
+    ever called it — only tests did. The payout scheduler selects rows that are
+    already `eligible`, so a delivered order sat in `protection_hold` for the
+    rest of time and the seller was never paid. Every other piece of the release
+    chain worked, which is why the gap survived: each part was individually
+    fine and no part was joined to the next.
+
+    Returns counts and a tally of why the rest were refused, so a deployment
+    where nothing is moving can be told apart from one where nothing is due.
+    """
+    ensure_schema(); conn = db.connect()
+    try:
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM marketplace_commercial_settlements WHERE payout_state='protection_hold' "
+            "ORDER BY seller_transaction_id LIMIT ?", (max(1, min(int(limit), 500)),)).fetchall()]
+    finally:
+        conn.close()
+    metrics = {"considered": len(rows), "released": 0, "blocked": 0, "errors": 0,
+               "reasons": {}}
+    for row in rows:
+        blockers = eligibility_blockers(row, now=now)
+        if blockers:
+            metrics["blocked"] += 1
+            for code in blockers:
+                metrics["reasons"][code] = metrics["reasons"].get(code, 0) + 1
+            continue
+        try:
+            evaluate_eligibility(row["seller_transaction_id"], now=now)
+            metrics["released"] += 1
+        except SettlementError:
+            # Raced by another replica, or moved on between the select and now.
+            metrics["errors"] += 1
+    return metrics
 
 def readiness() -> dict:
     return {"quote_authority": "PASS", "refund_ledger": "PASS", "payout_state_machine": "PASS",
