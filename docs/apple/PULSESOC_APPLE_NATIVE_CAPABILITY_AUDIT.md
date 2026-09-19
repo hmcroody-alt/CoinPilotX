@@ -527,6 +527,42 @@ already has too many activities", which must never be able to reach the call pat
   structured addresses and a product reason to be found by proximity. Listing this as an
   iOS capability to build would be a category error.
 
+Full treatment in **`MAPKIT.md`**.
+
+> **Sharpened 2026-09-19 — the verdict stands; its reason changes.** `MAPKIT.md` re-derived
+> this section and agrees with "do not implement," but the section as written above is the
+> version most likely to be reversed by the next person who checks it, because *"there is no
+> location data" is falsifiable by a grep and the grep returns hits.* Three corrections:
+>
+> **1. The lat/long is not merely IP-derived — it has never held a value.** `latitude` and
+> `longitude` occur three times in the whole repo, at two locations: the `visitor_sessions`
+> declarations (`bot.py:122504-122505`) and the column list of the single insert
+> (`:15039`), which binds literal `NULL, NULL` (`:15040`). No `UPDATE` writes them and none
+> of the six `visitor_sessions` selects reads them. "Don't display it" reads like a
+> presentation problem with a presentation fix; there is nothing to present.
+>
+> **2. The blocker is not a schema change, it is a trusted source — and that was already
+> looked for here and not found.** The section lists "a schema change, a geocoding pipeline,
+> an address-entry UI, and a privacy decision." The fourth is not open. `bot.py:15058-15063`
+> records the decision: geo came off request headers, "every visitor row's country/region/city
+> was whatever the visitor typed," and the fix was that region and city "record nothing rather
+> than recording a claim." The revisit condition above — *"if marketplace sellers gain
+> structured addresses"* — describes exactly the steerable, self-asserted claim that fix
+> removed, now with a map pin attached to make it look authoritative.
+>
+> **3. The schema does contain geocodable addresses, and they belong to staff.** Five
+> `address` columns exist; three are **Bitcoin** addresses (`:116061`, `:116074`, `:120483`).
+> The other two are `admin_users` (`:122347-122352`, full `address_line1/2` + city/state/zip/
+> country beside `date_of_birth` and emergency contact) and `employees` (`:123809`). They are
+> structured where every other address in the product is free text, which makes them **the
+> only rows a geocoder would succeed on** — so an engineer told "build the map, find the data"
+> lands on them by following the evidence. `MAPKIT.md` Finding 4 turns that into a named
+> prohibition, because an absence of data is not a control.
+>
+> `MAPKIT.md` Finding 6 also names what *would* be appropriate — a country-level marketplace
+> filter using the one field with a trusted source — so that "do not implement" does not get
+> re-litigated as "but users want local sellers."
+
 ## 10. Handoff
 
 - **Status** — FOUNDATION EXISTS
@@ -768,7 +804,9 @@ Ordered by dependency first, value second. Feature flags default **OFF** through
 **Wave 5 — deferred or not recommended.**
 - Share Extensions (#13).
 - Control Center / Action Button (#14) — blocked on #3 and on an 18.0 floor.
-- MapKit (#9) — **not recommended**; blocked on data that does not exist.
+- MapKit (#9) — **not recommended**; not because the data is missing but because the usable
+  source was deliberately emptied (`bot.py:15058-15063`) and the only geocodable addresses
+  left are staff home addresses. `MAPKIT.md`.
 
 ---
 
