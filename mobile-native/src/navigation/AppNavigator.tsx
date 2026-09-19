@@ -13,7 +13,7 @@ import { AppState } from "react-native";
 import { businessOsSection } from "../api/businessOs";
 import { getMyProfile, PulseProfile } from "../api/profile";
 import { isMember } from "../entitlements/canonicalTier";
-import { useCanonicalTier } from "../entitlements/useCanonicalTier";
+import { loadCanonicalTier, useCanonicalTier } from "../entitlements/useCanonicalTier";
 import { MasterNavigationDrawer } from "../components/MasterNavigationDrawer";
 import { MinimizedCallBanner } from "../calls/MinimizedCallBanner";
 import { invalidateNativeSync, registerSyncInvalidation, startNativeEventSync } from "../core/eventSync";
@@ -304,7 +304,23 @@ export function AppNavigator() {
     const unregisterMessages = registerSyncInvalidation("messenger", refreshBadgeSync);
     const stopSync = startNativeEventSync({
       fullResyncOnStart: true,
-      subsystems: ["messenger", "activity", "notifications", "orders", "marketplace", "seller_inventory", "status", "reels"]
+      subsystems: [
+        "messenger",
+        "activity",
+        "notifications",
+        "orders",
+        "marketplace",
+        "seller_inventory",
+        "status",
+        "reels",
+        // Entitlement belongs here for the *fallback* leg specifically. A delta
+        // poll invalidates whatever its events name, so a premium event already
+        // reaches the subscription below without this list. But when the delta
+        // endpoint fails, the fallback invalidates this list and nothing else —
+        // and "the sync endpoint is down" is exactly the moment a member who was
+        // just granted Premium would otherwise keep seeing it locked.
+        "premium"
+      ]
     });
     // The shared bell store (every seller header + Activity read from this one
     // source). Opt-in so importing the store never triggers network; wired once
@@ -338,6 +354,38 @@ export function AppNavigator() {
     };
     reload();
     return registerSyncInvalidation("profile", reload);
+  }, []);
+
+  useEffect(() => {
+    // An admin grant is the one entitlement change the device cannot observe.
+    // Purchase and restore are local acts, so `PremiumCenterScreen` re-reads
+    // straight after them; sign-in re-reads in `auth.ts`. A grant happens on a
+    // server the app is not talking to, to a member who is holding the phone —
+    // and until this subscription existed the only thing that would deliver it
+    // was `PremiumFeatureGate`'s foreground listener. A member who never
+    // backgrounds the app never foregrounds it either, so "restart the app" was
+    // the actual remedy for a grant, which is the shape of the complaint that
+    // started this: paid for it / was given it / still locked.
+    //
+    // The server already routes the event here — `subsystemsForSyncEvent` maps
+    // anything matching premium|subscription|entitlement|founder onto the
+    // "premium" subsystem. The delivery path ran end to end and terminated in
+    // no subscriber.
+    //
+    // Subscribing here rather than inside the cache module keeps the cache free
+    // of network lifecycle: this is mounted exactly while signed in
+    // (`App.tsx` renders AppNavigator only then), which is exactly the window
+    // in which entitlement means anything. One subscription serves every
+    // Premium surface because they all read the one shared answer.
+    return registerSyncInvalidation("premium", () => {
+      // Deliberately a plain load, not a reset-then-load. A reset publishes
+      // UNKNOWN_TIER to every gate first, so a member watching a Premium screen
+      // would see it blank out and come back for no reason they caused. There
+      // is no stale-identity risk here — sign-out resets on its own path — so
+      // the honest move is to leave the current answer standing until a better
+      // one arrives.
+      void loadCanonicalTier();
+    });
   }, []);
 
   const canonicalTier = useCanonicalTier();

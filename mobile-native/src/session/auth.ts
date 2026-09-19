@@ -21,7 +21,7 @@ import { setMediaCacheScope } from "../media/mediaCache";
 import { setOutboxScope } from "../core/mutations/outbox";
 import { clearUserScopedMediaState } from "../media/mediaSessionCleanup";
 import { rememberAccount } from "./rememberedAccounts";
-import { resetCanonicalTier } from "../entitlements/useCanonicalTier";
+import { loadCanonicalTier, resetCanonicalTier } from "../entitlements/useCanonicalTier";
 
 /**
  * Deterministic session-bootstrap phases. Every restore/sign-in/sign-out path
@@ -208,6 +208,12 @@ export async function signIn(identifier: string, password: string): Promise<Auth
   await persistSessionEnvelope({ ...session, user });
   await setCachedSessionUser(user);
   await rememberAccount(user).catch(() => undefined);
+  // Ask for THIS member's entitlement now that the envelope is persisted, so
+  // the request carries the new token. Without it the reset above leaves the
+  // shared answer at "unavailable" until some surface happens to mount and ask,
+  // and a premium member's first seconds after signing in are spent looking at
+  // a product that cannot confirm they paid for it.
+  void refreshEntitlementAfterSignIn();
   return authenticatedState(user);
 }
 
@@ -219,7 +225,24 @@ export async function createAccount(payload: { full_name: string; username: stri
   await persistSessionEnvelope({ ...session, user });
   await setCachedSessionUser(user);
   await rememberAccount(user).catch(() => undefined);
+  // A new account starts on the signup trial grant, which is a real
+  // entitlement the server has already written. Not asking for it would show a
+  // brand-new member the upsell for something they already hold.
+  void refreshEntitlementAfterSignIn();
   return authenticatedState(user);
+}
+
+/**
+ * Re-read the canonical tier for the member who just authenticated.
+ *
+ * Failures are swallowed on purpose: the shared cache already holds the honest
+ * "unavailable" answer from the reset, every premium gate re-asks on mount and
+ * on foreground, and a rejected promise here would surface as an unhandled
+ * rejection during sign-in — noise about a condition the app already renders
+ * truthfully.
+ */
+function refreshEntitlementAfterSignIn(): Promise<unknown> {
+  return loadCanonicalTier().catch(() => undefined);
 }
 
 /**
