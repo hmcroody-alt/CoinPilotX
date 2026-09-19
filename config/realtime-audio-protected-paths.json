@@ -505,6 +505,7 @@
       "mobile-native/package.json",
       "mobile-native/package-lock.json",
       "mobile-native/app.json",
+      "mobile-native/ios/PulseSoc/Info.plist",
       "mobile-native/eas.json",
       "mobile-native/ios/Podfile",
       "mobile-native/ios/Podfile.lock",
@@ -521,8 +522,15 @@
       "react-native": "^0.81.5"
     },
     "required_ios_configuration": {
-      "app.json:expo.ios.infoPlist.NSMicrophoneUsageDescription": "must be present and non-empty",
-      "app.json:expo.ios.infoPlist.UIBackgroundModes": "must contain \"audio\""
+      "declared_source": "mobile-native/app.json",
+      "declared_pointer": ["expo", "ios", "infoPlist"],
+      "built_source": "mobile-native/ios/PulseSoc/Info.plist",
+      "must_be_present_and_non_empty": ["NSMicrophoneUsageDescription"],
+      "background_modes_must_contain": ["audio", "voip"],
+      "sources_must_agree_on_declared_keys": true,
+      "reason": "Two files carry this configuration and only one of them ships. app.json is the Expo declaration; mobile-native/ios/ is committed and is what Xcode reads, so ios/PulseSoc/Info.plist is the artefact on the device. Every rule here is therefore asserted against BOTH. Without NSMicrophoneUsageDescription iOS denies the microphone outright; without the audio background mode a backgrounded call goes silent; without voip PushKit cannot wake the app for an incoming call, which is the only reason services/pulsesoc_voip_push.py's apns-push-type: voip is deliverable. None of those failures is visible in a simulator run or a unit test.",
+      "agreement_reason": "Divergence between the two files is its own bug class, upstream of any individual key: a prebuild-generated app.json value that the committed plist does not carry is a value that does not ship, and the build stays green either way. Equality is checked only over the keys app.json declares, because the built plist legitimately carries many more (CFBundle*, NSAppTransportSecurity, launch configuration) that Expo supplies from elsewhere.",
+      "enforced_by": "tests/protection/test_realtime_audio_architecture.py::DependencyLockTests::test_ios_microphone_and_background_audio_configuration_is_intact"
     },
     "reason": "A floating range on the Agora package lets a lockfile refresh change the media stack with no code diff."
   },

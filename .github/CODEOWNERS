@@ -102,6 +102,7 @@
 /mobile-native/eas.json                                 @hmcroody-alt
 /mobile-native/ios/Podfile                              @hmcroody-alt
 /mobile-native/ios/Podfile.lock                         @hmcroody-alt
+/mobile-native/ios/PulseSoc/Info.plist                  @hmcroody-alt
 /mobile-native/patches/                                 @hmcroody-alt
 
 # ---------------------------------------------------------------------------
