@@ -59,6 +59,25 @@ environment (`production`) on the `CoinPilotX` service, so a second environment
 or a separate service is required before this test can be run at all. That is an
 infrastructure decision for the owner, not a code change.
 
+### Which service needs which
+
+Railway variables are **per service**, and the payout worker does not run on the
+web service. Setting all four on the web service alone produces a deployment
+where checkout works and nothing is ever paid out.
+
+| Variable | `CoinPilotX` (web) | `coinpilotx-pulse-worker` |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | yes — creates the PaymentIntent | **yes — the transfer and payout legs run here** |
+| `STRIPE_WEBHOOK_SECRET` | yes — the only process that verifies a signature | no |
+| `STRIPE_PUBLISHABLE_KEY` | yes | no |
+| `STRIPE_CONNECT_CLIENT_ID` | yes — onboarding is a web flow | no |
+
+Production today happens to have `STRIPE_SECRET_KEY` on both, so this is easy to
+satisfy by accident and equally easy to miss when standing up a second
+environment from scratch. The symptom is not an error: the worker logs
+`blocked_by=stripe_not_configured` at boot and then declines every cycle
+quietly. Step 9 below is where that would first show up.
+
 No placeholder, fixture or fake credential was introduced anywhere in the
 codebase to work around this.
 

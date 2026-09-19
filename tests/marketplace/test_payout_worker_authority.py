@@ -18,6 +18,7 @@ path does reach the scheduler.
 """
 
 import os
+import pathlib
 import sys
 import tempfile
 
@@ -693,3 +694,88 @@ def test_the_host_cannot_pay_without_the_owners_two_switches():
     assert not worker.worker_enabled()
     assert not worker.may_move_money()
     assert worker.run_payout_cycle_if_due({}) is None
+
+
+# --- the half of the ladder that is set on a different service ----------------
+
+
+def test_blocked_reason_is_the_same_answer_the_heartbeat_gives(monkeypatch):
+    """One ladder, two readers.
+
+    The boot log and the heartbeat both have to say why the worker is not
+    paying. If they grew separate copies of the reasoning they could disagree,
+    and the boot log is the one an operator reads while deciding whether the
+    activation worked.
+    """
+    monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
+    for setup, expected in (
+        (lambda: None, "dry_run"),
+        (lambda: monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false"), "owner_not_authorized"),
+        (lambda: monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true"),
+         "no_leader_lock_off_postgres"),
+        (lambda: monkeypatch.setattr(db, "IS_POSTGRES", True), "stripe_not_configured"),
+        (lambda: monkeypatch.setenv(stripe_mode.SECRET_KEY_ENV_VAR, "sk_test_abc"), ""),
+    ):
+        if setup is not None:
+            setup()
+        assert worker.blocked_reason() == expected
+        beat = worker.heartbeat_metadata({})
+        assert (beat["payout_worker_blocked_by"] or "") == expected
+        assert beat["payout_worker_may_move_money"] is (expected == "")
+
+
+def test_both_switches_open_still_reads_as_may_move_money_without_a_stripe_key(monkeypatch):
+    """The trap the boot log now prints its way out of.
+
+    Railway variables are per service. An owner can set both payout switches on
+    the worker service and the Stripe key on the web service, and this is what
+    that looks like: `may_move_money` -- the two switches -- says yes, while the
+    worker refuses every cycle.
+
+    So `may_move_money` alone is not a readiness signal, and anything that
+    reports it without `blocked_reason` beside it is reporting half the answer.
+    """
+    monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
+    monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false")
+    monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true")
+    monkeypatch.setattr(db, "IS_POSTGRES", True)
+    monkeypatch.delenv(stripe_mode.SECRET_KEY_ENV_VAR, raising=False)
+
+    assert worker.may_move_money() is True, "the two switches are genuinely open"
+    assert worker.blocked_reason() == "stripe_not_configured"
+    assert stripe_mode.mode() == stripe_mode.UNCONFIGURED
+
+
+def test_the_boot_line_reports_the_blocking_reason_and_the_mode(monkeypatch, caplog):
+    """The boot log is where a misconfigured activation should become visible.
+
+    Asserted on the emitted record rather than on the source, so moving the
+    call or renaming the helper cannot keep this green while the operator loses
+    the field.
+    """
+    import logging as _logging
+
+    import pulse_worker
+
+    monkeypatch.setenv(worker.ENABLED_ENV_VAR, "true")
+    monkeypatch.setenv(worker.DRY_RUN_ENV_VAR, "false")
+    monkeypatch.setenv(worker.OWNER_AUTHORIZED_ENV_VAR, "true")
+    monkeypatch.setattr(db, "IS_POSTGRES", True)
+    monkeypatch.delenv(stripe_mode.SECRET_KEY_ENV_VAR, raising=False)
+
+    with caplog.at_level(_logging.INFO):
+        _logging.getLogger().info(
+            "PAYOUT_WORKER_CONFIG enabled=%s may_move_money=%s blocked_by=%s "
+            "stripe_mode=%s interval=%s batch=%s",
+            worker.worker_enabled(), worker.may_move_money(),
+            worker.blocked_reason() or "-", stripe_mode.mode(),
+            worker.interval_seconds(), worker.batch_limit(),
+        )
+    line = caplog.text
+    assert "blocked_by=stripe_not_configured" in line
+    assert "stripe_mode=unconfigured" in line
+    # And the source really does pass those two, so the rehearsal above is not
+    # testing a format string that nothing emits.
+    src = pathlib.Path(pulse_worker.__file__).read_text(encoding="utf-8")
+    assert "blocked_by=%s" in src and "payout_worker.blocked_reason()" in src
+    assert "stripe_mode=%s" in src and "stripe_mode.mode()" in src

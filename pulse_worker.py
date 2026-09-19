@@ -13,6 +13,7 @@ from services import marketplace_reservation_sweeper as reservation_sweeper
 from services import marketplace_release_cycle as release_cycle
 from services import marketplace_payout_worker as payout_worker
 from services import payments_reconciliation_cycle as reconciliation_cycle
+from services import stripe_mode
 
 
 WORKER_NAME = "pulse_worker"
@@ -261,10 +262,20 @@ def main():
         release_cycle.settlement_sweep_enabled(),
         release_cycle.interval_seconds(),
     )
+    # `may_move_money` is only the two switches, and both are set deliberately
+    # by whoever is activating. `blocked_by` is the rest of the ladder --
+    # Postgres, and a Stripe key *this service* can see. Railway variables are
+    # per service, so an owner who sets the switches here and the Stripe key on
+    # the web service gets a worker that announces itself ready and then
+    # refuses every cycle. Printing both puts that in the boot log rather than
+    # in a week of sellers not being paid.
     logging.info(
-        "PAYOUT_WORKER_CONFIG enabled=%s may_move_money=%s interval=%s batch=%s",
+        "PAYOUT_WORKER_CONFIG enabled=%s may_move_money=%s blocked_by=%s "
+        "stripe_mode=%s interval=%s batch=%s",
         payout_worker.worker_enabled(),
         payout_worker.may_move_money(),
+        payout_worker.blocked_reason() or "-",
+        stripe_mode.mode(),
         payout_worker.interval_seconds(),
         payout_worker.batch_limit(),
     )

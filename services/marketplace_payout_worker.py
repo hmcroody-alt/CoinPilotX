@@ -235,6 +235,22 @@ def _mutation_preconditions() -> str:
     return ""
 
 
+def blocked_reason() -> str:
+    """The public name for "why is this not paying", or ``""`` if it would.
+
+    ``may_move_money`` answers only for the two switches, which is the half an
+    operator sets deliberately. The other half -- Postgres, and a Stripe key
+    this *service* can see -- is set somewhere else and is the half that gets
+    forgotten, because Railway variables are per service and the payout worker
+    does not run on the web service.
+
+    Exposed so the boot log and the heartbeat can report the same reason
+    without either reaching into a private helper or growing its own copy of
+    the ladder.
+    """
+    return _mutation_preconditions()
+
+
 def resolve_account(seller_id: str) -> Mapping[str, Any]:
     """The seller's current Connect snapshot, read fresh every cycle.
 
@@ -432,12 +448,16 @@ def heartbeat_metadata(state: dict) -> dict:
     """
     if not worker_enabled():
         return {"payout_worker_enabled": False}
+    # Evaluated once. Two calls could disagree if a flag were read between
+    # them, and "may move money" and "blocked by" disagreeing is the one pair
+    # of fields an operator would never think to distrust.
+    blocked = blocked_reason()
     return {
         "payout_worker_enabled": True,
         "payout_worker_interval": interval_seconds(),
         # The honest headline: enabled does not mean paying.
-        "payout_worker_may_move_money": not _mutation_preconditions(),
-        "payout_worker_blocked_by": _mutation_preconditions() or None,
+        "payout_worker_may_move_money": not blocked,
+        "payout_worker_blocked_by": blocked or None,
         # Which Stripe the money would go to. An operator reading a heartbeat
         # that says it is paying should not have to look up a key to find out.
         "payout_worker_stripe_mode": stripe_mode.mode(),

@@ -90,6 +90,20 @@ Railway variables reach a container **only at boot**. Every step above is a
 redeploy, and `railway variables` describes intent, not the running process —
 verify with `railway ssh`.
 
+They are also **per service**. Steps 5 and 8 configure
+`coinpilotx-pulse-worker`, not `CoinPilotX`: the payout worker runs there, and
+it needs a `STRIPE_SECRET_KEY` of its own to reach Stripe at all. Both switches
+open on a service with no Stripe key gives `may_move_money=true` and a worker
+that refuses every cycle — so read `blocked_by` in the boot line, not
+`may_move_money`:
+
+```
+PAYOUT_WORKER_CONFIG enabled=True may_move_money=True \
+  blocked_by=stripe_not_configured stripe_mode=unconfigured interval=600 batch=25
+```
+
+`blocked_by=-` is the only value that means it would pay.
+
 ### Rolling back
 
 | Step reached | Fastest reversal |

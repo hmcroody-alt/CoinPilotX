@@ -66,8 +66,26 @@ responses and a bare `False` conflates them.
 | `dry_run` | `DRY_RUN` is not explicitly `false` | Expected during stage 1 |
 | `owner_not_authorized` | `OWNER_AUTHORIZED` is not explicitly `true` | Expected during stage 1 |
 | `no_leader_lock_off_postgres` | `db.IS_POSTGRES` is false | **Misconfiguration.** The worker is pointed at SQLite |
-| `stripe_not_configured` | No usable key | Reported once rather than discovered one row at a time — every row would fail identically |
+| `stripe_not_configured` | No usable key **on this service** | Reported once rather than discovered one row at a time — every row would fail identically. Railway variables are per service, and this worker is not the web service |
 | `stripe_mode_unrecognized` | Key prefix unreadable | **Stop.** The three switches say the owner authorised *a* payout run; they cannot say the owner knew which Stripe it would reach. An unreadable key is treated as live |
+
+`blocked_reason()` is the public reader, and the boot log and the heartbeat both
+go through it so they cannot drift into separate copies of this ladder.
+
+### Read `blocked_by`, not `may_move_money`
+
+`may_move_money` covers only the two switches — the half set deliberately by
+whoever is activating. The other half is Postgres and a Stripe key this service
+can see, and that half is set somewhere else, which is why it is the half that
+gets forgotten:
+
+```
+PAYOUT_WORKER_CONFIG enabled=True may_move_money=True \
+  blocked_by=stripe_not_configured stripe_mode=unconfigured interval=600 batch=25
+```
+
+Both switches are genuinely open there and nothing will be paid. `blocked_by=-`
+is the only value that means it would pay.
 
 ## 4. The leader lock
 
