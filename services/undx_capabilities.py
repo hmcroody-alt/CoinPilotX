@@ -256,13 +256,13 @@ CAPABILITIES: dict[str, Capability] = {
             # Billed per character, and the host is a literal while the path is
             # composed from the project id - which is why §11-12 says "including
             # composed URLs" and why no AI-call detector in this repo had ever
-            # flagged it. Two different credentials configure it: a service account
-            # JSON or a plain API key, and `GoogleConfig.configured` requires the
-            # project id plus either one.
+            # flagged it. One credential configures it: a service account JSON.
+            # `GOOGLE_CLOUD_TRANSLATION_API_KEY` was listed here until v3 was
+            # confirmed to reject API keys outright, which made this table report
+            # a key-only deployment as a reachable provider that cannot be reached.
             CapabilityProvider(
                 "google", "Google Cloud Translation v3",
-                key_envs=("GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON",
-                          "GOOGLE_CLOUD_TRANSLATION_API_KEY"),
+                key_envs=("GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON",),
                 endpoint="https://translation.googleapis.com/v3/",
                 pricing_unit=UNIT_MILLION_CHARACTERS,
             ),

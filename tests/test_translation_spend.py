@@ -26,7 +26,9 @@ someone reads Google's published figure into the table.
 from __future__ import annotations
 
 import dataclasses
+import json
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
@@ -66,9 +68,33 @@ class Session:
         return self._responses.pop(0) if len(self._responses) > 1 else self._responses[0]
 
 
+#: Shaped like a service account and worth nothing — enough to satisfy
+#: `GoogleConfig.configured`. The token comes from the autouse stub below, so
+#: google.auth never sees this and no test in this file touches the network.
+SERVICE_ACCOUNT_JSON = json.dumps({
+    "type": "service_account",
+    "client_email": "qa@qa-project.iam.gserviceaccount.com",
+    "private_key": "placeholder-not-a-key",
+    "token_uri": "https://oauth2.googleapis.com/token",
+})
+
+
+@pytest.fixture(autouse=True)
+def _stub_google_credentials(monkeypatch):
+    """Every adapter here authenticates with a bearer token, so stub the minting.
+
+    v3 takes OAuth2 only; these tests used to sidestep credentials entirely by
+    configuring an API key, which is a credential v3 rejects.
+    """
+    monkeypatch.setattr(
+        tp, "_cached_service_account_credentials",
+        lambda credentials_json, scope: SimpleNamespace(token="sealed-test-token"),
+    )
+
+
 def _adapter(session) -> tp.GoogleAdvancedProvider:
     return tp.GoogleAdvancedProvider(
-        tp.GoogleConfig(project_id="qa-project", api_key="sealed-test-key", max_retries=0),
+        tp.GoogleConfig(project_id="qa-project", credentials_json=SERVICE_ACCOUNT_JSON, max_retries=0),
         session=session,
     )
 
@@ -238,7 +264,7 @@ def test_a_retried_request_is_billed_once(ledger, priced):
     """
     session = Session(Response({}, 503), Response({}, 503), Response(translate_body()))
     adapter = tp.GoogleAdvancedProvider(
-        tp.GoogleConfig(project_id="qa-project", api_key="k", max_retries=2),
+        tp.GoogleConfig(project_id="qa-project", credentials_json=SERVICE_ACCOUNT_JSON, max_retries=2),
         session=session,
     )
     adapter.translate(SOURCE, "en", "es")

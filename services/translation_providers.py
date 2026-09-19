@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -78,12 +79,48 @@ class TranslationProvider(Protocol):
     def health(self) -> dict[str, Any]: ...
 
 
+# The fields `service_account.Credentials.from_service_account_info` needs before
+# it can mint a token. Checked so that `configured` can mean "this credential
+# could authenticate" rather than "somebody set the variable to something".
+_SERVICE_ACCOUNT_REQUIRED_FIELDS = ("client_email", "private_key", "token_uri")
+
+
+@functools.lru_cache(maxsize=8)
+def _service_account_is_loadable(credentials_json: str) -> bool:
+    """Whether the blob is a service-account JSON that could actually authenticate.
+
+    This used to be a presence check, which made a placeholder indistinguishable
+    from a credential. The failure that shape produces is the expensive one: the
+    health endpoint reports `configured: true, healthy: true` while every
+    translate dies in `json.loads`, so nothing is wrong until a user presses
+    Translate. Production was found holding the single character `{` here.
+
+    Structural only — it cannot tell a revoked key from a live one. That check is
+    `?probe=1`, which spends a real request to find out.
+    """
+    try:
+        info = json.loads(credentials_json)
+    except ValueError:
+        return False
+    return isinstance(info, dict) and all(
+        str(info.get(field) or "").strip() for field in _SERVICE_ACCOUNT_REQUIRED_FIELDS
+    )
+
+
 @dataclass(frozen=True)
 class GoogleConfig:
+    """Config for Cloud Translation **v3**, which is the only endpoint this module speaks.
+
+    There is deliberately no API-key field. v3 does not accept API keys under any
+    configuration — a `?key=` request returns 401 `CREDENTIALS_MISSING`, "API keys
+    are not supported by this API". A key-only deployment therefore cannot work,
+    and accepting one here only bought the ability to report it as configured.
+    Adding one back means adding a v2 client with it, not a query parameter.
+    """
+
     project_id: str
     location: str = "global"
     credentials_json: str = ""
-    api_key: str = ""
     timeout_seconds: float = 10.0
     max_retries: int = 2
 
@@ -93,14 +130,13 @@ class GoogleConfig:
             project_id=os.getenv("GOOGLE_CLOUD_PROJECT_ID", "").strip(),
             location=os.getenv("GOOGLE_CLOUD_TRANSLATION_LOCATION", "global").strip() or "global",
             credentials_json=os.getenv("GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON", "").strip(),
-            api_key=os.getenv("GOOGLE_CLOUD_TRANSLATION_API_KEY", "").strip(),
             timeout_seconds=max(1.0, min(float(os.getenv("TRANSLATION_REQUEST_TIMEOUT_SECONDS", "10") or 10), 30.0)),
             max_retries=max(0, min(int(os.getenv("TRANSLATION_MAX_RETRIES", "2") or 2), 3)),
         )
 
     @property
     def configured(self) -> bool:
-        return bool(self.project_id and (self.credentials_json or self.api_key))
+        return bool(self.project_id and _service_account_is_loadable(self.credentials_json))
 
 
 class GoogleAdvancedProvider:
@@ -116,25 +152,25 @@ class GoogleAdvancedProvider:
     def parent(self) -> str:
         return f"projects/{self.config.project_id}/locations/{self.config.location}"
 
-    def _authorization(self) -> tuple[dict[str, str], dict[str, str]]:
-        if self.config.credentials_json:
-            try:
-                credentials = _cached_service_account_credentials(self.config.credentials_json, self._scope)
-                return {"Authorization": f"Bearer {credentials.token}"}, {}
-            except ProviderError:
-                raise
-            except Exception as exc:
-                raise ProviderError("invalid_credentials", "Google translation credentials could not be loaded.") from exc
-        if self.config.api_key:
-            return {}, {"key": self.config.api_key}
-        raise ProviderError("provider_not_configured", "Google Cloud Translation is not configured.")
+    def _authorization(self) -> dict[str, str]:
+        # OAuth2 bearer only. v3 rejects `?key=`, so there is no query-parameter
+        # credential to fall back to.
+        if not self.config.credentials_json:
+            raise ProviderError("provider_not_configured", "Google Cloud Translation is not configured.")
+        try:
+            credentials = _cached_service_account_credentials(self.config.credentials_json, self._scope)
+        except ProviderError:
+            raise
+        except Exception as exc:
+            raise ProviderError("invalid_credentials", "Google translation credentials could not be loaded.") from exc
+        return {"Authorization": f"Bearer {credentials.token}"}
 
     def _request(self, method: str, suffix: str, *, payload: dict | None = None, params: dict | None = None) -> dict:
         if not self.config.configured:
             raise ProviderError("provider_not_configured", "Google Cloud Translation is not configured.")
-        headers, auth_params = self._authorization()
+        headers = self._authorization()
         headers["Content-Type"] = "application/json"
-        query = {**auth_params, **(params or {})}
+        query = dict(params or {})
         url = f"https://translation.googleapis.com/v3/{self.parent}{suffix}"
         last_error: Exception | None = None
         for attempt in range(self.config.max_retries + 1):
