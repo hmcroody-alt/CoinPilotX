@@ -265,11 +265,65 @@ are individually small. A whole extension target is not small. The failure mode
 is a developer running `npm run prebuild:ios` (it is still in `scripts`) and
 committing the result, which would drop every extension target at once.
 
-Mitigation, to land with the first extension: a protection test asserting the
-expected `PBXNativeTarget` count and each target's name in the committed
-pbxproj. That converts "somebody regenerated the project" from a silent
-capability deletion into a red build. Cheap, and it is the only thing standing
-between this decision and its one real risk.
+Mitigation: a protection test asserting the expected `PBXNativeTarget` count and
+each target's name in the committed pbxproj. That converts "somebody regenerated
+the project" from a silent capability deletion into a red build. Cheap, and it is
+the only thing standing between this decision and its one real risk.
+
+### The mitigation shipped first — 2026-09-19
+
+It was originally scoped to "land with the first extension." That was the wrong
+order, and the reasoning is worth keeping: the risk is not *adding* a target, it
+is **losing** one, and the test can only notice a loss if it was already there
+before the loss happened. Landing it with the first extension would leave the
+window between now and then unguarded — and that window includes the 16.1 floor,
+which has exactly the same failure mode.
+
+`tests/protection/test_ios_native_target_inventory.py`, auto-discovered by
+`scripts/protection/run_protection_suite.py` (its `SUITE_DIR.glob("test_*.py")`
+means adding the file is enough to enforce it). Six assertions over two
+hand-maintained properties of `project.pbxproj` that share one failure mode — a
+clean prebuild reverts them, nothing fails to compile, and the loss is invisible
+in review because the diff is enormous and mostly cosmetic:
+
+- the native target count matches `EXPECTED_TARGETS`;
+- every expected target is present, by name **and product type** (count alone
+  cannot see a widget swapped for a share extension);
+- every `IPHONEOS_DEPLOYMENT_TARGET` is 16.1;
+- there are still **four** such declarations — because an *absent* setting does
+  not error, it inherits, so "every value present is 16.1" is satisfied by a file
+  that declares it once and leaves three configurations low;
+- the project file is committed and present at all;
+- the parse is not vacuous.
+
+That last one earns its place. The house hazard for a gate like this is that
+every failure of its *reader* makes it greener — a regex that stops matching
+returns an empty set, which compares equal to an empty expectation and passes
+forever.
+
+**Verified by mutation, not by assertion.** Nine cases run against a throwaway
+`ROOT` in `/tmp` holding only the test and a copy of the pbxproj; the real tree
+was never written to, and a `git status` + `git diff` shasum either side came
+back identical (`6f61ba25…` both times). Each mutation had to turn **its named
+test** red, not merely something:
+
+| Mutation | Must fail |
+|---|---|
+| add an untracked second target | count |
+| rename the app target | names |
+| revert the floor to 15.1 | floor |
+| revert *one* configuration to 15.1 | floor |
+| delete one floor declaration | declaration count |
+| break the target-block regex | vacuity guard |
+| strip `productType` | names |
+
+Plus **two controls that had to stay green** — an unmutated copy, and a
+cosmetic comment edit. Without those, a harness that reported "everything fails"
+would look like perfect coverage. Final score **9/9**.
+
+Adding an extension now requires editing `EXPECTED_TARGETS` in the same commit.
+That is the intent, not an inconvenience: it makes the change deliberate and
+reviewable instead of accidental and silent.
 
 ---
 
