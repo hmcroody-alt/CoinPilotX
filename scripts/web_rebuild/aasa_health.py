@@ -14,10 +14,19 @@ distinct ways that no browser test and no App Store review will catch:
    error anywhere. A deploy that loses one env var kills every deep link in the
    product.
 2. **The app claims a path the AASA does not.** `mobile-native/src/navigation/
-   linking.ts` declares ~106 paths across 13 families. The served AASA claims
-   two: `/pulse/*` and `/search*`. Every path in the other eleven families is a
-   deep link the app knows how to open and will never be handed. The app is not
-   broken and the site is not broken — the association between them is.
+   linking.ts` declares 116 paths across 13 families. Every path in a family the
+   AASA does not claim is a deep link the app knows how to open and will never
+   be handed. The app is not broken and the site is not broken — the association
+   between them is.
+
+   This is the failure this check was written for, and it was real: the served
+   AASA once claimed only `/pulse/*` and `/search*`, stranding eleven families.
+   That has since been fixed — `APPLE_LINK_COMPONENTS` now claims ten patterns
+   plus two deliberate excludes, and as of 2026-09-19 every CLAIMED family
+   resolves with zero missed paths. The check stays because the gap is one edit
+   wide in either direction: widening `linking.ts` without widening the AASA
+   re-opens it silently. See `docs/apple/UNIVERSAL_LINKS.md` for the measured
+   end-to-end state.
 3. **The web rebuild invents a URL family.** A new `/explore` or `/watch`
    section is a URL the app has never heard of. That is fine, as long as it is
    a *decision*. This check makes it one: every family is either CLAIMED or
