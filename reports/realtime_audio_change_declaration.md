@@ -4380,3 +4380,92 @@ it. No audio code path branches on it, and no test asserts its value.
 The batteries are not re-listed line by line because the only code-bearing file
 in this range is a JSON build number. Re-running them would re-derive the same
 table from the same inputs.
+
+---
+
+## Background-mode addendum (2026-09-19): removing the unimplemented `fetch` mode
+
+Base: `31b92453e6347dbc4287c759c8f8c7ad2dfd0ccf`
+Required label: `audio-critical-change`
+
+### Why the change is required
+
+`UIBackgroundModes` declared `fetch`, and nothing in the repository implements
+background fetch. Verified four ways:
+
+| Check | Result |
+|---|---|
+| `expo-background-fetch` / `expo-task-manager` in `package.json` | absent |
+| `BGTaskScheduler`, `BGAppRefresh`, `performFetchWithCompletionHandler` under `ios/`, `modules/` | zero hits |
+| `BackgroundFetch`, `TaskManager`, `defineTask`, `registerTaskAsync` under `src/` | zero hits |
+| `BGTaskSchedulerPermittedIdentifiers` in `Info.plist` | not present — and `BGTaskScheduler` cannot run without it |
+
+A declared-but-unimplemented background mode is a real App Review exposure
+(Guideline 2.5.4: apps declaring background modes must implement the
+functionality). It buys nothing and is a standing reason for a reviewer to ask a
+question nobody can answer.
+
+This is the "no-cost correction" half of Wave 1 in
+`docs/apple/PULSESOC_APPLE_NATIVE_CAPABILITY_AUDIT.md`. If background refresh is
+ever wanted it comes back deliberately, with a scheduler identifier and a task
+— see audit item #5.
+
+### Which protected files changed
+
+| File | Category | Change |
+|---|---|---|
+| `mobile-native/app.json` | dependency watch | One line removed from `ios.infoPlist.UIBackgroundModes`: `"fetch"`. `audio`, `voip` and `remote-notification` remain, in order. Nothing else in the file changed. |
+
+`mobile-native/ios/PulseSoc/Info.plist` changed identically (one `<string>fetch</string>`
+removed) and is **not** a protected path; it is listed here because the two
+files must move together under the dual-maintenance policy in
+`mobile-native/docs/LOCALIZATION.md:403`.
+
+The manifest's own requirement on this key — `app.json:expo.ios.infoPlist.UIBackgroundModes`
+"must contain `audio`" (`config/realtime-audio-protected-paths.json:525`) — is
+still satisfied.
+
+### Why this cannot affect real-time audio
+
+`fetch` and `audio` are independent entries in the same array. Removing `fetch`
+does not narrow the `audio` or `voip` grants, which are what keep a live call
+and a livestream running in the background. No audio, Agora, AVAudioSession,
+microphone-publication, CallKit or PushKit source file is in this range — the
+diff is two deleted lines of configuration.
+
+### Expected behavior change
+
+None observable. Nothing scheduled background fetch work, so iOS had nothing to
+wake the app for under that mode. Backgrounded calls, livestreams, VoIP wakeups
+and remote notifications are unaffected.
+
+### Regression risk
+
+Low, and the one thing worth naming: if some dependency were silently relying on
+the `fetch` grant without appearing in any of the four checks above, its
+background work would stop. `expo-notifications` uses `remote-notification`,
+which is untouched, and `react-native-voip-push-notification` uses `voip`, also
+untouched.
+
+Rollback is re-adding one array entry to both files.
+
+### Validation run on this range
+
+| Check | Result |
+|---|---|
+| `npm run test:realtime-audio-critical` | **11 suites / 191 tests, all passed** |
+| `npm run test:realtime-audio` | **21 suites / 377 tests, all passed** |
+| `npm run test:realtime-audio-architecture` | **1 suite / 22 tests, all passed** |
+| `python -m unittest tests.protection.test_realtime_audio_architecture` | **19 tests, OK** |
+| `pytest tests/protection/test_agora_token_generation.py tests/protection/test_agora_rtc_provider_contract.py` | **13 passed** |
+| `npm run typecheck` | 3 pre-existing `pulse-apple-translation` module-resolution errors, unchanged from base and unrelated to this range (no file under `src/services/translation/` is in the diff) |
+| `npx expo prebuild --platform ios --no-install` | **passed**, and the CI assertion holds: `NSMicrophoneUsageDescription` present, `UIBackgroundModes` still contains `audio`. Confirmed `fetch` was not reinstated. |
+
+### Physical audible validation owed
+
+Per `reports/realtime_audio_verified_baseline.md` section 7. The static result
+above cannot prove a human heard audio on a phone, and this declaration does not
+claim otherwise. The specific thing to confirm on device is the one grant this
+change is adjacent to: **background audio continuity** — start a call, background
+the app, confirm audio continues; then repeat for a livestream. That is owed
+before the next store build, not before merge of a two-line config deletion.

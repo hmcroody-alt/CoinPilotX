@@ -112,7 +112,7 @@ both are constrained to *observing* state, never driving it.
 | 2 | Live Activities + Dynamic Island | NOT IMPLEMENTED | 16.1 | **Yes** | 4 |
 | 3 | App Intents / Siri / Shortcuts | NOT IMPLEMENTED | 16.0 | No | 4 |
 | 4 | Core Spotlight | NOT IMPLEMENTED | 15.1 ✅ | No | 3 |
-| 5 | BackgroundTasks | PARTIALLY IMPLEMENTED | 15.1 ✅ | No | 3 |
+| 5 | BackgroundTasks | NOT IMPLEMENTED (unused `fetch` declaration removed 2026-09-19) | 15.1 ✅ | No | 3 |
 | 6 | Sign in with Apple | NOT IMPLEMENTED | 15.1 ✅ | No | 2 |
 | 7 | Universal Links + Associated Domains | **FULLY IMPLEMENTED** | — | No | — |
 | 8 | StoreKit 2 | **FULLY IMPLEMENTED** | — | No | — |
@@ -255,6 +255,12 @@ are finished, tested, and should be left alone.
   silently never runs, and jest cannot catch it.
 - **Recommendation** — either implement one narrow refresh task or **drop the unused
   `fetch` declaration**. Leaving a claimed-but-unused capability is the worst of the three.
+- **RESOLVED 2026-09-19** — dropped. `fetch` is gone from both `app.json` and
+  `Info.plist`; `audio`, `voip` and `remote-notification` remain untouched. Status is now
+  **NOT IMPLEMENTED** and honestly so, rather than PARTIALLY IMPLEMENTED by declaration
+  only. If background refresh is wanted later it arrives with a
+  `BGTaskSchedulerPermittedIdentifiers` entry and an actual task, and it must not gate
+  itself on a module-scope `AppState.currentState` — see "Risk if wrong" above.
 
 ## 6. Sign in with Apple
 
@@ -473,12 +479,17 @@ Ordered by dependency first, value second. Feature flags default **OFF** through
 
 **Wave 1 — decisions and no-cost corrections.** No new capability.
 - ~~Decide the deployment-target question.~~ **DECIDED 2026-09-19: raise to 16.1.** Zero
-  measured native sessions below iOS 18. Applying it is still Wave 1 work: four pbxproj
-  lines plus `expo-build-properties` in `app.json`, which trips the `dependency_watch`
-  gate and needs a declaration. See `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`.
-- Resolve the unused `UIBackgroundModes: fetch` declaration (#5).
-- Optionally add `webcredentials:pulsesoc.com` to the associated domains (#7) — additive,
-  low-risk, and a prerequisite for any future passkey work.
+  measured native sessions below iOS 18. Applying it is four pbxproj lines and nothing
+  else — a non-clean prebuild was tested and preserves them, so no `app.json` change and
+  no declaration are needed. See `DECISIONS_DEPLOYMENT_TARGET_AND_EXTENSIONS.md`.
+- ~~Resolve the unused `UIBackgroundModes: fetch` declaration (#5).~~ **DONE 2026-09-19.**
+  Removed from `app.json` and `Info.plist`; nothing implemented background fetch and a
+  declared-but-unimplemented mode is a Guideline 2.5.4 exposure. Declared and batteried —
+  see the background-mode addendum in `reports/realtime_audio_change_declaration.md`.
+- ~~Optionally add `webcredentials:pulsesoc.com` to the associated domains (#7).~~
+  **DROPPED 2026-09-19.** Nothing plans passkeys. Adding an entitlement no code uses is
+  the same anti-pattern as the `fetch` mode removed one line above; it should arrive with
+  the feature that needs it, not in advance of one.
 
 **Wave 2 — the two foundations everything else waits on.**
 - **Sign in with Apple** (#6). Highest value, no target work, no lock interaction.
@@ -494,7 +505,8 @@ Ordered by dependency first, value second. Feature flags default **OFF** through
 **Wave 3 — cheap, self-contained wins.**
 - Core Spotlight (#4) — best value-per-effort, gated on a written indexing policy.
 - Keychain access group + Secure Enclave signing (#11).
-- BackgroundTasks (#5), if Wave 1 decided to implement rather than remove.
+- BackgroundTasks (#5) — Wave 1 removed the unused declaration rather than implementing.
+  Only revisit if a concrete refresh need appears; push already covers most of it.
 - App Attest report-only mode (#1), if the abuse case justifies it.
 
 **Wave 4 — extension-dependent and OS-gated.**
