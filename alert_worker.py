@@ -15,6 +15,7 @@ import signal
 import time
 
 from services import alert_engine, auto_signals_service, live_market_service, market_observations
+from services import pg_lock_health
 from services import pulse_briefings
 from services import undx_call_guard
 from services.sentinel import runtime as sentinel_runtime
@@ -90,6 +91,21 @@ def main():
             sample = _sample_market()
             result = alert_engine.evaluate_all_active_alerts(limit=limit, worker_name="alert_worker")
             sentinel_results = sentinel_runtime.run_scheduled_ingestion()
+            # Database lock-health probe. This worker is the right host for it
+            # precisely because it is not serving requests: during the
+            # 2026-09-19 convoy every web thread was blocked in libpq and could
+            # not have reported anything, while this loop kept running. Isolated
+            # like the briefing tick below — a monitor that can break its host
+            # is a net loss — and it opens its own connection rather than
+            # borrowing the pool a convoy would already have drained.
+            #
+            # The result is deliberately not threaded into the cycle log below:
+            # `run_once` emits its own line every cycle, and folding it in would
+            # bury an ERROR-level alert inside an INFO-level summary.
+            try:
+                pg_lock_health.run_once()
+            except Exception:
+                logging.exception("Lock health probe failed; alert sweep unaffected.")
             # Pulse Briefings tick: an evaluation window, never a mandatory
             # send. Isolated so a briefing fault can never break the alert
             # sweep, gated server-side by BRIEFINGS_DISABLED, and delivery-gated
