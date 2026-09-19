@@ -1116,6 +1116,16 @@
       "unavailable": "Content unavailable",
       "video": "Video"
     },
+    "profileCard": {
+      "eyebrow": "PULSESOC PROFILE",
+      "cta": "View Profile →",
+      "loading": "Loading profile…",
+      "forbidden": "This profile isn't available to you.",
+      "missing": "This profile is no longer available.",
+      "unavailable": "Profile unavailable",
+      "a11yOpen": "Open {{author}}'s PulseSoc profile",
+      "a11yOpenGeneric": "Open this PulseSoc profile"
+    },
     "messageActions": {
       "openLink": "Open Link",
       "copyLink": "Copy Link",

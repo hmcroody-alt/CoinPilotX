@@ -1102,6 +1102,16 @@
       "unavailable": "Kontni an pa disponib",
       "video": "Videyo"
     },
+    "profileCard": {
+      "eyebrow": "PWOFIL PULSESOC",
+      "cta": "Gade pwofil la →",
+      "loading": "N ap chaje pwofil la…",
+      "forbidden": "Pwofil sa a pa disponib pou ou.",
+      "missing": "Pwofil sa a pa disponib ankò.",
+      "unavailable": "Pwofil la pa disponib",
+      "a11yOpen": "Ouvri pwofil PulseSoc {{author}} la",
+      "a11yOpenGeneric": "Ouvri pwofil PulseSoc sa a"
+    },
     "messageActions": {
       "openLink": "Louvri lyen an",
       "copyLink": "Kopye lyen an",

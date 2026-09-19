@@ -17,13 +17,42 @@ jest.mock("../../api/feed", () => {
   return { ...actual, getPostDetail: jest.fn(), loadCachedPostDetail: jest.fn() };
 });
 
+jest.mock("../../api/profile", () => {
+  const actual = jest.requireActual("../../api/profile");
+  return { ...actual, getPublicProfile: jest.fn(), loadCachedProfile: jest.fn() };
+});
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const feed = require("../../api/feed") as {
   getPostDetail: jest.Mock;
   loadCachedPostDetail: jest.Mock;
 };
 
+// `api/profileTarget` is deliberately NOT mocked. The assertion that matters is
+// that the card looks a person up the way the profile screen does, and that is
+// `resolveProfileTarget`'s job -- stubbing it would leave the test agreeing with
+// a hand-written target rather than with the app's.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const profileApi = require("../../api/profile") as {
+  getPublicProfile: jest.Mock;
+  loadCachedProfile: jest.Mock;
+};
+
 const REF = resolvePulseEntity("https://pulsesoc.com/pulse/post/2432")!;
+const PROFILE_REF = resolvePulseEntity("https://pulsesoc.com/pulse/profile/roody")!;
+
+function publicProfile(overrides: Record<string, unknown> = {}) {
+  return {
+    user_id: 77,
+    display_name: "Roody Cherie",
+    username: "roody",
+    avatar_thumbnail_url: "https://cdn/avatar-sm.jpg",
+    avatar_url: "https://cdn/avatar-lg.jpg",
+    cover_url: "https://cdn/cover.jpg",
+    bio: "Building PulseSoc from Port-au-Prince.",
+    ...overrides
+  };
+}
 
 function postDetail(overrides: Record<string, unknown> = {}) {
   return {
@@ -43,6 +72,9 @@ beforeEach(() => {
   feed.getPostDetail.mockReset();
   feed.loadCachedPostDetail.mockReset();
   feed.loadCachedPostDetail.mockResolvedValue(null);
+  profileApi.getPublicProfile.mockReset();
+  profileApi.loadCachedProfile.mockReset();
+  profileApi.loadCachedProfile.mockResolvedValue(null);
 });
 
 describe("where the preview comes from", () => {
@@ -213,6 +245,88 @@ describe("when the network is the problem", () => {
     expect(await resolveEntityPreview(REF)).toEqual({ status: "unavailable", reason: "error" });
     feed.getPostDetail.mockResolvedValue(postDetail());
     expect((await resolveEntityPreview(REF)).status).toBe("ready");
+  });
+});
+
+describe("a profile is the same card, read the same way", () => {
+  it("reads the profile through the same call that opening the profile makes", async () => {
+    profileApi.getPublicProfile.mockResolvedValue(publicProfile());
+    await resolveEntityPreview(PROFILE_REF);
+    // As with posts: the point is not that a profile endpoint answered, it is
+    // that this is `ProfileScreen`'s own loader, so the private/suspended/
+    // deleted rules it enforces are enforced here for free and cannot drift.
+    expect(profileApi.getPublicProfile).toHaveBeenCalledWith(
+      expect.objectContaining({ profileKey: "roody" })
+    );
+  });
+
+  it("carries the name, handle, bio and cover onto the card", async () => {
+    profileApi.getPublicProfile.mockResolvedValue(publicProfile());
+    const state = await resolveEntityPreview(PROFILE_REF);
+    expect(state).toMatchObject({
+      status: "ready",
+      preview: {
+        kind: "profile",
+        authorName: "Roody Cherie",
+        authorHandle: "roody",
+        caption: "Building PulseSoc from Port-au-Prince.",
+        thumbnailUrl: "https://cdn/cover.jpg",
+        // The 26pt avatar asks for the small asset; taking `avatar_url` would
+        // download the full-size image to draw the identical circle.
+        authorAvatarUrl: "https://cdn/avatar-sm.jpg",
+        video: false
+      }
+    });
+  });
+
+  it.each([
+    ["private", 403, "forbidden"],
+    ["suspended", 403, "forbidden"],
+    ["deleted", 410, "missing"],
+    ["never existed", 404, "missing"]
+  ])("reports a %s profile without drawing any of it", async (_label, status, reason) => {
+    profileApi.getPublicProfile.mockRejectedValue(new PulseApiError("nope", status));
+    expect(await resolveEntityPreview(PROFILE_REF)).toEqual({ status: "unavailable", reason });
+  });
+
+  it("never reaches the offline cache for a profile it was refused", async () => {
+    profileApi.getPublicProfile.mockRejectedValue(new PulseApiError("private", 403));
+    profileApi.loadCachedProfile.mockResolvedValue(publicProfile());
+    const state = await resolveEntityPreview(PROFILE_REF);
+    // Someone who went private after this device cached them must not keep
+    // leaking a cover photo and a bio into a conversation.
+    expect(state).toEqual({ status: "unavailable", reason: "forbidden" });
+    expect(profileApi.loadCachedProfile).not.toHaveBeenCalled();
+  });
+
+  it("treats a payload with nobody in it as missing rather than drawing a blank card", async () => {
+    // `normalizeProfile` always returns an object, so "the server sent nothing"
+    // arrives as a well-formed profile with no `user_id`. Trusting the type
+    // here would render a card with an empty name and a working CTA.
+    profileApi.getPublicProfile.mockResolvedValue({ user_id: 0 });
+    expect(await resolveEntityPreview(PROFILE_REF)).toEqual({ status: "unavailable", reason: "missing" });
+  });
+
+  /**
+   * Post 2432 and the person addressed as `2432` are different objects.
+   *
+   * A profile is looked up by *key*, and a numeric key is a perfectly ordinary
+   * one -- `resolveProfileTarget` produces `profileKey: String(userId)`. So the
+   * two id spaces overlap completely, and a cache keyed on the id alone would
+   * serve whichever was asked for first to both. The kind is in the cache key
+   * for this reason and this test is what keeps it there.
+   */
+  it("does not confuse a post with a profile that has the same id", async () => {
+    const numericProfile = resolvePulseEntity("https://pulsesoc.com/pulse/profile/2432")!;
+    feed.getPostDetail.mockResolvedValue(postDetail());
+    profileApi.getPublicProfile.mockResolvedValue(publicProfile());
+
+    const post = await resolveEntityPreview(REF);
+    const profile = await resolveEntityPreview(numericProfile);
+
+    expect(post.status === "ready" && post.preview.kind).toBe("post");
+    expect(profile.status === "ready" && profile.preview.kind).toBe("profile");
+    expect(profileApi.getPublicProfile).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -55,6 +55,52 @@ describe("resolving a post link", () => {
   });
 });
 
+describe("resolving a profile link", () => {
+  it("resolves the canonical profile URL to its key and in-app path", () => {
+    expect(resolvePulseEntity("https://pulsesoc.com/pulse/profile/roody")).toEqual({
+      kind: "profile",
+      id: "roody",
+      url: "https://pulsesoc.com/pulse/profile/roody",
+      path: "/pulse/profile/roody"
+    });
+  });
+
+  it("keeps a numeric key a string rather than making it look like a post id", () => {
+    const entity = resolvePulseEntity("https://pulsesoc.com/pulse/profile/2432");
+    // The server resolves a numeric key as `users.user_id`; turning it into a
+    // number here would make `post:2432` and `profile:2432` indistinguishable
+    // anywhere the two are compared.
+    expect(entity).toMatchObject({ kind: "profile", id: "2432" });
+    expect(typeof entity?.id).toBe("string");
+  });
+
+  it("decodes a percent-encoded key so the lookup is the one the URL means", () => {
+    // `getPublicProfile` encodes again on its way out, so handing it the still
+    // encoded segment would look up a person literally called `roody%2Echerie`.
+    expect(resolvePulseEntity("https://pulsesoc.com/pulse/profile/roody%2Echerie")?.id).toBe("roody.cherie");
+  });
+
+  it.each([
+    ["a deeper path", "https://pulsesoc.com/pulse/profile/roody/posts"],
+    ["an empty key", "https://pulsesoc.com/pulse/profile/"],
+    ["a key with a space", "https://pulsesoc.com/pulse/profile/roody%20cherie"],
+    ["a key that is an injected path", "https://pulsesoc.com/pulse/profile/..%2F..%2Fadmin"],
+    ["a lookalike host", "https://pulsesoc.com.evil.example/pulse/profile/roody"]
+  ])("refuses to card %s", (_label, url) => {
+    expect(resolvePulseEntity(url)).toBeNull();
+  });
+
+  it.each([
+    ["the profile editor", "https://pulsesoc.com/pulse/profile/edit"],
+    ["the profile editor in caps", "https://pulsesoc.com/pulse/profile/EDIT"]
+  ])("refuses to card %s, which is a screen and not a person", (_label, url) => {
+    // `linking.ts` routes this to settings before it ever looks for a member,
+    // so a card here would look up somebody called "edit", be told there is no
+    // such person, and report that their profile had been deleted.
+    expect(resolvePulseEntity(url)).toBeNull();
+  });
+});
+
 describe("deciding what a message is about", () => {
   it("cards a message whose only content is the post link", () => {
     const body = "https://pulsesoc.com/pulse/post/2432";
@@ -77,6 +123,15 @@ describe("deciding what a message is about", () => {
   it("draws no card when two different posts are named", () => {
     // Promoting the first would be a guess the sender never made.
     const body = "https://pulsesoc.com/pulse/post/1 and https://pulsesoc.com/pulse/post/2";
+    expect(messageEntity(body, linksIn(body))).toBeNull();
+  });
+
+  it("draws no card when a post and a profile are both named", () => {
+    // Two entities of *different* kinds are still two subjects. The dedupe
+    // compares kind as well as id, so this must not collapse into one card --
+    // and it is the case that would break first if `id` alone became the
+    // identity, because a post id and a profile key can be the same string.
+    const body = "https://pulsesoc.com/pulse/post/2432 and https://pulsesoc.com/pulse/profile/roody";
     expect(messageEntity(body, linksIn(body))).toBeNull();
   });
 

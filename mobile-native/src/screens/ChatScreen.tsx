@@ -116,7 +116,7 @@ import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { LinkedText } from "../links/LinkedText";
 import { detectLinks } from "../links/messageLinks";
 import { bodyIsOnlyLinks, messageEntity } from "../links/pulseEntity";
-import { PulsePostLinkCard } from "../components/messages/PulsePostLinkCard";
+import { PulseEntityLinkCard } from "../components/messages/PulseEntityLinkCard";
 import { openMessageLink } from "../links/openMessageLink";
 import { presenceActivityText } from "../api/presence";
 import { reportPresenceActivity } from "../api/presenceSession";
@@ -2751,7 +2751,7 @@ function MessageBubble({
           </View>
         ) : null}
         {!deleted && !moderated ? <MessageMedia message={message} /> : null}
-        {entity ? <PulsePostLinkCard entity={entity} onOpen={onLinkPress} onLongPress={handleLongPress} /> : null}
+        {entity ? <PulseEntityLinkCard entity={entity} onOpen={onLinkPress} onLongPress={handleLongPress} /> : null}
         {showBodyText ? (
           deleted || moderated ? (
             <Text style={[styles.body, styles.systemBody]}>{body}</Text>
