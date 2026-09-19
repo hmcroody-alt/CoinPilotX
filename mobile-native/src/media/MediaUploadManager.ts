@@ -183,7 +183,7 @@ export class MediaUploadManager {
                 if (!signedUrls.get(number)) await signParts([number]);
                 const url = signedUrls.get(number);
                 if (!url) throw Object.assign(new Error("Upload authorization expired."), { status: 410 });
-                return uploadBlob(url, await partSource.read(start, end), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
+                return uploadBlob(url, partSource.read(start, end), asset.mimeType, (loaded) => { uploadedByPart.set(number, loaded); report("uploading", "Uploading media"); }, register);
               };
               let result;
               try {

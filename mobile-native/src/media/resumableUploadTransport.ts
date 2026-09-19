@@ -45,7 +45,12 @@ export async function nativeBlobFromUri(uri: string): Promise<Blob> {
 }
 
 export type PartSource = {
-  read: (start: number, end: number) => Promise<Blob | Uint8Array>;
+  // Synchronous on purpose. Parts upload concurrently and share one file handle, so a
+  // seek and its read must stay adjacent -- an `await` between them would let another
+  // worker move the offset in between, producing a part full of the wrong bytes that
+  // storage accepts and only a corrupt final object reveals. Keeping this off the
+  // promise chain means there is nowhere to put that await.
+  read: (start: number, end: number) => Blob | Uint8Array;
   close: () => void;
 };
 
@@ -72,7 +77,7 @@ export async function openPartSource(uri: string, mimeType: string): Promise<Par
     try {
       const handle = new File(fetchable).open();
       return {
-        read: async (start, end) => {
+        read: (start, end) => {
           handle.offset = start;
           return handle.readBytes(end - start);
         },
@@ -90,7 +95,7 @@ export async function openPartSource(uri: string, mimeType: string): Promise<Par
     }
   }
   const blob = await nativeBlobFromUri(uri);
-  return { read: async (start, end) => blob.slice(start, end, mimeType), close: () => {} };
+  return { read: (start, end) => blob.slice(start, end, mimeType), close: () => {} };
 }
 
 export function transientStatus(status: number) {

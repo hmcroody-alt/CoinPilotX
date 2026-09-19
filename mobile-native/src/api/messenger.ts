@@ -1291,7 +1291,7 @@ async function uploadMessengerMediaInParts(input: {
         const end = Math.min(sizeBytes, start + partSize);
         await withRetry(
           async () => {
-            await uploadBlob(part.upload_url, await source.read(start, end), mimeType, (loaded) => {
+            await uploadBlob(part.upload_url, source.read(start, end), mimeType, (loaded) => {
               sentByPart.set(number, loaded);
               report();
             }, () => undefined);
