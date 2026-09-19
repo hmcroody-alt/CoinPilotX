@@ -1102,6 +1102,16 @@
       "unavailable": "콘텐츠를 사용할 수 없음",
       "video": "동영상"
     },
+    "profileCard": {
+      "eyebrow": "PULSESOC 프로필",
+      "cta": "프로필 보기 →",
+      "loading": "프로필을 불러오는 중…",
+      "forbidden": "이 프로필은 볼 수 없습니다.",
+      "missing": "이 프로필은 더 이상 사용할 수 없습니다.",
+      "unavailable": "프로필을 사용할 수 없음",
+      "a11yOpen": "{{author}}님의 PulseSoc 프로필 열기",
+      "a11yOpenGeneric": "이 PulseSoc 프로필 열기"
+    },
     "messageActions": {
       "openLink": "링크 열기",
       "copyLink": "링크 복사",

@@ -10,14 +10,22 @@
  *
  * So the preview does not have a preview endpoint. It calls `getPostDetail`,
  * which is the same `GET /api/pulse/posts/:id` the app calls when someone taps
- * through to the post. Identical request, identical authorization, by
- * construction rather than by review: there is no second code path that could
- * be made more permissive than the first, because there is no second code path.
- * A post the viewer may not open returns the same 403 it would return on a tap,
- * and the card says so.
+ * through to the post — and `getPublicProfile`, which is the same
+ * `GET /api/pulse/profile/:key` `ProfileScreen` calls on mount. Identical
+ * request, identical authorization, by construction rather than by review:
+ * there is no second code path that could be made more permissive than the
+ * first, because there is no second code path. A post the viewer may not open
+ * returns the same 403 it would return on a tap, and the card says so.
  *
- * The cost of this is that a preview is a real post fetch. That is what the
- * caching below is for.
+ * This cuts both ways, and that is the point. The profile route does not
+ * currently refuse a viewer the target has blocked; neither, therefore, does
+ * the card. The card is not *more* permissive than the screen, which is the
+ * invariant worth having — and when that rule is tightened it is tightened in
+ * one place and both inherit it. A card with its own authorization would have
+ * had to be found and fixed separately, by someone who remembered it existed.
+ *
+ * The cost of this is that a preview is a real fetch. That is what the caching
+ * below is for.
  *
  * ## The cache has two shapes because failures do
  *
@@ -44,10 +52,24 @@ import { useEffect, useState } from "react";
 import { getPostDetail, loadCachedPostDetail, PulsePost } from "../api/feed";
 import { PulseApiError } from "../api/pulseApi";
 import { mediaPosterUrl, feedRenderableMedia } from "../api/feed";
+import { getPublicProfile, loadCachedProfile, PulseProfile } from "../api/profile";
+import { resolveProfileTarget } from "../api/profileTarget";
 import { PulseEntityRef } from "./pulseEntity";
 
+/**
+ * One shape for every kind, on purpose.
+ *
+ * A post and a profile are different objects but they are the *same card*: a
+ * picture, somebody's name and handle, a line of their words, a way in. Giving
+ * each kind its own preview type would have meant giving each kind its own
+ * card component, and two cards drift — one of them gets the fix for the video
+ * poster bug, or the unavailable state, or the a11y label, and the other does
+ * not. So the fields are named for their role in the card rather than for
+ * their origin in the payload: `caption` is a post's body and a profile's bio,
+ * `thumbnailUrl` is a post's first still and a profile's cover.
+ */
 export type EntityPreview = {
-  kind: "post";
+  kind: "post" | "profile";
   url: string;
   path: string;
   /** Display name, already trimmed. Empty when the server sent none. */
@@ -56,7 +78,7 @@ export type EntityPreview = {
   authorHandle: string;
   authorAvatarUrl: string;
   thumbnailUrl: string;
-  /** Short, flattened. Empty for a post with no caption. */
+  /** Short, flattened. Empty for a post with no caption or a bio-less profile. */
   caption: string;
   /** Whether the post carries video, so the card can mark the thumbnail. */
   video: boolean;
@@ -141,6 +163,34 @@ export function previewFromPost(post: PulsePost, ref: PulseEntityRef): EntityPre
 }
 
 /**
+ * A profile, in the same five fields a post uses.
+ *
+ * The mapping is deliberate rather than incidental: a profile's cover is the
+ * card's picture, its bio is the card's caption, and its owner is the card's
+ * author — a profile is the one entity whose author is itself. `video` is
+ * always false, which is not a stub: a profile has no video to badge, and the
+ * badge only ever renders over a thumbnail the card actually has.
+ */
+export function previewFromProfile(profile: PulseProfile, ref: PulseEntityRef): EntityPreview {
+  return {
+    kind: "profile",
+    url: ref.url,
+    path: ref.path,
+    authorName: flatten(profile.display_name || profile.full_name || ""),
+    // `public_player_id` is the fallback rather than the primary because it is
+    // the machine-facing handle; a person who has chosen a username should see
+    // the one they chose.
+    authorHandle: flatten(profile.username || profile.public_player_id || "").replace(/^@/, ""),
+    // The small avatar first: the card draws it at 26pt, so the full-size asset
+    // would be a larger download for an identical number of pixels.
+    authorAvatarUrl: flatten(profile.avatar_thumbnail_url || profile.avatar_url || ""),
+    thumbnailUrl: flatten(profile.cover_url || profile.banner_url || ""),
+    caption: shortCaption(profile.bio || ""),
+    video: false
+  };
+}
+
+/**
  * A terminal answer is cached; a transport failure is not.
  *
  * 401 is grouped with 403: from the card's point of view "you are not signed in
@@ -154,24 +204,56 @@ function stateForError(error: unknown): { state: EntityPreviewState; cacheable: 
   return { state: { status: "unavailable", reason: "error" }, cacheable: false };
 }
 
+/**
+ * The live read, per kind. Each arm calls the destination screen's own loader.
+ *
+ * `null` means "the server answered, and the answer was nothing" — a 200 with
+ * no object — which is `missing` rather than an error. Throwing is left to the
+ * API layer so the single `catch` below classifies every kind identically.
+ */
+async function fetchEntity(ref: PulseEntityRef): Promise<EntityPreview | null> {
+  if (ref.kind === "profile") {
+    const target = resolveProfileTarget(ref.id);
+    if (!target) return null;
+    const profile = await getPublicProfile(target);
+    // A payload with no `user_id` is not a person; normalizeProfile will still
+    // hand back an object, so the emptiness has to be checked rather than
+    // assumed away by the type.
+    return profile?.user_id ? previewFromProfile(profile, ref) : null;
+  }
+  const detail = await getPostDetail(ref.id);
+  return detail.post ? previewFromPost(detail.post, ref) : null;
+}
+
+/**
+ * Whatever this device already holds for the entity. Only consulted offline.
+ *
+ * Both loaders write their own cache and both destination screens read it for
+ * exactly this reason. A card that has the object sitting in storage and still
+ * draws "unavailable" because the network is down is choosing the worse of two
+ * available answers.
+ */
+async function cachedEntity(ref: PulseEntityRef): Promise<EntityPreview | null> {
+  if (ref.kind === "profile") {
+    const target = resolveProfileTarget(ref.id);
+    if (!target) return null;
+    const profile = await loadCachedProfile(target).catch(() => null);
+    return profile?.user_id ? previewFromProfile(profile, ref) : null;
+  }
+  const cached = await loadCachedPostDetail(ref.id).catch(() => null);
+  return cached?.post ? previewFromPost(cached.post, ref) : null;
+}
+
 async function fetchPreview(ref: PulseEntityRef): Promise<EntityPreviewState> {
   try {
-    const detail = await getPostDetail(ref.id);
-    if (!detail.post) return { status: "unavailable", reason: "missing" };
-    return { status: "ready", preview: previewFromPost(detail.post, ref) };
+    const preview = await fetchEntity(ref);
+    if (!preview) return { status: "unavailable", reason: "missing" };
+    return { status: "ready", preview };
   } catch (error) {
     const { state, cacheable } = stateForError(error);
     if (!cacheable) {
-      /**
-       * Offline, but this post may already be on the device.
-       *
-       * `getPostDetail` writes its own cache, and the post detail screen reads
-       * it for exactly this reason. A card that has the post sitting in storage
-       * and still draws "unavailable" because the network is down is choosing
-       * the worse of two available answers.
-       */
-      const cached = await loadCachedPostDetail(ref.id).catch(() => null);
-      if (cached?.post) return { status: "ready", preview: previewFromPost(cached.post, ref) };
+      const preview = await cachedEntity(ref).catch(() => null);
+      if (preview) return { status: "ready", preview };
     }
     if (cacheable) resolved.set(entityKey(ref), state);
     return state;

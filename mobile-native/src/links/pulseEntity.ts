@@ -20,28 +20,68 @@
  * narrowing of one: every pattern here must already be claimed over there, and
  * if it is not, `classifyLink` rejects it before these are consulted.
  *
- * ## One kind today, on purpose
+ * ## Two kinds, and the reason there are not six
  *
- * Only posts resolve. The union is written as a discriminated union of one so
- * that reels, profiles and products are additions rather than a rewrite, but a
+ * Posts and profiles resolve. Reels, marketplace listings, stores and
+ * conversations deliberately do not, and the reason is the rule in
+ * `entityPreview.ts`: a card may only exist where the preview can be fetched
+ * with the *same request a tap makes*. That is not true for the others today —
+ * there is no `GET /api/pulse/reels/:id` at all (the route is PATCH/DELETE
+ * only), marketplace has no read-one endpoint, stores have no public by-id
+ * read, and the only conversation read is a message-page fetch that writes to
+ * the local cache. Giving any of them a card would mean inventing a second,
+ * differently-authorized way to read them, which is the one thing this pair of
+ * modules exists to prevent.
+ *
+ * So the union grows when an entity gains a real by-id read, not before. A
  * resolver kind with no renderer behind it is dead code that reads as finished
  * work, so the kinds arrive with their cards.
  */
 
 import { classifyLink } from "./messageLinks";
 
-export type PulseEntityRef = {
-  kind: "post";
-  /** The server's id for the object. Public — it is in the URL the web serves. */
-  id: number;
+type EntityBase = {
   /** The canonical URL, normalised. What a tap opens and what the cache keys on. */
   url: string;
   /** The in-app path, from the routing table. `openMessageLink` wants this. */
   path: string;
 };
 
+export type PulseEntityRef =
+  /** The server's id for the object. Public — it is in the URL the web serves. */
+  | ({ kind: "post"; id: number } & EntityBase)
+  /**
+   * A profile is addressed by *key*, not by row id: the same person resolves
+   * from a username, a public player id or a numeric id, and the server decides
+   * which of those a given string is. The key is kept exactly as written so the
+   * card and the tap look the same person up the same way.
+   */
+  | ({ kind: "profile"; id: string } & EntityBase);
+
 /** `/pulse/post/2432` and nothing else — a trailing segment is a different page. */
 const POST_PATH = /^\/pulse\/post\/(\d+)$/i;
+
+/** `/pulse/profile/roody` — one segment, which is what the route table claims. */
+const PROFILE_PATH = /^\/pulse\/profile\/([^/]+)$/i;
+
+/**
+ * Keys the server could plausibly resolve. Anything else is not worth a request.
+ *
+ * This is a *shape* check, not an existence check — an unknown-but-well-formed
+ * key still goes to the server and comes back 404, because deciding locally
+ * which handles exist is exactly the kind of second opinion that drifts.
+ */
+const PROFILE_KEY = /^[A-Za-z0-9._@-]{1,64}$/;
+
+/**
+ * Segments under `/pulse/profile/` that are screens rather than people.
+ *
+ * `linking.ts` routes `/pulse/profile/edit` to the settings screen before it
+ * consults `profileTargetFromUrl`, so the path is shaped like a profile but is
+ * not one. Without this the card would look up a member called "edit", get a
+ * 404 and tell the reader that somebody's profile had been deleted.
+ */
+const PROFILE_RESERVED = new Set(["edit"]);
 
 /**
  * The entity a URL points at, or `null` if it is not one this app can card.
@@ -66,6 +106,21 @@ export function resolvePulseEntity(rawUrl: string): PulseEntityRef | null {
     // it to the resolver would spend a request to learn that.
     if (!Number.isSafeInteger(id) || id <= 0) return null;
     return { kind: "post", id, url: destination.url, path: destination.path };
+  }
+  const profile = PROFILE_PATH.exec(pathname);
+  if (profile) {
+    // The pathname is percent-encoded; the API layer encodes again when it
+    // builds the request, so handing it the still-encoded segment would look
+    // up `roody%2Echerie` rather than `roody.cherie`.
+    let key: string;
+    try {
+      key = decodeURIComponent(profile[1]);
+    } catch {
+      return null;
+    }
+    if (!PROFILE_KEY.test(key)) return null;
+    if (PROFILE_RESERVED.has(key.toLowerCase())) return null;
+    return { kind: "profile", id: key, url: destination.url, path: destination.path };
   }
   return null;
 }

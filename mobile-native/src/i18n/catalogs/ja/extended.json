@@ -1102,6 +1102,16 @@
       "unavailable": "コンテンツを利用できません",
       "video": "動画"
     },
+    "profileCard": {
+      "eyebrow": "PULSESOC のプロフィール",
+      "cta": "プロフィールを見る →",
+      "loading": "プロフィールを読み込んでいます…",
+      "forbidden": "このプロフィールは表示できません。",
+      "missing": "このプロフィールは利用できなくなりました。",
+      "unavailable": "プロフィールを利用できません",
+      "a11yOpen": "{{author}} の PulseSoc のプロフィールを開く",
+      "a11yOpenGeneric": "この PulseSoc のプロフィールを開く"
+    },
     "messageActions": {
       "openLink": "リンクを開く",
       "copyLink": "リンクをコピー",

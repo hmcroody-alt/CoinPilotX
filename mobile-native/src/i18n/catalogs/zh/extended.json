@@ -1102,6 +1102,16 @@
       "unavailable": "内容不可用",
       "video": "视频"
     },
+    "profileCard": {
+      "eyebrow": "PULSESOC 个人资料",
+      "cta": "查看个人资料 →",
+      "loading": "正在加载个人资料…",
+      "forbidden": "你无法查看此个人资料。",
+      "missing": "此个人资料已不可用。",
+      "unavailable": "个人资料不可用",
+      "a11yOpen": "打开 {{author}} 的 PulseSoc 个人资料",
+      "a11yOpenGeneric": "打开此 PulseSoc 个人资料"
+    },
     "messageActions": {
       "openLink": "打开链接",
       "copyLink": "复制链接",
