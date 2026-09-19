@@ -1,5 +1,15 @@
 # Payments — Production Activation Checklist
 
+> **SUPERSEDED by `PRODUCTION_ACTIVATION_READINESS.md`.**
+>
+> Four of this document's five blockers (B1, B2, B3, B5) were closed by the
+> Connect foundation work. Its diagnosis is still the reason those things were
+> built, and is kept for that; its *instructions* are stale, and acting on §2
+> below would mean re-solving problems that no longer exist.
+>
+> Go to `PRODUCTION_ACTIVATION_READINESS.md` for what is actually left and for
+> the ordered activation sequence.
+
 The gate between "the marketplace payment system is built" and "PulseSoc moves
 real money for real sellers".
 
