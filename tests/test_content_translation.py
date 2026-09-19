@@ -8,6 +8,7 @@ import json
 import os
 import sys
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -17,6 +18,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from services import content_translation as translation  # noqa: E402
 from services import db  # noqa: E402
+from services import translation_providers  # noqa: E402
 from services.translation_providers import GoogleAdvancedProvider, GoogleConfig, ProviderError  # noqa: E402
 
 try:  # Optional: this file is also meant to run standalone, without pytest.
@@ -174,6 +176,25 @@ def test_curated_validation_and_malformed_provider_response():
         assert exc.code == "invalid_provider_response" and exc.status == 502
 
 
+#: Shaped like a service account and worth nothing. It only has to satisfy
+#: `GoogleConfig.configured`; the token itself comes from the stub below, so no
+#: part of this is ever parsed by google.auth.
+SERVICE_ACCOUNT_JSON = json.dumps({
+    "type": "service_account",
+    "client_email": "qa@qa-project.iam.gserviceaccount.com",
+    "private_key": "placeholder-not-a-key",
+    "token_uri": "https://oauth2.googleapis.com/token",
+})
+
+
+def _stub_credentials(token="sealed-test-token"):
+    """Stand in for the minted OAuth2 credential, so no test needs the network."""
+    return patch(
+        "services.translation_providers._cached_service_account_credentials",
+        return_value=SimpleNamespace(token=token),
+    )
+
+
 def test_google_advanced_adapter_uses_v3_and_never_exposes_credentials():
     class Response:
         status_code = 200
@@ -188,15 +209,19 @@ def test_google_advanced_adapter_uses_v3_and_never_exposes_credentials():
             return Response()
 
     adapter = GoogleAdvancedProvider(
-        GoogleConfig(project_id="qa-project", api_key="sealed-test-key", max_retries=0),
+        GoogleConfig(project_id="qa-project", credentials_json=SERVICE_ACCOUNT_JSON, max_retries=0),
         session=Session,
     )
-    result = adapter.translate("Hello", "auto", "es")
+    with _stub_credentials():
+        result = adapter.translate("Hello", "auto", "es")
     assert result["translated_text"] == "Hola" and result["provider"] == "google"
     method, url, kwargs = Session.calls[0]
     assert method == "POST" and url.endswith("projects/qa-project/locations/global:translateText")
-    assert kwargs["params"] == {"key": "sealed-test-key"}
-    assert "sealed-test-key" not in json.dumps(result)
+    assert kwargs["headers"]["Authorization"] == "Bearer sealed-test-token"
+    # The credential rides in the header and nowhere else. v3 has no query-string
+    # credential, and anything put there would be logged by every proxy in between.
+    assert kwargs["params"] == {}
+    assert "sealed-test-token" not in json.dumps(result)
 
 
 def test_google_adapter_fails_closed_when_unconfigured():
@@ -206,6 +231,93 @@ def test_google_adapter_fails_closed_when_unconfigured():
         assert False, "unconfigured provider should fail"
     except ProviderError as exc:
         assert exc.code == "provider_not_configured"
+
+
+def _translation_env(**overrides):
+    """A translation-enabled environment with both credentials explicitly cleared.
+
+    Cleared rather than omitted: `patch.dict` merges, so a variable left out here
+    would be inherited from whatever the developer or CI runner happens to export,
+    and the test would pass for the wrong reason on one machine and fail on another.
+    """
+    env = {
+        "TRANSLATION_ENABLED": "true",
+        "TRANSLATION_PRIMARY_PROVIDER": "google",
+        "GOOGLE_CLOUD_PROJECT_ID": "qa-project",
+        "GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON": "",
+        "GOOGLE_CLOUD_TRANSLATION_API_KEY": "",
+    }
+    env.update(overrides)
+    return env
+
+
+def test_an_api_key_alone_is_not_a_configured_translation_deployment():
+    """A key-only deployment must report itself unconfigured, because it cannot work.
+
+    Cloud Translation v3 — the only endpoint this integration speaks — does not
+    accept API keys at all: a `?key=` request comes back 401 CREDENTIALS_MISSING,
+    "API keys are not supported by this API". The adapter nonetheless counted a
+    key as a credential, so `configured` was true, `/internal/health/translation`
+    answered `healthy: true`, and every actual translate failed with
+    `invalid_credentials`. An operator who set only the key got a system that
+    passed its own health check and was broken for users, and nothing surfaced
+    the difference until somebody pressed Translate.
+
+    `GOOGLE_CLOUD_TRANSLATION_API_KEY` is no longer read anywhere. This pins that:
+    setting it must not resurrect the claim.
+    """
+    with patch.dict(os.environ, _translation_env(
+        GOOGLE_CLOUD_TRANSLATION_API_KEY="AIzaSyNotUsableOnV3",
+    ), clear=False):
+        assert translation_providers.GoogleConfig.from_env().configured is False
+        status = translation.health_status()
+
+    assert status["configured"] is False, "a key-only deployment reported itself configured"
+    assert status["healthy"] is False, "a key-only deployment reported itself healthy"
+    # Enabled but unconfigured is the loud state, and it is the point of the fix.
+    assert status["degraded"] is True
+
+
+def test_a_credential_that_cannot_load_is_not_configured():
+    """`configured` must mean "could authenticate", not "the variable is non-empty".
+
+    Production was found with GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON set to the
+    single character `{`. That is non-empty, survives .strip(), and so passed the
+    old presence check — health reported configured and healthy while every call
+    died in json.loads. A truncated paste and a real service account must not be
+    indistinguishable.
+    """
+    unusable = {
+        "a bare brace": "{",
+        "not json at all": "your-credentials-here",
+        "an empty object": "{}",
+        "json but not an object": '"a string"',
+        "a service account missing private_key": json.dumps({
+            "type": "service_account",
+            "client_email": "qa@qa-project.iam.gserviceaccount.com",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }),
+    }
+    for label, blob in unusable.items():
+        with patch.dict(os.environ, _translation_env(
+            GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON=blob,
+        ), clear=False):
+            assert translation_providers.GoogleConfig.from_env().configured is False, (
+                f"{label} was accepted as a working credential"
+            )
+
+
+def test_a_complete_service_account_is_still_configured():
+    """The positive control for the two tests above.
+
+    Without it, a `configured` property that had regressed to always-False would
+    satisfy every assertion in this area while taking translation offline
+    everywhere — the tests would be green and the feature dead.
+    """
+    with patch.dict(os.environ, _translation_env(
+        GOOGLE_CLOUD_TRANSLATION_CREDENTIALS_JSON=SERVICE_ACCOUNT_JSON,
+    ), clear=False):
+        assert translation_providers.GoogleConfig.from_env().configured is True
 
 
 def test_canonical_post_authorization_ignores_caller_supplied_text():
@@ -320,6 +432,9 @@ def _run_standalone():
         test_curated_validation_and_malformed_provider_response,
         test_google_advanced_adapter_uses_v3_and_never_exposes_credentials,
         test_google_adapter_fails_closed_when_unconfigured,
+        test_an_api_key_alone_is_not_a_configured_translation_deployment,
+        test_a_credential_that_cannot_load_is_not_configured,
+        test_a_complete_service_account_is_still_configured,
         test_canonical_post_authorization_ignores_caller_supplied_text,
         test_inaccessible_canonical_content_is_not_translated,
         test_qa_rollout_is_server_authoritative,
