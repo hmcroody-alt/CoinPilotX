@@ -169,14 +169,40 @@ def _public_media_url(url):
     return media_service.normalize_url(url)
 
 
+def _first_still(*candidates):
+    """The first candidate that is a picture, skipping any that is a video.
+
+    A `or`-chain cannot express this: it stops at the first *truthy* value, and a
+    video URL sitting in a thumbnail field is very truthy. Skipping rather than
+    blanking matters -- an asset whose stored thumbnail is stale-and-wrong should
+    still fall through to its Mux frame instead of losing its picture entirely.
+    """
+    for candidate in candidates:
+        value = str(candidate or "").strip()
+        if value and not media_service.is_video_url(value):
+            return value
+    return ""
+
+
 def _canonical_media_payload(item, resolved, *, index=0, embed=None):
     """Return the one media schema used by all PulseSoc feed renderers."""
     payload = dict(embed or {})
     media_type = (resolved.get("media_type") or item.get("media_type") or payload.get("media_type") or payload.get("type") or "image")
     media_url = resolved.get("media_url") or payload.get("media_url") or ""
     valid_url = resolved.get("valid_url") or payload.get("valid_url") or media_url
-    thumb = resolved.get("thumbnail_url") or payload.get("thumbnail_url") or valid_url
-    poster = resolved.get("poster_url") or payload.get("poster_url") or thumb
+    # `valid_url` is the asset. For a photo the asset *is* the still, so it is a
+    # fine last resort; for a video it is the thing a still exists to avoid, and
+    # falling back to it here is what undid the guards in `resolve_media` one
+    # layer down -- the field was blanked there and refilled with the video here.
+    # The Mux thumbnail goes ahead of it so a transcoded asset resolves to a real
+    # frame, and a video with nothing at all resolves to "" rather than to
+    # itself, which lets a renderer draw no picture instead of an empty box.
+    mux_thumb = resolved.get("mux_thumbnail_url") or payload.get("mux_thumbnail_url") or ""
+    asset_as_still = "" if media_service.is_video_url(valid_url) else valid_url
+    thumb = _first_still(
+        resolved.get("thumbnail_url"), payload.get("thumbnail_url"), mux_thumb, asset_as_still
+    )
+    poster = _first_still(resolved.get("poster_url"), payload.get("poster_url"), thumb)
     width = int(float(resolved.get("width") or payload.get("width") or 0) or 0)
     height = int(float(resolved.get("height") or payload.get("height") or 0) or 0)
     ratio = resolved.get("aspect_ratio") or payload.get("aspect_ratio") or 0

@@ -117,6 +117,17 @@ def _is_video_url(value):
     return any(lowered.endswith(f".{ext}") for ext in VIDEO_EXTS | {"m4v", "qt"})
 
 
+def is_video_url(value):
+    """Public name for the video-extension test.
+
+    Feed serializers build their own still-frame fallbacks on top of
+    `resolve_media`, so they need the same notion of "this URL is the asset, not
+    a picture of it". Re-spelling the extension list at each call site is how the
+    two drift apart.
+    """
+    return _is_video_url(value)
+
+
 def _is_image_url(value):
     lowered = str(value or "").split("?", 1)[0].split("#", 1)[0].lower()
     return any(lowered.endswith(f".{ext}") for ext in IMAGE_EXTS | GIF_EXTS | {"avif"})
@@ -126,13 +137,20 @@ def mux_playback_urls(playback_id):
     """Return safe public Mux playback URLs for a playback id, without secrets."""
     playback_id = str(playback_id or "").strip()
     if not playback_id:
-        return {"hls_url": "", "thumbnail_url": ""}
+        return {"hls_url": "", "thumbnail_url": "", "mp4_url": ""}
     safe_id = "".join(ch for ch in playback_id if ch.isalnum() or ch in {"_", "-"})
     if not safe_id:
-        return {"hls_url": "", "thumbnail_url": ""}
+        return {"hls_url": "", "thumbnail_url": "", "mp4_url": ""}
     return {
         "hls_url": f"https://stream.mux.com/{safe_id}.m3u8",
         "thumbnail_url": f"https://image.mux.com/{safe_id}/thumbnail.jpg",
+        # Assets are created with ``mp4_support="standard"`` (see
+        # create_mux_asset_from_url), which publishes low/medium/high renditions
+        # -- not the newer ``capped-1080p`` name, which 404s on these assets.
+        # This is the rendition to hand to a caller that wants a plain file URL
+        # rather than a manifest: ``media_url`` consumers include <img>-style
+        # code paths and downloaders that cannot parse HLS.
+        "mp4_url": f"https://stream.mux.com/{safe_id}/high.mp4",
     }
 
 
@@ -781,6 +799,29 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
             kind = "audio"
         else:
             kind = "image"
+    # Mux is the primary delivery path for video. The R2 CDN hostname sits behind
+    # an edge rule that challenges video extensions -- a request for .mp4/.mov/.webm
+    # is answered 403 with an HTML interstitial before it ever reaches origin, while
+    # images and audio on that same host return 200. So a `media_url` pointing at the
+    # CDN hands every caller a URL that cannot play. `playback_url` already preferred
+    # Mux; this makes the plain-file fields agree with it, so a caller reading
+    # `media_url` is not left holding the one field that is still broken.
+    #
+    # The MP4 rendition is used rather than the HLS manifest because `media_url` is
+    # the field consumed by downloaders and by <video> tags with no HLS support;
+    # `playback_url` keeps serving HLS for players that prefer it.
+    #
+    # Two guards, both load-bearing:
+    #   * a signed playback id must never be served as a bare URL. Mux answers 403
+    #     without a token, and messenger records that policy per attachment, so the
+    #     absence of the column means public -- matching create_mux_asset_from_url's
+    #     documented default -- while an explicit "signed" opts out.
+    #   * an asset still ingesting has no rendition yet. Swapping a 403 for a 404 is
+    #     not an improvement, so the CDN copy stays until Mux reports ready.
+    mux_policy = str(item.get("mux_playback_policy") or "").strip().lower()
+    mux_ready = not mux_status or mux_status in {"ready", "asset_ready", "available"}
+    if kind == "video" and mux_urls["mp4_url"] and mux_policy != "signed" and mux_ready:
+        source = mux_urls["mp4_url"]
     if kind == "video":
         if _is_video_url(thumb):
             thumb = ""
@@ -836,6 +877,20 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
     poster_value = (poster or thumb or source)
     if kind == "video" and _is_video_url(poster_value):
         poster_value = ""
+    # The same guard, one field over. It was missing here for as long as it has
+    # been present above, and the asymmetry is the whole bug: a video with no
+    # stored still had `thumb` correctly blanked further up, fell back to
+    # `source`, and was served as `thumbnail_url` -- the asset itself, under the
+    # name of its own thumbnail. Every client that pointed an <img>/<Image> at
+    # that field drew an empty box, silently, because a video URL is a valid URL
+    # and image renderers do not report a decode that never starts.
+    #
+    # `poster` is preferred over `source` as the fallback, because by this point
+    # `poster` already holds the Mux thumbnail for any asset that has a playback
+    # id -- so the common case resolves to a real frame rather than to nothing.
+    thumb_value = (thumb or poster or source)
+    if kind == "video" and _is_video_url(thumb_value):
+        thumb_value = ""
     mux_playback_url = mux_urls["hls_url"] if kind == "video" else ""
     mux_processing = bool(kind == "video" and mux_playback_url and mux_status and mux_status not in {"ready", "asset_ready", "available"})
     return {
@@ -844,7 +899,7 @@ def resolve_media(media=None, *, url="", thumbnail_url="", poster_url="", media_
         "cdn_url": item.get("cdn_url") or canonical_cdn_url,
         "media_url": source,
         "playback_url": mux_playback_url or saved_playback_url or first_party_stream or source,
-        "thumbnail_url": thumb or source,
+        "thumbnail_url": thumb_value,
         "poster_url": poster_value,
         "mux_playback_id": mux_playback_id,
         "mux_asset_id": item.get("mux_asset_id") or "",
