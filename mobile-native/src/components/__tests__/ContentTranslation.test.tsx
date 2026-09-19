@@ -331,3 +331,95 @@ it("shows one compact chat action and moves preferences into a sheet", async () 
   fireEvent.press(screen.getByText("Translate now"));
   await waitFor(() => expect(screen.getByText("Bonjour PulseSoc")).toBeTruthy());
 });
+
+/**
+ * The messenger's long-press menu asks for a translation by bumping
+ * `translateRequestId`. These four cases are the ones that decide whether that
+ * is genuinely the same control or a second one wearing its name.
+ *
+ * Mutation contract:
+ *   - deleting the `if (!translateRequestId) return;` guard must turn "does not
+ *     translate a bubble nobody asked about" red;
+ *   - adding `toggleTranslation` to the effect's dependency array does not turn
+ *     a test red -- it exhausts the V8 heap, because the effect changes the
+ *     state that re-creates the callback that re-runs the effect. A crashed
+ *     suite is a kill, and the loudest one available;
+ *   - calling `translate()` from the effect instead of the toggle must turn
+ *     "puts the original back when the menu is used a second time" red.
+ */
+describe("a translation asked for from outside the component", () => {
+  it("does not translate a bubble nobody asked about", async () => {
+    const screen = render(
+      <ContentTranslation contentType="chat" contentRef="m-1" text="Hola PulseSoc" sourceLanguage="es" />
+    );
+    await act(async () => undefined);
+    expect(screen.getByText("Hola PulseSoc")).toBeTruthy();
+    expect(mockTranslateText).not.toHaveBeenCalled();
+  });
+
+  it("translates when the id first arrives", async () => {
+    const screen = render(
+      <ContentTranslation
+        contentType="chat"
+        contentRef="m-1"
+        text="Hola PulseSoc"
+        sourceLanguage="es"
+        translateRequestId={1}
+      />
+    );
+    await waitFor(() => expect(screen.getByText("Bonjour PulseSoc")).toBeTruthy());
+  });
+
+  it("stays translated once it settles", async () => {
+    // `toggleTranslation` is re-created *as a result of* translating. An effect
+    // that listed it as a dependency would therefore run a second time and
+    // toggle straight back -- and because restoring the original is a local
+    // switch rather than a round trip, the request count would stay at one the
+    // whole way through. So the assertion that catches it is what is on screen
+    // after the dust settles, not how many times the router was called.
+    const screen = render(
+      <ContentTranslation
+        contentType="chat"
+        contentRef="m-1"
+        text="Hola PulseSoc"
+        sourceLanguage="es"
+        translateRequestId={1}
+      />
+    );
+    await waitFor(() => expect(screen.getByText("Bonjour PulseSoc")).toBeTruthy());
+    await act(async () => undefined);
+    await act(async () => undefined);
+    expect(screen.getByText("Bonjour PulseSoc")).toBeTruthy();
+    expect(screen.queryByText("Hola PulseSoc")).toBeNull();
+    expect(mockTranslateText).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts the original back when the menu is used a second time", async () => {
+    // Not a boolean for exactly this reason: the second ask has to be
+    // expressible, and it means the same thing pressing the inline control
+    // twice means.
+    const screen = render(
+      <ContentTranslation
+        contentType="chat"
+        contentRef="m-1"
+        text="Hola PulseSoc"
+        sourceLanguage="es"
+        translateRequestId={1}
+      />
+    );
+    await waitFor(() => expect(screen.getByText("Bonjour PulseSoc")).toBeTruthy());
+
+    screen.rerender(
+      <ContentTranslation
+        contentType="chat"
+        contentRef="m-1"
+        text="Hola PulseSoc"
+        sourceLanguage="es"
+        translateRequestId={2}
+      />
+    );
+    await waitFor(() => expect(screen.getByText("Hola PulseSoc")).toBeTruthy());
+    // Restoring the original is a local switch, not a second round trip.
+    expect(mockTranslateText).toHaveBeenCalledTimes(1);
+  });
+});

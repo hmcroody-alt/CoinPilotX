@@ -1069,6 +1069,18 @@
       "missing": "Piblikasyon sa a pa disponib ankò.",
       "unavailable": "Kontni an pa disponib",
       "video": "Videyo"
+    },
+    "messageActions": {
+      "openLink": "Louvri lyen an",
+      "copyLink": "Kopye lyen an",
+      "shareLink": "Pataje lyen an",
+      "saveToPhotos": "Sere nan Foto",
+      "translate": "Tradui",
+      "forward": "Voye bay",
+      "info": "Enfòmasyon mesaj",
+      "chooseLink": "Ki lyen?",
+      "closeMenu": "Fèmen meni mesaj la",
+      "reactWith": "Reyaji ak {{emoji}}"
     }
   },
   "commerce": {

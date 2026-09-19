@@ -1083,6 +1083,18 @@
       "missing": "यह पोस्ट अब उपलब्ध नहीं है।",
       "unavailable": "सामग्री उपलब्ध नहीं",
       "video": "वीडियो"
+    },
+    "messageActions": {
+      "openLink": "लिंक खोलें",
+      "copyLink": "लिंक कॉपी करें",
+      "shareLink": "लिंक शेयर करें",
+      "saveToPhotos": "फ़ोटो में सहेजें",
+      "translate": "अनुवाद करें",
+      "forward": "आगे भेजें",
+      "info": "संदेश जानकारी",
+      "chooseLink": "कौन सा लिंक?",
+      "closeMenu": "संदेश मेनू बंद करें",
+      "reactWith": "{{emoji}} से प्रतिक्रिया दें"
     }
   },
   "commerce": {

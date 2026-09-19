@@ -1083,6 +1083,18 @@
       "missing": "Dieser Beitrag ist nicht mehr verfügbar.",
       "unavailable": "Inhalt nicht verfügbar",
       "video": "Video"
+    },
+    "messageActions": {
+      "openLink": "Link öffnen",
+      "copyLink": "Link kopieren",
+      "shareLink": "Link teilen",
+      "saveToPhotos": "In Fotos sichern",
+      "translate": "Übersetzen",
+      "forward": "Weiterleiten",
+      "info": "Nachrichtinfo",
+      "chooseLink": "Welcher Link?",
+      "closeMenu": "Nachrichtenmenü schließen",
+      "reactWith": "Mit {{emoji}} reagieren"
     }
   },
   "commerce": {

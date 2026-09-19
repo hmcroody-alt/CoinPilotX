@@ -1083,6 +1083,18 @@
       "missing": "Esta publicação não está mais disponível.",
       "unavailable": "Conteúdo indisponível",
       "video": "Vídeo"
+    },
+    "messageActions": {
+      "openLink": "Abrir link",
+      "copyLink": "Copiar link",
+      "shareLink": "Compartilhar link",
+      "saveToPhotos": "Salvar em Fotos",
+      "translate": "Traduzir",
+      "forward": "Encaminhar",
+      "info": "Informações da mensagem",
+      "chooseLink": "Qual link?",
+      "closeMenu": "Fechar o menu da mensagem",
+      "reactWith": "Reagir com {{emoji}}"
     }
   },
   "commerce": {

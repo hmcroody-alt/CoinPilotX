@@ -295,13 +295,20 @@ describe("a URL inside a message bubble", () => {
     expect(mockOpenURL).not.toHaveBeenCalled();
   });
 
-  it("still opens the message action sheet on a long press of the link", async () => {
+  it("still opens the message menu on a long press of the link", async () => {
     await renderChat(["https://pulsesoc.com/pulse/post/2432"]);
     await act(async () => {
       fireEvent(screen.getByRole("link"), "longPress");
     });
-    // The sheet identifies itself by its own title; reply/react/report live
-    // behind it, and they were the gestures at risk from a nested handler.
-    expect(screen.getByText("Message controls")).toBeTruthy();
+    // Reply is the row every message has, so its presence is the overlay being
+    // open rather than any particular message's context. It is the gesture that
+    // was at risk from a nested handler: a link run that claimed the long press
+    // would swallow this and leave the user with no way to reply to a message
+    // that happens to contain a URL.
+    expect(screen.getByTestId("message-action-reply")).toBeTruthy();
+    // And the link reached the menu as a link, not as prose. The overlay is
+    // handed the URLs the same `detectLinks` pass found while making them
+    // tappable, so an Open Link row is the proof that the two agree.
+    expect(screen.getByTestId("message-action-openLink")).toBeTruthy();
   });
 });

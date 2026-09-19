@@ -1163,6 +1163,18 @@
       "missing": "لم يعد هذا المنشور متاحًا.",
       "unavailable": "المحتوى غير متاح",
       "video": "فيديو"
+    },
+    "messageActions": {
+      "openLink": "فتح الرابط",
+      "copyLink": "نسخ الرابط",
+      "shareLink": "مشاركة الرابط",
+      "saveToPhotos": "حفظ في الصور",
+      "translate": "ترجمة",
+      "forward": "إعادة توجيه",
+      "info": "معلومات الرسالة",
+      "chooseLink": "أي رابط؟",
+      "closeMenu": "إغلاق قائمة الرسالة",
+      "reactWith": "التفاعل بـ {{emoji}}"
     }
   },
   "commerce": {

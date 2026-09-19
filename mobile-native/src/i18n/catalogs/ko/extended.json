@@ -1069,6 +1069,18 @@
       "missing": "이 게시물은 더 이상 사용할 수 없습니다.",
       "unavailable": "콘텐츠를 사용할 수 없음",
       "video": "동영상"
+    },
+    "messageActions": {
+      "openLink": "링크 열기",
+      "copyLink": "링크 복사",
+      "shareLink": "링크 공유",
+      "saveToPhotos": "사진에 저장",
+      "translate": "번역",
+      "forward": "전달",
+      "info": "메시지 정보",
+      "chooseLink": "어떤 링크인가요?",
+      "closeMenu": "메시지 메뉴 닫기",
+      "reactWith": "{{emoji}}(으)로 반응하기"
     }
   },
   "commerce": {

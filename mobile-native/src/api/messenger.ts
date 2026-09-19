@@ -852,6 +852,52 @@ export async function deleteMessage(messageId: number, scope: "self" | "everyone
   return result;
 }
 
+/**
+ * Amend a message you already sent.
+ *
+ * The server owns the rules and refuses anything else: not your message is a
+ * 403 `forbidden`, past its window a 403 `edit_window_expired`, empty a 400
+ * `empty_message`. Nothing is checked twice here -- the menu hides Edit when
+ * it can tell the answer in advance, but the answer itself comes from there.
+ *
+ * Deliberately does not send `edit_window_minutes`. The endpoint reads that
+ * key from the request body, which means a client can pick its own time
+ * limit; honouring the server's default is the only correct thing for a
+ * client to do with a parameter like that.
+ */
+export async function editMessage(messageId: number, body: string) {
+  const result = await pulseApi<{ ok?: boolean; message?: MessengerMessage; error?: string }>(
+    `${MESSENGER_API}/messages/${messageId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ body })
+    }
+  );
+  return {
+    ...result,
+    message: result.message ? normalizeMessages([result.message], 0)[0] : undefined
+  };
+}
+
+/**
+ * Copy a message into other conversations.
+ *
+ * The server caps this at ten targets and silently skips any conversation the
+ * sender cannot post to, so `count` is what actually happened and may be
+ * smaller than the list asked for. Callers should report `count`, not the
+ * length of their own selection.
+ */
+export async function forwardMessage(messageId: number, conversationIds: number[]) {
+  const targets = Array.from(new Set(conversationIds.map((id) => Number(id) || 0).filter(Boolean))).slice(0, 10);
+  return pulseApi<{ ok?: boolean; forwarded_message_ids?: number[]; count?: number; message?: string }>(
+    `${MESSENGER_API}/messages/${messageId}/forward`,
+    {
+      method: "POST",
+      body: JSON.stringify({ conversation_ids: targets })
+    }
+  );
+}
+
 export async function reportMessage(messageId: number, reason = "Needs review") {
   return pulseApi<{ ok?: boolean; report_id?: number; message?: string }>(`${MESSENGER_API}/messages/${messageId}/report`, {
     method: "POST",
