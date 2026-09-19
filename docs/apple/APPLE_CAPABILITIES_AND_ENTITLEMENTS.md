@@ -49,22 +49,35 @@ and gets the token revoked. Do not replace the variable with a literal.
 
 | Key | Value |
 |---|---|
-| `UIBackgroundModes` | `audio`, `voip`, `fetch`, `remote-notification` |
+| `UIBackgroundModes` | `audio`, `voip`, `remote-notification` (`fetch` removed in `f8abd3bc`) |
 | `NSCameraUsageDescription` | present |
 | `NSMicrophoneUsageDescription` | present |
 | `NSPhotoLibraryUsageDescription` | present |
 | `NSPhotoLibraryAddUsageDescription` | present |
 | `NSFaceIDUsageDescription` | present |
 | `CFBundleURLTypes` | `pulsesoc`, `com.pulsesoc.app`, `exp+pulsesoc-native` |
+| `ITSAppUsesNonExemptEncryption` | `false` — export compliance, present in **both** `app.json` and the committed `Info.plist:43` |
 
 **Absent** (each is required by a capability in the audit):
 
 `BGTaskSchedulerPermittedIdentifiers`, `NSUserActivityTypes`, `NSSupportsLiveActivities`,
-`INIntentsSupported` / Siri keys, `NSLocationWhenInUseUsageDescription`,
-`ITSAppUsesNonExemptEncryption` declaration.
+`INIntentsSupported` / Siri keys, `NSLocationWhenInUseUsageDescription`.
 
-Note on `UIBackgroundModes: fetch` — declared, but nothing in the codebase implements
-background fetch. See audit §5; this should either be implemented or removed.
+Both lists re-derived 2026-09-19 from the complete top-level key dump, not from
+per-key probes — see the warning below.
+
+`UIBackgroundModes: fetch` was declared with nothing implementing it; **removed in
+`f8abd3bc`**, and `app.json` was updated in the same commit so a clean prebuild cannot
+reintroduce it. The remaining three are all load-bearing: `audio` and `voip` for calls
+and radio, `remote-notification` for push. Audit §5's "implement or remove" is closed as
+*removed*.
+
+> **Do not probe this file with `plutil -extract <key> json`.** It errors identically
+> for a present scalar and a missing key, so every `<false/>`, `<string>` and `<integer>`
+> value reads as absent while array-valued keys extract fine. That asymmetry produced two
+> wrong rows in an earlier revision of this table, including one claiming
+> `ITSAppUsesNonExemptEncryption` was missing when it is at `Info.plist:43`. Use
+> `plutil -p ios/PulseSoc/Info.plist | grep '^  "'` and read the whole list.
 
 ### Associated domains — served AASA
 
@@ -217,6 +230,12 @@ python3 -m pytest tests/web_parity/test_aasa_claims.py
 
 # Current entitlements
 plutil -p mobile-native/ios/PulseSoc/PulseSoc.entitlements
+
+# Every Info.plist top-level key (the only probe that is correct for all value types)
+plutil -p mobile-native/ios/PulseSoc/Info.plist | grep '^  "'
+
+# app.json vs committed Info.plist divergence — prebuild would resolve it toward app.json
+python3 -c "import json;print(json.load(open('mobile-native/app.json'))['expo']['ios']['infoPlist'])"
 ```
 
 Anything asserted in this document can be re-derived from one of the above or from a cited

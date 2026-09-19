@@ -112,7 +112,7 @@ both are constrained to *observing* state, never driving it.
 | 2 | Live Activities + Dynamic Island | NOT IMPLEMENTED | 16.1 | **Yes** | 4 |
 | 3 | App Intents / Siri / Shortcuts | NOT IMPLEMENTED | 16.0 | No | 4 |
 | 4 | Core Spotlight | NOT IMPLEMENTED | 15.1 ✅ | No | 3 |
-| 5 | BackgroundTasks | NOT IMPLEMENTED (unused `fetch` declaration removed 2026-09-19) | 15.1 ✅ | No | 3 |
+| 5 | BackgroundTasks | NOT IMPLEMENTED (unused `fetch` declaration removed 2026-09-19) | 16.1 ✅ (device-only to test) | No | 3 |
 | 6 | Sign in with Apple | NOT IMPLEMENTED | 15.1 ✅ | No | 2 |
 | 7 | Universal Links + Associated Domains | **FULLY IMPLEMENTED** | — | No | — |
 | 8 | StoreKit 2 | **FULLY IMPLEMENTED** | — | No | — |
@@ -233,16 +233,19 @@ are finished, tested, and should be left alone.
 
 ## 5. BackgroundTasks
 
-- **Status** — PARTIALLY IMPLEMENTED
-- **Evidence** — `mobile-native/ios/PulseSoc/Info.plist:68-74` declares `UIBackgroundModes`
-  = `audio`, `voip`, `fetch`, `remote-notification`. No `BGTaskSchedulerPermittedIdentifiers`
-  key; no `BGAppRefreshTask`, `BGProcessingTask`, `expo-background-fetch`, or
-  `expo-task-manager` anywhere.
+- **Status** — NOT IMPLEMENTED (was PARTIALLY IMPLEMENTED by declaration only; see RESOLVED
+  below). Full treatment in **`BACKGROUND_TASKS.md`**.
+- **Evidence** — `mobile-native/ios/PulseSoc/Info.plist:68-73` declares `UIBackgroundModes`
+  = `audio`, `voip`, `remote-notification` (`fetch` removed 2026-09-19). No
+  `BGTaskSchedulerPermittedIdentifiers` key; no `BGAppRefreshTask`, `BGProcessingTask`,
+  `expo-background-fetch`, or `expo-task-manager` anywhere.
 - **What this means** — `fetch` is declared but **nothing implements it**. The app claims a
   background capability it does not use. That is not harmful, but it is the kind of
   discrepancy App Review occasionally asks about, and it is misleading to the next reader.
 - **What is missing** — the modern `BGTaskScheduler` path entirely.
-- **Minimum iOS** — satisfied at 15.1 (BGTaskScheduler is 13.0+).
+- **Minimum iOS** — satisfied at 16.1 (BGTaskScheduler is 13.0+). But **untestable on the
+  simulator**: `BGTaskScheduler.h` names Simulator as a cause of
+  `BGTaskSchedulerErrorCodeUnavailable`. Device-only by construction.
 - **New target** — no.
 - **Protection-lock interaction** — `audio` and `voip` modes are load-bearing for the
   locked surfaces. **Do not edit the `UIBackgroundModes` array** except to add/remove
@@ -258,9 +261,24 @@ are finished, tested, and should be left alone.
 - **RESOLVED 2026-09-19** — dropped. `fetch` is gone from both `app.json` and
   `Info.plist`; `audio`, `voip` and `remote-notification` remain untouched. Status is now
   **NOT IMPLEMENTED** and honestly so, rather than PARTIALLY IMPLEMENTED by declaration
-  only. If background refresh is wanted later it arrives with a
-  `BGTaskSchedulerPermittedIdentifiers` entry and an actual task, and it must not gate
-  itself on a module-scope `AppState.currentState` — see "Risk if wrong" above.
+  only. It must not gate itself on a module-scope `AppState.currentState` — see "Risk if
+  wrong" above.
+- **CORRECTION 2026-09-19** — the sentence this note originally ended with ("it arrives
+  with a `BGTaskSchedulerPermittedIdentifiers` entry and an actual task") was incomplete,
+  and wrong in a way that produces an unreadable runtime error. `BGTaskScheduler` did not
+  supersede the background modes. From `BGTask.h` in the iOS 26.5 SDK: a `BGAppRefreshTask`
+  "requires setting the `fetch` `UIBackgroundModes` capability", and a `BGProcessingTask`
+  requires `processing` — a mode this app has never declared. So implementing #5 means
+  **re-adding a background mode as well as the identifiers key**, in both `app.json` and
+  `Info.plist`. Omitting either yields `BGTaskSchedulerErrorCodeNotPermitted`, which cannot
+  distinguish the two causes. See `BACKGROUND_TASKS.md` Finding 2.
+- **FOUND WHILE AUDITING #5, and it is not about #5** — `UIBackgroundModes` is asserted by
+  `tests/protection/test_realtime_audio_architecture.py:312`, but that test reads
+  `app.json`. The committed `ios/PulseSoc/Info.plist` is what Xcode builds, and it is in no
+  manifest category and no `dependency_watch` list. Removing `audio` from it leaves the
+  protection suite green and the audio change gate clean while background call and radio
+  audio die on device. Live exposure, **owed to an audio mission** — see
+  `BACKGROUND_TASKS.md` Finding 1.
 
 ## 6. Sign in with Apple
 
