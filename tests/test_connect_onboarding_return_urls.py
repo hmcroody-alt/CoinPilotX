@@ -136,7 +136,12 @@ def drive_rewards_claim(monkeypatch):
 def drive_payouts_connect(monkeypatch, seller_type):
     """POST the marketplace payout onboarding for one seller type."""
     monkeypatch.setattr(bot, "STRIPE_SECRET_KEY", "sk_test_return_url_tests_only")
-    monkeypatch.setattr(bot, "approved_marketplace_seller_for_user", lambda *a, **k: True)
+    # Each lane is stubbed at the authority that lane actually consults. The
+    # merchant lane asks `seller_access_refusal`, which returns a response when
+    # it refuses and `None` when it does not, so an approved seller is `None`
+    # here. Stubbing the retired `approved_marketplace_seller_for_user` instead
+    # would leave this test green against a route that had stopped checking.
+    monkeypatch.setattr(bot, "seller_access_refusal", lambda *a, **k: None)
     monkeypatch.setattr(bot, "approved_teacher_for_user", lambda *a, **k: True)
     monkeypatch.setattr(bot, "seller_payout_account",
                         lambda *a, **k: {"connected_account_id": "acct_marketplace_seller"})
