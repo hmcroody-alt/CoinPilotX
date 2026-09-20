@@ -96653,6 +96653,21 @@ SELLER_APPLICATION_EVENTS = {
 }
 
 
+def greeting_first_name(user):
+    """The name to greet a user by, or "" when the row carries none.
+
+    ``users`` has no ``first_name`` column, so the first token of a full name is
+    the closest thing to one. ``display_name`` is the fallback rather than the
+    first choice because it is free-form and often a handle or a store name.
+    """
+    user = dict(user or {})
+    for field in ("full_name", "display_name"):
+        tokens = str(user.get(field) or "").split()
+        if tokens:
+            return tokens[0]
+    return str(user.get("username") or "").strip()
+
+
 def seller_application_email_context(cur, application, message=""):
     """Everything the applicant's email needs, gathered while the cursor is open."""
     user_id = int((application or {}).get("user_id") or 0)
@@ -96663,12 +96678,11 @@ def seller_application_email_context(cur, application, message=""):
         "seller_application_status": seller_lifecycle.normalize_status((application or {}).get("status") or ""),
     }
     try:
-        cur.execute("SELECT first_name, full_name, username FROM users WHERE id=? LIMIT 1", (user_id,))
-        user = dict(cur.fetchone() or {})
-        first = str(user.get("first_name") or "").strip()
-        if not first:
-            first = str(user.get("full_name") or "").strip().split(" ")[0]
-        context["seller_first_name"] = first or str(user.get("username") or "").strip()
+        cur.execute(
+            "SELECT full_name, display_name, username FROM users WHERE user_id=? LIMIT 1",
+            (user_id,),
+        )
+        context["seller_first_name"] = greeting_first_name(cur.fetchone())
     except Exception as exc:
         logging.warning("SELLER_APPLICATION_EMAIL_CONTEXT_FAILED user=%s error=%s", user_id, exc)
     context.update(seller_connect_status_context(cur, user_id))
@@ -96743,7 +96757,7 @@ def seller_first_names(user_ids):
     try:
         placeholders = ",".join(["?"] * len(ids))
         rows = conn.execute(
-            f"SELECT id, first_name, full_name, username FROM users WHERE id IN ({placeholders})",
+            f"SELECT user_id, full_name, display_name, username FROM users WHERE user_id IN ({placeholders})",
             tuple(ids),
         ).fetchall()
     except Exception as exc:
@@ -96754,10 +96768,7 @@ def seller_first_names(user_ids):
     names = {}
     for row in rows or []:
         user = dict(row)
-        first = str(user.get("first_name") or "").strip()
-        if not first:
-            first = str(user.get("full_name") or "").strip().split(" ")[0]
-        names[int(user["id"])] = first or str(user.get("username") or "").strip()
+        names[int(user["user_id"])] = greeting_first_name(user)
     return names
 
 
