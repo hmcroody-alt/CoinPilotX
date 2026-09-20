@@ -121,10 +121,39 @@ def test_create_connected_account_is_idempotent_per_user_and_seller_type(stripe_
 
     monkeypatch.setattr(stripe.Account, "create", staticmethod(fake_create))
     payment_provider.create_connected_account({"user_id": 7, "email": "s@x.com"}, "merchant")
+    first = seen["idempotency_key"]
+    payment_provider.create_connected_account({"user_id": 7, "email": "s@x.com"}, "merchant")
 
     # Two taps in the same second must not mint two Connect accounts.
-    assert seen["idempotency_key"] == "connect-account:7:merchant"
+    assert seen["idempotency_key"] == first
+    assert first.startswith("connect-account:7:merchant:")
     assert seen["type"] == "express"
+
+
+def test_a_retry_after_the_seller_changed_their_email_is_not_refused_by_stripe():
+    """The key is remembered for 24h; a repeat with new parameters is an error.
+
+    Stripe replays a key only when the parameters match — otherwise it raises
+    ``IdempotencyError``, which this route surfaces to the seller as a problem
+    on PulseSoc's side. A seller who starts onboarding, fixes their email and
+    tries again the same day is exactly that case, and it is not an error: the
+    connected account was never created, so there is nothing to protect.
+    Asserted on the key function so no live Stripe call is needed.
+    """
+    key = payment_provider._account_idempotency_key
+    assert key("7", "merchant", "old@x.com") != key("7", "merchant", "new@x.com")
+    # ...while everything that must still collide, still does.
+    assert key("7", "merchant", "s@x.com") == key("7", "merchant", "s@x.com")
+    assert key("7", "merchant", "") != key("8", "merchant", "")
+    assert key("7", "merchant", "") != key("7", "teacher", "")
+
+
+def test_the_idempotency_key_does_not_carry_the_sellers_email_in_the_clear():
+    """Keys are echoed in Stripe's dashboard and request logs."""
+    key = payment_provider._account_idempotency_key("7", "merchant", "seller@example.com")
+    assert "seller@example.com" not in key
+    assert "seller" not in key.split(":")[-1]
+    assert key.startswith("connect-account:7:merchant:")
 
 
 def test_a_new_account_cannot_use_stripe_automatic_payouts_and_pulsesoc_payouts_at_once(stripe_key, monkeypatch):
@@ -269,7 +298,8 @@ def test_the_idempotency_key_still_names_the_seller_on_the_normal_path(stripe_ke
     assert payment_provider.create_connected_account({"user_id": 7}, "merchant")["ok"] is True
     assert payment_provider.create_connected_account({"user_id": "8"}, "teacher")["ok"] is True
 
-    assert keys == ["connect-account:7:merchant", "connect-account:8:teacher"]
+    assert [k.rsplit(":", 1)[0] for k in keys] == ["connect-account:7:merchant", "connect-account:8:teacher"]
+    assert keys[0] != keys[1]
 
 
 def test_the_seller_id_in_metadata_matches_the_one_in_the_key(stripe_key, monkeypatch):
