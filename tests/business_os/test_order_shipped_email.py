@@ -266,3 +266,62 @@ def test_paying_an_order_emails_nobody(engine, alerts):
     _paid_order(BUYER)
 
     assert engine.events == []
+
+
+# --- public store identity --------------------------------------------------
+@pytest.fixture
+def store_named():
+    """Rename the seller's shop for one test, then put it back.
+
+    The seeding is module-scoped, so the name is shared by every test in this
+    file. A test that changes it and does not restore it silently rewrites the
+    assertions of whichever tests happen to run after it.
+    """
+    def rename(name):
+        mkt.upsert_seller(SELLER, display_name=name)
+
+    try:
+        yield rename
+    finally:
+        rename(STORE_NAME)
+
+
+def test_a_blank_looking_store_name_does_not_mangle_the_sentence(
+        engine, alerts, store_named):
+    """A store name of only spaces must read as no store name at all.
+
+    The store name is not a standalone row that can be quietly omitted — it is
+    interpolated into a sentence the buyer reads: "Hi Dana, <store> has shipped
+    your order." The template already handles an *absent* name by substituting
+    "the seller", so the empty case is safe. "   " is not empty, so it defeats
+    that substitution and mails the buyer a sentence with a hole in it.
+
+    This is pinned end to end rather than in the identity module's own unit
+    tests because the defect is not in resolving a name. It is in a caller
+    reading ``display_name`` off the row instead of through the canonical
+    accessor, and only a real render can tell those two apart.
+    """
+    store_named("   ")
+    order = _paid_order(BUYER)
+
+    ordm.fulfill_order(order["order_id"], SELLER, tracking_ref=TRACKING, context=_ctx())
+
+    body = engine.email()
+    assert "the seller has shipped your order" in body
+    assert "  has shipped your order" not in body
+
+
+def test_a_real_store_name_still_reaches_the_buyer(engine, alerts, store_named):
+    """Negative control for the test above.
+
+    Discarding the store name outright would also satisfy that assertion, and
+    would lose the feature. This pins that a genuine name — surrounding
+    whitespace and all — still lands in the buyer's sentence.
+    """
+    store_named("  Cherie Goods  ")
+    order = _paid_order(BUYER)
+
+    ordm.fulfill_order(order["order_id"], SELLER, tracking_ref=TRACKING, context=_ctx())
+
+    body = engine.email()
+    assert "Cherie Goods has shipped your order" in body

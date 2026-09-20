@@ -46,6 +46,7 @@ from services.business_os.marketplace import service as _svc
 from services.business_os.marketplace.service import MarketplaceError
 from services.business_os.marketplace import policy as _policy
 from services.business_os.ledger import ledger as _ledger
+from services import marketplace_seller_identity as _identity
 
 try:
     from services.business_os.marketplace import notifications as _notify
@@ -771,7 +772,20 @@ def _email_buyer_shipped(conn, order: Optional[dict]) -> None:
         seller = _row(conn.execute(
             "SELECT display_name FROM business_os_mkt_sellers WHERE seller_user_id = ? LIMIT 1",
             (_svc._sid(order.get("seller_user_id")),)).fetchone()) or {}
-        context["store_name"] = str(seller.get("display_name") or "")
+        # Through the canonical accessor rather than off the column, so this
+        # buyer-facing name is resolved the same way every other buyer-facing
+        # surface resolves it. Reading the column raw differs in one case that
+        # matters here: a ``display_name`` of "   " is not empty, so it would
+        # survive the template's omit-when-empty rule and print exactly the
+        # blank row that rule exists to prevent. ``store_name`` strips, so an
+        # all-whitespace name becomes "" and the store line is dropped.
+        #
+        # ``store_name`` and not ``display_store_name``: the latter substitutes
+        # "PulseSoc Store" for an absent name, and this template would rather
+        # say nothing about the store than attribute the shipment to a shop the
+        # buyer never bought from. Omission is this email's existing choice and
+        # is preserved.
+        context["store_name"] = _identity.store_name(seller)
         context["item_summary"] = _item_summary(get_order_items(order_id, conn=conn))
     except Exception as exc:  # noqa: BLE001 - see docstring
         LOGGER.warning("BUSOS_MKT_SHIPPED_CONTEXT_FAILED order=%s error=%s", order_id, exc)
