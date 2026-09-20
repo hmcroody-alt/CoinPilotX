@@ -231,6 +231,56 @@ def _is_missing_table_error(exc: BaseException) -> bool:
     return any(pattern in text for pattern in _MISSING_TABLE_PATTERNS)
 
 
+#: The canonical seller standing, per ``services/seller_access_state``: the
+#: column that module names as "the one authority on whether someone may sell".
+_CANONICAL_APPROVED = "approved"
+
+
+def _canonical_seller_status(conn, owner) -> Optional[str]:
+    """``marketplace_sellers.status`` for this owner, or ``None`` if unknowable.
+
+    WHY A SECOND READ AT ALL
+
+    Two tables have carried seller approval: ``business_os_mkt_sellers``, which
+    this module has always read, and ``marketplace_sellers``, which gates every
+    other selling surface in the app. Nothing kept them in step. An admin
+    suspending a seller through the marketplace tools left the Business OS row
+    saying ``approved``, and a storefront published under that row stayed live
+    and kept taking orders from a seller the platform had already stopped.
+
+    The reconciliation is deliberately an **AND**, not a merge. Both must say
+    approved. That direction matters: it can only ever refuse something that was
+    previously allowed, never allow something previously refused, so it cannot
+    put a shop online that either table would have kept down. A union would have
+    been the tempting shape — "approved anywhere is approved" — and it would have
+    made a stale row a way *past* a live suspension.
+
+    ``None`` means genuinely unknowable and is handled by the caller as a
+    provisioning fact rather than a verdict. A Business-OS-only database (the
+    subsystem is flag-gated and its tests create only its own tables) has no
+    ``marketplace_sellers`` at all; treating that absence as a denial would
+    refuse every publish in an environment where the canonical authority was
+    never installed, which is a different failure from a seller who was refused.
+    Any *other* query failure is raised, not swallowed — "we could not check" and
+    "we checked and no" must not collapse into each other here either.
+    """
+    try:
+        row = _row(conn.execute(
+            "SELECT status FROM marketplace_sellers WHERE user_id = ?",
+            (_sid(owner),)).fetchone())
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_table_error(exc):
+            return None
+        raise StoreError(
+            "Seller approval could not be checked right now. Please try again.",
+            503, "seller_review_failed") from exc
+    # An absent row is not an absent table. This owner has no canonical seller
+    # record, which is a real answer and a denying one.
+    if row is None:
+        return ""
+    return str(row.get("status") or "").strip().lower()
+
+
 def _seller_status(conn, business_id: str) -> tuple:
     """The business owner's seller-approval status, and how we know.
 
@@ -281,7 +331,24 @@ def _seller_status(conn, business_id: str) -> tuple:
         raise StoreError(
             "Seller approval could not be checked right now. Please try again.",
             503, "seller_review_failed") from exc
-    return (None if seller is None else str(seller.get("status") or "")), owner
+    status = None if seller is None else str(seller.get("status") or "")
+    if status != "approved":
+        # Already refusing. There is nothing the canonical table could say that
+        # would change the answer, so it is not asked — and asking anyway would
+        # let a canonical "approved" look, to a future reader, like it might
+        # have mattered.
+        return status, owner
+    canonical = _canonical_seller_status(conn, owner)
+    if canonical is None or canonical == _CANONICAL_APPROVED:
+        # `None` is "this database has no canonical table", not "approved".
+        # Business OS's own gate above has already passed, so falling through
+        # to it leaves the subsystem exactly as strict as it was before.
+        return status, owner
+    # The two disagree, and the canonical one wins. Its word is returned rather
+    # than a generic refusal so the 403 tells the merchant the actual state —
+    # "your seller status is 'suspended'" is actionable; "not approved" against
+    # a Business OS row that plainly says approved is a support ticket.
+    return (canonical or ""), owner
 
 
 def _require_seller_approved(conn, business_id: str, what: str) -> None:
