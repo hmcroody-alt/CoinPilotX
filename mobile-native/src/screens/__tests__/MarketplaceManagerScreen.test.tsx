@@ -61,15 +61,45 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   setItem: jest.fn(async () => undefined)
 }));
 
+/**
+ * The seller verdict is an external dependency of this screen, and a stubborn
+ * one to supply for real: `useSellerAccess` calls `useFocusEffect`, which
+ * demands a navigation context this suite has never had — it renders the screen
+ * bare with a hand-rolled `navigation` object. Wrapping all 12 existing tests in
+ * a NavigationContainer to satisfy one hook would quietly change what they are
+ * exercising.
+ *
+ * So it is mocked, defaulting to an approved seller: the state in which this
+ * file's actual subject — the two panes — is on screen at all. The gate is not
+ * thereby assumed away; the `selling behind the seller gate` block below drives
+ * this mock through the refusing states rather than trusting the default.
+ */
+const mockUseSellerAccess = jest.fn();
+const mockRefreshSellerAccess = jest.fn();
+jest.mock("../../marketplace/useSellerAccess", () => ({
+  useSellerAccess: () => mockUseSellerAccess()
+}));
+
 import {
   MARKETPLACE_BOOST_ENABLED,
   MARKETPLACE_CART_ENABLED,
   MARKETPLACE_OFFERS_ENABLED
 } from "../../api/marketplaceOffers";
 import { MARKETPLACE_MOCK_DATA_GAPS } from "../../api/marketplaceScreen";
+import { DENIED_SELLER_ACCESS, parseSellerAccessState } from "../../api/sellerAccess";
 import { MarketplaceManagerScreen } from "../MarketplaceManagerScreen";
 
 const navigation = { navigate: jest.fn(), goBack: jest.fn() };
+
+function sellerAccess(status: string) {
+  return {
+    state: parseSellerAccessState({ seller_application_status: status }),
+    loading: false,
+    failed: false,
+    stale: false,
+    refresh: mockRefreshSellerAccess
+  };
+}
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -99,6 +129,7 @@ beforeEach(() => {
   mockSellerOrders.mockResolvedValue({ orders: [] });
   mockCachedMarketplace.mockResolvedValue([]);
   mockCachedStore.mockResolvedValue(null);
+  mockUseSellerAccess.mockReturnValue(sellerAccess("APPROVED"));
 });
 
 async function renderScreen() {
@@ -259,5 +290,108 @@ describe("MarketplaceManagerScreen", () => {
     // The animation stops; the content does not disappear.
     expect(await findByText("Road bike")).toBeTruthy();
     expect(await findByText("Your items")).toBeTruthy();
+  });
+});
+
+describe("selling behind the seller gate", () => {
+  /**
+   * Selling and the Store dashboard used to answer differently for one account:
+   * the dashboard consulted the seller application, this pane consulted nothing
+   * at all, so a seller with a half-finished application saw a full Selling tab
+   * — empty, and reading as a broken store rather than an unfinished form.
+   * Both now read the one verdict from the one endpoint.
+   */
+
+  it("shows the gate instead of the selling pane for an unapproved seller", async () => {
+    for (const status of [
+      "NO_APPLICATION",
+      "DRAFT",
+      "SUBMITTED",
+      "UNDER_REVIEW",
+      "MORE_INFORMATION_REQUIRED",
+      "DECLINED",
+      "SUSPENDED"
+    ] as const) {
+      mockUseSellerAccess.mockReturnValue(sellerAccess(status));
+      const view = await renderScreen();
+      expect(view.queryByTestId("marketplace-selling-gate")).toBeTruthy();
+      expect(view.queryByText("Your items")).toBeNull();
+      view.unmount();
+    }
+  });
+
+  it("does not gate buying, which was never about being a seller", async () => {
+    // The two panes are independent surfaces that happen to share a screen.
+    // Refusing to let someone *buy* because their seller application is a
+    // draft would be a new bug introduced by the fix for the old one.
+    mockUseSellerAccess.mockReturnValue(sellerAccess("DRAFT"));
+    const { findByText, findAllByLabelText } = await renderScreen();
+
+    // The toggle is switched rather than the hidden pane inspected in place.
+    // Both panes stay mounted (that is how each one's scroll position survives
+    // the toggle), but the inactive one carries `display: "none"`, which RNTL
+    // excludes from queries by default — so reading it while hidden would prove
+    // only that it exists in the tree, not that a draft seller can reach it.
+    await act(async () => {
+      fireEvent.press(await findByText("Buying"));
+    });
+
+    // Asserted through the accessible name rather than the visible title: the
+    // card composes its title alongside other nodes, so an exact text query
+    // misses it and would read here as "the buying feed is gone" — the exact
+    // false alarm this test exists to rule out.
+    expect((await findAllByLabelText(/Oak dining table/)).length).toBeGreaterThan(0);
+  });
+
+  it("gates while the verdict is still loading, rather than after", async () => {
+    // An open Selling pane during `loading` is the same bug narrowed to the
+    // first few hundred milliseconds of a cold launch — long enough to see.
+    mockUseSellerAccess.mockReturnValue({
+      state: DENIED_SELLER_ACCESS,
+      loading: true,
+      failed: false,
+      stale: false,
+      refresh: mockRefreshSellerAccess
+    });
+    const view = await renderScreen();
+    expect(view.queryByTestId("marketplace-selling-gate-loading")).toBeTruthy();
+    expect(view.queryByText("Your items")).toBeNull();
+  });
+
+  it("retries rather than denies when the verdict could not be read", async () => {
+    mockUseSellerAccess.mockReturnValue({
+      state: DENIED_SELLER_ACCESS,
+      loading: false,
+      failed: true,
+      stale: true,
+      refresh: mockRefreshSellerAccess
+    });
+    const view = await renderScreen();
+    await act(async () => {
+      fireEvent.press(view.getByTestId("marketplace-selling-gate-cta"));
+    });
+    expect(mockRefreshSellerAccess).toHaveBeenCalled();
+    expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("sends a suspended seller to their orders, not to the application form", async () => {
+    mockUseSellerAccess.mockReturnValue(sellerAccess("SUSPENDED"));
+    const view = await renderScreen();
+    await act(async () => {
+      fireEvent.press(view.getByTestId("marketplace-selling-gate-cta"));
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith("SellerStore", {
+      mode: "orders",
+      title: "Orders"
+    });
+  });
+
+  it("sends an applicant to the application form", async () => {
+    mockUseSellerAccess.mockReturnValue(sellerAccess("DRAFT"));
+    const view = await renderScreen();
+    await act(async () => {
+      fireEvent.press(view.getByTestId("marketplace-selling-gate-cta"));
+    });
+    expect(navigation.navigate).toHaveBeenCalledWith("MerchantApply");
   });
 });

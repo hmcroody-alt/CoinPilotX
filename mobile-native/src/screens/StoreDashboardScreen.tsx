@@ -54,6 +54,9 @@ import {
   type MarketplacePricingRule
 } from "../api/marketplace";
 import { PulseApiError } from "../api/pulseApi";
+import { sellerStoreNameOrEmpty } from "../api/sellerIdentity";
+import type { CardPaymentStatus } from "../api/sellerAccess";
+import { CardPaymentsCard } from "../components/store/CardPaymentsCard";
 import {
   StoreAttentionBanner,
   StoreBulkBar,
@@ -223,9 +226,23 @@ type Props = {
     push?: (...args: any[]) => void;
     goBack?: () => void;
   };
+  /**
+   * The seller's card-payment readiness, passed down rather than fetched here.
+   *
+   * `SellerStoreRoute` already holds the one seller verdict for this route — it
+   * is what decided this screen may render at all — so reading it again here
+   * would mean two `/seller/access-state` requests on every focus, and two
+   * answers that can disagree for as long as the second is in flight.
+   *
+   * Optional because three test files and any future non-route caller mount
+   * this screen directly. When it is absent the card-payments row is simply not
+   * drawn: an absent status is *unknown*, and the one thing worse than no CTA
+   * is a "Set up payments" button shown to a seller who already has.
+   */
+  cardPaymentStatus?: CardPaymentStatus;
 };
 
-export function StoreDashboardScreen({ route, navigation }: Props) {
+export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: Props) {
   const formatters = useFormatters();
   const reducedMotion = useLogiNexusReducedMotion();
   const insets = useSafeAreaInsets();
@@ -712,7 +729,12 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
   // Gathering rows across tabs is the workflow, and `selectionSummary` names the
   // part that scrolled off screen so nothing is selected invisibly.
 
-  const sellerName = String(snapshot.listings[0]?.seller_name || "Your store");
+  // Through `sellerStoreNameOrEmpty`, not off `seller_name` directly. The raw
+  // field is a legacy alias the server keeps pointed at the canonical store
+  // name; reading it here happened to work, but it made this the one seller
+  // surface deciding for itself which of several name-shaped keys to trust —
+  // exactly how the buyer surfaces came to disagree with each other.
+  const sellerName = sellerStoreNameOrEmpty(snapshot.listings[0]) || "Your store";
   const listingsFailed = result?.listings.status === "error";
   const ordersFailed = result?.orders.status === "error";
 
@@ -745,6 +767,24 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
     },
     [navigation]
   );
+
+  /**
+   * "Set up payments" — hands off to the payout-onboarding layer.
+   *
+   * Deliberately a navigation, not a `POST /api/pulse/payouts/connect` from
+   * here. That route has three success-shaped answers — a link, or `ok: true`
+   * with no link because the deployment has no Stripe key, or a 403 because
+   * approval has not landed — and `MoneyLayerScreen` already tells them apart
+   * (`payoutOnboardingOutcome`), opens Stripe's own hosted page, and re-checks
+   * status when the app returns to the foreground. A second caller here would
+   * be a second chance to read `ok: true` as "you're set up".
+   *
+   * `navigate`, not `push`: `MoneyLayer` is a different route, so there is no
+   * merge-into-the-focused-screen problem the way there is for `SellerStore`.
+   */
+  const openPaymentSetup = useCallback(() => {
+    navigation.navigate("MoneyLayer", { layer: "payout_onboarding" });
+  }, [navigation]);
 
   /**
    * The listing editor is a panel inside `SellerStoreScreen`, and this screen
@@ -1166,6 +1206,21 @@ export function StoreDashboardScreen({ route, navigation }: Props) {
                     setExpanded(true);
                   }}
                   reducedMotion={reducedMotion}
+                />
+              </Animated.View>
+            ) : null}
+
+            {/* Card payments. Sits with the store-level rows rather than in
+                the listing list because it is a fact about the storefront, not
+                about any one product — and it renders at all only when there
+                is something to say: `CardPaymentsCard` returns null for READY.
+                See `marketplace/cardPaymentState` for which states get a CTA. */}
+            {cardPaymentStatus ? (
+              <Animated.View style={entrance.styleFor(SLOT.banner)}>
+                <CardPaymentsCard
+                  status={cardPaymentStatus}
+                  onSetUpPayments={openPaymentSetup}
+                  testID="store-card-payments"
                 />
               </Animated.View>
             ) : null}
