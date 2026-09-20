@@ -113,6 +113,25 @@ SAFE_CONTEXT_KEYS = frozenset({
 })
 
 
+def greeting_first_name(user: Mapping[str, Any] | None) -> str:
+    """The name to greet a user by, or "" when the row carries none.
+
+    ``users`` has no ``first_name`` column, so the first token of a full name is
+    the closest thing to one. ``display_name`` is the fallback rather than the
+    first choice because it is free-form and often a handle or a store name.
+
+    Lives here rather than in ``bot`` so that the payout scheduler, which cannot
+    import ``bot`` without a cycle, derives the same name from the same rule.
+    Callers supply the row; this makes no database access of its own.
+    """
+    user = dict(user or {})
+    for field in ("full_name", "display_name"):
+        tokens = str(user.get(field) or "").split()
+        if tokens:
+            return tokens[0]
+    return str(user.get("username") or "").strip()
+
+
 def _spec(
     *,
     template: str,
