@@ -248,3 +248,57 @@ def test_the_buyer_view_preserves_the_verdict_even_as_it_hides_the_reason(cur):
     view = capability.buyer_view(decision)
     assert view["card_payments_available"] == decision["card_payments_available"] is False
     assert view["reason_code"] == marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE
+
+
+# --------------------------------------------------------------------------- #
+# The two unavailable sentences. Same reason code, different truth.
+# --------------------------------------------------------------------------- #
+
+def test_a_seller_refusal_says_it_is_the_seller_not_the_platform(cur):
+    """The collapsed code is shared with the platform-off case.
+
+    Both arrive at the buyer as ``PAYMENT_UNAVAILABLE``, so a message chosen
+    from the *collapsed* code cannot tell them apart and would describe every
+    refusal as a temporary platform pause. For a seller who has never onboarded
+    that is two lies at once: it tells the buyer to come back later for
+    something that will not change on its own, and it blames PulseSoc for a
+    condition PulseSoc has already fixed.
+    """
+    for reason in capability.SELLER_PRIVATE_REASONS:
+        view = capability.buyer_view({
+            "card_payments_available": False,
+            "reason_code": reason,
+            "message": capability.SELLER_MESSAGES[reason],
+            "badge": marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_BADGE,
+        })
+        assert view["message"] == capability.SELLER_CARD_UNAVAILABLE_MESSAGE, reason
+        # Still one sentence for all five: which of them it is stays private.
+        assert view["reason_code"] == marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE
+
+
+def test_the_platform_pause_still_blames_the_platform(cur, monkeypatch):
+    """The other direction of the same distinction.
+
+    With the rail off, the seller's own state is unknown and irrelevant —
+    telling a buyer the *seller* has not enabled cards would be an accusation
+    the platform has no evidence for, about a seller who may be fully onboarded.
+    """
+    monkeypatch.delenv(marketplace_payment_pause.CARD_PAYMENTS_ENABLED_ENV_VAR, raising=False)
+    _seller(cur)
+    view = capability.buyer_view(capability.evaluate(cur, seller_user_id=SELLER))
+    assert view["reason_code"] == capability.FEATURE_DISABLED
+    assert view["message"] == marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE
+    assert view["message"] != capability.SELLER_CARD_UNAVAILABLE_MESSAGE
+
+
+def test_the_seller_sentence_names_no_seller_and_no_reason():
+    """It is rendered to an anonymous buyer, so it must carry nothing.
+
+    A sentence that named the seller, or said *which* requirement was missing,
+    would put a seller's account state on an unauthenticated response.
+    """
+    message = capability.SELLER_CARD_UNAVAILABLE_MESSAGE
+    assert message.strip()
+    lowered = message.lower()
+    for leak in ("stripe", "connect", "payout", "approv", "requirement", "verif"):
+        assert leak not in lowered, leak

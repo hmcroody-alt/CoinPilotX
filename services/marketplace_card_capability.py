@@ -115,9 +115,20 @@ SELLER_MESSAGES = {
     INVENTORY_UNAVAILABLE: "This listing is out of stock.",
 }
 
-#: What a buyer is told. Every seller-private reason lands on the same sentence,
-#: which is also the sentence the cash lane has always used.
+#: What a buyer is told when the *platform* rail is off. Describes PulseSoc, not
+#: the seller, because that is what is true in that case.
 _BUYER_FALLBACK = marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE
+
+#: What a buyer is told when the rail is on but *this seller* cannot use it.
+#: Deliberately one sentence for all five seller-private reasons: a buyer learns
+#: that cash is the lane for this purchase, and learns nothing about whether the
+#: seller is unapproved, mid-verification or has payouts disabled.
+#:
+#: This exists because ``_BUYER_FALLBACK`` became a lie the moment the rail could
+#: be on. "Card payments are temporarily unavailable" tells a buyer to come back
+#: later for a seller who has never onboarded and may never do so, and it blames
+#: the platform for a condition the platform has already fixed.
+SELLER_CARD_UNAVAILABLE_MESSAGE = "Seller has not enabled card payments yet."
 
 BUYER_MESSAGES = {
     AVAILABLE: SELLER_MESSAGES[AVAILABLE],
@@ -348,11 +359,19 @@ def buyer_view(decision: Mapping[str, Any]) -> dict:
     could log or display would make it one.
     """
     reason = str(decision.get("reason_code") or STRIPE_UNAVAILABLE)
-    if reason in SELLER_PRIVATE_REASONS:
+    seller_private = reason in SELLER_PRIVATE_REASONS
+    if seller_private:
         reason = marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_CODE
+    if seller_private:
+        # The collapsed code is shared with the platform-off case, so the code
+        # alone can no longer pick the sentence. Chosen from what was *actually*
+        # decided, before the collapse, rather than from what survived it.
+        message = SELLER_CARD_UNAVAILABLE_MESSAGE
+    else:
+        message = BUYER_MESSAGES.get(reason, _BUYER_FALLBACK)
     return {
         "card_payments_available": bool(decision.get("card_payments_available")),
         "reason_code": reason,
-        "message": BUYER_MESSAGES.get(reason, _BUYER_FALLBACK),
+        "message": message,
         "badge": decision.get("badge"),
     }

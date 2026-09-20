@@ -83,3 +83,66 @@ describe("fetchCheckoutOptions", () => {
     expect(CHECKOUT_OPTIONS_FALLBACK.cardPaymentsAvailable).toBe(false);
   });
 });
+
+/**
+ * Asking about a seller.
+ *
+ * The platform rail being open stopped being the whole answer the moment it was
+ * opened: a seller who has not finished Connect onboarding still cannot take a
+ * card. If the client does not name the seller, the server can only give the
+ * platform answer, and the screen renders an enabled card row that the checkout
+ * lane refuses once the buyer has already chosen to pay.
+ */
+describe("fetchCheckoutOptions(sellerUserId)", () => {
+  it("names the seller in the request", async () => {
+    mockPulseApi.mockResolvedValue({ shipping_countries: ["US"], card_payments_available: true });
+    await fetchCheckoutOptions(4242);
+    expect(mockPulseApi).toHaveBeenCalledWith(
+      "/api/pulse/marketplace/cart/checkout-options?seller_id=4242"
+    );
+  });
+
+  it("accepts the string a navigation param actually is", async () => {
+    // Route params arrive as strings. A number-only signature would typecheck
+    // at the call site and then silently drop the seller at runtime.
+    mockPulseApi.mockResolvedValue({ shipping_countries: ["US"], card_payments_available: true });
+    await fetchCheckoutOptions("4242");
+    expect(mockPulseApi).toHaveBeenCalledWith(
+      "/api/pulse/marketplace/cart/checkout-options?seller_id=4242"
+    );
+  });
+
+  it("asks bare when there is no seller to name", async () => {
+    // A multi-seller cart has no single seller. Asking `seller_id=0` would be a
+    // question about a seller that does not exist, and the honest answer to
+    // that is "unavailable" — closing the card row for a cart that may be
+    // perfectly payable. The charge-time gate is still the backstop.
+    mockPulseApi.mockResolvedValue({ shipping_countries: ["US"], card_payments_available: true });
+    for (const empty of [undefined, 0, "", "abc", null as unknown as undefined]) {
+      mockPulseApi.mockClear();
+      await fetchCheckoutOptions(empty);
+      expect(mockPulseApi).toHaveBeenCalledWith("/api/pulse/marketplace/cart/checkout-options");
+    }
+  });
+
+  it("carries the server's seller-specific refusal through unchanged", async () => {
+    // The sentence is the server's, not a literal here: the client cannot tell
+    // a platform pause from an un-onboarded seller, and they need different
+    // words. "Temporarily unavailable" about a seller who has never onboarded
+    // tells the buyer to come back for something that will not change.
+    mockPulseApi.mockResolvedValue({
+      shipping_countries: ["US"],
+      card_payments_available: false,
+      payment_badge: "Temporarily Unavailable",
+      payment_unavailable_message: "Seller has not enabled card payments yet."
+    });
+    const options = await fetchCheckoutOptions(4242);
+    expect(options.cardPaymentsAvailable).toBe(false);
+    expect(options.cardUnavailableMessage).toBe("Seller has not enabled card payments yet.");
+  });
+
+  it("still fails closed for a seller when the server cannot be reached", async () => {
+    mockPulseApi.mockRejectedValue(new Error("offline"));
+    expect((await fetchCheckoutOptions(4242)).cardPaymentsAvailable).toBe(false);
+  });
+});

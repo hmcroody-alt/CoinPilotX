@@ -210,11 +210,16 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // response carries whether the card rail is open — and a digital download has
   // to answer that question too. Never throws and never leaves the screen
   // waiting: an unreachable server resolves to the closed default.
+  //
+  // The seller is sent along because the platform rail being open is only half
+  // the answer: this particular seller also has to be able to receive the
+  // money. A cart spanning several sellers has no single `sellerUserId`, so it
+  // gets the platform answer and the charge-time gate remains the backstop.
   useEffect(() => {
     let alive = true;
-    void fetchCheckoutOptions().then((next) => { if (alive) setOptions(next); });
+    void fetchCheckoutOptions(params.sellerUserId).then((next) => { if (alive) setOptions(next); });
     return () => { alive = false; };
-  }, []);
+  }, [params.sellerUserId]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -619,9 +624,16 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         <RadioRow
           selected={options.cardPaymentsAvailable && paymentMethod === "card"}
           title="Card / Stripe"
+          // The unavailable sentence comes from the server rather than from a
+          // literal here, because there is now more than one reason to be
+          // unavailable and they are not interchangeable. "Temporarily paused"
+          // was true while the whole rail was off; said about a seller who has
+          // never onboarded it tells the buyer to come back later for something
+          // that will not change, and blames the platform for the seller's
+          // state. The server knows which case this is; the screen does not.
           detail={options.cardPaymentsAvailable
             ? "Pay by card now. The seller is paid after the order completes."
-            : "Card checkout is temporarily paused. Marketplace orders settle with cash, local pickup, or in person."}
+            : options.cardUnavailableMessage}
           trailing={options.cardPaymentsAvailable ? "" : options.cardBadge}
           disabled={!options.cardPaymentsAvailable}
           onPress={() => {

@@ -105,10 +105,28 @@ export const CHECKOUT_OPTIONS_FALLBACK: CheckoutOptions = {
     "Marketplace card payments are temporarily unavailable. Choose cash, local pickup, or in-person payment."
 };
 
-/** Ask the server what this checkout may offer. Never throws. */
-export async function fetchCheckoutOptions(): Promise<CheckoutOptions> {
+/** Ask the server what this checkout may offer. Never throws.
+ *
+ * `sellerUserId` is optional but should be passed by any caller that knows who
+ * it is buying from. Without it the answer is only whether the *platform* card
+ * rail is on, which stopped being enough the moment that rail was switched on:
+ * a seller who has never finished Connect onboarding still cannot take a card,
+ * and a form built from the platform answer alone offers a card row the
+ * checkout lane then refuses — after the buyer has committed to paying.
+ *
+ * Omitting it is not a silent downgrade to "available": the server's per-seller
+ * verdict is an AND, so a caller that cannot name a seller gets the platform
+ * answer and the charge-time gate still holds. It just holds later, and later
+ * is a worse place for the buyer to find out.
+ */
+export async function fetchCheckoutOptions(sellerUserId?: number | string): Promise<CheckoutOptions> {
   try {
-    const data = (await pulseApi("/api/pulse/marketplace/cart/checkout-options")) as {
+    const seller = Number(sellerUserId || 0);
+    const path =
+      seller > 0
+        ? `/api/pulse/marketplace/cart/checkout-options?seller_id=${encodeURIComponent(String(seller))}`
+        : "/api/pulse/marketplace/cart/checkout-options";
+    const data = (await pulseApi(path)) as {
       shipping_countries?: string[];
       card_payments_available?: boolean;
       payment_badge?: string;

@@ -429,20 +429,68 @@ def cart_checkout_options():
       Unavailable" after an operator turned the rail on, and the only way to
       correct it would be an App Store release. One answer, served.
 
-    This is the **platform** answer and deliberately not a per-seller one. The
-    route is unauthenticated configuration, and whether a given seller has
-    finished Connect onboarding is that seller's business — asked later, on the
-    checkout lanes, where the buyer is known and the verdict is
-    :func:`marketplace_card_capability.buyer_view`-shaped.
+    Without ``seller_id`` this is the **platform** answer: is the rail on at
+    all. With one it is additionally the answer for that seller, because the
+    platform answer alone is not enough to render a checkout form. While the
+    rail was off the two could not disagree — everything was unavailable. Once
+    it is on they disagree for every seller who has not finished Connect
+    onboarding, and a form built from the platform answer alone would offer a
+    card row that the checkout lane then refuses. That is the same
+    "rejection after the form is filled" the country picker above exists to
+    prevent, and it is worse here, because the buyer has committed to paying
+    before being told the seller cannot be paid.
+
+    The per-seller verdict is passed through
+    :func:`marketplace_card_capability.buyer_view`, so this route can be asked
+    about any seller without disclosing *why* a seller is ineligible. It answers
+    "not this seller, not today"; whether that is an unapproved application,
+    outstanding Stripe requirements or disabled payouts stays on the seller's
+    own surfaces. The route stays unauthenticated on that basis.
     """
     card_available = not marketplace_payment_pause.marketplace_card_payments_paused()
+    badge = "" if card_available else marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_BADGE
+    message = "" if card_available else marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE
+
+    raw_seller = (request.args.get("seller_id") or "").strip()
+    if card_available and raw_seller:
+        # Only consulted when the platform rail is already on. A seller lookup
+        # cannot make a disabled rail available, so when the flag is off there
+        # is nothing to ask and no reason to spend a connection asking it.
+        try:
+            seller_id = int(raw_seller)
+        except (TypeError, ValueError):
+            seller_id = 0
+        if seller_id > 0:
+            from services import marketplace_card_capability
+
+            def _ask(cur, _conn):
+                return marketplace_card_capability.buyer_view(
+                    marketplace_card_capability.evaluate(cur, seller_user_id=seller_id)
+                )
+
+            try:
+                verdict = _with_db(_ask)
+            except Exception:
+                # evaluate() already refuses rather than raises; this catches a
+                # failure to get a connection at all. A checkout form that
+                # cannot reach the database must not offer a card lane it
+                # cannot verify, so the failure is a refusal like any other.
+                LOGGER.exception("CART_CHECKOUT_OPTIONS_CARD_LOOKUP_FAILED seller=%s", seller_id)
+                verdict = None
+            if verdict is None or not verdict.get("card_payments_available"):
+                card_available = False
+                badge = marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_BADGE
+                message = (
+                    (verdict or {}).get("message")
+                    or marketplace_card_capability.SELLER_CARD_UNAVAILABLE_MESSAGE
+                )
+
     return _json({
         "ok": True,
         "shipping_countries": list(marketplace_fulfillment.shipping_countries()),
         "card_payments_available": card_available,
-        "payment_badge": "" if card_available else marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_BADGE,
-        "payment_unavailable_message": (
-            "" if card_available else marketplace_payment_pause.MARKETPLACE_CARD_UNAVAILABLE_MESSAGE),
+        "payment_badge": badge,
+        "payment_unavailable_message": message,
     })
 
 
