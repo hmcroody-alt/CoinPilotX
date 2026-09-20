@@ -96729,6 +96729,42 @@ def emit_payment_notification(event, user_id, context=None, email_only=False):
         return {"ok": False, "error": str(exc)}
 
 
+def marketplace_shipped_email_context(cur, record):
+    """What the buyer is told when their order ships, on the caller's cursor.
+
+    Takes the fulfillment route's cursor rather than opening a connection: this
+    runs once per shipment on a request path, and a pool of eight does not want
+    a second connection for three small reads.
+
+    Never raises. The shipment is already committed by the time this is called,
+    so a lookup that fails must cost the buyer a carrier name, not the email —
+    and the template renders every one of these keys as optional.
+    """
+    record = dict(record or {})
+    tx_id = int(record.get("seller_transaction_id") or 0)
+    context = {
+        # The seller_transactions id, matching what payment_succeeded sent for
+        # this same order, so the buyer's two emails name it the same way.
+        "order_id": str(tx_id),
+        "order_reference": f"#{tx_id}",
+        "carrier": str(record.get("carrier") or ""),
+        "tracking_reference": str(record.get("tracking_reference") or ""),
+        "buyer_first_name": greeting_first_name_for(cur, record.get("buyer_user_id")),
+    }
+    try:
+        cur.execute("SELECT metadata_json FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
+        details = json.loads(dict(cur.fetchone() or {}).get("metadata_json") or "{}")
+        context["item_summary"] = str(details.get("title") or "")[:160]
+        cur.execute(
+            "SELECT display_name, business_name FROM marketplace_sellers WHERE user_id=? LIMIT 1",
+            (int(record.get("seller_id") or 0),),
+        )
+        context["store_name"] = marketplace_seller_identity.display_store_name(cur.fetchone())
+    except Exception as exc:
+        logging.warning("MARKETPLACE_SHIPPED_CONTEXT_FAILED order=%s error=%s", tx_id, exc)
+    return context
+
+
 def emit_seller_application_event(user_id, status, context):
     """Send the applicant's payment notification. Call this AFTER the commit.
 
