@@ -223,7 +223,9 @@ describe("getOfficeSecurityStatus", () => {
       setupRequired: false,
       cooldownSeconds: 30,
       biometricPreference: "enabled",
-      unlocked: true
+      unlocked: true,
+      // A 200 is not a refusal, so there is no tier to name.
+      upgradeTier: null
     });
   });
 
@@ -235,7 +237,9 @@ describe("getOfficeSecurityStatus", () => {
       setupRequired: false,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false
+      unlocked: false,
+      // "We could not look" is the one answer that must never carry a price.
+      upgradeTier: null
     });
   });
 
@@ -252,8 +256,44 @@ describe("getOfficeSecurityStatus", () => {
       setupRequired: false,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false
+      unlocked: false,
+      // This body named no tier, and none is invented. `_gate` refuses an
+      // unrecognised verdict generically rather than guessing precisely so it
+      // never asks for money without naming a price; substituting a plausible
+      // rung here would undo that on the client.
+      upgradeTier: null
     });
+  });
+
+  /**
+   * The tier the refusal names, carried rather than dropped.
+   *
+   * `_gate` has always sent `minimum_tier` alongside "Your plan does not
+   * include this" — the sentence and the rung that would satisfy it travel
+   * together — and this client used to keep the status code and discard the
+   * body. That left one door covering two different people: a member whose
+   * membership lapsed, and a member whose membership is perfectly active but
+   * whose tier does not reach this far up the ladder. Both get an identical
+   * 403, so without the rung there is nothing to tell them apart, and the
+   * second person was told to renew a membership that had not lapsed.
+   */
+  it("carries the tier a 403 names, so the door can tell 'lapsed' from 'higher rung'", async () => {
+    mockPulseApi.mockRejectedValueOnce(
+      apiError(403, { state: "NOT_ENTITLED", minimum_tier: "PRIVATE" })
+    );
+    const status = await getOfficeSecurityStatus();
+    expect(status.state).toBe("UPGRADE_REQUIRED");
+    expect(status.upgradeTier).toBe("PRIVATE");
+  });
+
+  it("does not attach a tier to an outage", async () => {
+    // Belt and braces for the asymmetry above: a 503 carrying a stray
+    // `minimum_tier` must still name no price. Reading the field off anything
+    // but a 403 would let a degraded resolve bill someone for downtime.
+    mockPulseApi.mockRejectedValueOnce(apiError(503, { minimum_tier: "PRIVATE" }));
+    const status = await getOfficeSecurityStatus();
+    expect(status.state).toBe("UNAVAILABLE");
+    expect(status.upgradeTier).toBeNull();
   });
 
   it("leaves the server's other refusals on the UNAVAILABLE path", async () => {
@@ -306,7 +346,8 @@ describe("the owner's path through the door", () => {
       setupRequired: true,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false
+      unlocked: false,
+      upgradeTier: null
     });
     // The assertion that names the bug: no renew path is reachable from here.
     expect(status.state).not.toBe("UPGRADE_REQUIRED");

@@ -299,6 +299,19 @@ export type OfficeSecurityStatus = {
   biometricPreference: "enabled" | "disabled" | "unset";
   /** Whether the grant THIS device presented is currently valid. */
   unlocked: boolean;
+  /**
+   * The tier the refusal named, carried verbatim from the 403 body's
+   * `minimum_tier`. Null whenever the server did not say.
+   *
+   * `_gate` has always sent this — "Your plan does not include this" travels
+   * with the rung that would include it — and this client used to drop the
+   * whole body on the floor and keep only the status code. That is what left
+   * the lock gate with one sentence for two different people: a member whose
+   * membership lapsed, and a member whose membership is perfectly active but
+   * does not reach this far up the ladder. Telling the second person to "renew"
+   * is both false and useless — renewing buys them the tier they already hold.
+   */
+  upgradeTier: string | null;
 };
 
 /**
@@ -359,7 +372,9 @@ export async function getOfficeSecurityStatus(): Promise<OfficeSecurityStatus> {
       cooldownSeconds: asFiniteNumber(body.cooldown_seconds) ?? 0,
       biometricPreference:
         preference === "enabled" || preference === "disabled" ? preference : "unset",
-      unlocked: body.unlocked === true
+      unlocked: body.unlocked === true,
+      // A 200 is not a refusal, so there is no tier to name.
+      upgradeTier: null
     };
   } catch (error) {
     // A 403 is not a failure to reach the server -- it is the server's answer.
@@ -374,9 +389,27 @@ export async function getOfficeSecurityStatus(): Promise<OfficeSecurityStatus> {
       setupRequired: false,
       cooldownSeconds: 0,
       biometricPreference: "unset",
-      unlocked: false
+      unlocked: false,
+      // Kept only for the refusal that actually names a tier. Reading it off a
+      // 503 would attach a rung to "we could not look", which is the one answer
+      // that must never carry a price.
+      upgradeTier: upgradeRequired ? readMinimumTier(error) : null
     };
   }
+}
+
+/**
+ * The rung named by a 403, or null when the server named none.
+ *
+ * Null is a real and expected outcome, not a parse failure: `_gate` refuses an
+ * unrecognised verdict generically rather than guessing, precisely so it never
+ * asks for money without naming a price. The caller must keep that distinction
+ * — a missing tier means "say it generically", never "substitute one".
+ */
+function readMinimumTier(error: unknown): string | null {
+  if (!(error instanceof PulseApiError)) return null;
+  const tier = asText(asRecord(error.details).minimum_tier).trim();
+  return tier || null;
 }
 
 /** First-entry passcode creation (Stages 1-3). The value crosses once, in the body. */

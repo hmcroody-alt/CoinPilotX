@@ -71,6 +71,7 @@ import {
   setupOfficePasscode,
   unlockOffice
 } from "../api/privateOffice";
+import { useCanonicalTier } from "../entitlements/useCanonicalTier";
 import { useTranslation } from "../i18n";
 import { useAuth } from "../session/auth";
 import { getBiometricCapability } from "../session/biometricAuth";
@@ -99,6 +100,28 @@ const PASSCODE_MAX_LENGTH = 12;
  * membership and an unreachable server need different sentences and different
  * buttons: retrying a 403 can never succeed, and offering "Try again" to
  * someone whose subscription expired is a dead end that hides the real reason.
+ *
+ * That split was right and still did not go far enough, because ONE door was
+ * still covering two different people. A 403 means "your tier does not reach
+ * this", and there are two ways to be in that position:
+ *
+ *   the membership lapsed        -> renewing genuinely fixes it;
+ *   the membership is active     -> renewing buys the rung they already stand
+ *   but the rung is higher          on, and changes nothing.
+ *
+ * The door said "Private Office is part of premium membership, and yours isn't
+ * active right now. Renew to open it again." to both. To the second person that
+ * is false three times over — Private Office is NOT part of premium membership
+ * (it is `TIER_PRIVATE`, a rung above), their membership IS active, and "again"
+ * claims they once had something they never did. An active Premium member who
+ * opened Private Meetings was told their membership had lapsed and sent to pay
+ * for a tier they were already on. That is the shape of the original report:
+ * "I'm Premium and this is still locked."
+ *
+ * So the sentence now branches on the member's own canonical tier, and the
+ * honest half reuses the exact copy `PrivateOfficeScreen` already renders for
+ * this case — "Upgrade required / Private Office is included with {{tier}}",
+ * with no renew button, because there is nothing to renew.
  */
 type GateDoor =
   | "CHECKING"
@@ -129,6 +152,21 @@ function digitsOnly(value: string): string {
 export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
   const { t } = useTranslation();
   const { authState } = useAuth();
+  /**
+   * Read only to tell "lapsed" apart from "not high enough", never to decide
+   * access — the 403 already decided that and the server stays the judge.
+   *
+   * Three outcomes, not two, because "we could not confirm your membership" is
+   * not "you have no membership". Collapsing UNKNOWN into LAPSED would put the
+   * renew prompt back in front of exactly the member it is most wrong for —
+   * a paying one we merely failed to reach — which is the failure this whole
+   * mission is about. UNKNOWN therefore gets the plan-neutral sentence, which
+   * is true whichever way the unresolved read would have gone, and no button:
+   * we do not ask for money on the strength of a question we could not answer.
+   */
+  const tier = useCanonicalTier();
+  const membership: "ACTIVE" | "LAPSED" | "UNKNOWN" =
+    tier.state !== "resolved" ? "UNKNOWN" : tier.effectiveTier === "FREE" ? "LAPSED" : "ACTIVE";
   const lock = useSyncExternalStore(subscribeOfficeLock, getOfficeLockSnapshot);
   // The envelope disappears when the bearer session dies, but the member can
   // still be signed in via the web cookie — the auth context knows who they
@@ -137,6 +175,9 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
   const authUserId = Number(authState.user?.user_id ?? 0);
 
   const [door, setDoor] = useState<GateDoor>("CHECKING");
+  // The rung the refusal named. Null means the server named none, which is a
+  // real answer and is rendered generically rather than guessed at.
+  const [upgradeTier, setUpgradeTier] = useState<string | null>(null);
   const [userId, setUserId] = useState(0);
   const [busy, setBusy] = useState(false);
   const [passcode, setPasscode] = useState("");
@@ -196,6 +237,7 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
       if (!mounted.current) return;
       setCooldown(status.cooldownSeconds);
       if (status.state === "UPGRADE_REQUIRED") {
+        setUpgradeTier(status.upgradeTier);
         setDoor("UPGRADE_REQUIRED");
         return;
       }
@@ -511,9 +553,24 @@ export function PrivateOfficeLockGate({ children, onDismiss, onRenew }: Props) {
         {door === "UPGRADE_REQUIRED" ? (
           <View style={styles.panel}>
             <Ionicons name="lock-closed-outline" size={26} color={colors.accent} />
-            <Text style={styles.panelTitle}>{t("premium:privateOffice.lock.upgrade.title")}</Text>
-            <Text style={styles.panelText}>{t("premium:privateOffice.lock.upgrade.body")}</Text>
-            {onRenew ? (
+            <Text style={styles.panelTitle}>
+              {membership === "LAPSED"
+                ? t("premium:privateOffice.lock.upgrade.title")
+                : t("premium:privateOffice.upgrade.title")}
+            </Text>
+            <Text style={styles.panelText}>
+              {membership === "LAPSED"
+                ? t("premium:privateOffice.lock.upgrade.body")
+                : membership === "ACTIVE" && upgradeTier
+                  ? t("premium:privateOffice.upgrade.body", { tier: upgradeTier })
+                  : t("premium:privateOffice.upgrade.bodyGeneric")}
+            </Text>
+            {/* The renew button appears for a lapsed membership and nobody
+                else. To an active member it is the one control that cannot
+                help — it sells the tier they already hold — and to a member we
+                could not resolve it is a charge justified by a guess. A button
+                that takes money without changing anything is worse than none. */}
+            {onRenew && membership === "LAPSED" ? (
               <Pressable style={styles.primaryButton} onPress={onRenew} accessibilityRole="button">
                 <Text style={styles.primaryButtonText}>
                   {t("premium:privateOffice.lock.upgrade.action")}

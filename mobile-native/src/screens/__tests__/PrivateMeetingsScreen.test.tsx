@@ -70,6 +70,28 @@ jest.mock("../../api/privateOffice", () => ({
   unlockOffice: (...args: unknown[]) => mockUnlockOffice(...args)
 }));
 
+/**
+ * The member's own tier, as the lock gate reads it.
+ *
+ * Stubbed for the same reason the module above is: the real hook issues a
+ * network read on mount, and this suite is not about entitlement. Leaving it
+ * real would also route that read through the shared process-wide cache, so one
+ * case's answer would decide the next case's copy.
+ *
+ * It is stubbed rather than merely tolerated because of the claim at the bottom
+ * of this file — "no transport of its own". That claim is about the screen not
+ * hand-rolling a per-row read; the entitlement answer is a single de-duplicated
+ * fetch shared by every premium surface in the app, which is the opposite of
+ * what that case guards against. Mocking keeps the assertion pointed at what it
+ * was written for instead of quietly widening it into "the gate may not consult
+ * the one shared authority".
+ */
+jest.mock("../../entitlements/useCanonicalTier", () => ({
+  useCanonicalTier: () => ({ state: "unavailable", effectiveTier: "FREE" }),
+  loadCanonicalTier: jest.fn(async () => ({ state: "unavailable", effectiveTier: "FREE" })),
+  resetCanonicalTier: jest.fn()
+}));
+
 jest.mock("../../session/sessionStore", () => ({
   ...jest.requireActual("../../session/sessionStore"),
   getSessionEnvelope: async () => ({
