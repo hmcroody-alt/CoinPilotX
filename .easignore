@@ -20,6 +20,31 @@ CoinPilotX:screenshots:/
 __pycache__/
 **/__pycache__/
 
+# The Flask backend is not an input to an iOS build. Expo needs mobile-native/
+# and the repo-root JS config; none of the Python service, its templates, its
+# static assets or its test suite is read by the native build, and together they
+# are roughly 60 MB of the upload. Excluding them is also what keeps this archive
+# comfortably inside EAS Build's 2 GB limit as the backend grows.
+#
+# Every one of these is anchored with a leading slash on purpose. Un-anchored,
+# gitignore semantics match the name at ANY depth, and the backend shares
+# directory names with live React Native source: mobile-native/src/services is
+# the whole API layer, plus src/data, src/emoji/data and a modules/*/tests dir.
+# An un-anchored `services/` silently ships an archive whose app cannot build.
+/static/
+/services/
+/tests/
+/scripts/
+/docs/
+/backend/
+/data/
+/models/
+/migrations/
+/templates/
+/UNDX_RECON/
+/UNDX_HUGGINGFACE/
+/*.py
+
 # Native iOS source is required for production signing, but generated outputs are not.
 mobile-native/ios/Pods/
 mobile-native/ios/build/
@@ -28,6 +53,14 @@ mobile-native/ios/**/*.xcuserdata/
 mobile-native/ios/**/*.xcuserstate
 mobile-native/ios/**/DerivedData/
 mobile-native/ios/.xcode.env.local
+
+# Out-of-tree derived data for the local device and simulator build rigs. These
+# live at the repo root, not under ios/, so the DerivedData rule above does not
+# reach them, and they are ~12 GB each -- on their own enough to push the upload
+# past EAS Build's 2 GB archive limit (an 8.2 GB tarball was rejected). They are
+# untracked local build caches and are not inputs to a remote build.
+dd/
+dd-sim/
 mobile-native/.expo/
 mobile-native/node_modules/
 
