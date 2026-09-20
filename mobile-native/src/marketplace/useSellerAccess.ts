@@ -17,6 +17,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import {
   DENIED_SELLER_ACCESS,
   fetchSellerAccessState,
+  isSellerAccessUnsupported,
   loadCachedSellerAccessState,
   type SellerAccessState
 } from "../api/sellerAccess";
@@ -28,6 +29,11 @@ export type SellerAccessResult = {
   failed: boolean;
   /** True while showing a cached answer that the network has not yet confirmed. */
   stale: boolean;
+  /**
+   * True when the server has no access-state route, so there is no verdict to
+   * honour. Callers must not gate on this: see `isSellerAccessUnsupported`.
+   */
+  unsupported: boolean;
   refresh: () => Promise<void>;
 };
 
@@ -36,6 +42,7 @@ export function useSellerAccess(): SellerAccessResult {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [stale, setStale] = useState(false);
+  const [unsupported, setUnsupported] = useState(false);
   const mounted = useRef(true);
   // Set once the server has answered. Guards the cache paint below from
   // overwriting a canonical answer with an older one if the two race.
@@ -56,12 +63,28 @@ export function useSellerAccess(): SellerAccessResult {
       setState(next);
       setFailed(false);
       setStale(false);
-    } catch {
+      setUnsupported(false);
+    } catch (error) {
       if (!mounted.current) return;
+      if (isSellerAccessUnsupported(error)) {
+        // Not a failed check — there is no check on this deployment. Reported
+        // separately so callers can fall through to the pre-gate behaviour
+        // instead of showing a retry that will never succeed.
+        setUnsupported(true);
+        setFailed(false);
+        setStale(false);
+        return;
+      }
       // Keep whatever we last knew rather than flipping to denied: a network
       // blip must not eject an approved seller from their own store. The server
       // re-checks every mutation anyway, so a stale "approved" here costs a
       // refused request, not an escape.
+      //
+      // `unsupported` is cleared here as well as on success. It is a claim
+      // about the server, and a 404 followed by a 503 means the last thing we
+      // know is "could not check", not "there is no check" — leaving it latched
+      // would keep the gate stood down on evidence the next attempt withdrew.
+      setUnsupported(false);
       setFailed(true);
       setStale(true);
     } finally {
@@ -88,5 +111,5 @@ export function useSellerAccess(): SellerAccessResult {
     }, [refresh])
   );
 
-  return { state, loading, failed, stale, refresh };
+  return { state, loading, failed, stale, unsupported, refresh };
 }

@@ -58359,10 +58359,10 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
-    if not seller:
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
         conn.close()
-        return api_error("Merchant approval is required before editing listings.", 403)
+        return refusal
     cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     existing = dict(cur.fetchone() or {})
     if not existing:
@@ -58655,10 +58655,10 @@ def api_pulse_marketplace_seller_listing_resume(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
-    if not seller:
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
         conn.close()
-        return api_error("Merchant approval is required before resuming listings.", 403)
+        return refusal
     cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     listing = dict(cur.fetchone() or {})
     if not listing:

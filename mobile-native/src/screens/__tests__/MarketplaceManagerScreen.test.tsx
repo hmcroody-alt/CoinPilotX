@@ -97,6 +97,7 @@ function sellerAccess(status: string) {
     loading: false,
     failed: false,
     stale: false,
+    unsupported: false,
     refresh: mockRefreshSellerAccess
   };
 }
@@ -351,6 +352,7 @@ describe("selling behind the seller gate", () => {
       loading: true,
       failed: false,
       stale: false,
+      unsupported: false,
       refresh: mockRefreshSellerAccess
     });
     const view = await renderScreen();
@@ -364,6 +366,7 @@ describe("selling behind the seller gate", () => {
       loading: false,
       failed: true,
       stale: true,
+      unsupported: false,
       refresh: mockRefreshSellerAccess
     });
     const view = await renderScreen();
@@ -372,6 +375,26 @@ describe("selling behind the seller gate", () => {
     });
     expect(mockRefreshSellerAccess).toHaveBeenCalled();
     expect(navigation.navigate).not.toHaveBeenCalled();
+  });
+
+  it("does not gate at all against a server that has no gate", async () => {
+    // A 404 on the access-state route means this deployment predates the route
+    // — and therefore predates the server-side enforcement behind it. Gating
+    // here would be a client refusing on behalf of a server that never agreed
+    // to refuse, which is how "We couldn't check your seller status" ended up
+    // in front of every seller on a build that shipped ahead of its backend.
+    mockUseSellerAccess.mockReturnValue({
+      state: DENIED_SELLER_ACCESS,
+      loading: false,
+      failed: false,
+      stale: false,
+      unsupported: true,
+      refresh: mockRefreshSellerAccess
+    });
+    const view = await renderScreen();
+    expect(view.queryByTestId("marketplace-selling-gate")).toBeNull();
+    expect(view.queryByTestId("marketplace-selling-gate-loading")).toBeNull();
+    expect(view.queryByText("Your items")).toBeTruthy();
   });
 
   it("sends a suspended seller to their orders, not to the application form", async () => {

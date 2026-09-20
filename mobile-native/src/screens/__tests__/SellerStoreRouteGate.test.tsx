@@ -50,6 +50,7 @@ function accessOf(status: string, over: Record<string, unknown> = {}) {
     loading: false,
     failed: false,
     stale: false,
+    unsupported: false,
     refresh
   };
 }
@@ -144,6 +145,7 @@ describe("the Store dashboard behind the gate", () => {
       loading: true,
       failed: false,
       stale: false,
+      unsupported: false,
       refresh
     });
     const { view } = open({ mode: "dashboard" });
@@ -196,12 +198,66 @@ describe("the gate's way out", () => {
       loading: false,
       failed: true,
       stale: true,
+      unsupported: false,
       refresh
     });
     const { view, nav } = open({ mode: "dashboard" });
     fireEvent.press(view.getByTestId("seller-access-gate-cta"));
     expect(refresh).toHaveBeenCalled();
     expect(nav.navigate).not.toHaveBeenCalled();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * A server that has no gate
+ * ------------------------------------------------------------------ */
+
+describe("a deployment without the access-state route", () => {
+  /** No verdict, no cache, and a 404 that will 404 again on every retry. */
+  function unsupportedAccess() {
+    return {
+      state: DENIED_SELLER_ACCESS,
+      loading: false,
+      failed: false,
+      stale: false,
+      unsupported: true,
+      refresh
+    };
+  }
+
+  it("opens the Store instead of walling it off", () => {
+    // Observed on a real device: the app shipped ahead of the route, so every
+    // fetch 404'd, nothing was ever cached, and the state stayed denied. The
+    // result was "We couldn't check your seller status" in front of *every*
+    // seller, permanently, with a Try again that could never succeed.
+    //
+    // Falling open is safe here and only here: the gate is routing, not
+    // authorization. A server without this route also lacks the enforcement
+    // behind it, so the seller surfaces there are governed by the checks that
+    // were already in place, and every mutation is re-checked server-side
+    // regardless. A client gate stricter than its server protects nothing
+    // while taking a working store away from an approved seller.
+    mockUseSellerAccess.mockReturnValue(unsupportedAccess());
+    const { view } = open({ mode: "dashboard" });
+    expect(view.queryByTestId("seller-access-gate")).toBeNull();
+    expect(view.queryByTestId("dashboard")).toBeTruthy();
+  });
+
+  it("does not show the retry that would never succeed", () => {
+    mockUseSellerAccess.mockReturnValue(unsupportedAccess());
+    const { view } = open({ mode: "dashboard" });
+    expect(view.queryByTestId("seller-access-gate-cta")).toBeNull();
+    expect(view.queryByTestId("seller-access-gate-loading")).toBeNull();
+  });
+
+  it("still gates when the route exists and answers no", () => {
+    // The negative control for the rule above. `unsupported` must mean "there
+    // is no gate on this server", never "the gate said no" — if the two ever
+    // collapse, the fix for the wall becomes a hole.
+    mockUseSellerAccess.mockReturnValue(accessOf("DRAFT"));
+    const { view } = open({ mode: "dashboard" });
+    expect(view.queryByTestId("seller-access-gate")).toBeTruthy();
+    expect(view.queryByTestId("dashboard")).toBeNull();
   });
 });
 

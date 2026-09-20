@@ -38,6 +38,7 @@ import {
   canOpenStore,
   canSellOnMarketplace,
   fetchSellerAccessState,
+  isSellerAccessUnsupported,
   loadCachedSellerAccessState,
   parseSellerAccessState,
   sellerAccessDestination,
@@ -316,5 +317,74 @@ describe("loadCachedSellerAccessState", () => {
   it("answers null rather than throwing when the cache cannot be read", async () => {
     mockReadJsonCache.mockRejectedValue(new Error("unreadable"));
     await expect(loadCachedSellerAccessState()).resolves.toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * "There is no gate here" vs "the gate could not be read"
+ * ------------------------------------------------------------------ */
+
+describe("isSellerAccessUnsupported", () => {
+  // The real class, not a stand-in. The mock at the top of this file spreads
+  // `requireActual`, so this is the same constructor `pulseApi` throws with —
+  // and a predicate that reads `error.status` is only worth as much as the
+  // guarantee that the status on the wire arrives intact.
+  const { PulseApiError } = jest.requireActual("../pulseApi");
+
+  it("recognises a 404 as a server that predates the route", () => {
+    // Observed in production: the app build shipped ahead of the backend, the
+    // route 404'd on every focus, and the hook reported a failed *check*. That
+    // put "We couldn't check your seller status" in front of every seller with
+    // a retry that could never succeed. A 404 on this path is a provisioning
+    // fact, not a verdict, and not a failure.
+    expect(isSellerAccessUnsupported(new PulseApiError("Not Found", 404, "not_found"))).toBe(true);
+  });
+
+  it("does not mistake a real failure for a missing route", () => {
+    // Each of these means the gate exists and could not be read. Falling open
+    // on any of them would turn a network blip into an unguarded store — the
+    // whole reason the predicate is a status equality and not a status range.
+    for (const status of [400, 401, 403, 408, 429, 500, 502, 503, 504]) {
+      expect(isSellerAccessUnsupported(new PulseApiError("nope", status))).toBe(false);
+    }
+  });
+
+  it("does not fall open on an unreachable server", () => {
+    // `pulseApi` reports a dead connection as 503 `request_unreachable` and a
+    // blown budget as 504 `request_timeout`. Offline is the single most common
+    // way this call fails, so it is the single most important thing that must
+    // not read as "this deployment has no seller gate".
+    expect(isSellerAccessUnsupported(new PulseApiError("unreachable", 503, "request_unreachable"))).toBe(false);
+    expect(isSellerAccessUnsupported(new PulseApiError("slow", 504, "request_timeout"))).toBe(false);
+  });
+
+  it("does not fall open on an error that never came from the API", () => {
+    // A thrown `TypeError`, a rejected promise carrying a string, a null — none
+    // of these carry a status, and a duck-typed check would read `undefined`
+    // and could be spoofed by any object with the right shape.
+    expect(isSellerAccessUnsupported(new TypeError("Network request failed"))).toBe(false);
+    expect(isSellerAccessUnsupported({ status: 404 })).toBe(false);
+    expect(isSellerAccessUnsupported("404")).toBe(false);
+    expect(isSellerAccessUnsupported(null)).toBe(false);
+    expect(isSellerAccessUnsupported(undefined)).toBe(false);
+  });
+
+  it("classifies the error fetchSellerAccessState actually throws", () => {
+    // The predicate and the thrower, joined. `fetchSellerAccessState` does not
+    // catch, so whatever `pulseApi` raises reaches the hook unchanged — and it
+    // is the hook's classification of that object that decides whether a
+    // seller sees their store.
+    const raised = new PulseApiError("Not Found", 404, "not_found");
+    mockPulseApi.mockRejectedValue(raised);
+    return fetchSellerAccessState().then(
+      () => {
+        throw new Error("expected a rejection");
+      },
+      (error) => {
+        expect(isSellerAccessUnsupported(error)).toBe(true);
+        // And nothing was cached: there is no verdict to remember.
+        expect(mockWriteJsonCache).not.toHaveBeenCalled();
+      }
+    );
   });
 });

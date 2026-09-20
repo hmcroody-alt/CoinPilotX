@@ -27,7 +27,7 @@
  * transfer it to.
  */
 import { readJsonCache, writeJsonCache } from "../core/cache";
-import { pulseApi } from "./pulseApi";
+import { PulseApiError, pulseApi } from "./pulseApi";
 
 const SELLER_ACCESS_CACHE_KEY = "pulsesoc.native.seller.access";
 
@@ -154,6 +154,29 @@ export function parseSellerAccessState(payload: unknown): SellerAccessState {
     lifecycle_status: typeof row.lifecycle_status === "string" ? row.lifecycle_status : "",
     degraded: row.degraded === true
   };
+}
+
+/**
+ * Whether the failure means *this server has no seller gate*, not *the check
+ * failed*.
+ *
+ * The same distinction the server draws internally between a missing table and
+ * a missing row, drawn again at the network edge. A 404 on this path is a
+ * provisioning fact: the deployment predates the access-state route. A server
+ * that lacks the route also lacks the enforcement behind it, so the seller
+ * surfaces on that deployment are governed by the checks that were already
+ * there — and a client gate stricter than the server it is talking to protects
+ * nothing while taking a working store away from an approved seller.
+ *
+ * This is safe to fall open on for one reason only: the gate is routing, not
+ * authorization. Every seller mutation is re-checked server-side, so the worst
+ * a wrongly-ungated screen can do is let someone press a button that is then
+ * refused. Inverting it — blocking the surface — is the failure mode that put
+ * "We couldn't check your seller status" in front of every seller on a
+ * deployment that had simply not shipped the route yet.
+ */
+export function isSellerAccessUnsupported(error: unknown): boolean {
+  return error instanceof PulseApiError && error.status === 404;
 }
 
 /** Fetch the canonical state. Throws on transport failure — callers decide. */

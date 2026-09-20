@@ -57,7 +57,7 @@ export function requiresSellerApproval(params?: RootStackParamList["SellerStore"
 
 export function SellerStoreRoute(props: Props) {
   const gated = requiresSellerApproval(props.route?.params);
-  const { state, loading, failed, refresh } = useSellerAccess();
+  const { state, loading, failed, unsupported, refresh } = useSellerAccess();
 
   const handleAction = useCallback(
     (action: SellerAccessAction) => {
@@ -86,7 +86,11 @@ export function SellerStoreRoute(props: Props) {
     [props.navigation, refresh]
   );
 
-  if (gated && (loading || !state.store_access)) {
+  // `unsupported` short-circuits the gate entirely. A deployment without the
+  // access-state route has no verdict to honour and no new enforcement behind
+  // it, so gating here would take the Store away from sellers on a server that
+  // never agreed to gate them. The modes below re-check server-side regardless.
+  if (gated && !unsupported && (loading || !state.store_access)) {
     return (
       <SellerAccessGate
         state={state}

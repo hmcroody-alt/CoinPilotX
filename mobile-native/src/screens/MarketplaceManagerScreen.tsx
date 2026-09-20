@@ -698,7 +698,8 @@ export function MarketplaceManagerScreen({ navigation }: Props) {
               same endpoint, so the two can no longer answer differently for
               one account. Buying is untouched: not being an approved seller
               has never had anything to do with being allowed to buy. */}
-          {sellerAccess.loading || !sellerAccess.state.marketplace_selling_access ? (
+          {!sellerAccess.unsupported &&
+          (sellerAccess.loading || !sellerAccess.state.marketplace_selling_access) ? (
             <SellerAccessGate
               state={sellerAccess.state}
               loading={sellerAccess.loading}
