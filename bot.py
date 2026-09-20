@@ -3344,7 +3344,16 @@ def log_visitor_request():
     # COMMIT per logged request, and the native app drives almost all of its
     # traffic through /api/. Logging it would add a write to every mobile call on
     # a 2-worker gunicorn. API traffic is measured by analytics_events instead.
-    if request.path.startswith(("/api/", "/internal/", "/webhook/", "/stripe-webhook")):
+    # `/stripe/webhook` is the same Flask handler as `/stripe-webhook` and
+    # `/api/stripe/webhook` (one function, three rules) but matched none of the
+    # prefixes above, so Stripe deliveries arriving on it paid for a visitor
+    # row each. That is a write on the webhook hot path, it counts a machine as
+    # a visitor, and it stores Stripe's egress IP in `visitor_logs.ip_address`.
+    # All three spellings are excluded now, so the exclusion no longer depends
+    # on which of the aliases a destination happens to be configured with.
+    if request.path.startswith(
+        ("/api/", "/internal/", "/webhook/", "/stripe-webhook", "/stripe/webhook")
+    ):
         return None
     if request.path in {"/health", "/health/database"}:
         return None
@@ -22005,10 +22014,19 @@ def api_pulse_rewards_claim(reward_id):
                         logging.exception(
                             "REWARD_CONNECT_SNAPSHOT_FAILED user_id=%s", user["user_id"])
                 base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+                # `/pulse/rewards` is not a route — there is no such rule in the
+                # URL map, no catch-all, and no 404 handler, so a seller who
+                # finished Stripe onboarding from a reward claim landed on a
+                # bare 404 with their bank details already submitted. The
+                # account this path creates is a *merchant* Connect account
+                # (see `create_connected_account(user, "merchant")` above), and
+                # `/pulse/merchant/payouts` is the page that reads exactly that
+                # account's onboarding state — the same destination the
+                # marketplace onboarding route hands Stripe.
                 link = _provider.create_onboarding_link(
                     connected_account_id,
-                    refresh_url=f"{base}/pulse/rewards",
-                    return_url=f"{base}/pulse/rewards",
+                    refresh_url=f"{base}/pulse/merchant/payouts",
+                    return_url=f"{base}/pulse/merchant/payouts",
                 )
                 if not link.get("ok"):
                     return jsonify(link), int(link.get("http_status") or 503)
@@ -57930,6 +57948,88 @@ def pulse_apply_marketplace_charge_refund(obj):
         f"{obj.get('id') or 'charge'}:{int(obj.get('amount_refunded') or 0)}")
 
 
+#: What a human is expected to do with a won dispute that cannot be released.
+#: Recorded on the incident rather than executed: the settlement is in one of
+#: two unresolved positions (already transferred, or frozen mid-schedule), and
+#: which one it is decides whether anything is owed at all. Nothing here moves
+#: money — reconciliation has to prove the correct action first.
+MARKETPLACE_DISPUTE_WON_REMEDIATION = (
+    "Do not transition this settlement automatically. Confirm against Stripe "
+    "that the disputed funds were returned to the platform balance, then "
+    "compare the seller ledger: if the seller was already paid, the won "
+    "dispute owes nothing further and the incident is resolved with that note; "
+    "if the settlement is frozen short of payout, release it to the payout "
+    "state its own event log shows the hold interrupted."
+)
+
+
+def pulse_open_dispute_review_incident(tx_id, dispute_id, event_id, status,
+                                       origin, settlement):
+    """Record a won dispute whose settlement cannot be released, for a human.
+
+    Reuses the canonical financial-incident engine — the same append-only table
+    the reconciliation sweep and the payout applier write to, and the one the
+    admin `/api/pulse/finance/incidents` surface reads — so this lands in the
+    operator's existing channel instead of a log line nobody greps. It is typed
+    `PAYOUT_STATE_CONFLICT` for the same reason
+    `reconcile_marketplace_settlements` types its stranded-settlement findings
+    that way: the dispute outcome and the payout state disagree and only a human
+    can say which is right.
+
+    Never raises. A failure to *describe* a stuck settlement must not abort the
+    dispute handler mid-loop, which would skip the remaining transactions, the
+    order-row update and the buyer/seller notifications — and would cost Stripe
+    a 200.
+    """
+    settlement = dict(settlement or {})
+    try:
+        from services.business_os.payments import incidents as _incidents
+
+        return _incidents.open_incident(
+            _incidents.PAYOUT_STATE_CONFLICT,
+            domain="seller_payments",
+            severity="critical",
+            summary=(
+                f"Marketplace settlement {tx_id} closed dispute {dispute_id} as "
+                f"'{status}' but sits in payout state "
+                f"{settlement.get('payout_state') or 'unknown'!r} with no "
+                f"releasable origin state ({origin or 'none recorded'}); the "
+                "recovered funds have no resolved position."
+            ),
+            details={
+                "seller_transaction_id": tx_id,
+                "dispute_id": dispute_id,
+                "stripe_event_id": event_id,
+                "dispute_status": status,
+                "hold_origin_state": origin or "",
+                "payout_state": settlement.get("payout_state") or "",
+                "blocker_code": settlement.get("blocker_code") or "",
+                "seller_id": settlement.get("seller_id") or "",
+                "order_id": settlement.get("order_id") or "",
+                "currency": settlement.get("currency") or "",
+                "net_seller_earnings_minor":
+                    settlement.get("net_seller_earnings_minor"),
+                "seller_reversed_minor": settlement.get("seller_reversed_minor"),
+                "automatic_action_taken": "none",
+                "remediation": MARKETPLACE_DISPUTE_WON_REMEDIATION,
+            },
+            related_object=f"marketplace_settlement:{tx_id}",
+            stripe_ref=str(dispute_id or ""),
+            # Keyed on the row and this dispute, not on the event: a Stripe
+            # redelivery refreshes one incident, while a second chargeback on
+            # the same order is a genuinely new finding.
+            incident_key=(
+                f"{_incidents.PAYOUT_STATE_CONFLICT}:marketplace_settlement:"
+                f"{tx_id}:dispute_won_unreleasable:{dispute_id}"
+            ),
+        )
+    except Exception:
+        logging.exception(
+            "MARKETPLACE_DISPUTE_REVIEW_INCIDENT_FAILED tx_id=%s dispute_id=%s",
+            tx_id, dispute_id)
+        return None
+
+
 def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
     """Freeze, release or reverse a Marketplace settlement for a chargeback.
 
@@ -57973,9 +58073,28 @@ def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
                     # there is no state to hand the settlement back to. Never
                     # invent one: this needs the owner, not an automatic
                     # transition that would relabel a paid order as unpaid.
+                    #
+                    # But a log line is not an operational state. PulseSoc has
+                    # won money back and the settlement it belongs to is in an
+                    # unresolved position, so the finding is persisted as a
+                    # critical financial incident carrying its own remediation
+                    # for a human to execute. The log stays — it is what you
+                    # grep when you already know to look.
                     logging.warning(
                         "MARKETPLACE_DISPUTE_WON_NEEDS_REVIEW tx_id=%s dispute_id=%s origin_state=%s",
                         tx_id, dispute_id, origin or "unknown")
+                    incident = pulse_open_dispute_review_incident(
+                        tx_id, dispute_id, event_id, status, origin, settlement)
+                    outcomes.append({
+                        "seller_transaction_id": tx_id,
+                        "dispute_id": dispute_id,
+                        "action": "needs_review",
+                        "hold_origin_state": origin or "",
+                        "payout_state": settlement.get("payout_state") or "",
+                        "incident_id": (incident or {}).get("id"),
+                        "incident_key": (incident or {}).get("incident_key"),
+                        "remediation": MARKETPLACE_DISPUTE_WON_REMEDIATION,
+                    })
                     continue
                 outcomes.append(settlements.release_hold(
                     tx_id, to_state=origin, actor="stripe_webhook",
