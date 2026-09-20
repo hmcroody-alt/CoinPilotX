@@ -7,6 +7,7 @@ setup-required responses instead of crashing the app.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from typing import Any
@@ -192,6 +193,30 @@ def _seller_identity(user: dict[str, Any], seller_type: str) -> str:
         return ""
 
 
+def _account_idempotency_key(user_id: str, seller_type: str, email: str) -> str:
+    """Name the seller *and* the request, because Stripe keys outlive the tap.
+
+    The key's whole job is the double tap that lands before the first response
+    is persisted — once ``seller_payout_accounts`` holds a connected account id
+    the route never calls this function again, so the row is the durable guard.
+    But a Stripe idempotency key is remembered for 24 hours, and a repeat that
+    carries *different* parameters is not replayed: it raises
+    ``IdempotencyError``. Keyed on the seller alone, a seller who started
+    onboarding, changed their email, and tried again the same day would be
+    refused by Stripe for a reason that has nothing to do with them — and the
+    route surfaces that as "a problem on PulseSoc's side, not with your
+    account", which is true and useless.
+
+    So the key carries a digest of the parameters that vary. Identical taps
+    still collapse onto one key and one account; a genuinely different request
+    gets a different key and a real answer. The seller and seller type stay in
+    the clear for log reading; only the email is hashed, because an idempotency
+    key is echoed in Stripe's dashboard and request logs.
+    """
+    digest = hashlib.sha256(f"{user_id}\x1f{seller_type}\x1f{email}".encode()).hexdigest()[:16]
+    return f"connect-account:{user_id}:{seller_type}:{digest}"
+
+
 def create_connected_account(user: dict[str, Any], seller_type: str) -> dict[str, Any]:
     # Checked before ``_stripe_ready`` for the reason ``create_payment_intent``
     # states: behind the readiness gate this branch would be unreachable on a
@@ -201,10 +226,11 @@ def create_connected_account(user: dict[str, Any], seller_type: str) -> dict[str
         return connect_refusal(CONNECT_IDENTITY_CODE, _IDENTITY_MESSAGE, "account_create")
     if not _stripe_ready():
         return setup_required("Stripe Connect cannot start until STRIPE_SECRET_KEY is configured.")
+    email = user.get("email") or None
     try:
         account = stripe.Account.create(
             type="express",
-            email=user.get("email") or None,
+            email=email,
             metadata={"user_id": user_id, "seller_type": seller_type},
             capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
             # PulseSoc runs separate charges and transfers and decides settlement
@@ -214,9 +240,7 @@ def create_connected_account(user: dict[str, Any], seller_type: str) -> dict[str
             # schedulers would both pay the seller out of the same balance.
             # Manual is what makes PulseSoc the only thing moving that money.
             settings={"payouts": {"schedule": {"interval": "manual"}}},
-            # Guards the double tap that lands before the first response is
-            # persisted; the stored row is the durable guard once it exists.
-            idempotency_key=f"connect-account:{user_id}:{seller_type}",
+            idempotency_key=_account_idempotency_key(user_id, seller_type, email or ""),
         )
     except Exception as exc:
         return connect_failure(exc, "account_create")
