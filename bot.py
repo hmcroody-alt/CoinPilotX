@@ -57723,6 +57723,10 @@ def pulse_emit_payment_checkout_event(
         "dispute_opened": "Dispute opened",
         "dispute_updated": "Dispute updated",
         "dispute_resolved": "Dispute resolved",
+        # Buyer and seller are sent identical copy below, so an outcome is worded
+        # by who the issuer decided for rather than as a win or a loss.
+        "dispute_won": "Dispute closed in the seller's favour",
+        "dispute_lost": "Dispute closed in the buyer's favour",
         "order_cancelled": "Order cancelled",
     }
     note_bodies = {
@@ -57738,6 +57742,8 @@ def pulse_emit_payment_checkout_event(
         "dispute_opened": "A payment dispute was opened for this order.",
         "dispute_updated": "A payment dispute changed state.",
         "dispute_resolved": "A payment dispute was resolved or closed.",
+        "dispute_won": "The card issuer decided this payment dispute for the seller. The payment stands.",
+        "dispute_lost": "The card issuer decided this payment dispute for the buyer. The payment has been reversed.",
         "order_cancelled": "This order was cancelled.",
     }
     recipients = [
@@ -111700,7 +111706,29 @@ def stripe_webhook():
                         conn2.commit(); conn2.close()
             tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
             if tx_id:
-                status = "refunded" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved"
+                # `charge.dispute.closed` is the only event reaching here that
+                # carries an outcome, and a lost chargeback is not a resolution:
+                # the money has been taken back off the seller. It used to emit
+                # the same "Dispute resolved" notification as a win, so the
+                # seller read their loss as good news. The row status stays in
+                # `pulse_apply_marketplace_dispute`'s vocabulary — that function
+                # rewrites this same column moments later, and a second spelling
+                # here would make the order flap depending on which one ran.
+                outcome = str(obj.get("status") or "") if event_type == "charge.dispute.closed" else ""
+                if event_type == "charge.refunded":
+                    status, note_event = "refunded", "refund_issued"
+                elif event_type == "charge.dispute.created":
+                    status = note_event = "dispute_opened"
+                elif event_type == "charge.dispute.updated":
+                    status = note_event = "dispute_updated"
+                elif outcome == "lost":
+                    status = note_event = "dispute_lost"
+                elif outcome == "won":
+                    status, note_event = "dispute_resolved", "dispute_won"
+                else:
+                    # `warning_closed` — an inquiry that never became a dispute,
+                    # so nothing was decided and nothing was at risk.
+                    status = note_event = "dispute_resolved"
                 cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
                 tx = dict(cur.fetchone() or {})
                 cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=?", (status, now, tx_id))
@@ -111708,7 +111736,7 @@ def stripe_webhook():
                     pulse_emit_payment_checkout_event(
                         cur,
                         {**tx, "status": status},
-                        "refund_issued" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved",
+                        note_event,
                         status=status,
                         actor_user_id=tx.get("buyer_user_id") or 0,
                         extra={
