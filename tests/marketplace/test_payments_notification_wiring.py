@@ -143,9 +143,25 @@ class DisputeWiring(WiringTestCase):
         bot.emit_marketplace_dispute_notifications([9001], self.DISPUTE, "charge.dispute.updated")
         self.assertEqual(["dispute_action_required"], self.emit.events())
 
-    def test_a_closed_dispute_sends_nothing_here(self):
-        closed = dict(self.DISPUTE, status="won")
-        bot.emit_marketplace_dispute_notifications([9001], closed, "charge.dispute.closed")
+    def test_each_terminal_status_sends_its_own_outcome(self):
+        # This used to send nothing at all, so a seller was told their payment
+        # was disputed and then never told how it ended. A win and a loss must
+        # not be able to arrive as the same event.
+        for status, event in (("won", "dispute_won"),
+                              ("lost", "dispute_lost"),
+                              ("warning_closed", "dispute_inquiry_closed")):
+            with self.subTest(status=status):
+                self.emit.calls.clear()
+                bot.emit_marketplace_dispute_notifications(
+                    [9001], dict(self.DISPUTE, status=status), "charge.dispute.closed")
+                self.assertEqual([event], self.emit.events())
+                self.assertEqual(SELLER, self.emit.calls[0]["user_id"])
+
+    def test_an_unrecognised_terminal_status_sends_nothing(self):
+        # Silence beats a guess: there is no outcome wording that is safe to
+        # pick when the verdict is unreadable.
+        bot.emit_marketplace_dispute_notifications(
+            [9001], dict(self.DISPUTE, status="under_review"), "charge.dispute.closed")
         self.assertEqual([], self.emit.calls)
 
     def test_an_update_with_no_deadline_does_not_ask_for_evidence(self):

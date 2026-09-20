@@ -53,6 +53,9 @@ PAYMENT_SUCCEEDED = "payment_succeeded"
 ORDER_SHIPPED = "order_shipped"
 DISPUTE_OPENED = "dispute_opened"
 DISPUTE_ACTION_REQUIRED = "dispute_action_required"
+DISPUTE_WON = "dispute_won"
+DISPUTE_LOST = "dispute_lost"
+DISPUTE_INQUIRY_CLOSED = "dispute_inquiry_closed"
 
 
 #: Context keys permitted to cross into notification metadata and into a
@@ -342,6 +345,45 @@ SPECS: Dict[str, Dict[str, Any]] = {
         urgency="immediate",
         source_type="marketplace_dispute",
         dedupe_fields=("dispute_id", "evidence_due_by"),
+    ),
+    # The close. A dispute is the one thing a seller is told about that can end
+    # against them, so the three terminal statuses get three events rather than
+    # one: a loss and a win must not be able to render the same sentence.
+    DISPUTE_WON: _spec(
+        template="dispute_won",
+        title="A payment dispute closed in your favour",
+        body="The buyer's bank decided a disputed payment in your favour. The payment stands.",
+        preview="A payment dispute closed in your favour.",
+        deep_link=_SELLER_ORDERS,
+        category="payments",
+        priority="high",
+        urgency="standard",
+        source_type="marketplace_dispute",
+        dedupe_fields=("dispute_id",),
+    ),
+    DISPUTE_LOST: _spec(
+        template="dispute_lost",
+        title="A payment dispute closed in the buyer's favour",
+        body="The buyer's bank decided a disputed payment for the buyer. The payment has been reversed.",
+        preview="A payment dispute closed in the buyer's favour.",
+        deep_link=_SELLER_ORDERS,
+        category="payments",
+        priority="high",
+        urgency="immediate",
+        source_type="marketplace_dispute",
+        dedupe_fields=("dispute_id",),
+    ),
+    DISPUTE_INQUIRY_CLOSED: _spec(
+        template="dispute_inquiry_closed",
+        title="A payment inquiry on your store has closed",
+        body="A bank's question about a payment closed without becoming a dispute. Nothing was decided.",
+        preview="A payment inquiry closed without becoming a dispute.",
+        deep_link=_SELLER_ORDERS,
+        category="payments",
+        priority="normal",
+        urgency="standard",
+        source_type="marketplace_dispute",
+        dedupe_fields=("dispute_id",),
     ),
 }
 

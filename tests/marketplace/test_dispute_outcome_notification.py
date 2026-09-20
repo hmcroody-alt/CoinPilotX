@@ -169,17 +169,160 @@ def test_the_order_row_keeps_the_dispute_handler_vocabulary():
     assert _order_status(8207) == "dispute_resolved"
 
 
-def test_a_metadata_free_dispute_notifies_nobody():
-    # Pins a real gap rather than asserting it is fine. Stripe's Dispute object
-    # carries no seller metadata, and this notification branch is keyed on
-    # `metadata.seller_transaction_id` alone — unlike the settlement handler,
-    # which falls back to the payment intent. So in production a closed
-    # chargeback currently notifies neither party at all. If that is ever wired
-    # to the payment-intent fallback, this test should be updated to assert the
-    # outcome wording instead of silence.
+def test_the_metadata_gated_branch_is_unreachable_for_a_real_dispute():
+    # The branch every test above exercises is keyed on
+    # `metadata.seller_transaction_id`, which a real Stripe Dispute never
+    # carries. So none of that copy reaches production by this route, and the
+    # tests below — which post the object in its real shape — are the ones that
+    # say whether a seller is told anything at all.
     _seed_transaction(8208)
     bare = _dispute("dp_bare", 8208, "lost")
     bare["metadata"] = {}
     assert _post_webhook("charge.dispute.closed", bare, event_id="evt_dp_bare").status_code == 200
     assert _notifications(8208, SELLER) == []
     assert _notifications(8208, BUYER) == []
+
+
+# --------------------------------------------------------------------------
+# The route that actually reaches a seller in production.
+#
+# `emit_marketplace_dispute_notifications` resolves transactions through the
+# payment intent, so it works on a Dispute exactly as Stripe sends one. It used
+# to return early for `charge.dispute.closed`: the seller was told a payment was
+# disputed and then never told how it ended.
+# --------------------------------------------------------------------------
+
+
+def _seed_settled_order(tx_id):
+    """A paid order with the settlement row the payment-intent fallback reads.
+
+    `pulse_marketplace_reversal_transaction_ids` looks the dispute up by
+    `provider_payment_id` on the settlement, not by the order row, so an order
+    without one resolves to no transactions and the whole path is skipped.
+    """
+    import bot
+    from services.business_os.ledger import ledger
+    from services import marketplace_settlement_service as settlement
+    bot.init_db(); ledger.ensure_schema(); settlement.ensure_schema()
+    quote = {"quote_id": f"q{tx_id}", "fee_policy_version": "MARKETPLACE_LEGACY_CURRENT",
+             "payout_policy_version": "MARKETPLACE_PAYOUTS_V1", "platform_fee_bps": 1000,
+             "merchandise_net_minor": 10000, "shipping_minor": 0, "tax_minor": 0,
+             "seller_shipping_credit_minor": 0, "buyer_total_minor": 10000}
+    metadata_json = json.dumps({"commercial_quote": quote})
+    now = datetime.utcnow().isoformat(timespec="seconds")
+    conn = bot.db()
+    try:
+        conn.execute("DELETE FROM seller_transactions WHERE id=?", (tx_id,))
+        conn.execute(
+            "INSERT INTO seller_transactions (id, buyer_user_id, seller_user_id, seller_type,"
+            " item_type, item_id, amount_cents, currency, platform_fee_cents, seller_net_cents,"
+            " status, stripe_payment_intent_id, metadata_json, created_at, updated_at)"
+            " VALUES (?, ?, ?, 'merchant', 'marketplace_product', 55, 10000, 'USD', 1000, 9000,"
+            " 'paid', ?, ?, ?, ?)",
+            (tx_id, BUYER, SELLER, f"pi_note_{tx_id}", metadata_json, now, now))
+        conn.commit()
+    finally:
+        conn.close()
+    settlement.settle_paid_transaction(
+        {"id": tx_id, "seller_user_id": SELLER, "item_type": "marketplace_product",
+         "amount_cents": 10000, "platform_fee_cents": 1000, "seller_net_cents": 9000,
+         "currency": "USD", "metadata_json": metadata_json},
+        payout_ready=True, provider_payment_id=f"pi_note_{tx_id}")
+
+
+def _real_dispute(dispute_id, tx_id, status):
+    """A Dispute in the shape Stripe sends one: no seller metadata of any kind."""
+    return {"id": dispute_id, "object": "dispute", "charge": f"ch_{dispute_id}",
+            "payment_intent": f"pi_note_{tx_id}", "amount": 10000, "currency": "usd",
+            "reason": "product_not_received", "status": status, "metadata": {}}
+
+
+def _dispute_notifications(tx_id, user_id=SELLER):
+    import bot
+    conn = bot.db(); conn.row_factory = bot.sqlite3.Row
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT type, title, body, metadata_json FROM pulse_notifications"
+            " WHERE user_id=? AND entity_type='marketplace_dispute' AND entity_id=?"
+            " ORDER BY id", (user_id, str(tx_id))).fetchall()]
+    finally:
+        conn.close()
+
+
+def _run_dispute_lifecycle(tx_id, dispute_id, status):
+    """Open the dispute, then close it — the order production sends them in.
+
+    Closing without opening leaves the settlement with no hold to release, so
+    the won path takes its `needs_review` branch and the test would be asserting
+    against a state a real chargeback never passes through.
+    """
+    _seed_settled_order(tx_id)
+    opened = _real_dispute(dispute_id, tx_id, "needs_response")
+    opened["evidence_details"] = {"due_by": int(time.time()) + 7 * 86400}
+    assert _post_webhook("charge.dispute.created", opened,
+                         event_id=f"evt_{dispute_id}_open").status_code == 200
+    assert _post_webhook("charge.dispute.closed", _real_dispute(dispute_id, tx_id, status),
+                         event_id=f"evt_{dispute_id}_close").status_code == 200
+    return _dispute_notifications(tx_id)
+
+
+def test_a_real_lost_chargeback_now_reaches_the_seller():
+    # The gap this closes. Before, the seller got the "a payment was disputed"
+    # email and then silence, while their earnings were reversed underneath them.
+    notes = _run_dispute_lifecycle(8301, "dp_real_lost", "lost")
+    assert [n["type"] for n in notes] == ["dispute_opened", "dispute_lost"]
+    closed = notes[-1]
+    assert "resolved" not in closed["title"].lower()
+    assert "buyer" in closed["title"].lower()
+    assert "reversed" in closed["body"].lower()
+
+
+def test_a_real_won_chargeback_is_told_apart_from_a_lost_one():
+    won = _run_dispute_lifecycle(8302, "dp_real_won", "won")[-1]
+    lost = _run_dispute_lifecycle(8303, "dp_real_lost_2", "lost")[-1]
+    assert won["type"] == "dispute_won"
+    assert won["title"] != lost["title"]
+    assert won["body"] != lost["body"]
+    assert "reversed" not in won["body"].lower()
+
+
+def test_a_real_closed_inquiry_claims_nothing_either_way():
+    # `warning_closed` never became a dispute. Both "you won" and "you lost"
+    # would be untrue, and the seller has nothing to do about it.
+    note = _run_dispute_lifecycle(8304, "dp_real_inquiry", "warning_closed")[-1]
+    assert note["type"] == "dispute_inquiry_closed"
+    for word in ("favour", "reversed", "won", "lost"):
+        assert word not in note["title"].lower(), note["title"]
+
+
+def test_an_unrecognised_terminal_status_says_nothing():
+    # Guessing is the failure this whole change is about. A status the mapping
+    # does not know must not fall back to either outcome.
+    _seed_settled_order(8305)
+    odd = _real_dispute("dp_real_odd", 8305, "under_review")
+    assert _post_webhook("charge.dispute.closed", odd,
+                         event_id="evt_dp_real_odd").status_code == 200
+    assert _dispute_notifications(8305) == []
+
+
+def test_the_close_queues_its_own_email_rather_than_the_opening_one():
+    # The notification carries a template key, not a rendered body, so the wrong
+    # key here mails the seller "a payment has been disputed" for its resolution.
+    notes = _run_dispute_lifecycle(8306, "dp_real_email", "lost")
+    templates = [json.loads(n["metadata_json"] or "{}").get("email_template") for n in notes]
+    assert templates == ["dispute_opened", "dispute_lost"]
+
+    from services import payments_notifications
+    rendered = payments_notifications.render_email(json.loads(notes[-1]["metadata_json"]))
+    assert rendered is not None
+    assert "resolved" not in rendered["subject"].lower()
+    assert "buyer's favour" in rendered["subject"].lower()
+
+
+def test_a_stripe_redelivery_of_the_close_does_not_notify_twice():
+    # Stripe redelivers on any non-2xx and on its own schedule. Two "your
+    # dispute was lost" notifications for one chargeback reads as two losses.
+    _run_dispute_lifecycle(8307, "dp_real_replay", "lost")
+    assert _post_webhook("charge.dispute.closed", _real_dispute("dp_real_replay", 8307, "lost"),
+                         event_id="evt_dp_real_replay_again").status_code == 200
+    assert [n["type"] for n in _dispute_notifications(8307)] == ["dispute_opened", "dispute_lost"]
