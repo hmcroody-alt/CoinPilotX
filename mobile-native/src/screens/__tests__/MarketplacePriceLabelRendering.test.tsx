@@ -339,19 +339,29 @@ describe("no surface invents a price, including the ones this file never renders
    * The second is the one worth spelling out. `withoutComments` is the only
    * moving part in the scan, and a regression there fails *open* — every phrase
    * goes missing, every test stays green, and the guard reports success while
-   * guarding nothing. So a string that genuinely ships in rendered copy is
-   * looked for and must be found. It is deliberately one of the sentences the
-   * checkout screen prints, which puts the control in the same file the scan
-   * most needs to read.
+   * guarding nothing. So strings that genuinely ship in rendered copy are looked
+   * for and must be found, in the files the scan most needs to read.
+   *
+   * There are two because the checkout's settlement sentences moved out of the
+   * screen and into `marketplace/checkoutPaymentCopy.ts`, where the lane
+   * decision is now made. The single control that used to stand here went with
+   * them — and a control that follows its sentence into another file has
+   * silently stopped covering the file it was placed in. Each of the two now
+   * names its own owner: the module that holds the copy, and the screen, which
+   * has the densest comment-to-code ratio in the scan and is therefore the
+   * likeliest place for an over-eager stripper to swallow real code.
    */
   it("is reading the source it is guarding", () => {
     expect(files.length).toBeGreaterThan(200);
 
-    const CONTROL = "No card or Stripe charge will start.";
-    const survives = files.filter((file) => withoutComments(readFileSync(file, "utf8")).includes(CONTROL));
-    expect(survives.map((file) => relative(SRC, file).split("\\").join("/"))).toContain(
-      "screens/MarketplaceCheckoutScreen.tsx"
-    );
+    const CONTROLS: [string, string][] = [
+      ["No card or Stripe charge will start.", "marketplace/checkoutPaymentCopy.ts"],
+      ["Your order isn't confirmed until your payment clears.", "screens/MarketplaceCheckoutScreen.tsx"]
+    ];
+    for (const [control, owner] of CONTROLS) {
+      const survives = files.filter((file) => withoutComments(readFileSync(file, "utf8")).includes(control));
+      expect(survives.map((file) => relative(SRC, file).split("\\").join("/"))).toContain(owner);
+    }
   });
 
   it("does not ship any of these phrases in rendered copy", () => {

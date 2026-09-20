@@ -29,6 +29,7 @@ import {
   type CheckoutCountry,
   type CheckoutOptions
 } from "../api/checkoutCountries";
+import { checkoutSettlementCopy } from "../marketplace/checkoutPaymentCopy";
 import {
   deviceTimezone,
   formatDateLabel,
@@ -235,6 +236,14 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
   // from `price × quantity` alone — no shipping options, no automatic tax — so
   // that number *is* the charge, not a running estimate.
   const knowsFinalAmount = params.subtotalMinor != null;
+  // The settlement sentence and the CTA's lane-capability, decided together so
+  // they cannot contradict each other. See `marketplace/checkoutPaymentCopy`.
+  const settlement = checkoutSettlementCopy({
+    lane: paymentMethod,
+    cardPaymentsAvailable: options.cardPaymentsAvailable,
+    cardUnavailableMessage: options.cardUnavailableMessage,
+    knowsFinalAmount
+  });
   // The charge, or "" when this screen does not know it. Never a sentence
   // standing in for one.
   //
@@ -670,27 +679,38 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
           <SummaryRow label={paymentMethod === "cash" ? "Total due to seller" : "Total to pay"} value={amount} strong />
         ) : null}
         {/* Something always says where the money is settled, including when the
-            total row above is omitted. The card branch's sentence used to be
-            the only one that covered an unknown amount, and card is the branch
-            that is currently paused — so on the one lane a buyer can actually
-            use, an order with no subtotal said nothing about the amount at all.
-            A row removed for honesty still owes the buyer the reason. */}
-        {paymentMethod === "cash" ? (
-          <Text style={styles.muted}>
-            {knowsFinalAmount
-              ? "No card or Stripe charge will start. Pay the seller directly when you pick up or meet in person."
-              : "No card or Stripe charge will start. The amount isn't set here — agree it with the seller when you pick up or meet in person."}
-          </Text>
-        ) : knowsFinalAmount ? (
-          <Text style={styles.muted}>Marketplace card payments are temporarily unavailable.</Text>
-        ) : (
-          <Text style={styles.muted}>The exact amount is confirmed on the secure payment page before you authorize anything.</Text>
-        )}
+            total row above is omitted.
+
+            The card branch answers two independent questions, and it used to
+            answer the wrong one from a literal. Whether the rail is open is the
+            server's to say — and when it is closed the reason differs per
+            seller, so the sentence is the server's too, the same one the row
+            and the footnote already show. Whether the amount is final is this
+            screen's own fact and stays here.
+
+            Collapsing those two into one hard-coded sentence is how
+            "Marketplace card payments are temporarily unavailable." came to sit
+            directly under a live "Pay securely · $40.92". The literal was true
+            when the rail was globally paused and could not follow it open
+            again; every other sentence on this screen had already been moved to
+            the server and this one was missed, so the screen contradicted
+            itself in the one place a buyer reads last. */}
+        <Text style={styles.muted}>{settlement.text}</Text>
       </Section>
 
       {message ? <Text style={styles.error}>{message}</Text> : null}
       {/* The CTA states an amount only when this screen knows the exact charge.
-          Otherwise it promises nothing it cannot keep. */}
+          Otherwise it promises nothing it cannot keep.
+
+          It is also disabled when the card lane is the selected one and the
+          server says that lane is shut. `beginCheckout` already refuses this
+          case, but it refuses it *after* the tap, and its own comment calls
+          itself "courtesy, not enforcement" — so until now the only thing a
+          buyer saw beforehand was a live "Pay securely" button. That is the
+          invalid triad: a card lane selected, a sentence saying card is
+          unavailable, and an enabled button promising to charge it. Disabling
+          here makes the three unable to co-occur rather than relying on the
+          row's `disabled` prop, which the options fetch can land behind. */}
       <PrimaryButton
         label={stage === "opening"
           ? paymentMethod === "cash" ? "Confirming cash order…" : "Opening secure payment…"
@@ -701,6 +721,7 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
               : "Continue to Payment"}
         icon={stage === "opening" ? null : paymentMethod === "cash" ? "cash-outline" : "lock-closed"}
         busy={stage === "opening"}
+        disabled={!settlement.ctaEnabled}
         onPress={() => void beginCheckout()}
       />
       {/* The cash footnote used to open by declaring the card rail paused. That
