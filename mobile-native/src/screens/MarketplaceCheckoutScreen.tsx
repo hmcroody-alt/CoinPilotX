@@ -703,9 +703,19 @@ export function MarketplaceCheckoutScreen({ route, navigation }: Props) {
         busy={stage === "opening"}
         onPress={() => void beginCheckout()}
       />
+      {/* The cash footnote used to open by declaring the card rail paused. That
+          was a platform claim made on the buyer's behalf by a shipped binary,
+          and it is now wrong in two separate ways: the rail may be open and
+          this seller simply un-onboarded, or the rail may be open and the buyer
+          may have picked cash freely. Neither is a pause. So the sentence about
+          card only appears when card is genuinely unavailable, and when it does
+          it is the server's sentence — the same one the row above shows, rather
+          than a second, contradicting account of why. */}
       <Text style={styles.footnote}>
         {paymentMethod === "cash"
-          ? "Marketplace card payments are paused. Cash, local pickup, and in-person orders remain active with a $0.00 PulseSoc platform fee."
+          ? options.cardPaymentsAvailable
+            ? "Cash, local pickup, and in-person orders carry a $0.00 PulseSoc platform fee."
+            : `${options.cardUnavailableMessage} Cash, local pickup, and in-person orders remain active with a $0.00 PulseSoc platform fee.`
           : "Your order isn't confirmed until your payment clears."}
       </Text>
     </ScrollView>
