@@ -97084,10 +97084,29 @@ def api_pulse_payouts_connect():
     seller_type = payload.get("seller_type") if payload.get("seller_type") in {"merchant", "teacher"} else "merchant"
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    approved = approved_teacher_for_user(cur, user["user_id"]) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, user["user_id"])
-    if not approved:
-        conn.close()
-        return api_error(f"Approved {seller_type} status is required before payout onboarding.", 403)
+    # Two lanes, two authorities, on purpose. The teacher lane is a separate
+    # product with its own approval table and is untouched here.
+    #
+    # The merchant lane goes through the canonical gate because this is the
+    # endpoint the Store's "Set up payments" card calls. The card is shown on
+    # the strength of the canonical seller state, so a route that refused on a
+    # *different* authority would put a live button in front of a seller and
+    # then turn them away — and the two authorities can disagree, which is the
+    # divergence this whole change exists to close.
+    #
+    # This does not touch the Connect safety gate. Approval decides whether
+    # onboarding may *start*; whether a transfer may be sent is decided later
+    # and separately by `seller_destination_account_id`, from Stripe's own
+    # charges/payouts flags. The two axes stay apart here as everywhere else.
+    if seller_type == "teacher":
+        if not approved_teacher_for_user(cur, user["user_id"]):
+            conn.close()
+            return api_error("Approved teacher status is required before payout onboarding.", 403)
+    else:
+        refusal = seller_access_refusal(cur, user["user_id"])
+        if refusal:
+            conn.close()
+            return refusal
     account = seller_payout_account(cur, user["user_id"], seller_type)
     connected_account_id = account.get("connected_account_id") or ""
     trace_id = secrets.token_hex(6)
@@ -98970,10 +98989,10 @@ def api_pulse_marketplace_media_upload():
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
+    refusal = seller_access_refusal(cur, user["user_id"])
     conn.close()
-    if not seller:
-        return api_error("Merchant approval is required before uploading product media.", 403)
+    if refusal:
+        return refusal
     file_storage = request.files.get("file") or request.files.get("media")
     if file_storage:
         file_storage.stream.seek(0, os.SEEK_END)
@@ -99096,10 +99115,10 @@ def api_pulse_marketplace_media_attach():
     if media_id <= 0:
         return api_error("An uploaded media reference is required.", 400)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
-    if not seller:
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
         conn.close()
-        return api_error("Merchant approval is required before uploading product media.", 403)
+        return refusal
     cur.execute("SELECT * FROM chat_media_uploads WHERE id=? LIMIT 1", (media_id,))
     source = cur.fetchone()
     if not source:
@@ -99149,10 +99168,10 @@ def api_pulse_marketplace_digital_file_upload():
     if not user:
         return api_error("Login required.", 401)
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    seller = approved_marketplace_seller_for_user(cur, user["user_id"])
-    if not seller:
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
         conn.close()
-        return api_error("Merchant approval is required before uploading digital files.", 403)
+        return refusal
     file_storage = request.files.get("file") or request.files.get("media")
     result, status = marketplace_listing_types_service.store_digital_file(int(user["user_id"]), file_storage)
     if not result.get("ok"):
