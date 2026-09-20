@@ -58116,12 +58116,35 @@ def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
                   "charge.dispute.updated": "dispute_updated",
                   "charge.dispute.closed": "dispute_lost" if status == "lost" else "dispute_resolved"}.get(event_type)
     if row_status:
+        # A won dispute whose settlement could not be handed back to a prior
+        # state is NOT resolved, whatever the dispute's own status says. The
+        # branch above already refused the transition and opened a critical
+        # incident; writing "dispute_resolved" over the top of that would put
+        # "Dispute resolved" in front of the seller and the admin panel while
+        # the money sits unreconciled, which is the one reading that stops
+        # anyone from going and looking. Those rows get their own status so the
+        # order row agrees with the incident instead of contradicting it.
+        stranded = {
+            o.get("seller_transaction_id")
+            for o in outcomes
+            if isinstance(o, dict) and o.get("action") == "needs_review"
+        }
+        groups = [(row_status, [t for t in tx_ids if t not in stranded])]
+        if stranded:
+            groups.append(
+                ("dispute_won_review", [t for t in tx_ids if t in stranded])
+            )
         conn = db()
         try:
             now = datetime.utcnow().isoformat(timespec="seconds")
-            placeholders = ",".join(["?"] * len(tx_ids))
-            conn.execute(f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
-                         tuple([row_status, now] + tx_ids))
+            for value, ids in groups:
+                if not ids:
+                    continue
+                placeholders = ",".join(["?"] * len(ids))
+                conn.execute(
+                    f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
+                    tuple([value, now] + ids),
+                )
             conn.commit()
         finally:
             conn.close()

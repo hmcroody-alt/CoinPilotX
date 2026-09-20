@@ -304,10 +304,30 @@ def test_completed_connect_onboarding_reconciles_the_sales_that_preceded_it(bot_
     `pending_onboarding`, and the branch used to refresh
     `seller_payout_accounts` and stop — leaving the money unreleasable forever
     with nothing anywhere reporting a problem.
+
+    Pinned through the reconcile's own input rather than by slicing a fixed
+    window off the first ``account.updated`` branch. That slice broke the first
+    time a second ``account.updated`` block was added ahead of this one (the
+    Connect projection applier) and again when the gate was lifted into named
+    locals — both times reporting a regression where the behaviour was intact.
+    What actually has to hold is that the reconcile is reachable and that it is
+    gated on Stripe reporting *both* capabilities, so that is what is asserted.
     """
-    branch = bot_source.split('if event_type == "account.updated":', 1)[1][:3000]
-    assert 'obj.get("payouts_enabled") and obj.get("charges_enabled")' in branch
     assert "reconcile_seller_onboarding" in bot_source
+    # `connect_seller_id` is the only thing that feeds the reconcile, so the
+    # innermost `if` above its assignment is the gate under test. Comments are
+    # dropped first: prose in this block contains the word "and", which would
+    # make a conjunction check pass against an `or` gate.
+    before = bot_source.split("connect_seller_id = str(", 1)[0]
+    code = [line for line in before.split("\n")
+            if line.strip() and not line.strip().startswith("#")]
+    gate = [line for line in code if line.strip().startswith("if ")][-1]
+    assert "payouts" in gate and "charges" in gate, gate
+    assert " and " in gate, f"both capabilities must be required, not either: {gate}"
+    assert " or " not in gate, f"either-capability gate releases money too early: {gate}"
+    # ...and the two names really are Stripe's answer, not a local default.
+    assert 'bool(obj.get("charges_enabled"))' in bot_source
+    assert 'bool(obj.get("payouts_enabled"))' in bot_source
 
 
 def test_the_dispute_events_are_declared_required_for_the_webhook_endpoint():

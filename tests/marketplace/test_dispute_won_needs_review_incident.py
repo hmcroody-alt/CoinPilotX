@@ -402,7 +402,12 @@ def test_the_webhook_returns_200_even_if_the_incident_write_fails(monkeypatch):
     assert _incident_rows(111) == []
     # The rest of the handler still ran — the failure was contained to the
     # incident write, not allowed to abort the loop before the order row.
-    assert _order_status(111) == "dispute_resolved"
+    #
+    # And the order row still tells the truth. This is the case where it counts
+    # most: the incident did not open, so the row is the only surviving trace
+    # that this settlement needs a human. "dispute_resolved" here would erase
+    # the last signal.
+    assert _order_status(111) == "dispute_won_review"
 
 
 def test_the_webhook_delivers_a_won_dispute_all_the_way_to_the_incident():
@@ -421,3 +426,101 @@ def test_the_webhook_delivers_a_won_dispute_all_the_way_to_the_incident():
     rows = _incident_rows(112)
     assert len(rows) == 1
     assert rows[0]["severity"] == "critical"
+
+
+# --------------------------------------------------------------------------
+# the order row must not contradict the incident
+#
+# `row_status` used to be computed from the Stripe event alone, so every won
+# dispute wrote "dispute_resolved" regardless of what the handler had actually
+# managed to do with the settlement. A stranded settlement therefore rendered
+# as "Dispute resolved" to the seller and in the admin panel -- the one reading
+# that stops anybody from going to look at it.
+# --------------------------------------------------------------------------
+
+def test_a_stranded_won_dispute_does_not_render_as_resolved():
+    import bot
+    _schema()
+    settlement.settle_paid_transaction(_tx(120), payout_ready=True, provider_payment_id="pi_120")
+    _advance(120, ["protection_hold", "eligible", "scheduled", "paid"])
+    _seed_order_row(120)
+
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_120", "pi_120", status="won"),
+                                        "charge.dispute.closed", "evt_120")
+
+    assert _order_status(120) != "dispute_resolved"
+    assert _order_status(120) == "dispute_won_review"
+
+
+def test_a_releasable_won_dispute_still_reads_as_resolved():
+    """Positive control. The new status must not swallow the normal case."""
+    import bot
+    _schema()
+    settlement.settle_paid_transaction(_tx(121), payout_ready=True, provider_payment_id="pi_121")
+    settlement.mark_delivered(121, actor="carrier", idempotency_key="delivery:121")
+    _seed_order_row(121)
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_121", "pi_121"),
+                                        "charge.dispute.created", "evt_121")
+
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_121", "pi_121", status="won"),
+                                        "charge.dispute.closed", "evt_121b")
+
+    assert _incident_rows(121) == []
+    assert _order_status(121) == "dispute_resolved"
+
+
+def test_a_lost_dispute_is_still_marked_lost():
+    """The other branch of the same dict — not collateral damage."""
+    import bot
+    _schema()
+    settlement.settle_paid_transaction(_tx(122), payout_ready=True, provider_payment_id="pi_122")
+    settlement.mark_delivered(122, actor="carrier", idempotency_key="delivery:122")
+    _seed_order_row(122)
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_122", "pi_122"),
+                                        "charge.dispute.created", "evt_122")
+
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_122", "pi_122", status="lost"),
+                                        "charge.dispute.closed", "evt_122b")
+
+    assert _order_status(122) == "dispute_lost"
+
+
+def test_a_dispute_closure_splits_a_mixed_batch_by_outcome():
+    """Two orders on one charge, only one of them stranded.
+
+    The write used to be a single UPDATE over every id in the batch, so one
+    status had to cover all of them. A settlement that released cleanly and one
+    that could not are different facts and must not share a row status.
+    """
+    import bot
+    _schema()
+    settlement.settle_paid_transaction(_tx(123), payout_ready=True, provider_payment_id="pi_shared")
+    settlement.settle_paid_transaction(_tx(124), payout_ready=True, provider_payment_id="pi_shared")
+    # 123 stays releasable; 124 is driven all the way to paid so it strands.
+    settlement.mark_delivered(123, actor="carrier", idempotency_key="delivery:123")
+    _advance(124, ["protection_hold", "eligible", "scheduled", "paid"])
+    _seed_order_row(123)
+    _seed_order_row(124)
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_shared", "pi_shared"),
+                                        "charge.dispute.created", "evt_shared")
+
+    bot.pulse_apply_marketplace_dispute(_dispute("dp_shared", "pi_shared", status="won"),
+                                        "charge.dispute.closed", "evt_shared_b")
+
+    assert _order_status(123) == "dispute_resolved"
+    assert _order_status(124) == "dispute_won_review"
+
+
+def test_a_warning_closed_dispute_strands_the_same_way():
+    """`warning_closed` takes the same release branch, so it strands alike."""
+    import bot
+    _schema()
+    settlement.settle_paid_transaction(_tx(125), payout_ready=True, provider_payment_id="pi_125")
+    _advance(125, ["protection_hold", "eligible", "scheduled", "paid"])
+    _seed_order_row(125)
+
+    bot.pulse_apply_marketplace_dispute(
+        _dispute("dp_125", "pi_125", status="warning_closed"),
+        "charge.dispute.closed", "evt_125")
+
+    assert _order_status(125) == "dispute_won_review"
