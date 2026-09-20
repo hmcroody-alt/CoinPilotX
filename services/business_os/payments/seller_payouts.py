@@ -99,6 +99,146 @@ DEFAULT_LIST_LIMIT = 25
 
 INCIDENT_DOMAIN = "seller_payments"
 
+# --- failure classification --------------------------------------------------
+#
+# A payout submission that raises is not one kind of event. A connection reset
+# and a closed bank account both arrive here as an exception, and treating them
+# alike is wrong in both directions: retrying the closed account burns the
+# budget on a call that can only ever fail, while giving up on the reset strands
+# money that one more attempt would have moved.
+#
+# Three outcomes, because the *response* differs, not just the odds:
+#
+#   RETRYABLE     transient; the same call may succeed unchanged, so retry with
+#                 backoff and tell nobody — a retry that works is not news.
+#   SELLER_ACTION permanent until the seller fixes their bank details. Retrying
+#                 is pointless; the only thing that unblocks it is the seller,
+#                 so notify them.
+#   PERMANENT     the platform's problem (bad key, Connect not enabled, a
+#                 malformed request). Neither a retry nor the seller helps —
+#                 an operator has to look.
+#
+# Matching is by Stripe's failure ``code`` first, then by exception class name
+# walked up the MRO. Class names are duck-typed exactly as
+# ``marketplace_payment_errors`` does, so nothing here imports ``stripe``.
+
+RETRYABLE = "retryable"
+SELLER_ACTION = "seller_action"
+PERMANENT = "permanent"
+
+FAILURE_CLASSES = frozenset({RETRYABLE, SELLER_ACTION, PERMANENT})
+
+#: Stripe payout/transfer failure codes that only the seller can clear. These
+#: are the ``failure_code`` values Stripe puts on a failed payout object plus
+#: the account-shaped errors a transfer raises.
+_SELLER_ACTION_CODES = frozenset({
+    "account_closed",
+    "account_frozen",
+    "bank_account_restricted",
+    "bank_ownership_changed",
+    "could_not_process",
+    "debit_not_authorized",
+    "declined",
+    "incorrect_account_holder_name",
+    "incorrect_account_holder_address",
+    "incorrect_account_holder_tax_id",
+    "invalid_account_number",
+    "invalid_currency",
+    "no_account",
+    "unsupported_card",
+})
+
+#: Codes whose cause is on Stripe's side or the wire, and passes on its own.
+_RETRYABLE_CODES = frozenset({
+    "api_connection_error",
+    "api_error",
+    "lock_timeout",
+    "processing_error",
+    "rate_limit",
+})
+
+#: Exception class names that are transient by construction.
+_RETRYABLE_CLASSES = frozenset({
+    "APIConnectionError",
+    "APIError",
+    "RateLimitError",
+    "ServiceUnavailableError",
+    "Timeout",
+    "TimeoutError",
+    "ConnectionError",
+})
+
+#: Exception class names that will fail identically forever. ``CardError`` is
+#: here rather than under SELLER_ACTION because on the payout rails it means the
+#: debit instrument itself was refused at submission, which no wait changes; the
+#: code table above still routes the seller-fixable variants to the seller.
+_PERMANENT_CLASSES = frozenset({
+    "AuthenticationError",
+    "PermissionError",
+    "InvalidRequestError",
+    "IdempotencyError",
+    "CardError",
+    "SignatureVerificationError",
+})
+
+#: The code recorded when nothing identified the failure.
+UNCLASSIFIED_FAILURE_CODE = "unclassified"
+
+
+def _exception_code(exc: Any) -> str:
+    """Stripe's machine-readable failure code, from wherever it hid it."""
+    for attr in ("code", "failure_code"):
+        value = getattr(exc, attr, None)
+        if value:
+            return str(value).strip().lower()
+    body = getattr(exc, "json_body", None)
+    if isinstance(body, Mapping):
+        err = body.get("error")
+        if isinstance(err, Mapping) and err.get("code"):
+            return str(err["code"]).strip().lower()
+    return ""
+
+
+def _class_names(exc: Any) -> list:
+    """The exception's class name and every base, nearest first."""
+    try:
+        return [cls.__name__ for cls in type(exc).__mro__]
+    except Exception:  # noqa: BLE001 - odd objects must not break classification
+        return [type(exc).__name__]
+
+
+def classify_payout_failure(exc: Any = None, *, code: str = "") -> dict:
+    """Decide whether a failed payout submission may be retried.
+
+    Returns ``{"failure_class", "failure_code", "retryable", "seller_action"}``.
+
+    **An unrecognised failure is PERMANENT.** That is the fail-closed choice and
+    it is deliberate: the alternative default would retry every unknown error
+    until the budget ran out, which for the failure this platform is most likely
+    to hit first — Connect not enabled on the account — means a fixed number of
+    guaranteed-futile Stripe writes per settlement per cycle, and an operator
+    sees a retry queue draining instead of an incident. Refusing to retry
+    something we cannot name costs a delay; retrying it costs a mistake repeated
+    at whatever rate the scheduler runs.
+    """
+    resolved = str(code or "").strip().lower() or (_exception_code(exc) if exc is not None else "")
+    if resolved in _SELLER_ACTION_CODES:
+        return {"failure_class": SELLER_ACTION, "failure_code": resolved,
+                "retryable": False, "seller_action": True}
+    if resolved in _RETRYABLE_CODES:
+        return {"failure_class": RETRYABLE, "failure_code": resolved,
+                "retryable": True, "seller_action": False}
+    for name in _class_names(exc) if exc is not None else ():
+        if name in _PERMANENT_CLASSES:
+            return {"failure_class": PERMANENT, "failure_code": resolved or name,
+                    "retryable": False, "seller_action": False}
+        if name in _RETRYABLE_CLASSES:
+            return {"failure_class": RETRYABLE, "failure_code": resolved or name,
+                    "retryable": True, "seller_action": False}
+    return {"failure_class": PERMANENT,
+            "failure_code": resolved or UNCLASSIFIED_FAILURE_CODE,
+            "retryable": False, "seller_action": False}
+
 
 class PayoutError(ValueError):
     """Rejected payout operation. ``status_code`` maps onto the HTTP layer."""
@@ -601,6 +741,37 @@ def build_stripe_transfer_args(payout: Mapping[str, Any], *, transfer_group: str
     }
 
 
+def build_stripe_transfer_reversal_args(payout: Mapping[str, Any], *, amount_cents: int,
+                                        reversal_key: str) -> dict:
+    """The kwargs for clawing part or all of a transfer back to the platform.
+
+    The intended call is ``stripe.Transfer.create_reversal(args["transfer_id"],
+    **args["kwargs"], idempotency_key=args["idempotency_key"])`` against the
+    platform key. Partial by design: a refund is frequently for less than the
+    whole order, so the amount is the caller's, not the transfer's.
+
+    The idempotency key is the caller's ``reversal_key`` rather than anything
+    derived from the payout, because one transfer can legitimately be reversed
+    more than once — two partial refunds on the same order — and a key derived
+    from the payout would silently make the second one a replay of the first.
+    Shapes arguments only; calls nothing.
+    """
+    return {
+        "method": "transfer_reversal",
+        "transfer_id": str(payout.get("stripe_transfer_id") or ""),
+        "idempotency_key": f"seller_transfer_reversal:{reversal_key}",
+        "kwargs": {
+            "amount": int(amount_cents or 0),
+            "metadata": {
+                "payout_key": str(payout.get("payout_key") or ""),
+                "pulse_user_id": str(payout.get("user_id") or ""),
+                "local_payout_id": str(payout.get("id") or ""),
+                "reversal_key": str(reversal_key or ""),
+            },
+        },
+    }
+
+
 def build_stripe_payout_args(payout: Mapping[str, Any]) -> dict:
     """The kwargs a networked caller passes to the Stripe API for this payout.
 
@@ -623,6 +794,50 @@ def build_stripe_payout_args(payout: Mapping[str, Any]) -> dict:
             },
         },
     }
+
+
+def record_transfer_id(payout_id: int, stripe_transfer_id: str, *,
+                       actor: str = "system") -> Optional[dict]:
+    """Remember the transfer the moment it lands, before the payout is tried.
+
+    The two legs are separate Stripe calls and only the second one is allowed to
+    advance the status, so between them there is a window where the platform has
+    irreversibly moved money to a connected account and has written nothing down.
+    ``mark_payout_submitted`` records both ids at once, which is correct when the
+    payout succeeds and useless when it does not — the scheduler's own comment
+    said as much ("A payout failure after a successful transfer loses the id
+    here"). Losing it is survivable for a retry, because the transfer's
+    idempotency key is stable, but not for a refund: deciding whether a refund
+    needs a transfer reversal means knowing whether a transfer exists, and with
+    the id dropped the books say it does not.
+
+    Writes the id only, never the status; ``mark_payout_submitted`` still owns
+    pending → payout_created. First id wins, so a replay cannot rewrite history.
+    """
+    stripe_transfer_id = str(stripe_transfer_id or "").strip()
+    if not stripe_transfer_id:
+        return None
+    ensure_schema()
+    conn = db.connect()
+    try:
+        payout = get_payout(payout_id=payout_id, conn=conn)
+        if payout is None:
+            raise PayoutError(f"payout {payout_id} not found", 404, "not_found")
+        if payout.get("stripe_transfer_id"):
+            return payout  # idempotent replay; the first id is authoritative
+        conn.execute(
+            "UPDATE seller_payout_requests SET stripe_transfer_id = ?, updated_at = ? "
+            "WHERE id = ? AND (stripe_transfer_id IS NULL OR stripe_transfer_id = '')",
+            (stripe_transfer_id, _utc_now_iso(), int(payout["id"])),
+        )
+        _append_event(conn, payout["id"], "transfer_submitted", details={
+            "stripe_transfer_id": stripe_transfer_id,
+            "actor": str(actor),
+        })
+        conn.commit()
+        return get_payout(payout_id=payout_id, conn=conn)
+    finally:
+        conn.close()
 
 
 def mark_payout_submitted(payout_id: int, *, stripe_payout_id: str = "",

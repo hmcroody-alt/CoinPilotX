@@ -390,6 +390,37 @@ def create_transfer(*, destination: str = "", idempotency_key: str = "", **kwarg
     }
 
 
+def create_transfer_reversal(*, transfer_id: str = "", idempotency_key: str = "",
+                             **kwargs) -> dict[str, Any]:
+    """Claw a transfer back from a connected account to the platform balance.
+
+    The inverse of :func:`create_transfer`, and the only thing that can recover
+    a seller's cut once the transfer leg has run. Under separate charges and
+    transfers a refund is paid to the buyer out of the *platform* balance, while
+    the seller's share is already sitting in the connected account where no
+    refund can reach it; without a reversal that difference is simply a loss
+    carried as a negative internal balance.
+
+    A reversal draws on the connected account's Stripe balance, so it works only
+    while the money is still there. Once a payout has moved that balance to the
+    seller's bank there is nothing left to reverse and Stripe refuses the call —
+    which is a different recovery, not a retryable error, and is the caller's to
+    decide about.
+    """
+    if not _stripe_ready():
+        return setup_required("Transfer reversals are unavailable until Stripe is configured.")
+    transfer_id = str(transfer_id or "").strip()
+    if not transfer_id:
+        return {"ok": False, "message": "Provider transfer id is required."}
+    extra: dict[str, Any] = {"idempotency_key": idempotency_key} if idempotency_key else {}
+    reversal = stripe.Transfer.create_reversal(transfer_id, **kwargs, **extra)
+    return {
+        "ok": True,
+        "reversal": stripe_response_dict(reversal),
+        "provider_reversal_id": stripe_response_value(reversal, "id"),
+    }
+
+
 def create_payout(*, stripe_account: str, idempotency_key: str = "", **kwargs) -> dict[str, Any]:
     """Create a payout from a connected account's Stripe balance to its bank."""
     if not _stripe_ready():

@@ -66,6 +66,34 @@ DEFAULT_BATCH = 25
 MIN_BATCH = 1
 MAX_BATCH = 200
 
+RETRY_MAX_ATTEMPTS_ENV_VAR = "MARKETPLACE_PAYOUT_RETRY_MAX_ATTEMPTS"
+RETRY_BASE_SECONDS_ENV_VAR = "MARKETPLACE_PAYOUT_RETRY_BASE_SECONDS"
+RETRY_MAX_SECONDS_ENV_VAR = "MARKETPLACE_PAYOUT_RETRY_MAX_SECONDS"
+
+#: Five attempts on a doubling backoff from fifteen minutes covers every
+#: transient failure this platform can really have — a Stripe blip, a rate
+#: limit, a connection reset — and stops well short of the failures where
+#: retrying is the wrong tool entirely. The ceiling exists because an unbounded
+#: retry is not persistence, it is a way of never telling anyone. The floor of
+#: one exists because zero attempts would make the retry path unreachable, and
+#: an unreachable path is an untested one.
+DEFAULT_RETRY_MAX_ATTEMPTS = 5
+MIN_RETRY_MAX_ATTEMPTS = 1
+MAX_RETRY_MAX_ATTEMPTS = 10
+
+#: A seller waiting fifteen more minutes for money that already sat out a
+#: multi-day protection window has lost nothing measurable. Retrying in seconds
+#: would just spend the whole budget inside one Stripe outage.
+DEFAULT_RETRY_BASE_SECONDS = 900
+MIN_RETRY_BASE_SECONDS = 60
+MAX_RETRY_BASE_SECONDS = 86400
+
+#: Cap on any single wait, so the last attempt of a long budget still lands
+#: within a working day instead of next week.
+DEFAULT_RETRY_MAX_SECONDS = 21600
+MIN_RETRY_MAX_SECONDS = 60
+MAX_RETRY_MAX_SECONDS = 604800
+
 #: Distinct from the 620260524 that ``bot.init_db`` uses. Sharing a key would
 #: make a long migration and a payout cycle silently exclude each other.
 ADVISORY_LOCK_KEY = 620260917
@@ -122,6 +150,24 @@ def interval_seconds() -> int:
 def batch_limit() -> int:
     """Rows per cycle, clamped. ``run_once`` clamps again at 200 independently."""
     return _clamped(BATCH_ENV_VAR, DEFAULT_BATCH, MIN_BATCH, MAX_BATCH)
+
+
+def retry_policy() -> dict:
+    """The bounded retry budget, clamped, as one dict the scheduler can pass on.
+
+    Returned as a value rather than read by the scheduler so the whole policy is
+    decided once per cycle. Reading the env per row would let a variable change
+    mid-cycle produce two different budgets in one run, and the resulting row
+    history would be unexplainable from the configuration.
+    """
+    return {
+        "max_attempts": _clamped(RETRY_MAX_ATTEMPTS_ENV_VAR, DEFAULT_RETRY_MAX_ATTEMPTS,
+                                 MIN_RETRY_MAX_ATTEMPTS, MAX_RETRY_MAX_ATTEMPTS),
+        "base_seconds": _clamped(RETRY_BASE_SECONDS_ENV_VAR, DEFAULT_RETRY_BASE_SECONDS,
+                                 MIN_RETRY_BASE_SECONDS, MAX_RETRY_BASE_SECONDS),
+        "max_seconds": _clamped(RETRY_MAX_SECONDS_ENV_VAR, DEFAULT_RETRY_MAX_SECONDS,
+                                MIN_RETRY_MAX_SECONDS, MAX_RETRY_MAX_SECONDS),
+    }
 
 
 def _clamped(name: str, default: int, low: int, high: int) -> int:
@@ -325,6 +371,29 @@ def _payout_via_stripe(args: Mapping[str, Any]) -> Mapping[str, Any]:
     return {"id": result.get("provider_payout_id") or ""}
 
 
+def _reverse_transfer_via_stripe(args: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Connected account → platform balance: the transfer leg, undone.
+
+    The third money movement on these rails and the only one that runs backwards.
+    It is reachable from exactly one place — a refund on an order whose transfer
+    has landed but whose payout has not — because that is the only window in
+    which the money is still somewhere this platform can reach. Called on a
+    settled payout it fails, and it is supposed to: that is a different problem
+    with a different answer, not a call to try harder at.
+    """
+    from services import payment_provider
+
+    args = dict(args or {})
+    result = payment_provider.create_transfer_reversal(
+        transfer_id=str(args.get("transfer_id") or ""),
+        idempotency_key=str(args.get("idempotency_key") or ""),
+        **dict(args.get("kwargs") or {}),
+    )
+    if not result.get("ok"):
+        raise RuntimeError(f"transfer reversal refused: {result.get('message') or result}")
+    return {"id": result.get("provider_reversal_id") or ""}
+
+
 def preview(limit: int | None = None) -> dict:
     """What a mutating cycle would pay out, without writing anything.
 
@@ -361,8 +430,14 @@ def preview(limit: int | None = None) -> dict:
 
 def run_cycle(*, account_resolver: Callable[[str], Mapping[str, Any]] | None = None,
               provider_transfer: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
-              provider_create: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> dict:
+              provider_create: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+              provider_reversal: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None) -> dict:
     """One cycle: preview, or take the lock and pay.
+
+    Two jobs under one lock: pay out what is owed to sellers, and claw back what
+    a refund has made no longer theirs. They share the lock because they read and
+    write the same settlement rows and the same connected-account balances, and
+    two replicas doing one each would race over both.
 
     The injectable arguments exist so tests can drive the mutating path without a
     Stripe key. They default to the real Stripe-backed callables, which means a
@@ -382,8 +457,24 @@ def run_cycle(*, account_resolver: Callable[[str], Mapping[str, Any]] | None = N
             provider_transfer=provider_transfer or _transfer_via_stripe,
             provider_create=provider_create or _payout_via_stripe,
             limit=batch_limit(),
+            retry_policy=retry_policy(),
         )
-    return {"status": "ok", "moved_money": bool(metrics.get("transferred_count")), **metrics}
+        # The second job is isolated from the first. By the time it runs the
+        # payout pass has already moved real money, and its metrics are the only
+        # record of what moved; letting a clawback failure propagate would
+        # discard that record and make the cycle look like it never ran. The
+        # failure is not swallowed - it is logged and carried out in the result,
+        # so the heartbeat shows a recovery queue that has stopped draining.
+        try:
+            recovery = scheduler.run_refund_recovery_once(
+                provider_reversal=provider_reversal or _reverse_transfer_via_stripe,
+                limit=batch_limit(),
+            )
+        except Exception as exc:  # noqa: BLE001 - reported, not hidden
+            logging.exception("PAYOUT_WORKER_REFUND_RECOVERY_FAILED error=%s", exc)
+            recovery = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+    moved = bool(metrics.get("transferred_count")) or bool(recovery.get("reversed_count"))
+    return {"status": "ok", "moved_money": moved, "refund_recovery": recovery, **metrics}
 
 
 def run_payout_cycle_if_due(state: dict) -> dict | None:
