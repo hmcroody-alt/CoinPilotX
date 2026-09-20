@@ -810,6 +810,82 @@ def _dispute_opened(ctx: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _dispute_won(ctx: Mapping[str, Any]) -> Dict[str, Any]:
+    order_url = _url(ctx.get("order_url") or SELLER_ORDERS_PATH)
+    return {
+        "subject": "A disputed payment was resolved in your favour",
+        "title": "The dispute was resolved in your favour",
+        "preheader": "The payout hold on this order has been lifted.",
+        "blocks": [
+            _paragraph(
+                f"Hi {_esc(ctx.get('seller_first_name') or 'there')}, the bank has decided a disputed "
+                "payment on one of your orders in your favour. Nothing is being taken back."
+            ),
+            _facts(
+                [
+                    ("Order", ctx.get("order_reference") or ""),
+                    ("Amount", money(ctx.get("amount_cents"), ctx.get("currency") or "USD")),
+                    ("Reason given", ctx.get("dispute_reason") or ""),
+                ]
+            ),
+            _notice(
+                f"<strong style=\"color:{HEADING}\">The payout hold has been lifted</strong> and this "
+                "order returns to its normal payout schedule.",
+                tone="ok",
+            ),
+            _button("View order", order_url),
+        ],
+        "text": [
+            "A disputed payment on one of your orders was resolved in your favour.",
+            "",
+            f"Order: {ctx.get('order_reference') or ''}",
+            f"Amount: {money(ctx.get('amount_cents'), ctx.get('currency') or 'USD')}",
+            "",
+            "The payout hold has been lifted and this order returns to its normal payout schedule.",
+        ],
+        "ctas": [("View order", order_url)],
+    }
+
+
+def _dispute_lost(ctx: Mapping[str, Any]) -> Dict[str, Any]:
+    order_url = _url(ctx.get("order_url") or SELLER_ORDERS_PATH)
+    return {
+        "subject": "A disputed payment was decided against you",
+        "title": "The dispute was decided against you",
+        "preheader": "The disputed amount has been taken back from your earnings.",
+        "blocks": [
+            _paragraph(
+                f"Hi {_esc(ctx.get('seller_first_name') or 'there')}, the bank has decided a disputed "
+                "payment on one of your orders in the buyer's favour. The money has been returned to "
+                "them and is no longer payable to you."
+            ),
+            _facts(
+                [
+                    ("Order", ctx.get("order_reference") or ""),
+                    ("Taken back", money(ctx.get("amount_cents"), ctx.get("currency") or "USD")),
+                    ("Reason given", ctx.get("dispute_reason") or ""),
+                ]
+            ),
+            _notice(
+                f"<strong style=\"color:{HEADING}\">Your earnings have been adjusted</strong> by this "
+                "amount. If the order had already been paid out, it is recovered from later earnings.",
+                tone="bad",
+            ),
+            _button("View order", order_url),
+        ],
+        "text": [
+            "A disputed payment on one of your orders was decided in the buyer's favour.",
+            "",
+            f"Order: {ctx.get('order_reference') or ''}",
+            f"Taken back: {money(ctx.get('amount_cents'), ctx.get('currency') or 'USD')}",
+            "",
+            "Your earnings have been adjusted by this amount. If the order had already been paid "
+            "out, it is recovered from later earnings.",
+        ],
+        "ctas": [("View order", order_url)],
+    }
+
+
 def _refund_completed(ctx: Mapping[str, Any]) -> Dict[str, Any]:
     order_url = _url(ctx.get("order_url") or "/pulse/orders")
     return {
@@ -926,6 +1002,8 @@ TEMPLATES: Dict[str, SpecBuilder] = {
     "new_paid_order": _new_paid_order,
     "dispute_opened": _dispute_opened,
     "dispute_action_required": _dispute_opened,
+    "dispute_won": _dispute_won,
+    "dispute_lost": _dispute_lost,
     "refund_completed": _refund_completed,
     "payment_succeeded": _payment_succeeded,
     "order_shipped": _order_shipped,

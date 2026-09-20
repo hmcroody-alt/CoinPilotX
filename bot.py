@@ -96873,6 +96873,88 @@ def emit_marketplace_dispute_notifications(tx_ids, dispute_obj, event_type):
         })
 
 
+def emit_marketplace_dispute_outcome_notifications(outcomes, tx_ids, dispute_obj, event_type):
+    """Tell the seller how a chargeback ended. Call this AFTER the settlement moves.
+
+    Its own lane rather than a branch of ``emit_marketplace_dispute_notifications``
+    because the outcome is not derivable from the Stripe event alone. A won
+    dispute whose settlement could not be handed back to a prior payout state is
+    stranded on a critical incident, and "you won, the hold is lifted" is the one
+    reading that stops anybody from going to look — the same reason
+    ``pulse_apply_marketplace_dispute`` gives those rows ``dispute_won_review``
+    instead of ``dispute_resolved``. Stranded transactions are therefore left to
+    the incident, so this needs the handler's outcomes, not just its ids.
+
+    A lost dispute reports the allocator's per-order reversal rather than the
+    dispute's own ``amount``: a chargeback on a cart charge covers several
+    orders, and the disputed figure is the whole charge.
+
+    Emitted once per seller, not once per transaction. The engine dedupes on
+    ``dispute_id``, so a per-transaction loop would have the second order's
+    money silently dropped rather than counted into the figure the seller sees.
+    """
+    if event_type != "charge.dispute.closed":
+        return
+    obj = dict(dispute_obj or {})
+    status = str(obj.get("status") or "")
+    if status == "lost":
+        event = "dispute_lost"
+    elif status in {"won", "warning_closed"}:
+        # `warning_closed` is an inquiry that never became a real dispute. The
+        # seller was told the payout was on hold when it opened, so they are
+        # owed the fact that it no longer is.
+        event = "dispute_won"
+    else:
+        return
+    stranded = {
+        int(outcome.get("seller_transaction_id") or 0)
+        for outcome in outcomes or []
+        if isinstance(outcome, dict) and outcome.get("action") == "needs_review"
+    }
+    ids = [int(v) for v in (tx_ids or []) if int(v or 0) and int(v) not in stranded]
+    if not ids:
+        return
+    reversed_minor = {}
+    for outcome in outcomes or []:
+        if not isinstance(outcome, dict) or outcome.get("duplicate"):
+            continue
+        settlement = dict(outcome.get("settlement") or {})
+        tx_id = int(settlement.get("seller_transaction_id") or 0)
+        amount = int(outcome.get("total_refund_minor") or 0)
+        if tx_id and amount > 0:
+            reversed_minor[tx_id] = reversed_minor.get(tx_id, 0) + amount
+    parties = marketplace_transaction_parties(ids)
+    if not parties:
+        return
+    per_seller = {}
+    for tx_id in ids:
+        row = parties.get(tx_id) or {}
+        seller_id = int(row.get("seller_user_id") or 0)
+        if not seller_id:
+            continue
+        amount = reversed_minor.get(tx_id, 0) if event == "dispute_lost" else 0
+        if not amount:
+            amount = int(row.get("amount_cents") or 0)
+        bucket = per_seller.setdefault(
+            seller_id,
+            {"amount_cents": 0, "order_id": tx_id,
+             "currency": str(row.get("currency") or obj.get("currency") or "USD").upper()},
+        )
+        bucket["amount_cents"] += amount
+        bucket["order_id"] = min(bucket["order_id"], tx_id)
+    names = seller_first_names(per_seller.keys())
+    for seller_id, bucket in per_seller.items():
+        emit_payment_notification(event, seller_id, {
+            "order_id": str(bucket["order_id"]),
+            "order_reference": f"#{bucket['order_id']}",
+            "dispute_id": str(obj.get("id") or ""),
+            "amount_cents": bucket["amount_cents"],
+            "currency": bucket["currency"],
+            "dispute_reason": str(obj.get("reason") or "").replace("_", " "),
+            "seller_first_name": names.get(seller_id, ""),
+        })
+
+
 def approved_marketplace_seller_for_user(cur, user_id):
     cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (int(user_id or 0),))
     seller = cur.fetchone()
@@ -111698,18 +111780,26 @@ def stripe_webhook():
                         conn2 = db(); cur2 = conn2.cursor()
                         cur2.execute("UPDATE creator_transactions SET status='disputed', updated_at=? WHERE id=?", (now, tx_id))
                         conn2.commit(); conn2.close()
-            tx_id = safe_int(metadata.get("seller_transaction_id"), 0)
+            # Refunds only. A dispute event's `data.object` is a Dispute, whose
+            # metadata is its own and empty, so the dispute arms of this block
+            # never once fired — `pulse_marketplace_reversal_transaction_ids`
+            # exists because the payment intent is the only identifier both
+            # object shapes carry. Leaving them here was not merely dead: should
+            # Stripe ever populate dispute metadata they would wake up as a
+            # second writer, overwriting `pulse_apply_marketplace_dispute`'s
+            # `dispute_lost`/`dispute_won_review` with `dispute_resolved` and
+            # sending a second notification for the one dispute.
+            tx_id = safe_int(metadata.get("seller_transaction_id"), 0) if event_type == "charge.refunded" else 0
             if tx_id:
-                status = "refunded" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved"
                 cur.execute("SELECT * FROM seller_transactions WHERE id=? LIMIT 1", (tx_id,))
                 tx = dict(cur.fetchone() or {})
-                cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=?", (status, now, tx_id))
+                cur.execute("UPDATE seller_transactions SET status=?, updated_at=? WHERE id=?", ("refunded", now, tx_id))
                 if tx:
                     pulse_emit_payment_checkout_event(
                         cur,
-                        {**tx, "status": status},
-                        "refund_issued" if event_type == "charge.refunded" else "dispute_opened" if event_type == "charge.dispute.created" else "dispute_updated" if event_type == "charge.dispute.updated" else "dispute_resolved",
-                        status=status,
+                        {**tx, "status": "refunded"},
+                        "refund_issued",
+                        status="refunded",
                         actor_user_id=tx.get("buyer_user_id") or 0,
                         extra={
                             "stripe_event_id": event_id,
@@ -111754,11 +111844,16 @@ def stripe_webhook():
             # the ledger open their own, and holding this one across them is how
             # `ensure_schema(conn)` deadlocks a worker on Postgres.
             try:
-                pulse_apply_marketplace_dispute(obj, event_type, event_id)
+                dispute_outcomes = pulse_apply_marketplace_dispute(obj, event_type, event_id)
+                dispute_tx_ids = pulse_marketplace_reversal_transaction_ids(obj)
                 # After the hold, never before: an email saying the payout is on
                 # hold must not go out ahead of the hold actually landing.
-                emit_marketplace_dispute_notifications(
-                    pulse_marketplace_reversal_transaction_ids(obj), obj, event_type)
+                emit_marketplace_dispute_notifications(dispute_tx_ids, obj, event_type)
+                # A closed dispute is the outcome lane, and it needs what the
+                # handler actually managed to do — a won dispute it could not
+                # release is stranded on an incident, not resolved.
+                emit_marketplace_dispute_outcome_notifications(
+                    dispute_outcomes, dispute_tx_ids, obj, event_type)
             except Exception:
                 # A chargeback that does not place its hold is money about to be
                 # transferred to a seller who is losing it. Never silent.
