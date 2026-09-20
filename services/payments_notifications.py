@@ -53,6 +53,8 @@ PAYMENT_SUCCEEDED = "payment_succeeded"
 ORDER_SHIPPED = "order_shipped"
 DISPUTE_OPENED = "dispute_opened"
 DISPUTE_ACTION_REQUIRED = "dispute_action_required"
+DISPUTE_WON = "dispute_won"
+DISPUTE_LOST = "dispute_lost"
 
 
 #: Context keys permitted to cross into notification metadata and into a
@@ -342,6 +344,30 @@ SPECS: Dict[str, Dict[str, Any]] = {
         urgency="immediate",
         source_type="marketplace_dispute",
         dedupe_fields=("dispute_id", "evidence_due_by"),
+    ),
+    DISPUTE_WON: _spec(
+        template="dispute_won",
+        title="A disputed payment was resolved in your favour",
+        body="The bank decided a disputed payment in your favour. The payout hold has been lifted.",
+        preview="A disputed payment was resolved in your favour.",
+        deep_link=_SELLER_ORDERS,
+        category="payments",
+        priority="high",
+        urgency="standard",
+        source_type="marketplace_dispute",
+        dedupe_fields=("dispute_id",),
+    ),
+    DISPUTE_LOST: _spec(
+        template="dispute_lost",
+        title="A disputed payment was decided against you",
+        body="The bank decided a disputed payment in the buyer's favour. The amount has been taken back from your earnings.",
+        preview="A disputed payment was decided against you.",
+        deep_link=_SELLER_ORDERS,
+        category="payments",
+        priority="high",
+        urgency="immediate",
+        source_type="marketplace_dispute",
+        dedupe_fields=("dispute_id",),
     ),
 }
 
