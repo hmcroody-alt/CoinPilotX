@@ -111481,11 +111481,15 @@ def stripe_webhook():
     # Additive: the legacy branch below still records into the old tables. The
     # appliers are idempotent, so the inbox replay path (stripe_ledger_handler
     # via reconcile_worker) firing for the same event is harmless.
-    if event_type.startswith("payout.") or event_type in {"transfer.created", "transfer.reversed"}:
+    # Both families are matched by prefix and the appliers decide what they
+    # recognise. Holding a second copy of the event list here is what let the
+    # live endpoint stay subscribed to transfer.updated / transfer.canceled
+    # while this branch silently declined to route them.
+    if event_type.startswith("payout.") or event_type.startswith("transfer."):
         try:
             from services.business_os.payments import seller_payouts as _bos_seller_payouts
             _bos_seller_payouts.ensure_schema()
-            if event_type in {"transfer.created", "transfer.reversed"}:
+            if event_type.startswith("transfer."):
                 _bos_seller_payouts.apply_stripe_transfer_event(event)
             else:
                 _bos_seller_payouts.apply_stripe_payout_event(event)

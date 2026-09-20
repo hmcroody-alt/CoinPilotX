@@ -86,6 +86,21 @@ HANDLED_PAYOUT_EVENTS = {
 #: Bookkeeping-only Stripe notification; carries no state we project.
 IGNORED_PAYOUT_EVENTS = {"payout.reconciliation_completed"}
 
+#: Transfer events appended to a payout's audit trail. This is the *only* copy
+#: of the list. Both dispatchers (``bot.stripe_webhook`` and the inbox replay in
+#: ``stripe_ledger_handler``) reach the applier on a ``transfer.`` prefix and let
+#: it decide, because three hand-maintained copies of the same set is how the
+#: endpoint ended up subscribed to events nothing read: ``transfer.updated`` and
+#: ``transfer.canceled`` were enabled on the live endpoint the whole time and
+#: were dropped on the floor by two out of three lists that never heard about
+#: them. Widening the set here now reaches every caller at once.
+TRANSFER_EVENT_TYPES = frozenset({
+    "transfer.created",
+    "transfer.reversed",
+    "transfer.updated",
+    "transfer.canceled",
+})
+
 _STRIPE_STATUS_MAP = {
     "pending": "payout_created",
     "in_transit": "in_transit",
@@ -1131,16 +1146,21 @@ def apply_stripe_payout_event(event: Mapping[str, Any]) -> dict:
 
 
 def apply_stripe_transfer_event(event: Mapping[str, Any]) -> dict:
-    """Append ``transfer.created`` / ``transfer.reversed`` to a payout's trail.
+    """Append a ``TRANSFER_EVENT_TYPES`` event to a payout's audit trail.
 
     Transfers only matter here when a payout row already carries the transfer
     id (i.e. the payout was funded via a platform→connected-account transfer).
     Anything else is somebody else's transfer and is ignored without incident.
+
+    This appends; it never transitions a payout. That is what makes it safe for
+    both dispatchers to route the whole ``transfer.`` family here and let this
+    function reject what it does not recognise -- an unknown transfer event
+    costs an ignored return, not a wrong state.
     """
     if not isinstance(event, Mapping):
         return {"ignored": True, "reason": "malformed_event"}
     event_type = str(event.get("type") or "").strip()
-    if event_type not in {"transfer.created", "transfer.reversed"}:
+    if event_type not in TRANSFER_EVENT_TYPES:
         return {"ignored": True, "type": event_type}
     data = event.get("data") if isinstance(event.get("data"), Mapping) else {}
     obj = data.get("object") if isinstance(data.get("object"), Mapping) else {}
