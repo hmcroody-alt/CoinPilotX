@@ -165,7 +165,7 @@ def verify_seller_scope(conn, owner_user_id, actor_user_id):
 def _business_os_scope(conn, user_id):
     """The caller's Business OS business and storefront, if they have both."""
     row = conn.execute(
-        "SELECT b.business_id, s.storefront_id, b.display_name, b.legal_name "
+        "SELECT b.business_id, s.storefront_id, b.display_name "
         "FROM business_os_business b "
         "JOIN business_os_store_storefront s ON s.business_id=b.business_id "
         "WHERE b.owner_user_id=? AND COALESCE(b.status,'') NOT IN ('archived','suspended') "
@@ -176,7 +176,12 @@ def _business_os_scope(conn, user_id):
     return {
         "business_id": str(row["business_id"]),
         "store_id": str(row["storefront_id"]),
-        "store_name": str(row["display_name"] or row["legal_name"] or "").strip(),
+        # `legal_name` is deliberately not a fallback here. It is review
+        # evidence, and this scope feeds a merchant-facing header that mirrors
+        # the buyer-facing store name — the same rule as
+        # `marketplace_seller_identity`, applied to the Business OS branch so
+        # the two sources cannot answer differently.
+        "store_name": str(row["display_name"] or "").strip(),
         "source": "BUSINESS_OS",
     }
 
