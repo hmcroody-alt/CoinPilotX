@@ -19,6 +19,7 @@ Engine-portable via ``services.db``; does not import ``bot.py``.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any, Mapping, Optional
 
@@ -161,11 +162,96 @@ def _upsert(conn, *, user_id: str, connected_account_id: str,
              int(details_submitted), requirements_json, disabled_reason,
              now, now, existing["user_id"]),
         )
+    _project_onto_legacy_row(
+        conn,
+        connected_account_id=connected_account_id,
+        payouts_enabled=payouts_enabled,
+        charges_enabled=charges_enabled,
+        requirements=requirements,
+        disabled_reason=disabled_reason,
+    )
     row = conn.execute(
         "SELECT * FROM connect_account_state WHERE user_id = ?",
         (user_id,),
     ).fetchone()
     return _serialize(_row_to_dict(row))
+
+
+def _project_onto_legacy_row(conn, *, connected_account_id: str,
+                             payouts_enabled: bool, charges_enabled: bool,
+                             requirements: Mapping[str, Any],
+                             disabled_reason: str) -> int:
+    """Copy the same Stripe truth onto the legacy ``seller_payout_accounts`` row.
+
+    ``connect_account_state`` is the canonical projection, but it is not what
+    the two surfaces that decide anything actually read. The checkout
+    capability gate (``services/marketplace_card_capability._seller_row``) and
+    the seller payouts screen (``services/seller_money._payout_method``) both
+    SELECT from ``seller_payout_accounts``. Before this, only the
+    ``account.updated`` webhook refreshed that table; an explicit refresh
+    (``record_account_snapshot``) updated the projection and left the gate
+    reading the old columns. A seller Stripe had just switched off therefore
+    kept a ``charges_enabled = 1`` row — a stale column unlocking card
+    checkout.
+
+    Calling this from ``_upsert`` is what makes the two write paths one path:
+    every route by which Stripe truth enters the system lands in both tables,
+    in the same transaction, from the same normalized values.
+
+    **UPDATE only, never INSERT.** Creating the row belongs to the onboarding
+    path, which owns ``seller_type`` — half of this table's unique key — and a
+    webhook about an account with no local row must not invent one. A missing
+    row already reads as ``STRIPE_NOT_CONNECTED``, which is a refusal, so
+    update-only is also the fail-closed choice.
+
+    Matched on the Stripe account id, not on ``user_id``: this module stores
+    ``user_id`` as TEXT and the legacy table as INTEGER, and SQLite does not
+    compare those equal. The account id is TEXT on both sides.
+
+    Returns the number of rows updated. Never raises.
+    """
+    now = _utc_now_iso()
+    account_id = str(connected_account_id or "")
+    if not account_id:
+        return 0
+    assignments = [
+        "charges_enabled = ?", "payouts_enabled = ?", "requirements_json = ?",
+        "last_checked_at = ?", "last_synced_at = ?", "updated_at = ?",
+    ]
+    params: list[Any] = [
+        int(bool(charges_enabled)), int(bool(payouts_enabled)),
+        json.dumps(dict(requirements or {}), default=str), now, now, now,
+    ]
+    if str(disabled_reason or "").strip():
+        # Stripe naming a `disabled_reason` is Stripe saying this account is
+        # restricted, and the gate treats that string as a refusal. Every other
+        # value in this column belongs to the onboarding path's vocabulary and
+        # is not ours to overwrite — leaving a stale 'complete' here is safe,
+        # because the capability flags above are what actually open the rail.
+        assignments.append("onboarding_status = ?")
+        params.append("restricted")
+    params.extend([account_id, account_id])
+    try:
+        cur = conn.execute(
+            "UPDATE seller_payout_accounts SET " + ", ".join(assignments)
+            + " WHERE connected_account_id = ? OR provider_account_id = ?",
+            tuple(params),
+        )
+        return int(getattr(cur, "rowcount", 0) or 0)
+    except Exception as exc:  # noqa: BLE001 - mirroring must not lose the write
+        # Failing to mirror must never lose the canonical write that already
+        # happened in this transaction. Same posture as `_lookup_local_user`.
+        # The capability gate reads `connect_account_state` directly as well,
+        # so a mirror that did not land cannot leave the gate permissive.
+        text = str(exc).lower()
+        if "no such table" in text or "does not exist" in text:
+            # Hermetic projection tests carry no legacy table. Not a fault.
+            logging.debug(
+                "CONNECT_LEGACY_PROJECTION_SKIPPED_NO_TABLE account=%s", account_id)
+        else:
+            logging.exception(
+                "CONNECT_LEGACY_PROJECTION_FAILED connected_account_id=%s", account_id)
+        return 0
 
 
 def _lookup_local_user(conn, connected_account_id: str) -> str:

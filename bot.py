@@ -3344,7 +3344,16 @@ def log_visitor_request():
     # COMMIT per logged request, and the native app drives almost all of its
     # traffic through /api/. Logging it would add a write to every mobile call on
     # a 2-worker gunicorn. API traffic is measured by analytics_events instead.
-    if request.path.startswith(("/api/", "/internal/", "/webhook/", "/stripe-webhook")):
+    # `/stripe/webhook` is the same Flask handler as `/stripe-webhook` and
+    # `/api/stripe/webhook` (one function, three rules) but matched none of the
+    # prefixes above, so Stripe deliveries arriving on it paid for a visitor
+    # row each. That is a write on the webhook hot path, it counts a machine as
+    # a visitor, and it stores Stripe's egress IP in `visitor_logs.ip_address`.
+    # All three spellings are excluded now, so the exclusion no longer depends
+    # on which of the aliases a destination happens to be configured with.
+    if request.path.startswith(
+        ("/api/", "/internal/", "/webhook/", "/stripe-webhook", "/stripe/webhook")
+    ):
         return None
     if request.path in {"/health", "/health/database"}:
         return None
@@ -22005,10 +22014,19 @@ def api_pulse_rewards_claim(reward_id):
                         logging.exception(
                             "REWARD_CONNECT_SNAPSHOT_FAILED user_id=%s", user["user_id"])
                 base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
+                # `/pulse/rewards` is not a route — there is no such rule in the
+                # URL map, no catch-all, and no 404 handler, so a seller who
+                # finished Stripe onboarding from a reward claim landed on a
+                # bare 404 with their bank details already submitted. The
+                # account this path creates is a *merchant* Connect account
+                # (see `create_connected_account(user, "merchant")` above), and
+                # `/pulse/merchant/payouts` is the page that reads exactly that
+                # account's onboarding state — the same destination the
+                # marketplace onboarding route hands Stripe.
                 link = _provider.create_onboarding_link(
                     connected_account_id,
-                    refresh_url=f"{base}/pulse/rewards",
-                    return_url=f"{base}/pulse/rewards",
+                    refresh_url=f"{base}/pulse/merchant/payouts",
+                    return_url=f"{base}/pulse/merchant/payouts",
                 )
                 if not link.get("ok"):
                     return jsonify(link), int(link.get("http_status") or 503)
@@ -57930,6 +57948,88 @@ def pulse_apply_marketplace_charge_refund(obj):
         f"{obj.get('id') or 'charge'}:{int(obj.get('amount_refunded') or 0)}")
 
 
+#: What a human is expected to do with a won dispute that cannot be released.
+#: Recorded on the incident rather than executed: the settlement is in one of
+#: two unresolved positions (already transferred, or frozen mid-schedule), and
+#: which one it is decides whether anything is owed at all. Nothing here moves
+#: money — reconciliation has to prove the correct action first.
+MARKETPLACE_DISPUTE_WON_REMEDIATION = (
+    "Do not transition this settlement automatically. Confirm against Stripe "
+    "that the disputed funds were returned to the platform balance, then "
+    "compare the seller ledger: if the seller was already paid, the won "
+    "dispute owes nothing further and the incident is resolved with that note; "
+    "if the settlement is frozen short of payout, release it to the payout "
+    "state its own event log shows the hold interrupted."
+)
+
+
+def pulse_open_dispute_review_incident(tx_id, dispute_id, event_id, status,
+                                       origin, settlement):
+    """Record a won dispute whose settlement cannot be released, for a human.
+
+    Reuses the canonical financial-incident engine — the same append-only table
+    the reconciliation sweep and the payout applier write to, and the one the
+    admin `/api/pulse/finance/incidents` surface reads — so this lands in the
+    operator's existing channel instead of a log line nobody greps. It is typed
+    `PAYOUT_STATE_CONFLICT` for the same reason
+    `reconcile_marketplace_settlements` types its stranded-settlement findings
+    that way: the dispute outcome and the payout state disagree and only a human
+    can say which is right.
+
+    Never raises. A failure to *describe* a stuck settlement must not abort the
+    dispute handler mid-loop, which would skip the remaining transactions, the
+    order-row update and the buyer/seller notifications — and would cost Stripe
+    a 200.
+    """
+    settlement = dict(settlement or {})
+    try:
+        from services.business_os.payments import incidents as _incidents
+
+        return _incidents.open_incident(
+            _incidents.PAYOUT_STATE_CONFLICT,
+            domain="seller_payments",
+            severity="critical",
+            summary=(
+                f"Marketplace settlement {tx_id} closed dispute {dispute_id} as "
+                f"'{status}' but sits in payout state "
+                f"{settlement.get('payout_state') or 'unknown'!r} with no "
+                f"releasable origin state ({origin or 'none recorded'}); the "
+                "recovered funds have no resolved position."
+            ),
+            details={
+                "seller_transaction_id": tx_id,
+                "dispute_id": dispute_id,
+                "stripe_event_id": event_id,
+                "dispute_status": status,
+                "hold_origin_state": origin or "",
+                "payout_state": settlement.get("payout_state") or "",
+                "blocker_code": settlement.get("blocker_code") or "",
+                "seller_id": settlement.get("seller_id") or "",
+                "order_id": settlement.get("order_id") or "",
+                "currency": settlement.get("currency") or "",
+                "net_seller_earnings_minor":
+                    settlement.get("net_seller_earnings_minor"),
+                "seller_reversed_minor": settlement.get("seller_reversed_minor"),
+                "automatic_action_taken": "none",
+                "remediation": MARKETPLACE_DISPUTE_WON_REMEDIATION,
+            },
+            related_object=f"marketplace_settlement:{tx_id}",
+            stripe_ref=str(dispute_id or ""),
+            # Keyed on the row and this dispute, not on the event: a Stripe
+            # redelivery refreshes one incident, while a second chargeback on
+            # the same order is a genuinely new finding.
+            incident_key=(
+                f"{_incidents.PAYOUT_STATE_CONFLICT}:marketplace_settlement:"
+                f"{tx_id}:dispute_won_unreleasable:{dispute_id}"
+            ),
+        )
+    except Exception:
+        logging.exception(
+            "MARKETPLACE_DISPUTE_REVIEW_INCIDENT_FAILED tx_id=%s dispute_id=%s",
+            tx_id, dispute_id)
+        return None
+
+
 def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
     """Freeze, release or reverse a Marketplace settlement for a chargeback.
 
@@ -57973,9 +58073,28 @@ def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
                     # there is no state to hand the settlement back to. Never
                     # invent one: this needs the owner, not an automatic
                     # transition that would relabel a paid order as unpaid.
+                    #
+                    # But a log line is not an operational state. PulseSoc has
+                    # won money back and the settlement it belongs to is in an
+                    # unresolved position, so the finding is persisted as a
+                    # critical financial incident carrying its own remediation
+                    # for a human to execute. The log stays — it is what you
+                    # grep when you already know to look.
                     logging.warning(
                         "MARKETPLACE_DISPUTE_WON_NEEDS_REVIEW tx_id=%s dispute_id=%s origin_state=%s",
                         tx_id, dispute_id, origin or "unknown")
+                    incident = pulse_open_dispute_review_incident(
+                        tx_id, dispute_id, event_id, status, origin, settlement)
+                    outcomes.append({
+                        "seller_transaction_id": tx_id,
+                        "dispute_id": dispute_id,
+                        "action": "needs_review",
+                        "hold_origin_state": origin or "",
+                        "payout_state": settlement.get("payout_state") or "",
+                        "incident_id": (incident or {}).get("id"),
+                        "incident_key": (incident or {}).get("incident_key"),
+                        "remediation": MARKETPLACE_DISPUTE_WON_REMEDIATION,
+                    })
                     continue
                 outcomes.append(settlements.release_hold(
                     tx_id, to_state=origin, actor="stripe_webhook",
@@ -57997,12 +58116,35 @@ def pulse_apply_marketplace_dispute(obj, event_type, event_id=""):
                   "charge.dispute.updated": "dispute_updated",
                   "charge.dispute.closed": "dispute_lost" if status == "lost" else "dispute_resolved"}.get(event_type)
     if row_status:
+        # A won dispute whose settlement could not be handed back to a prior
+        # state is NOT resolved, whatever the dispute's own status says. The
+        # branch above already refused the transition and opened a critical
+        # incident; writing "dispute_resolved" over the top of that would put
+        # "Dispute resolved" in front of the seller and the admin panel while
+        # the money sits unreconciled, which is the one reading that stops
+        # anyone from going and looking. Those rows get their own status so the
+        # order row agrees with the incident instead of contradicting it.
+        stranded = {
+            o.get("seller_transaction_id")
+            for o in outcomes
+            if isinstance(o, dict) and o.get("action") == "needs_review"
+        }
+        groups = [(row_status, [t for t in tx_ids if t not in stranded])]
+        if stranded:
+            groups.append(
+                ("dispute_won_review", [t for t in tx_ids if t in stranded])
+            )
         conn = db()
         try:
             now = datetime.utcnow().isoformat(timespec="seconds")
-            placeholders = ",".join(["?"] * len(tx_ids))
-            conn.execute(f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
-                         tuple([row_status, now] + tx_ids))
+            for value, ids in groups:
+                if not ids:
+                    continue
+                placeholders = ",".join(["?"] * len(ids))
+                conn.execute(
+                    f"UPDATE seller_transactions SET status=?, updated_at=? WHERE id IN ({placeholders})",
+                    tuple([value, now] + ids),
+                )
             conn.commit()
         finally:
             conn.close()
@@ -111339,20 +111481,36 @@ def stripe_webhook():
     # Additive: the legacy branch below still records into the old tables. The
     # appliers are idempotent, so the inbox replay path (stripe_ledger_handler
     # via reconcile_worker) firing for the same event is harmless.
-    if event_type.startswith("payout.") or event_type in {"transfer.created", "transfer.reversed"}:
+    # Both families are matched by prefix and the appliers decide what they
+    # recognise. Holding a second copy of the event list here is what let the
+    # live endpoint stay subscribed to transfer.updated / transfer.canceled
+    # while this branch silently declined to route them.
+    if event_type.startswith("payout.") or event_type.startswith("transfer."):
         try:
             from services.business_os.payments import seller_payouts as _bos_seller_payouts
             _bos_seller_payouts.ensure_schema()
-            if event_type in {"transfer.created", "transfer.reversed"}:
+            if event_type.startswith("transfer."):
                 _bos_seller_payouts.apply_stripe_transfer_event(event)
             else:
                 _bos_seller_payouts.apply_stripe_payout_event(event)
         except Exception:
             logging.exception("BOS_SELLER_PAYOUT_EVENT_FAILED event_id=%s type=%s", event_id, event_type)
+    # Attribution for the legacy branch below is *not* recomputed there. The
+    # projection applier already resolves a Stripe account to a seller in the
+    # order that actually works (metadata.user_id stamped at account creation ->
+    # its own projection row -> the legacy mapping table) and opens the
+    # ORPHAN_STRIPE_OBJECT incident when it cannot. A second attribution here
+    # would be a second thing to keep in sync, so the answer it already computed
+    # is carried forward instead. Empty means "no attributable seller", and the
+    # legacy write below then leaves the table alone rather than inventing one.
+    connect_projection_user_id = ""
     if event_type == "account.updated":
         try:
             from services.business_os.payments import connect_accounts as _bos_connect_accounts
-            _bos_connect_accounts.apply_account_updated_event(event)
+            _connect_projection = _bos_connect_accounts.apply_account_updated_event(event) or {}
+            connect_projection_user_id = str(
+                (_connect_projection.get("state") or {}).get("user_id") or ""
+            ).strip()
         except Exception:
             logging.exception("BOS_CONNECT_ACCOUNT_EVENT_FAILED event_id=%s", event_id)
 
@@ -111363,21 +111521,68 @@ def stripe_webhook():
         # (event, user_id, context) gathered here, emitted after the commit —
         # the notification engine opens its own connection.
         payment_notifications = []
+        # Same discipline: (provider_payout_id, paid) run after the commit.
+        payout_scheduler_event = None
         conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
         if event_type == "account.updated":
             acct = obj.get("id") or ""
             requirements = (obj.get("requirements") or {}).get("currently_due") or []
             disabled_reason = str((obj.get("requirements") or {}).get("disabled_reason") or "")
-            cur.execute(
-                """
-                UPDATE seller_payout_accounts
-                SET onboarding_status=?, payouts_enabled=?, charges_enabled=?, missing_requirements_json=?, last_checked_at=?, updated_at=?
-                WHERE connected_account_id=?
-                """,
-                ("complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due", 1 if obj.get("payouts_enabled") else 0, 1 if obj.get("charges_enabled") else 0, json.dumps(requirements, default=str), now, now, acct),
-            )
-            cur.execute("SELECT user_id FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
-            connect_user_id = safe_int(dict(cur.fetchone() or {}).get("user_id"), 0)
+            # This used to be a bare `UPDATE ... WHERE connected_account_id=?`.
+            # Stripe routinely delivers `account.updated` for a freshly created
+            # account *before* — or racing with — the insert in the onboarding
+            # route, and that UPDATE then matched zero rows and dropped the
+            # capability state on the floor with nothing to say it had. It is an
+            # upsert now, so an early-arriving event lands and a redelivery
+            # rewrites the same row rather than adding a second one.
+            #
+            # It stays bound to both the account *and* a seller. An existing row
+            # for this account is authoritative for identity; otherwise the
+            # attribution the projection applier already did upstream is used.
+            # When neither names a seller the table is left untouched: Stripe
+            # also delivers `account.updated` for accounts this platform does
+            # not own, and fabricating a row under a null/zero/guessed user
+            # would be worse than the silent no-op this replaces.
+            cur.execute("SELECT user_id, seller_type FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (acct,))
+            connect_existing_row = dict(cur.fetchone() or {})
+            connect_user_id = safe_int(connect_existing_row.get("user_id") or connect_projection_user_id, 0)
+            connect_seller_type = str(
+                connect_existing_row.get("seller_type")
+                or (obj.get("metadata") or {}).get("seller_type")
+                or ""
+            ).strip().lower()
+            if connect_seller_type not in {"merchant", "teacher"}:
+                # Same default the onboarding route applies to an unstated type.
+                connect_seller_type = "merchant"
+            if acct and connect_user_id:
+                # ON CONFLICT (user_id, seller_type) + excluded.*: the same
+                # dialect-portable shape the onboarding route upserts with
+                # (see /api/pulse/payouts/connect), understood by both SQLite
+                # and Postgres, and matching the UNIQUE(user_id, seller_type)
+                # this table is declared with in init_db().
+                cur.execute(
+                    """
+                    INSERT INTO seller_payout_accounts
+                    (user_id, seller_type, provider, connected_account_id, onboarding_status, payouts_enabled, charges_enabled, missing_requirements_json, last_checked_at, created_at, updated_at)
+                    VALUES (?, ?, 'stripe', ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, seller_type) DO UPDATE SET connected_account_id=excluded.connected_account_id,
+                      onboarding_status=excluded.onboarding_status, payouts_enabled=excluded.payouts_enabled,
+                      charges_enabled=excluded.charges_enabled, missing_requirements_json=excluded.missing_requirements_json,
+                      last_checked_at=excluded.last_checked_at, updated_at=excluded.updated_at
+                    """,
+                    (
+                        connect_user_id,
+                        connect_seller_type,
+                        acct,
+                        "complete" if obj.get("payouts_enabled") and obj.get("charges_enabled") else "requirements_due",
+                        1 if obj.get("payouts_enabled") else 0,
+                        1 if obj.get("charges_enabled") else 0,
+                        json.dumps(requirements, default=str),
+                        now,
+                        now,
+                        now,
+                    ),
+                )
             charges_on = bool(obj.get("charges_enabled"))
             payouts_on = bool(obj.get("payouts_enabled"))
             if payouts_on and charges_on:
@@ -111409,7 +111614,18 @@ def stripe_webhook():
                 elif requirements:
                     payment_notifications.append(("stripe_verification_required", connect_user_id, connect_context))
         elif event_type in {"payout.paid", "payout.failed"}:
-            destination = obj.get("destination") or obj.get("account") or ""
+            # The envelope first, and only then the object. PulseSoc pays sellers
+            # out *as* the connected account (marketplace_payout_worker calls
+            # stripe.Payout.create(..., stripe_account=acct)), and for a payout
+            # created that way `destination` is the seller's own bank account —
+            # `ba_...` — not `acct_...`. The connected account id arrives only on
+            # the event envelope's top-level `account` field, exactly as it does
+            # for account.application.deauthorized below. Reading `destination`
+            # first matched no row, so no payout_paid / payout_failed
+            # notification was ever emitted for a connected-account payout.
+            # The object fields remain as fallbacks so a platform-scoped payout,
+            # which carries no envelope account, still resolves.
+            destination = event.get("account") or obj.get("destination") or obj.get("account") or ""
             cur.execute("SELECT * FROM seller_payout_accounts WHERE connected_account_id=? LIMIT 1", (destination,))
             account = dict(cur.fetchone() or {})
             if account:
@@ -111430,9 +111646,15 @@ def stripe_webhook():
                         "failure_reason": obj.get("failure_message") or "",
                     },
                 ))
-            from services import marketplace_payout_scheduler
-            marketplace_payout_scheduler.apply_provider_event(
-                obj.get("id") or "", paid=event_type == "payout.paid", event_id=event_id)
+            # Deferred to after the commit below, for the same reason the
+            # onboarding reconcile and the dispute hold already are: this opens
+            # its own connection and runs `ensure_schema` DDL on it. Held open
+            # across the uncommitted INSERT above, the second connection blocks
+            # on the first one's write lock — SQLite raises "database is locked"
+            # and Postgres simply waits. It was reachable before only because
+            # the seller lookup never matched, so the INSERT never ran and the
+            # connection never took a write lock.
+            payout_scheduler_event = (obj.get("id") or "", event_type == "payout.paid")
         else:
             # A refunded or disputed advertiser wallet top-up has to debit the
             # wallet, otherwise the advertiser keeps spending money Stripe has
@@ -111496,6 +111718,18 @@ def stripe_webhook():
                         },
                     )
         conn.commit(); conn.close()
+        if payout_scheduler_event:
+            try:
+                from services import marketplace_payout_scheduler
+                marketplace_payout_scheduler.apply_provider_event(
+                    payout_scheduler_event[0], paid=payout_scheduler_event[1], event_id=event_id)
+            except Exception:
+                # A settlement left at `scheduled` after Stripe has ruled on the
+                # payout is money in an unknown state. Never silent — but never
+                # a 500 either, or Stripe redelivers an event whose database
+                # effects above have already landed.
+                logging.exception("MARKETPLACE_PAYOUT_PROVIDER_EVENT_FAILED event_id=%s payout=%s",
+                                  event_id, payout_scheduler_event[0])
         for _event_name, _event_user_id, _event_context in payment_notifications:
             # Each is deduped on a stable key derived from the Stripe object, so
             # a webhook redelivery re-enters here and sends nothing twice.

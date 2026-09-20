@@ -417,12 +417,16 @@ def handle_stripe_event(payload: Mapping[str, Any]) -> dict:
     inline ``bot.stripe_webhook`` path can safely both fire for one event.
     """
     event_type = str((payload or {}).get("type") or "")
-    if event_type.startswith("payout.") or event_type in (
-        "transfer.created", "transfer.reversed"
-    ):
+    # Prefix-matched, like the inline dispatcher in ``bot.stripe_webhook``. The
+    # applier owns the event list (``seller_payouts.TRANSFER_EVENT_TYPES``) and
+    # returns ``{"ignored": True}`` for anything outside it, so a transfer event
+    # this inbox has never seen marks the row processed instead of falling
+    # through to the ledger mapper, and widening the applier's set does not need
+    # a matching edit in two other files that will be forgotten.
+    if event_type.startswith("payout.") or event_type.startswith("transfer."):
         from services.business_os.payments import seller_payouts
         seller_payouts.ensure_schema()
-        if event_type in ("transfer.created", "transfer.reversed"):
+        if event_type.startswith("transfer."):
             return seller_payouts.apply_stripe_transfer_event(payload)
         return seller_payouts.apply_stripe_payout_event(payload)
     if event_type == "account.updated":

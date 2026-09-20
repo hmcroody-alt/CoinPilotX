@@ -174,6 +174,42 @@ def _seller_row(cur, seller_user_id: int) -> dict:
     return dict(cur.fetchone() or {})
 
 
+def _canonical_row(cur, connected_account_id: str) -> dict:
+    """What Stripe last said about this account, from the canonical projection.
+
+    ``seller_payout_accounts`` (read above) is the legacy table; the
+    authoritative record of Stripe's own words is ``connect_account_state``,
+    written by ``services.business_os.payments.connect_accounts`` from both the
+    ``account.updated`` webhook and explicit server-side refreshes. The two are
+    kept equal by one sync path, and this second read is what makes that
+    property *enforced* rather than merely intended: if they ever disagree, the
+    caller below takes the more restrictive answer, so no stale column in the
+    legacy table can open the card rail on its own.
+
+    Read through the caller's cursor so it sees the same transaction it is
+    about to charge in, and so a checkout costs no extra pooled connection.
+
+    Returns ``{}`` — "no opinion" — when the projection has nothing for this
+    account, which is also what an absent table looks like. Failing open *here*
+    is not a permissive default: the legacy checks have already run and already
+    refused if they should, so no opinion is exactly today's behaviour.
+    """
+    try:
+        cur.execute(
+            "SELECT charges_enabled, payouts_enabled, disabled_reason, "
+            "requirements_json FROM connect_account_state "
+            "WHERE connected_account_id=? LIMIT 1",
+            (str(connected_account_id),),
+        )
+        return dict(cur.fetchone() or {})
+    except Exception as exc:  # noqa: BLE001 - absent table is not a verdict
+        logging.debug(
+            "MARKETPLACE_CARD_CANONICAL_STATE_UNREADABLE account=%s error=%s",
+            connected_account_id, exc,
+        )
+        return {}
+
+
 def _seller_approved(cur, seller_user_id: int) -> bool:
     """``marketplace_sellers.status`` is the one authority on whether someone may sell.
 
@@ -224,6 +260,28 @@ def _decide(cur, seller_user_id: int, listing: Mapping[str, Any] | None,
         return CARD_CAPABILITY_DISABLED
     if not _truthy(row.get("payouts_enabled")):
         return PAYOUTS_DISABLED
+
+    # The legacy row says yes. Ask the canonical projection the same questions
+    # and let it veto. These repeat the four checks above deliberately: the two
+    # tables are kept equal by one sync path, so agreeing is the normal case and
+    # this block normally changes nothing. It exists for the case the sync path
+    # missed — an onboarding write that never got a webhook, a mirror UPDATE
+    # that matched no row, a column added to one table and not the other. The
+    # reason codes are the same ones, so the verdict a seller is shown does not
+    # depend on which table noticed.
+    #
+    # Only ever a refusal. The canonical row cannot promote a "no" from the
+    # legacy row into a "yes", because both must pass.
+    canonical = _canonical_row(cur, account_id)
+    if canonical:
+        if str(canonical.get("disabled_reason") or "").strip():
+            return STRIPE_REQUIREMENTS_DUE
+        if _requirements_outstanding(canonical):
+            return STRIPE_REQUIREMENTS_DUE
+        if not _truthy(canonical.get("charges_enabled")):
+            return CARD_CAPABILITY_DISABLED
+        if not _truthy(canonical.get("payouts_enabled")):
+            return PAYOUTS_DISABLED
 
     if listing is not None:
         status = str(listing.get("status") or "").strip().lower()

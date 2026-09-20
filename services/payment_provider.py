@@ -82,6 +82,17 @@ _UNAVAILABLE_MESSAGE = "Payout setup is temporarily unavailable. Try again in a 
 
 CONNECT_PLATFORM_CODE = "CONNECT_PLATFORM_NOT_ENABLED"
 
+# A Connect account is minted once per seller and then holds that seller's money
+# forever. The only thing that keeps two sellers out of one account is the
+# idempotency key, and the only thing in that key that distinguishes them is the
+# user id — so an unusable id is not a detail to paper over with "", it is the
+# whole guard going missing. Refused here rather than sent to Stripe.
+CONNECT_IDENTITY_CODE = "CONNECT_SELLER_IDENTITY_MISSING"
+_IDENTITY_MESSAGE = (
+    "Payout setup couldn't start because your session didn't identify which "
+    "account to connect. Sign out and back in, then try again."
+)
+
 # Stripe answers a platform that never enabled Connect with a plain
 # ``InvalidRequestError`` whose only distinguishing mark is its message — there
 # is no ``code`` on it. Matched here purely to choose honest copy; the provider's
@@ -139,16 +150,70 @@ def connect_failure(exc: Exception, operation: str) -> dict[str, Any]:
     }
 
 
+def connect_refusal(code: str, message: str, operation: str, http_status: int = 400) -> dict[str, Any]:
+    """The same descriptor :func:`connect_failure` returns, for a call we refuse.
+
+    Callers in ``bot.py`` read ``ok``, ``http_status``, ``message``, ``code``,
+    ``provider_error`` and ``retryable`` off a failed Connect result, so a
+    refusal that never reached Stripe has to answer in that exact shape rather
+    than raise. ``provider_error`` keeps the ``{type, code, param}`` keys with
+    empty values: there is no provider error to fingerprint, because no provider
+    call was made.
+    """
+    print(f"CONNECT_{operation.upper()}_REFUSED code={code}", flush=True)
+    logging.error("CONNECT_%s_REFUSED code=%s", operation.upper(), code)
+    return {
+        "ok": False,
+        "status": "invalid_request",
+        "code": code,
+        "http_status": http_status,
+        "message": message,
+        "provider_error": {"type": "", "code": None, "param": None},
+        "retryable": False,
+    }
+
+
+def _seller_identity(user: dict[str, Any], seller_type: str) -> str:
+    """Return the id half of the idempotency key, or "" if it cannot be trusted.
+
+    Fails closed. ``str(user.get("user_id") or "")`` used to yield ``""`` for a
+    missing id, which collapsed every such seller onto the key
+    ``connect-account::merchant`` — and Stripe answers a repeated idempotency key
+    by replaying the *first* response, so the second seller would be handed the
+    first seller's connected account. Anything that is not a positive integer is
+    rejected, because every real caller passes a row id.
+    """
+    if not str(seller_type or "").strip():
+        return ""
+    raw = str(user.get("user_id") or "").strip()
+    try:
+        return str(int(raw)) if int(raw) > 0 else ""
+    except (TypeError, ValueError):
+        return ""
+
+
 def create_connected_account(user: dict[str, Any], seller_type: str) -> dict[str, Any]:
+    # Checked before ``_stripe_ready`` for the reason ``create_payment_intent``
+    # states: behind the readiness gate this branch would be unreachable on a
+    # developer machine and in CI, so production would be the first place it ran.
+    user_id = _seller_identity(user if isinstance(user, dict) else {}, seller_type)
+    if not user_id:
+        return connect_refusal(CONNECT_IDENTITY_CODE, _IDENTITY_MESSAGE, "account_create")
     if not _stripe_ready():
         return setup_required("Stripe Connect cannot start until STRIPE_SECRET_KEY is configured.")
-    user_id = str(user.get("user_id") or "")
     try:
         account = stripe.Account.create(
             type="express",
             email=user.get("email") or None,
             metadata={"user_id": user_id, "seller_type": seller_type},
             capabilities={"card_payments": {"requested": True}, "transfers": {"requested": True}},
+            # PulseSoc runs separate charges and transfers and decides settlement
+            # timing itself: the payout worker calls Transfer.create and then
+            # Payout.create against the connected account. An Express account
+            # defaults to Stripe's *automatic* schedule, so without this the two
+            # schedulers would both pay the seller out of the same balance.
+            # Manual is what makes PulseSoc the only thing moving that money.
+            settings={"payouts": {"schedule": {"interval": "manual"}}},
             # Guards the double tap that lands before the first response is
             # persisted; the stored row is the durable guard once it exists.
             idempotency_key=f"connect-account:{user_id}:{seller_type}",
@@ -322,6 +387,37 @@ def create_transfer(*, destination: str = "", idempotency_key: str = "", **kwarg
         "ok": True,
         "transfer": stripe_response_dict(transfer),
         "provider_transfer_id": stripe_response_value(transfer, "id"),
+    }
+
+
+def create_transfer_reversal(*, transfer_id: str = "", idempotency_key: str = "",
+                             **kwargs) -> dict[str, Any]:
+    """Claw a transfer back from a connected account to the platform balance.
+
+    The inverse of :func:`create_transfer`, and the only thing that can recover
+    a seller's cut once the transfer leg has run. Under separate charges and
+    transfers a refund is paid to the buyer out of the *platform* balance, while
+    the seller's share is already sitting in the connected account where no
+    refund can reach it; without a reversal that difference is simply a loss
+    carried as a negative internal balance.
+
+    A reversal draws on the connected account's Stripe balance, so it works only
+    while the money is still there. Once a payout has moved that balance to the
+    seller's bank there is nothing left to reverse and Stripe refuses the call —
+    which is a different recovery, not a retryable error, and is the caller's to
+    decide about.
+    """
+    if not _stripe_ready():
+        return setup_required("Transfer reversals are unavailable until Stripe is configured.")
+    transfer_id = str(transfer_id or "").strip()
+    if not transfer_id:
+        return {"ok": False, "message": "Provider transfer id is required."}
+    extra: dict[str, Any] = {"idempotency_key": idempotency_key} if idempotency_key else {}
+    reversal = stripe.Transfer.create_reversal(transfer_id, **kwargs, **extra)
+    return {
+        "ok": True,
+        "reversal": stripe_response_dict(reversal),
+        "provider_reversal_id": stripe_response_value(reversal, "id"),
     }
 
 

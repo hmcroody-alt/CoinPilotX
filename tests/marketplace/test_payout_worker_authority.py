@@ -674,7 +674,16 @@ def test_the_cycle_is_hosted_in_exactly_one_process():
     for path in list(root.glob("*_worker.py")) + [root / "bot.py", root / "Procfile"]:
         if not path.exists():
             continue
-        if "marketplace_payout_worker" in path.read_text(encoding="utf-8", errors="ignore"):
+        # Comments are dropped before the search. Hosting the cycle means
+        # importing or calling it; *naming* it in an explanatory comment does
+        # not, and a raw substring scan cannot tell those apart. It failed that
+        # way once, on a comment in bot.py that pointed at this very module to
+        # explain where payouts actually run — the gate reporting the opposite
+        # of what the comment said. Splitting on "#" keeps the code half of a
+        # line, so `import marketplace_payout_worker  # noqa` is still caught.
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+        if "marketplace_payout_worker" in code:
             hosts.append(path.name)
     assert hosts == ["pulse_worker.py"], (
         "expected the payout cycle to be hosted only by pulse_worker.py, found: "

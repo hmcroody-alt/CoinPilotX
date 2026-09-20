@@ -7,6 +7,7 @@ importing services.db), mirroring tests/business_os_finance/test_incidents.py.
 """
 
 import os
+import pathlib
 import tempfile
 import unittest
 
@@ -292,6 +293,100 @@ class WebhookLifecycleTests(BaseCase):
              "data": {"object": {"id": "tr_other"}}})
         self.assertTrue(miss["ignored"])
         self.assertEqual(self._incident_types(), [])
+
+    def test_every_declared_transfer_event_reaches_the_trail(self):
+        # transfer.updated and transfer.canceled were enabled on the production
+        # endpoint and routed by nothing: a canceled transfer left the payout
+        # row still advertising a stripe_transfer_id that Stripe no longer
+        # honoured, with no trace of the cancellation anywhere. Whatever is in
+        # TRANSFER_EVENT_TYPES has to actually land.
+        self._fund("7", 4000)
+        seen = []
+        for index, event_type in enumerate(sorted(seller_payouts.TRANSFER_EVENT_TYPES)):
+            payout = self._request(cents=100, key=f"tk-{index}")["payout"]
+            transfer_id = f"tr_decl_{index}"
+            conn = db.connect()
+            conn.execute(
+                "UPDATE seller_payout_requests SET stripe_transfer_id=? WHERE id=?",
+                (transfer_id, payout["id"]))
+            conn.commit()
+            conn.close()
+            result = seller_payouts.apply_stripe_transfer_event(
+                {"id": f"evt_decl_{index}", "type": event_type,
+                 "data": {"object": {"id": transfer_id, "amount": 100,
+                                     "currency": "usd"}}})
+            self.assertTrue(result.get("applied"),
+                            f"{event_type} did not reach the trail: {result}")
+            seen.append(event_type)
+        self.assertEqual(sorted(seen), sorted(seller_payouts.TRANSFER_EVENT_TYPES))
+        self.assertIn("transfer.canceled", seen)
+        self.assertIn("transfer.updated", seen)
+        self.assertEqual(self._incident_types(), [])
+
+    def test_an_undeclared_transfer_event_is_ignored_not_raised(self):
+        # The dispatchers match on the "transfer." prefix, so a transfer event
+        # Stripe invents tomorrow arrives here. It must decline, not explode --
+        # that is the whole reason the prefix delegation is safe.
+        result = seller_payouts.apply_stripe_transfer_event(
+            {"id": "evt_future", "type": "transfer.teleported",
+             "data": {"object": {"id": "tr_1", "amount": 500}}})
+        self.assertTrue(result["ignored"])
+        self.assertEqual(result["type"], "transfer.teleported")
+        self.assertEqual(self._incident_types(), [])
+
+
+class TransferEventDispatchTests(unittest.TestCase):
+    """The event list must have exactly one copy.
+
+    It had three -- bot.stripe_webhook, stripe_ledger_handler and the applier --
+    and two of them never learned about transfer.updated / transfer.canceled.
+    Both dispatchers now match the "transfer." prefix and let the applier
+    decide, so these tests fail if either one grows its own list again.
+    """
+
+    def _dispatcher_sources(self):
+        root = pathlib.Path(__file__).resolve().parents[2]
+        handler = root / "services/business_os/payments/stripe_ledger_handler.py"
+        bot_src = (root / "bot.py").read_text(encoding="utf-8", errors="ignore")
+        start = bot_src.index("Wave B: seller payout lifecycle")
+        return {
+            "bot.stripe_webhook": bot_src[start:start + 1200],
+            "stripe_ledger_handler": handler.read_text(encoding="utf-8"),
+        }
+
+    def test_neither_dispatcher_keeps_its_own_event_list(self):
+        for name, src in self._dispatcher_sources().items():
+            code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+            for literal in ('"transfer.created"', "'transfer.created'",
+                            '"transfer.reversed"', "'transfer.reversed'"):
+                self.assertNotIn(
+                    literal, code,
+                    f"{name} hard-codes {literal}; route on the prefix and let "
+                    "seller_payouts.TRANSFER_EVENT_TYPES be the only list")
+
+    def test_both_dispatchers_route_the_whole_transfer_family(self):
+        for name, src in self._dispatcher_sources().items():
+            code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+            self.assertIn('startswith("transfer.")', code,
+                          f"{name} does not prefix-match transfer events")
+            self.assertIn("apply_stripe_transfer_event", code,
+                          f"{name} does not reach the transfer applier")
+
+    def test_the_ledger_mapper_posts_nothing_for_transfer_events(self):
+        # Before the prefix change, transfer.updated / transfer.canceled fell
+        # through to the ledger mapper. This asserts that fall-through was inert
+        # -- i.e. short-circuiting it moved no money.
+        from services.business_os.payments.stripe_ledger_handler import (
+            map_stripe_postings,
+        )
+        for event_type in sorted(seller_payouts.TRANSFER_EVENT_TYPES):
+            postings = map_stripe_postings({
+                "id": "evt_m", "type": event_type,
+                "data": {"object": {"id": "tr_1", "amount": 1000,
+                                    "currency": "usd", "destination": "acct_1"}},
+            })
+            self.assertEqual(postings, [],
+                             f"{event_type} used to post to the ledger")
 
 
 class ReadSurfaceTests(BaseCase):

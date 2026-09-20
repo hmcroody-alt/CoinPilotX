@@ -8,12 +8,13 @@ quote; the current fee policy is never consulted during a refund.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from services import db
 from services.business_os.ledger import ledger
 from services.business_os.marketplace import policy
+from services.business_os.payments import incidents, seller_payouts
 
 PAYOUT_STATES = frozenset({"pending_onboarding", "pending_order", "pending_fulfillment",
                            "protection_hold", "eligible", "scheduled", "paid", "failed",
@@ -98,6 +99,33 @@ def _ensure_transfer_group_column(conn) -> None:
     # deadline — two unrelated policies must not share one stored number.
     if "delivered_at" not in cols:
         conn.execute("ALTER TABLE marketplace_commercial_settlements ADD COLUMN delivered_at TEXT")
+    # The retry budget lives on the row, not in the worker, for one reason: a
+    # deploy restarts the process, and an in-memory counter would hand every
+    # stranded settlement a fresh set of attempts every few hours — an unbounded
+    # retry wearing a bound's clothing. `payout_next_attempt_at` is an ISO-8601
+    # UTC string like every other timestamp here, so the backoff survives the
+    # restart along with the count.
+    for column, column_type in (("payout_attempt_count", "INTEGER DEFAULT 0"),
+                                ("payout_next_attempt_at", "TEXT"),
+                                ("payout_failure_code", "TEXT"),
+                                ("payout_failure_class", "TEXT"),
+                                # Which of the three refund situations this row
+                                # is in, stamped by `apply_refund` rather than
+                                # inferred later: by the time an operator looks,
+                                # the payout may have moved on and the answer
+                                # would have quietly changed.
+                                ("refund_recovery_case", "TEXT"),
+                                # How much of the seller's cut this refund has
+                                # to claw back, and the reversal that did it.
+                                # Stored so the debt is attributable to an order
+                                # instead of only visible as an aggregate
+                                # negative balance nobody can explain.
+                                ("refund_recovery_minor", "INTEGER DEFAULT 0"),
+                                ("refund_reversed_minor", "INTEGER DEFAULT 0"),
+                                ("refund_reversal_id", "TEXT")):
+        if column not in cols:
+            conn.execute("ALTER TABLE marketplace_commercial_settlements "
+                         f"ADD COLUMN {column} {column_type}")
     # Cached only once the caller's commit has landed, so a rolled-back DDL is
     # not remembered as applied.
 
@@ -389,10 +417,180 @@ def apply_refund(transaction_id: Any, *, provider_refund_id: str,
                           entry_type="marketplace_fee_reversal", source="platform:marketplace_revenue",
                           destination="external:stripe_marketplace_refunds", related_object=related,
                           provider_reference=provider_refund_id, allow_negative=True)
+    recovery = stamp_refund_recovery(transaction_id, seller_reversal_minor=seller_delta,
+                                     provider_refund_id=provider_refund_id)
     result = get_settlement(transaction_id)
     return {"settlement": result, "provider_refund_id": provider_refund_id,
             "fee_reversal_minor": fee_delta, "seller_reversal_minor": seller_delta,
-            "total_refund_minor": total, "duplicate": False}
+            "total_refund_minor": total, "duplicate": False,
+            "recovery_case": recovery["case"], "recovery_minor": recovery["recovery_minor"]}
+
+#: The four situations a refund can find the seller's cut in. They are kept
+#: apart because the correct action differs in kind, not in degree, and
+#: collapsing any two of them either moves money that should not move or fails
+#: to move money that should.
+RECOVERY_NONE = "none"                       # nothing of the seller's to recover
+RECOVERY_BEFORE_TRANSFER = "before_transfer" # money never left the platform
+RECOVERY_TRANSFER_REVERSIBLE = "transfer_reversible"  # in the connected account
+RECOVERY_AFTER_PAYOUT = "after_payout"       # in the seller's bank
+RECOVERY_INDETERMINATE = "indeterminate"     # payout in flight; unknowable now
+
+REFUND_RECOVERY_CASES = frozenset({RECOVERY_NONE, RECOVERY_BEFORE_TRANSFER,
+                                   RECOVERY_TRANSFER_REVERSIBLE, RECOVERY_AFTER_PAYOUT,
+                                   RECOVERY_INDETERMINATE})
+
+def classify_refund_recovery(payout: Mapping[str, Any] | None, *, seller_reversal_minor: int) -> str:
+    """Where the seller's refunded cut physically is, right now.
+
+    Under separate charges and transfers the buyer's refund comes out of the
+    *platform* balance. Whether the seller's share can be recovered depends
+    entirely on how far down the rails it has already travelled, and there is no
+    single answer:
+
+    * Nothing was reversed from the seller, or no payout was ever requested, so
+      the seller's cut is still an entry in ``seller_payable`` that the refund
+      has already adjusted. **Nothing to do** — no Stripe call exists for this
+      and making one would be inventing a debt.
+    * A transfer landed but no payout has been created. The money is sitting in
+      the connected account's Stripe balance, which is exactly what
+      ``Transfer.create_reversal`` draws on. **Reversible.**
+    * The payout is paid (or was returned after paying). The money reached the
+      seller's bank and no platform-side call can reach it. **A debt**, to be
+      recorded and pursued, not silently absorbed.
+    * A payout exists and is in flight. The connected-account balance is already
+      committed to it, so a reversal may succeed, may fail, or may overdraw the
+      account depending on timing this process cannot observe. **Indeterminate**
+      — and an indeterminate case is the one where automatically moving money is
+      least defensible, so it moves none and asks for a human.
+    """
+    if int(seller_reversal_minor or 0) <= 0:
+        return RECOVERY_NONE
+    if not payout or not str(payout.get("stripe_transfer_id") or "").strip():
+        return RECOVERY_BEFORE_TRANSFER
+    status = str(payout.get("status") or "")
+    if status in {"paid", "returned"}:
+        return RECOVERY_AFTER_PAYOUT
+    if status in {"payout_created", "in_transit"}:
+        return RECOVERY_INDETERMINATE
+    # pending / failed / canceled: a transfer exists, no payout is drawing on it.
+    return RECOVERY_TRANSFER_REVERSIBLE
+
+def stamp_refund_recovery(transaction_id: Any, *, seller_reversal_minor: int,
+                          provider_refund_id: str = "") -> dict:
+    """Record which recovery case this refund is in, and raise it if it is a debt.
+
+    Decided at refund time rather than looked up later on purpose: the payout row
+    keeps moving, so the same question asked tomorrow can return a different
+    answer about money that has already gone. What is stamped here is what was
+    true when the buyer was refunded.
+
+    Never calls Stripe and never moves money. It records a fact and, when that
+    fact is that the platform is owed money it cannot take back, opens the
+    incident that makes it somebody's job.
+    """
+    payout = None
+    try:
+        payout = seller_payouts.get_payout(payout_key=f"marketplace:payout:{int(transaction_id)}")
+    except Exception:  # noqa: BLE001 - a refund must not fail because of a lookup
+        payout = None
+    case = classify_refund_recovery(payout, seller_reversal_minor=seller_reversal_minor)
+    owed = int(seller_reversal_minor or 0) if case in {RECOVERY_TRANSFER_REVERSIBLE,
+                                                       RECOVERY_AFTER_PAYOUT,
+                                                       RECOVERY_INDETERMINATE} else 0
+    ensure_schema(); conn = db.connect()
+    try:
+        conn.execute("""UPDATE marketplace_commercial_settlements SET refund_recovery_case=?,
+            refund_recovery_minor=COALESCE(refund_recovery_minor,0)+?, updated_at=?
+            WHERE seller_transaction_id=?""",
+            (case, owed, _now(), int(transaction_id))); conn.commit()
+    finally:
+        conn.close()
+    if case in {RECOVERY_AFTER_PAYOUT, RECOVERY_INDETERMINATE}:
+        _open_recovery_incident(transaction_id, case, owed, payout, provider_refund_id)
+    return {"case": case, "recovery_minor": owed, "payout": payout}
+
+def _open_recovery_incident(transaction_id: Any, case: str, owed: int,
+                            payout: Mapping[str, Any] | None, provider_refund_id: str) -> None:
+    """Make an unrecoverable refund a named debt instead of a quiet minus sign.
+
+    Without this the only trace is a negative ``seller_payable`` balance, which
+    the reconciliation sweep does notice — in aggregate, with no attribution to
+    the order or refund that caused it. A seller who never sells again would
+    carry that forever and nobody could say what it was for. The incident names
+    the order, the seller, the amount and why it cannot be reversed, so the debt
+    can be pursued, written off, or invoiced as a decision rather than by decay.
+    """
+    summary = ("Refund on settlement %s cannot be recovered from the seller's Stripe "
+               "balance (%s): %s minor owed" % (transaction_id, case, owed)) if case == RECOVERY_AFTER_PAYOUT \
+        else ("Refund on settlement %s found a payout in flight (%s); recovery action "
+              "is undetermined and nothing was moved: %s minor at stake"
+              % (transaction_id, case, owed))
+    try:
+        incidents.open_incident(
+            incidents.NEGATIVE_BALANCE_DETECTED, domain="seller_payments",
+            severity="critical" if case == RECOVERY_AFTER_PAYOUT else "warning",
+            summary=summary,
+            details={"seller_transaction_id": int(transaction_id), "recovery_case": case,
+                     "recoverable_minor": int(owed),
+                     "provider_refund_id": str(provider_refund_id or ""),
+                     "stripe_transfer_id": str((payout or {}).get("stripe_transfer_id") or ""),
+                     "stripe_payout_id": str((payout or {}).get("stripe_payout_id") or ""),
+                     "payout_status": str((payout or {}).get("status") or "")},
+            related_object=f"marketplace_settlement:{transaction_id}",
+            stripe_ref=str(provider_refund_id or ""),
+            incident_key=(f"{incidents.NEGATIVE_BALANCE_DETECTED}:marketplace_refund:"
+                          f"{transaction_id}:{provider_refund_id}"))
+    except Exception:  # noqa: BLE001 - reporting must not break a refund
+        pass
+
+def refund_recovery_queue(*, limit: int = 50) -> list:
+    """Refunds whose seller cut is still sitting in a connected account.
+
+    Compares owed against already-reversed rather than testing a "done" flag,
+    because a single order can be refunded twice. A flag would let the second
+    partial refund raise the debt and then never be collected, which is the
+    quiet version of the bug this whole feature exists to remove.
+
+    Only the reversible case appears. The indeterminate and after-payout cases
+    have incidents, not a queue: a queue is a thing that gets drained
+    automatically, and neither of those should be.
+    """
+    ensure_schema(); conn = db.connect()
+    try:
+        return [dict(r) for r in conn.execute("""SELECT * FROM marketplace_commercial_settlements
+            WHERE refund_recovery_case=?
+            AND COALESCE(refund_recovery_minor,0) > COALESCE(refund_reversed_minor,0)
+            ORDER BY seller_transaction_id LIMIT ?""",
+            (RECOVERY_TRANSFER_REVERSIBLE, max(1, min(int(limit), 200)))).fetchall()]
+    finally:
+        conn.close()
+
+def record_refund_reversal(transaction_id: Any, provider_reversal_id: str,
+                           reversed_total_minor: int) -> dict | None:
+    """Record how much of a refund has now been clawed back.
+
+    Stores the running total as an absolute figure, not an increment, so calling
+    this twice for the same reversal cannot double-count it — which matters
+    because the Stripe call in front of it is idempotent and *will* return the
+    same reversal twice on a retry. The comparison is done here rather than in
+    SQL because two-argument ``MAX`` is SQLite-only and ``GREATEST`` is
+    Postgres-only; neither belongs in a statement this module runs on both.
+    """
+    provider_reversal_id = str(provider_reversal_id or "").strip()
+    if not provider_reversal_id:
+        return None
+    ensure_schema(); conn = db.connect()
+    try:
+        current = get_settlement(transaction_id, conn=conn)
+        if not current:
+            return None
+        total = max(int(current.get("refund_reversed_minor") or 0), int(reversed_total_minor or 0))
+        conn.execute("""UPDATE marketplace_commercial_settlements SET refund_reversed_minor=?,
+            refund_reversal_id=?, updated_at=? WHERE seller_transaction_id=?""",
+            (total, provider_reversal_id, _now(), int(transaction_id))); conn.commit()
+    finally:
+        conn.close()
+    return get_settlement(transaction_id)
 
 def transition_payout(transaction_id: Any, to_state: str, *, actor: str, reason: str,
                       idempotency_key: str, provider_reference: str = "") -> dict:
@@ -420,6 +618,89 @@ def transition_payout(transaction_id: Any, to_state: str, *, actor: str, reason:
     finally:
         conn.close()
     return {"settlement": get_settlement(transaction_id), "duplicate": False}
+
+def record_payout_failure(transaction_id: Any, *, failure_code: str, failure_class: str,
+                          retryable: bool, max_attempts: int, base_seconds: int,
+                          max_seconds: int, now: datetime | None = None) -> dict:
+    """Charge one attempt against the settlement's retry budget and say what's next.
+
+    The arithmetic lives here, with the row it writes, so the count that is read
+    and the count that is stored come from one connection and cannot interleave.
+    The *tunables* are arguments rather than reads, because they belong to the
+    worker's clamped configuration and importing that module here would close a
+    cycle (the worker already imports the scheduler, which imports this).
+
+    Backoff is exponential from ``base_seconds``, doubling per attempt and capped
+    at ``max_seconds``. The cap matters more than the curve: without it the fifth
+    attempt on a 15-minute base lands four hours out, and a seller whose transfer
+    failed on a blip waits for no reason.
+
+    Returns ``{"attempt", "exhausted", "retryable", "next_attempt_at",
+    "settlement"}``. ``exhausted`` is true when the budget is spent, and
+    ``next_attempt_at`` is ``None`` whenever nothing further will be tried —
+    which is what the selector in :func:`retryable_settlements` keys on, so a
+    non-retryable failure is not merely deprioritised, it is unreachable.
+    """
+    ensure_schema(); conn = db.connect(); transaction_id = int(transaction_id)
+    try:
+        current = get_settlement(transaction_id, conn=conn)
+        if not current:
+            raise SettlementError("settlement not found")
+        attempt = int(current.get("payout_attempt_count") or 0) + 1
+        exhausted = attempt >= max(1, int(max_attempts))
+        next_at = None
+        if retryable and not exhausted:
+            delay = min(int(base_seconds) * (2 ** (attempt - 1)), int(max_seconds))
+            next_at = ((now or datetime.now(timezone.utc)) + timedelta(seconds=delay)) \
+                .strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        conn.execute("""UPDATE marketplace_commercial_settlements SET payout_attempt_count=?,
+            payout_next_attempt_at=?, payout_failure_code=?, payout_failure_class=?, updated_at=?
+            WHERE seller_transaction_id=?""",
+            (attempt, next_at, str(failure_code or "")[:100], str(failure_class or "")[:32],
+             _now(), transaction_id)); conn.commit()
+    finally:
+        conn.close()
+    return {"attempt": attempt, "exhausted": bool(exhausted and retryable),
+            "retryable": bool(retryable), "next_attempt_at": next_at,
+            "settlement": get_settlement(transaction_id)}
+
+def retryable_settlements(*, limit: int = 50, now: datetime | None = None) -> list:
+    """Failed settlements whose backoff has elapsed and whose budget remains.
+
+    Deliberately narrower than "payout_state='failed'". A failure only earns a
+    place here by having had a future attempt time written for it, which
+    :func:`record_payout_failure` does only for a classified-retryable failure
+    inside its budget. Everything else — permanent, seller-action, unclassified,
+    exhausted — has ``payout_next_attempt_at`` NULL and is invisible to this
+    query. The default is therefore "not retried", and a row becomes retryable
+    by an explicit decision rather than by matching a state name.
+    """
+    ensure_schema(); conn = db.connect()
+    cutoff = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    try:
+        return [dict(r) for r in conn.execute("""SELECT * FROM marketplace_commercial_settlements
+            WHERE payout_state='failed' AND payout_next_attempt_at IS NOT NULL
+            AND payout_next_attempt_at<=? AND blocker_code IS NULL
+            ORDER BY payout_next_attempt_at, seller_transaction_id LIMIT ?""",
+            (cutoff, max(1, min(int(limit), 200)))).fetchall()]
+    finally:
+        conn.close()
+
+def clear_payout_retry_schedule(transaction_id: Any) -> None:
+    """Stop offering a settlement for retry, keeping the attempts it has spent.
+
+    Called when an attempt succeeds. The count is *not* reset: a settlement that
+    needed three tries to submit has already shown the platform something, and
+    if a webhook fails it later it should not arrive at that failure with a full
+    budget. Attempts spent stay spent.
+    """
+    ensure_schema(); conn = db.connect()
+    try:
+        conn.execute("UPDATE marketplace_commercial_settlements SET payout_next_attempt_at=NULL, "
+                     "updated_at=? WHERE seller_transaction_id=?",
+                     (_now(), int(transaction_id))); conn.commit()
+    finally:
+        conn.close()
 
 def mark_delivered(transaction_id: Any, *, actor: str, idempotency_key: str) -> dict:
     result = transition_payout(transaction_id, "protection_hold", actor=actor,

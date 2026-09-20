@@ -90,4 +90,18 @@ def test_failed_transfer_never_reaches_the_payout_call():
                                  provider_create=lambda a: payout_calls.append(a) or {"id":"po_never"})
     assert payout_calls == []
     assert metrics["transferred_count"] == 0 and metrics["failed_count"] == 1
-    assert settlements.get_settlement(92)["payout_state"] == "failed"
+    # This assertion used to read `payout_state == "failed"` and stop there, which
+    # was the whole of the old behaviour: the row failed and nothing ever looked
+    # at it again. Retry governance changed the *end* state, not this test's
+    # point. A bare RuntimeError carries no Stripe error code and no Stripe
+    # exception class, so it is unclassifiable, and an unclassifiable failure is
+    # treated as non-retryable — the money stays fenced and an operator is told,
+    # rather than being retried blindly or stranded silently.
+    row = settlements.get_settlement(92)
+    assert row["payout_state"] == "held"
+    assert row["blocker_code"] == scheduler.UNRECOVERABLE_BLOCKER
+    assert row["payout_failure_class"] == "permanent"
+    assert row["payout_failure_code"] == "unclassified"
+    # Never retried: the budget was not spent down by a failure it must not repeat.
+    assert row["payout_attempt_count"] == 1
+    assert row["payout_next_attempt_at"] is None
