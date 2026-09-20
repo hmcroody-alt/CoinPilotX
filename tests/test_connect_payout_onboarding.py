@@ -127,6 +127,164 @@ def test_create_connected_account_is_idempotent_per_user_and_seller_type(stripe_
     assert seen["type"] == "express"
 
 
+def test_a_new_account_cannot_use_stripe_automatic_payouts_and_pulsesoc_payouts_at_once(stripe_key, monkeypatch):
+    """PulseSoc calls ``Payout.create`` itself, so Stripe must not also schedule.
+
+    Express accounts default to Stripe's *automatic* payout schedule. With
+    separate charges and transfers, the worker moves the seller's cut with
+    ``Transfer.create`` and then ``Payout.create`` against the connected
+    account — an automatic schedule would sweep that same balance on Stripe's
+    own timetable, so both would pay the seller for one sale. The account has to
+    be born manual; there is no later call that fixes an account minted wrong.
+    """
+    seen = {}
+
+    def fake_create(**kwargs):
+        seen.update(kwargs)
+        return _account()
+
+    monkeypatch.setattr(stripe.Account, "create", staticmethod(fake_create))
+    payment_provider.create_connected_account({"user_id": 7, "email": "s@x.com"}, "merchant")
+
+    # Asserted on the kwargs Stripe was actually handed, not on the source text.
+    assert seen["settings"]["payouts"]["schedule"]["interval"] == "manual"
+
+
+def test_the_manual_schedule_is_a_shape_stripe_15_accepts(stripe_key, monkeypatch):
+    """Guards the nesting, which is the one way to send this and be ignored.
+
+    A flat ``payout_schedule=`` or a ``settings.payouts.schedule.interval``
+    string would be accepted by a mock and rejected (or silently dropped) by the
+    API, leaving the account on the automatic default. Checked against the
+    installed SDK's own parameter type.
+    """
+    from stripe.params._account_create_params import (
+        AccountCreateParamsSettings,
+        AccountCreateParamsSettingsPayouts,
+        AccountCreateParamsSettingsPayoutsSchedule,
+    )
+
+    seen = {}
+    monkeypatch.setattr(
+        stripe.Account, "create",
+        staticmethod(lambda **kw: seen.update(kw) or _account()),
+    )
+    payment_provider.create_connected_account({"user_id": 7}, "merchant")
+
+    assert set(seen["settings"]).issubset(AccountCreateParamsSettings.__annotations__)
+    assert set(seen["settings"]["payouts"]).issubset(AccountCreateParamsSettingsPayouts.__annotations__)
+    schedule = seen["settings"]["payouts"]["schedule"]
+    assert set(schedule).issubset(AccountCreateParamsSettingsPayoutsSchedule.__annotations__)
+    assert schedule["interval"] in {"daily", "manual", "monthly", "weekly"}
+
+
+# --------------------------------------------------------------------------
+# The idempotency key must identify one seller, or no call happens
+# --------------------------------------------------------------------------
+
+@pytest.mark.parametrize(
+    "user",
+    [
+        pytest.param({}, id="absent"),
+        pytest.param({"user_id": ""}, id="empty"),
+        pytest.param({"user_id": None}, id="none"),
+        pytest.param({"user_id": 0}, id="zero"),
+        pytest.param({"user_id": "   "}, id="whitespace"),
+        pytest.param({"user_id": "undefined"}, id="non_numeric"),
+    ],
+)
+def test_an_unusable_user_id_never_reaches_stripe(stripe_key, monkeypatch, user):
+    """Fail closed: no id, no call — never a key two sellers could share.
+
+    ``connect-account::merchant`` is a *valid* idempotency key, so Stripe would
+    not reject it; it would replay the first seller's cached response and hand
+    that seller's connected account to everyone after them.
+    """
+    calls = []
+    monkeypatch.setattr(
+        stripe.Account, "create",
+        staticmethod(lambda **kw: calls.append(kw) or _account()),
+    )
+
+    result = payment_provider.create_connected_account(user, "merchant")
+
+    assert calls == []
+    assert result["ok"] is False
+    assert result["code"] == payment_provider.CONNECT_IDENTITY_CODE
+    assert json.dumps(result)
+
+
+def test_an_empty_seller_type_never_reaches_stripe(stripe_key, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        stripe.Account, "create",
+        staticmethod(lambda **kw: calls.append(kw) or _account()),
+    )
+
+    result = payment_provider.create_connected_account({"user_id": 7}, "")
+
+    assert calls == []
+    assert result["ok"] is False
+    assert result["code"] == payment_provider.CONNECT_IDENTITY_CODE
+
+
+def test_the_refusal_is_shaped_like_every_other_connect_failure(stripe_key, monkeypatch):
+    """The route reads these six keys off any failed Connect result."""
+    monkeypatch.setattr(stripe.Account, "create", staticmethod(lambda **kw: _account()))
+
+    refusal = payment_provider.create_connected_account({}, "merchant")
+    provider_failure = payment_provider.connect_failure(_platform_error(), "account_create")
+
+    assert set(refusal) == set(provider_failure)
+    assert refusal["retryable"] is False
+    assert set(refusal["provider_error"]) == {"type", "code", "param"}
+    # Nothing was called, so there is no provider error to fingerprint.
+    assert refusal["provider_error"]["type"] == ""
+    assert int(refusal["http_status"]) == 400
+
+
+def test_two_sellers_with_no_id_do_not_collapse_onto_one_idempotency_key(stripe_key, monkeypatch):
+    """The actual harm: one Connect account silently shared by many sellers."""
+    keys = []
+    monkeypatch.setattr(
+        stripe.Account, "create",
+        staticmethod(lambda **kw: keys.append(kw.get("idempotency_key")) or _account()),
+    )
+
+    payment_provider.create_connected_account({"email": "a@x.com"}, "merchant")
+    payment_provider.create_connected_account({"email": "b@x.com"}, "merchant")
+
+    assert keys == []
+    assert "connect-account::merchant" not in keys
+
+
+def test_the_idempotency_key_still_names_the_seller_on_the_normal_path(stripe_key, monkeypatch):
+    """The fail-closed guard must not have narrowed the working path."""
+    keys = []
+    monkeypatch.setattr(
+        stripe.Account, "create",
+        staticmethod(lambda **kw: keys.append(kw.get("idempotency_key")) or _account()),
+    )
+
+    assert payment_provider.create_connected_account({"user_id": 7}, "merchant")["ok"] is True
+    assert payment_provider.create_connected_account({"user_id": "8"}, "teacher")["ok"] is True
+
+    assert keys == ["connect-account:7:merchant", "connect-account:8:teacher"]
+
+
+def test_the_seller_id_in_metadata_matches_the_one_in_the_key(stripe_key, monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        stripe.Account, "create",
+        staticmethod(lambda **kw: seen.update(kw) or _account()),
+    )
+
+    payment_provider.create_connected_account({"user_id": "9"}, "merchant")
+
+    assert seen["metadata"]["user_id"] == "9"
+    assert seen["idempotency_key"].split(":")[1] == seen["metadata"]["user_id"]
+
+
 def test_create_connected_account_without_a_key_is_setup_required(monkeypatch):
     monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
     result = payment_provider.create_connected_account({"user_id": 7}, "merchant")
