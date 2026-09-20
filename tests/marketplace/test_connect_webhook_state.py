@@ -324,6 +324,90 @@ def _payout_object(payout_id, *, destination, amount=5000, failure=""):
     }
 
 
+def _seed_user(user_id, *, full_name=None, display_name=None, username=None):
+    conn = bot.db()
+    try:
+        conn.execute("DELETE FROM users WHERE user_id=?", (user_id,))
+        conn.execute(
+            "INSERT INTO users (user_id, username, full_name, display_name) VALUES (?,?,?,?)",
+            (user_id, username, full_name, display_name))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class GreetingNameReachesTheWebhookEmails(WebhookTestCase):
+    """Both of these contexts are built inside the webhook's open transaction.
+
+    The name is resolved on that same cursor, so these prove the lookup happens
+    before the commit closes it — and they assert on the rendered body, because
+    a missing key renders "Hi there" without erroring.
+    """
+
+    def _body(self, event, context):
+        from services import payments_email_templates as templates
+        return str(templates.render(event, dict(context, order_reference="#1", store_name="S")))
+
+    def test_a_restricted_account_email_greets_the_seller(self):
+        account_id = "acct_greet_restricted"
+        user_id = 87301
+        _seed_user(user_id, full_name="Cherie Roody")
+        _seed_account(account_id, user_id)
+
+        response = _post_webhook(
+            "account.updated",
+            _account_event(account_id, user_id=user_id, charges=False, payouts=False,
+                           disabled_reason="requirements.past_due"),
+            event_id="evt_greet_restricted")
+
+        self.assertEqual(200, response.status_code)
+        restricted = self.emit.for_event("seller_account_restricted")
+        self.assertEqual(1, len(restricted), f"emitted {self.emit.events()}")
+        self.assertEqual("Cherie", restricted[0]["context"]["seller_first_name"])
+        body = self._body("seller_account_restricted", restricted[0]["context"])
+        self.assertIn("Cherie", body)
+        self.assertNotIn("Hi there", body)
+
+    def test_a_paid_payout_email_greets_the_seller(self):
+        account_id = "acct_greet_payout"
+        user_id = 87302
+        _seed_user(user_id, display_name="Dana Fox")
+        _seed_account(account_id, user_id)
+
+        response = _post_webhook(
+            "payout.paid",
+            _payout_object("po_greet_1", destination="ba_1LxSellerBank", amount=5000),
+            event_id="evt_greet_payout",
+            account=account_id)
+
+        self.assertEqual(200, response.status_code)
+        paid = self.emit.for_event("payout_paid")
+        self.assertEqual(1, len(paid), f"emitted {self.emit.events()}")
+        self.assertEqual("Dana", paid[0]["context"]["seller_first_name"])
+        body = self._body("payout_paid", paid[0]["context"])
+        self.assertIn("Dana", body)
+        self.assertNotIn("Hi there", body)
+
+    def test_a_seller_with_no_name_still_gets_the_email(self):
+        """Negative control: an unnamed seller is greeted "there", not dropped."""
+        account_id = "acct_greet_nameless"
+        user_id = 87303
+        _seed_user(user_id)
+        _seed_account(account_id, user_id)
+
+        response = _post_webhook(
+            "payout.paid",
+            _payout_object("po_greet_2", destination="ba_1LxSellerBank", amount=1500),
+            event_id="evt_greet_nameless",
+            account=account_id)
+
+        self.assertEqual(200, response.status_code)
+        paid = self.emit.for_event("payout_paid")
+        self.assertEqual(1, len(paid), f"emitted {self.emit.events()}")
+        self.assertEqual("", paid[0]["context"]["seller_first_name"])
+        self.assertIn("Hi there", self._body("payout_paid", paid[0]["context"]))
+
+
 class ConnectedAccountPayouts(WebhookTestCase):
 
     def test_a_paid_payout_resolves_the_seller_from_the_envelope(self):

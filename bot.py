@@ -96656,16 +96656,32 @@ SELLER_APPLICATION_EVENTS = {
 def greeting_first_name(user):
     """The name to greet a user by, or "" when the row carries none.
 
-    ``users`` has no ``first_name`` column, so the first token of a full name is
-    the closest thing to one. ``display_name`` is the fallback rather than the
-    first choice because it is free-form and often a handle or a store name.
+    The rule lives in the notification layer so the payout scheduler, which
+    cannot import ``bot``, greets a seller by the same name this does.
     """
-    user = dict(user or {})
-    for field in ("full_name", "display_name"):
-        tokens = str(user.get(field) or "").split()
-        if tokens:
-            return tokens[0]
-    return str(user.get("username") or "").strip()
+    from services import payments_notifications
+
+    return payments_notifications.greeting_first_name(user)
+
+
+def greeting_first_name_for(cur, user_id):
+    """One greeting name, read on a cursor the caller already holds.
+
+    Takes the caller's cursor rather than opening its own connection because
+    both webhook call sites are inside an open transaction, and a second writer
+    there is a lock wait on Postgres. Never raises: an unaddressed email is a
+    blemish, but a webhook that dies looking up a name is redelivered by Stripe
+    against database effects that have already landed.
+    """
+    try:
+        cur.execute(
+            "SELECT full_name, display_name, username FROM users WHERE user_id=? LIMIT 1",
+            (int(user_id or 0),),
+        )
+        return greeting_first_name(cur.fetchone())
+    except Exception as exc:
+        logging.warning("NOTIFICATION_GREETING_NAME_FAILED user=%s error=%s", user_id, exc)
+        return ""
 
 
 def seller_application_email_context(cur, application, message=""):
@@ -96819,8 +96835,14 @@ def emit_marketplace_paid_order_emails(paid_txs):
     connection, and a second writer inside the webhook's open transaction is a
     lock wait on Postgres.
     """
-    for tx in paid_txs or []:
-        tx = dict(tx or {})
+    rows = [dict(tx or {}) for tx in paid_txs or []]
+    # One lookup for the whole batch. Resolving a name per row would open a
+    # connection per row against a pool of 8, and a large charge is a batch.
+    names = seller_first_names(
+        [row.get("buyer_user_id") for row in rows]
+        + [row.get("seller_user_id") for row in rows]
+    )
+    for tx in rows:
         tx_id = int(tx.get("id") or 0)
         if not tx_id:
             continue
@@ -96838,12 +96860,16 @@ def emit_marketplace_paid_order_emails(paid_txs):
         }
         buyer_id = int(tx.get("buyer_user_id") or 0)
         if buyer_id:
-            emit_payment_notification("payment_succeeded", buyer_id, shared, email_only=True)
+            emit_payment_notification("payment_succeeded", buyer_id, {
+                **shared,
+                "buyer_first_name": names.get(buyer_id, ""),
+            }, email_only=True)
         seller_id = int(tx.get("seller_user_id") or 0)
         if seller_id:
             emit_payment_notification("new_paid_order", seller_id, {
                 **shared,
                 "seller_net_cents": int(tx.get("seller_net_cents") or 0),
+                "seller_first_name": names.get(seller_id, ""),
             }, email_only=True)
 
 
@@ -111696,6 +111722,7 @@ def stripe_webhook():
                     "payout_status": "enabled" if payouts_on else "not_enabled",
                     "requirements": ", ".join(str(item) for item in requirements)[:400],
                     "disabled_reason": disabled_reason,
+                    "seller_first_name": greeting_first_name_for(cur, connect_user_id),
                 }
                 if disabled_reason:
                     payment_notifications.append(("seller_account_restricted", connect_user_id, connect_context))
@@ -111737,6 +111764,7 @@ def stripe_webhook():
                         "arrival_date": stripe_timestamp_date(obj.get("arrival_date")),
                         "failed_at": now if event_type == "payout.failed" else "",
                         "failure_reason": obj.get("failure_message") or "",
+                        "seller_first_name": greeting_first_name_for(cur, account.get("user_id")),
                     },
                 ))
             # Deferred to after the commit below, for the same reason the

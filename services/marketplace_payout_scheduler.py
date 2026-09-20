@@ -188,6 +188,27 @@ def _fence(tx_id: int, payout_key: str, *, blocker: str, attempt: int) -> None:
     except Exception as exc:  # noqa: BLE001 - the incident below is the backstop
         logger.warning("MARKETPLACE_PAYOUT_FENCE_FAILED tx=%s blocker=%s error=%s", tx_id, blocker, exc)
 
+def _greeting_first_name(seller_id: int) -> str:
+    """The seller's name for the email greeting, or "" — never raises.
+
+    Its own connection because this runs in a scheduler cycle, not inside a
+    request's transaction. One row, once per failed payout.
+    """
+    try:
+        from services import payments_notifications
+        conn = db.connect()
+        try:
+            found = conn.execute(
+                "SELECT full_name, display_name, username FROM users WHERE user_id=? LIMIT 1",
+                (int(seller_id),),
+            ).fetchone()
+        finally:
+            conn.close()
+        return payments_notifications.greeting_first_name(found)
+    except Exception as exc:  # noqa: BLE001 - a greeting must not fail a payout
+        logger.warning("MARKETPLACE_PAYOUT_GREETING_NAME_FAILED seller=%s error=%s", seller_id, exc)
+        return ""
+
 def _notify_seller(row: Mapping[str, Any], classified: Mapping[str, Any], *, attempt: int) -> None:
     """Tell the seller their bank details refused the payout. Never raises.
 
@@ -207,6 +228,7 @@ def _notify_seller(row: Mapping[str, Any], classified: Mapping[str, Any], *, att
             "currency": str(row.get("currency") or "usd"),
             "order_reference": str(row.get("order_id") or ""),
             "failure_reason": str(classified.get("failure_code") or ""),
+            "seller_first_name": _greeting_first_name(seller_id),
         })
     except Exception as exc:  # noqa: BLE001 - a payout must not fail on a notification
         logger.warning("MARKETPLACE_PAYOUT_NOTIFY_FAILED tx=%s error=%s",
