@@ -227,6 +227,35 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       MerchantApply: "pulse/merchant/apply",
       MerchantDashboard: "pulse/merchant/dashboard",
+      /**
+       * Where Stripe Connect onboarding hands a seller back.
+       *
+       * `/pulse/merchant/payouts` is a web route that already existed — it is
+       * the URL the onboarding link has always carried — but nothing claimed it
+       * here, so a seller returning from Stripe stayed in the browser. The
+       * server's return page now opens `pulsesoc://pulse/merchant/payouts` and
+       * this is the entry that catches it.
+       *
+       * It must sit above `MerchantProfile`. That route's `:sellerId` matches
+       * the literal segment `payouts` perfectly well, and without this entry
+       * the link would open a merchant profile for a seller named "payouts" —
+       * a wrong screen rather than no screen, which is the harder failure to
+       * notice. `services/app_links.py` reserves `payouts` as a store id for
+       * the same reason.
+       *
+       * `layer` arrives as a query param so the server can choose the landing
+       * by return state: a seller who is live wants the overview, a seller with
+       * steps left wants the setup surface. An absent or unrecognised value
+       * falls back to `payout_overview` inside the screen, so an older link
+       * still lands somewhere truthful.
+       */
+      MoneyLayer: {
+        path: "pulse/merchant/payouts",
+        parse: {
+          layer: String,
+          currency: String
+        }
+      },
       MerchantProfile: {
         path: "pulse/merchant/:sellerId",
         parse: {

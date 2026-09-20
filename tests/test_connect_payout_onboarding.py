@@ -436,9 +436,19 @@ def test_get_account_status_reports_stripes_own_flags(stripe_key, monkeypatch):
     assert status["payouts_enabled"] is False
     assert status["charges_enabled"] is False
     assert status["details_submitted"] is False
-    assert status["disabled_reason"] == ""
+    # `disabled_reason` is Stripe's, and Stripe puts it on `requirements` — as
+    # this file's own `_account()` fixture has always done. This assertion used
+    # to read `== ""`, which passed because the extraction looked for a
+    # top-level key that Stripe does not send. It pinned the absence rather than
+    # the value, so the single field that separates "Stripe wants a document"
+    # from "Stripe has stopped this account" read empty for every account.
+    assert status["disabled_reason"] == "requirements.past_due"
     assert status["onboarding_status"] == "restricted"
     assert status["requirements"]["currently_due"] == ["external_account", "individual.id_number"]
+    # Flattened alongside the nested copy so a caller choosing what to tell a
+    # seller does not have to know which nesting a field arrived in.
+    assert status["currently_due"] == ["external_account", "individual.id_number"]
+    assert status["past_due"] == []
 
 
 def test_an_existing_account_id_is_not_by_itself_ready(stripe_key, monkeypatch):

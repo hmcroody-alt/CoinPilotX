@@ -268,6 +268,27 @@ def create_onboarding_link(provider_account_id: str, refresh_url: str = "", retu
     return {"ok": True, "url": stripe_response_value(link, "url")}
 
 
+def _requirement_list(requirements: dict[str, Any], bucket: str) -> list[str]:
+    """One of Stripe's requirement arrays, as a list of strings.
+
+    Defensive about the container because this dict is also reconstructed from
+    stored JSON on replay paths: a bare string here must not be iterated
+    character by character into a requirement called ``"c"``.
+    """
+    value = requirements.get(bucket)
+    if not value:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, dict):
+        return []
+    try:
+        return [str(item).strip() for item in value if str(item).strip()]
+    except TypeError:
+        return []
+
+
 def get_account_status(provider_account_id: str) -> dict[str, Any]:
     if not _stripe_ready():
         return setup_required("Stripe account status is unavailable until Stripe is configured.")
@@ -279,15 +300,42 @@ def get_account_status(provider_account_id: str) -> dict[str, Any]:
         return connect_failure(exc, "account_retrieve")
     payouts_enabled = bool(stripe_response_value(account, "payouts_enabled", False))
     charges_enabled = bool(stripe_response_value(account, "charges_enabled", False))
+    requirements = stripe_response_dict(stripe_response_value(account, "requirements", {}))
+    capabilities = stripe_response_dict(stripe_response_value(account, "capabilities", {}))
+    # `disabled_reason` lives on `account.requirements`, not on the account.
+    # Reading it from the top level returned "" for every account Stripe has
+    # ever held — including one whose `requirements.disabled_reason` said
+    # exactly why — so the one field that distinguishes "Stripe is asking for a
+    # document" from "Stripe has stopped this account" was never populated.
+    # `connect_accounts.record_account_snapshot` has always read it from the
+    # right place; this key was the odd one out. The top-level lookup is kept as
+    # a fallback only so a replayed or hand-built account dict that carries it
+    # flat still works.
+    disabled_reason = str(
+        requirements.get("disabled_reason")
+        or stripe_response_value(account, "disabled_reason", "")
+        or ""
+    ).strip()
     return {
         "ok": True,
         "provider_account_id": provider_account_id,
         "payouts_enabled": payouts_enabled,
         "charges_enabled": charges_enabled,
         "details_submitted": bool(stripe_response_value(account, "details_submitted", False)),
-        "disabled_reason": str(stripe_response_value(account, "disabled_reason", "") or ""),
+        "disabled_reason": disabled_reason,
+        # This module's own word for the pair of flags, not the
+        # `seller_payout_accounts.onboarding_status` column's vocabulary. The
+        # two are unrelated and must not be copied into one another — see
+        # `services/stripe_onboarding_return`, which owns that translation.
         "onboarding_status": "enabled" if payouts_enabled and charges_enabled else "restricted",
-        "requirements": stripe_response_dict(stripe_response_value(account, "requirements", {})),
+        "requirements": requirements,
+        # Flattened so a caller deciding what to tell a seller does not have to
+        # know which of Stripe's two nestings a given field arrived in.
+        "currently_due": _requirement_list(requirements, "currently_due"),
+        "past_due": _requirement_list(requirements, "past_due"),
+        "capabilities": capabilities,
+        "card_payments_capability": str(capabilities.get("card_payments") or ""),
+        "transfers_capability": str(capabilities.get("transfers") or ""),
         "account": stripe_response_dict(account),
     }
 

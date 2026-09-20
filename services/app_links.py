@@ -549,6 +549,25 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         display_name="The seller application",
     ),
     _d(
+        "seller_payouts",
+        "/pulse/merchant/payouts",
+        native_screen="MoneyLayer",
+        # The one marketplace row that is genuinely web-equivalent, and not by
+        # choice: this is the URL Stripe Connect onboarding returns to, so it is
+        # reached in a browser by definition. The web page is the Stripe return
+        # page; the app screen is Payments & Payouts. They are the same subject,
+        # which is what this flag claims, and the return page's whole job is to
+        # move the seller from the first to the second.
+        web_equivalent=True,
+        auth_required=True,
+        label="Open Payments & Payouts in PulseSoc",
+        display_name="Payments & Payouts",
+        notes=(
+            "Stripe Connect's return_url. `store` reserves `payouts` as a slug "
+            "so this path is never read as a storefront."
+        ),
+    ),
+    _d(
         "purchases",
         "/pulse/purchases",
         native_screen="BuyerPurchases",

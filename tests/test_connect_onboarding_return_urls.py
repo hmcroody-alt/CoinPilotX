@@ -166,31 +166,88 @@ def test_a_reward_claim_lands_the_seller_on_the_connect_status_page(
         monkeypatch, logged_in, onboarding_links):
     """The destination is the page for the account this path actually creates.
 
-    The rewards claim mints a *merchant* Connect account, so the page that reads
-    that account's onboarding state is where a returning seller learns whether
+    The rewards claim mints a *merchant* Connect account, so the pages that read
+    that account's onboarding state are where a returning seller learns whether
     Stripe accepted them.
     """
     drive_rewards_claim(monkeypatch)
 
-    endpoints = {resolve(onboarding_links[0][leg])[0]
-                 for leg in ("return_url", "refresh_url")}
-    assert endpoints == {"pulse_merchant_payouts_page"}
+    call = onboarding_links[0]
+    assert resolve(call["return_url"])[0] == "pulse_merchant_payouts_return_page"
+    assert resolve(call["refresh_url"])[0] == "pulse_merchant_payouts_refresh_page"
 
 
-@pytest.mark.parametrize("seller_type,endpoint", [
-    ("merchant", "pulse_merchant_payouts_page"),
-    ("teacher", "pulse_teacher_payouts_page"),
+@pytest.mark.parametrize("seller_type,return_endpoint,refresh_endpoint", [
+    ("merchant", "pulse_merchant_payouts_return_page", "pulse_merchant_payouts_refresh_page"),
+    ("teacher", "pulse_teacher_payouts_return_page", "pulse_teacher_payouts_refresh_page"),
 ])
 def test_marketplace_payout_onboarding_returns_to_a_page_that_exists(
-        monkeypatch, logged_in, onboarding_links, seller_type, endpoint):
+        monkeypatch, logged_in, onboarding_links, seller_type,
+        return_endpoint, refresh_endpoint):
     """The sibling call site, both of its interpolated seller types."""
     response = drive_payouts_connect(monkeypatch, seller_type)
 
     assert response.status_code == 200, response.get_data(as_text=True)
     assert len(onboarding_links) == 1
     call = onboarding_links[0]
-    assert resolve(call["return_url"])[0] == endpoint
-    assert resolve(call["refresh_url"])[0] == endpoint
+    assert resolve(call["return_url"])[0] == return_endpoint
+    assert resolve(call["refresh_url"])[0] == refresh_endpoint
+
+
+@pytest.mark.parametrize("driver", ["rewards", "merchant", "teacher"])
+def test_the_two_legs_are_never_the_same_url(monkeypatch, logged_in, onboarding_links, driver):
+    """The fix, stated as the property rather than as two endpoint names.
+
+    Stripe sends ``refresh_url`` when the link expired before it was used and
+    ``return_url`` when the seller came out the other end. Both call sites used
+    to pass the *same* string, which threw away the only signal separating those
+    two events: a seller who finished and a seller whose link went stale landed
+    on the same page and were told the same thing.
+
+    Asserted across every call site because the collapse is easy to reintroduce
+    — the two arguments sit on adjacent lines and an f-string copied down one
+    line looks right.
+    """
+    if driver == "rewards":
+        drive_rewards_claim(monkeypatch)
+    else:
+        drive_payouts_connect(monkeypatch, driver)
+
+    call = onboarding_links[0]
+    assert call["return_url"] != call["refresh_url"], (
+        "return_url and refresh_url describe opposite outcomes and must not "
+        "resolve to one page"
+    )
+    assert resolve(call["return_url"])[0] != resolve(call["refresh_url"])[0]
+
+
+@pytest.mark.parametrize("driver", ["rewards", "merchant", "teacher"])
+def test_no_stripe_secret_or_account_identifier_rides_in_the_return_url(
+        monkeypatch, logged_in, onboarding_links, driver):
+    """Nothing about the account may be carried in a URL the seller can edit.
+
+    A return URL is visible in the address bar, lands in browser history, and is
+    trivially editable, so anything it carries is both disclosed and untrusted.
+    The return page re-reads the account from Stripe instead; these URLs are
+    therefore expected to be bare paths, and this pins that they stay that way.
+    """
+    if driver == "rewards":
+        drive_rewards_claim(monkeypatch)
+    else:
+        drive_payouts_connect(monkeypatch, driver)
+
+    call = onboarding_links[0]
+    account_id = call["provider_account_id"]
+    assert account_id, "the fixture should have recorded an account id to look for"
+    for leg in ("return_url", "refresh_url"):
+        url = call[leg]
+        assert account_id not in url
+        assert "acct_" not in url
+        assert "sk_" not in url and "rk_" not in url
+        assert "?" not in url and "#" not in url, (
+            f"{leg} carries a query or fragment; the return page must derive "
+            "state from Stripe, not from the URL"
+        )
 
 
 def test_the_providers_own_default_urls_are_also_served():

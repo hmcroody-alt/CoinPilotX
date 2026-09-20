@@ -274,6 +274,11 @@ def test_reserved_sub_pages_are_not_mistaken_for_resources(reserved):
         ("/pulse/profile/edit", "profile_edit"),
         ("/pulse/merchant/apply", "seller_apply"),
         ("/pulse/merchant/dashboard", "seller_dashboard"),
+        # Stripe Connect's return_url. Sharper than its siblings: the app's own
+        # `MerchantProfile` route is `pulse/merchant/:sellerId`, which matches
+        # the literal segment `payouts`, so getting this wrong yields a merchant
+        # profile for a seller called "payouts" rather than a dead link.
+        ("/pulse/merchant/payouts", "seller_payouts"),
         ("/pulse/marketplace/create", "marketplace_create"),
     ],
 )

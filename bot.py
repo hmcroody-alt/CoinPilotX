@@ -22021,13 +22021,17 @@ def api_pulse_rewards_claim(reward_id):
                 # bare 404 with their bank details already submitted. The
                 # account this path creates is a *merchant* Connect account
                 # (see `create_connected_account(user, "merchant")` above), and
-                # `/pulse/merchant/payouts` is the page that reads exactly that
-                # account's onboarding state — the same destination the
-                # marketplace onboarding route hands Stripe.
+                # `/pulse/merchant/payouts/*` reads exactly that account's
+                # onboarding state — the same destinations the marketplace
+                # onboarding route hands Stripe, and split the same way: the
+                # return leg re-reads the account and hands the seller to the
+                # app, the refresh leg says the link went stale. A reward claim
+                # and a marketplace signup produce the same Connect account, so
+                # they must not come back to differently-informed pages.
                 link = _provider.create_onboarding_link(
                     connected_account_id,
-                    refresh_url=f"{base}/pulse/merchant/payouts",
-                    return_url=f"{base}/pulse/merchant/payouts",
+                    refresh_url=f"{base}/pulse/merchant/payouts/refresh",
+                    return_url=f"{base}/pulse/merchant/payouts/return",
                 )
                 if not link.get("ok"):
                     return jsonify(link), int(link.get("http_status") or 503)
@@ -59909,10 +59913,19 @@ def pulse_merchant_dashboard_page():
             msg = "Apply and complete verification before merchant tools unlock."
         return pulse_social_shell("Merchant Dashboard", "Merchant approval is required before seller tools unlock.", f"<section class='card'><h2>{status_text}</h2><p>{html_escape(clean_html(msg))}</p><a class='button primary' href='{app_first_href('seller_apply')}'>Open Merchant Application</a></section>")
     rows = "".join(f"<tr><td>{l.get('id')}</td><td>{html_escape(clean_html(l.get('title') or ''))}</td><td>{html_escape(clean_html(l.get('status') or ''))}</td><td>{int(l.get('safety_score') or 0)}</td></tr>" for l in listings)
-    # "Payouts" deliberately stays on the web. `/pulse/merchant/payouts` is the
-    # `return_url` and `refresh_url` Stripe Connect onboarding comes back to, so
-    # it has to be a page a browser can land on. Sending the button to the app
-    # while Stripe returns to the web would split one flow across two surfaces.
+    # "Payouts" stays on the web here, but no longer for the reason this comment
+    # used to give. The old reasoning was that `/pulse/merchant/payouts` is what
+    # Stripe Connect comes back to, so the button had to match or the flow would
+    # be split across two surfaces. Stripe now returns to
+    # `/pulse/merchant/payouts/return`, which re-reads the account and hands the
+    # seller to the app — so the flow ends in the app by design, and "keep the
+    # button on the web to match Stripe" describes a constraint that no longer
+    # exists.
+    #
+    # What survives is narrower: this page is the merchant *web* dashboard, and
+    # a member reading it in a browser is telling us which surface they want.
+    # `app_first_href` is used by its siblings because those destinations have no
+    # production-ready web page; this one does.
     main = f"<section class='grid'><div class='card'><h2>Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'not applied'))}</p></div><div class='card'><h2>Products</h2><p class='metric'>{len(listings)}</p></div><div class='card'><h2>Risk Score</h2><p class='metric'>{int(seller.get('risk_score') or 0)}</p></div></section><section class='card'><h2>Merchant Tools</h2><div class='actions'><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a><a class='button' href='/pulse/merchant/payouts'>Payouts</a><a class='button' href='{app_first_href('seller_apply')}'>Update Application</a></div></section><section class='card'><h2>Listings</h2><table class='table'><tr><th>ID</th><th>Title</th><th>Status</th><th>Review risk</th></tr>{rows or '<tr><td colspan=4>No listings yet.</td></tr>'}</table></section>"
     return pulse_social_shell("Merchant Dashboard", "Manage approved listings, safety review, buyer messages, and merchant readiness.", main)
 
@@ -59923,7 +59936,25 @@ def seller_payouts_page(seller_type):
     if not user:
         return redirect(url_for("login_page", next=request.path))
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
-    approved = approved_teacher_for_user(cur, user["user_id"]) if seller_type == "teacher" else approved_marketplace_seller_for_user(cur, user["user_id"])
+    if seller_type == "teacher":
+        approved = bool(approved_teacher_for_user(cur, user["user_id"]))
+    else:
+        # The same authority `/api/pulse/payouts/connect` asks before it issues
+        # the onboarding link. This page used to read `marketplace_sellers.status`
+        # directly, which is a *different* question: `seller_access_state` also
+        # considers the application row, so a seller it cleared to start Connect
+        # could be refused by this page on the way back. That is the "Approval
+        # Required / Open Application" page an approved seller was shown after
+        # completing Stripe onboarding — an approval they had, offering an
+        # application they had already submitted.
+        #
+        # `seller_access_refusal` returns a JSON 403 and this is an HTML page, so
+        # the underlying state is read directly rather than through that helper.
+        from services import seller_access_state as _seller_access
+
+        approved = bool(
+            _seller_access.get_seller_access_state(cur, user["user_id"]).get("seller_approved")
+        )
     account = seller_payout_account(cur, user["user_id"], seller_type)
     fee_bps = seller_fee_bps(cur, seller_type)
     cur.execute("SELECT * FROM seller_transactions WHERE seller_user_id=? AND seller_type=? ORDER BY id DESC LIMIT 30", (user["user_id"], seller_type))
@@ -59954,6 +59985,207 @@ def pulse_merchant_payouts_page():
 @webhook_app.route("/pulse/teacher/payouts", methods=["GET"])
 def pulse_teacher_payouts_page():
     return seller_payouts_page("teacher")
+
+
+def _connect_return_snapshot(user_id, seller_type):
+    """Re-read this seller's account from Stripe and persist what comes back.
+
+    Called on the return leg, never from the query string. Stripe appends
+    nothing to `return_url` — no status, no account id, no signature — and even
+    if it did, a URL the seller's browser just followed is a value the seller
+    can edit. The only trustworthy source for "did onboarding actually finish"
+    is a fresh `Account.retrieve`, so that is what this does.
+
+    Returns the snapshot `stripe_onboarding_return` classifies. An unreadable
+    account returns `{"ok": False}`, which that module renders as the one state
+    that neither promises anything nor writes anything.
+    """
+    from services import payment_provider as _provider
+
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        account = seller_payout_account(cur, user_id, seller_type) or {}
+    finally:
+        conn.close()
+    account_id = str(
+        account.get("connected_account_id") or account.get("provider_account_id") or ""
+    ).strip()
+    if not account_id:
+        # No connected account on file. Stripe cannot have returned them from an
+        # onboarding flow we never started, so this is a stale or forged link.
+        return {"ok": False, "reason": "no_connected_account"}
+    try:
+        status = _provider.get_account_status(account_id)
+    except Exception:
+        logging.exception("CONNECT_RETURN_RETRIEVE_FAILED user_id=%s", user_id)
+        return {"ok": False, "reason": "retrieve_failed"}
+    if not status.get("ok"):
+        return {"ok": False, "reason": str(status.get("code") or "retrieve_failed")}
+
+    # Persist through the one writer that lands in both tables in the same
+    # transaction. This is also what refreshes `charges_enabled` /
+    # `payouts_enabled` / `requirements_json`, so the seller's next page load
+    # reads Stripe's answer rather than the row onboarding left behind.
+    try:
+        from services.business_os.payments import connect_accounts as _bos_connect
+
+        _bos_connect.record_account_snapshot(user_id, status)
+    except Exception:
+        logging.exception("CONNECT_RETURN_SNAPSHOT_FAILED user_id=%s", user_id)
+
+    # The status word itself is this mission's fix. `record_account_snapshot`
+    # deliberately leaves `onboarding_status` alone unless Stripe named a
+    # `disabled_reason` — sound for the buyer-facing card gate, which reads the
+    # capability flags, but the money path refuses on the *word* regardless of
+    # those flags. That is how a live account kept `onboarding_started` and
+    # every sale booked `ledger_pending_onboarding`.
+    _persist_onboarding_status(user_id, seller_type, status)
+    return status
+
+
+def _persist_onboarding_status(user_id, seller_type, snapshot):
+    """Write the `onboarding_status` this snapshot actually implies.
+
+    Separate from the snapshot write above because it is the one column the
+    canonical projection will not touch, and because an empty verdict must be a
+    no-op rather than a blank. `stripe_onboarding_return.onboarding_status_for`
+    returns "" when it could not establish the state, and overwriting a good
+    stored status with a guess is how a transient Stripe timeout would demote a
+    live seller.
+    """
+    from services import stripe_onboarding_return as _return
+
+    status_word = _return.onboarding_status_for(snapshot)
+    if not status_word:
+        return
+    conn = db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE seller_payout_accounts SET onboarding_status=?, updated_at=? "
+            "WHERE user_id=? AND seller_type=?",
+            (status_word, datetime.now(timezone.utc).isoformat(), int(user_id), seller_type),
+        )
+        conn.commit()
+    except Exception:
+        logging.exception("CONNECT_RETURN_STATUS_WRITE_FAILED user_id=%s", user_id)
+    finally:
+        conn.close()
+
+
+#: Which money layer a returning seller should land on, by return state.
+#:
+#: A seller whose account is live wants the overview — the figures and the
+#: status, nothing to do. A seller with steps left wants the setup surface,
+#: which is where `cardPaymentState` renders the specific next step. Sending
+#: everyone to the same layer would either ask a finished seller to "set up
+#: payments" or hide the remaining work from one who has some.
+_RETURN_LAYER = {
+    "ready": "payout_overview",
+    "under_review": "payout_overview",
+    "more_info": "payout_onboarding",
+    "incomplete": "payout_onboarding",
+}
+
+
+def seller_payout_return_page(seller_type, *, expired=False):
+    """Where Stripe Connect onboarding hands the seller back.
+
+    Split from `refresh_url` on purpose. Stripe uses the two for opposite
+    events — a link that went stale before it was used, and a flow the seller
+    actually completed — and this system had them set to the same string, which
+    threw away the only signal that distinguishes them. A seller who finished
+    and a seller whose link expired landed on the same page and were told the
+    same thing.
+    """
+    from services import app_links as _links
+    from services import stripe_onboarding_return as _return
+
+    init_db()
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+
+    snapshot = {"ok": False, "reason": "link_expired"} if expired else _connect_return_snapshot(
+        user["user_id"], seller_type
+    )
+    page = _return.return_presentation(snapshot)
+
+    payouts_path = f"/pulse/{seller_type}/payouts"
+    layer = _RETURN_LAYER.get(page["state"], "payout_overview")
+    # The handoff is the custom scheme, not a pulsesoc.com link. iOS treats a
+    # tap on a same-domain link as ordinary in-site navigation and never
+    # consults the associated-domains file, so a universal link from this page
+    # would simply reload this page. `app_scheme_url` refuses any path the
+    # shipped binary cannot resolve, so this raising would mean the app route
+    # went missing rather than the link quietly opening nothing.
+    try:
+        app_url = f"{_links.app_scheme_url(payouts_path)}?layer={layer}"
+    except _links.AppLinkError:
+        logging.exception("CONNECT_RETURN_APP_LINK_UNRESOLVABLE path=%s", payouts_path)
+        app_url = ""
+
+    auto = bool(page["auto_handoff"]) and bool(app_url)
+    note = html_escape(page["auto_note"]) if auto else ""
+    # Nothing Stripe-specific reaches the browser: no account id, no keys, no
+    # provider metadata, no requirement names. The page says what state the
+    # seller is in and offers one link into the app, which is where the
+    # authenticated detail lives.
+    body = (
+        f"<section class='card'>"
+        f"<h2>{html_escape(page['headline'])}</h2>"
+        f"<p>{html_escape(page['body'])}</p>"
+        f"<div class='actions'>"
+        + (f"<a class='button primary' id='openApp' href='{html_escape(app_url)}'>{html_escape(page['cta'])}</a>" if app_url else "")
+        + f"<a class='button' href='{payouts_path}'>Stay on the web</a>"
+        f"</div>"
+        + (f"<p class='muted' id='autoNote'>{note}</p>" if note else "")
+        + f"</section>"
+    )
+    script = ""
+    if auto:
+        # ~1.2s: long enough for the seller to read the headline and see that
+        # the handoff is deliberate, short enough that it does not read as a
+        # page that failed to do anything. `location.href` rather than a
+        # synthetic click so a blocked scheme surfaces as the page staying put
+        # with the button still there, which is the honest fallback.
+        script = (
+            "setTimeout(function(){try{location.href=document.getElementById('openApp').href;}"
+            "catch(e){}},1200);"
+        )
+    return pulse_social_shell(
+        "Stripe Setup",
+        "Returning you to PulseSoc.",
+        body,
+        "",
+        script,
+    )
+
+
+@webhook_app.route("/pulse/merchant/payouts/return", methods=["GET"])
+@auth_required
+def pulse_merchant_payouts_return_page():
+    return seller_payout_return_page("merchant")
+
+
+@webhook_app.route("/pulse/teacher/payouts/return", methods=["GET"])
+@auth_required
+def pulse_teacher_payouts_return_page():
+    return seller_payout_return_page("teacher")
+
+
+@webhook_app.route("/pulse/merchant/payouts/refresh", methods=["GET"])
+@auth_required
+def pulse_merchant_payouts_refresh_page():
+    return seller_payout_return_page("merchant", expired=True)
+
+
+@webhook_app.route("/pulse/teacher/payouts/refresh", methods=["GET"])
+@auth_required
+def pulse_teacher_payouts_refresh_page():
+    return seller_payout_return_page("teacher", expired=True)
 
 
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
@@ -97137,7 +97369,19 @@ def api_pulse_payouts_connect():
             )
             conn.commit()
             base = (APP_BASE_URL or request.url_root.rstrip("/")).rstrip("/")
-            link = payment_provider.create_onboarding_link(connected_account_id, refresh_url=f"{base}/pulse/{seller_type}/payouts", return_url=f"{base}/pulse/{seller_type}/payouts")
+            # Two different events, two different URLs. Stripe sends
+            # `refresh_url` when the link went stale before it was used and
+            # `return_url` when the seller came out the other end; pointing both
+            # at the same page discarded the only thing that told them apart, so
+            # a seller who finished and a seller whose link expired were shown
+            # the same words. The return leg is also the only moment we know to
+            # re-read the account, which is why it is a route of its own rather
+            # than the payouts page with a query flag.
+            link = payment_provider.create_onboarding_link(
+                connected_account_id,
+                refresh_url=f"{base}/pulse/{seller_type}/payouts/refresh",
+                return_url=f"{base}/pulse/{seller_type}/payouts/return",
+            )
             if not link.get("ok"):
                 conn.close()
                 return api_error(
