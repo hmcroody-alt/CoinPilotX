@@ -810,6 +810,105 @@ def _dispute_opened(ctx: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _dispute_close_facts(ctx: Mapping[str, Any]) -> str:
+    return _facts(
+        [
+            ("Order", ctx.get("order_reference") or ""),
+            ("Disputed amount", money(ctx.get("amount_cents"), ctx.get("currency") or "USD")),
+            ("Reason given", ctx.get("dispute_reason") or ""),
+        ]
+    )
+
+
+def _dispute_won(ctx: Mapping[str, Any]) -> Dict[str, Any]:
+    order_url = _url(ctx.get("order_url") or SELLER_ORDERS_PATH)
+    return {
+        "subject": "A payment dispute closed in your favour",
+        "title": "The dispute closed in your favour",
+        "preheader": "The payment stands and the money is not being taken back.",
+        "blocks": [
+            _paragraph(
+                f"Hi {_esc(ctx.get('seller_first_name') or 'there')}, the buyer's bank has decided a "
+                "disputed payment on your store in your favour."
+            ),
+            _dispute_close_facts(ctx),
+            _notice(
+                f"<strong style=\"color:{HEADING}\">The payment stands.</strong> The disputed amount is "
+                "not being taken back. Open the order to see where its payout has got to.",
+                tone="ok",
+            ),
+            _button("View order", order_url),
+        ],
+        "text": [
+            "The buyer's bank has decided a disputed payment on your store in your favour.",
+            "",
+            f"Order: {ctx.get('order_reference') or ''}",
+            f"Disputed amount: {money(ctx.get('amount_cents'), ctx.get('currency') or 'USD')}",
+            "",
+            "The payment stands. The disputed amount is not being taken back.",
+        ],
+        "ctas": [("View order", order_url)],
+    }
+
+
+def _dispute_lost(ctx: Mapping[str, Any]) -> Dict[str, Any]:
+    order_url = _url(ctx.get("order_url") or SELLER_ORDERS_PATH)
+    return {
+        "subject": "A payment dispute closed in the buyer's favour",
+        "title": "The dispute closed in the buyer's favour",
+        "preheader": "The disputed amount has been returned to the buyer.",
+        "blocks": [
+            _paragraph(
+                f"Hi {_esc(ctx.get('seller_first_name') or 'there')}, the buyer's bank has decided a "
+                "disputed payment on your store in the buyer's favour."
+            ),
+            _dispute_close_facts(ctx),
+            _notice(
+                f"<strong style=\"color:{HEADING}\">The payment has been reversed.</strong> The disputed "
+                "amount has gone back to the buyer, and your earnings for this order have been adjusted "
+                "to match. There is no further action for you to take on the dispute itself.",
+                tone="bad",
+            ),
+            _button("View order", order_url),
+        ],
+        "text": [
+            "The buyer's bank has decided a disputed payment on your store in the buyer's favour.",
+            "",
+            f"Order: {ctx.get('order_reference') or ''}",
+            f"Disputed amount: {money(ctx.get('amount_cents'), ctx.get('currency') or 'USD')}",
+            "",
+            "The payment has been reversed. The disputed amount has gone back to the buyer, and your "
+            "earnings for this order have been adjusted to match.",
+        ],
+        "ctas": [("View order", order_url)],
+    }
+
+
+def _dispute_inquiry_closed(ctx: Mapping[str, Any]) -> Dict[str, Any]:
+    order_url = _url(ctx.get("order_url") or SELLER_ORDERS_PATH)
+    return {
+        "subject": "A payment inquiry on your store has closed",
+        "title": "The payment inquiry has closed",
+        "preheader": "It never became a dispute, so nothing was decided either way.",
+        "blocks": [
+            _paragraph(
+                f"Hi {_esc(ctx.get('seller_first_name') or 'there')}, the bank's question about a payment "
+                "on your store has been closed. It never became a dispute, so nothing was decided either "
+                "way and nothing has been taken back."
+            ),
+            _dispute_close_facts(ctx),
+            _button("View order", order_url),
+        ],
+        "text": [
+            "The bank's question about a payment on your store has been closed. It never became a "
+            "dispute, so nothing was decided either way and nothing has been taken back.",
+            "",
+            f"Order: {ctx.get('order_reference') or ''}",
+        ],
+        "ctas": [("View order", order_url)],
+    }
+
+
 def _refund_completed(ctx: Mapping[str, Any]) -> Dict[str, Any]:
     order_url = _url(ctx.get("order_url") or "/pulse/orders")
     return {
@@ -926,6 +1025,9 @@ TEMPLATES: Dict[str, SpecBuilder] = {
     "new_paid_order": _new_paid_order,
     "dispute_opened": _dispute_opened,
     "dispute_action_required": _dispute_opened,
+    "dispute_won": _dispute_won,
+    "dispute_lost": _dispute_lost,
+    "dispute_inquiry_closed": _dispute_inquiry_closed,
     "refund_completed": _refund_completed,
     "payment_succeeded": _payment_succeeded,
     "order_shipped": _order_shipped,

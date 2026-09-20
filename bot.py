@@ -96848,6 +96848,15 @@ def emit_marketplace_dispute_notifications(tx_ids, dispute_obj, event_type):
     ``dispute_opened`` fires once, on creation, and already carries the evidence
     deadline. ``dispute_action_required`` is reserved for a later update, so the
     seller is not sent two emails about the same dispute in the same second.
+
+    The close is the only event carrying a verdict, and it is the one the seller
+    is waiting on. It used to fall through to the ``return`` below, so a seller
+    was told a payment was disputed and then never told how it ended: the money
+    moved — hold released, or earnings reversed — and nothing said so. The other
+    route that could have said it reads ``seller_transaction_id`` off the
+    Dispute's own metadata, which Stripe never populates, so this is the only
+    one that reaches anybody. An unrecognised terminal status sends nothing
+    rather than guessing which way it went.
     """
     obj = dict(dispute_obj or {})
     status = str(obj.get("status") or "")
@@ -96857,6 +96866,16 @@ def emit_marketplace_dispute_notifications(tx_ids, dispute_obj, event_type):
         event = "dispute_opened"
     elif event_type == "charge.dispute.updated" and status == "needs_response" and due_by:
         event = "dispute_action_required"
+    elif event_type == "charge.dispute.closed":
+        event = {"won": "dispute_won",
+                 "lost": "dispute_lost",
+                 # An inquiry that never became a dispute. Nothing was decided,
+                 # so it must not be worded as either side winning.
+                 "warning_closed": "dispute_inquiry_closed"}.get(status, "")
+        if not event:
+            logging.warning("MARKETPLACE_DISPUTE_CLOSED_UNKNOWN_STATUS dispute_id=%s status=%s",
+                            obj.get("id") or "", status or "(empty)")
+            return
     else:
         return
     parties = marketplace_transaction_parties(tx_ids)
