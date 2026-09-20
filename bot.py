@@ -331,6 +331,7 @@ from services import (
     media_service,
     media_storage,
     media_upload_sessions,
+    store_identity_sync as store_identity_sync,
     stored_video_policy,
     messenger_media_foundation,
     mux_live_service,
@@ -43104,7 +43105,7 @@ def api_pulse_search():
         "marketplace",
         """
         SELECT l.id, l.title, l.description, l.short_description, l.category, l.price_label,
-               COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
+               NULLIF(TRIM(ms.display_name),'') AS seller_store_name
         FROM marketplace_listings l
         LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
         WHERE l.status IN ('active','approved')
@@ -57564,7 +57565,7 @@ def pulse_marketplace_owned_listing_response(cur, listing_id, user_id):
                -- told about their own listing without widening the row.
                -- `moderation_reason` is deliberately not among them.
                l.moderation_category, l.review_version, l.reviewed_at,
-               COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
+               NULLIF(TRIM(ms.display_name),'') AS seller_store_name,
                -- Selected for `seller_label`, which answers "Live" from the
                -- publication rules and not from the merchant's own two columns.
                -- The seller-listings query beside this one already joined it;
@@ -58619,6 +58620,10 @@ def api_pulse_marketplace_seller_listing_pause(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
+        conn.close()
+        return refusal
     cur.execute("SELECT id FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     if not cur.fetchone():
         conn.close()
@@ -58692,6 +58697,10 @@ def api_pulse_marketplace_seller_listing_delete(listing_id):
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
+        conn.close()
+        return refusal
     cur.execute("SELECT id FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1", (int(listing_id), int(user["user_id"])))
     if not cur.fetchone():
         conn.close()
@@ -59090,9 +59099,14 @@ def api_pulse_marketplace_seller_listings_batch():
     # fields, and the single-listing edit route already refuses an unapproved
     # seller. Leaving either out would make the bulk endpoint the one way to edit
     # a listing without merchant approval.
-    if normalized["action"] in ("publish", "price", "category") and not approved_marketplace_seller_for_user(cur, user["user_id"]):
-        conn.close()
-        return api_error("Merchant approval is required before publishing listings.", 403)
+    # `hide` is deliberately absent: taking a listing down reduces exposure, and
+    # a suspended seller must keep the ability to withdraw their own goods.
+    # Every other action puts something in front of a buyer.
+    if normalized["action"] in ("publish", "price", "category"):
+        refusal = seller_access_refusal(cur, user["user_id"])
+        if refusal:
+            conn.close()
+            return refusal
 
     # §34. Answered here, *above the claim*, so the structure of the function is
     # the guarantee: a preview returns before a key can be spent and before the
@@ -96978,6 +96992,28 @@ def approved_marketplace_seller_for_user(cur, user_id):
     return seller if seller.get("status") == "approved" else {}
 
 
+def seller_access_refusal(cur, user_id):
+    """``None`` if this account may mutate seller-owned things, else a 403 response.
+
+    Every seller mutation route calls this and nothing else. Before it, four
+    routes carried four different opinions and three carried none: create and
+    edit checked ``status == 'approved'`` by two different means, resume called
+    ``approved_marketplace_seller_for_user``, and pause, delete, submit and the
+    batch route checked only ownership. Ownership is not approval — a seller
+    suspended for fraud still owns their listings, and could still publish them.
+
+    The refusal body carries the full access state so the client can route
+    straight to the application screen rather than having to ask a second time
+    why it was refused.
+    """
+    from services import seller_access_state
+
+    body = seller_access_state.require_seller_access(cur, int(user_id or 0))
+    if body is None:
+        return None
+    return jsonify(body), 403
+
+
 def approved_teacher_for_user(cur, user_id):
     cur.execute("SELECT * FROM pulse_teacher_profiles WHERE user_id=? LIMIT 1", (int(user_id or 0),))
     teacher = dict(cur.fetchone() or {})
@@ -97842,7 +97878,7 @@ def pulse_buyer_order_prefetch(cur, rows):
         cur.execute(
             f"""
             SELECT u.user_id, u.username, u.avatar_url,
-                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
+                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name
             FROM users u
             LEFT JOIN marketplace_sellers ms ON ms.user_id=u.user_id
             WHERE u.user_id IN ({placeholders})
@@ -97860,7 +97896,7 @@ def pulse_buyer_order_prefetch(cur, rows):
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
                    l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
                    l.product_type, l.listing_type, l.listing_metadata_json,
-                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
+                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name,
                    u.username AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -97916,7 +97952,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
         cur.execute(
             """
             SELECT u.user_id, u.username, u.avatar_url,
-                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name
+                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name
             FROM users u
             LEFT JOIN marketplace_sellers ms ON ms.user_id=u.user_id
             WHERE u.user_id=? LIMIT 1
@@ -97933,7 +97969,7 @@ def pulse_buyer_order_response(cur, order, source_table="seller_transactions",
             SELECT l.id, l.title, l.seller_user_id, l.category, l.price_label, l.currency,
                    l.cover_image_url, l.media_url AS image_url, l.cover_image_url AS thumbnail_url, l.video_url,
                    l.product_type, l.listing_type, l.listing_metadata_json,
-                   COALESCE(NULLIF(TRIM(ms.display_name),''), NULLIF(TRIM(ms.business_name),'')) AS seller_store_name,
+                   NULLIF(TRIM(ms.display_name),'') AS seller_store_name,
                    u.username AS seller_username
             FROM marketplace_listings l
             LEFT JOIN users u ON u.user_id=l.seller_user_id
@@ -98555,6 +98591,72 @@ def _seller_profile_api():
     return _profile_api
 
 
+def _seller_profile_access_refusal(user_id):
+    """Seller gate for the Business Profile mutations, which own no cursor.
+
+    These routes hand straight off to ``services.business_os.profile.api`` and
+    never open a connection of their own, so this one borrows a connection for
+    the length of the check and gives it straight back. That is a real cost on a
+    pool of 8, and it is accepted here only because profile writes are rare —
+    the listing routes, which are not rare, pass their existing cursor to
+    ``seller_access_refusal`` instead.
+
+    A failure to *read* the gate refuses the write. A profile edit that lands
+    because the gate was unreadable is the outcome this whole change exists to
+    prevent.
+    """
+    conn = None
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        return seller_access_refusal(conn.cursor(), user_id)
+    except Exception:
+        logging.exception("[business-profile] seller access check failed")
+        return api_error("Your seller status could not be confirmed right now.", 503)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _propagate_store_name(user_id, result):
+    """Land a Business Profile rename on the canonical store-name column.
+
+    Reads the value back out of the service's own response rather than off the
+    request, so the name that reaches ``marketplace_sellers`` is the one the
+    profile service validated and stored — a partial save that *rejected* the
+    name must not propagate the rejected text.
+
+    Best effort by design. The profile write has already committed by the time
+    we get here, so failing the request now would tell the owner their edit was
+    lost when it was not. A propagation miss leaves the two names as they were
+    before this function existed; the audit script is what finds them.
+    """
+    try:
+        status, body = result
+        if int(status) != 200 or not isinstance(body, dict):
+            return
+        profile = body.get("profile")
+        if not isinstance(profile, dict) or "business_name" not in profile:
+            return
+        conn = db()
+        try:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            if store_identity_sync.adopt_store_name(
+                    cur, user_id, profile.get("business_name")) is not None:
+                conn.commit()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception:
+        logging.exception("[business-profile] store name propagation failed")
+
+
 def _seller_profile_response(result):
     status, body = result
     response = jsonify(body)
@@ -98595,6 +98697,45 @@ def _viewer_has_purchased(conn, viewer_user_id, seller_user_id):
         return False
 
 
+@webhook_app.route("/api/pulse/seller/access-state", methods=["GET"])
+@auth_required
+def api_pulse_seller_access_state():
+    """The one verdict the client reads before showing any seller surface.
+
+    Deliberately its own endpoint rather than a field bolted onto the Business
+    OS payload: Marketplace Selling needs the same answer, and a field on one
+    screen's payload is how Store and Selling came to hold different opinions in
+    the first place. One endpoint, one shape, both callers.
+
+    Never cached. A seller approved thirty seconds ago must not be told to apply
+    because an intermediary held the previous answer.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services import seller_access_state
+
+    conn = None
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        state = seller_access_state.get_seller_access_state(
+            conn.cursor(), int(user["user_id"]))
+    except Exception:
+        logging.exception("[seller-access] state read failed")
+        return api_error("Your seller status could not be loaded right now.", 503)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    response = jsonify({"ok": True, "seller_access": state})
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @webhook_app.route("/api/pulse/business/profile", methods=["GET"])
 def api_pulse_business_profile_get():
     """Everything the owner screen needs in one round trip.
@@ -98627,12 +98768,16 @@ def api_pulse_business_profile_update():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    refusal = _seller_profile_access_refusal(user["user_id"])
+    if refusal:
+        return refusal
     payload = request.get_json(silent=True) or {}
     try:
-        return _seller_profile_response(
-            _seller_profile_api().update_profile(int(user["user_id"]), payload))
+        result = _seller_profile_api().update_profile(int(user["user_id"]), payload)
     except Exception:
         return _seller_profile_failure("profile update")
+    _propagate_store_name(user["user_id"], result)
+    return _seller_profile_response(result)
 
 
 @webhook_app.route("/api/pulse/business/profile/hours", methods=["POST"])
@@ -98641,6 +98786,9 @@ def api_pulse_business_profile_hours():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    refusal = _seller_profile_access_refusal(user["user_id"])
+    if refusal:
+        return refusal
     payload = request.get_json(silent=True) or {}
     try:
         handler = _seller_profile_api()
@@ -98658,6 +98806,9 @@ def api_pulse_business_profile_link():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    refusal = _seller_profile_access_refusal(user["user_id"])
+    if refusal:
+        return refusal
     payload = request.get_json(silent=True) or {}
     try:
         return _seller_profile_response(
@@ -98674,6 +98825,9 @@ def api_pulse_business_profile_address():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    refusal = _seller_profile_access_refusal(user["user_id"])
+    if refusal:
+        return refusal
     payload = request.get_json(silent=True) or {}
     try:
         return _seller_profile_response(
@@ -98707,6 +98861,9 @@ def api_pulse_business_profile_publish():
     user = api_account_user()
     if not user:
         return api_error("Login required.", 401)
+    refusal = _seller_profile_access_refusal(user["user_id"])
+    if refusal:
+        return refusal
     try:
         return _seller_profile_response(
             _seller_profile_api().publish(int(user["user_id"])))
@@ -99199,6 +99356,12 @@ def api_pulse_marketplace_seller_listing_submit(listing_id):
         return api_error("Login required.", 401)
     now = datetime.utcnow().isoformat(timespec="seconds")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
+    # Ownership is not approval. A seller suspended after drafting a listing
+    # still owns it, and without this could still push it live.
+    refusal = seller_access_refusal(cur, user["user_id"])
+    if refusal:
+        conn.close()
+        return refusal
     cur.execute("SELECT * FROM marketplace_listings WHERE id=? AND seller_user_id=? LIMIT 1",
                 (listing_id, int(user["user_id"])))
     listing = dict(cur.fetchone() or {})
