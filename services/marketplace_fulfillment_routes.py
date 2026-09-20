@@ -87,6 +87,11 @@ def _act(transaction_id: int, resolve_target):
     ``mark_delivered`` opens its own connection, so calling it from inside this
     transaction would have it read a delivery that has not landed yet and, on
     Postgres, block on locks this transaction still holds.
+
+    The buyer's "your order shipped" notification is sent on the same terms and
+    for the same reason. This route is the only door into ``shipped`` — the
+    sweeper only ever advances *out* of it — so telling the buyer here reaches
+    every shipment there is.
     """
     bot = _bot()
     try:
@@ -99,6 +104,8 @@ def _act(transaction_id: int, resolve_target):
 
     body = _payload()
     settle_key = ""
+    shipped_buyer = None
+    shipped_context = {}
     conn = bot.db()
     try:
         import sqlite3
@@ -143,6 +150,14 @@ def _act(transaction_id: int, resolve_target):
         conn.commit()
         if result["settles_delivery"]:
             settle_key = key
+        if target == order_fulfillment.SHIPPED and not result["duplicate"]:
+            # Built on the open cursor, after the commit: the row it describes
+            # has landed, and a second connection here would be one per
+            # shipment. `duplicate` is a re-press of the same button, which
+            # moved nothing and so has nothing new to announce.
+            shipped = dict(result["fulfillment"] or {})
+            shipped_buyer = shipped.get("buyer_user_id")
+            shipped_context = bot.marketplace_shipped_email_context(cur, shipped)
         payload = _serialize(result["fulfillment"])
         payload["duplicate"] = result["duplicate"]
     except Exception:
@@ -160,6 +175,11 @@ def _act(transaction_id: int, resolve_target):
     if settle_key:
         order_fulfillment.settle_delivery(
             transaction_id, actor=f"{role}:{user.get('user_id')}", idempotency_key=settle_key)
+    if shipped_buyer:
+        # Not email_only: nothing else tells the buyer their order shipped, so
+        # there is no in-app row here to avoid duplicating — unlike the paid
+        # order, which the checkout path has already announced.
+        bot.emit_payment_notification("order_shipped", shipped_buyer, shipped_context)
     return _json({"ok": True, "fulfillment": payload})
 
 
