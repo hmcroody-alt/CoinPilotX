@@ -3,14 +3,14 @@
     "name": "PulseSoc",
     "slug": "pulsesoc-native",
     "scheme": "pulsesoc",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "newArchEnabled": false,
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.pulsesoc.app",
-      "buildNumber": "28",
+      "buildNumber": "29",
       "supportsTablet": false,
       "associatedDomains": [
         "applinks:pulsesoc.com"
