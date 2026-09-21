@@ -42,7 +42,7 @@ import json
 import logging
 from typing import Any, Mapping, Optional
 
-from . import config, promotion, schema, subject
+from . import config, promotion, ranking, schema, subject
 
 LOGGER = logging.getLogger(__name__)
 
@@ -380,13 +380,33 @@ def explain(cur, placement_id: Any, token: Any) -> dict:
     listings and reading their own scores back.
     """
     row = load_placement(cur, placement_id, token)
+    # Two separate ways this column disappoints, and only one of them raises.
+    # `"{not json"` raises and is caught; `"[]"` and `"null"` parse *successfully*
+    # into a list and a None, so a try/except around the parse alone leaves the
+    # next attribute access to fail — an AttributeError on a curiosity tap, on a
+    # row nobody is looking at. Both layers are checked for shape, not just for
+    # truthiness, because `contributions` is iterated with `.items()`.
     try:
         breakdown = json.loads(row.get("score_breakdown_json") or "{}")
     except Exception:
         breakdown = {}
-    contributions = breakdown.get("contributions") or {}
+    if not isinstance(breakdown, dict):
+        breakdown = {}
+    contributions = breakdown.get("contributions")
+    if not isinstance(contributions, dict):
+        contributions = {}
+    # Two filters, doing two different jobs. The allowlist decides what may be
+    # *said* — a term with no translation and no business being shown to a
+    # shopper is excluded whatever its value. The sign and sort then pick which
+    # of the sayable terms actually lifted this product. Dropping the allowlist
+    # and keeping `v > 0` would make a sign typo in the operator weight override
+    # enough to publish `seller_risk` to a shopper.
     top = sorted(
-        ((k, v) for k, v in contributions.items() if isinstance(v, (int, float)) and v > 0),
+        (
+            (k, v)
+            for k, v in contributions.items()
+            if k in ranking.EXPLAINABLE_FACTORS and isinstance(v, (int, float)) and v > 0
+        ),
         key=lambda pair: pair[1],
         reverse=True,
     )[:3]

@@ -37,6 +37,9 @@ import { injectAds } from "../feed/injectAds";
 import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
+import { HomeRowWithCommerce, injectCommerceRows } from "../commerce/commerceRows";
+import { CommerceFeedCard } from "../commerce/CommerceFeedCard";
+import { useFeedCommerce } from "../commerce/useFeedCommerce";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { withCachedAge } from "../core/sync/ageLabel";
 import { primaryMediaOf } from "../core/media/mediaDescriptors";
@@ -62,14 +65,18 @@ import { SpatialPager } from "../spatial/SpatialPager";
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * Posts, ads and — once the discovery flags are on — suggestion rows.
+ * Posts, ads, suggestion rows, and Marketplace recommendations.
  *
- * `HomeRow` is `FeedRow` plus one `discovery` member, so with every flag off
- * this alias describes exactly the same set of rows it described before: the
- * union widens, but `injectDiscoveryRows` returns its input unchanged and no
- * value of the new shape is ever constructed.
+ * Each widening is inert by default. `HomeRow` is `FeedRow` plus one
+ * `discovery` member; `HomeRowWithCommerce` is that plus one `commerce` member.
+ * With the discovery flags off `injectDiscoveryRows` returns its input
+ * unchanged, and with the commerce engine off the serve endpoint answers with
+ * an empty placement list, which makes `injectCommerceRows` return *its* input
+ * unchanged. So the union describes more shapes than before while the list
+ * still contains exactly the rows it contained before, and no value of either
+ * new shape is ever constructed.
  */
-type HomeFeedRow = HomeRow<PulsePost>;
+type HomeFeedRow = HomeRowWithCommerce<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -198,7 +205,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
       const row = token.item as HomeFeedRow | undefined;
       if (!row) continue;
       if (row.type === "post" && nextActivePostId == null) nextActivePostId = row.post.id;
-      if (row.type === "ad" || row.type === "discovery") nextViewableRowKeys.add(row.key);
+      // `commerce` joins this set for the same reason `ad` is in it: the row
+      // needs to know when it is actually on screen so it can report a visible
+      // impression. The list's 72% threshold is stricter than the server's 60%,
+      // which under-counts rather than over-counts — see `CommerceFeedCard`.
+      if (row.type === "ad" || row.type === "discovery" || row.type === "commerce") {
+        nextViewableRowKeys.add(row.key);
+      }
     }
     setActivePostId(nextActivePostId);
     setViewableRowKeys((current) => {
@@ -280,24 +293,55 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     refreshToken: discoveryRefreshToken
   });
 
+  const commerce = useFeedCommerce({
+    // Same rule as discovery: no recommendations for a signed-out viewer. The
+    // server would refuse anyway — every discovery route is `@auth_required` —
+    // so this is about not making the call, not about trusting the client.
+    enabled: isAuthenticated,
+    refreshToken: discoveryRefreshToken
+  });
+
   /**
-   * Ads first, then suggestions threaded through the result.
+   * Ads first, then suggestions, then Marketplace recommendations.
    *
    * The order matters and is not interchangeable. `injectAds` owns the sponsored
    * cadence Advertising specified; running it first and composing over its output
    * means discovery can see where the ads landed and keep each ad with the post
-   * that earned it, while an ad slot is never displaced by a carousel. With the
-   * discovery flags off, `discovery.modules` is empty and `injectDiscoveryRows`
-   * returns the ad-injected array itself — so this line produces byte-identical
-   * rows to the previous `injectAds(...)` call, which is the §15 rollback path.
+   * that earned it, while an ad slot is never displaced by a carousel.
+   * `injectCommerceRows` runs last for the same reason one level up: it can see
+   * every non-post row the two before it placed, which is what lets it refuse a
+   * slot that would put a product card directly under an advert.
+   *
+   * Each stage is inert when its inputs are empty. With the discovery flags off
+   * `discovery.modules` is empty and `injectDiscoveryRows` returns the
+   * ad-injected array itself; with the commerce engine off `commerce.placements`
+   * is empty and `injectCommerceRows` returns *that* array. So this expression
+   * still produces byte-identical rows to the original `injectAds(...)` call,
+   * which is the §15 rollback path — now two features deep.
    */
   const feedRows = useMemo<HomeFeedRow[]>(
     () =>
-      injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
-        dismissed: discovery.dismissed,
-        rotationOffset: discovery.rotationOffset
-      }),
-    [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
+      injectCommerceRows(
+        injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
+          dismissed: discovery.dismissed,
+          rotationOffset: discovery.rotationOffset
+        }),
+        commerce.placements,
+        {
+          dismissedPlacementIds: commerce.dismissedPlacementIds,
+          dismissedSellerIds: commerce.dismissedSellerIds
+        }
+      ),
+    [
+      posts,
+      availableAds,
+      discovery.modules,
+      discovery.dismissed,
+      discovery.rotationOffset,
+      commerce.placements,
+      commerce.dismissedPlacementIds,
+      commerce.dismissedSellerIds
+    ]
   );
 
   /**
@@ -990,6 +1034,18 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
         />
       );
     }
+    if (row.type === "commerce") {
+      return (
+        <CommerceFeedCard
+          placement={row.placement}
+          isViewable={viewableRowKeys.has(row.key)}
+          visibleDwellMs={commerce.visibleDwellMs}
+          edgeInset={12}
+          navigation={navigation}
+          onFeedback={commerce.onFeedback}
+        />
+      );
+    }
     const item = row.post;
     return (
       <PostCard
@@ -1047,7 +1103,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     handleShare,
     isFocused,
     navigation,
-    viewableRowKeys
+    viewableRowKeys,
+    commerce.visibleDwellMs,
+    commerce.onFeedback
   ]);
 
   const renderFeedItem = useCallback(

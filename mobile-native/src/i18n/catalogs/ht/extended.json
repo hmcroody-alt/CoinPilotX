@@ -1137,6 +1137,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "Rekòmande nan Marketplace",
+        "trending": "Tandans sou PulseSoc",
+        "sponsored": "Peye"
+      },
+      "subtitle": {
+        "matches_your_interests": "Dapre sa ou renmen",
+        "because_you_viewed": "Paske ou te gade atik sanblab",
+        "related_to_this_post": "An rapò ak sa w ap gade a",
+        "from_sellers_you_follow": "Nan men vandè ou swiv",
+        "trending": "Tandans sou PulseSoc kounye a",
+        "new_arrival": "Fèk ajoute nan Marketplace",
+        "popular": "Popilè pami achtè yo",
+        "new_to_marketplace": "Nouvo nan Marketplace"
+      },
+      "action": {
+        "viewProduct": "Gade pwodwi a",
+        "save": "Sere",
+        "saved": "Sere deja",
+        "seeAll": "Gade tout"
+      },
+      "menu": {
+        "title": "Opsyon rekòmandasyon",
+        "hide": "Kache sa a",
+        "notInterested": "Mwen pa enterese",
+        "seeFewer": "Montre mwen mwens konsa",
+        "hideSeller": "Pa rekòmande vandè sa a",
+        "why": "Poukisa m ap wè sa?",
+        "snooze": "Kache sijesyon Marketplace pou 30 jou"
+      },
+      "why": {
+        "title": "Poukisa m ap wè sa?",
+        "loading": "N ap verifye…",
+        "unavailable": "Nou pa ka eksplike rekòmandasyon sa a kounye a.",
+        "factorsTitle": "Sou kisa li baze",
+        "close": "Fèmen"
+      },
+      "factor": {
+        "relevance": "Jan li koresponn ak sa ou t ap gade",
+        "quality": "Kalite anons lan",
+        "predicted_interest": "Bagay ou te enterese ladan yo anvan",
+        "conversion_probability": "Konbyen fwa achtè achte atik konsa",
+        "seller_reliability": "Istwa vandè a",
+        "freshness": "Depi kilè anons lan pibliye",
+        "exploration_bonus": "Bay nouvo anons yon chans",
+        "diversity_bonus": "Montre ou plizyè vandè diferan"
+      },
+      "module": {
+        "recommended_for_you": "Rekòmande pou ou",
+        "because_you_viewed": "Paske ou te gade",
+        "trending": "Tandans",
+        "new_arrivals": "Nouvo rive",
+        "from_sellers_you_follow": "Nan men vandè ou swiv",
+        "new_to_marketplace": "Nouvo nan Marketplace",
+        "popular": "Popilè"
+      }
+    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Gade",

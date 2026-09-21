@@ -1231,6 +1231,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "مقترح من المتجر",
+        "trending": "رائج على PulseSoc",
+        "sponsored": "برعاية"
+      },
+      "subtitle": {
+        "matches_your_interests": "بناءً على ما يعجبك",
+        "because_you_viewed": "لأنك شاهدت عناصر مشابهة",
+        "related_to_this_post": "متعلق بما تتصفحه",
+        "from_sellers_you_follow": "من بائعين تتابعهم",
+        "trending": "رائج على PulseSoc الآن",
+        "new_arrival": "أُضيف حديثًا إلى المتجر",
+        "popular": "مشهور بين المتسوقين",
+        "new_to_marketplace": "جديد في المتجر"
+      },
+      "action": {
+        "viewProduct": "عرض المنتج",
+        "save": "حفظ",
+        "saved": "تم الحفظ",
+        "seeAll": "عرض الكل"
+      },
+      "menu": {
+        "title": "خيارات التوصية",
+        "hide": "إخفاء هذا",
+        "notInterested": "غير مهتم",
+        "seeFewer": "عرض عناصر أقل مثل هذا",
+        "hideSeller": "لا توصِ بهذا البائع",
+        "why": "لماذا أرى هذا؟",
+        "snooze": "إخفاء اقتراحات المتجر لمدة 30 يومًا"
+      },
+      "why": {
+        "title": "لماذا أرى هذا؟",
+        "loading": "جارٍ التحقق…",
+        "unavailable": "لا يمكننا شرح هذه التوصية الآن.",
+        "factorsTitle": "ما استندت إليه",
+        "close": "إغلاق"
+      },
+      "factor": {
+        "relevance": "مدى تطابقه مع ما كنت تشاهده",
+        "quality": "جودة الإعلان",
+        "predicted_interest": "أشياء أبديت اهتمامًا بها من قبل",
+        "conversion_probability": "عدد مرات شراء المتسوقين لعناصر مماثلة",
+        "seller_reliability": "سجل البائع",
+        "freshness": "حداثة الإعلان",
+        "exploration_bonus": "منح الإعلانات الجديدة فرصة",
+        "diversity_bonus": "عرض مجموعة متنوعة من البائعين"
+      },
+      "module": {
+        "recommended_for_you": "موصى به لك",
+        "because_you_viewed": "لأنك شاهدت",
+        "trending": "الرائج",
+        "new_arrivals": "وصل حديثًا",
+        "from_sellers_you_follow": "من بائعين تتابعهم",
+        "new_to_marketplace": "جديد في المتجر",
+        "popular": "شائع"
+      }
+    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "تصفح",

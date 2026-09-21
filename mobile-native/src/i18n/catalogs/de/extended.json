@@ -1151,6 +1151,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "Empfohlen aus dem Marketplace",
+        "trending": "Im Trend auf PulseSoc",
+        "sponsored": "Gesponsert"
+      },
+      "subtitle": {
+        "matches_your_interests": "Basierend auf dem, was dir gefällt",
+        "because_you_viewed": "Weil du ähnliche Artikel angesehen hast",
+        "related_to_this_post": "Passend zu dem, was du gerade liest",
+        "from_sellers_you_follow": "Von Verkäufern, denen du folgst",
+        "trending": "Gerade im Trend auf PulseSoc",
+        "new_arrival": "Gerade neu eingestellt",
+        "popular": "Beliebt bei Käufern",
+        "new_to_marketplace": "Neu im Marketplace"
+      },
+      "action": {
+        "viewProduct": "Produkt ansehen",
+        "save": "Speichern",
+        "saved": "Gespeichert",
+        "seeAll": "Alle ansehen"
+      },
+      "menu": {
+        "title": "Empfehlungsoptionen",
+        "hide": "Das ausblenden",
+        "notInterested": "Kein Interesse",
+        "seeFewer": "Weniger davon anzeigen",
+        "hideSeller": "Diesen Verkäufer nicht empfehlen",
+        "why": "Warum sehe ich das?",
+        "snooze": "Marketplace-Vorschläge 30 Tage lang ausblenden"
+      },
+      "why": {
+        "title": "Warum sehe ich das?",
+        "loading": "Wird geprüft…",
+        "unavailable": "Wir können diese Empfehlung gerade nicht erklären.",
+        "factorsTitle": "Worauf sie beruht",
+        "close": "Schließen"
+      },
+      "factor": {
+        "relevance": "Wie gut es zu dem passt, was du angesehen hast",
+        "quality": "Die Qualität des Angebots",
+        "predicted_interest": "Dinge, für die du dich schon interessiert hast",
+        "conversion_probability": "Wie oft Käufer solche Artikel kaufen",
+        "seller_reliability": "Die Bilanz des Verkäufers",
+        "freshness": "Wie neu das Angebot ist",
+        "exploration_bonus": "Neuen Angeboten eine Chance geben",
+        "diversity_bonus": "Dir verschiedene Verkäufer zeigen"
+      },
+      "module": {
+        "recommended_for_you": "Für dich empfohlen",
+        "because_you_viewed": "Weil du angesehen hast",
+        "trending": "Im Trend",
+        "new_arrivals": "Neu eingetroffen",
+        "from_sellers_you_follow": "Von Verkäufern, denen du folgst",
+        "new_to_marketplace": "Neu im Marketplace",
+        "popular": "Beliebt"
+      }
+    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Stöbern",

@@ -1151,6 +1151,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "मार्केटप्लेस से अनुशंसित",
+        "trending": "PulseSoc पर ट्रेंडिंग",
+        "sponsored": "प्रायोजित"
+      },
+      "subtitle": {
+        "matches_your_interests": "आपकी पसंद के आधार पर",
+        "because_you_viewed": "क्योंकि आपने मिलते-जुलते आइटम देखे",
+        "related_to_this_post": "आप जो देख रहे हैं उससे संबंधित",
+        "from_sellers_you_follow": "उन विक्रेताओं से जिन्हें आप फ़ॉलो करते हैं",
+        "trending": "अभी PulseSoc पर ट्रेंडिंग",
+        "new_arrival": "मार्केटप्लेस में अभी जोड़ा गया",
+        "popular": "खरीदारों के बीच लोकप्रिय",
+        "new_to_marketplace": "मार्केटप्लेस पर नया"
+      },
+      "action": {
+        "viewProduct": "उत्पाद देखें",
+        "save": "सहेजें",
+        "saved": "सहेजा गया",
+        "seeAll": "सभी देखें"
+      },
+      "menu": {
+        "title": "अनुशंसा विकल्प",
+        "hide": "इसे छिपाएँ",
+        "notInterested": "रुचि नहीं है",
+        "seeFewer": "इस तरह के कम दिखाएँ",
+        "hideSeller": "इस विक्रेता की अनुशंसा न करें",
+        "why": "मुझे यह क्यों दिख रहा है?",
+        "snooze": "मार्केटप्लेस सुझाव 30 दिनों के लिए छिपाएँ"
+      },
+      "why": {
+        "title": "मुझे यह क्यों दिख रहा है?",
+        "loading": "जाँच की जा रही है…",
+        "unavailable": "हम अभी इस अनुशंसा की व्याख्या नहीं कर सकते।",
+        "factorsTitle": "यह किस पर आधारित थी",
+        "close": "बंद करें"
+      },
+      "factor": {
+        "relevance": "यह उससे कितना मेल खाता है जो आप देख रहे थे",
+        "quality": "लिस्टिंग की गुणवत्ता",
+        "predicted_interest": "वे चीज़ें जिनमें आपने पहले रुचि दिखाई",
+        "conversion_probability": "खरीदार ऐसे आइटम कितनी बार खरीदते हैं",
+        "seller_reliability": "विक्रेता का रिकॉर्ड",
+        "freshness": "लिस्टिंग कितनी नई है",
+        "exploration_bonus": "नई लिस्टिंग को मौका देना",
+        "diversity_bonus": "आपको विभिन्न विक्रेता दिखाना"
+      },
+      "module": {
+        "recommended_for_you": "आपके लिए अनुशंसित",
+        "because_you_viewed": "क्योंकि आपने देखा",
+        "trending": "ट्रेंडिंग",
+        "new_arrivals": "नए आगमन",
+        "from_sellers_you_follow": "उन विक्रेताओं से जिन्हें आप फ़ॉलो करते हैं",
+        "new_to_marketplace": "मार्केटप्लेस पर नया",
+        "popular": "लोकप्रिय"
+      }
+    },
     "marketplace": {
       "title": "मार्केटप्लेस",
       "browse": "ब्राउज़ करें",

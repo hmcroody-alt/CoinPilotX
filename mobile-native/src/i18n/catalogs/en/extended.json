@@ -1151,6 +1151,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "Recommended from Marketplace",
+        "trending": "Trending on PulseSoc",
+        "sponsored": "Sponsored"
+      },
+      "subtitle": {
+        "matches_your_interests": "Based on what you like",
+        "because_you_viewed": "Because you viewed similar items",
+        "related_to_this_post": "Related to what you're reading",
+        "from_sellers_you_follow": "From sellers you follow",
+        "trending": "Trending on PulseSoc right now",
+        "new_arrival": "Just added to Marketplace",
+        "popular": "Popular with shoppers",
+        "new_to_marketplace": "New to Marketplace"
+      },
+      "action": {
+        "viewProduct": "View product",
+        "save": "Save",
+        "saved": "Saved",
+        "seeAll": "See all"
+      },
+      "menu": {
+        "title": "Recommendation options",
+        "hide": "Hide this",
+        "notInterested": "Not interested",
+        "seeFewer": "See fewer like this",
+        "hideSeller": "Don't recommend this seller",
+        "why": "Why am I seeing this?",
+        "snooze": "Hide Marketplace suggestions for 30 days"
+      },
+      "why": {
+        "title": "Why am I seeing this?",
+        "loading": "Checking…",
+        "unavailable": "We can't explain this recommendation right now.",
+        "factorsTitle": "What it was based on",
+        "close": "Close"
+      },
+      "factor": {
+        "relevance": "How well it matches what you were looking at",
+        "quality": "The listing's quality",
+        "predicted_interest": "Things you've shown interest in before",
+        "conversion_probability": "How often shoppers buy items like this",
+        "seller_reliability": "The seller's track record",
+        "freshness": "How recently it was listed",
+        "exploration_bonus": "Giving newer listings a chance",
+        "diversity_bonus": "Showing you a range of sellers"
+      },
+      "module": {
+        "recommended_for_you": "Recommended for you",
+        "because_you_viewed": "Because you viewed",
+        "trending": "Trending",
+        "new_arrivals": "New arrivals",
+        "from_sellers_you_follow": "From sellers you follow",
+        "new_to_marketplace": "New to Marketplace",
+        "popular": "Popular"
+      }
+    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Browse",

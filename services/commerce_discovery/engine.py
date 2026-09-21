@@ -507,6 +507,10 @@ def _persist(
     ttl = config.placement_ttl_seconds()
     now = subject.now_iso()
 
+    # One expiry for the whole response, computed once. Per-row expiries would
+    # differ by microseconds and give the client nothing useful to reason about.
+    expires_at = subject.expiry_iso(ttl)
+
     for slot, (row, verdict) in enumerate(selected):
         placement_id = subject.new_id("cd_pl")
         token = subject.make_token(placement_id)
@@ -526,7 +530,7 @@ def _persist(
                         "contributions": verdict["contributions"],
                     }, separators=(",", ":"), sort_keys=True),
                     verdict["ranking_version"], session_id or "",
-                    token, subject.expiry_iso(ttl), now,
+                    token, expires_at, now,
                 ),
             )
         except Exception:
@@ -536,6 +540,7 @@ def _persist(
         out.append(_payload(
             row, verdict, placement_id, token,
             surface=surface, slot=slot, klass=klass,
+            expires_at=expires_at,
             parse_price=parse_price, serialize=serialize,
         ))
 
@@ -551,6 +556,7 @@ def _payload(
     surface: str,
     slot: int,
     klass: str,
+    expires_at: str,
     parse_price,
     serialize,
 ) -> dict:
@@ -599,6 +605,10 @@ def _payload(
         "impression_token": token,
         "surface": surface,
         "slot": slot,
+        # The client needs this to stop reporting against a placement the server
+        # will reject anyway. Without it a card left on screen past the TTL posts
+        # impressions that fail, which reads in the logs as a client defect.
+        "expires_at": expires_at,
         "promotion_class": klass,
         "label_key": promotion.label_key(klass),
         "reason": verdict["reason"],

@@ -1151,6 +1151,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "Recomendado do Marketplace",
+        "trending": "Em alta no PulseSoc",
+        "sponsored": "Patrocinado"
+      },
+      "subtitle": {
+        "matches_your_interests": "Com base no que você curte",
+        "because_you_viewed": "Porque você viu itens semelhantes",
+        "related_to_this_post": "Relacionado ao que você está vendo",
+        "from_sellers_you_follow": "De vendedores que você segue",
+        "trending": "Em alta no PulseSoc agora",
+        "new_arrival": "Acabou de chegar ao Marketplace",
+        "popular": "Popular entre os compradores",
+        "new_to_marketplace": "Novo no Marketplace"
+      },
+      "action": {
+        "viewProduct": "Ver produto",
+        "save": "Salvar",
+        "saved": "Salvo",
+        "seeAll": "Ver tudo"
+      },
+      "menu": {
+        "title": "Opções de recomendação",
+        "hide": "Ocultar isto",
+        "notInterested": "Não tenho interesse",
+        "seeFewer": "Ver menos como isto",
+        "hideSeller": "Não recomendar este vendedor",
+        "why": "Por que estou vendo isto?",
+        "snooze": "Ocultar sugestões do Marketplace por 30 dias"
+      },
+      "why": {
+        "title": "Por que estou vendo isto?",
+        "loading": "Verificando…",
+        "unavailable": "Não conseguimos explicar esta recomendação agora.",
+        "factorsTitle": "No que se baseou",
+        "close": "Fechar"
+      },
+      "factor": {
+        "relevance": "O quanto combina com o que você estava vendo",
+        "quality": "A qualidade do anúncio",
+        "predicted_interest": "Coisas que já despertaram seu interesse",
+        "conversion_probability": "Com que frequência compradores levam itens assim",
+        "seller_reliability": "O histórico do vendedor",
+        "freshness": "Há quanto tempo foi anunciado",
+        "exploration_bonus": "Dar uma chance a anúncios novos",
+        "diversity_bonus": "Mostrar uma variedade de vendedores"
+      },
+      "module": {
+        "recommended_for_you": "Recomendado para você",
+        "because_you_viewed": "Porque você viu",
+        "trending": "Em alta",
+        "new_arrivals": "Novidades",
+        "from_sellers_you_follow": "De vendedores que você segue",
+        "new_to_marketplace": "Novo no Marketplace",
+        "popular": "Popular"
+      }
+    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Explorar",

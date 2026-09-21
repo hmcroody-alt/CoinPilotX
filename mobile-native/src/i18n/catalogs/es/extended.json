@@ -1151,6 +1151,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "Recomendado de Marketplace",
+        "trending": "Tendencia en PulseSoc",
+        "sponsored": "Patrocinado"
+      },
+      "subtitle": {
+        "matches_your_interests": "Según lo que te gusta",
+        "because_you_viewed": "Porque viste artículos similares",
+        "related_to_this_post": "Relacionado con lo que estás viendo",
+        "from_sellers_you_follow": "De vendedores que sigues",
+        "trending": "Tendencia en PulseSoc ahora mismo",
+        "new_arrival": "Recién añadido a Marketplace",
+        "popular": "Popular entre los compradores",
+        "new_to_marketplace": "Nuevo en Marketplace"
+      },
+      "action": {
+        "viewProduct": "Ver producto",
+        "save": "Guardar",
+        "saved": "Guardado",
+        "seeAll": "Ver todo"
+      },
+      "menu": {
+        "title": "Opciones de recomendación",
+        "hide": "Ocultar esto",
+        "notInterested": "No me interesa",
+        "seeFewer": "Ver menos como esto",
+        "hideSeller": "No recomendar a este vendedor",
+        "why": "¿Por qué veo esto?",
+        "snooze": "Ocultar sugerencias de Marketplace durante 30 días"
+      },
+      "why": {
+        "title": "¿Por qué veo esto?",
+        "loading": "Comprobando…",
+        "unavailable": "No podemos explicar esta recomendación ahora mismo.",
+        "factorsTitle": "En qué se basó",
+        "close": "Cerrar"
+      },
+      "factor": {
+        "relevance": "Qué tanto coincide con lo que estabas viendo",
+        "quality": "La calidad del anuncio",
+        "predicted_interest": "Cosas que te han interesado antes",
+        "conversion_probability": "Con qué frecuencia los compradores adquieren artículos así",
+        "seller_reliability": "El historial del vendedor",
+        "freshness": "Qué tan reciente es la publicación",
+        "exploration_bonus": "Dar una oportunidad a anuncios nuevos",
+        "diversity_bonus": "Mostrarte una variedad de vendedores"
+      },
+      "module": {
+        "recommended_for_you": "Recomendado para ti",
+        "because_you_viewed": "Porque viste",
+        "trending": "Tendencias",
+        "new_arrivals": "Novedades",
+        "from_sellers_you_follow": "De vendedores que sigues",
+        "new_to_marketplace": "Nuevo en Marketplace",
+        "popular": "Popular"
+      }
+    },
     "marketplace": {
       "title": "Marketplace",
       "browse": "Explorar",

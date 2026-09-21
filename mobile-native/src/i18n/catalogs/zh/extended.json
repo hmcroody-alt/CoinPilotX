@@ -1137,6 +1137,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "来自市场的推荐",
+        "trending": "PulseSoc 热门",
+        "sponsored": "赞助"
+      },
+      "subtitle": {
+        "matches_your_interests": "根据你的喜好",
+        "because_you_viewed": "因为你看过类似商品",
+        "related_to_this_post": "与你正在浏览的内容相关",
+        "from_sellers_you_follow": "来自你关注的卖家",
+        "trending": "正在 PulseSoc 上热门",
+        "new_arrival": "刚上架的商品",
+        "popular": "买家中很受欢迎",
+        "new_to_marketplace": "市场新上架"
+      },
+      "action": {
+        "viewProduct": "查看商品",
+        "save": "收藏",
+        "saved": "已收藏",
+        "seeAll": "查看全部"
+      },
+      "menu": {
+        "title": "推荐选项",
+        "hide": "隐藏这条",
+        "notInterested": "不感兴趣",
+        "seeFewer": "少看这类内容",
+        "hideSeller": "不要推荐这个卖家",
+        "why": "为什么向我展示这条？",
+        "snooze": "隐藏市场推荐 30 天"
+      },
+      "why": {
+        "title": "为什么向我展示这条？",
+        "loading": "正在查询…",
+        "unavailable": "暂时无法说明这条推荐的原因。",
+        "factorsTitle": "推荐依据",
+        "close": "关闭"
+      },
+      "factor": {
+        "relevance": "与你浏览内容的匹配程度",
+        "quality": "商品信息的质量",
+        "predicted_interest": "你以前感兴趣的内容",
+        "conversion_probability": "同类商品的购买频率",
+        "seller_reliability": "卖家的过往记录",
+        "freshness": "商品上架的时间",
+        "exploration_bonus": "让新上架的商品也有机会",
+        "diversity_bonus": "为你展示不同的卖家"
+      },
+      "module": {
+        "recommended_for_you": "为你推荐",
+        "because_you_viewed": "因为你看过",
+        "trending": "热门商品",
+        "new_arrivals": "新品上架",
+        "from_sellers_you_follow": "来自你关注的卖家",
+        "new_to_marketplace": "市场新品",
+        "popular": "热门"
+      }
+    },
     "marketplace": {
       "title": "商城",
       "browse": "浏览",

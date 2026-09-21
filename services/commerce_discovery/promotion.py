@@ -69,9 +69,9 @@ ALL_CLASSES = frozenset({ORGANIC, HOUSE, PAID})
 #: gate, and the label is the part of a commerce unit a regulator would read
 #: first, so it must be translatable rather than English-shaped.
 LABEL_KEYS = {
-    ORGANIC: "marketplace:discovery.label.recommended",
-    HOUSE: "marketplace:discovery.label.trending",
-    PAID: "marketplace:discovery.label.sponsored",
+    ORGANIC: "commerce:discovery.label.recommended",
+    HOUSE: "commerce:discovery.label.trending",
+    PAID: "commerce:discovery.label.sponsored",
 }
 
 

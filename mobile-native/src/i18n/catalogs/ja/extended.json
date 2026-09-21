@@ -1137,6 +1137,64 @@
     }
   },
   "commerce": {
+    "discovery": {
+      "label": {
+        "recommended": "マーケットプレイスのおすすめ",
+        "trending": "PulseSocで話題",
+        "sponsored": "広告"
+      },
+      "subtitle": {
+        "matches_your_interests": "あなたの好みに基づいて",
+        "because_you_viewed": "似た商品を見たため",
+        "related_to_this_post": "表示中の投稿に関連",
+        "from_sellers_you_follow": "フォロー中の出品者から",
+        "trending": "PulseSocで今話題",
+        "new_arrival": "マーケットプレイスに新着",
+        "popular": "購入者に人気",
+        "new_to_marketplace": "マーケットプレイスの新規出品"
+      },
+      "action": {
+        "viewProduct": "商品を見る",
+        "save": "保存",
+        "saved": "保存済み",
+        "seeAll": "すべて見る"
+      },
+      "menu": {
+        "title": "おすすめの設定",
+        "hide": "これを非表示",
+        "notInterested": "興味がない",
+        "seeFewer": "これに似たものを減らす",
+        "hideSeller": "この出品者をおすすめしない",
+        "why": "これが表示される理由",
+        "snooze": "マーケットプレイスの提案を30日間非表示にする"
+      },
+      "why": {
+        "title": "これが表示される理由",
+        "loading": "確認中…",
+        "unavailable": "このおすすめの理由は現在表示できません。",
+        "factorsTitle": "判断の材料",
+        "close": "閉じる"
+      },
+      "factor": {
+        "relevance": "見ていた内容との一致度",
+        "quality": "出品の品質",
+        "predicted_interest": "これまでに関心を示したもの",
+        "conversion_probability": "同様の商品が購入される頻度",
+        "seller_reliability": "出品者の実績",
+        "freshness": "出品されてからの新しさ",
+        "exploration_bonus": "新しい出品にも機会を与えるため",
+        "diversity_bonus": "さまざまな出品者を表示するため"
+      },
+      "module": {
+        "recommended_for_you": "あなたへのおすすめ",
+        "because_you_viewed": "閲覧履歴から",
+        "trending": "話題の商品",
+        "new_arrivals": "新着",
+        "from_sellers_you_follow": "フォロー中の出品者から",
+        "new_to_marketplace": "マーケットプレイスの新規出品",
+        "popular": "人気"
+      }
+    },
     "marketplace": {
       "title": "マーケットプレイス",
       "browse": "見つける",

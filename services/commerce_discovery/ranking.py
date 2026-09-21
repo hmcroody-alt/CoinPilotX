@@ -76,6 +76,37 @@ REASON_PRIORITY = (
 )
 
 
+#: The only score terms that may be named to a user.
+#:
+#: "Why am I seeing this?" answers with the terms that *lifted* this product, and
+#: the eight below are exactly the terms carrying a client i18n key
+#: (``commerce:discovery.factor.<name>``). The four penalties are absent for two
+#: independent reasons, either sufficient on its own:
+#:
+#: * ``refund_risk`` and ``seller_risk`` are judgements about a seller. Naming
+#:   them in a shopper-facing sheet publishes an internal risk assessment of a
+#:   named store to that store's potential customers.
+#: * none of the four has a translation, so rendering one puts a raw key string
+#:   on screen in every locale.
+#:
+#: Selecting by ``contribution > 0`` is *not* the same guard. Weights are
+#: operator-overridable through ``COMMERCE_DISCOVERY_WEIGHTS``, so a single sign
+#: typo in a JSON env var turns a penalty positive and walks it into the sheet.
+#: This allowlist is the vocabulary; the sign test only ranks within it.
+EXPLAINABLE_FACTORS = frozenset(
+    {
+        "relevance",
+        "quality",
+        "predicted_interest",
+        "conversion_probability",
+        "seller_reliability",
+        "freshness",
+        "exploration_bonus",
+        "diversity_bonus",
+    }
+)
+
+
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
 

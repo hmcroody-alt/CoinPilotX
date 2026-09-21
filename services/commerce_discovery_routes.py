@@ -8,7 +8,7 @@ The client contract is ``mobile-native/src/api/commerceDiscovery.ts``.
     POST   /events/impression         rendered, or became visible
     POST   /events/engagement         click → product_view → … → purchase
     POST   /events/feedback           hide / not_interested / see_fewer / …
-    GET    /explain/<placement_id>    "Why am I seeing this?"
+    POST   /explain/<placement_id>   "Why am I seeing this?"
 
 Why the serve endpoint is a POST
 --------------------------------
@@ -317,7 +317,7 @@ def commerce_discovery_marketplace_modules():
             modules.append({
                 "key": key,
                 "reason": reason,
-                "title_key": f"marketplace:discovery.module.{key}",
+                "title_key": f"commerce:discovery.module.{key}",
                 "placements": items,
             })
             if len(modules) >= config.marketplace_module_limit():
@@ -422,14 +422,21 @@ def commerce_discovery_feedback():
     return _event_route(runner)
 
 
-@discovery_blueprint.route(f"{API_PREFIX}/explain/<placement_id>", methods=["GET"])
+@discovery_blueprint.route(f"{API_PREFIX}/explain/<placement_id>", methods=["POST"])
 @auth_required
 def commerce_discovery_explain(placement_id):
-    """"Why am I seeing this?" — reason code and factor names, never scores."""
+    """"Why am I seeing this?" — reason code and factor names, never scores.
+
+    POST for the same reason serve is: the placement token is an HMAC
+    capability, and a capability in a query string is a credential written to
+    every access log and proxy cache between here and the phone. It reads, but
+    the method follows the payload.
+    """
     user, err = _require_user()
     if err:
         return err
-    token = request.args.get("token") or ""
+    payload = request.get_json(silent=True) or {}
+    token = str(payload.get("impression_token") or payload.get("token") or "")
 
     def handler(cur, conn):
         return _json(events.explain(cur, placement_id, token))
