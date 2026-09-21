@@ -253,6 +253,12 @@ TIME_FORMATS = ("12h", "24h")
 DOWNLOAD_POLICIES = ("always", "wifi", "never")
 MEDIA_QUALITIES = ("auto", "data_saver", "high")
 
+# How much organic Marketplace discovery a user wants on the social surfaces.
+# Three named steps rather than a slider: the underlying quantity is a cadence
+# in posts, and exposing that number would turn the setting into a promise
+# about feed composition that ranking is not in a position to keep.
+COMMERCE_FREQUENCIES = ("low", "balanced", "more")
+
 FONT_SCALE_MIN = 0.85
 FONT_SCALE_MAX = 1.4
 FONT_SCALE_STEP = 0.05
@@ -335,6 +341,21 @@ def default_preferences() -> dict:
             "shareCrashReports": True,
             "activityStatusSharing": True,
         },
+        # Organic Marketplace discovery. Kept apart from `data.personalizedAds`
+        # deliberately: that setting governs *paid* advertising, and a user who
+        # switches off ad personalization has said nothing about whether they
+        # want unpaid product recommendations. One switch governing two
+        # different commercial relationships would make both consents unclear.
+        #
+        # `snoozeUntil` is an absolute ISO instant, "" for not snoozed. Absolute
+        # rather than a countdown so it survives a device clock change and
+        # cannot be shortened by reinstalling the app.
+        "commerce": {
+            "marketplaceRecommendations": True,
+            "frequency": "balanced",
+            "personalizedRecommendations": True,
+            "snoozeUntil": "",
+        },
         "developer": {
             "enabled": False,
             "showPerfOverlay": False,
@@ -398,6 +419,27 @@ def _time_of_day(value, fallback: str) -> str:
     return f"{hours:02d}:{minutes:02d}"
 
 
+def _iso_instant(value, fallback: str) -> str:
+    """A UTC ISO-8601 instant, or ``fallback``.
+
+    Used for the commerce snooze. Anything unparseable falls back rather than
+    being stored verbatim, because an unparseable expiry is read downstream as
+    "no expiry" — a snooze that never ends and that no UI offers a way to
+    cancel.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    candidate = text[:-1] + "+00:00" if text.endswith("Z") else text
+    try:
+        parsed = datetime.fromisoformat(candidate)
+    except (TypeError, ValueError):
+        return fallback
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).isoformat(timespec="seconds")
+
+
 def _language_tag(value, fallback: str) -> str:
     text = str(value or "").strip()
     if not text or len(text) > 35:
@@ -450,6 +492,7 @@ def normalize_preferences(payload, base: dict | None = None) -> dict:
     security = group("security")
     storage = group("storage")
     data = group("data")
+    commerce = group("commerce")
     developer = group("developer")
 
     raw_categories = notifications.get("categories")
@@ -532,6 +575,24 @@ def normalize_preferences(payload, base: dict | None = None) -> dict:
         "data": {
             key: _bool(data.get(key), base["data"][key])
             for key in ("personalizedAds", "shareAnalytics", "shareCrashReports", "activityStatusSharing")
+        },
+        "commerce": {
+            "marketplaceRecommendations": _bool(
+                commerce.get("marketplaceRecommendations"),
+                base["commerce"]["marketplaceRecommendations"],
+            ),
+            "frequency": _one_of(
+                commerce.get("frequency"), COMMERCE_FREQUENCIES, base["commerce"]["frequency"]
+            ),
+            "personalizedRecommendations": _bool(
+                commerce.get("personalizedRecommendations"),
+                base["commerce"]["personalizedRecommendations"],
+            ),
+            # Normalized through the ISO parser rather than stored as given: a
+            # client that sends garbage here would otherwise create a snooze
+            # that never expires, and a snooze nobody can end is worse for the
+            # user than no snooze at all.
+            "snoozeUntil": _iso_instant(commerce.get("snoozeUntil"), base["commerce"]["snoozeUntil"]),
         },
         "developer": {
             key: _bool(developer.get(key), base["developer"][key])

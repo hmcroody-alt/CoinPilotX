@@ -65,6 +65,9 @@ INDIRECT_ACCESSORS = (
     "_env",
     "_env_bool",
     "_env_enabled",
+    # `_env_float` was missing while two modules already used it, which hid
+    # UNDX_EMBEDDING_MONTHLY_BUDGET_USD and every commerce-discovery ratio knob.
+    "_env_float",
     "_env_int",
     "_env_text",
     "_flag",

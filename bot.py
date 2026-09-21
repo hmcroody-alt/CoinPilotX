@@ -1396,6 +1396,10 @@ _load_route_pack("pulse_marketplace_cart", "services.marketplace_cart_routes")
 _load_route_pack("pulse_marketplace_offers", "services.marketplace_offers_routes")
 _load_route_pack("pulse_marketplace_returns", "services.marketplace_returns_routes")
 _load_route_pack("pulse_marketplace_fulfillment", "services.marketplace_fulfillment_routes")
+# Organic + house commerce discovery. Deliberately registered beside the
+# marketplace packs and nowhere near the advertising packs: this engine gives
+# unpaid reach, and its events must never be accounted as ad delivery.
+_load_route_pack("pulse_commerce_discovery", "services.commerce_discovery_routes")
 # Business OS web surface (website parity milestone 3): serves the /business-os
 # dashboard page over the existing /api/business-os API — no new API routes.
 _load_route_pack("business_os_web", "services.business_os_web")
