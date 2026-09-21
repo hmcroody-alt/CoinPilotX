@@ -248,6 +248,24 @@ describe("ReelsScreen visibility playback", () => {
   });
 });
 
+/**
+ * The save requests only, picked out of every request the screen makes.
+ *
+ * `mockSaveApi` is the whole `pulseApi` transport, not a save-specific spy, so
+ * `mock.calls[0]` means "the first request this screen made for any reason" —
+ * which was the save request only for as long as saving was the only thing the
+ * screen did on this path. It no longer is: the Marketplace chip's serve
+ * request goes out on mount and lands first, and a dedupe assertion counting
+ * *all* calls would count that one too.
+ *
+ * Filtering by route keeps both assertions saying exactly what they were
+ * written to say, and makes them indifferent to whatever the screen fetches
+ * next for reasons of its own.
+ */
+function saveCalls(): any[][] {
+  return mockSaveApi.mock.calls.filter(([url]) => String(url).endsWith(`/reels/${REEL_ID}/save`));
+}
+
 describe("ReelsScreen save", () => {
   it("states the wanted state on the reel save route rather than asking for a toggle", async () => {
     // A Reel used to save through `saveReel(id)`, a bodyless POST that flipped
@@ -262,7 +280,8 @@ describe("ReelsScreen save", () => {
       `/api/pulse/reels/${REEL_ID}/save`,
       expect.objectContaining({ method: "POST" })
     );
-    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ reel_id: REEL_ID, saved: true });
+    expect(saveCalls()).toHaveLength(1);
+    expect(JSON.parse(saveCalls()[0][1].body)).toEqual({ reel_id: REEL_ID, saved: true });
   });
 
   it("issues one request for a double tap, so a save cannot race an unsave", async () => {
@@ -277,7 +296,7 @@ describe("ReelsScreen save", () => {
       first = onSave(reel());
       second = onSave(reel());
     });
-    expect(mockSaveApi).toHaveBeenCalledTimes(1);
+    expect(saveCalls()).toHaveLength(1);
 
     await tap(async () => {
       pending.resolve({ ok: true, saved: true });

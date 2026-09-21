@@ -41,9 +41,9 @@ import {
   CommercePlacement,
   explainCommercePlacement,
   recordCommerceEngagement,
-  recordCommerceImpression,
   type CommerceExplanation
 } from "../api/commerceDiscovery";
+import { useCommerceImpression } from "./useCommerceImpression";
 import { saveMarketplaceListing } from "../api/marketplace";
 import { useTranslation } from "../i18n/I18nContext";
 import { formatCurrencyAmount, formatNumber } from "../i18n/format";
@@ -104,50 +104,12 @@ export function CommerceFeedCard({
   const measuredHeight = useRef(0);
   const [collapsing, setCollapsing] = useState(false);
 
-  const visibleMsRef = useRef(0);
-  const viewableSinceRef = useRef<number | null>(null);
-  const visibleReportedRef = useRef(false);
   const clickingRef = useRef(false);
 
-  // "Served and drawn". Keyed on the placement id so a FlatList recycling this
-  // row onto a different placement reports the new one; the server dedupes on
-  // the impression token, so a re-render of the *same* placement cannot double
-  // count even if this effect were to run twice.
-  useEffect(() => {
-    recordCommerceImpression(placement, { visible: false }).catch(() => undefined);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placement.placementId]);
-
-  const flushVisible = useCallback(() => {
-    if (viewableSinceRef.current != null) {
-      visibleMsRef.current += Date.now() - viewableSinceRef.current;
-      viewableSinceRef.current = null;
-    }
-    if (visibleReportedRef.current) return;
-    if (visibleMsRef.current < Math.max(0, visibleDwellMs)) return;
-    visibleReportedRef.current = true;
-    recordCommerceImpression(placement, {
-      visible: true,
-      viewDurationMs: visibleMsRef.current
-    }).catch(() => undefined);
-  }, [placement, visibleDwellMs]);
-
-  useEffect(() => {
-    if (isViewable) {
-      if (viewableSinceRef.current == null) viewableSinceRef.current = Date.now();
-      // Fires the moment the dwell is satisfied rather than waiting for the row
-      // to scroll away, so a card the user is still looking at is already
-      // counted.
-      const timer = setTimeout(flushVisible, Math.max(0, visibleDwellMs));
-      return () => clearTimeout(timer);
-    }
-    flushVisible();
-    return undefined;
-  }, [isViewable, flushVisible, visibleDwellMs]);
-
-  // Unmount closes the dwell window — otherwise a card scrolled out of the
-  // recycling window loses whatever time it had accumulated.
-  useEffect(() => () => flushVisible(), [flushVisible]);
+  // "Served and drawn", then "actually seen" once the dwell is satisfied. The
+  // rule is shared with the Reels chip rather than restated here — see
+  // `useCommerceImpression`.
+  useCommerceImpression({ placement, isViewable, visibleDwellMs });
 
   /**
    * Fold the row away, *then* tell the parent.

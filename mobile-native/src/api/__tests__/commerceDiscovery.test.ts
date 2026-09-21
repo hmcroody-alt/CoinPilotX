@@ -234,8 +234,21 @@ describe("reads never throw", () => {
     await expect(fetchCommercePlacements("feed")).resolves.toEqual({
       placements: [],
       visiblePercentThreshold: 60,
-      visibleDwellMs: 1000
+      visibleDwellMs: 1000,
+      cadence: { leadIn: 6, interval: 8, maxPerPage: 2 }
     });
+  });
+
+  it("hands a failing surface back its own rhythm, not the feed's", async () => {
+    // A caller that asked for the reels rhythm and got an error must not be
+    // consoled with the feed's cadence — that is how a surface whose budget is
+    // one ends up placing at feed density the moment the network hiccups. The
+    // fallback is the one the caller supplied, on every failure path.
+    api.mockRejectedValue(new Error("offline"));
+    const reelsCadence = { leadIn: 4, interval: 10, maxPerPage: 1 };
+    const result = await fetchCommercePlacements("reels", { cadence: reelsCadence });
+    expect(result.placements).toEqual([]);
+    expect(result.cadence).toEqual(reelsCadence);
   });
 
   it("returns no modules when the marketplace request fails", async () => {

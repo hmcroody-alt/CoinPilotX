@@ -232,7 +232,13 @@ def commerce_discovery_serve(surface):
     if err:
         return err
 
-    if str(surface or "").strip().lower() not in schema.SURFACES:
+    # Normalised once and reused. The check below used to lowercase a copy and
+    # leave the original in play, so `/reels` and `/REELS` both passed it and
+    # then took different paths through everything downstream — the second one
+    # would have been served feed cadence and reported its events under a
+    # surface name nothing else writes.
+    surface = str(surface or "").strip().lower()
+    if surface not in schema.SURFACES:
         return _empty()
 
     payload = request.get_json(silent=True) or {}
@@ -270,6 +276,7 @@ def commerce_discovery_serve(surface):
             "surface": surface,
             "visible_percent_threshold": config.VISIBLE_PERCENT_THRESHOLD,
             "visible_dwell_ms": config.VISIBLE_DWELL_MS,
+            "cadence": config.cadence(surface),
         })
 
     try:

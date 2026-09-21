@@ -91,18 +91,56 @@ export type CommerceContext = {
   tags?: string[];
 };
 
+/**
+ * How often this surface may place a unit.
+ *
+ * Server-owned for the same reason the viewability contract is: the numbers are
+ * operator knobs, and a client holding its own copy turns every one of them into
+ * a variable that can be set and does nothing. The local defaults below are what
+ * a surface uses until the first response lands — and since that response also
+ * carries the placements, no unit has been drawn at the local rhythm by then.
+ */
+export type CommerceCadence = {
+  leadIn: number;
+  interval: number;
+  maxPerPage: number;
+};
+
 export type CommerceServeResult = {
   placements: CommercePlacement[];
   /** Server-owned viewability contract, so the rule lives in one place. */
   visiblePercentThreshold: number;
   visibleDwellMs: number;
+  cadence: CommerceCadence;
 };
 
 const EMPTY_RESULT: CommerceServeResult = {
   placements: [],
   visiblePercentThreshold: 60,
-  visibleDwellMs: 1000
+  visibleDwellMs: 1000,
+  cadence: { leadIn: 6, interval: 8, maxPerPage: 2 }
 };
+
+/**
+ * A cadence field is only adopted when the server actually sent a usable number.
+ *
+ * `interval: 0` is the dangerous one — it passes a truthiness check in some
+ * shapes, and it means "place a unit on every single item". Anything that is not
+ * a finite number at or above its floor falls back to the local default rather
+ * than being coerced.
+ */
+function mapCadence(raw: RawCadence | undefined, fallback: CommerceCadence): CommerceCadence {
+  const pick = (value: unknown, floor: number, spare: number): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= floor ? parsed : spare;
+  };
+  const cadence = raw || {};
+  return {
+    leadIn: pick(cadence.lead_in, 0, fallback.leadIn),
+    interval: pick(cadence.interval, 1, fallback.interval),
+    maxPerPage: pick(cadence.max_per_page, 0, fallback.maxPerPage)
+  };
+}
 
 const API_PREFIX = "/api/pulse/commerce/discovery";
 
@@ -120,6 +158,12 @@ type RawProduct = {
   rating?: number;
   rating_count?: number;
   review_count?: number;
+};
+
+type RawCadence = {
+  lead_in?: number;
+  interval?: number;
+  max_per_page?: number;
 };
 
 type RawPlacement = {
@@ -217,14 +261,23 @@ function usable(placement: CommercePlacement): boolean {
  */
 export async function fetchCommercePlacements(
   surface: CommerceSurface,
-  options: { context?: CommerceContext; sessionId?: string; limit?: number } = {}
+  options: {
+    context?: CommerceContext;
+    sessionId?: string;
+    limit?: number;
+    /** Used until the server answers — each surface's own local rhythm. */
+    cadence?: CommerceCadence;
+  } = {}
 ): Promise<CommerceServeResult> {
+  const fallbackCadence = options.cadence || EMPTY_RESULT.cadence;
+  const empty: CommerceServeResult = { ...EMPTY_RESULT, cadence: fallbackCadence };
   try {
     const response = await pulseApi<{
       ok?: boolean;
       placements?: RawPlacement[];
       visible_percent_threshold?: number;
       visible_dwell_ms?: number;
+      cadence?: RawCadence;
     }>(`${API_PREFIX}/${surface}`, {
       method: "POST",
       body: JSON.stringify({
@@ -233,15 +286,16 @@ export async function fetchCommercePlacements(
         ...(options.limit === undefined ? {} : { limit: options.limit })
       })
     });
-    if (!response?.ok || !Array.isArray(response.placements)) return EMPTY_RESULT;
+    if (!response?.ok || !Array.isArray(response.placements)) return empty;
     return {
       placements: response.placements.map(mapPlacement).filter(usable),
       visiblePercentThreshold:
         Number(response.visible_percent_threshold) || EMPTY_RESULT.visiblePercentThreshold,
-      visibleDwellMs: Number(response.visible_dwell_ms) || EMPTY_RESULT.visibleDwellMs
+      visibleDwellMs: Number(response.visible_dwell_ms) || EMPTY_RESULT.visibleDwellMs,
+      cadence: mapCadence(response.cadence, fallbackCadence)
     };
   } catch {
-    return EMPTY_RESULT;
+    return empty;
   }
 }
 

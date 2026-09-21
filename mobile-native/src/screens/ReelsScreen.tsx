@@ -55,6 +55,9 @@ import { PulseApiError } from "../api/pulseApi";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
+import type { ReelCommerceBinding } from "../components/ReelPlayerCard";
+import { useCallSession } from "../calls/callSessionStore";
+import { useReelsCommerce } from "../commerce/useReelsCommerce";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
 import { classifyReelMedia } from "../reels/reelMediaKind";
@@ -177,6 +180,7 @@ export function ReelsScreen({ route, navigation }: Props) {
   const [moreReel, setMoreReel] = useState<PulseReel | null>(null);
   const [appActive, setAppActive] = useState(AppState.currentState === "active");
   const [shareOpen, setShareOpen] = useState(false);
+  const [commerceRefreshToken, setCommerceRefreshToken] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(Dimensions.get("window").height);
   const [viewportWidth, setViewportWidth] = useState(Dimensions.get("window").width);
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 72 });
@@ -218,6 +222,84 @@ export function ReelsScreen({ route, navigation }: Props) {
    * asserts against it.
    */
   const playbackAllowed = isFocused && appActive && !overlayOpen;
+
+  /**
+   * Marketplace discovery on Reels: at most one chip, or nothing at all.
+   *
+   * ### What gates *existence* versus what gates the *moment*
+   *
+   * `enabled` is the existence gate — false means no fetch is made and no
+   * placement is held. It carries only the durable conditions, because the
+   * server's reels budget is one placement per session: a gate that flickers
+   * would spend that budget on the first fetch and return empty forever after,
+   * turning a transient overlay into a permanent loss.
+   *
+   * So a comment sheet, a blur, or a backgrounded app are deliberately *not*
+   * here. Those are handled by `active` on the card, which already means
+   * "focused AND foreground AND no overlay AND this is the reel on screen", and
+   * which the chip uses to suspend its dwell counting and pause its ignore
+   * timer. The chip stays bound; it just stops counting.
+   *
+   * What is here:
+   *
+   *   * **Signed out.** Every discovery route is `@auth_required`, so this is
+   *     about not making the call rather than about trusting the client.
+   *   * **An active call.** A no-interruption zone, and unlike an overlay it is
+   *     not a state the user steps in and out of while watching reels — they
+   *     leave the screen. Read-only: this subscribes to the call snapshot and
+   *     touches no audio API.
+   *
+   * The camera and the composer are absent on purpose. Both live on other
+   * screens — Reels' ＋ button navigates to Home's composer — so reaching them
+   * already unmounts nothing but does blur this screen, and the no-chip
+   * behaviour follows from the card's `active` rather than from a fetch gate.
+   */
+  const callSession = useCallSession();
+  const signedIn = Number(authState.user?.user_id || 0) > 0;
+  /**
+   * Which reels are even candidates to carry a chip.
+   *
+   * Live reels are excluded rather than filtered later: a Live is one of the
+   * brief's no-interruption zones, and dropping it from the id list means the
+   * binder never considers it, so the chip lands on the next eligible reel
+   * instead of being bound and then suppressed. Binding is by id throughout —
+   * pagination appends and a refresh replaces, both of which shift indices.
+   */
+  const commerceReelIds = useMemo(
+    () =>
+      reels
+        .filter((reel) => !(reel.live_session_id || reel.live?.live_session_id))
+        .map((reel) => String(reel.id))
+        .filter((id) => id && id !== "0"),
+    [reels]
+  );
+  const commerce = useReelsCommerce({
+    reelIds: commerceReelIds,
+    enabled: signedIn && !callSession.sessionActive,
+    refreshToken: commerceRefreshToken
+  });
+  /**
+   * The chip for one reel, or null — which is the answer for all but one reel.
+   *
+   * A function rather than an inline lookup so the "no chip" case is a single
+   * `null` the card can branch on once, and so the map lookup is keyed by the
+   * same string the binder keyed on. `String(reel.id)` is repeated rather than
+   * shared with `commerceReelIds` deliberately: a helper that normalised ids in
+   * one place and not the other is exactly how a binding goes silently missing.
+   */
+  const commerceBindingFor = useCallback(
+    (reel: PulseReel): ReelCommerceBinding | null => {
+      const placement = commerce.chipByReelId.get(String(reel.id));
+      if (!placement) return null;
+      return {
+        placement,
+        visibleDwellMs: commerce.visibleDwellMs,
+        navigation,
+        onFeedback: commerce.onFeedback
+      };
+    },
+    [commerce.chipByReelId, commerce.onFeedback, commerce.visibleDwellMs, navigation]
+  );
   /**
    * Warm the reel after this one before the user swipes to it.
    *
@@ -364,6 +446,11 @@ export function ReelsScreen({ route, navigation }: Props) {
     }
     if (mode === "refresh") setRefreshing(true);
     if (mode === "more") setLoadingMore(true);
+    // Bumped here rather than in the pull-to-refresh handler because refresh has
+    // three entrances — the RefreshControl, the recovery screen's Retry, and the
+    // tab double-tap — and a token wired to only one of them would leave the
+    // other two showing a chip bound to a reel list that no longer exists.
+    if (mode === "refresh") setCommerceRefreshToken((current) => current + 1);
     try {
       const data = await listReels({ lane, limit: PAGE_SIZE, offset: nextOffset, includeComments: false });
       if (version !== loadVersion.current) return;
@@ -932,6 +1019,7 @@ export function ReelsScreen({ route, navigation }: Props) {
               onOpenMore={setMoreReel}
               onJoinLive={joinLiveReel}
               onViewable={(reel, watchMs) => reel.id > 0 ? trackReelView(reel.id, watchMs).catch(() => undefined) : undefined}
+              commerce={commerceBindingFor(item)}
             />
           </View>
         )}

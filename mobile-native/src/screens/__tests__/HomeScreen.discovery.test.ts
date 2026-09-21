@@ -104,9 +104,26 @@ describe("preview visibility (§4, §5, §14.4, §14.7)", () => {
   });
 
   it("tracks discovery rows in the same viewable-key set ads already used", () => {
-    // One notion of "visible" for both, rather than a second mechanism that can
-    // drift from the first.
-    expect(homeSource).toContain('if (row.type === "ad" || row.type === "discovery") nextViewableRowKeys.add(row.key)');
+    // One notion of "visible" for every row that reports an impression, rather
+    // than a second mechanism that can drift from the first.
+    //
+    // Matched on the branch's content rather than on one exact spelling. This
+    // assertion used to pin a single-line form of the `if`, which meant that
+    // adding `commerce` to it — joining the set being exactly the behaviour
+    // this test wants — wrapped the line and turned the test red while the code
+    // got strictly more correct. A source test that fails on reformatting is
+    // measuring the formatter.
+    // There are *two* writers of `viewableRowKeys` — the FlatList's viewability
+    // callback and the spatial feed's settled-page effect — and the second one
+    // was missing `commerce` entirely, which the old single-line assertion could
+    // not see because it only ever looked at the first. So the invariant is
+    // stated over every guard instead: wherever ads and discovery rows are
+    // treated as impression-reporting, commerce rows are too.
+    const guards = homeSource.match(/row\.type === "ad" \|\| row\.type === "discovery"[^)]*/g) || [];
+    expect(guards).toHaveLength(2);
+    for (const guard of guards) {
+      expect(guard).toContain('row.type === "commerce"');
+    }
   });
 
   it("gates previews on focus, so leaving the feed stops playback", () => {

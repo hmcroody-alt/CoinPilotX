@@ -148,6 +148,48 @@ def reels_lead_in() -> int:
     return _env_int("COMMERCE_DISCOVERY_REELS_LEAD_IN", 4, minimum=1)
 
 
+def reels_interval() -> int:
+    """Reels between chips, once the lead-in is spent.
+
+    Only reachable when ``COMMERCE_DISCOVERY_REELS_MAX_PER_SESSION`` is raised
+    above its default of 1, but it has to exist for that knob to be safe to
+    turn: without it a budget of 2 puts the second chip on the very next reel.
+    """
+    return _env_int("COMMERCE_DISCOVERY_REELS_INTERVAL", 10, minimum=1)
+
+
+def cadence(surface: str) -> dict:
+    """The placement rhythm for one surface, as plain numbers.
+
+    This exists because the rhythm has two owners and only one of them can be
+    authoritative. The client cannot fetch it separately — it needs the cadence
+    on the same frame it needs the placements, or the first page places rows at
+    one rhythm and re-places them at another. But when the client is the *only*
+    owner, ``COMMERCE_DISCOVERY_FEED_INTERVAL`` becomes a variable an operator
+    can set, restart for, and watch do nothing, which is worse than not having
+    the knob at all.
+
+    Sending it alongside the placements settles it: cadence can only change on a
+    response that changes the placements too, so a retune never re-flows rows
+    that are already on screen.
+    """
+    if surface == "reels":
+        return {
+            "lead_in": reels_lead_in(),
+            "interval": reels_interval(),
+            "max_per_page": surface_caps()["reels"][0],
+        }
+    if surface == "messenger":
+        return {"lead_in": 0, "interval": 1, "max_per_page": surface_caps()["messenger"][0]}
+    if surface == "marketplace":
+        return {"lead_in": 0, "interval": 1, "max_per_page": marketplace_module_limit()}
+    return {
+        "lead_in": feed_lead_in(),
+        "interval": feed_interval(),
+        "max_per_page": feed_max_per_page(),
+    }
+
+
 def messenger_max_per_session() -> int:
     return _env_int("COMMERCE_DISCOVERY_MESSENGER_MAX_PER_SESSION", 1, minimum=0)
 

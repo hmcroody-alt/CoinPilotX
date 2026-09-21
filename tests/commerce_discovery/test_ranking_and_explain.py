@@ -177,6 +177,45 @@ class TestSurfaceFloors:
         assert config.min_score("carousel") == config.min_score("feed")
 
 
+class TestCadenceReachesTheClient:
+    """The rhythm knobs were defined and then read by nobody.
+
+    `feed_lead_in`, `feed_interval` and `reels_lead_in` all existed, all had
+    env overrides, and nothing in the codebase called them — the client held
+    its own hardcoded copies. An operator could set
+    `COMMERCE_DISCOVERY_FEED_INTERVAL`, restart, and watch the feed place cards
+    at exactly the rhythm it did before. These tests fail if the wiring is ever
+    cut again, which is the only way to notice.
+    """
+
+    @pytest.mark.parametrize("surface", ["feed", "reels", "messenger", "marketplace"])
+    def test_every_surface_answers_with_a_usable_rhythm(self, surface):
+        values = config.cadence(surface)
+        assert set(values) == {"lead_in", "interval", "max_per_page"}
+        assert values["interval"] >= 1, "a zero interval would stack every chip on one item"
+        assert values["lead_in"] >= 0
+        assert values["max_per_page"] >= 0
+
+    def test_reels_waits_longer_and_shows_less_than_the_feed(self):
+        # The brief calls Reels the most intrusive surface: a chip there shares
+        # the frame with something the user is actively watching.
+        reels, feed = config.cadence("reels"), config.cadence("feed")
+        assert reels["interval"] > feed["interval"]
+        assert reels["max_per_page"] <= feed["max_per_page"]
+
+    def test_an_operator_retune_actually_changes_the_answer(self, monkeypatch):
+        monkeypatch.setenv("COMMERCE_DISCOVERY_FEED_INTERVAL", "20")
+        monkeypatch.setenv("COMMERCE_DISCOVERY_REELS_LEAD_IN", "9")
+        assert config.cadence("feed")["interval"] == 20
+        assert config.cadence("reels")["lead_in"] == 9
+
+    def test_an_unknown_surface_gets_the_feed_rhythm_rather_than_none(self):
+        # Same direction as `min_score`: fall back to the surface with the
+        # gentlest cadence, never to "no cadence at all", which a client would
+        # read as zero and place a card on every item.
+        assert config.cadence("carousel") == config.cadence("feed")
+
+
 class TestOperatorWeightOverrides:
     def test_ignores_a_weight_for_a_term_the_model_does_not_have(self, monkeypatch):
         # Accepting an unknown key would let a typo look like a working retune.

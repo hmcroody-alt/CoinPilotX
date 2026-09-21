@@ -26,7 +26,7 @@
  */
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { fetchCommercePlacements, recordCommerceFeedback } from "../../api/commerceDiscovery";
-import type { CommercePlacement } from "../../api/commerceDiscovery";
+import type { CommercePlacement, CommerceServeResult } from "../../api/commerceDiscovery";
 import { useFeedCommerce } from "../useFeedCommerce";
 import { __resetCommerceSessionId, commerceSessionId } from "../session";
 
@@ -65,11 +65,15 @@ function placement(id: string, sellerUserId = 42): CommercePlacement {
   };
 }
 
-function served(placements: CommercePlacement[]) {
+/** What the server sends when no operator has retuned the feed rhythm. */
+const DEFAULT_CADENCE = { leadIn: 6, interval: 8, maxPerPage: 2 };
+
+function served(placements: CommercePlacement[]): CommerceServeResult {
   return {
     placements,
     visiblePercentThreshold: 60,
-    visibleDwellMs: 1000
+    visibleDwellMs: 1000,
+    cadence: DEFAULT_CADENCE
   };
 }
 
@@ -98,7 +102,8 @@ describe("useFeedCommerce — fetching", () => {
     fetchPlacements.mockResolvedValue({
       placements: [placement("p1")],
       visiblePercentThreshold: 75,
-      visibleDwellMs: 2500
+      visibleDwellMs: 2500,
+      cadence: DEFAULT_CADENCE
     });
     const { result } = renderHook(() => useFeedCommerce({}));
     await waitFor(() => expect(result.current.visibleDwellMs).toBe(2500));

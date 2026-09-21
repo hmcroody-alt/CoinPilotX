@@ -576,8 +576,15 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     if (!spatialFeed) return;
     const row = feedRows[Math.min(spatialIndex, Math.max(0, feedRows.length - 1))];
     setActivePostId(row && row.type === "post" ? row.post.id : null);
+    // `commerce` belongs here for the same reason it belongs in the FlatList's
+    // viewability callback: this is the *other* writer of `viewableRowKeys`, and
+    // a row type missing from it is a row that can never report a visible
+    // impression on the spatial path. Home does not page spatially today, so
+    // omitting it was invisible rather than harmless.
     setViewableRowKeys(
-      row && (row.type === "ad" || row.type === "discovery") ? new Set([row.key]) : new Set()
+      row && (row.type === "ad" || row.type === "discovery" || row.type === "commerce")
+        ? new Set([row.key])
+        : new Set()
     );
   }, [spatialFeed, feedRows, spatialIndex]);
 
