@@ -1,9 +1,9 @@
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { AccessibilityInfo, FlatList, NativeScrollEvent, NativeSyntheticEvent, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ASSISTANT_PRESENCE,
@@ -16,6 +16,8 @@ import {
 } from "../api/messenger";
 import { conversationSplitEnabled } from "../api/conversationDomain";
 import { PulseApiError } from "../api/pulseApi";
+import { MessengerCommerceStrip } from "../commerce/MessengerCommerceStrip";
+import { useMessengerCommerce } from "../commerce/useMessengerCommerce";
 import { PulseCommandAvatar, PulseCommandPanel, PulseCommandSegmentRail } from "../components/PulseCommand";
 import { LogiNexusScreenShell, LogiNexusStatePanel } from "../components/Screen";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -86,6 +88,40 @@ export function MessengerScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   // -------------------------------------------------------------------------
 
+  // ---- Marketplace discovery strip ---------------------------------------
+  // At most one suggestion, in the list header, above the "Recent
+  // conversations" heading. It is deliberately not part of `data`: a commerce
+  // entry in the conversation array would replace a thread, push one off the
+  // first page, or reorder the list the user already knows.
+  const isFocused = useIsFocused();
+  const [commerceRefreshToken, setCommerceRefreshToken] = useState(0);
+  const commerce = useMessengerCommerce({
+    enabled: authState.status === "signedIn",
+    refreshToken: commerceRefreshToken
+  });
+
+  /**
+   * The strip's viewability, which the list cannot report for us.
+   * `onViewableItemsChanged` covers `data`, not `ListHeaderComponent`, so the
+   * screen measures the slot once and compares the scroll offset against it.
+   * Held in a ref and compared to a boolean so the scroll handler stays O(1)
+   * with no re-render except on the two frames where the answer changes.
+   */
+  const commerceHalfwayY = useRef(0);
+  const [commerceInView, setCommerceInView] = useState(true);
+  const dockOnScroll = dock.handlers.onScroll;
+  const handleScroll = useCallback(
+    (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+      // Composed, not replaced: the dock's reveal-on-scroll-up gesture is this
+      // list's existing behaviour and overwriting `onScroll` would silently
+      // strand the bottom nav.
+      dockOnScroll(event);
+      const offsetY = Math.max(0, event.nativeEvent.contentOffset?.y || 0);
+      setCommerceInView(offsetY <= commerceHalfwayY.current);
+    },
+    [dockOnScroll]
+  );
+
   const openNewChat = useCallback((initialQuery = "") => {
     navigation.navigate("NewChat", initialQuery ? { initialQuery } : undefined);
   }, [navigation]);
@@ -96,6 +132,10 @@ export function MessengerScreen() {
       if (refreshingRef.current) return;
       refreshingRef.current = true;
       setRefreshing(true);
+      // A pull-to-refresh is the user asking for a fresh inbox, so the
+      // suggestion is re-served too. Anything they hid stays hidden — the hook
+      // keeps its dismissal set across a refresh on purpose.
+      setCommerceRefreshToken((token) => token + 1);
     }
     else setLoading(true);
     setError("");
@@ -261,6 +301,32 @@ export function MessengerScreen() {
               <QuickAction icon="◉" title="Start Room" subtitle="Public or private" accent="room" onPress={() => { setCommunityCreateIntent("room"); navigation.navigate("Tabs", { screen: "Groups" }); }} />
             </PulseCommandPanel>
             {error && conversations.length ? <Text accessibilityLiveRegion="polite" style={styles.error}>Showing cached conversations while Messenger reconnects.</Text> : null}
+            {commerce.placement ? (
+              <View
+                testID="messenger-commerce-slot"
+                onLayout={(event) => {
+                  // The scroll offset at which half the strip has gone. Measured
+                  // inside the header stack, so it omits the list's own
+                  // `paddingTop` — which puts the real halfway point slightly
+                  // *later* than this one, and so stops the impression clock a
+                  // little early. Under-counting is the right direction for this
+                  // number; over-counting is the one that lies.
+                  const { y, height } = event.nativeEvent.layout;
+                  commerceHalfwayY.current = y + height / 2;
+                }}
+              >
+                <MessengerCommerceStrip
+                  placement={commerce.placement}
+                  isViewable={commerceInView && isFocused}
+                  visibleDwellMs={commerce.visibleDwellMs}
+                  navigation={navigation}
+                  onFeedback={commerce.onFeedback}
+                />
+              </View>
+            ) : null}
+            {/* The heading stays directly above the rows it labels. Putting the
+                strip between them would be the one arrangement that genuinely
+                reads as commerce inserted into the conversation list. */}
             <Text style={styles.sectionLabel} testID="messenger-recent-heading">Recent conversations</Text>
           </View>
         }
@@ -271,6 +337,10 @@ export function MessengerScreen() {
         ) : <LogiNexusStatePanel state="empty" title={emptyTitle(selectedFilter)} body={emptyBody(selectedFilter)} />}
         renderItem={({ item }) => <ConversationRow item={item} navigation={navigation} />}
         {...dock.handlers}
+        // After the spread, deliberately: `handleScroll` calls the dock's own
+        // handler first and then adds the strip's viewability to it. Before the
+        // spread it would simply be overwritten.
+        onScroll={handleScroll}
       />
       {visualRefresh ? (
         <Pressable
