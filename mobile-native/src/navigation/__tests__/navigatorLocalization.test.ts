@@ -145,7 +145,14 @@ describe("navigator header titles", () => {
     // `PrivateMeetings`. `PrivateMeetingRoom` is registered `headerShown: false`
     // and so has never appeared in this list at all; a title arriving on it is a
     // chrome regression in a call surface, not a copy change.
-    expect(TITLE_OPTIONS.length).toBe(140);
+    //
+    // 140 + 1: `CommerceSettings`, the Marketplace suggestions preferences
+    // screen. One entry and not two — the organic discovery placements it
+    // governs live inside Feed, Reels, Messenger and Marketplace, which are
+    // existing screens with existing titles. A second commerce route arriving
+    // here would mean discovery had grown a surface of its own, which is the
+    // thing the placement design is specifically not allowed to do.
+    expect(TITLE_OPTIONS.length).toBe(141);
   });
 
   it("has no hardcoded string literal titles", () => {

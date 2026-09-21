@@ -3178,6 +3178,11 @@
           "subtitle": "Idioma do app, tradução, formato de hora",
           "keywords": "traduzir idioma local região fuso horário formato de hora 24 horas"
         },
+        "commerce": {
+          "title": "Sugestões do Marketplace",
+          "subtitle": "Sugestões de produtos, frequência, pausa",
+          "keywords": "marketplace sugestoes recomendacoes produtos compras feed reels frequencia pausa personalizado comercio loja"
+        },
         "storage": {
           "title": "Armazenamento e dados",
           "subtitle": "Downloads, qualidade de mídia, cache",

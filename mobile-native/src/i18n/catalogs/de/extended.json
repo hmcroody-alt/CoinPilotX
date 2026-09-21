@@ -3178,6 +3178,11 @@
           "subtitle": "App-Sprache, Übersetzung, Zeitformat",
           "keywords": "übersetzen sprache region zeitzone zeitformat 24 stunden gebietsschema"
         },
+        "commerce": {
+          "title": "Marketplace-Vorschläge",
+          "subtitle": "Produktvorschläge, Häufigkeit, Pause",
+          "keywords": "marketplace vorschlage empfehlungen produkte shopping feed reels haufigkeit pause personalisiert handel shop laden"
+        },
         "storage": {
           "title": "Speicher & Daten",
           "subtitle": "Downloads, Medienqualität, Cache",

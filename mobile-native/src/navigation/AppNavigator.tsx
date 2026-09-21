@@ -128,6 +128,7 @@ import { AboutSettingsScreen } from "../screens/settings/AboutSettingsScreen";
 import { AccessibilitySettingsScreen } from "../screens/settings/AccessibilitySettingsScreen";
 import { AppearanceSettingsScreen } from "../screens/settings/AppearanceSettingsScreen";
 import { BlockedUsersScreen } from "../screens/settings/BlockedUsersScreen";
+import { CommerceSettingsScreen } from "../screens/settings/CommerceSettingsScreen";
 import { DataPrivacySettingsScreen } from "../screens/settings/DataPrivacySettingsScreen";
 import { HelpSettingsScreen } from "../screens/settings/HelpSettingsScreen";
 import { LanguageSettingsScreen } from "../screens/settings/LanguageSettingsScreen";
@@ -765,6 +766,7 @@ export function AppNavigator() {
       <Stack.Screen name="AppearanceSettings" component={AppearanceSettingsScreen} options={{ title: t("common:screens.appearance") }} />
       <Stack.Screen name="AccessibilitySettings" component={AccessibilitySettingsScreen} options={{ title: t("common:screens.accessibility") }} />
       <Stack.Screen name="LanguageSettings" component={LanguageSettingsScreen} options={{ title: t("common:screens.languageRegion") }} />
+      <Stack.Screen name="CommerceSettings" component={CommerceSettingsScreen} options={{ title: t("common:screens.marketplaceSuggestions") }} />
       <Stack.Screen name="StorageSettings" component={StorageSettingsScreen} options={{ title: t("common:screens.storageData") }} />
       <Stack.Screen name="PermissionsSettings" component={PermissionsSettingsScreen} options={{ title: t("common:screens.devicePermissions") }} />
       <Stack.Screen name="PrivacySettings" component={PrivacySettingsScreen} options={{ title: t("common:screens.privacy") }} />
@@ -814,6 +816,7 @@ const SETTINGS_ROUTE_NAMES = new Set([
   "AppearanceSettings",
   "AccessibilitySettings",
   "LanguageSettings",
+  "CommerceSettings",
   "StorageSettings",
   "PermissionsSettings",
   "PrivacySettings",

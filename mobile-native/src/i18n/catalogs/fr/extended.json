@@ -3178,6 +3178,11 @@
           "subtitle": "Langue de l'application, traduction, format de l'heure",
           "keywords": "traduire langue locale region région fuseau horaire format heure 24h"
         },
+        "commerce": {
+          "title": "Suggestions Marketplace",
+          "subtitle": "Suggestions de produits, fréquence, pause",
+          "keywords": "marketplace suggestions recommandations produits achats fil reels frequence pause personnalise commerce boutique"
+        },
         "storage": {
           "title": "Stockage et données",
           "subtitle": "Téléchargements, qualité des médias, cache",

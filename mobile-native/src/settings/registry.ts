@@ -133,6 +133,18 @@ export const SETTINGS_ENTRIES: SettingsEntry[] = [
     icon: "language-outline",
     route: "LanguageSettings",
   },
+  // Sits in Preferences rather than Privacy on purpose. The privacy question —
+  // "is my history used to pick these" — is one switch on this page; the other
+  // three are about how much of a thing the user already accepted they want.
+  // Filing the whole page under Privacy would imply the feature is a disclosure
+  // to be managed rather than a feature to be tuned.
+  {
+    id: "commerce",
+    section: "preferences",
+    icon: "pricetags-outline",
+    route: "CommerceSettings",
+    requiresAuth: true
+  },
   {
     id: "storage",
     section: "preferences",

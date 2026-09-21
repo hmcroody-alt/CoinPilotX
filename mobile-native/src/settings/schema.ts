@@ -126,6 +126,36 @@ export type DataPreferences = {
   activityStatusSharing: boolean;
 };
 
+/** How densely organic Marketplace discovery may place on social surfaces. */
+export const COMMERCE_FREQUENCIES = ["low", "balanced", "more"] as const;
+export type CommerceFrequency = (typeof COMMERCE_FREQUENCIES)[number];
+
+/**
+ * Organic Marketplace discovery — the free placements, not paid ads.
+ *
+ * `data.personalizedAds` is deliberately a different switch and lives in a
+ * different group. That one is about advertising a seller paid for; these four
+ * are about products PulseSoc surfaces at no charge. Collapsing them would mean
+ * a user who turns off ad personalisation silently loses a feature they never
+ * objected to — or, worse, a user who turns off recommendations keeps seeing
+ * ads and concludes the switch is a lie.
+ *
+ * These key names are a wire contract. `services/commerce_discovery/
+ * preferences.py::viewer_policy` reads them verbatim off the synced settings
+ * document — `marketplaceRecommendations`, `snoozeUntil`,
+ * `personalizedRecommendations`, `frequency`. Renaming one here does not break
+ * a build; it makes the server quietly stop honouring the preference.
+ */
+export type CommercePreferences = {
+  /** Master switch. Off stops organic discovery on feed, reels and messenger. */
+  marketplaceRecommendations: boolean;
+  /** Off keeps discovery but ranks on popularity rather than this account. */
+  personalizedRecommendations: boolean;
+  frequency: CommerceFrequency;
+  /** ISO-8601 instant, or `""` for no pause. Empty is the resting state. */
+  snoozeUntil: string;
+};
+
 export type DeveloperPreferences = {
   enabled: boolean;
   showPerfOverlay: boolean;
@@ -141,6 +171,7 @@ export type Preferences = {
   security: SecurityPreferences;
   storage: StoragePreferences;
   data: DataPreferences;
+  commerce: CommercePreferences;
   developer: DeveloperPreferences;
 };
 
@@ -234,6 +265,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
     shareCrashReports: true,
     activityStatusSharing: true
   },
+  commerce: {
+    marketplaceRecommendations: true,
+    personalizedRecommendations: true,
+    frequency: "balanced",
+    snoozeUntil: ""
+  },
   developer: {
     enabled: false,
     showPerfOverlay: false,
@@ -295,6 +332,43 @@ function timeOfDay(value: unknown, fallback: string): string {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 }
 
+/**
+ * An ISO-8601 instant in canonical UTC form, or `""`.
+ *
+ * Strict on purpose, and asymmetrically so. The server's `is_expired` fails
+ * *closed* on a timestamp it cannot read — an unparseable `snoozeUntil` is
+ * treated as already past, so the pause the user asked for silently ends. The
+ * only place that can be prevented is here, before the value is written. So
+ * anything that does not round-trip through `Date` falls back rather than
+ * being passed along as a string that looks like a pause and is not one.
+ *
+ * An *expired* timestamp is kept rather than blanked. Normalization would
+ * otherwise depend on the wall clock: the same stored document would normalize
+ * differently one minute apart, which turns the mere passage of time into a
+ * diff and pushes a patch nobody asked for. Expiry is a question for whoever
+ * reads the value, not for the parser.
+ */
+/**
+ * Date-and-time, not "whatever `Date` will swallow".
+ *
+ * `new Date()` alone is far too permissive to use as a validator here. It reads
+ * `"42"` as the year 2042 — so a stray number arriving in this field would not
+ * be rejected, it would become a twenty-year pause. The shape is checked first
+ * and `Date` is asked only to reject impossible values inside a well-formed
+ * one (`2030-02-31`).
+ */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:?\d{2})?$/i;
+
+function isoInstant(value: unknown, fallback: string): string {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (!ISO_INSTANT.test(text)) return fallback;
+  const parsed = new Date(text);
+  const millis = parsed.getTime();
+  if (!Number.isFinite(millis)) return fallback;
+  return parsed.toISOString();
+}
+
 function languageTag(value: unknown, fallback: string): string {
   const text = String(value ?? "").trim();
   if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(text)) return fallback;
@@ -338,6 +412,7 @@ export function normalizePreferences(input: unknown, base: Preferences = DEFAULT
   const security = group("security");
   const storage = group("storage");
   const data = group("data");
+  const commerce = group("commerce");
   const developer = group("developer");
 
   const rawCategories =
@@ -439,6 +514,18 @@ export function normalizePreferences(input: unknown, base: Preferences = DEFAULT
       shareAnalytics: bool(data.shareAnalytics, base.data.shareAnalytics),
       shareCrashReports: bool(data.shareCrashReports, base.data.shareCrashReports),
       activityStatusSharing: bool(data.activityStatusSharing, base.data.activityStatusSharing)
+    },
+    commerce: {
+      marketplaceRecommendations: bool(
+        commerce.marketplaceRecommendations,
+        base.commerce.marketplaceRecommendations
+      ),
+      personalizedRecommendations: bool(
+        commerce.personalizedRecommendations,
+        base.commerce.personalizedRecommendations
+      ),
+      frequency: oneOf<CommerceFrequency>(commerce.frequency, COMMERCE_FREQUENCIES, base.commerce.frequency),
+      snoozeUntil: isoInstant(commerce.snoozeUntil, base.commerce.snoozeUntil)
     },
     developer: {
       enabled: bool(developer.enabled, base.developer.enabled),

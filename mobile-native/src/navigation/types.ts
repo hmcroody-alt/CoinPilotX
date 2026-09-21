@@ -631,6 +631,7 @@ export type RootStackParamList = {
   AppearanceSettings: { highlight?: string } | undefined;
   AccessibilitySettings: { highlight?: string } | undefined;
   LanguageSettings: { highlight?: string } | undefined;
+  CommerceSettings: { highlight?: string } | undefined;
   StorageSettings: { highlight?: string } | undefined;
   PermissionsSettings: { highlight?: string } | undefined;
   PrivacySettings: { highlight?: string } | undefined;

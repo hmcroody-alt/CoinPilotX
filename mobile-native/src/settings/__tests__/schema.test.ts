@@ -20,6 +20,7 @@
 import {
   CACHE_LIMIT_MAX_MB,
   CACHE_LIMIT_MIN_MB,
+  COMMERCE_FREQUENCIES,
   DEFAULT_PREFERENCES,
   FONT_SCALE_MAX,
   FONT_SCALE_MIN,
@@ -574,5 +575,123 @@ describe("device-local classification", () => {
     expect(merged.security.biometricUnlock).toBe(true);
     expect(merged.storage.cacheLimitMb).toBe(512);
     expect(merged.developer).toEqual(localDoc.developer);
+  });
+});
+
+/**
+ * Marketplace suggestions.
+ *
+ * This group is unusual in one respect that the generic totality tests above
+ * cannot see: it is a **wire contract with Python**. Nothing in TypeScript
+ * consumes `marketplaceRecommendations` — the client only writes it.
+ * `services/commerce_discovery/preferences.py::viewer_policy` reads these four
+ * names verbatim out of the synced settings document. Rename one and the build
+ * stays green, the screen keeps working, the switch keeps animating, and the
+ * server quietly stops honouring the user's refusal. So the names themselves
+ * are asserted, which is the only place that failure can be caught on this side
+ * of the boundary.
+ */
+describe("commerce", () => {
+  it("spells the four keys the backend reads", () => {
+    expect(Object.keys(DEFAULT_PREFERENCES.commerce).sort()).toEqual([
+      "frequency",
+      "marketplaceRecommendations",
+      "personalizedRecommendations",
+      "snoozeUntil"
+    ]);
+  });
+
+  it("defaults to on, personalized, balanced, and not paused", () => {
+    expect(DEFAULT_PREFERENCES.commerce).toEqual({
+      marketplaceRecommendations: true,
+      personalizedRecommendations: true,
+      frequency: "balanced",
+      snoozeUntil: ""
+    });
+  });
+
+  it("is account-synced, so the master switch actually reaches the server", () => {
+    // Not a style point. The server is the only thing that can stop a placement
+    // being *ranked*; a switch stripped as device-local would leave the engine
+    // serving a user who said no, with the client hiding the answer.
+    const sent = stripDeviceLocal({
+      commerce: { ...DEFAULT_PREFERENCES.commerce, marketplaceRecommendations: false }
+    });
+    expect(sent.commerce).toEqual({ ...DEFAULT_PREFERENCES.commerce, marketplaceRecommendations: false });
+    expect(isDeviceLocalGroup("commerce")).toBe(false);
+  });
+
+  it("accepts every frequency it offers, and nothing else", () => {
+    COMMERCE_FREQUENCIES.forEach((frequency) => {
+      expect(normalizePreferences({ commerce: { frequency } }).commerce.frequency).toBe(frequency);
+    });
+    expect(normalizePreferences({ commerce: { frequency: "never" } }).commerce.frequency).toBe("balanced");
+  });
+
+  describe("the pause instant", () => {
+    it("canonicalizes an offset timestamp to the same instant in UTC", () => {
+      // The server parses with `datetime.fromisoformat`, which accepts both
+      // forms; sending one shape always means a stored value that can be
+      // compared as a string when someone inevitably does.
+      const { snoozeUntil } = normalizePreferences({
+        commerce: { snoozeUntil: "2030-01-15T12:00:00+02:00" }
+      }).commerce;
+      expect(snoozeUntil).toBe("2030-01-15T10:00:00.000Z");
+    });
+
+    it("falls back rather than passing through something unparseable", () => {
+      // `is_expired` fails *closed* on a timestamp it cannot read — an
+      // unreadable pause is treated as already over. Letting garbage through
+      // would end the user's pause without telling them.
+      const base: Preferences = {
+        ...DEFAULT_PREFERENCES,
+        commerce: { ...DEFAULT_PREFERENCES.commerce, snoozeUntil: "2030-01-15T10:00:00.000Z" }
+      };
+      expect(normalizePreferences({ commerce: { snoozeUntil: "next tuesday" } }, base).commerce.snoozeUntil).toBe(
+        "2030-01-15T10:00:00.000Z"
+      );
+      // `new Date("42")` is the year 2042, so a bare number reaching this field
+      // would not be rejected — it would become a twenty-year pause. That is
+      // why the coercer checks the *shape* before it parses.
+      expect(normalizePreferences({ commerce: { snoozeUntil: 42 } }, base).commerce.snoozeUntil).toBe(
+        "2030-01-15T10:00:00.000Z"
+      );
+      // A bare date is not an instant, and the gap between the two readings of
+      // it is a timezone's worth of pause.
+      expect(normalizePreferences({ commerce: { snoozeUntil: "2030-01-15" } }, base).commerce.snoozeUntil).toBe(
+        "2030-01-15T10:00:00.000Z"
+      );
+    });
+
+    it("lets a nonexistent calendar day roll over rather than rejecting it", () => {
+      // Pinned because it is a real gap and the size of the gap is the reason
+      // it is left alone: `2030-02-31` becomes 3 March, a two-day slip on a
+      // thirty-day pause. The `"42"` case had to be caught because it was a
+      // twenty-year one. Writing a calendar validator for a field that is only
+      // ever produced by `toISOString()` would buy two days of accuracy in a
+      // case that cannot arise.
+      expect(normalizePreferences({ commerce: { snoozeUntil: "2030-02-31T00:00:00Z" } }).commerce.snoozeUntil).toBe(
+        "2030-03-03T00:00:00.000Z"
+      );
+    });
+
+    it("treats an explicit empty string as no pause, not as a missing key", () => {
+      const base: Preferences = {
+        ...DEFAULT_PREFERENCES,
+        commerce: { ...DEFAULT_PREFERENCES.commerce, snoozeUntil: "2030-01-15T10:00:00.000Z" }
+      };
+      // This is how "Resume now" is expressed. If `""` fell back to the base
+      // the way an unparseable value does, the button would do nothing.
+      expect(normalizePreferences({ commerce: { snoozeUntil: "" } }, base).commerce.snoozeUntil).toBe("");
+    });
+
+    it("keeps a pause that has already lapsed", () => {
+      // Deliberate: blanking it here would make normalization a function of the
+      // wall clock, so the same stored document would normalize differently one
+      // minute apart and the mere passage of time would push a patch. Expiry is
+      // the reader's question.
+      const past = "2001-01-01T00:00:00.000Z";
+      expect(normalizePreferences({ commerce: { snoozeUntil: past } }).commerce.snoozeUntil).toBe(past);
+    });
   });
 });

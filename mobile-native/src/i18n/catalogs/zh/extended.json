@@ -3160,6 +3160,11 @@
           "subtitle": "应用语言、翻译、时间格式",
           "keywords": "语言 翻译 地区 时区 时间格式 24 小时 简体 language region"
         },
+        "commerce": {
+          "title": "商城推荐",
+          "subtitle": "商品推荐、频率、暂停",
+          "keywords": "商城 市场 推荐 建议 商品 产品 购物 信息流 短视频 频率 暂停 个性化 电商 店铺"
+        },
         "storage": {
           "title": "存储与数据",
           "subtitle": "下载、媒体画质、缓存",

@@ -3178,6 +3178,11 @@
           "subtitle": "App language, translation, time format",
           "keywords": "translate locale region timezone time format 24 hour"
         },
+        "commerce": {
+          "title": "Marketplace suggestions",
+          "subtitle": "Product suggestions, how often, pause",
+          "keywords": "marketplace suggestions recommendations recommended products shopping feed reels frequency pause snooze personalized commerce store"
+        },
         "storage": {
           "title": "Storage & data",
           "subtitle": "Downloads, media quality, cache",
