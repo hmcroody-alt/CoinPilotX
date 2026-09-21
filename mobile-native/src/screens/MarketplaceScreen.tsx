@@ -49,6 +49,8 @@ import {
 } from "../api/marketplaceBuyerPresentation";
 import { mediaDisplayUrl } from "../api/feed";
 import { sellerStoreName } from "../api/sellerIdentity";
+import { MarketplaceDiscoveryShelves } from "../commerce/MarketplaceDiscoveryShelves";
+import { useMarketplaceCommerce } from "../commerce/useMarketplaceCommerce";
 import { registerSyncInvalidation } from "../core/eventSync";
 import { useTranslation } from "../i18n";
 import { useBottomNavSurface } from "../navigation/BottomNavVisibility";
@@ -91,6 +93,26 @@ export function MarketplaceScreen({ route, navigation }: Props) {
   const [cartCount, setCartCount] = useState(0);
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<SortKey>("relevance");
+
+  // ---- Discovery shelves --------------------------------------------------
+  // Recommended rails above the grid. They stand down the moment the user
+  // narrows, because a shelf answers "show me something" and a narrowed grid is
+  // the answer to a specific question the user just asked.
+  const [commerceRefreshToken, setCommerceRefreshToken] = useState(0);
+  /**
+   * The four states in which the shelves must not be here.
+   *
+   * `sellerUserId` is the one that is not a matter of taste: this screen doubles
+   * as a seller's storefront, and putting other sellers' products above a
+   * seller's own inventory is taking their surface to advertise their
+   * competitors.
+   */
+  const commerceSuppressed =
+    Boolean(sellerUserId) || Boolean(query.trim()) || category !== "All" || offline;
+  const commerce = useMarketplaceCommerce({
+    suppressed: commerceSuppressed,
+    refreshToken: commerceRefreshToken
+  });
 
   const categories = useMemo(
     () => ["All", ...Array.from(new Set(items.map((item) => String(item.category || "").trim()).filter(Boolean))).slice(0, 12)],
@@ -228,6 +250,9 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             tintColor={storeLight.accent.brandOnLight}
             onRefresh={() => {
               refreshCartCount();
+              // A pull-to-refresh is the user asking for a fresh browse, so the
+              // shelves are re-served too. Anything they hid stays hidden.
+              setCommerceRefreshToken((token) => token + 1);
               load("refresh").catch(() => undefined);
             }}
           />
@@ -311,6 +336,15 @@ export function MarketplaceScreen({ route, navigation }: Props) {
             </View>
 
             {error ? <Text style={styles.notice} accessibilityLiveRegion="polite">{error}</Text> : null}
+
+            {/* Below every control the user owns — search, sort, category — and
+                above the grid. Placing the shelves above those controls would
+                put our ordering ahead of the tools for changing it. */}
+            <MarketplaceDiscoveryShelves
+              modules={commerce.modules}
+              navigation={navigation as any}
+              onFeedback={commerce.onFeedback}
+            />
           </View>
         }
         ListEmptyComponent={
