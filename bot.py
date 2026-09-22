@@ -7131,6 +7131,22 @@ def create_email_verification(user_id):
     return token
 
 
+def verification_token_rejection_reason(row):
+    """Why a verification link was refused: unknown, already_used, or expired.
+
+    All three reach the user as the same sentence, which is correct -- telling a
+    stranger which one it was would say whether the token ever existed. The
+    distinction still has to be recorded, because it is the difference between
+    "the mail arrived late" and "they clicked twice", and those have opposite
+    fixes.
+    """
+    if not row:
+        return "unknown_token"
+    if row[2]:
+        return "already_used"
+    return "expired"
+
+
 def send_account_confirmation_email(user, source="signup"):
     if not user or not user.get("email"):
         return {"ok": False, "message": "User email not found.", "trace_id": secrets.token_hex(6)}
@@ -7156,6 +7172,18 @@ def send_account_confirmation_email(user, source="signup"):
             source,
             getattr(send_platform_email, "last_error", "") or "Email provider did not accept the verification email.",
         )
+    # Every confirmation email in the product is sent from here -- signup, the
+    # resend button, the duplicate-signup retry, the email change. Without an
+    # event at this one point an auth journey shows `login_unconfirmed` three
+    # times with no way to tell whether mail was ever sent, which is the whole
+    # question. `source` is what distinguishes a first send from a resend.
+    log_auth_event(
+        "verification_email_sent" if ok else "verification_email_failed",
+        user.get("email"),
+        user.get("user_id"),
+        status="success" if ok else "failed",
+        details={"source": source, "trace_id": trace_id},
+    )
     return {
         "ok": bool(ok),
         "queued": False,
@@ -7793,6 +7821,13 @@ def api_mobile_auth_confirm_email():
     row = cur.fetchone()
     if not row or row[2] or row[1] < datetime.now().isoformat():
         conn.close()
+        log_auth_event(
+            "verification_link_rejected",
+            "",
+            (row[0] if row else 0),
+            status="failed",
+            details={"source": "mobile", "reason": verification_token_rejection_reason(row)},
+        )
         return api_error("This verification link is invalid or expired.", 400, error="invalid_or_expired_token")
     now = datetime.now().isoformat()
     cur.execute("UPDATE users SET email_verified=1, updated_at=? WHERE user_id=?", (now, row[0]))
@@ -7800,6 +7835,7 @@ def api_mobile_auth_confirm_email():
     conn.commit()
     conn.close()
     verified_user = load_account_by_id(row[0])
+    log_auth_event("email_confirmed", (verified_user or {}).get("email") or "", row[0], status="success", details={"source": "mobile"})
     if verified_user and verified_user.get("referred_by"):
         conn = db()
         cur = conn.cursor()
@@ -14146,6 +14182,13 @@ def verify_email_page(token=""):
     row = cur.fetchone()
     if not row or row[2] or row[1] < datetime.now().isoformat():
         conn.close()
+        log_auth_event(
+            "verification_link_rejected",
+            "",
+            (row[0] if row else 0),
+            status="failed",
+            details={"source": "web", "reason": verification_token_rejection_reason(row)},
+        )
         return render_account_page("login", "Login", error="This verification link is invalid or expired.")
     now = datetime.now().isoformat()
     cur.execute("UPDATE users SET email_verified=1, updated_at=? WHERE user_id=?", (now, row[0]))
@@ -14153,6 +14196,7 @@ def verify_email_page(token=""):
     conn.commit()
     conn.close()
     verified_user = load_account_by_id(row[0])
+    log_auth_event("email_confirmed", (verified_user or {}).get("email") or "", row[0], status="success", details={"source": "web"})
     if verified_user and verified_user.get("referred_by"):
         conn = db()
         cur = conn.cursor()
