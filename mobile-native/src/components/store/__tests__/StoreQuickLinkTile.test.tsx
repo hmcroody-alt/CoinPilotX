@@ -298,5 +298,69 @@ describe("StoreQuickLinkTile unavailable state", () => {
     expect(button.props.accessibilityState.disabled).toBe(true);
     expect(button.props.accessibilityLabel).toBe("Audiences. Unavailable. Not available yet");
     expect(tree.UNSAFE_queryAllByProps({ name: "lock-closed-outline" }).length).toBeGreaterThan(0);
+  });});
+
+/**
+ * §5. A tile that reports its section is asking for something.
+ */
+describe("StoreQuickLinkTile attention flag", () => {
+  /**
+   * §5. The dot is a locator, not the message.
+   *
+   * A tile whose only signal of trouble is an amber pixel is a tile that says
+   * nothing to a merchant who cannot distinguish the colour, and nothing at all
+   * to a screen reader. So the flag is required to reach the spoken label too —
+   * and the reason itself stays in the subtitle, which the caller already had
+   * to write.
+   */
+  it("says 'needs attention' out loud rather than only in amber", () => {
+    const tree = render(
+      <StoreQuickLinkGrid
+        items={[tile({ label: "Supplier orders", subtitle: "3 can't be ordered yet", attention: true })]}
+        reducedMotion
+      />
+    );
+
+    expect(tree.getByRole("button").props.accessibilityLabel).toBe(
+      "Supplier orders. Needs attention. 3 can't be ordered yet"
+    );
+    expect(tree.getByTestId("quick-link-attention", { includeHiddenElements: true })).toBeTruthy();
+  });
+
+  /**
+   * An unset flag is not a healthy one.
+   *
+   * The prop is opt-in precisely so that the screens which have not been
+   * migrated render the tile they always had. A default of `false` that drew a
+   * green mark would report every un-migrated section as fine, which is the
+   * §21 defect with a friendlier colour.
+   */
+  it("marks nothing on a tile whose caller did not answer the question", () => {
+    const tree = render(
+      <StoreQuickLinkGrid items={[tile({ label: "Inventory" })]} reducedMotion />
+    );
+
+    expect(tree.queryByTestId("quick-link-attention", { includeHiddenElements: true })).toBeNull();
+    expect(tree.getByRole("button").props.accessibilityLabel).not.toMatch(/attention/i);
+  });
+
+  /**
+   * An amber mark over a locked door asks the merchant to act and then refuses
+   * the tap. Unavailable wins, and the label keeps saying so.
+   */
+  it("never flags a tile it will not let the merchant open", () => {
+    const tree = render(
+      <StoreQuickLinkGrid
+        items={[
+          tile({ label: "Returns policy", subtitle: "Not available yet", onPress: undefined, attention: true })
+        ]}
+        reducedMotion
+      />
+    );
+
+    expect(tree.queryByTestId("quick-link-attention", { includeHiddenElements: true })).toBeNull();
+    expect(tree.getByRole("button").props.accessibilityLabel).toBe(
+      "Returns policy. Unavailable. Not available yet"
+    );
   });
 });

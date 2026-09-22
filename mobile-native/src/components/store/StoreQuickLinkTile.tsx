@@ -75,6 +75,20 @@ export type StoreQuickLinkTileProps = {
    * on tiles without an `onPress`.
    */
   informational?: boolean;
+  /**
+   * This tile's section is asking for something.
+   *
+   * Opt-in and additive: a caller that does not know the answer leaves it unset
+   * and gets the tile it has always had, rather than a green-by-default one — an
+   * attention flag whose absence means "fine" would report every screen that has
+   * not been migrated as healthy.
+   *
+   * It marks the tile, it does not write it. The reason must already be in the
+   * `subtitle`, because the dot below is a locator for a fact stated in words,
+   * not the fact itself; a merchant who cannot distinguish the amber would
+   * otherwise have no signal at all.
+   */
+  attention?: boolean;
   reducedMotion: boolean;
 };
 
@@ -85,6 +99,7 @@ export function StoreQuickLinkTile({
   onPress,
   disabled = false,
   informational = false,
+  attention = false,
   reducedMotion
 }: StoreQuickLinkTileProps) {
   const press = useStorePress(reducedMotion, 0.97);
@@ -103,6 +118,9 @@ export function StoreQuickLinkTile({
    */
   const info = informational && !onPress && !disabled;
   const unavailable = !info && (disabled || !onPress);
+  // Never on a tile that cannot be opened: an amber mark over a locked door asks
+  // the merchant to act and then refuses the tap.
+  const flagged = attention && !unavailable;
 
   return (
     <Animated.View style={[styles.wrap, press.style]}>
@@ -115,7 +133,9 @@ export function StoreQuickLinkTile({
         accessibilityRole={info ? "text" : "button"}
         accessibilityState={info ? undefined : { disabled: unavailable }}
         accessibilityLabel={
-          unavailable ? `${label}. Unavailable. ${subtitle}` : `${label}. ${subtitle}`
+          unavailable
+            ? `${label}. Unavailable. ${subtitle}`
+            : `${label}. ${flagged ? "Needs attention. " : ""}${subtitle}`
         }
       >
         <Ionicons
@@ -135,7 +155,7 @@ export function StoreQuickLinkTile({
             {label}
           </Text>
           <Text
-            style={styles.subtitle}
+            style={[styles.subtitle, flagged && styles.subtitleAttention]}
             numberOfLines={QUICK_LINK_SUBTITLE_LINES}
             ellipsizeMode="tail"
             maxFontSizeMultiplier={QUICK_LINK_SUBTITLE_MAX_FONT_SCALE}
@@ -143,6 +163,19 @@ export function StoreQuickLinkTile({
             {subtitle}
           </Text>
         </View>
+        {/* Beside the chevron rather than instead of it: the tile still opens a
+            screen, and swapping the affordance for a warning would hide that.
+            Hidden from assistive technology because the label already says
+            "Needs attention" — a dot announced separately is a second reading of
+            one fact. */}
+        {flagged ? (
+          <View
+            style={styles.attentionDot}
+            testID="quick-link-attention"
+            accessibilityElementsHidden
+            importantForAccessibility="no"
+          />
+        ) : null}
         {/* An unavailable tile says so with a shape, not only with grey. Reduced
             opacity on truncated text is indistinguishable from a rendering
             fault, and it is invisible to anyone who cannot perceive the
@@ -237,5 +270,12 @@ const styles = StyleSheet.create({
   body: { flex: 1, gap: 2 },
   label: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
   muted: { color: storeLight.text.muted },
-  subtitle: { fontSize: 11, color: storeLight.text.muted }
+  subtitle: { fontSize: 11, color: storeLight.text.muted },
+  subtitleAttention: { color: storeLight.status.warning, fontWeight: "600" },
+  attentionDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: storeLight.status.warning
+  }
 });

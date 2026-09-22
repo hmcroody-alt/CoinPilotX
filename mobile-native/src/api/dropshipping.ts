@@ -675,6 +675,256 @@ export function connectionCanFulfil(connection: SupplierConnection): boolean {
 }
 
 /* ------------------------------------------------------------------ *
+ * Supplier status — the one health answer
+ * ------------------------------------------------------------------ */
+
+/**
+ * The single most upstream thing the merchant has left to do.
+ *
+ * Ordered by what blocks what, and chosen by the server. A client picking its
+ * own order would send a merchant with expired credentials to go and fix three
+ * out-of-stock products, using stock readings taken before the credentials
+ * expired — work they would do twice.
+ */
+export const SUPPLIER_NEXT_ACTIONS = [
+  "RECONNECT_SUPPLIER",
+  "CHOOSE_FULFILLMENT_SHOP",
+  "RETRY_SYNC",
+  "RESOLVE_PRODUCT_ISSUES",
+  "IMPORT_FIRST_PRODUCT",
+  "REVIEW_DRAFTS"
+] as const;
+export type SupplierNextAction = (typeof SUPPLIER_NEXT_ACTIONS)[number];
+
+/**
+ * Whether a fulfilment shop has been chosen, as a state rather than as "is the
+ * id empty". The id is stored NOT NULL, so "never chosen" and "chosen, then the
+ * provider stopped offering it" are both the empty string on the wire and a
+ * client testing truthiness cannot tell them apart.
+ */
+export const FULFILLMENT_SHOP_STATES = ["BOUND", "NOT_SELECTED"] as const;
+export type FulfillmentShopState = (typeof FULFILLMENT_SHOP_STATES)[number];
+
+export type SupplierProductCounts = {
+  imported: number;
+  published: number;
+  awaitingReview: number;
+  draft: number;
+  blocked: number;
+  archived: number;
+  other: number;
+};
+
+export type SupplierIssueCounts = {
+  /** Products flagged for anything at all. One product with two problems is one. */
+  products: number;
+  cost: number;
+  stock: number;
+};
+
+export type SupplierOrderCounts = {
+  /** Paid sales with no supplier purchase behind them yet. */
+  awaitingSupplierOrder: number;
+  /** Of those, the ones the merchant can place right now. */
+  readyToPlace: number;
+  /** Of those, the ones held up by something they must fix first. */
+  blocked: number;
+  placed: number;
+};
+
+export type SupplierStatus = {
+  connectionId: string;
+  provider: string;
+  connectionState: string;
+  message: string | null;
+  environment: string;
+  realOrderSubmissionEnabled: boolean;
+  fulfillmentShopState: FulfillmentShopState;
+  externalShopId: string | null;
+  credentialPresent: boolean;
+  lastVerifiedAt: string | null;
+  lastSyncAt: string | null;
+  /**
+   * When the *catalogue* last moved, which is a different clock from
+   * `lastSyncAt`: one connection-level call can succeed while every product row
+   * stays untouched.
+   */
+  lastProductSyncAt: string | null;
+  products: SupplierProductCounts;
+  /** Worst sync state across this connection's products, or null when it has none. */
+  syncState: string | null;
+  issues: SupplierIssueCounts;
+  /**
+   * Null when the server could not read the fulfilment tables — not zero. "No
+   * orders are waiting" is a claim about the merchant's sales, and a read that
+   * did not happen cannot support it.
+   */
+  orders: SupplierOrderCounts | null;
+  nextAction: SupplierNextAction | null;
+  needsAttention: boolean;
+};
+
+export type StoreSupplierStatus = {
+  environment: string;
+  realOrderSubmissionEnabled: boolean;
+  suppliers: SupplierStatus[];
+  needsAttention: boolean;
+};
+
+function count(value: unknown): number {
+  const parsed = centsOrNull(value);
+  return parsed !== null && parsed >= 0 ? parsed : 0;
+}
+
+/**
+ * Null unless the server sent an object. Every other normalizer here defaults a
+ * missing number to zero, which is right for a count of products the merchant
+ * owns and wrong for a count of orders they owe: zero is the reassuring answer,
+ * so an absent block must not be spelled as one.
+ */
+function orderCounts(value: unknown): SupplierOrderCounts | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  return {
+    awaitingSupplierOrder: count(raw.awaiting_supplier_order),
+    readyToPlace: count(raw.ready_to_place),
+    blocked: count(raw.blocked),
+    placed: count(raw.placed)
+  };
+}
+
+function nextAction(value: unknown): SupplierNextAction | null {
+  const name = text(value).toUpperCase();
+  return (SUPPLIER_NEXT_ACTIONS as readonly string[]).includes(name)
+    ? (name as SupplierNextAction)
+    : null;
+}
+
+/**
+ * Every default below leans the same way: toward "not proven healthy".
+ *
+ * A missing field is not evidence of health, and this payload's whole purpose is
+ * to stop screens claiming a supplier works when nothing checked. So
+ * `needsAttention` is `!== false` rather than `=== true` — an absent field means
+ * a server that cannot answer, and nagging a working merchant is recoverable
+ * where a green badge over a dead connection is not. `environment` falls back to
+ * SANDBOX and `realOrderSubmissionEnabled` to false for the same reason: the
+ * failure mode of guessing wrong must never be "we told them real orders ship".
+ */
+function normalizeSupplierStatus(raw: Record<string, unknown>): SupplierStatus {
+  const products = (raw.products || {}) as Record<string, unknown>;
+  const issues = (raw.issues || {}) as Record<string, unknown>;
+  return {
+    connectionId: text(raw.connection_id),
+    provider: text(raw.provider).toLowerCase() || "unknown",
+    connectionState: text(raw.connection_state).toUpperCase() || "UNKNOWN",
+    message: textOrNull(raw.message),
+    environment: text(raw.environment).toUpperCase() || "SANDBOX",
+    realOrderSubmissionEnabled: raw.real_order_submission_enabled === true,
+    fulfillmentShopState: raw.fulfillment_shop_state === "BOUND" ? "BOUND" : "NOT_SELECTED",
+    externalShopId: textOrNull(raw.external_shop_id),
+    credentialPresent: raw.credential_present === true,
+    lastVerifiedAt: textOrNull(raw.last_verified_at),
+    lastSyncAt: textOrNull(raw.last_sync_at),
+    lastProductSyncAt: textOrNull(raw.last_product_sync_at),
+    products: {
+      imported: count(products.imported),
+      published: count(products.published),
+      awaitingReview: count(products.awaiting_review),
+      draft: count(products.draft),
+      blocked: count(products.blocked),
+      archived: count(products.archived),
+      other: count(products.other)
+    },
+    // Null, not "SYNCED": a connection with no products has no sync state, and
+    // saying it is synced is the fabrication this endpoint exists to end.
+    syncState: textOrNull(raw.sync_state)?.toUpperCase() ?? null,
+    issues: {
+      products: count(issues.products),
+      cost: count(issues.cost),
+      stock: count(issues.stock)
+    },
+    orders: orderCounts(raw.orders),
+    nextAction: nextAction(raw.next_action),
+    needsAttention: raw.needs_attention !== false
+  };
+}
+
+/**
+ * Everything every dropshipping surface needs to describe supplier health.
+ *
+ * One call, because the alternative is what this replaced: screens holding the
+ * connections list and the products list, neither of which contains "is this
+ * supplier working", inferring it — three screens, three rules, three answers
+ * about the same connection at the same moment.
+ *
+ * `environment` and `realOrderSubmissionEnabled` are repeated at the top level
+ * on purpose. They are platform-wide, and a client reading them off whichever
+ * connection sorted first would report them per-supplier, so a second supplier
+ * would appear to have different permissions than the first.
+ */
+export async function getSupplierStatus(scope: DropshippingScope): Promise<StoreSupplierStatus> {
+  const response = await pulseApi<{
+    environment?: unknown;
+    real_order_submission_enabled?: unknown;
+    suppliers?: unknown[];
+    needs_attention?: unknown;
+  }>(`${BASE}/supplier-status${scopeQuery(scope)}`);
+  const suppliers = list<Record<string, unknown>>(response.suppliers).map(normalizeSupplierStatus);
+  return {
+    environment: text(response.environment).toUpperCase() || "SANDBOX",
+    realOrderSubmissionEnabled: response.real_order_submission_enabled === true,
+    suppliers,
+    // The server's own rollup when it sent one. Re-scanning the list here would
+    // be a second implementation of "is anything wrong", which is the defect.
+    needsAttention:
+      response.needs_attention !== undefined
+        ? response.needs_attention !== false
+        : suppliers.some((supplier) => supplier.needsAttention)
+  };
+}
+
+export type SupplierResync = {
+  queuedProducts: number;
+  queuedJobs: number;
+  truncated: boolean;
+  maxProducts: number;
+};
+
+/**
+ * Ask for this supplier's data to be re-read now.
+ *
+ * Resolves when the work is *queued*, not when it is done — the background
+ * worker drains it. So the caller must not tell the merchant "synced"; the
+ * honest sentence is that a refresh has started, and the fresh figures arrive
+ * on a later {@link getSupplierStatus}.
+ *
+ * `truncated` is passed through rather than hidden. A merchant with a catalogue
+ * larger than one request may enqueue, told simply "syncing", would go looking
+ * for a failure that is really a cap.
+ */
+export async function requestSupplierResync(
+  scope: DropshippingScope,
+  connectionId: string
+): Promise<SupplierResync> {
+  const response = await pulseApi<{
+    queued_products?: unknown;
+    queued_jobs?: unknown;
+    truncated?: unknown;
+    max_products?: unknown;
+  }>(`${BASE}/connections/${encodeURIComponent(connectionId)}/sync`, {
+    method: "POST",
+    body: scopeBody(scope)
+  });
+  return {
+    queuedProducts: count(response.queued_products),
+    queuedJobs: count(response.queued_jobs),
+    truncated: response.truncated === true,
+    maxProducts: count(response.max_products)
+  };
+}
+
+/* ------------------------------------------------------------------ *
  * Catalogue browse
  * ------------------------------------------------------------------ */
 

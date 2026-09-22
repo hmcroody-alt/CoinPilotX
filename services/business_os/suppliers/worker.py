@@ -39,15 +39,28 @@ def ensure_schema(conn=None):
             conn.close()
 
 
-def schedule(*, connection_id, business_id, store_id, kind, resource_id="", now=None, dirty=False):
-    """Internal-only; callers must establish ownership before scheduling IDs."""
+def schedule(*, connection_id, business_id, store_id, kind, resource_id="", now=None, dirty=False,
+             conn=None):
+    """Internal-only; callers must establish ownership before scheduling IDs.
+
+    ``conn`` lets a caller enqueueing many resources at once do it on one
+    connection. Without it, a merchant asking to refresh a catalogue of two
+    hundred products opens four hundred connections against a pool of eight, and
+    the request that was meant to help them times out instead. The caller that
+    passes a connection owns the commit, so the whole batch lands or none of it
+    does. ``ensure_schema`` is still called on its own connection either way --
+    running that DDL inside a borrowed transaction is what leaves it uncommitted
+    and blocks the next connection on the lock it took.
+    """
     if kind not in KINDS or not isinstance(resource_id, str) or len(resource_id) > 200:
         raise fulfillment.FulfillmentError("invalid_sync_resource", 400)
     if kind in {"product", "inventory", "order", "tracking"} and not resource_id:
         raise fulfillment.FulfillmentError("missing_sync_resource", 400)
     now = time.time() if now is None else now
-    ensure_schema()
-    conn = db.connect()
+    owned = conn is None
+    if owned:
+        ensure_schema()
+        conn = db.connect()
     try:
         conn.execute("INSERT INTO business_os_supplier_sync_jobs "
              "(id,connection_id,business_id,store_id,kind,resource_id,available_at) VALUES(?,?,?,?,?,?,?) "
@@ -58,9 +71,11 @@ def schedule(*, connection_id, business_id, store_id, kind, resource_id="", now=
             conn.execute("UPDATE business_os_supplier_sync_jobs SET available_at=? "
                          "WHERE connection_id=? AND kind=? AND resource_id=? AND available_at>?",
                          (now, connection_id, kind, resource_id, now))
-        conn.commit()
+        if owned:
+            conn.commit()
     finally:
-        conn.close()
+        if owned:
+            conn.close()
 
 
 def schedule_connection(connection_id, business_id, store_id, *, now=None):

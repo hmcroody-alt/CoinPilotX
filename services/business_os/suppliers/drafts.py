@@ -970,3 +970,156 @@ def list_drafts(business_id, store_id, actor_user_id, connection_id, *,
     finally:
         conn.close()
     return {"items": rows, "count": total}
+
+
+#: Sync states ordered worst-first. Rolling many products into one word means
+#: choosing which product speaks for the set, and the only safe choice is the
+#: unhappiest: a merchant told "Synced" because 99 of 100 products synced will
+#: not go looking for the hundredth. ``UNKNOWN`` outranks every named state
+#: because a value this module does not recognise is one it cannot vouch for.
+_SYNC_SEVERITY = ("UNKNOWN", supplier_schema.SYNC_ERROR, supplier_schema.SYNC_DISCONNECTED,
+                  supplier_schema.SYNC_REMOVED, supplier_schema.SYNC_STALE,
+                  supplier_schema.SYNC_PENDING, supplier_schema.SYNC_SYNCED)
+
+
+def _rollup(counts):
+    """The worst sync state present, or None when there is nothing to speak for."""
+    present = {state for state, n in counts.items() if n > 0}
+    if not present:
+        return None
+    for state in _SYNC_SEVERITY:
+        if state in present:
+            return state
+    return "UNKNOWN"
+
+
+def status_counts(business_id, store_id, actor_user_id, connection_id, *, context=None):
+    """How many imported products are in each state, for one connection.
+
+    Aggregated in SQL rather than by paging :func:`list_drafts`, because a
+    caller that wants the number and not the rows should not pay for the rows --
+    and because a count computed from a page is a count of the page. That exact
+    defect is recorded a few lines above this one.
+
+    ## ``published`` requires both axes to agree
+
+    ``status`` and ``approval_status`` are separate authorities and a listing
+    needs both to be visible to a buyer: ``marketplace_listing_lifecycle``
+    gates on ``status in PUBLIC_STATUSES and approval == APPROVED``. Counting
+    ``status='published'`` alone would report a listing sitting in moderation as
+    live, which is the one error a merchant cannot detect from this screen --
+    everything looks shipped and nothing is selling. So the awaiting-review rows
+    are counted under ``awaiting_review`` no matter what ``status`` says.
+
+    ## Cost and stock attention are not a second sync clock
+
+    There is one ``sync_state`` column, so this returns one sync rollup. A
+    caller wanting to show separate "inventory" and "pricing" health must read
+    ``cost_attention`` / ``stock_attention``, which count products whose last
+    *successful* read found a problem -- a listing selling below cost synced
+    perfectly, and reporting that as a sync failure would merge "the supplier is
+    unreachable" with "the supplier raised their price". Inventing a second
+    per-product sync state to fill a field name would be the same fabrication in
+    the other direction.
+    """
+    policy.require_enabled()
+    revisions = _revisions()
+    conn = db.connect()
+    try:
+        _, seller_user_id = _scope(conn, business_id, store_id, actor_user_id,
+                                   connection_id, context=context)
+        source = ("FROM marketplace_product_sources s "
+                  "JOIN marketplace_listings l ON l.id = s.listing_id "
+                  "WHERE s.seller_user_id=? AND s.supplier_connection_id=? "
+                  "AND s.business_id=? AND s.store_id=?")
+        params = (int(seller_user_id), connection_id, business_id, store_id)
+        cur = conn.cursor()
+
+        cur.execute("SELECT LOWER(COALESCE(l.status,'')) AS st, "
+                    "LOWER(COALESCE(l.approval_status,'')) AS ap, COUNT(*) AS n "
+                    + source + " GROUP BY 1, 2", params)
+        by_status, imported = {}, 0
+        published = awaiting = draft = blocked = archived = other = 0
+        for row in cur.fetchall():
+            status_value = str(row[0] or "")
+            approval = str(row[1] or "")
+            n = int(row[2] or 0)
+            imported += n
+            key = f"{status_value}/{approval}" if approval else status_value
+            by_status[key] = by_status.get(key, 0) + n
+            if status_value == lifecycle.DRAFT:
+                # Checked before approval, and that order is the whole
+                # correctness of this bucket. `importer` seeds every new row
+                # `status='draft', approval_status='pending_review'`, so reading
+                # the approval column first reports a draft the merchant is
+                # still writing as sitting in moderation -- and since that is
+                # how every import starts, the draft count would be zero for
+                # everyone. `lifecycle.MERCHANT_RELEASED_STATUSES` excludes
+                # draft for the same reason: nobody has asked for a decision
+                # yet, so a pending approval value is a seed, not a claim.
+                draft += n
+            elif status_value in lifecycle.AWAITING_DECISION_STATES \
+                    or approval in lifecycle.AWAITING_DECISION_STATES:
+                awaiting += n
+            elif status_value in lifecycle.PUBLIC_STATUSES and approval in lifecycle.APPROVED_STATES:
+                published += n
+            elif status_value in {lifecycle.REJECTED, lifecycle.CHANGES_REQUESTED,
+                                  lifecycle.SUSPENDED} or approval == lifecycle.REJECTED:
+                blocked += n
+            elif status_value == lifecycle.ARCHIVED:
+                archived += n
+            else:
+                # Published-but-unapproved lands here, and so does any status
+                # added after this was written. Both are "not live and not a
+                # draft", which is true without claiming to know which.
+                other += n
+
+        cur.execute("SELECT UPPER(COALESCE(s.sync_state,'')) AS ss, COUNT(*) AS n "
+                    + source + " GROUP BY 1", params)
+        sync = {state: 0 for state in supplier_schema.SYNC_STATES}
+        sync["UNKNOWN"] = 0
+        for row in cur.fetchall():
+            state = str(row[0] or "").strip() or supplier_schema.SYNC_PENDING
+            sync[state if state in sync else "UNKNOWN"] += int(row[1] or 0)
+
+        # LIKE over the stored JSON rather than fetching every flagged row and
+        # parsing it here: the reasons are fixed uppercase tokens from
+        # ATTENTION_REASONS, none is a substring of another, and quoting them
+        # makes each match exact. Built from the module constant and never from
+        # request data, so the interpolation cannot carry anything a caller sent.
+        reasons = tuple(revisions.ATTENTION_REASONS)
+        assert all(r.replace("_", "").isalnum() for r in reasons)
+        sums = ", ".join(
+            f"SUM(CASE WHEN s.attention_json LIKE '%\"{r}\"%' THEN 1 ELSE 0 END) AS r{i}"
+            for i, r in enumerate(reasons))
+        cur.execute(f"SELECT {sums}, "
+                    "SUM(CASE WHEN COALESCE(s.attention_json,'') NOT IN ('','[]','null') "
+                    "THEN 1 ELSE 0 END) AS any_flagged, MAX(s.last_synced_at) AS last_synced "
+                    + source, params)
+        row = cur.fetchone() or ()
+        attention = {r: int((row[i] if i < len(row) else 0) or 0) for i, r in enumerate(reasons)}
+        flagged = int((row[len(reasons)] if len(row) > len(reasons) else 0) or 0)
+        last_synced_at = (row[len(reasons) + 1] if len(row) > len(reasons) + 1 else None) or None
+    finally:
+        conn.close()
+
+    return {
+        "imported": imported,
+        "published": published,
+        "awaiting_review": awaiting,
+        "draft": draft,
+        "blocked": blocked,
+        "archived": archived,
+        "other": other,
+        # The raw histogram travels beside the rollups so a reader can always
+        # recover what the buckets were built from, and so a status added later
+        # is visible here before anyone teaches the buckets about it.
+        "by_status": by_status,
+        "sync": sync,
+        "sync_state": _rollup(sync),
+        "attention": attention,
+        "attention_products": flagged,
+        "cost_attention": sum(attention[r] for r in revisions.COST_REASONS),
+        "stock_attention": sum(attention[r] for r in revisions.STOCK_REASONS),
+        "last_synced_at": last_synced_at,
+    }
