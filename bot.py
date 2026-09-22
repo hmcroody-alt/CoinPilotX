@@ -7221,12 +7221,17 @@ def change_unverified_account_email(old_email, new_email, password, source="emai
     }
 
 
-def unverified_signup_delivery_response(email, message="", trace_id=""):
+def unverified_signup_delivery_response(email, message="", trace_id="", delivery_failed=False):
+    # `email_delivery_failed` drives the client's "we couldn't send it, resend
+    # below" copy, so it has to mean a send was attempted and refused. It used to
+    # be `bool(trace_id)`, which is a property of the caller's bookkeeping rather
+    # than of the send -- the one path that passed no trace id reported success
+    # while its own message said delivery had failed.
     return {
         "ok": True,
         "authenticated": False,
         "requires_email_confirmation": True,
-        "email_delivery_failed": bool(trace_id),
+        "email_delivery_failed": bool(delivery_failed),
         "message": message or "Account created successfully but verification email could not be delivered.",
         "trace_id": trace_id or "",
         "email": email,
@@ -7277,10 +7282,13 @@ def signup_page():
         if error:
             existing_user = load_account_by_email(email) if email else None
             if existing_user and not int(existing_user.get("email_verified") or 0):
+                retry = send_account_confirmation_email(existing_user, source="signup_retry")
                 return render_account_page(
                     "login",
                     "Confirm Email",
-                    message="Account created successfully but verification email could not be delivered. Use Resend Email or Change Email Address.",
+                    message="Check your email to confirm your account."
+                    if retry.get("ok")
+                    else f"This account still needs confirming, but the verification email could not be delivered. Trace ID: {retry.get('trace_id')}. Use Resend Email or Change Email Address.",
                     resend_email=email,
                 )
             return render_account_page("signup", "Create Account", error=error)
@@ -7694,7 +7702,19 @@ def api_mobile_auth_register():
     if error:
         existing_user = load_account_by_email(email) if email else None
         if existing_user and not int(existing_user.get("email_verified") or 0):
-            return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.")), 200
+            # Signing up again with an address that already holds an unverified
+            # account is how someone asks for the mail they never received.
+            # Answering "check your email" without sending one leaves the account
+            # unverified for good, which is where half of them are.
+            retry = send_account_confirmation_email(existing_user, source="mobile_signup_retry")
+            return jsonify(unverified_signup_delivery_response(
+                email,
+                "Check your email to confirm your account."
+                if retry.get("ok")
+                else "This account still needs confirming, but the verification email could not be delivered.",
+                retry.get("trace_id") or "",
+                delivery_failed=not retry.get("ok"),
+            )), 200
         return api_error(error, 400)
     if preferred_language:
         save_user_preferred_language(user["user_id"], preferred_language, user["user_id"])
@@ -7704,7 +7724,7 @@ def api_mobile_auth_register():
         result = send_account_confirmation_email(user, source="mobile_signup")
         if result.get("ok"):
             return jsonify({"ok": True, "authenticated": False, "requires_email_confirmation": True, "message": "Check your email to confirm your account.", "trace_id": result.get("trace_id"), "email": email}), 200
-        return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.", result.get("trace_id") or "")), 200
+        return jsonify(unverified_signup_delivery_response(email, "Account created successfully but verification email could not be delivered.", result.get("trace_id") or "", delivery_failed=True)), 200
     session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "first_login"
