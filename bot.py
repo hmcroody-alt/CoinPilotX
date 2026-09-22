@@ -7057,6 +7057,12 @@ def safe_password_reset_request(email, source="web"):
             log_auth_event("forgot_password_invalid_email", email, status="invalid", details={"source": source, "db_engine": db_service.ENGINE_NAME})
         except Exception:
             logging.warning("PASSWORD_RESET_INVALID_EMAIL_LOG_FAILED source=%s", source)
+        # Syntax, not existence: the caller typed something that is not an email
+        # address, so no lookup ran and nothing can ever be delivered. Saying so
+        # is enumeration-safe -- it judges their own keystrokes, not the account
+        # store -- while the generic "if an account exists" line is simply false
+        # here, and leaves them waiting for mail that was never sendable.
+        result["invalid_email"] = True
         return result
     try:
         user, token = create_password_reset(email)
@@ -7344,9 +7350,6 @@ def login_page():
         if restriction_message:
             log_auth_event("login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
             return render_account_page("login", "Login", error=restriction_message), 403
-        if user.get("email") and not int(user.get("email_verified") or 0):
-            log_auth_event("login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
-            return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=email)
         if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
             challenge_gate = login_security_preflight(email, enforce_challenge=True)
             if not challenge_gate.get("allowed"):
@@ -7359,6 +7362,11 @@ def login_page():
                 ), int(challenge_gate.get("status") or 403)
             register_failed_login(email, user.get("user_id") if user else 0, "invalid_password")
             return render_account_page("login", "Login", error="Email or password is incorrect.")
+        # Same ordering rule as the mobile endpoint: the unconfirmed page names a
+        # real account and offers to mail it, so it must sit behind the password.
+        if user.get("email") and not int(user.get("email_verified") or 0):
+            log_auth_event("login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
+            return render_account_page("login", "Login", error="Please confirm your email before logging in.", resend_email=email)
         session.permanent = True
         session["account_user_id"] = user["user_id"]
         session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
@@ -7591,15 +7599,21 @@ def api_mobile_auth_login():
     if restriction_message:
         log_auth_event("mobile_login_restricted", email, user["user_id"], status="blocked", details={"account_status": user.get("account_status") or "", "login_enabled": safe_int(user.get("login_enabled"), 1), "access_enabled": safe_int(user.get("access_enabled"), 1), "db_engine": db_service.ENGINE_NAME})
         return api_error(restriction_message, 403, error="account_restricted", error_code="account_restricted")
-    if user.get("email") and not int(user.get("email_verified") or 0):
-        log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
-        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
     if not user.get("password_hash") or not check_password_hash(user["password_hash"], password):
         challenge_gate = login_security_preflight(email, enforce_challenge=True)
         if not challenge_gate.get("allowed"):
             return mobile_login_gate_error(challenge_gate)
         register_failed_login(email, user.get("user_id") if user else 0, "mobile_invalid_password")
         return api_error("Email or password is incorrect.", 401, error=MOBILE_LOGIN_INVALID_CREDENTIALS, error_code=MOBILE_LOGIN_INVALID_CREDENTIALS)
+    # Password first, then confirmation state. `email_not_confirmed` names a real
+    # account, so answering it before the password is checked turns this endpoint
+    # into an oracle: anyone could submit an address with an empty password and
+    # learn whether it is registered -- exactly the distinction the 401 above
+    # refuses to make. Behind a correct password it discloses nothing the account
+    # holder does not already know, which is what makes the clear message safe.
+    if user.get("email") and not int(user.get("email_verified") or 0):
+        log_auth_event("mobile_login_unconfirmed", email, user["user_id"], status="blocked", details={"db_engine": db_service.ENGINE_NAME})
+        return api_error("Please confirm your email before logging in.", 403, error="email_not_confirmed", error_code="email_not_confirmed")
     session.permanent = True
     session["account_user_id"] = user["user_id"]
     session["pulse_welcome_reason"] = "welcome_back" if user.get("last_login_at") else "first_login"
@@ -7779,7 +7793,15 @@ def api_mobile_auth_recover():
     init_db()
     payload = request.get_json(silent=True) or {}
     email = normalize_email(clean_html(payload.get("email") or ""))
-    safe_password_reset_request(email, source="mobile_api")
+    result = safe_password_reset_request(email, source="mobile_api")
+    # An address that never parsed cannot be "sent to if it exists". Answering the
+    # generic line to input that is not an email is what produced every one of the
+    # `forgot_password_invalid_email` events this endpoint has ever logged: the
+    # caller is told to go check a mailbox no request was ever addressed to.
+    # `/api/mobile/auth/resend-confirmation` already refuses the same input this
+    # way; only this route pretended to succeed.
+    if result.get("invalid_email") or result.get("masked_input"):
+        return api_error("Enter the email address for your PulseSoc account.", 400, error="invalid_email", error_code="invalid_email")
     return jsonify({"ok": True, "message": "If an account exists, password recovery has been sent."})
 
 
@@ -112504,7 +112526,15 @@ def email_status_from_result(result):
         return "failed_brevo_403"
     if result.get("status_code") == 429 or result.get("error_code") == "brevo_rate_limited":
         return "failed_brevo_rate_limited"
-    return f"failed_brevo_{result.get('status_code') or 'not_configured'}"
+    if result.get("error_code"):
+        return f"failed_{result['error_code']}"
+    if result.get("status_code"):
+        return f"failed_brevo_{result['status_code']}"
+    # A failure that carried neither a provider status code nor an error code
+    # never reached Brevo -- DNS, TLS, connect timeout. Naming that
+    # "not_configured", as this line used to, sends whoever reads the admin log
+    # to check environment variables that were correct all along.
+    return "failed_brevo_network_error"
 
 
 def log_email_status(user_id, email, subject, status, email_type="", provider="brevo", provider_status_code=None, provider_message_id="", safe_error_reason="", metadata=None, trace_id="", retry_count=0):
@@ -112730,6 +112760,20 @@ def _email_retry_at(attempts):
 
 def process_email_delivery_jobs(limit=10, provider_send=None):
     """Claim and process a bounded batch without recursively creating jobs."""
+    # Claiming a row spends an attempt: `retry_count` is incremented at claim
+    # time, before the provider is reached. A process holding no Brevo
+    # credentials cannot deliver anything, so letting it drain the queue would
+    # burn five attempts against mail another process could have sent and then
+    # dead-letter it permanently -- verification and password-reset mail
+    # included. Every worker importing this module inherits the opportunistic
+    # processor, so this is not hypothetical. Leave the rows for a process that
+    # can actually send them.
+    if provider_send is None:
+        readiness = email_service_service.provider_status()
+        if not readiness.get("ready"):
+            return {"attempted": 0, "sent": 0, "retry": 0, "dead_letter": 0, "skipped": 0,
+                    "deferred": "provider_not_ready",
+                    "missing_fields": readiness.get("missing_fields") or []}
     provider_send = provider_send or email_service_service.send_email
     limit = max(1, min(int(limit or 10), 50))
     now = datetime.now().isoformat()
@@ -112956,6 +113000,25 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
         from_email,
         bool(provider.get("api_key_configured")),
     )
+    # This verdict used to be computed only to be logged. Calling the provider
+    # anyway from a process with no credentials cannot deliver the message; it
+    # spends the attempt, writes a `failed_brevo_not_configured` row that reads
+    # like a platform-wide outage, and only then reaches the outbox where a
+    # configured process actually sends it. Every such row in production came
+    # from exactly that -- a worker that inherited the sender address but not
+    # the API key. Hand the message to the outbox up front instead. Nothing is
+    # suppressed: the mail is queued, delivered by the worker, and the log says
+    # queued because that is what happened.
+    if not provider.get("ready") and queue_on_failure:
+        queued = enqueue_platform_email(
+            to_email, subject, text_body, html_body, user_id,
+            email_type=email_type,
+            idempotency_key=idempotency_key,
+            metadata={"deferred_reason": "provider_not_ready_in_this_process",
+                      "missing_fields": provider.get("missing_fields") or []},
+        )
+        send_platform_email.last_error = "" if queued.get("ok") else "queue_failed"
+        return bool(queued.get("ok"))
     try:
         result = email_service_service.send_email(
             to_email,
