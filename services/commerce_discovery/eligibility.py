@@ -22,7 +22,7 @@ somebody's feed unprompted has not. So discovery adds:
   moderator said yes; it does not mean nothing has been flagged since. A listing
   carrying a live ``moderation_reason`` is held back from push even while it
   stays purchasable to someone who navigates to it directly,
-* **a safety score above the floor**, where one has been computed,
+* **a listing below the risk ceiling**, where it has been scored,
 * **a seller below the risk ceiling**.
 
 The asymmetry is deliberate and worth stating plainly: a failing gate here
@@ -37,8 +37,9 @@ Two-stage evaluation
 The cheap, indexable conditions are pushed into SQL (:func:`candidate_sql`) so
 the database is not asked to return the whole catalogue. The judgemental ones
 run in Python (:func:`gate`) over the returned rows, because ``safety_score`` is
-nullable with a meaning ("never scored") that is not "zero", and because a SQL
-expression is a poor place to keep a rule someone will need to argue with.
+nullable with a meaning ("never scored") that is neither "clean" nor "risky",
+and because a SQL expression is a poor place to keep a rule someone will need to
+argue with — this one has already been wrong once in the direction that matters.
 """
 
 from __future__ import annotations
@@ -51,10 +52,20 @@ from services import marketplace_listing_lifecycle as listing_lifecycle
 LOGGER = logging.getLogger(__name__)
 
 
-#: Listings scoring below this on the 0–100 safety scale are not pushed.
-#: A *missing* score is not a failure — most of the catalogue predates the
-#: scorer, and treating unscored as unsafe would empty discovery entirely.
-MIN_SAFETY_SCORE = 40
+#: Listings at or above this on the 0–100 risk scale are not pushed.
+#:
+#: The column this reads is named ``safety_score`` and holds the opposite: it is
+#: written from ``revenue_safety_engine.marketplace_listing_review()["risk_score"]``
+#: (bot.py, on publish and on resume), where 0 is clean and 100 is worst. The
+#: name is the trap. Reading it as a safety score inverts the gate twice over —
+#: it rejects every clean listing, which empties discovery in a way that looks
+#: like an empty catalogue rather than a bug, and it admits only the listings
+#: the scorer wanted a human to look at.
+#:
+#: 30 is the scorer's own ``needs_review`` threshold. Anything it would route to
+#: a moderator is not something to push at a stranger, even while it stays
+#: perfectly purchasable to someone who navigates to it.
+MAX_LISTING_RISK = 30
 
 #: Sellers at or above this ``risk_score`` are not promoted. The column is
 #: internal and never leaves the server; it is read here and discarded.
@@ -72,7 +83,7 @@ INELIGIBLE_CODES = (
     "no_cover_image",
     "no_resolvable_price",
     "moderation_flagged",
-    "low_safety_score",
+    "listing_risk",
     "seller_risk",
     "suppressed",        # this viewer told us not to
     "over_exposed",      # frequency cap
@@ -168,12 +179,19 @@ def moderation_clean(listing: Mapping[str, Any]) -> bool:
     return not _text(listing.get("moderation_reason"))
 
 
-def safety_ok(listing: Mapping[str, Any]) -> bool:
+def listing_risk_ok(listing: Mapping[str, Any]) -> bool:
+    """Whether the listing's own risk score is below the ceiling.
+
+    Reads ``safety_score``, which holds a *risk* score — see
+    :data:`MAX_LISTING_RISK`. An unscored listing passes: most of the catalogue
+    predates the scorer, and an unparseable value is a data problem rather than
+    evidence about the product.
+    """
     raw = listing.get("safety_score")
     if raw in (None, ""):
-        return True  # never scored — see MIN_SAFETY_SCORE
+        return True
     try:
-        return int(raw) >= MIN_SAFETY_SCORE
+        return int(raw) < MAX_LISTING_RISK
     except (TypeError, ValueError):
         return True
 
@@ -201,8 +219,8 @@ def gate(listing: Mapping[str, Any], parse_price) -> str:
         return "no_resolvable_price"
     if not moderation_clean(listing):
         return "moderation_flagged"
-    if not safety_ok(listing):
-        return "low_safety_score"
+    if not listing_risk_ok(listing):
+        return "listing_risk"
     if not seller_ok(listing):
         return "seller_risk"
     return ""

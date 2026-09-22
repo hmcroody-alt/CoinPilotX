@@ -205,7 +205,9 @@ class SimulatedMarketplace:
                 f"A very good {category[:-1]}", f"Full description of product {listing_id}",
                 category, "", f"${20 + listing_id}.00", "USD", 25,
                 "physical", "physical", f"https://cdn.example/{listing_id}.jpg",
-                created, created, 0, "published", "approved", 90, "",
+                # safety_score holds a *risk* score — 0 is what the scorer writes
+                # for a listing it found nothing wrong with. See eligibility.py.
+                created, created, 0, "published", "approved", 0, "",
             ),
         )
 
