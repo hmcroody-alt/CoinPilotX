@@ -1,17 +1,26 @@
 """A person locked out of their own account is not an attacker.
 
-The Security Center selected its Failed Logins tab with `status='failed'`, and
-built its Suspicious Domains list -- the one with a "Block Domain" button beside
-every row -- from the same predicate. `status='failed'` is not a statement about
-intent. It was true of a mistyped recovery address, of a verification email our
-own provider refused, and of an expired confirmation link.
+Three places asked `status='failed'` and read the answer as "an attack". That
+column records how a request ended, not who sent it. It is equally true of
+`forgot_password_request_failed` (our own exception), of
+`unverified_email_change_failed` (a wrong password typed by someone already
+logged in), and of `verification_link_rejected` (a mail client prefetched the
+link, or the user double-tapped it).
 
-Three of those on one domain put gmail.com in front of an operator under the
-heading "suspicious", one click from locking out most of the userbase.
+Two of the three readers were display -- the Security Center's Failed Logins tab
+and its Suspicious Domains list, where every row carries a "Block Domain"
+button. The third was `failed_login_recent_count`, which is not display at all:
+it drives the automated cooldowns. Fourteen `status='failed'` rows on one domain
+inside five minutes buys that entire domain a fifteen-minute lockout.
 
-The sharpest case is `login_unconfirmed`: the visitor supplied the *correct*
-password. That is evidence they own the account, and it was being counted
-towards a block.
+A provider outage produces precisely that shape. Every pending signup emits
+`verification_email_failed` at once, and most users share two or three mail
+domains -- so the mail breaking is what locks out everybody whose mail broke,
+and gmail.com is the first domain over the line. That is the failure this file
+exists to prevent.
+
+`login_unconfirmed` is the sharpest case in the other direction: the visitor
+supplied the *correct* password, which is evidence they own the account.
 
 Runs against a temp sqlite file so nothing touches coinpilotx.db.
 """
@@ -197,6 +206,65 @@ class AuthFrictionCase(unittest.TestCase):
         panel = body.split("Nobody is stuck right now")[0]
         for control in ("block_ip", "block_domain"):
             self.assertNotIn(control, panel.split("<nav")[-1])
+
+    def _lockout_count(self, where_sql="", params=()):
+        conn = db_service.connect()
+        cur = conn.cursor()
+        try:
+            return bot.failed_login_recent_count(cur, where_sql, params)
+        finally:
+            conn.close()
+
+    def test_n_a_mail_outage_cannot_lock_out_a_domain(self):
+        # The one that matters. FAILED_LOGIN_DOMAIN_LIMIT is 14 in a 300s
+        # window; an outage while 20 people are signing up used to put every
+        # one of those failures on gmail.com's tally and take the domain down
+        # with the mail.
+        self._seed("verification_email_failed", domain="gmail.com", count=20)
+        self.assertEqual(self._lockout_count("AND email_domain=?", ("gmail.com",)), 0)
+        self.assertLess(bot.FAILED_LOGIN_DOMAIN_LIMIT, 20, "the seeding no longer exceeds the limit it is testing")
+
+    def test_o_a_double_tapped_verification_link_is_not_a_wrong_password(self):
+        # Mail clients prefetch links and people double-tap them, so this is
+        # ordinary behaviour by the account's actual owner.
+        self._seed("verification_link_rejected", count=9, email_hash="owner")
+        self.assertEqual(self._lockout_count("AND email_hash=?", ("owner",)), 0)
+        self.assertLess(bot.FAILED_LOGIN_EMAIL_LIMIT, 9)
+
+    def test_p_a_wrong_password_still_counts_towards_the_cooldown(self):
+        # The control. Narrowing the predicate must not disarm the lockout.
+        self._seed("login_failed", count=6, email_hash="attacker")
+        self.assertEqual(self._lockout_count("AND email_hash=?", ("attacker",)), 6)
+
+    def test_q_the_retired_event_name_still_counts(self):
+        # `mobile_login_failed` has no emitter left but 23 rows exist in
+        # production, and a lockout that forgets its own history under-counts.
+        self._seed("mobile_login_failed", count=3, email_hash="legacy")
+        self.assertEqual(self._lockout_count("AND email_hash=?", ("legacy",)), 3)
+        self.assertEqual(bot.auth_event_class("mobile_login_failed"), "security")
+
+    def test_r_a_block_cannot_supply_the_evidence_for_its_own_renewal(self):
+        # `login_blocked` and `login_challenge_required` are emitted *by* the
+        # lockout. Counting them would make a cooldown self-sustaining: it
+        # would keep producing the rows that justify extending it.
+        self._seed("login_blocked", count=30, email_hash="looped", status="blocked")
+        self._seed("login_challenge_required", count=30, email_hash="looped", status="challenge")
+        self.assertEqual(self._lockout_count("AND email_hash=?", ("looped",)), 0)
+        for event in ("login_blocked", "login_challenge_required"):
+            self.assertEqual(bot.auth_event_class(event), "security")
+            self.assertNotIn(event, bot.AUTH_LOCKOUT_EVENTS)
+
+    def test_s_our_own_crash_does_not_lock_out_the_person_who_hit_it(self):
+        # `signup_failed` is a server-side exception. Whoever was signing up
+        # did nothing wrong.
+        self._seed("signup_failed", count=10, email_hash="unlucky")
+        self.assertEqual(self._lockout_count("AND email_hash=?", ("unlucky",)), 0)
+
+    def test_t_every_lockout_event_is_a_declared_security_event(self):
+        # The lockout set is narrower than the security set, never wider: you
+        # cannot be blocked for something we do not consider an attack.
+        for event in bot.AUTH_LOCKOUT_EVENTS:
+            self.assertIn(event, bot.AUTH_SECURITY_EVENTS)
 
     def test_m_no_readable_address_reaches_the_friction_panel(self):
         conn = db_service.connect()
