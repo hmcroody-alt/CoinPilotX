@@ -178,10 +178,21 @@ export function LoginScreen() {
       }
     } catch (error) {
       setFormError(describeLoginError(error));
+      // `email_not_confirmed` is the one rejection the user cannot act on from
+      // this screen: the credentials were right and retyping them will refuse
+      // identically forever. Carry them to the resend action with the address
+      // already filled rather than leaving them to re-attempt the same login.
+      if (error instanceof PulseApiError && error.code === "email_not_confirmed") {
+        const trimmed = identifier.trim();
+        navigation.navigate("AccountRecovery", {
+          email: trimmed.includes("@") ? trimmed : undefined,
+          intent: "verification"
+        });
+      }
     } finally {
       setSubmitting(false);
     }
-  }, [identifier, password, submitting, setAuthState, biometricCapability, biometricEnabled, enableBiometricsForUser, t]);
+  }, [identifier, password, submitting, setAuthState, biometricCapability, biometricEnabled, enableBiometricsForUser, navigation, t]);
 
   const handleBiometricPress = useCallback(async () => {
     if (biometricState === "loading") return;
