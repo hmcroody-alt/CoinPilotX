@@ -47,7 +47,13 @@ export type ProgressCenterSection =
 export type AuthStackParamList = {
   Login: undefined;
   Signup: undefined;
-  AccountRecovery: undefined;
+  /**
+   * `email` prefills the field and `intent` picks which action leads. Login
+   * sends both when it is bounced for an unconfirmed account, so the user lands
+   * on Resend with their address already typed instead of re-deriving why they
+   * were refused.
+   */
+  AccountRecovery: { email?: string; intent?: "password" | "verification" } | undefined;
 };
 
 export type AppTabParamList = {
