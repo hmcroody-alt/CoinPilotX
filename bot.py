@@ -6293,16 +6293,20 @@ def failed_login_severity(total_count=0, blocked=False, challenged=False, is_bot
 
 
 #: Whether an auth event is an attacker's fingerprint or a real person having a
-#: bad time. `status='failed'` does not answer that, and reading it as if it did
-#: is how the Security Center came to offer a "Block Domain" button against
-#: gmail.com for three mistyped addresses.
+#: bad time. `status` does not answer that. It records how a request ended, not
+#: who was making it: `forgot_password_request_failed` (our own error),
+#: `unverified_email_change_failed` (wrong password on a form the account owner
+#: is already logged into) and `verification_link_rejected` (a mail client
+#: prefetched the link) are all `status='failed'`, and none is an attack.
 #:
-#: `login_unconfirmed` is the sharpest case: the visitor supplied the *correct*
-#: password. That is evidence they own the account -- the opposite of an attack
-#: -- and it was being counted as a failed login.
+#: `login_unconfirmed` is the sharpest case in the other direction: the visitor
+#: supplied the *correct* password. That is evidence they own the account.
 AUTH_EVENT_CLASS = {
     # Someone trying keys that are not theirs.
     "login_failed": "security",
+    # Retired in favour of `login_failed`; still the name on historical rows,
+    # so the Security Center must keep recognising it or its own past vanishes.
+    "mobile_login_failed": "security",
     "login_blocked": "security",
     "login_challenge_required": "security",
     "login_restricted": "security",
@@ -6332,6 +6336,16 @@ AUTH_EVENT_CLASS = {
 
 AUTH_SECURITY_EVENTS = tuple(sorted(k for k, v in AUTH_EVENT_CLASS.items() if v == "security"))
 AUTH_FRICTION_EVENTS = tuple(sorted(k for k, v in AUTH_EVENT_CLASS.items() if v == "friction"))
+
+#: What may count towards an automated cooldown: a wrong credential, nothing
+#: else. Deliberately narrower than AUTH_SECURITY_EVENTS, for two reasons.
+#:
+#: `login_blocked` and `login_challenge_required` are emitted *by* the lockout
+#: itself, so counting them would let a block re-supply the evidence for its own
+#: renewal and never lift. `signup_failed` is a server-side exception; whoever
+#: was signing up did nothing wrong and locking them out for our crash is
+#: backwards.
+AUTH_LOCKOUT_EVENTS = ("login_failed", "mobile_login_failed")
 
 
 def auth_event_class(event_type):
@@ -6511,14 +6525,24 @@ def failed_login_marked_safe(cur, control_type, control_value):
 
 
 def failed_login_recent_count(cur, where_sql, params, window_seconds=FAILED_LOGIN_WINDOW_SECONDS):
+    """How many wrong credentials arrived in the window. Feeds automated cooldowns.
+
+    This used to ask for `status='failed'`, which is a fact about how a request
+    ended rather than about whether anyone was attacking. Fourteen of them on one
+    domain in five minutes buys that whole domain a fifteen-minute cooldown, and
+    a provider outage produces exactly that shape: every pending signup emits
+    `verification_email_failed` at once, most of them on the same two or three
+    mail domains. Mail breaking must not lock out everyone whose mail broke.
+    """
     since = (datetime.now() - timedelta(seconds=window_seconds)).isoformat()
+    placeholders = ",".join(["?"] * len(AUTH_LOCKOUT_EVENTS))
     cur.execute(
         f"""
         SELECT COUNT(*) AS total
         FROM auth_events
-        WHERE status='failed' AND created_at>=? {where_sql}
+        WHERE event_type IN ({placeholders}) AND created_at>=? {where_sql}
         """,
-        (since, *params),
+        (*AUTH_LOCKOUT_EVENTS, since, *params),
     )
     row = cur.fetchone()
     return int((row["total"] if hasattr(row, "keys") else row[0]) or 0)
@@ -29588,9 +29612,10 @@ def admin_security_page():
     security_placeholders = ",".join(["?"] * len(AUTH_SECURITY_EVENTS))
     filters = {
         "all": ("All", "", ()),
-        # `status='failed'` used to select this tab, which meant a mistyped
-        # recovery address and a refused verification email arrived at a screen
-        # whose every row carries a Block IP button. Name the events instead.
+        # `status='failed'` used to select this tab. That is how a request ended,
+        # not who sent it, so a refused verification link and our own failed
+        # Brevo send landed on a screen whose every row carries a Block IP
+        # button. Name the events instead.
         "failed-logins": ("Failed Logins", f"WHERE event_type IN ({security_placeholders})", AUTH_SECURITY_EVENTS),
         "admin-actions": ("Admin Actions", "", ()),
     }
@@ -29609,10 +29634,11 @@ def admin_security_page():
     cur.execute("SELECT control_type, control_value, reason, created_at FROM failed_login_safe_list ORDER BY updated_at DESC LIMIT 120")
     safe_rows = [dict(row) for row in cur.fetchall()]
     # Three failures on a domain puts a "Block Domain" button next to it, and
-    # `status='failed'` counted a mistyped address, an expired verification
-    # link and a refused Brevo send towards that three. Blocking gmail.com
-    # locks out most of the userbase, so this list may only be built from
-    # events that are actually somebody trying keys that are not theirs.
+    # `status='failed'` counted an expired verification link and a refused Brevo
+    # send towards that three. Both arrive in bulk on the common mail domains
+    # during an outage, and blocking gmail.com locks out most of the userbase,
+    # so this list may only be built from events that are actually somebody
+    # trying keys that are not theirs.
     cur.execute(f"""
         SELECT email_domain AS domain, COUNT(*) AS failures, MAX(severity) AS severity, MAX(created_at) AS latest
         FROM auth_events
@@ -106063,7 +106089,10 @@ def department_counts(slug):
         elif slug == "security":
             cur.execute("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,))
             counts["today"] = int(dict(cur.fetchone() or {}).get("total") or 0)
-            cur.execute("SELECT COUNT(*) AS total FROM auth_events WHERE status='failed' AND created_at>=?", (today,))
+            cur.execute(
+                f"SELECT COUNT(*) AS total FROM auth_events WHERE event_type IN ({','.join(['?'] * len(AUTH_SECURITY_EVENTS))}) AND created_at>=?",
+                (*AUTH_SECURITY_EVENTS, today),
+            )
             counts["warnings"] = int(dict(cur.fetchone() or {}).get("total") or 0)
         elif slug == "support":
             cur.execute("SELECT COUNT(*) AS total FROM support_tickets WHERE status!='closed'")
@@ -106215,7 +106244,7 @@ def department_control_panels(slug):
     elif slug == "security":
         metrics = [
             {"name": "Security events today", "value": scalar("SELECT COUNT(*) AS total FROM security_events WHERE created_at>=?", (today,)), "detail": "Threat signal"},
-            {"name": "Failed logins", "value": scalar("SELECT COUNT(*) AS total FROM auth_events WHERE status='failed' AND created_at>=?", (today,)), "detail": "Auth risk"},
+            {"name": "Failed logins", "value": scalar(f"SELECT COUNT(*) AS total FROM auth_events WHERE event_type IN ({','.join(['?'] * len(AUTH_SECURITY_EVENTS))}) AND created_at>=?", (*AUTH_SECURITY_EVENTS, today)), "detail": "Auth risk"},
             {"name": "Admin activity", "value": scalar("SELECT COUNT(*) AS total FROM admin_activity_logs WHERE created_at>=?", (today,)), "detail": "Audit"},
         ]
         table_rows = rows("SELECT id, event_type, path, status, created_at FROM security_events ORDER BY id DESC LIMIT 8")
