@@ -205,6 +205,72 @@ describe("LoginScreen", () => {
     expect(shown).not.toMatch(/match our records/i);
   });
 
+  /**
+   * `email_not_confirmed` is the one rejection this screen cannot resolve. The
+   * credentials were correct, so the natural response -- retype them -- refuses
+   * identically forever, and the only way forward is the resend action on a
+   * screen the user has no reason to associate with the message they just read.
+   * Production shows the dead end being walked: three `mobile_login_unconfirmed`
+   * events for one account, then two recovery attempts.
+   */
+  async function submitAndNavigate(error: PulseApiError, identifier: string) {
+    mockedSignIn.mockRejectedValue(error);
+    const screen = render(<LoginScreen />);
+    openPulseGate(screen);
+    const { getByTestId, findByTestId } = screen;
+    await waitFor(() => expect(getByTestId("login-identifier")).toBeTruthy());
+    fireEvent.changeText(getByTestId("login-identifier"), identifier);
+    fireEvent.changeText(getByTestId("login-password"), "password123");
+    fireEvent.press(getByTestId("login-submit"));
+    await findByTestId("login-form-error");
+  }
+
+  const NOT_CONFIRMED = () =>
+    new PulseApiError("Please confirm your email before logging in.", 403, "email_not_confirmed");
+
+  it("carries an unconfirmed account to the resend action with the address filled", async () => {
+    await submitAndNavigate(NOT_CONFIRMED(), "  Roody@Example.com  ");
+    expect(mockNavigate).toHaveBeenCalledWith("AccountRecovery", {
+      email: "Roody@Example.com",
+      intent: "verification"
+    });
+  });
+
+  it("passes no address when the user signed in with a username", async () => {
+    // The identifier field takes either. A username in the email box would be
+    // refused by the recovery screen's own shape check, so it is better to hand
+    // over an empty field than one the user must first clear.
+    await submitAndNavigate(NOT_CONFIRMED(), "roody");
+    expect(mockNavigate).toHaveBeenCalledWith("AccountRecovery", {
+      email: undefined,
+      intent: "verification"
+    });
+  });
+
+  it("leaves the user on the login screen for every other rejection", async () => {
+    // The control. Without it the redirect could fire on any failure at all and
+    // the assertions above would not notice -- and a redirect on a mistyped
+    // password would be a worse dead end than the one it replaced.
+    const others: Array<[string, number, string]> = [
+      ["invalid_credentials", 401, "Email or password is incorrect."],
+      ["login_challenge_required", 403, "Complete the security challenge to continue."],
+      ["login_rate_limited", 429, "Too many failed login attempts."],
+      ["account_restricted", 403, "This account is not active."]
+    ];
+    for (const [code, status, message] of others) {
+      await submitAndNavigate(new PulseApiError(message, status, code), "roody@example.com");
+    }
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("still shows the unconfirmed message on the way out", async () => {
+    // Navigating away must not replace the explanation. The recovery screen
+    // reads the `intent` and says its own version, but the user should see why
+    // they moved before the transition, not only after it.
+    const shown = await submitAndReadError(NOT_CONFIRMED());
+    expect(shown).toMatch(/confirm your email/i);
+  });
+
   it("reports a restricted account as restricted", async () => {
     const shown = await submitAndReadError(
       new PulseApiError("This account is not active.", 403, "account_restricted")
