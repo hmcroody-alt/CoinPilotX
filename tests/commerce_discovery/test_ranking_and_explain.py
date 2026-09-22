@@ -35,12 +35,34 @@ class TestTheExplainableVocabulary:
         # never be shown; a signal missing from here is simply not explainable.
         assert ranking.EXPLAINABLE_FACTORS <= set(config.DEFAULT_WEIGHTS)
 
-    def test_is_exactly_the_positively_weighted_terms(self):
+    #: Positive terms that are deliberately not sayable. ``novelty`` is a
+    #: statement about the *sequence* rather than about the product — "you have
+    #: not seen this recently" is not a reason anyone would want something, and
+    #: beside ``freshness`` and ``exploration_bonus`` it would be a third,
+    #: differently-meaning "new" in the same explain list.
+    MUTE_POSITIVES = {"novelty"}
+
+    def test_explains_every_positive_term_it_has_not_deliberately_muted(self):
+        # Not `== positive`, because that phrasing makes adding a positive
+        # signal silently publish it. Written this way, a new term fails here
+        # until someone classifies it, and the muted set is the written record
+        # of which ones were classified as unsayable.
         positive = {name for name, weight in config.DEFAULT_WEIGHTS.items() if weight > 0}
-        assert ranking.EXPLAINABLE_FACTORS == positive
+        assert self.MUTE_POSITIVES < positive
+        assert ranking.EXPLAINABLE_FACTORS == positive - self.MUTE_POSITIVES
 
     @pytest.mark.parametrize(
-        "penalty", ["repetition_penalty", "hide_penalty", "refund_risk", "seller_risk"]
+        "penalty",
+        [
+            "repetition_penalty",
+            "seller_repetition_penalty",
+            "category_repetition_penalty",
+            "cross_surface_penalty",
+            "owned_penalty",
+            "hide_penalty",
+            "refund_risk",
+            "seller_risk",
+        ],
     )
     def test_never_admits_a_penalty(self, penalty):
         # Two independent reasons, either sufficient: these have no translation,
@@ -48,6 +70,45 @@ class TestTheExplainableVocabulary:
         # published to that seller's potential customers.
         assert penalty in config.DEFAULT_WEIGHTS
         assert penalty not in ranking.EXPLAINABLE_FACTORS
+
+
+class TestTheSellerShareTerm:
+    """The one term in the model that looks across requests at a seller.
+
+    It used to be ``count / seller_cap``, which reached 1.0 after six
+    impressions. Past that point every seller scored identically here, so in any
+    session longer than a few seconds the only surviving difference between a
+    store with sixty listings and one with seven was how much inventory each
+    had — the failure the term exists to prevent, arriving by way of the term
+    that was supposed to prevent it.
+    """
+
+    def test_opens_a_session_on_the_count_ramp(self):
+        # Below the cap there is no share worth computing: one placement out of
+        # one is a 100% share and means nothing.
+        cap = config.seller_cap()
+        assert ranking.seller_repetition_penalty(0, recent_impressions=0) == 0.0
+        assert ranking.seller_repetition_penalty(cap, recent_impressions=0) == 1.0
+
+    def test_does_not_saturate_once_the_session_is_long(self):
+        # Ten sellers, an even split. Every one of them is far past the count
+        # cap and none is over-represented, so none should be penalised at all.
+        even = ranking.seller_repetition_penalty(20, recent_impressions=200, distinct_sellers=10)
+        assert even == pytest.approx(0.0, abs=1e-9)
+
+    def test_separates_an_over_represented_seller_from_the_rest(self):
+        hogging = ranking.seller_repetition_penalty(100, recent_impressions=200, distinct_sellers=10)
+        ordinary = ranking.seller_repetition_penalty(11, recent_impressions=200, distinct_sellers=10)
+        assert hogging > ordinary
+        # And the gap is wide enough for the -0.18 weight to actually reorder
+        # two otherwise comparable listings.
+        assert hogging - ordinary >= 0.25
+
+    def test_a_viewer_shown_two_stores_is_not_punished_for_the_split(self):
+        # The reference point is the sellers this viewer has *seen*, not the
+        # catalogue's. Half the impressions from each of two stores is an even
+        # split, not a monopoly.
+        assert ranking.seller_repetition_penalty(50, recent_impressions=100, distinct_sellers=2) == 0.0
 
 
 class TestScoreNormalisation:

@@ -242,9 +242,134 @@ def seller_window_seconds() -> int:
     return _env_int("COMMERCE_DISCOVERY_SELLER_WINDOW", 86400, minimum=60)
 
 
+def category_cap() -> int:
+    """Times one category may be shown to one viewer inside its window.
+
+    Higher than the seller cap because a category is a much coarser bucket —
+    "clothing" covers most of the catalogue on some marketplaces, and a cap tight
+    enough to police a shirt/shirt/shirt run would also stop a user who genuinely
+    only shops clothing from being served anything.
+    """
+    return _env_int("COMMERCE_DISCOVERY_CATEGORY_CAP", 10, minimum=1)
+
+
+def category_window_seconds() -> int:
+    return _env_int("COMMERCE_DISCOVERY_CATEGORY_WINDOW", 86400, minimum=60)
+
+
 def hide_days() -> int:
     """Length of the "hide suggestions for 30 days" snooze."""
     return _env_int("COMMERCE_DISCOVERY_HIDE_DAYS", 30, minimum=1)
+
+
+# --- cooldowns --------------------------------------------------------------
+# The frequency caps above answer "how often, ever"; these answer "how soon,
+# again". Both are needed and they are not the same control: a product capped at
+# three impressions a week can still deliver all three inside one scroll, which
+# is the exact failure this pipeline exists to remove.
+def product_cooldown_seconds() -> int:
+    """Quiet period after a product has been shown, on the same surface.
+
+    Six hours rather than the seven-day frequency window: the cap is the ceiling,
+    this is the spacing. A product a user did not engage with should be out of
+    the way for the rest of the browsing day without being banished for a week.
+    """
+    return _env_int("COMMERCE_DISCOVERY_PRODUCT_COOLDOWN", 21600, minimum=0)
+
+
+def cross_surface_cooldown_seconds() -> int:
+    """Quiet period before a product may reappear on a *different* surface.
+
+    Deliberately much shorter than the same-surface cooldown, and deliberately
+    not zero. Seeing one pair of shoes in the feed, then in reels, then above the
+    chat list inside a minute reads as a broken system rather than a relevant
+    one — but the same product resurfacing an hour later in a different context
+    is the pipeline working.
+    """
+    return _env_int("COMMERCE_DISCOVERY_CROSS_SURFACE_COOLDOWN", 1800, minimum=0)
+
+
+def seller_cooldown_seconds() -> int:
+    """Quiet period after any product from one seller has been shown.
+
+    This is what stops a seller with fifty eligible listings from consuming every
+    placement purely on inventory size — the per-response seller cap cannot see
+    across requests, and a scrolling feed is many requests.
+    """
+    return _env_int("COMMERCE_DISCOVERY_SELLER_COOLDOWN", 900, minimum=0)
+
+
+def purchase_suppression_seconds() -> int:
+    """How long a bought product stays out of ordinary discovery.
+
+    Ninety days is the durable-goods answer. There is no consumable exception
+    here on purpose: the catalogue has no reliable consumable flag, and guessing
+    wrong in that direction re-advertises a sofa to someone who just bought one.
+    A shorter window is a config change, not a code change.
+    """
+    return _env_int("COMMERCE_DISCOVERY_PURCHASE_SUPPRESSION", 7776000, minimum=0)
+
+
+def exposure_lookback_seconds() -> int:
+    """Hard bound on how far back the exposure read reaches.
+
+    The brief asks for bounded retention and no unlimited history tables. There
+    is no history table — exposure is derived from the impression event log — so
+    the bound lives here, on the *read*. Without it this query grows without
+    limit for a heavy user and eventually becomes the slowest thing in the
+    request.
+    """
+    return _env_int("COMMERCE_DISCOVERY_EXPOSURE_LOOKBACK", 604800, minimum=60)
+
+
+def exposure_row_limit() -> int:
+    """Hard bound on rows the exposure read will consider."""
+    return _env_int("COMMERCE_DISCOVERY_EXPOSURE_ROWS", 600, minimum=50)
+
+
+# --- candidate pool ---------------------------------------------------------
+# Batched generation, refilled on a low watermark. The pool is built once per
+# request and shared by every surface policy, which is what stops four screens
+# independently asking for "top products" and getting the same four answers.
+def candidate_batch_size() -> int:
+    """Rows pulled from the catalogue per batch."""
+    return _env_int("COMMERCE_DISCOVERY_CANDIDATE_BATCH", 60, minimum=10)
+
+
+def candidate_target_size() -> int:
+    """Eligible candidates the pool tries to hold before ranking stops asking."""
+    return _env_int("COMMERCE_DISCOVERY_CANDIDATE_TARGET", 40, minimum=1)
+
+
+def candidate_low_watermark() -> int:
+    """Refill threshold. Below this the pool fetches another batch.
+
+    Refilling at a watermark rather than on exhaustion is the difference between
+    a pool that is occasionally thin and a pool that is occasionally empty, and
+    an empty pool is a surface with nothing to show.
+    """
+    return _env_int("COMMERCE_DISCOVERY_CANDIDATE_LOW_WATER", 12, minimum=1)
+
+
+def candidate_max_batches() -> int:
+    """Hard stop on batches per request, so a hostile catalogue cannot loop."""
+    return _env_int("COMMERCE_DISCOVERY_CANDIDATE_MAX_BATCHES", 6, minimum=1)
+
+
+def rotation_period_seconds() -> int:
+    """How often the pool's starting offset moves.
+
+    Cooldowns rotate the *shallow* head of the catalogue; this reaches the deep
+    end. Without it, a listing ranked 500th by the candidate ordering is never
+    fetched at all, however novel it is — the fixed ordering would have to cool
+    down 499 listings first. Zero disables rotation entirely.
+    """
+    return _env_int("COMMERCE_DISCOVERY_ROTATION_PERIOD", 3600, minimum=0)
+
+
+def rotation_slots() -> int:
+    """Distinct starting offsets the rotation cycles through."""
+    return _env_int("COMMERCE_DISCOVERY_ROTATION_SLOTS", 4, minimum=1)
 
 
 def request_rate_max() -> int:
@@ -275,16 +400,29 @@ def exploration_rate() -> float:
 #: with eleven significant figures would be overfitted to a marketplace that has
 #: almost no engagement history yet, and it would be impossible to explain to a
 #: seller asking why their product does not appear.
+#:
+#: The positive terms sum to exactly **1.0**, and that is load-bearing rather
+#: than tidy. ``ranking.score_listing`` divides by the positive mass, so the sum
+#: is the denominator every ``min_score`` floor is calibrated against. Adding
+#: ``novelty`` without taking its weight out of the existing terms would have
+#: quietly scaled every score down by 9% and moved all four surface floors — the
+#: anti-repetition work would have arrived looking like a relevance regression.
+#: Keep the positive column at 1.0 when retuning.
 DEFAULT_WEIGHTS: dict[str, float] = {
-    "relevance": 0.28,
-    "quality": 0.16,
-    "predicted_interest": 0.14,
-    "conversion_probability": 0.10,
-    "seller_reliability": 0.10,
-    "freshness": 0.08,
+    "relevance": 0.26,
+    "quality": 0.14,
+    "predicted_interest": 0.13,
+    "conversion_probability": 0.09,
+    "seller_reliability": 0.09,
+    "freshness": 0.07,
     "exploration_bonus": 0.06,
-    "diversity_bonus": 0.08,
+    "diversity_bonus": 0.07,
+    "novelty": 0.09,
     "repetition_penalty": -0.20,
+    "seller_repetition_penalty": -0.18,
+    "category_repetition_penalty": -0.12,
+    "cross_surface_penalty": -0.35,
+    "owned_penalty": -0.45,
     "hide_penalty": -0.60,
     "refund_risk": -0.15,
     "seller_risk": -0.25,
@@ -325,7 +463,7 @@ def weights() -> dict[str, float]:
 #: Bumped whenever the model changes shape (a term added, removed, or
 #: redefined). Stamped onto every event row so a metric can be read against the
 #: model that produced it instead of being silently pooled across two.
-RANKING_VERSION = "commerce-discovery-v1"
+RANKING_VERSION = "commerce-discovery-v2"
 
 
 #: Viewability, in PulseSoc's existing vocabulary rather than the spec's.

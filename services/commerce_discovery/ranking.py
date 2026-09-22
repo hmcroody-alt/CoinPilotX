@@ -1,9 +1,18 @@
 """The score, and the reason the score can be read out loud.
 
-``commerce_score`` is a weighted sum of twelve signals, each normalised to
+``commerce_score`` is a weighted sum of seventeen signals, each normalised to
 ``[0, 1]`` before weighting. Positive terms earn a slot; negative terms spend
 one. Weights live in ``config.DEFAULT_WEIGHTS`` and are overridable as a whole
 vector, never one leaked constant at a time.
+
+Five of the seventeen have nothing to do with how good a product is. ``novelty``,
+the three repetition penalties and ``owned_penalty`` all describe the *sequence*
+the viewer is being shown rather than the item — and they exist because a model
+built only from item quality is deterministic, and a deterministic ranker over a
+stable catalogue returns the same winners every single request. That is not a
+tuning problem that better relevance would fix. It is what "keeps showing me the
+same products" actually is, and the only cure is for the score to know what came
+before it.
 
 Three properties are load-bearing, and each one cost something to get.
 
@@ -105,6 +114,15 @@ EXPLAINABLE_FACTORS = frozenset(
         "diversity_bonus",
     }
 )
+#: ``novelty`` is deliberately **not** in that set, and the reason is not i18n.
+#: It is a statement about the *sequence* rather than about the product: "you
+#: have not seen this recently" is not a reason anyone would want something. Put
+#: in front of a shopper it would also sit beside ``freshness`` ("new arrival")
+#: and ``exploration_bonus`` ("new to marketplace") as a third, differently-
+#: meaning "new", which is how an explanation feature starts reading as noise.
+#: The four repetition and ownership penalties are excluded for the reason the
+#: original four were: naming them publishes an internal assessment of a named
+#: store, or of what this person has already bought.
 
 
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
@@ -321,6 +339,130 @@ def repetition_penalty(recent_impressions: int) -> float:
     return _clamp(float(recent_impressions) / float(cap))
 
 
+def novelty(seconds_since_seen: float, cooldown_seconds: int) -> float:
+    """How fresh this product is *to this person*, as distinct from how new it is.
+
+    ``freshness`` measures the listing's age; this measures the gap since the
+    viewer last saw it. The two are independent — a listing published a year ago
+    that this person has never encountered is maximally novel and minimally
+    fresh — and collapsing them would mean a catalogue that stopped growing
+    could never produce a novel recommendation again.
+
+    Measured in time rather than in count, which is what separates it from
+    :func:`repetition_penalty`. The count answers "how much of this person's
+    weekly allowance has this product used"; this answers "has it had time to
+    stop being the thing they just scrolled past". A product can be well under
+    its cap and still be the wrong thing to show twice in twenty seconds.
+
+    Ramps linearly to 1.0 at the cooldown boundary. Never-seen returns 1.0 —
+    that is what ``exposure.NEVER`` is for, not a special case here.
+    """
+    gap = max(0.0, float(seconds_since_seen))
+    window = max(1, int(cooldown_seconds))
+    return _clamp(gap / float(window))
+
+
+def seller_repetition_penalty(
+    recent_seller_impressions: int,
+    *,
+    recent_impressions: int = 0,
+    distinct_sellers: int = 0,
+) -> float:
+    """How over-represented this seller is in what the viewer has recently seen.
+
+    The per-response seller cap cannot see this. A scrolling feed is many
+    requests, and a seller with fifty eligible listings satisfies a
+    two-per-response cap twenty-five times running without ever breaking it —
+    which is exactly how inventory size turns into placement share. This term is
+    the only thing in the model that looks across requests at a seller.
+
+    Measured as a *share* rather than as a count against a cap, because a count
+    saturates and a saturated term is an inert one. Six impressions used to mean
+    full penalty; past that, a seller with sixty placements and a seller with
+    seven scored identically here, so the only surviving discriminator between
+    them was how much inventory each had — the precise failure this term exists
+    to prevent, arriving a few seconds into any real session.
+
+    The reference point is an even split across the sellers this viewer has
+    actually been shown, not across the catalogue, because the catalogue's seller
+    count is not knowable from a scored row and would be the wrong number anyway:
+    a viewer whose eligible inventory comes from three stores is not being
+    treated badly when each supplies a third.
+
+    Below ``seller_cap`` impressions there is no share worth computing — one
+    placement out of one is a 100% share and means nothing — so the original
+    count ramp still governs the opening of a session.
+    """
+    cap = max(1, config.seller_cap())
+    count = max(0, int(recent_seller_impressions))
+    total = max(0, int(recent_impressions))
+    if total < cap:
+        return _clamp(float(count) / float(cap))
+
+    fair = 1.0 / float(max(2, int(distinct_sellers)))
+    share = float(count) / float(total)
+    return _clamp((share - fair) / (1.0 - fair))
+
+
+def category_repetition_penalty(recent_category_impressions: int) -> float:
+    """How concentrated this viewer's recent commerce has been in one category.
+
+    Deliberately weaker than the seller term. Category concentration is often
+    *correct* — someone shopping for a coat should be shown coats — so this
+    nudges against a shirt/shirt/shirt/shirt run without overriding a genuine
+    interest signal, which ``relevance`` and ``predicted_interest`` both carry at
+    higher weight.
+    """
+    cap = max(1, config.category_cap())
+    return _clamp(float(recent_category_impressions) / float(cap))
+
+
+def cross_surface_penalty(seconds_since_other_surface: float, cooldown_seconds: int) -> float:
+    """Whether this product just appeared somewhere *else* in the app.
+
+    The failure this prevents has a specific feel to it: the same pair of shoes
+    in the feed, then over a reel, then above the chat list, inside a minute.
+    Each placement is individually defensible and the sequence reads as a broken
+    system — the user concludes the app is following them rather than helping
+    them.
+
+    Steep rather than binary. A hard block would make the product unavailable
+    even when it is the only thing left in the pool, and the brief forbids the
+    blank more firmly than it forbids the repeat; a steep ramp means it loses to
+    anything else that qualifies and wins only against nothing.
+    """
+    window = max(1, int(cooldown_seconds))
+    gap = max(0.0, float(seconds_since_other_surface))
+    if gap >= window:
+        return 0.0
+    return _clamp(1.0 - (gap / float(window)))
+
+
+def owned_penalty(*, purchased: bool = False, in_cart: bool = False, saved: bool = False) -> float:
+    """How much of this product the viewer already has.
+
+    Three states, three strengths, because they mean three different things:
+
+    * **purchased** — they own it. Recommending it again is the most obviously
+      broken output this engine can produce. Full penalty, though in practice
+      ``pool`` has already removed it; this is the backstop for the request
+      where the purchase read degraded.
+    * **in cart** — they are mid-decision. Re-advertising is not broken, but it
+      spends a discovery slot telling someone something they already know, and
+      the brief is explicit that discovery must not interfere with checkout.
+    * **saved** — softest. A saved product does not need discovery to be found
+      again; the user has a list. It should still be able to resurface on a
+      genuinely strong match, so this is a nudge rather than a bar.
+    """
+    if purchased:
+        return 1.0
+    if in_cart:
+        return 0.8
+    if saved:
+        return 0.35
+    return 0.0
+
+
 def hide_penalty(hidden_strength: float) -> float:
     """Weight of the viewer's own negative signals against this listing/seller.
 
@@ -361,6 +503,20 @@ def score_listing(
     recent_impressions: int = 0,
     hidden_strength: float = 0.0,
     diversity: float = 1.0,
+    recent_seller_impressions: int = 0,
+    recent_category_impressions: int = 0,
+    #: Denominators for the seller share. Defaulted rather than required so a
+    #: caller that knows nothing about the viewer's wider history still gets the
+    #: opening-of-session count ramp rather than a division by zero.
+    recent_total_impressions: int = 0,
+    recent_distinct_sellers: int = 0,
+    seconds_since_seen: float = 1e9,
+    seconds_since_other_surface: float = 1e9,
+    product_cooldown_seconds: Optional[int] = None,
+    cross_surface_cooldown_seconds: Optional[int] = None,
+    purchased: bool = False,
+    in_cart: bool = False,
+    saved: bool = False,
     parse_iso=None,
     now=None,
     weights: Optional[Mapping[str, float]] = None,
@@ -375,6 +531,13 @@ def score_listing(
     resolved = dict(config.DEFAULT_WEIGHTS)
     resolved.update(weights or config.weights())
 
+    product_gap = config.product_cooldown_seconds() if product_cooldown_seconds is None else product_cooldown_seconds
+    cross_gap = (
+        config.cross_surface_cooldown_seconds()
+        if cross_surface_cooldown_seconds is None
+        else cross_surface_cooldown_seconds
+    )
+
     signals = {
         "relevance": relevance(listing, context),
         "quality": quality(listing),
@@ -384,7 +547,16 @@ def score_listing(
         "freshness": freshness(listing, parse_iso, now) if parse_iso and now else NEUTRAL,
         "exploration_bonus": exploration_bonus(stats),
         "diversity_bonus": _clamp(diversity),
+        "novelty": novelty(seconds_since_seen, product_gap),
         "repetition_penalty": repetition_penalty(recent_impressions),
+        "seller_repetition_penalty": seller_repetition_penalty(
+            recent_seller_impressions,
+            recent_impressions=recent_total_impressions,
+            distinct_sellers=recent_distinct_sellers,
+        ),
+        "category_repetition_penalty": category_repetition_penalty(recent_category_impressions),
+        "cross_surface_penalty": cross_surface_penalty(seconds_since_other_surface, cross_gap),
+        "owned_penalty": owned_penalty(purchased=purchased, in_cart=in_cart, saved=saved),
         "hide_penalty": hide_penalty(hidden_strength),
         "refund_risk": refund_risk(stats),
         "seller_risk": seller_risk(listing),

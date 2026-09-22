@@ -30,6 +30,18 @@ about the listing, so it cannot be a column in a scored row. :func:`_select`
 re-scores the diversity term as it builds the output, which is the only place
 the already-chosen set exists.
 
+What this module stopped owning
+-------------------------------
+
+Candidate retrieval used to live here, as one fixed ``LIMIT 120`` over a
+deterministic ordering, and that single query is what made the engine repeat
+itself: the same head of the catalogue came back on every request, for every
+surface, for everybody. It now lives in ``pool``, which pages and rotates, and
+the per-viewer memory that gives the ranker something to rotate *against* lives
+in ``exposure``. The four surfaces' differing spacing and diversity budgets live
+in ``router``. What is left here is the order those four are asked in, which is
+the one thing that genuinely belongs to a pipeline.
+
 On the frequency cap reading across promotion classes
 -----------------------------------------------------
 
@@ -45,23 +57,22 @@ from __future__ import annotations
 import logging
 from typing import Any, Mapping, Optional, Sequence
 
-from . import config, eligibility, preferences, promotion, ranking, schema, subject
+from . import (
+    config,
+    eligibility,
+    exposure,
+    pool,
+    preferences,
+    promotion,
+    ranking,
+    router,
+    schema,
+    subject,
+)
 from .preferences import ViewerPolicy
+from .router import SurfacePolicy
 
 LOGGER = logging.getLogger(__name__)
-
-#: Rows pulled from the database before filtering. Generous enough that the
-#: eligibility and frequency filters have something to work with, bounded so a
-#: viewer who has hidden a lot cannot turn one feed request into a table scan.
-CANDIDATE_POOL = 120
-
-#: Max listings per seller in one response. Two, not one: a store with a strong
-#: matching pair should be able to show both, but a single seller must never own
-#: a whole shelf.
-MAX_PER_SELLER = 2
-
-#: Max listings per category in one response, for the same reason.
-MAX_PER_CATEGORY = 3
 
 
 def _rows(cur) -> list[dict]:
@@ -140,26 +151,63 @@ def _serve(
     if _session_cap_reached(cur, policy.subject_ref, surface):
         return []
 
-    candidates = _candidates(cur, user_id, surface, context, parse_price, policy)
+    branch = router.policy_for(surface)
+
+    # The memory read comes before the candidate read because the pool needs it:
+    # cooldowns are the cheapest filter available and applying them in SQL is
+    # what keeps the batching loop from fetching pages of products this viewer
+    # has already been shown.
+    state = exposure.load(cur, policy.subject_ref, user_id)
+
+    built = pool.build(
+        cur,
+        viewer_user_id=user_id,
+        policy=policy,
+        exposure=state,
+        parse_price=parse_price,
+        surface=surface,
+        product_cooldown=branch.product_cooldown_seconds,
+        seller_cooldown=branch.seller_cooldown_seconds,
+        target=branch.pool_target,
+        rotation_offset=exposure.rotation_offset(policy.subject_ref),
+    )
+    candidates = list(built.rows)
     if not candidates:
+        LOGGER.debug(
+            "COMMERCE_DISCOVERY_POOL_EMPTY surface=%s scanned=%d batches=%d dropped=%s",
+            surface, built.scanned, built.batches, built.dropped,
+        )
         return []
 
     profile = _interest_profile(cur, user_id) if policy.personalized else {}
     stats = _listing_stats(cur, [row["id"] for row in candidates])
-    seen = _recent_impressions(cur, policy.subject_ref, [row["id"] for row in candidates])
 
     scored = []
     now = subject.now_utc()
     weights = config.weights()
     for row in candidates:
+        listing_id = int(row["id"])
+        seller_id = int(row.get("seller_user_id") or 0)
+        category = str(row.get("category") or "").strip().lower()
         verdict = ranking.score_listing(
             row,
             context=context if policy.personalized else None,
             interest_topics=profile.get("topics", ()),
             viewed_categories=profile.get("viewed_categories", ()),
             followed_sellers=profile.get("followed_sellers", frozenset()),
-            stats=stats.get(int(row["id"])),
-            recent_impressions=seen.get(int(row["id"]), 0),
+            stats=stats.get(listing_id),
+            recent_impressions=state.product_seen(listing_id),
+            recent_seller_impressions=state.seller_seen(seller_id),
+            recent_category_impressions=state.category_seen(category),
+            recent_total_impressions=state.total_impressions,
+            recent_distinct_sellers=state.distinct_sellers,
+            seconds_since_seen=state.seconds_since_product(listing_id),
+            seconds_since_other_surface=state.seconds_since_other_surface(listing_id, surface),
+            product_cooldown_seconds=branch.product_cooldown_seconds,
+            cross_surface_cooldown_seconds=branch.cross_surface_cooldown_seconds,
+            purchased=listing_id in state.purchased,
+            in_cart=listing_id in state.in_cart,
+            saved=state.is_saved(listing_id),
             hidden_strength=policy.hidden_strength(row),
             diversity=1.0,
             parse_iso=subject.parse_iso,
@@ -168,8 +216,8 @@ def _serve(
         )
         scored.append((row, verdict))
 
-    floor = config.min_score(surface)
-    selected = _select(scored, budget, floor, policy)
+    floor = branch.relevance_floor()
+    selected = _select(scored, budget, floor, branch)
     if not selected:
         # The explicit form of "no placement is better than a bad placement":
         # the pool was non-empty and everything in it was below the bar.
@@ -223,60 +271,6 @@ def _session_cap_reached(cur, ref: str, surface: str) -> bool:
 
 
 # --- candidate retrieval ----------------------------------------------------
-def _candidates(
-    cur,
-    user_id: Any,
-    surface: str,
-    context: Optional[Mapping[str, Any]],
-    parse_price,
-    policy: ViewerPolicy,
-) -> list[dict]:
-    """Eligible listings, already filtered by suppression and frequency cap.
-
-    The SQL half carries the publication gate and the two indexable additions
-    (cover image, price label). The Python half carries the judgemental gates
-    and the per-viewer state, which is not joinable here: suppressions and
-    impressions are keyed by ``subject_ref``, and joining a hashed viewer key
-    against the catalogue on the hot path would buy nothing over a set lookup
-    against a bounded pool.
-    """
-    sql = (
-        f"SELECT {eligibility.candidate_projection()} "
-        "FROM marketplace_listings l "
-        "LEFT JOIN users u ON u.user_id=l.seller_user_id "
-        "LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id "
-        f"WHERE {eligibility.candidate_sql()} "
-        # Never recommend a seller their own listing. Not a fraud control —
-        # there is no money here — simply that it is absurd, and it is exactly
-        # what a seller testing their own store would hit first.
-        "AND COALESCE(l.seller_user_id,0)<>? "
-        "ORDER BY l.featured DESC, l.updated_at DESC, l.id DESC "
-        "LIMIT ?"
-    )
-    try:
-        cur.execute(sql, (int(user_id or 0), CANDIDATE_POOL))
-        rows = _rows(cur)
-    except Exception:
-        LOGGER.warning("COMMERCE_DISCOVERY_CANDIDATE_QUERY_FAILED", exc_info=True)
-        return []
-
-    out: list[dict] = []
-    for row in rows:
-        try:
-            listing_id = int(row.get("id") or 0)
-            seller_id = int(row.get("seller_user_id") or 0)
-        except (TypeError, ValueError):
-            continue
-        if listing_id in policy.suppressed_listings:
-            continue
-        if seller_id in policy.suppressed_sellers:
-            continue
-        if eligibility.gate(row, parse_price) != "":
-            continue
-        out.append(row)
-    return out
-
-
 def _listing_stats(cur, listing_ids: Sequence[int]) -> dict[int, dict]:
     """Impressions, clicks, orders and refunds per listing.
 
@@ -331,27 +325,6 @@ def _listing_stats(cur, listing_ids: Sequence[int]) -> dict[int, dict]:
     return stats
 
 
-def _recent_impressions(cur, ref: str, listing_ids: Sequence[int]) -> dict[int, int]:
-    """How often this viewer has already seen each candidate, in the window."""
-    if not listing_ids:
-        return {}
-    ids = [int(i) for i in listing_ids]
-    marks = ",".join("?" for _ in ids)
-    try:
-        cur.execute(
-            "SELECT listing_id, COUNT(*) AS n FROM commerce_discovery_impression_events "
-            f"WHERE subject_ref=? AND event_at>? AND listing_id IN ({marks}) GROUP BY listing_id",
-            [ref, subject.window_start_iso(config.product_window_seconds()), *ids],
-        )
-        return {int(row["listing_id"]): int(row["n"] or 0) for row in _rows(cur)}
-    except Exception:
-        LOGGER.debug("COMMERCE_DISCOVERY_FREQ_READ_FAILED", exc_info=True)
-        # Empty means "assume unseen", which is the generous direction. The hard
-        # cap below still applies to anything we *can* read; what is lost is
-        # only the de-ranking nudge, not the enforcement.
-        return {}
-
-
 def _interest_profile(cur, user_id: Any) -> dict:
     """Durable signals about what this viewer likes.
 
@@ -392,13 +365,18 @@ def _interest_profile(cur, user_id: Any) -> dict:
 
 
 # --- selection --------------------------------------------------------------
-def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, policy: ViewerPolicy) -> list[tuple[dict, dict]]:
+def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: SurfacePolicy) -> list[tuple[dict, dict]]:
     """Greedy pick with live diversity re-scoring and a reserved explore slot.
 
     Greedy rather than optimal because the objective changes as items are
     chosen (diversity depends on the partial answer), and because the budget is
-    one or two items — an exact solver over a 120-row pool to place two cards
+    one or two items — an exact solver over a forty-row pool to place two cards
     would be a great deal of machinery to reach the same two cards.
+
+    The per-seller and per-category caps come from the surface's branch policy
+    rather than from a module constant, which is the whole of what makes
+    Messenger's strip refuse a second product from one store while the feed
+    still allows a matching pair.
 
     The explore slot is taken from the *bottom* of the qualifying set, not from
     below the floor. Exploration means "surface something unproven", never
@@ -416,13 +394,13 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, policy: 
     category_counts: dict[str, int] = {}
 
     def admissible(row: dict) -> bool:
-        seller = int(row.get("seller_user_id") or 0)
-        category = str(row.get("category") or "").strip().lower()
-        if seller_counts.get(seller, 0) >= MAX_PER_SELLER:
-            return False
-        if category and category_counts.get(category, 0) >= MAX_PER_CATEGORY:
-            return False
-        return True
+        return router.admissible(
+            branch,
+            seller_id=int(row.get("seller_user_id") or 0),
+            category=str(row.get("category") or "").strip().lower(),
+            seller_counts=seller_counts,
+            category_counts=category_counts,
+        )
 
     def take(pair: tuple[dict, dict]) -> None:
         row, _ = pair
