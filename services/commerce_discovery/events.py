@@ -174,6 +174,7 @@ def record_impression(
     placement_id: Any,
     token: Any,
     *,
+    conn,
     viewer_user_id: Any = None,
     visible: bool = False,
     view_duration_ms: int = 0,
@@ -189,7 +190,7 @@ def record_impression(
     against. Collapsing them would make one number wrong whichever definition
     was chosen.
     """
-    schema.ensure_schema(cur)
+    schema.ensure_schema(conn)
     row = load_placement(cur, placement_id, token)
     pid = row["placement_id"]
     prefix = "vis" if visible else "impr"
@@ -231,6 +232,7 @@ def record_engagement(
     token: Any,
     action: str,
     *,
+    conn,
     value_minor: int = 0,
     currency: str = "",
     order_ref: str = "",
@@ -245,7 +247,7 @@ def record_engagement(
     valuable of the two events to protect an integrity property that nobody is
     being billed against.
     """
-    schema.ensure_schema(cur)
+    schema.ensure_schema(conn)
     verb = str(action or "").strip().lower()
     if verb not in ENGAGEMENT_ACTIONS:
         raise DiscoveryEventError("UNKNOWN_ACTION", f"Unsupported engagement action: {action!r}")
@@ -295,6 +297,7 @@ def record_feedback(
     token: Any,
     action: str,
     *,
+    conn,
     request_meta: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Record a negative signal **and** apply the suppression it implies.
@@ -319,7 +322,7 @@ def record_feedback(
     """
     from . import preferences as prefs
 
-    schema.ensure_schema(cur)
+    schema.ensure_schema(conn)
     verb = str(action or "").strip().lower()
     if verb not in schema.FEEDBACK_ACTIONS:
         raise DiscoveryEventError("UNKNOWN_ACTION", f"Unsupported feedback action: {action!r}")

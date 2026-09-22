@@ -269,6 +269,7 @@ class SimulatedMarketplace:
             self.conn.cursor(),
             self.viewer_id,
             surface,
+            conn=self.conn,
             context=context,
             session_id=session_id,
             limit=limit,
@@ -283,6 +284,7 @@ class SimulatedMarketplace:
                 cur,
                 placement["placement_id"],
                 placement["impression_token"],
+                conn=self.conn,
                 viewer_user_id=self.viewer_id,
                 visible=visible,
                 view_duration_ms=1200,
@@ -348,7 +350,8 @@ class SimulatedMarketplace:
             self.conn.cursor(),
             placement["placement_id"],
             placement["impression_token"],
-            action=action,
+            action,
+            conn=self.conn,
         )
 
 
@@ -371,7 +374,7 @@ def market(clock, monkeypatch) -> SimulatedMarketplace:
     # this file would otherwise run against a fresh database it believes it has
     # already migrated — "no such table" in whichever test happens to run second.
     schema.ensure_schema.reset()
-    schema.ensure_schema(cur)
+    schema.ensure_schema(conn)
     conn.commit()
 
     def stub_preferences(_cur, _user_id):

@@ -211,7 +211,7 @@ class TestMessengerStrip:
 
         assert "chat" not in schema.SURFACES
         assert "conversation" not in schema.SURFACES
-        assert engine.serve(None, 1, "chat") == []
+        assert engine.serve(None, 1, "chat", conn=None) == []
 
 
 class TestMarketplaceShelves:

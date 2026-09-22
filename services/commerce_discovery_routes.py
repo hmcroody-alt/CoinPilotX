@@ -262,7 +262,7 @@ def commerce_discovery_serve(surface):
     def handler(cur, conn):
         bot = _bot()
         placements = engine.serve(
-            cur, user["user_id"], surface,
+            cur, user["user_id"], surface, conn=conn,
             context=_context_from_request(payload),
             session_id=session_id,
             limit=limit,
@@ -304,7 +304,7 @@ def commerce_discovery_marketplace_modules():
     def handler(cur, conn):
         bot = _bot()
         pool = engine.serve(
-            cur, user["user_id"], "marketplace",
+            cur, user["user_id"], "marketplace", conn=conn,
             context=None,
             session_id=str(request.args.get("session_id") or "")[:64],
             limit=config.marketplace_module_limit() * 6,
@@ -357,7 +357,7 @@ def _event_route(runner):
     token = payload.get("impression_token") or payload.get("token")
 
     def handler(cur, conn):
-        return _json(runner(cur, user, payload, placement_id, token))
+        return _json(runner(cur, conn, user, payload, placement_id, token))
 
     try:
         return _with_db(handler)
@@ -374,9 +374,9 @@ def _event_route(runner):
 @discovery_blueprint.route(f"{API_PREFIX}/events/impression", methods=["POST"])
 @auth_required
 def commerce_discovery_impression():
-    def runner(cur, user, payload, placement_id, token):
+    def runner(cur, conn, user, payload, placement_id, token):
         result = events.record_impression(
-            cur, placement_id, token,
+            cur, placement_id, token, conn=conn,
             viewer_user_id=user["user_id"],
             visible=bool(payload.get("visible")),
             view_duration_ms=payload.get("view_duration_ms") or 0,
@@ -390,10 +390,11 @@ def commerce_discovery_impression():
 @discovery_blueprint.route(f"{API_PREFIX}/events/engagement", methods=["POST"])
 @auth_required
 def commerce_discovery_engagement():
-    def runner(cur, user, payload, placement_id, token):
+    def runner(cur, conn, user, payload, placement_id, token):
         result = events.record_engagement(
             cur, placement_id, token,
             str(payload.get("action") or ""),
+            conn=conn,
             value_minor=payload.get("value_minor") or 0,
             currency=str(payload.get("currency") or ""),
             order_ref=str(payload.get("order_ref") or ""),
@@ -412,13 +413,13 @@ def commerce_discovery_feedback():
     Returns ``suppressed`` so the client knows the request was honoured and can
     collapse the card without waiting to observe the absence on a later fetch.
     """
-    def runner(cur, user, payload, placement_id, token):
+    def runner(cur, conn, user, payload, placement_id, token):
         action = str(payload.get("action") or "")
         meta = dict(_request_meta())
         # The category travels with the feedback so "see fewer like this" has
         # something to soften. Bounded here rather than trusted downstream.
         meta["category"] = str(payload.get("category") or "")[:80]
-        result = events.record_feedback(cur, placement_id, token, action, request_meta=meta)
+        result = events.record_feedback(cur, placement_id, token, action, conn=conn, request_meta=meta)
         return {
             "ok": True,
             "duplicate": bool(result.get("duplicate")),

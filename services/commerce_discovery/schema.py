@@ -224,18 +224,49 @@ _DDL = (
 
 
 @run_once_per_process
-def ensure_schema(cur) -> bool:
+def ensure_schema(conn) -> bool:
     """Create the discovery tables. Idempotent, once per worker process.
+
+    Takes the connection rather than a cursor, and the reason is the commit
+    below — which is also why it cannot simply reach for ``cur.connection``.
+    PEP 249 makes that attribute optional, ``sqlite3`` and ``psycopg2`` both
+    provide it, and ``services.db.CompatCursor`` — which is what wraps every
+    cursor once ``DATABASE_URL`` points at PostgreSQL — does not. Reading it
+    would raise ``AttributeError``, be swallowed as a schema failure, and take
+    discovery down on exactly the engine this function exists to be careful
+    about, while every SQLite test in this package went on passing.
 
     Returns ``False`` on failure rather than raising, and the guard does not
     cache a ``False`` — a transient DDL failure must not leave this worker
     permanently convinced the tables exist, and it must also not take down the
     feed. A discovery request that finds no tables degrades to serving no
     placements, which every client renders as an ordinary quiet feed.
+
+    The commit is load-bearing twice over, and neither reason is visible locally
+    because SQLite autocommits DDL.
+
+    Caching a DDL call is only sound if the DDL is durable. PostgreSQL DDL is
+    transactional, so a ``CREATE TABLE IF NOT EXISTS`` on a request that later
+    raises is rolled back with everything else — while the guard has already
+    recorded success, so the retry never comes. That worker spends the rest of
+    its life certain the tables exist, and every discovery query in it dies on
+    ``UndefinedTable``. The engine reports that to the client as "no placements",
+    so the failure presents as a permanently quiet shop rather than as an error.
+
+    Committing here also releases the ``CREATE``'s ShareLock now instead of
+    holding it until the request commits. Every caller runs this as its first
+    statement on a freshly opened connection, so there is nothing else in the
+    transaction to commit — but the request that follows takes a RowExclusiveLock
+    on these same tables to write its impression row, and two workers
+    interleaving (write, DDL) against (DDL, write) is a lock cycle. That is the
+    incident this guard was factored out of, and holding the lock across a full
+    ranking pass on the feed hot path is the longest possible way to hold it.
     """
     try:
+        cur = conn.cursor()
         for statement in _DDL:
             cur.execute(statement)
+        conn.commit()
         return True
     except Exception:
         LOGGER.exception("COMMERCE_DISCOVERY_SCHEMA_FAILED")

@@ -88,6 +88,7 @@ def serve(
     user_id: Any,
     surface: str,
     *,
+    conn,
     context: Optional[Mapping[str, Any]] = None,
     session_id: str = "",
     limit: Optional[int] = None,
@@ -100,10 +101,15 @@ def serve(
     ``parse_price`` and ``serialize`` are injected (they live on ``bot``) so the
     whole pipeline is testable without importing the monolith. The route pack
     supplies the real ones.
+
+    ``conn`` is wanted only so the schema DDL can commit itself — see
+    :func:`schema.ensure_schema`. Without it the tables are still created, but
+    inside the caller's transaction, where a later failure rolls them back after
+    the once-per-process guard has already recorded success.
     """
     try:
         return _serve(
-            cur, user_id, surface,
+            cur, user_id, surface, conn=conn,
             context=context, session_id=session_id, limit=limit,
             promotion_class=promotion_class,
             parse_price=parse_price, serialize=serialize,
@@ -121,6 +127,7 @@ def _serve(
     user_id: Any,
     surface: str,
     *,
+    conn,
     context: Optional[Mapping[str, Any]],
     session_id: str,
     limit: Optional[int],
@@ -134,7 +141,7 @@ def _serve(
 
     klass = promotion.assert_unpaid(promotion_class)
 
-    if not schema.ensure_schema(cur):
+    if not schema.ensure_schema(conn):
         return []
 
     policy = preferences.viewer_policy(cur, user_id)
