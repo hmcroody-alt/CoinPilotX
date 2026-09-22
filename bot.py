@@ -31552,37 +31552,94 @@ def admin_predictions_page():
     return admin_page_html("Predictions Intelligence", body, admin)
 
 
+def email_health_snapshot():
+    # `bool(os.getenv("BREVO_API_KEY"))` answers a different question than "can
+    # this process send mail": it ignores BREVO_EMAIL_ENABLED, a blank sender,
+    # and a key pasted with surrounding whitespace. Ask the sender itself.
+    brevo = brevo_config_diagnostics()
+    now_iso = datetime.utcnow().isoformat(timespec="seconds")
+    worker_cutoff = (datetime.utcnow() - timedelta(hours=1)).isoformat(timespec="seconds")
+    conn = db()
+    cur = conn.cursor()
+    cur.execute("SELECT created_at, recipient_email, email_type, subject, status FROM email_logs ORDER BY created_at DESC LIMIT 1")
+    last_email = cur.fetchone()
+    # Every failure this codebase records is `failed_*`; matching only the two
+    # bare words counted 2 of the 1,551 failures in production and put a
+    # reassuring number in front of whoever came here to find out why mail was
+    # not arriving.
+    cur.execute("SELECT COUNT(*) AS count FROM email_logs WHERE status LIKE 'failed%'")
+    failed_row = cur.fetchone()
+    failed_count = failed_row["count"] if failed_row else 0
+    # Rows actually waiting on us. The same table holds scheduled mail whose
+    # next_retry_at is deliberately far in the future, and delivered and
+    # dead-lettered history; counting all of it reported a backlog of thousands
+    # against a real backlog of six.
+    cur.execute(
+        "SELECT COUNT(*) AS count FROM failed_email_queue "
+        "WHERE status IN ('pending','failed','retry_ready','processing') "
+        "AND (next_retry_at IS NULL OR next_retry_at='' OR next_retry_at<=?)",
+        (now_iso,),
+    )
+    queued_row = cur.fetchone()
+    queued_count = queued_row["count"] if queued_row else 0
+    cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue WHERE status='dead_letter'")
+    dead_row = cur.fetchone()
+    dead_count = dead_row["count"] if dead_row else 0
+    cur.execute("SELECT created_at FROM email_logs WHERE status LIKE 'sent%' ORDER BY created_at DESC LIMIT 1")
+    last_sent_row = cur.fetchone()
+    last_sent_at = (last_sent_row["created_at"] if last_sent_row else "") or ""
+    cur.execute("SELECT created_at, email_type, status FROM email_logs WHERE status LIKE 'failed%' ORDER BY created_at DESC LIMIT 1")
+    last_failure = cur.fetchone()
+    # The outbox worker is the only thing that moves a row to 'sent', so a
+    # recent one is the evidence that it is running. There is no heartbeat.
+    cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue WHERE status='sent' AND COALESCE(updated_at,'')>=?", (worker_cutoff,))
+    worker_row = cur.fetchone()
+    worker_recent_sends = worker_row["count"] if worker_row else 0
+    cur.execute("SELECT created_at, email, template, status FROM payment_email_logs ORDER BY created_at DESC LIMIT 1")
+    last_payment_email = cur.fetchone()
+    conn.close()
+    return {
+        "provider_ready": bool(brevo.get("ready")),
+        "api_key_configured": bool(brevo.get("api_key_configured")),
+        "api_key_source": brevo.get("api_key_source") or "",
+        "api_key_has_surrounding_whitespace": bool(brevo.get("api_key_has_surrounding_whitespace")),
+        "sender_email_configured": bool(brevo.get("sender_email_configured")),
+        "sender_name_configured": bool(brevo.get("sender_name_configured")),
+        "sending_enabled": bool(brevo.get("enabled")),
+        "missing_fields": brevo.get("missing_fields") or [],
+        "last_successful_send_at": last_sent_at,
+        "last_failure": dict(last_failure) if last_failure else {},
+        "queue_depth_due_now": queued_count,
+        "queue_dead_lettered": dead_count,
+        "worker_sends_in_the_last_hour": worker_recent_sends,
+        "failed_email_count": failed_count,
+        "latest_email": dict(last_email) if last_email else {},
+        "latest_payment_email": dict(last_payment_email) if last_payment_email else {},
+    }
+
+
 @webhook_app.route("/admin/email-health", methods=["GET"])
 def admin_email_health_page():
     admin, denied = require_admin_page("emails.view")
     if denied:
         return denied
-    brevo_ready = bool(os.getenv("BREVO_API_KEY"))
+    health = email_health_snapshot()
     smtp_ready = bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_USER") and os.getenv("SMTP_PASSWORD"))
-    conn = db()
-    cur = conn.cursor()
-    cur.execute("SELECT created_at, recipient_email, email_type, subject, status FROM email_logs ORDER BY created_at DESC LIMIT 1")
-    last_email = cur.fetchone()
-    cur.execute("SELECT COUNT(*) AS count FROM email_logs WHERE lower(status) IN ('failed','error')")
-    failed_row = cur.fetchone()
-    failed_count = failed_row["count"] if failed_row else 0
-    cur.execute("SELECT COUNT(*) AS count FROM failed_email_queue")
-    queued_row = cur.fetchone()
-    queued_count = queued_row["count"] if queued_row else 0
-    cur.execute("SELECT created_at, email, template, status FROM payment_email_logs ORDER BY created_at DESC LIMIT 1")
-    last_payment_email = cur.fetchone()
-    conn.close()
+    readiness = {k: v for k, v in health.items() if k not in ("latest_email", "latest_payment_email")}
     body = f"""
     <h1>Email Health</h1>
     <div class="grid">
-      <div class="card"><div class="metric">{'Yes' if brevo_ready else 'No'}</div><p>Brevo configured</p></div>
+      <div class="card"><div class="metric">{'Yes' if health['provider_ready'] else 'No'}</div><p>Brevo can send</p></div>
       <div class="card"><div class="metric">{'Yes' if smtp_ready else 'No'}</div><p>SMTP configured</p></div>
-      <div class="card"><div class="metric">{failed_count}</div><p>failed emails</p></div>
-      <div class="card"><div class="metric">{queued_count}</div><p>queued retries</p></div>
+      <div class="card"><div class="metric">{health['failed_email_count']}</div><p>failed emails</p></div>
+      <div class="card"><div class="metric">{health['queue_depth_due_now']}</div><p>queued and due now</p></div>
+      <div class="card"><div class="metric">{health['queue_dead_lettered']}</div><p>dead-lettered</p></div>
+      <div class="card"><div class="metric">{health['worker_sends_in_the_last_hour']}</div><p>worker sends, last hour</p></div>
     </div>
-    <div class="card"><h2>Latest Email</h2><pre>{html_escape(clean_html(json.dumps(last_email or {}, indent=2)))}</pre></div>
-    <div class="card"><h2>Latest Payment Email</h2><pre>{html_escape(clean_html(json.dumps(last_payment_email or {}, indent=2)))}</pre></div>
-    <p class="muted">Secrets are never shown here. Sender values are checked from MAIL_FROM_ADDRESS/BREVO_SENDER_EMAIL and MAIL_FROM_NAME/BREVO_SENDER_NAME.</p>
+    <div class="card"><h2>Readiness</h2><pre>{html_escape(clean_html(json.dumps(readiness, indent=2, default=str)))}</pre></div>
+    <div class="card"><h2>Latest Email</h2><pre>{html_escape(clean_html(json.dumps(health['latest_email'], indent=2, default=str)))}</pre></div>
+    <div class="card"><h2>Latest Payment Email</h2><pre>{html_escape(clean_html(json.dumps(health['latest_payment_email'], indent=2, default=str)))}</pre></div>
+    <p class="muted">Secrets are never shown here: configuration is reported as present or absent, never by value.</p>
     """
     return admin_page_html("Email Health", body, admin)
 
