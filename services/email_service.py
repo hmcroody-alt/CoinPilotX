@@ -43,20 +43,21 @@ def support_email():
 
 
 def brevo_api_key_config():
-    candidates = [
-        ("BREVO_API_KEY", os.getenv("BREVO_API_KEY")),
-        ("SENDINBLUE_API_KEY", os.getenv("SENDINBLUE_API_KEY")),
-        ("BREVO_SMTP_API_KEY", os.getenv("BREVO_SMTP_API_KEY")),
-    ]
-    for source, raw_value in candidates:
-        if raw_value:
-            value = raw_value.strip()
-            return {
-                "value": value,
-                "source": source,
-                "configured": bool(value),
-                "has_surrounding_whitespace": raw_value != value,
-            }
+    # `BREVO_API_KEY` is the only name. The two former fallbacks
+    # (`SENDINBLUE_API_KEY`, a pre-rebrand artifact, and `BREVO_SMTP_API_KEY`,
+    # which names a different credential entirely) are set on none of the
+    # deployed services, so they resolved nothing while still implying the key
+    # could legitimately arrive under three names -- which is how a service ends
+    # up half-configured without anyone noticing.
+    raw_value = os.getenv("BREVO_API_KEY")
+    if raw_value:
+        value = raw_value.strip()
+        return {
+            "value": value,
+            "source": "BREVO_API_KEY",
+            "configured": bool(value),
+            "has_surrounding_whitespace": raw_value != value,
+        }
     return {"value": "", "source": "", "configured": False, "has_surrounding_whitespace": False}
 
 
