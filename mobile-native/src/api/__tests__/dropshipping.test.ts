@@ -77,6 +77,7 @@ import {
   getImportedProduct,
   getStoreImportPolicy,
   getSupplierProduct,
+  getSupplierStatus,
   importNeedsReview,
   importSelected,
   listImportedProducts,
@@ -89,6 +90,12 @@ import {
   updateImportedProduct,
   updateStoreImportPolicy
 } from "../dropshipping";
+import {
+  NEXT_ACTION_COPY,
+  actionIsBlocking,
+  operatingMode,
+  ordersCopy
+} from "../../screens/dropshipping/supplierStatusCopy";
 import { PulseApiError } from "../pulseApi";
 
 const SCOPE = { businessId: "biz-1", storeId: 42 } as any;
@@ -1288,6 +1295,121 @@ describe("the shipping allowance keeps unknown and zero apart", () => {
     it("leaves the allowance alone when it is not part of the change", async () => {
       await updateStoreImportPolicy(SCOPE, { autoPublish: false });
       expect(bodyOf()).not.toHaveProperty("shipping_allowance_cents");
+    });
+  });
+});
+
+/**
+ * The payload production actually sends, byte for byte.
+ *
+ * Every other fixture in this file was written by the same person who wrote the
+ * normaliser, which makes them a check on internal consistency and not on the
+ * wire. This one was captured on 2026-09-22 by running the deployed
+ * `services.business_os.suppliers.status` against the live database for the only
+ * merchant who has a supplier connected, and pasted here unedited — spellings,
+ * nesting, `null`s and all.
+ *
+ * It is here because the mission's own QA step could not be completed on the
+ * merchant's phone, and a fixture that agrees with the client's assumptions is
+ * exactly the evidence that failure mode produces. If the server ever renames
+ * `real_order_submission_enabled` or moves `orders` under the products block,
+ * this is the test that goes red rather than a merchant's screen going blank.
+ */
+const PRODUCTION_PAYLOAD_2026_09_22 = {
+  environment: "SANDBOX",
+  real_order_submission_enabled: false,
+  needs_attention: true,
+  suppliers: [
+    {
+      connection_id: "sc_366edc85175345eeb4ce86913ed21f1e",
+      provider: "cj",
+      connection_state: "CONNECTED",
+      message: null,
+      environment: "SANDBOX",
+      real_order_submission_enabled: false,
+      fulfillment_shop_state: "NOT_SELECTED",
+      external_shop_id: "",
+      credential_present: true,
+      last_verified_at: "2026-09-22T05:32:47.460333+00:00",
+      last_sync_at: "2026-09-22T05:32:48.741121+00:00",
+      last_product_sync_at: "2026-09-22T05:31:56",
+      products: {
+        imported: 38,
+        published: 11,
+        awaiting_review: 0,
+        draft: 27,
+        blocked: 0,
+        archived: 0,
+        other: 0,
+        by_status: { "published/approved": 11, "draft/pending_review": 27 }
+      },
+      sync_state: "SYNCED",
+      sync: { PENDING: 0, SYNCED: 38, STALE: 0, ERROR: 0, DISCONNECTED: 0, REMOVED: 0, UNKNOWN: 0 },
+      issues: {
+        products: 0,
+        cost: 0,
+        stock: 0,
+        by_reason: {
+          MARGIN_LOST: 0,
+          SELLING_BELOW_COST: 0,
+          COST_UNAVAILABLE: 0,
+          SUPPLIER_OUT_OF_STOCK: 0,
+          STOCK_UNREADABLE: 0,
+          REPRICE_IMPOSSIBLE: 0
+        }
+      },
+      orders: {
+        awaiting_supplier_order: 0,
+        ready_to_place: 0,
+        blocked: 0,
+        placed: 0,
+        counted_through: 200
+      },
+      next_action: "CHOOSE_FULFILLMENT_SHOP",
+      needs_attention: true
+    }
+  ]
+};
+
+describe("getSupplierStatus against the real production payload", () => {
+  it("reads every field the screens render, off the wire the server really uses", async () => {
+    mockPulseApi.mockResolvedValue(PRODUCTION_PAYLOAD_2026_09_22);
+    const status = await getSupplierStatus(SCOPE);
+    const supplier = status.suppliers[0];
+
+    expect(status.environment).toBe("SANDBOX");
+    expect(status.realOrderSubmissionEnabled).toBe(false);
+    expect(status.needsAttention).toBe(true);
+    expect(supplier.connectionState).toBe("CONNECTED");
+    // The live account's real defect: connected, importing, publishing — and no
+    // shop chosen, so nothing can be ordered. This is the one state the merchant
+    // has to be told about, and the one a "green tick because connected" screen
+    // would hide.
+    expect(supplier.fulfillmentShopState).toBe("NOT_SELECTED");
+    expect(supplier.nextAction).toBe("CHOOSE_FULFILLMENT_SHOP");
+    expect(supplier.products.imported).toBe(38);
+    expect(supplier.products.published).toBe(11);
+    expect(supplier.products.draft).toBe(27);
+    expect(supplier.syncState).toBe("SYNCED");
+    expect(supplier.issues.products).toBe(0);
+    expect(supplier.orders).toEqual({ awaitingSupplierOrder: 0, readyToPlace: 0, blocked: 0, placed: 0 });
+  });
+
+  it("turns that payload into the three sentences the merchant is shown", async () => {
+    mockPulseApi.mockResolvedValue(PRODUCTION_PAYLOAD_2026_09_22);
+    const status = await getSupplierStatus(SCOPE);
+
+    // §1: who, which environment, and whether anything ships — all three, in the
+    // dull case as much as the alarming one.
+    expect(operatingMode(status).line).toBe("CJ connected · Sandbox mode · Real fulfilment OFF");
+    // §3: one thing to do next, and the button that does it.
+    expect(NEXT_ACTION_COPY[status.suppliers[0].nextAction!].button).toBe("Choose fulfilment shop");
+    expect(actionIsBlocking(status.suppliers[0].nextAction)).toBe(true);
+    // §6: zero waiting is a real zero here — the server read the tables and
+    // found nothing, which is a different answer from `null`.
+    expect(ordersCopy(status.suppliers[0].orders)).toEqual({
+      label: "Nothing waiting",
+      attention: false
     });
   });
 });
