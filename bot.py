@@ -6292,6 +6292,127 @@ def failed_login_severity(total_count=0, blocked=False, challenged=False, is_bot
     return "Low"
 
 
+#: Whether an auth event is an attacker's fingerprint or a real person having a
+#: bad time. `status='failed'` does not answer that, and reading it as if it did
+#: is how the Security Center came to offer a "Block Domain" button against
+#: gmail.com for three mistyped addresses.
+#:
+#: `login_unconfirmed` is the sharpest case: the visitor supplied the *correct*
+#: password. That is evidence they own the account -- the opposite of an attack
+#: -- and it was being counted as a failed login.
+AUTH_EVENT_CLASS = {
+    # Someone trying keys that are not theirs.
+    "login_failed": "security",
+    "login_blocked": "security",
+    "login_challenge_required": "security",
+    "login_restricted": "security",
+    "mobile_login_restricted": "security",
+    "signup_failed": "security",
+    # Someone who owns the account and cannot get in, or whose mail we broke.
+    "login_unconfirmed": "friction",
+    "mobile_login_unconfirmed": "friction",
+    "forgot_password_invalid_email": "friction",
+    "forgot_password_masked_email": "friction",
+    "forgot_password_no_match": "friction",
+    "forgot_password_request_failed": "friction",
+    "signup_duplicate": "friction",
+    "verification_email_failed": "friction",
+    "verification_link_rejected": "friction",
+    "unverified_email_change_failed": "friction",
+    # Progress, not a problem.
+    "login_success": "neutral",
+    "mobile_login_success": "neutral",
+    "signup_started": "neutral",
+    "signup_completed": "neutral",
+    "forgot_password_token_created": "neutral",
+    "verification_email_sent": "neutral",
+    "email_confirmed": "neutral",
+    "unverified_email_changed": "neutral",
+}
+
+AUTH_SECURITY_EVENTS = tuple(sorted(k for k, v in AUTH_EVENT_CLASS.items() if v == "security"))
+AUTH_FRICTION_EVENTS = tuple(sorted(k for k, v in AUTH_EVENT_CLASS.items() if v == "friction"))
+
+
+def auth_event_class(event_type):
+    """'security', 'friction', 'neutral', or 'unclassified' for a name we do not know.
+
+    Unclassified is a fourth answer rather than a default into one of the three,
+    because either default is wrong in one direction. Defaulting to security
+    makes every friction event somebody adds later blockable; defaulting to
+    friction quietly drops a new attack signal. Both consumers below therefore
+    require a positive declaration, and an unclassified event lands in neither.
+    """
+    return AUTH_EVENT_CLASS.get((event_type or "").strip(), "unclassified")
+
+
+def auth_friction_level(events, accounts):
+    """Product health, not threat level. Rises with people, not with volume.
+
+    One person retrying twelve times is one person; twelve people hitting the
+    same wall once each is an outage. Keyed on distinct accounts first for that
+    reason, with the event count only able to raise a floor.
+    """
+    accounts = int(accounts or 0)
+    events = int(events or 0)
+    if accounts >= 5 or events >= 40:
+        return "AUTH_FRICTION_HIGH"
+    if accounts >= 2 or events >= 10:
+        return "AUTH_FRICTION_MEDIUM"
+    return "AUTH_FRICTION_LOW"
+
+
+def auth_friction_snapshot(window_hours=24, limit=20):
+    """Who is stuck right now, correlated by hashed email rather than by IP.
+
+    A phone moving between cells changes IP mid-journey, so grouping a journey
+    by IP splits one struggling person into several and makes them look like
+    several attackers. `email_hash` is stable across that, and unlike the
+    address itself it is safe to put on an admin screen.
+    """
+    if not AUTH_FRICTION_EVENTS:
+        return {"level": "AUTH_FRICTION_LOW", "events": 0, "accounts": 0, "window_hours": window_hours, "by_event": {}, "journeys": []}
+    since = (datetime.now() - timedelta(hours=int(window_hours or 24))).isoformat()
+    placeholders = ",".join(["?"] * len(AUTH_FRICTION_EVENTS))
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    auth_event_schema_guard(cur, conn)
+    cur.execute(
+        f"SELECT event_type, COUNT(*) AS n FROM auth_events "
+        f"WHERE event_type IN ({placeholders}) AND created_at>=? GROUP BY event_type ORDER BY n DESC",
+        (*AUTH_FRICTION_EVENTS, since),
+    )
+    by_event = {row["event_type"]: int(row["n"] or 0) for row in cur.fetchall()}
+    cur.execute(
+        f"SELECT COALESCE(email_hash,'') AS email_hash, COALESCE(email,'') AS masked_email, "
+        f"COUNT(*) AS n, COUNT(DISTINCT event_type) AS distinct_events, "
+        f"MIN(created_at) AS first_seen, MAX(created_at) AS last_seen "
+        f"FROM auth_events WHERE event_type IN ({placeholders}) AND created_at>=? "
+        f"AND COALESCE(email_hash,'')<>'' GROUP BY email_hash, masked_email "
+        f"ORDER BY n DESC, last_seen DESC LIMIT ?",
+        (*AUTH_FRICTION_EVENTS, since, int(limit or 20)),
+    )
+    journeys = [dict(row) for row in cur.fetchall()]
+    cur.execute(
+        f"SELECT COUNT(DISTINCT COALESCE(email_hash,'')) AS accounts FROM auth_events "
+        f"WHERE event_type IN ({placeholders}) AND created_at>=? AND COALESCE(email_hash,'')<>''",
+        (*AUTH_FRICTION_EVENTS, since),
+    )
+    accounts_row = cur.fetchone()
+    conn.close()
+    accounts = int((accounts_row["accounts"] if accounts_row else 0) or 0)
+    events = sum(by_event.values())
+    return {
+        "level": auth_friction_level(events, accounts),
+        "events": events,
+        "accounts": accounts,
+        "window_hours": int(window_hours or 24),
+        "by_event": by_event,
+        "journeys": journeys,
+    }
+
+
 def log_auth_event(event_type, email="", user_id=0, status="info", details=None):
     try:
         conn = db()
@@ -29464,9 +29585,13 @@ def admin_security_page():
             log_admin_audit(admin.get("id"), action, "failed_login_control", value, {"event_id": event_id, "message": message})
             conn.commit()
     active_tab = clean_html(request.args.get("tab") or "all").lower()
+    security_placeholders = ",".join(["?"] * len(AUTH_SECURITY_EVENTS))
     filters = {
         "all": ("All", "", ()),
-        "failed-logins": ("Failed Logins", "WHERE status='failed' OR event_type LIKE '%login_failed%'", ()),
+        # `status='failed'` used to select this tab, which meant a mistyped
+        # recovery address and a refused verification email arrived at a screen
+        # whose every row carries a Block IP button. Name the events instead.
+        "failed-logins": ("Failed Logins", f"WHERE event_type IN ({security_placeholders})", AUTH_SECURITY_EVENTS),
         "admin-actions": ("Admin Actions", "", ()),
     }
     where_sql, where_params = filters.get(active_tab, filters["all"])[1], filters.get(active_tab, filters["all"])[2]
@@ -29483,17 +29608,23 @@ def admin_security_page():
     blocked_rows = [dict(row) for row in cur.fetchall()]
     cur.execute("SELECT control_type, control_value, reason, created_at FROM failed_login_safe_list ORDER BY updated_at DESC LIMIT 120")
     safe_rows = [dict(row) for row in cur.fetchall()]
-    cur.execute("""
+    # Three failures on a domain puts a "Block Domain" button next to it, and
+    # `status='failed'` counted a mistyped address, an expired verification
+    # link and a refused Brevo send towards that three. Blocking gmail.com
+    # locks out most of the userbase, so this list may only be built from
+    # events that are actually somebody trying keys that are not theirs.
+    cur.execute(f"""
         SELECT email_domain AS domain, COUNT(*) AS failures, MAX(severity) AS severity, MAX(created_at) AS latest
         FROM auth_events
-        WHERE status='failed' AND COALESCE(email_domain,'')!=''
+        WHERE event_type IN ({security_placeholders}) AND COALESCE(email_domain,'')!=''
         GROUP BY email_domain
         HAVING COUNT(*) >= 3
         ORDER BY failures DESC, latest DESC
         LIMIT 120
-    """)
+    """, AUTH_SECURITY_EVENTS)
     suspicious_domains = [dict(row) for row in cur.fetchall()]
     conn.close()
+    friction = auth_friction_snapshot()
     pipeline_recent = {"available": False, "events": []}
     if command_center_client_service.is_enabled():
         pipeline_recent = command_center_client_service.get_recent_security_events(limit=50)
@@ -29591,11 +29722,28 @@ def admin_security_page():
             )
         return "<table><tr><th>Risk</th><th>Severity</th><th>Event Type</th><th>User</th><th>Status</th><th>AI</th><th>Date</th></tr>" + "".join(body_rows) + "</table>"
 
+    def friction_journeys_table(rows):
+        header = "<tr><th>Account</th><th>Events</th><th>Distinct kinds</th><th>First seen</th><th>Last seen</th></tr>"
+        if not rows:
+            return f"<table>{header}<tr><td colspan='5'>Nobody is stuck right now.</td></tr></table>"
+        body_rows = "".join(
+            "<tr>"
+            f"<td>{html_escape(clean_html(row.get('masked_email') or ''))}</td>"
+            f"<td>{int(row.get('n') or 0)}</td>"
+            f"<td>{int(row.get('distinct_events') or 0)}</td>"
+            f"<td>{html_escape(clean_html(row.get('first_seen') or ''))}</td>"
+            f"<td>{html_escape(clean_html(row.get('last_seen') or ''))}</td>"
+            "</tr>"
+            for row in rows
+        )
+        return f"<table>{header}{body_rows}</table>"
+
     tabs = [
         ("all", "All"),
         ("failed-logins", "Failed Logins"),
         ("blocked-ips", "Blocked IPs"),
         ("suspicious-domains", "Suspicious Domains"),
+        ("user-friction", "User Friction"),
         ("admin-actions", "Admin Actions"),
     ]
     tab_html = "<nav aria-label='Security filters'>" + "".join(
@@ -29606,6 +29754,22 @@ def admin_security_page():
         main_panel = controls_table(blocked_rows)
     elif active_tab == "suspicious-domains":
         main_panel = suspicious_domains_table(suspicious_domains)
+    elif active_tab == "user-friction":
+        # Deliberately no Block buttons on this panel. Everything here is a
+        # person who cannot get into their own account.
+        breakdown = "".join(
+            f"<li>{html_escape(clean_html(name))}: {int(count)}</li>"
+            for name, count in sorted(friction["by_event"].items(), key=lambda kv: -kv[1])
+        ) or "<li>None in this window.</li>"
+        main_panel = (
+            f"<p class='muted'>People who own an account and cannot get in, over the last {friction['window_hours']} hours. "
+            "These are product-health signals, not threats, and no blocking control applies to them. "
+            "Journeys are grouped by hashed email rather than IP, because a phone changing cells mid-journey "
+            "would otherwise split one stuck person into several.</p>"
+            f"<p><strong>{html_escape(friction['level'])}</strong> &middot; {friction['events']} events across {friction['accounts']} accounts</p>"
+            f"<ul>{breakdown}</ul>"
+            + friction_journeys_table(friction["journeys"])
+        )
     elif active_tab == "admin-actions":
         main_panel = admin_rows_table(audit_rows, [("admin_email","Admin"),("action","Action"),("target_type","Target"),("target_id","ID"),("created_at","Date")])
     else:
@@ -29614,7 +29778,7 @@ def admin_security_page():
         "<h1>Security Center</h1>"
         "<p class='muted'>Failed-login monitoring and Command Center scam-shield scoring with IP, country, user-agent, device, route, severity, cooldowns, challenges, and reversible admin controls. Emails remain masked.</p>"
         + (f"<div class='card'>{html_escape(clean_html(message))}</div>" if message else "")
-        + f"<div class='grid'><div class='card'><strong>Security Engine</strong><p class='metric'>{'Online' if pipeline_recent.get('available') else 'Disabled'}</p></div><div class='card'><strong>Recent Risk Events</strong><p class='metric'>{len(pipeline_recent.get('events') or [])}</p></div></div>"
+        + f"<div class='grid'><div class='card'><strong>Security Engine</strong><p class='metric'>{'Online' if pipeline_recent.get('available') else 'Disabled'}</p></div><div class='card'><strong>Recent Risk Events</strong><p class='metric'>{len(pipeline_recent.get('events') or [])}</p></div><div class='card'><strong>User Friction</strong><p class='metric'>{html_escape(friction['level'].replace('AUTH_FRICTION_', '').title())}</p><p class='muted'>{friction['accounts']} accounts stuck, {friction['window_hours']}h</p></div></div>"
         + tab_html
         + f"<div class='card'>{main_panel}</div>"
         + "<h2>Command Center Risk Signals</h2>"
