@@ -83,7 +83,7 @@ missing in production, the failure is real and user-visible.
 | **LiveKit** | live audio/video calls, Live broadcast | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_WEBHOOK_SECRET` | yes, per-minute | token mint fails, so "Broadcast could not start" — this is the same surface as the phase 9 incident |
 | **Cloudflare R2** (or S3) | all uploaded media | `R2_BUCKET` \| `S3_BUCKET`, `R2_ACCESS_KEY_ID` \| `AWS_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` \| `AWS_SECRET_ACCESS_KEY`, `R2_ENDPOINT_URL` \| `R2_ENDPOINT` \| `R2_ACCOUNT_ID` \| `S3_ENDPOINT_URL`, `R2_PUBLIC_BASE_URL` | yes, storage + egress | with `MEDIA_REQUIRE_DURABLE_UPLOAD` on, uploads fail loudly (correct); with it off, media writes to ephemeral disk and vanishes on redeploy |
 | **Mux** | VOD assets, HLS playback, reels transcode | `MUX_TOKEN_ID`, `MUX_TOKEN_SECRET`, `MUX_WEBHOOK_SECRET`, `MUX_DATA_ENV_KEY`, `MUX_DATA_ANALYTICS_ENABLED` | yes, per-minute encoded + delivered | uploads accepted, never transcode; posts sit in "processing" forever |
-| **Brevo** | transactional email, SMS | `BREVO_API_KEY`, `BREVO_SMTP_API_KEY`, `BREVO_SMS_API_KEY`, `BREVO_SMS_ENABLED`, `BREVO_SMS_SENDER`, `BREVO_DEFAULT_LIST_ID`, `BREVO_PRO_LIST_ID`, `BREVO_TELEGRAM_LIST_ID`, `DEFAULT_FROM_EMAIL`, `SMS_SENDER_NAME` | yes, per-send above free tier | password reset and verification email never arrive; signup completes and the account is unreachable |
+| **Brevo** | transactional email, SMS | `BREVO_API_KEY`, `BREVO_SMS_API_KEY`, `BREVO_SMS_ENABLED`, `BREVO_SMS_SENDER`, `BREVO_DEFAULT_LIST_ID`, `BREVO_PRO_LIST_ID`, `BREVO_TELEGRAM_LIST_ID`, `DEFAULT_FROM_EMAIL`, `SMS_SENDER_NAME` | yes, per-send above free tier | password reset and verification email never arrive; signup completes and the account is unreachable |
 | **TURN relay** | calls for users behind symmetric NAT | `TURN_SERVER_URL` (and `STUN_SERVER_URL`) | yes — TURN relays media | calls work in testing and fail for a minority of real users, silently. The worst-shaped failure on this page |
 
 The alias columns are not cosmetic. `services/media_storage.py` resolves
@@ -164,7 +164,6 @@ the repository; it is now an alias group over the six real keys.
 
 | Variable | Same vendor as | Note |
 |---|---|---|
-| `SENDINBLUE_API_KEY` | `BREVO_API_KEY` | rename artifact — Sendinblue became Brevo. Read at `services/email_service.py:48` |
 | `CMC_API_KEY` | `COINMARKETCAP_API_KEY` | `bot.py:96460` reads `COINMARKETCAP_API_KEY or CMC_API_KEY` |
 | `BING_SEARCH_V7_SUBSCRIPTION_KEY` | `BING_SEARCH_API_KEY` | two spellings of one Azure key |
 | `BOT_TOKEN` | `TELEGRAM_BOT_TOKEN` | one BotFather token |

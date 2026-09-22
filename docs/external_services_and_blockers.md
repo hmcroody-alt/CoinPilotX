@@ -152,13 +152,15 @@ different jobs per chain.
 ### Email, SMS and push
 
 Brevo (formerly Sendinblue) covers both email and SMS:
-`BREVO_API_KEY`, `BREVO_SMTP_API_KEY`, `BREVO_SMS_API_KEY`,
+`BREVO_API_KEY`, `BREVO_SMS_API_KEY`,
 `BREVO_SMS_ENABLED`, `BREVO_SMS_SENDER`, `BREVO_DEFAULT_LIST_ID`,
-`BREVO_PRO_LIST_ID`, `BREVO_TELEGRAM_LIST_ID`, `SENDINBLUE_API_KEY`,
+`BREVO_PRO_LIST_ID`, `BREVO_TELEGRAM_LIST_ID`,
 `DEFAULT_FROM_EMAIL`, `SMS_SENDER_NAME`
 
-`SENDINBLUE_API_KEY` alongside `BREVO_API_KEY` is a rename artifact — same
-vendor, old name. Worth consolidating so nobody buys twice.
+The consolidation this section used to recommend has happened. `BREVO_API_KEY`
+is the only name for the transactional email key; `SENDINBLUE_API_KEY` (rename
+artifact) and `BREVO_SMTP_API_KEY` (which names a different credential) are no
+longer read by anything.
 
 Push notification credentials — these are free from Apple/Google but require
 developer accounts:

@@ -112530,7 +112530,15 @@ def email_status_from_result(result):
         return "failed_brevo_403"
     if result.get("status_code") == 429 or result.get("error_code") == "brevo_rate_limited":
         return "failed_brevo_rate_limited"
-    return f"failed_brevo_{result.get('status_code') or 'not_configured'}"
+    if result.get("error_code"):
+        return f"failed_{result['error_code']}"
+    if result.get("status_code"):
+        return f"failed_brevo_{result['status_code']}"
+    # A failure that carried neither a provider status code nor an error code
+    # never reached Brevo -- DNS, TLS, connect timeout. Naming that
+    # "not_configured", as this line used to, sends whoever reads the admin log
+    # to check environment variables that were correct all along.
+    return "failed_brevo_network_error"
 
 
 def log_email_status(user_id, email, subject, status, email_type="", provider="brevo", provider_status_code=None, provider_message_id="", safe_error_reason="", metadata=None, trace_id="", retry_count=0):
@@ -112756,6 +112764,20 @@ def _email_retry_at(attempts):
 
 def process_email_delivery_jobs(limit=10, provider_send=None):
     """Claim and process a bounded batch without recursively creating jobs."""
+    # Claiming a row spends an attempt: `retry_count` is incremented at claim
+    # time, before the provider is reached. A process holding no Brevo
+    # credentials cannot deliver anything, so letting it drain the queue would
+    # burn five attempts against mail another process could have sent and then
+    # dead-letter it permanently -- verification and password-reset mail
+    # included. Every worker importing this module inherits the opportunistic
+    # processor, so this is not hypothetical. Leave the rows for a process that
+    # can actually send them.
+    if provider_send is None:
+        readiness = email_service_service.provider_status()
+        if not readiness.get("ready"):
+            return {"attempted": 0, "sent": 0, "retry": 0, "dead_letter": 0, "skipped": 0,
+                    "deferred": "provider_not_ready",
+                    "missing_fields": readiness.get("missing_fields") or []}
     provider_send = provider_send or email_service_service.send_email
     limit = max(1, min(int(limit or 10), 50))
     now = datetime.now().isoformat()
@@ -112982,6 +113004,25 @@ def send_platform_email(to_email, subject, text_body, html_body="", user_id=None
         from_email,
         bool(provider.get("api_key_configured")),
     )
+    # This verdict used to be computed only to be logged. Calling the provider
+    # anyway from a process with no credentials cannot deliver the message; it
+    # spends the attempt, writes a `failed_brevo_not_configured` row that reads
+    # like a platform-wide outage, and only then reaches the outbox where a
+    # configured process actually sends it. Every such row in production came
+    # from exactly that -- a worker that inherited the sender address but not
+    # the API key. Hand the message to the outbox up front instead. Nothing is
+    # suppressed: the mail is queued, delivered by the worker, and the log says
+    # queued because that is what happened.
+    if not provider.get("ready") and queue_on_failure:
+        queued = enqueue_platform_email(
+            to_email, subject, text_body, html_body, user_id,
+            email_type=email_type,
+            idempotency_key=idempotency_key,
+            metadata={"deferred_reason": "provider_not_ready_in_this_process",
+                      "missing_fields": provider.get("missing_fields") or []},
+        )
+        send_platform_email.last_error = "" if queued.get("ok") else "queue_failed"
+        return bool(queued.get("ok"))
     try:
         result = email_service_service.send_email(
             to_email,
