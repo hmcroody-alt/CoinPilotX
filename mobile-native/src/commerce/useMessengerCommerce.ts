@@ -34,6 +34,7 @@ import {
   fetchCommercePlacements,
   recordCommerceFeedback
 } from "../api/commerceDiscovery";
+import { startCommercePause, useSocialDiscoveryAllowed } from "./consent";
 import { commerceSessionId } from "./session";
 
 export type UseMessengerCommerceOptions = {
@@ -69,9 +70,14 @@ const LOCAL_CADENCE = { leadIn: 0, interval: 1, maxPerPage: 1 };
 const DEFAULT_VISIBLE_DWELL_MS = 1000;
 
 export function useMessengerCommerce({
-  enabled = true,
+  enabled: callerEnabled = true,
   refreshToken = 0
 }: UseMessengerCommerceOptions = {}): MessengerCommerceState {
+  // The master switch, read rather than passed — see `useFeedCommerce` for why
+  // this is not left to the screen to remember.
+  const consented = useSocialDiscoveryAllowed();
+  const enabled = callerEnabled && consented;
+
   const [placements, setPlacements] = useState<CommercePlacement[]>([]);
   const [visibleDwellMs, setVisibleDwellMs] = useState(DEFAULT_VISIBLE_DWELL_MS);
   const [dismissedPlacementIds, setDismissedPlacementIds] = useState<ReadonlySet<string>>(new Set());
@@ -122,6 +128,10 @@ export function useMessengerCommerce({
     if (action === "snooze") {
       snoozedRef.current = true;
       setPlacements([]);
+      // Durable, and visible in Settings — the ref above only covers this
+      // process, and the server-side suppression row is invisible to the
+      // settings screen, which would report suggestions as on with no Resume.
+      startCommercePause();
     } else if (action === "hide_seller") {
       const sellerId = placement.product.sellerUserId;
       if (sellerId) {

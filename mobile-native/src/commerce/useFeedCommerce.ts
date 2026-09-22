@@ -41,6 +41,7 @@ import {
   fetchCommercePlacements,
   recordCommerceFeedback
 } from "../api/commerceDiscovery";
+import { startCommercePause, useSocialDiscoveryAllowed } from "./consent";
 import { commerceSessionId } from "./session";
 
 export type UseFeedCommerceOptions = {
@@ -77,7 +78,18 @@ export type FeedCommerceState = {
   sessionId: string;
 };
 
-export function useFeedCommerce({ enabled = true, refreshToken = 0 }: UseFeedCommerceOptions = {}): FeedCommerceState {
+export function useFeedCommerce({
+  enabled: callerEnabled = true,
+  refreshToken = 0
+}: UseFeedCommerceOptions = {}): FeedCommerceState {
+  // Read here rather than taken as an option on purpose. The master switch is
+  // not Home's business to remember, and a surface that forgot to pass it would
+  // keep placing for a user who had switched discovery off — the one failure
+  // this feature cannot be allowed to have. Every social surface gets it by
+  // calling the hook at all.
+  const consented = useSocialDiscoveryAllowed();
+  const enabled = callerEnabled && consented;
+
   const [placements, setPlacements] = useState<CommercePlacement[]>([]);
   const [dismissedPlacementIds, setDismissedPlacementIds] = useState<ReadonlySet<string>>(new Set());
   const [dismissedSellerIds, setDismissedSellerIds] = useState<ReadonlySet<number>>(new Set());
@@ -133,6 +145,11 @@ export function useFeedCommerce({ enabled = true, refreshToken = 0 }: UseFeedCom
     if (action === "snooze") {
       snoozedRef.current = true;
       setPlacements([]);
+      // Durable, and visible in Settings. The ref above only covers this
+      // process; the server-side suppression row the feedback call writes
+      // outlives it but is invisible to the settings screen, which would then
+      // report suggestions as on with nothing to resume.
+      startCommercePause();
     } else if (action === "hide_seller") {
       const sellerId = placement.product.sellerUserId;
       if (sellerId) {

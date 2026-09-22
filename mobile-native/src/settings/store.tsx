@@ -27,6 +27,11 @@ import { AppState, AppStateStatus } from "react-native";
 import { readJsonCache, writeJsonCache } from "../core/cache";
 import { setHapticsEnabled } from "../native/haptics";
 import {
+  registerCommercePauseWriter,
+  setSocialDiscoveryAllowed,
+  socialDiscoveryAllowed
+} from "../commerce/consent";
+import {
   fetchRemotePreferences,
   PreferenceSyncError,
   pushPreferencePatch
@@ -249,6 +254,16 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
     setHapticsEnabled(preferences.accessibility.hapticFeedback);
   }, [preferences.accessibility.hapticFeedback]);
 
+  /* --------------- Mirror the commerce discovery master switch ------------- */
+
+  // Same shape as the haptics mirror above, and for the same reason: the
+  // consumers are hooks inside Home, Reels and Messenger, and giving those
+  // screens a hard dependency on this provider would mean a missing provider
+  // takes down the feed rather than quieting commerce. See `commerce/consent`.
+  useEffect(() => {
+    setSocialDiscoveryAllowed(socialDiscoveryAllowed(preferences.commerce));
+  }, [preferences.commerce]);
+
   /* -------------------------------- Hydration ------------------------------ */
 
   useEffect(() => {
@@ -370,6 +385,19 @@ export function PreferencesProvider({ children, enabled = true }: { children: Re
     },
     [enabled, persist, scheduleFlush, syncPendingState]
   );
+
+  /* ------------- Let a commerce card start the same pause Settings does ----- */
+
+  // The card's ••• "hide for 30 days" wrote only a server-side suppression row,
+  // while Settings wrote `commerce.snoozeUntil`. Both paused discovery, so
+  // nothing looked broken — but Settings could see only its own, and reported
+  // suggestions as on, with nothing to resume. Registered here rather than
+  // beside the mirror above because it closes over `update`, which is declared
+  // further down this component and would be in its temporal dead zone there.
+  useEffect(() => {
+    registerCommercePauseWriter((snoozeUntil) => void update("commerce", { snoozeUntil }));
+    return () => registerCommercePauseWriter(null);
+  }, [update]);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;

@@ -6,24 +6,17 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 // would give this screen a buzz the user had switched off. The direct-import
 // call sites elsewhere in `screens/settings/` are a baseline, not a pattern.
 import { haptic } from "../../native/haptics";
+import { COMMERCE_PAUSE_DAYS, isPauseActive, pauseEndsAt } from "../../commerce/consent";
 import { SettingsHeader, SettingsSection, SettingsShell } from "../../settings/components/SettingsShell";
 import { SettingsBadge, SettingsRow, SettingsSwitch } from "../../settings/components/SettingsControls";
 import { usePreferenceGroup } from "../../settings/store";
 import { CommerceFrequency } from "../../settings/schema";
 import { useTheme } from "../../theme/ThemeContext";
 
-/**
- * Length of the pause offered here.
- *
- * Deliberately a client-side constant rather than something fetched from the
- * server's `COMMERCE_DISCOVERY_HIDE_DAYS`, and the two cannot drift apart in a
- * way that matters: what gets stored is an **absolute instant**, not a
- * duration. The server honours the timestamp it is given. If the backend's own
- * default is ever retuned, a pause already in flight keeps the end date the
- * user was shown, which is the only behaviour that would not look like a bug
- * from the outside.
- */
-const PAUSE_DAYS = 30;
+// Shared with the card's ••• menu rather than declared here: the two controls
+// wear the same label, so a constant either of them could change alone is a
+// constant that will eventually make them disagree.
+const PAUSE_DAYS = COMMERCE_PAUSE_DAYS;
 
 const FREQUENCY_OPTIONS: { value: CommerceFrequency; label: string }[] = [
   { value: "low", label: "Fewer" },
@@ -198,11 +191,8 @@ export function CommerceSettingsScreen() {
    * user whose suggestions came back weeks ago.
    */
   const pausedUntil = useMemo(() => {
-    if (!value.snoozeUntil) return null;
-    const at = new Date(value.snoozeUntil);
-    const millis = at.getTime();
-    if (!Number.isFinite(millis) || millis <= Date.now()) return null;
-    return at;
+    if (!isPauseActive(value.snoozeUntil)) return null;
+    return new Date(value.snoozeUntil);
   }, [value.snoozeUntil]);
 
   const pauseLabel = useMemo(() => {
@@ -214,10 +204,7 @@ export function CommerceSettingsScreen() {
     }
   }, [pausedUntil]);
 
-  const startPause = useCallback(() => {
-    const until = new Date(Date.now() + PAUSE_DAYS * 24 * 60 * 60 * 1000);
-    void setGroup({ snoozeUntil: until.toISOString() });
-  }, [setGroup]);
+  const startPause = useCallback(() => void setGroup({ snoozeUntil: pauseEndsAt() }), [setGroup]);
 
   // `""` rather than deleting the key: the patch shape the store sends is a
   // partial group, and an absent key means "unchanged", which would leave the

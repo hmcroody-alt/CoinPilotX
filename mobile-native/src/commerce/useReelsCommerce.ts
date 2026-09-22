@@ -30,6 +30,7 @@ import {
   recordCommerceFeedback
 } from "../api/commerceDiscovery";
 import { REELS_INTERVAL, REELS_LEAD_IN, REELS_MAX_CHIPS, bindReelCommerce } from "./reelSlots";
+import { startCommercePause, useSocialDiscoveryAllowed } from "./consent";
 import { commerceSessionId } from "./session";
 
 export type UseReelsCommerceOptions = {
@@ -68,9 +69,14 @@ const NO_CHIPS: ReadonlyMap<string, CommercePlacement> = new Map();
 
 export function useReelsCommerce({
   reelIds,
-  enabled = true,
+  enabled: callerEnabled = true,
   refreshToken = 0
 }: UseReelsCommerceOptions): ReelsCommerceState {
+  // The master switch, read rather than passed — see `useFeedCommerce` for why
+  // this is not left to the screen to remember.
+  const consented = useSocialDiscoveryAllowed();
+  const enabled = callerEnabled && consented;
+
   const [placements, setPlacements] = useState<CommercePlacement[]>([]);
   const [cadence, setCadence] = useState<CommerceCadence>(LOCAL_CADENCE);
   const [visibleDwellMs, setVisibleDwellMs] = useState(DEFAULT_VISIBLE_DWELL_MS);
@@ -124,6 +130,10 @@ export function useReelsCommerce({
     if (action === "snooze") {
       snoozedRef.current = true;
       setPlacements([]);
+      // Durable, and visible in Settings — the ref above only covers this
+      // process, and the server-side suppression row is invisible to the
+      // settings screen, which would report suggestions as on with no Resume.
+      startCommercePause();
     } else if (action === "hide_seller") {
       const sellerId = placement.product.sellerUserId;
       if (sellerId) {

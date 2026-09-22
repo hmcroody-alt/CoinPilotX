@@ -49,13 +49,22 @@ import {
   fetchCommerceModules,
   recordCommerceFeedback
 } from "../api/commerceDiscovery";
+import { startCommercePause } from "./consent";
 import { commerceSessionId } from "./session";
 
 export type UseMarketplaceCommerceOptions = {
   /**
-   * False whenever the shelves must not exist at all — signed out, or the user
-   * has turned recommendations off. A gate on *existence*: no fetch, nothing
-   * held.
+   * False whenever the shelves must not exist at all — signed out. A gate on
+   * *existence*: no fetch, nothing held.
+   *
+   * Explicitly **not** the master switch, which this comment used to claim.
+   * "Show Marketplace suggestions" governs being recommended to while doing
+   * something else; opening a shop is asking to be shown things, and a switch
+   * that emptied the shop's own shelves would break a feature nobody
+   * complained about. The settings screen prints that promise under the
+   * switch, and `preferences.py::SOCIAL_SURFACES` is the server half of it —
+   * which is why this hook, alone of the four, does not read
+   * `useSocialDiscoveryAllowed`.
    */
   enabled?: boolean;
   /**
@@ -129,6 +138,12 @@ export function useMarketplaceCommerce({
     if (action === "snooze") {
       snoozedRef.current = true;
       setServed([]);
+      // The same pause the other three surfaces and Settings write, even though
+      // this hook does not gate on it. "Hide suggestions for 30 days" has to
+      // mean one thing wherever it is tapped — a version of it that only
+      // cleared the shelf it was tapped on would be a different feature wearing
+      // the same label.
+      startCommercePause();
     } else if (action === "hide_seller") {
       const sellerId = placement.product.sellerUserId;
       if (sellerId) {

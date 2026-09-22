@@ -12,8 +12,11 @@ Order of authority, strongest first
 
 1. **``marketplaceRecommendations: false``** — the master switch. Organic
    discovery stops on every social surface. Marketplace itself keeps working:
-   the user switched off *being recommended to*, not *shopping*.
-2. **An unexpired snooze** — same effect, with an end date.
+   the user switched off *being recommended to*, not *shopping*. That scoping
+   is carried by :data:`SOCIAL_SURFACES`, not by ``allowed`` — resolution runs
+   to completion so the shop is still served this viewer's suppressions,
+   frequency and personalization.
+2. **An unexpired snooze** — same effect, same scope, with an end date.
 3. **A suppression** — narrower: this product, this seller, or this surface.
 4. **``frequency``** — shapes how much, never whether.
 5. **``personalizedRecommendations: false``** — shapes *how* it is ranked. The
@@ -53,15 +56,31 @@ FREQUENCY_MULTIPLIER = {"low": 0.4, "balanced": 1.0, "more": 1.6}
 #: one is a nudge.
 SEE_FEWER_WEIGHT = 0.34
 
+#: The surfaces the master switch and the snooze govern: the ones where a
+#: product appears while the user came to do something else.
+#:
+#: ``marketplace`` is deliberately absent. Both controls answer "stop
+#: recommending things to me", and opening a shop is asking to be shown things —
+#: emptying the shop's own shelves would break a feature nobody complained
+#: about. The settings screen says so to the user in as many words
+#: ("Marketplace keeps recommending products inside Marketplace either way"), so
+#: this is a promise rather than an implementation detail.
+SOCIAL_SURFACES = frozenset({"feed", "reels", "messenger"})
+
 
 @dataclass(frozen=True)
 class ViewerPolicy:
     """Everything the engine is allowed to know about this viewer's wishes."""
 
     subject_ref: str
-    #: False when discovery is off entirely, for any reason.
+    #: False when discovery is off *everywhere* — the engine switch, or a read
+    #: that failed. A user's own refusal does not land here: it is scoped to
+    #: :data:`SOCIAL_SURFACES` through ``suppressed_surfaces``, because
+    #: Marketplace keeps working. Ask :meth:`allows_surface`, never this field.
     allowed: bool
     #: Why it is off, as a stable code, for admin observability. "" when on.
+    #: Also set for a social-only block, where ``allowed`` stays True: the code
+    #: says what the user did, ``allows_surface`` says where it applies.
     blocked_reason: str = ""
     personalized: bool = True
     frequency: str = "balanced"
@@ -137,12 +156,21 @@ def viewer_policy(cur, user_id: Any, *, load_preferences=None) -> ViewerPolicy:
         return _denied(ref, "preferences_unreadable")
 
     group = _commerce_group(preferences)
-    if group.get("marketplaceRecommendations") is False:
-        return _denied(ref, "user_disabled")
 
-    snooze_until = group.get("snoozeUntil") or ""
-    if snooze_until and not subject.is_expired(snooze_until):
-        return _denied(ref, "snoozed")
+    # The master switch and the snooze are the user's own refusal, and they are
+    # scoped rather than global: both mean "stop recommending to me while I am
+    # doing something else", which is the social surfaces. Resolution continues
+    # past this point instead of returning, because Marketplace still has to be
+    # served properly — with this viewer's suppressions, frequency and
+    # personalization intact. Returning `_denied` here, as this did, closed the
+    # shop as well and contradicted what the settings screen tells the user.
+    social_block = ""
+    if group.get("marketplaceRecommendations") is False:
+        social_block = "user_disabled"
+    else:
+        snooze_until = group.get("snoozeUntil") or ""
+        if snooze_until and not subject.is_expired(snooze_until):
+            social_block = "snoozed"
 
     personalized = group.get("personalizedRecommendations", True) is not False
     if not config.personalization_enabled():
@@ -159,11 +187,16 @@ def viewer_policy(cur, user_id: Any, *, load_preferences=None) -> ViewerPolicy:
     return ViewerPolicy(
         subject_ref=ref,
         allowed=True,
+        blocked_reason=social_block,
         personalized=personalized,
         frequency=str(group.get("frequency") or "balanced"),
         suppressed_listings=listings,
         suppressed_sellers=sellers,
-        suppressed_surfaces=surfaces,
+        # Folded into the same set the per-surface suppressions use, so there is
+        # one question `allows_surface` has to answer and one place a surface
+        # can be off. A second `allowed`-shaped flag would be a second thing to
+        # forget at the call site.
+        suppressed_surfaces=frozenset(surfaces | SOCIAL_SURFACES) if social_block else surfaces,
         soft_signals=soft,
     )
 
@@ -212,7 +245,11 @@ def _load_suppressions(cur, ref: str):
         elif scope == "surface":
             surfaces.add(value.lower())
         elif scope == "all":
-            surfaces.update(("feed", "reels", "messenger"))
+            # "All" has always meant the social surfaces, never the shop — this
+            # tuple was spelled out here and the master switch was resolved
+            # globally a hundred lines up, which is how the two paths came to
+            # disagree about a pause. One definition now.
+            surfaces.update(SOCIAL_SURFACES)
 
     return frozenset(listings), frozenset(sellers), frozenset(surfaces), soft
 
