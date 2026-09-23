@@ -1400,6 +1400,10 @@ _load_route_pack("pulse_marketplace_fulfillment", "services.marketplace_fulfillm
 # marketplace packs and nowhere near the advertising packs: this engine gives
 # unpaid reach, and its events must never be accounted as ad delivery.
 _load_route_pack("pulse_commerce_discovery", "services.commerce_discovery_routes")
+# A read layer over the discovery events the pack above writes. No ingest and
+# no table of its own — production already holds 111 event tables and the
+# problem this solves is that none of them join exposure to outcome.
+_load_route_pack("pulse_analytics", "services.pulse_analytics_routes")
 # Business OS web surface (website parity milestone 3): serves the /business-os
 # dashboard page over the existing /api/business-os API — no new API routes.
 _load_route_pack("business_os_web", "services.business_os_web")
