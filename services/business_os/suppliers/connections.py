@@ -295,10 +295,15 @@ def _verify(adapter, auth, selected_shop=None, *, sensitive_values=()):
 
     Shop listing is the optional half, and used not to be. Requiring it meant a
     real CJ account that owns no external storefront could never connect, even
-    though importing products needs no CJ shop at all -- and in practice CJ
-    answers `shop/getShops` for such an account with a business code its own
-    documentation does not list, which we correctly refuse to interpret and
-    which therefore killed the whole connection.
+    though importing products needs no CJ shop at all.
+
+    The original note here added that CJ answers `shop/getShops` for such an
+    account with an unlisted business code. That was wrong, and it was this
+    file's own reading of a bug it had elsewhere: the rejection came from our
+    transport refusing CJ's `code: 0` success envelope, not from CJ refusing to
+    answer. Connecting survived it either way, which is why nothing here had to
+    be reconsidered when the real cause was found -- but the reasoning is worth
+    correcting rather than leaving for the next reader to inherit.
 
     So an unreadable shop list is survivable *only when nothing was selected*.
     If a shop was selected, an unreadable list is fatal: the alternative is
@@ -660,6 +665,25 @@ def _live_shops(connection_id, business_id, store_id, actor_user_id, *, context=
 
 
 def _annotated_shops(shops):
+    """Per shop: can an order go here, and if not, what would the merchant do.
+
+    The verdict is ``dispatch_shop``'s and is not second-guessed -- a shop this
+    list calls choosable is one dispatch will accept, which is the entire point
+    of annotating rather than filtering.
+
+    The *reason* is refined in one case. ``dispatch_shop`` answers
+    ``api_shop_binding_required`` for three different situations, because from
+    where it stands they are one situation: the order cannot go. But they are
+    not one situation for the person reading this list. A shop switched off in
+    the CJ console is a shop they can switch back on; a Shopify storefront will
+    never take an API order no matter what they do. Reporting both as "your
+    supplier won't take orders for this shop from an outside app" tells the
+    first merchant their shop is the wrong kind, and sends them looking for a
+    problem that isn't there.
+
+    So an inactive shop is named as inactive. It stays unfulfillable either way
+    -- this narrows the explanation, not the gate.
+    """
     from services.business_os.suppliers import fulfillment
     annotated = []
     for shop in shops:
@@ -668,6 +692,8 @@ def _annotated_shops(shops):
             reason = ""
         except fulfillment.FulfillmentError as exc:
             reason = exc.code
+            if reason == "api_shop_binding_required" and shop.get("status") != 1:
+                reason = "shop_disabled"
         annotated.append(shop | {"fulfillable": not reason, "unfulfillable_reason": reason})
     return annotated
 
@@ -679,24 +705,30 @@ def connection_shops(connection_id, business_id, store_id, actor_user_id, *, con
     verdict, so a merchant reading this list learns which choice will work
     before making it rather than at the first order they lose.
 
-    An account that owns no shop is the *expected* answer here, not an error.
-    CJ replies to ``shop/getShops`` for such an account with a business code its
-    own documentation does not list, which the transport correctly refuses to
-    interpret and reports as ``SUPPLIER_REJECTED`` (422). That is the state the
-    live connection is in today. Left to propagate it reaches the app as a bare
-    "Something went wrong" -- 422 matches none of the client's status classes --
-    for the single most likely outcome of opening this screen.
+    An empty list is an ordinary answer here and needs no special handling: CJ
+    reports a shopless account as a successful empty ``data``, the same shape it
+    uses for a populated one.
 
-    ``_verify`` already made this decision for connecting: an unreadable shop
-    list is survivable when nothing was selected. This is the same rule for
-    reading, and it is narrower on purpose. ``_verify`` survives *any*
-    ``SupplierError`` because there the shop is irrelevant -- importing needs
-    none, so connecting should not fail on it. Here the shop list *is* the
-    answer, so collapsing a throttle or a dead credential into "you have no
-    shops" would print a false instruction: it tells a merchant to go create a
-    storefront when the truth is "ask again in a minute" or "your key is
-    rejected". Only a rejection -- CJ answered, and the answer was not a list --
-    is reported as an empty list. Everything else keeps its own meaning.
+    This function used to translate ``SUPPLIER_REJECTED`` into an empty list, on
+    the stated belief that CJ answers ``shop/getShops`` for a shopless account
+    with an unlisted business code. That belief was wrong, and the code that
+    encoded it hid the bug that produced it. CJ returns ``code: 0`` on success
+    from this endpoint -- a second success envelope the transport did not
+    recognise -- so *every* call rejected, including ones carrying a perfectly
+    good shop. The live account has owned an ``api`` shop since 2026-09-08 and
+    was still being told it had none, because a real list was being converted to
+    an empty one and an empty one reads as an account fact.
+
+    That is the trap in translating a transport failure into a domain answer:
+    the sentence the merchant sees is about their CJ account, but the evidence
+    behind it is about our parser, and no amount of care in the wording fixes
+    the mismatch. So a rejection is now reported as a rejection. It keeps its
+    own distinct code rather than propagating as a bare 422, which the client
+    has no status class for and would render as "Something went wrong".
+
+    Every other ``SupplierError`` keeps its own meaning as before -- a throttle
+    stays a throttle, a dead credential stays a reauth prompt -- so the four
+    states the merchant can be in stay four different sentences.
 
     Binding is unaffected. ``bind_shop`` selects, so it goes through
     ``_live_shops`` directly and an unreadable list stays fatal there, exactly
@@ -710,7 +742,8 @@ def connection_shops(connection_id, business_id, store_id, actor_user_id, *, con
     except SupplierError as exc:
         if str(getattr(exc, "code", "")).upper() != "SUPPLIER_REJECTED":
             raise
-        shops = []
+        raise SupplierConnectionError("We couldn't load your CJ shops right now.", 502,
+                                      "shop_list_unavailable") from None
     current = get_connection(connection_id, business_id, store_id, actor_user_id, context=context)
     return {"shops": _annotated_shops(shops), "external_shop_id": current["external_shop_id"]}
 

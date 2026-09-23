@@ -198,6 +198,77 @@ def test_health_without_a_bound_shop_proves_identity_and_asks_nothing_else():
     assert len(transport.calls) == 1
 
 
+def test_the_shop_list_cj_actually_sends_is_read_rather_than_rejected():
+    """CJ answers this endpoint with `code: 0`, and it means success.
+
+    Every fixture in this file is built by a `Response` whose default body says
+    `{"code": 200, "result": True}`, so until this test the suite asserted an
+    envelope the live account does not use for these two paths. That is how a
+    100%-broken shop list stayed green: the fake transport was answering in a
+    dialect the real one never spoke.
+
+    The body below is the one the merchant's account returned on 2026-09-22 --
+    `code: 0`, `success: true`, `message: null`, and no `result` key at all --
+    carrying the `api` shop it has owned since 2026-09-08. Rejecting it cost
+    that merchant fulfilment entirely, and the rejection was reported to them
+    as a fact about their CJ account.
+    """
+    adapter, transport, _, _ = make_adapter(Response(body={"code": 0, "success": True, "message": None,
+        "data": [{"id": SHOP, "name": "Fixture shop", "type": "api", "status": 1}]}))
+    shops = adapter.get_shops()
+    assert shops == [{"shop_id": SHOP, "name": "Fixture shop", "platform": "api", "status": 1}]
+    assert_call(transport, "shop/getShops")
+
+
+def test_the_warehouse_list_uses_the_same_envelope_and_is_read_too():
+    """The second casualty, and the reason the fix is not endpoint-specific.
+
+    Seven endpoints were measured against the live account. `setting/get`,
+    `product/getCategory`, `product/listV2`, `shopping/pay/getBalance` and
+    `webhook/product/subscribe/list` answer `code: 200`; `shop/getShops` and
+    this one answer `code: 0`. So the split is not one endpoint's quirk, and a
+    patch that special-cased the shop list would have left warehouses failing
+    for exactly the same reason, undiagnosed.
+    """
+    adapter, transport, _, _ = make_adapter(Response(body={"code": 0, "success": True, "message": None,
+        "data": [{"id": "5001", "areaId": 1, "countryCode": "CN", "areaEn": "China", "disabled": False}]}))
+    assert adapter.get_warehouses() == [{"warehouse_id": "5001", "area_id": 1, "country": "CN",
+        "name": "China", "disabled": False}]
+    assert_call(transport, "product/globalWarehouseList")
+
+
+@pytest.mark.parametrize("body", [
+    {"code": 0, "success": False, "message": "shop service unavailable", "data": []},
+    {"code": 0, "result": False, "data": []},
+    {"code": 0, "message": "nothing affirmed", "data": []},
+    {"code": 1699999, "success": True, "data": []}])
+def test_admitting_code_zero_did_not_admit_failure_or_silence(body):
+    """`0` is admitted as a code and nothing more.
+
+    A widened success gate is only safe if it stayed a gate. A body that denies
+    success is still a rejection whatever its code, a body that affirms nothing
+    is still a rejection, and a code outside the two CJ actually uses is still
+    a rejection even when the body claims success -- otherwise this fix would
+    have traded a shop list we could not read for a failure we could not see.
+    """
+    adapter, _, _, _ = make_adapter(Response(body=body))
+    with pytest.raises(SupplierError) as failure:
+        adapter.get_shops()
+    assert failure.value.code == "SUPPLIER_REJECTED"
+
+
+def test_an_account_with_no_shops_is_a_successful_empty_list_not_a_failure():
+    """The distinction the swallow in `connection_shops` used to erase.
+
+    CJ reports a shopless account as an ordinary success carrying an empty
+    `data`. It has a shape of its own, so there is never a need to infer
+    emptiness from a rejection -- and the code that did infer it turned this
+    adapter's failure into a sentence about the merchant's account.
+    """
+    adapter, _, _, _ = make_adapter(Response(body={"code": 0, "success": True, "message": None, "data": []}))
+    assert adapter.get_shops() == []
+
+
 @pytest.mark.parametrize("shop,status", [(SHOP, 0), ("4001", 1), (SHOP, None)])
 def test_shop_health_rejects_unowned_inactive_unknown(shop, status):
     adapter, _, _, _ = make_adapter(Response({"openId": OPEN_ID}),

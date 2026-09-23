@@ -391,11 +391,16 @@ def test_a_cj_account_that_owns_no_storefront_can_still_connect():
 
 
 def test_a_shop_list_we_cannot_read_does_not_block_a_connection_that_selects_none():
-    """CJ answers `shop/getShops` for such an account with an undocumented code.
+    """A shop list can fail for reasons connecting does not depend on.
 
-    We refuse to interpret business codes CJ does not publish -- correctly -- so
-    the call raises. With no shop selected there is nothing that answer would
-    have authorized, so it must not take the whole connection down with it.
+    The rejection is stated here as a bare fact rather than explained, which is
+    the point: this test used to assert that CJ answers a shopless account with
+    an undocumented business code, and that explanation was false -- the 422 in
+    production came from our own transport refusing CJ's `code: 0` success
+    envelope. The behaviour under test survived the correction untouched,
+    because with no shop selected there is nothing that answer would have
+    authorized, whatever produced it. So it must not take the whole connection
+    down with it, and the test does not need to know why the list failed.
     """
     adapter = FakeAdapter(shops_error=svc.SupplierError("SUPPLIER_REJECTED", http_status=422))
     result = svc.connect_cj("biz-a", "store-a", "100", SECRETS["api_key"], adapter=adapter)

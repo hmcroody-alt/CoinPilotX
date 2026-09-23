@@ -365,7 +365,27 @@ class CJAdapter:
             raise SupplierError("SUPPLIER_NOT_FOUND", http_status=404, endpoint=path, provider_code=code)
         if code == 1603003:
             raise SupplierError("DUPLICATE_SUPPLIER_ORDER", http_status=409, ambiguous_write=True, endpoint=path, provider_code=code)
-        if code != 200 or (body.get("result") is not True and body.get("success") is not True) or body.get("result") is False or body.get("success") is False:
+        # CJ has two success envelopes, not one.
+        #
+        # Most endpoints answer `{"code": 200, "result": true, "success": true,
+        # "message": "Success"}`. A minority answer `{"code": 0, "success": true,
+        # "message": null}` with no `result` key at all. Measured against the live
+        # account on 2026-09-22, `shop/getShops` and `product/globalWarehouseList`
+        # use the second form while `setting/get`, `product/getCategory`,
+        # `product/listV2`, `shopping/pay/getBalance` and
+        # `webhook/product/subscribe/list` use the first.
+        #
+        # Requiring `code == 200` therefore rejected two endpoints that had
+        # succeeded and returned data. The cost was not abstract: the merchant's
+        # only CJ shop was discarded on arrival, so fulfilment could never be set
+        # up, and `connection_shops` reported the 422 as "this account has no
+        # shops" -- a sentence about the account that was really a sentence about
+        # this line.
+        #
+        # `0` is admitted only as a code. The affirmative below is unchanged and
+        # still required, so a body that says `success: false` is still a
+        # rejection whatever its code, and a body that affirms nothing is too.
+        if code not in (200, 0) or (body.get("result") is not True and body.get("success") is not True) or body.get("result") is False or body.get("success") is False:
             raise SupplierError("SUPPLIER_REJECTED", http_status=422, ambiguous_write=write and code in (1600000, 1600301),
                                 endpoint=path, provider_code=code)
         data = body.get("data")

@@ -510,6 +510,26 @@ describe("stateForError separates causes that have different fixes", () => {
     expect(stateForError(new PulseApiError("x", 500))).toBe("ERROR");
   });
 
+  /**
+   * A shop list the server could not read, which used to be an empty one.
+   *
+   * `connection_shops` translated the supplier's rejection into `shops: []`, so
+   * this failure reached the merchant as a sentence about their supplier
+   * account — "this account has no shops" — when the truth was that we could
+   * not read the list. The live account was told exactly that, over a shop it
+   * had owned since 2026-09-08. The server now reports the failure as a
+   * failure, and this asserts the client has somewhere to put it: a 502 matches
+   * none of the status classes at the foot of `stateForError`, so without the
+   * code it arrives as a bare "Something went wrong" and the trade would have
+   * been one wrong answer for another.
+   */
+  it("reads an unreadable shop list as the supplier being unreachable", () => {
+    expect(stateForError(new PulseApiError("x", 502, "shop_list_unavailable")))
+      .toBe("PROVIDER_UNAVAILABLE");
+    // And the status alone does not get there, so the code is doing the work.
+    expect(stateForError(new PulseApiError("x", 502))).toBe("ERROR");
+  });
+
   it("returns a retry hint only when the server gave one", () => {
     expect(retryAfterSeconds(new PulseApiError("x", 503, "provider_unavailable", { retry_after: 30 }))).toBe(30);
     expect(retryAfterSeconds(new PulseApiError("x", 503))).toBeNull();

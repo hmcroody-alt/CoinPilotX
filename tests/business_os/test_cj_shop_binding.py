@@ -239,34 +239,82 @@ def test_the_shop_list_marks_which_shops_can_take_orders(ready):
     assert result["external_shop_id"] == SHOP
     assert {s["shop_id"]: s["fulfillable"] for s in result["shops"]} == {
         SHOP: True, OTHER: False, "cj-shop-c": False}
-    assert {s["unfulfillable_reason"] for s in result["shops"] if not s["fulfillable"]} == {
-        "api_shop_binding_required"}
     # No credential, token or account id rides along with the shop list.
     rendered = json.dumps(result, default=str)
     assert not any(secret in rendered for secret in SECRETS.values())
 
 
+def test_a_shop_switched_off_is_named_as_switched_off_not_as_the_wrong_kind(ready):
+    """One refusal code, two situations, and opposite next moves.
+
+    ``dispatch_shop`` answers ``api_shop_binding_required`` for a Shopify
+    storefront and for a CJ API shop the merchant has switched off, because from
+    where it stands they are the same fact: the order cannot go. From where the
+    merchant stands they are not. The first shop is the wrong kind and always
+    will be; the second is theirs and one toggle away in the CJ console.
+
+    Told the same sentence -- "your supplier won't take orders for this shop
+    from an outside app" -- the second merchant goes looking for a problem with
+    the shop's type that does not exist, and the one thing they could actually
+    fix is never mentioned. The gate is unchanged: both are still unfulfillable.
+    """
+    adapter, connection, _ = ready
+    adapter.shops = [API_SHOP, shop(shop_id=OTHER, name="Storefront", platform="Shopify"),
+                     shop(shop_id="cj-shop-c", name="Closed", status=0)]
+    result = svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
+    assert {s["shop_id"]: s["unfulfillable_reason"] for s in result["shops"]} == {
+        SHOP: "", OTHER: "api_shop_binding_required", "cj-shop-c": "shop_disabled"}
+    # And the refinement is display-only: dispatch still refuses the switched-off
+    # shop under its own code, so nothing about what may be sent has moved.
+    with pytest.raises(f.FulfillmentError, match="api_shop_binding_required"):
+        f.dispatch_shop(adapter.shops, "cj-shop-c")
+
+
 def test_an_account_that_owns_no_storefront_reads_as_no_shops_not_as_an_error(ready):
-    """The most likely outcome of opening this screen, and it used to be a 500.
+    """An account with no shops has its own shape, and it is an ordinary one.
 
-    A CJ account with no external storefront is the normal shape for selling
-    through PulseSoc -- PulseSoc *is* the storefront -- and it is the state of
-    the live connection today. CJ answers ``shop/getShops`` for such an account
-    with a business code its own documentation does not list; the transport
-    correctly refuses to interpret it and reports ``SUPPLIER_REJECTED`` (422).
+    CJ reports a shopless account as a successful empty ``data`` -- the same
+    envelope it uses for a populated list, just with nothing in it. So the
+    empty state needs no inference: it is stated, and it arrives here as an
+    empty list without any error to interpret.
 
-    ``_verify`` already decided this for connecting. Reading the list had never
-    been asked, because nothing called it. Left as it was, shipping the merchant
-    screen would have shipped "Something went wrong" as the *ordinary* answer:
-    422 matches none of the client's status classes, so it renders bare.
+    Read from an unbound connection because that is where the question is
+    actually asked -- a merchant opening the picker to choose their first shop.
+    A *bound* connection meeting an empty list is a different event entirely,
+    and it is asserted earlier in this file: the shop they already chose has
+    gone, which is ``shop_not_authorized``, not "you own none".
+    """
+    adapter, connection, _ = ready
+    unbind(connection["id"])
+    adapter.shops = []
+    result = svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
+    assert result["shops"] == [] and result["external_shop_id"] == ""
+
+
+def test_a_rejected_shop_list_is_not_reported_as_an_account_that_owns_none(ready):
+    """This test asserted the exact opposite until 2026-09-22, and was wrong.
+
+    It used to claim CJ answers a shopless account with an undocumented
+    business code, and therefore that ``SUPPLIER_REJECTED`` should read as an
+    empty list. Probing the live account disproved both halves. CJ states
+    emptiness plainly (above), and the rejection this branch existed to absorb
+    was not CJ's verdict at all -- it was our own transport refusing a `code: 0`
+    success envelope it did not recognise, discarding a real shop the merchant
+    had owned since 2026-09-08.
+
+    The belief and the bug were the same line of reasoning, which is why the
+    test could not catch it: a rejection was being converted into a sentence
+    about the merchant's CJ account, so the more thoroughly we got the empty
+    state right, the more convincing the false claim became. A rejection is now
+    reported as a rejection, under a code the client can render as "we couldn't
+    read this" rather than as "you own no shops".
     """
     adapter, connection, _ = ready
     adapter.shops_error = svc.SupplierError("SUPPLIER_REJECTED", http_status=422)
-    result = svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
-    assert result["shops"] == []
-    # And the merchant's own binding still reads back. An unreadable live list
-    # says nothing about what this connection already chose.
-    assert result["external_shop_id"] == SHOP
+    with pytest.raises(svc.SupplierConnectionError) as failure:
+        svc.connection_shops(connection["id"], "biz-a", "store-a", "100", adapter=adapter)
+    assert failure.value.code == "shop_list_unavailable" and failure.value.http_status == 502
+    assert "no shops" not in str(failure.value).lower()
 
 
 @pytest.mark.parametrize("code,status", [("RATE_LIMITED", 429), ("PROVIDER_UNAVAILABLE", 503),
@@ -353,3 +401,29 @@ def test_a_shopless_connection_still_imports_and_the_refusal_is_only_fulfilment(
     assert result["external_shop_id"] == ""
     assert [s["shop_id"] for s in result["shops"]] == [SHOP]
     assert svc.get_connection(connection["id"], "biz-a", "store-a", "100")["status"] == "CONNECTED"
+
+
+def test_choosing_a_shop_sends_nothing_to_the_supplier_and_arms_nothing(ready):
+    """Naming a destination is not the same act as shipping to it.
+
+    The screen this unblocks presents choosing a shop as the last missing step
+    before fulfilment works, which is true and is exactly why it is worth
+    asserting what the step does *not* do. A merchant tapping "Use this shop" is
+    answering "where would orders go", not "start sending them" -- so no order
+    may leave, live submission may not arm itself, and the environment may not
+    move off sandbox as a side effect of the answer.
+
+    Read through ``get_connection`` rather than from the call log alone: an
+    adapter that was never asked to create an order proves nothing about a flag
+    that was flipped and would be read by the next request. That is the surface
+    the merchant's own screen reads its "sandbox" badge from.
+    """
+    adapter, connection, _ = ready
+    unbind(connection["id"])
+    bind(connection, adapter)
+
+    assert adapter.created == [] and adapter.created_live == []
+    recorded = svc.get_connection(connection["id"], "biz-a", "store-a", "100")
+    assert recorded["external_shop_id"] == SHOP
+    assert recorded["environment"] == "SANDBOX"
+    assert recorded["production_fulfillment_enabled"] is False

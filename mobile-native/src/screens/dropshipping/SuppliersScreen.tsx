@@ -119,7 +119,12 @@ const STATUS_COPY: Record<string, string> = {
  */
 const SHOP_REASON_COPY: Record<string, string> = {
   api_shop_binding_required: "Your supplier won't take orders for this shop from an outside app.",
-  ambiguous_shop_name: "Shares its name with another shop, so an order has no single destination."
+  ambiguous_shop_name: "Shares its name with another shop, so an order has no single destination.",
+  // Separated from the line above because the merchant's next move differs. A
+  // switched-off shop is theirs to switch back on; a Shopify storefront is the
+  // wrong kind of shop forever. Told the same sentence, the first merchant goes
+  // looking for a problem with the shop's type that does not exist.
+  shop_disabled: "Switched off in your supplier's console. Turn it back on there to use it."
 };
 
 /** An open shop picker: which connection it belongs to, and what it has to show. */
@@ -683,7 +688,7 @@ function ShopPicker({
       empty={{
         title: "This supplier account has no shops.",
         body:
-          "Orders go to a shop your supplier's console sets up to accept them from outside apps. Create one there, then reopen this list. Importing and publishing keep working in the meantime."
+          "Orders go to a shop your supplier's console sets up to accept them from outside apps. Create one there, then check again below. Importing and publishing keep working in the meantime."
       }}
     />
   ) : null;
@@ -704,6 +709,26 @@ function ShopPicker({
       </View>
 
       {block}
+      {/*
+        The empty state is the one state where the merchant's next move happens
+        somewhere else entirely — in their supplier's console — and then they
+        come back. `DropshippingStateView` gives `EMPTY` no button anywhere in
+        the app, correctly: an empty list is usually an invitation to create
+        something *here*, and a "Try again" on it would just redraw nothing.
+        Here it is the opposite. The list will have changed, and without this
+        the only way to find out is to close the picker and reopen it, which
+        the copy has to ask for in words. Reading it again is the whole action.
+      */}
+      {picker.state === "EMPTY" ? (
+        <Pressable
+          style={styles.pickerRecheck}
+          onPress={onReload}
+          accessibilityRole="button"
+          accessibilityLabel="Check for shops again"
+        >
+          <Text style={styles.secondaryText}>Check again</Text>
+        </Pressable>
+      ) : null}
       {block
         ? null
         : picker.shops.map((shop) => {
@@ -846,6 +871,12 @@ const styles = StyleSheet.create({
   pickerTitle: { fontSize: 13, fontWeight: "700", color: storeLight.text.primary },
   pickerClose: {
     minHeight: storeLight.size.tapTarget,
+    justifyContent: "center",
+    paddingHorizontal: 8
+  },
+  pickerRecheck: {
+    minHeight: storeLight.size.tapTarget,
+    alignSelf: "flex-start",
     justifyContent: "center",
     paddingHorizontal: 8
   },

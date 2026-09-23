@@ -2484,7 +2484,14 @@ const PROVIDER_CODES = [
   "quota_exhausted",
   "product_unavailable",
   "request_timeout",
-  "request_unreachable"
+  "request_unreachable",
+  // CJ answered the shop list with something that was not a list. It is a 502,
+  // which matches none of the status classes at the foot of this function, so
+  // without this entry it arrives as a bare "Something went wrong" — and the
+  // server only started sending it because the alternative was worse: this case
+  // used to be reported as an empty shop list, which told the merchant their CJ
+  // account owned no shops when the truth was that we could not read them.
+  "shop_list_unavailable"
 ];
 
 /**
