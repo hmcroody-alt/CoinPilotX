@@ -179,6 +179,23 @@ def api_pulse_analytics_seller_funnel():
     report["window_days"] = days
     if surface:
         report["surface"] = surface
+
+    # One line per served funnel, carrying the shape of the answer rather than
+    # the answer. A degraded report is indistinguishable from a quiet week on
+    # the wire and from a healthy one in the logs unless the degradation is
+    # counted: `outcome=unavailable` is the field that tells an operator the
+    # order table was unreadable, and `listings=0` separates a seller with no
+    # listings from a seller whose listings could not be resolved.
+    #
+    # No `subject_ref`, no listing ids, no money. This is an operational
+    # signal, and an operational log that accretes commercial detail becomes a
+    # second analytics store that nobody declared.
+    LOGGER.info(
+        "PULSE_ANALYTICS_FUNNEL_SERVED seller_user_id=%s window_days=%s surface=%s "
+        "listings=%s impressions=%s engagements=%s outcome=%s",
+        seller_id, days, surface or "-", len(listing_ids), len(impression_rows),
+        len(engagement_rows), report["outcome"]["source"],
+    )
     return _json({"ok": True, "funnel": report})
 
 

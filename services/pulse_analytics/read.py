@@ -39,6 +39,21 @@ So the scope is resolved to the seller's listing ids first and the event query
 runs against ``idx_cd_impr_listing (listing_id, event_at)``, which exists. No
 index is added and no shared schema is touched.
 
+Two of the three reads are still scans, and saying otherwise would be the
+defect this package was written to stop. Verified against production on
+2026-09-22: neither ``marketplace_listings`` nor ``seller_transactions``
+carries an index on ``seller_user_id``, so resolving the listing scope and
+reading the orders each traverse their table. Both are small — 47 listings and
+32 orders across the whole platform — and the existing
+``/api/pulse/marketplace/seller/metrics`` route has always read orders the same
+way, so this adds no new scan shape. The fix is a ``CREATE INDEX`` on two
+tables every other feature reads, which is a schema change with its own review
+rather than a line smuggled in under an analytics mission.
+
+``tests/pulse_analytics/test_query_plans.py`` pins all of it — the indexed path,
+the scanning paths, and the seller-only alternative that was rejected for
+degrading to a full traversal.
+
 The event row's own ``seller_user_id`` is still required to match. It is a
 denormalised snapshot taken when the impression was written, so the two can
 disagree — if a listing ever changes hands, the historical rows still name the

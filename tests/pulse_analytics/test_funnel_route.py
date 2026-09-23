@@ -219,6 +219,39 @@ def test_a_session_carrying_no_usable_seller_id_is_a_server_error_not_a_wide_rea
     assert "funnel" not in _body(response)
 
 
+def test_a_degraded_funnel_is_visible_in_the_logs_not_only_on_the_wire(
+    client, cur, caplog
+):
+    """A missing half looks like a quiet week unless the degradation is counted."""
+    write_impression(cur, listing_id=A_LISTINGS[0], seller_user_id=SELLER_A)
+    cur.execute("DROP TABLE seller_transactions")
+
+    with caplog.at_level("INFO", logger="services.pulse_analytics_routes"):
+        client.get("/api/pulse/analytics/seller/funnel")
+
+    served = [r for r in caplog.records if "PULSE_ANALYTICS_FUNNEL_SERVED" in r.getMessage()]
+    assert len(served) == 1
+    assert "outcome=unavailable" in served[0].getMessage()
+
+
+def test_the_operational_log_carries_no_viewer_or_commercial_detail(client, cur, caplog):
+    """An operational log that accretes commerce becomes an undeclared store."""
+    write_impression(
+        cur, listing_id=A_LISTINGS[0], seller_user_id=SELLER_A, subject_ref="viewer-hash-9"
+    )
+    write_order(cur, item_id=A_LISTINGS[0], seller_user_id=SELLER_A, amount_cents=4242)
+
+    with caplog.at_level("INFO", logger="services.pulse_analytics_routes"):
+        client.get("/api/pulse/analytics/seller/funnel")
+
+    line = next(
+        r.getMessage() for r in caplog.records if "PULSE_ANALYTICS_FUNNEL_SERVED" in r.getMessage()
+    )
+    assert "viewer-hash-9" not in line
+    assert "4242" not in line
+    assert str(A_LISTINGS[0]) not in line
+
+
 def test_the_route_declares_its_auth_for_the_default_deny_audit(client):
     from services import pulse_analytics_routes
     from services.route_auth import declaration_of
