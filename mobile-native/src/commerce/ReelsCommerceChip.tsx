@@ -49,6 +49,7 @@ import {
   CommercePlacement,
   recordCommerceEngagement
 } from "../api/commerceDiscovery";
+import { attributeCommerceClick } from "./attribution";
 import { useTranslation } from "../i18n/I18nContext";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -135,6 +136,11 @@ export function ReelsCommerceChip({
     clickingRef.current = true;
     // Before navigating: the transition unmounts this chip, and a beacon
     // started on the way out races its own component's teardown.
+    // Opens the attribution window before the beacon, not after: the await
+    // below can take as long as the network does, and the product screen is
+    // already mounting by then. Attributing first means a fast navigation
+    // cannot beat its own click into the store and arrive unattributed.
+    attributeCommerceClick(placement);
     await recordCommerceEngagement(placement, "click").catch(() => undefined);
     clickingRef.current = false;
     const listingId = placement.product.listingId;

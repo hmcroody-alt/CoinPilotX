@@ -45,6 +45,7 @@ import {
   recordCommerceEngagement,
   type CommerceExplanation
 } from "../api/commerceDiscovery";
+import { attributeCommerceClick } from "./attribution";
 import { saveMarketplaceListing } from "../api/marketplace";
 import { useTranslation } from "../i18n/I18nContext";
 import { formatCurrencyAmount, formatNumber } from "../i18n/format";
@@ -203,6 +204,11 @@ function ShelfCard({
     clickingRef.current = true;
     // Recorded before navigating: the transition unmounts this card, and a
     // beacon started on the way out races its own component's teardown.
+    // Opens the attribution window before the beacon, not after: the await
+    // below can take as long as the network does, and the product screen is
+    // already mounting by then. Attributing first means a fast navigation
+    // cannot beat its own click into the store and arrive unattributed.
+    attributeCommerceClick(placement);
     await recordCommerceEngagement(placement, "click").catch(() => undefined);
     clickingRef.current = false;
     const listingId = product.listingId;

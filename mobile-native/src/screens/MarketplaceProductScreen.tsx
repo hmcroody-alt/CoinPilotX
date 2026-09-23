@@ -24,7 +24,7 @@
 
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   NativeScrollEvent,
@@ -45,6 +45,8 @@ import {
   startMarketplaceSellerChat
 } from "../api/marketplace";
 import { addToCart } from "../api/marketplaceCommerce";
+import { CommerceEngagementAction, recordCommerceEngagement } from "../api/commerceDiscovery";
+import { commerceAttributionFor } from "../commerce/attribution";
 import {
   canPurchaseMarketplaceListing as canPurchaseListing,
   isStocklessMarketplaceListing as isStockless,
@@ -126,6 +128,54 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   // Same store and same key the grid card underneath uses, so saving here is
   // reflected there without either screen knowing about the other.
   const savedState = useSavedState("marketplace", listingId, listing?.saved);
+
+  /**
+   * §18: the funnel past the click, for the arrivals that came from one.
+   *
+   * `commerceAttributionFor` returns null for every other way of reaching this
+   * screen — search, a deep link, the grid, a share — and that null is the
+   * point. Reporting an organic arrival against a placement would credit
+   * discovery with sales it did not cause, which is a worse outcome than not
+   * measuring at all.
+   *
+   * Keyed on the listing rather than on the mount so a re-render or a returning
+   * navigation does not restate the view. The server dedups these anyway
+   * (`eng:product_view:<placement>`), so this is about not sending the request,
+   * not about the count being right.
+   *
+   * Placed above the `!listing` early return because it is a hook. The guard
+   * inside it is on `listingId`, which is what this screen can act on even when
+   * the listing snapshot has not arrived.
+   */
+  const viewedRef = useRef(0);
+  useEffect(() => {
+    if (!listingId || viewedRef.current === listingId) return;
+    const attribution = commerceAttributionFor(listingId);
+    if (!attribution) return;
+    viewedRef.current = listingId;
+    recordCommerceEngagement(attribution, "product_view").catch(() => undefined);
+  }, [listingId]);
+
+  /**
+   * One funnel emit, or nothing at all.
+   *
+   * Every §18 event past the view goes through here so the three rules that
+   * make them safe are stated once: an unattributed arrival sends nothing, the
+   * beacon never throws into a buyer action, and the quantity on screen is what
+   * multiplies the price. A fire-and-forget call inside a purchase flow is
+   * exactly the kind of thing that must not be able to fail loudly.
+   */
+  const emitCommerceFunnel = useCallback(
+    (action: CommerceEngagementAction, unitMinor: number | null | undefined) => {
+      const attribution = commerceAttributionFor(listingId);
+      if (!attribution) return;
+      recordCommerceEngagement(attribution, action, {
+        valueMinor: unitMinor == null ? 0 : unitMinor * qty,
+        currency: listing?.currency || "USD"
+      }).catch(() => undefined);
+    },
+    [listing?.currency, listingId, qty]
+  );
 
   if (!listing || !listingId) {
     return (
@@ -241,6 +291,10 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
       // them to checkout here is the bug this screen exists to remove.
       await addToCart(listingId, qty);
       setNotice(`Added to cart · ${qty} × ${listing.title || "item"}`);
+      // §18, after the await: an add-to-cart that failed is not one. The value
+      // is the line total rather than the unit price, so a discovery-driven
+      // basket of three is not reported as a basket of one.
+      emitCommerceFunnel("add_to_cart", marketplaceListingPriceMinor(listing));
     } catch (error) {
       setNotice(buyerErrorCopy(error, "This item could not be added to your cart."));
     } finally {
@@ -259,6 +313,12 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     // The unit price is multiplied out here: passing the bare label would have
     // let the checkout CTA read "$5.00" on an order for two.
     const unitMinor = marketplaceListingPriceMinor(listing);
+    // §18. Emitted here, on the way *into* checkout, rather than from
+    // `MarketplaceCheckoutScreen` — checkout is a locked path this work must not
+    // touch, and "the buyer started checkout" is a fact this screen already
+    // knows. `purchase` has no equivalent safe hook point and is deliberately
+    // not wired; see the mission report.
+    emitCommerceFunnel("checkout_started", unitMinor);
     const kind = resolveFulfillmentKind(listing);
     const thumbnail = marketplaceListingThumbnail(listing);
     navigation.navigate("MarketplaceCheckout", {
