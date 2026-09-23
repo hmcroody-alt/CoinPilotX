@@ -24,12 +24,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CommerceCadence,
+  CommerceContext,
   CommerceFeedbackAction,
   CommercePlacement,
   fetchCommercePlacements,
   recordCommerceFeedback
 } from "../api/commerceDiscovery";
-import { REELS_INTERVAL, REELS_LEAD_IN, REELS_MAX_CHIPS, bindReelCommerce } from "./reelSlots";
+import {
+  REELS_INTERVAL,
+  REELS_LEAD_IN,
+  REELS_MAX_CHIPS,
+  bindReelCommerce,
+  reelCommerceSlots
+} from "./reelSlots";
 import { startCommercePause, useSocialDiscoveryAllowed } from "./consent";
 import { commerceSessionId } from "./session";
 
@@ -47,12 +54,31 @@ export type UseReelsCommerceOptions = {
   enabled?: boolean;
   /** Bumped by the screen on pull-to-refresh. */
   refreshToken?: number;
+  /**
+   * What the reel that will carry the chip is about (§8).
+   *
+   * A resolver rather than a prepared context because the hook, not the screen,
+   * knows *which* reel that is — `reelCommerceSlots` derives it from the same
+   * cadence arithmetic the binder uses, so the reel we describe to the ranker
+   * and the reel the chip lands on cannot be two different videos.
+   *
+   * Optional: with no resolver the request carries no context and ranking falls
+   * back to NEUTRAL relevance, which is exactly the pre-§8 behaviour.
+   */
+  resolveContext?: (reelId: string) => CommerceContext | null;
 };
 
 const LOCAL_CADENCE: CommerceCadence = {
   leadIn: REELS_LEAD_IN,
   interval: REELS_INTERVAL,
   maxPerPage: REELS_MAX_CHIPS
+};
+
+/** The same rhythm in the binder's vocabulary — `maxChips`, not `maxPerPage`. */
+const LOCAL_CADENCE_SLOTS = {
+  leadIn: REELS_LEAD_IN,
+  interval: REELS_INTERVAL,
+  maxChips: REELS_MAX_CHIPS
 };
 
 const DEFAULT_VISIBLE_DWELL_MS = 1000;
@@ -70,7 +96,8 @@ const NO_CHIPS: ReadonlyMap<string, CommercePlacement> = new Map();
 export function useReelsCommerce({
   reelIds,
   enabled: callerEnabled = true,
-  refreshToken = 0
+  refreshToken = 0,
+  resolveContext
 }: UseReelsCommerceOptions): ReelsCommerceState {
   // The master switch, read rather than passed — see `useFeedCommerce` for why
   // this is not left to the screen to remember.
@@ -88,13 +115,62 @@ export function useReelsCommerce({
   // Snoozing empties the list; a response already in flight must not undo that.
   const snoozedRef = useRef(false);
 
+  /**
+   * A *content* key for the reel list, with the list itself kept in a ref.
+   *
+   * `reelIds` is rebuilt by the screen on every render, so depending on its
+   * identity would re-bind — and hand the renderer a brand new `Map` — on every
+   * frame of a scroll. Depending on a joined string instead re-binds only when
+   * the list actually changes.
+   *
+   * The ref is what keeps this honest. The key is used for *comparison* only and
+   * the binder reads the real array, so a separator that happens to occur inside
+   * an id can at worst cause one redundant re-bind. Reconstructing the ids by
+   * splitting the key back apart would instead corrupt them — that is the
+   * version of this trick that looks identical and is wrong.
+   */
+  const reelIdKey = Array.isArray(reelIds) ? reelIds.join("|") : "";
+  const reelIdsRef = useRef<readonly string[]>(reelIds);
+  reelIdsRef.current = reelIds;
+
+  /**
+   * The reel the chip will sit on, named before the chip is asked for.
+   *
+   * Computed with the *local* cadence, because the server's cadence arrives in
+   * the same response this is used to request — there is no ordering in which
+   * we could use it. The local numbers mirror `commerce_discovery/config.py`, so
+   * the two agree unless an operator retunes reels, and the worst case of a
+   * disagreement is that the context describes a nearby reel rather than the
+   * exact one. That degrades the match; it cannot mis-bind anything, because
+   * binding below still uses the server's cadence.
+   */
+  const targetReelId = useMemo(
+    () => reelCommerceSlots(reelIdsRef.current, LOCAL_CADENCE_SLOTS)[0] || "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [reelIdKey]
+  );
+
+  // Read through a ref so a screen that rebuilds the resolver every render (the
+  // normal case — it closes over the reel list) does not refire the fetch.
+  const resolveContextRef = useRef(resolveContext);
+  resolveContextRef.current = resolveContext;
+
   useEffect(() => {
-    if (!enabled) {
+    // No target reel means the list is shorter than the lead-in, so no slot
+    // exists for a chip to occupy. Fetching would spend a request and a
+    // server-side placement row on a chip that structurally cannot render —
+    // and, worse, would have to be requested with no context at all.
+    if (!enabled || !targetReelId) {
       setPlacements([]);
       return undefined;
     }
     let cancelled = false;
+    // §8. `null` is passed through as an omitted field rather than as `{}`: a
+    // reel with no topic should be ranked at NEUTRAL relevance, not scored
+    // against an empty string.
+    const context = resolveContextRef.current?.(targetReelId) || undefined;
     fetchCommercePlacements("reels", {
+      context,
       sessionId,
       limit: REELS_MAX_CHIPS,
       cadence: LOCAL_CADENCE
@@ -112,7 +188,7 @@ export function useReelsCommerce({
     return () => {
       cancelled = true;
     };
-  }, [enabled, refreshToken, sessionId]);
+  }, [enabled, refreshToken, sessionId, targetReelId]);
 
   // A refresh is a new list, so session-local dismissals are no longer about
   // anything on screen. The server still holds them, so this cannot un-hide
@@ -151,24 +227,6 @@ export function useReelsCommerce({
 
     recordCommerceFeedback(placement, action).catch(() => undefined);
   }, []);
-
-  /**
-   * A *content* key for the reel list, with the list itself kept in a ref.
-   *
-   * `reelIds` is rebuilt by the screen on every render, so depending on its
-   * identity would re-bind — and hand the renderer a brand new `Map` — on every
-   * frame of a scroll. Depending on a joined string instead re-binds only when
-   * the list actually changes.
-   *
-   * The ref is what keeps this honest. The key is used for *comparison* only and
-   * the binder reads the real array, so a separator that happens to occur inside
-   * an id can at worst cause one redundant re-bind. Reconstructing the ids by
-   * splitting the key back apart would instead corrupt them — that is the
-   * version of this trick that looks identical and is wrong.
-   */
-  const reelIdKey = Array.isArray(reelIds) ? reelIds.join("|") : "";
-  const reelIdsRef = useRef<readonly string[]>(reelIds);
-  reelIdsRef.current = reelIds;
 
   const chipByReelId = useMemo(() => {
     if (!enabled || placements.length === 0) return NO_CHIPS;

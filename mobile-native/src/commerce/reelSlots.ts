@@ -73,6 +73,52 @@ function dismissed(placement: CommercePlacement, options: ReelSlotOptions): bool
 }
 
 /**
+ * Which reels are *offered* a slot, in order — the cadence, with no placements.
+ *
+ * Split out of `bindReelCommerce` because the answer is useful before any
+ * placement exists. The caller that needs it is the fetch: §8 wants the chip
+ * matched to the reel it sits on, and since this arithmetic depends only on the
+ * id list and the cadence, the surface can name that reel and send *its* topic
+ * as the ranking context — rather than sending a generic signal and hoping the
+ * chip lands somewhere it happens to fit.
+ *
+ * `bindReelCommerce` consumes this rather than repeating the loop, so a change
+ * to the rhythm cannot make the reel we asked about and the reel we bind to
+ * drift apart.
+ *
+ * Returned ids are deduped: a repeated id would otherwise hand two reels the
+ * same chip, and reels lists do repeat across pagination boundaries. Positions
+ * are raw array indices, so a duplicate still consumes its position.
+ */
+export function reelCommerceSlots(
+  reelIds: readonly string[],
+  options: Pick<ReelSlotOptions, "leadIn" | "interval" | "maxChips"> = {}
+): string[] {
+  const slots: string[] = [];
+  if (!Array.isArray(reelIds)) return slots;
+
+  const leadIn = Math.max(options.leadIn ?? REELS_LEAD_IN, 1);
+  const interval = Math.max(options.interval ?? REELS_INTERVAL, 1);
+  const maxChips = Math.max(options.maxChips ?? REELS_MAX_CHIPS, 0);
+  if (maxChips === 0) return slots;
+
+  const seenIds = new Set<string>();
+  for (let position = 0; position < reelIds.length; position += 1) {
+    const reelId = String(reelIds[position] || "");
+    if (!reelId || seenIds.has(reelId)) continue;
+    seenIds.add(reelId);
+
+    if (slots.length >= maxChips) break;
+    if (position < leadIn) continue;
+    if ((position - leadIn) % interval !== 0) continue;
+
+    slots.push(reelId);
+  }
+
+  return slots;
+}
+
+/**
  * Bind placements to reels.
  *
  * Returns an empty map — never a partial or a guess — whenever there is nothing
@@ -91,37 +137,19 @@ export function bindReelCommerce(
     return bound;
   }
 
-  const leadIn = Math.max(options.leadIn ?? REELS_LEAD_IN, 1);
-  const interval = Math.max(options.interval ?? REELS_INTERVAL, 1);
-  const maxChips = Math.max(options.maxChips ?? REELS_MAX_CHIPS, 0);
   const now = options.now ?? Date.now();
-  if (maxChips === 0) return bound;
-
   const usable = placements.filter((placement) => renderable(placement, now));
   if (usable.length === 0) return bound;
 
-  // Counts slots *offered*, not chips drawn — a slot skipped because the user
-  // dismissed its placement is still spent.
-  let slot = 0;
-  const seenIds = new Set<string>();
-
-  for (let position = 0; position < reelIds.length; position += 1) {
-    const reelId = String(reelIds[position] || "");
-    // A duplicate id would otherwise overwrite an earlier binding and hand two
-    // reels the same chip. Reels lists do repeat across pagination boundaries.
-    if (!reelId || seenIds.has(reelId)) continue;
-    seenIds.add(reelId);
-
-    if (slot >= maxChips) break;
-    if (position < leadIn) continue;
-    if ((position - leadIn) % interval !== 0) continue;
-
+  // Slots are *offered*, not drawn — a slot whose placement the user dismissed
+  // is still spent, which is why this indexes `usable` by slot position rather
+  // than consuming the next undismissed placement.
+  const slots = reelCommerceSlots(reelIds, options);
+  for (let slot = 0; slot < slots.length; slot += 1) {
     const placement = usable[slot];
-    slot += 1;
     if (!placement) break;
     if (dismissed(placement, options)) continue;
-
-    bound.set(reelId, placement);
+    bound.set(slots[slot], placement);
   }
 
   return bound;
