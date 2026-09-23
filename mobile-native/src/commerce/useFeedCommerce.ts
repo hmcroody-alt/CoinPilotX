@@ -56,14 +56,19 @@ const DEFAULT_VISIBLE_PERCENT = 60;
 const DEFAULT_VISIBLE_DWELL_MS = 1000;
 
 /**
- * Asked for more than the feed will place (2 per page), on purpose.
+ * Asked for more than the feed will draw, on purpose.
  *
- * Every placement the server returns costs it a persisted row and an HMAC, so
- * this is not free — but a page that hides its one card and has nothing behind
- * it shows a gap for the rest of the session, and the client cannot ask for "one
- * more" without a second round trip mid-scroll. Six is two pages of headroom.
+ * A page places at most `COMMERCE_MAX_ROWS` strips of `COMMERCE_PRODUCTS_PER_ROW`
+ * products — eight — and asking for exactly eight makes every dismissal
+ * permanent for the session: `injectCommerceRows` hands each slot a fixed window
+ * of this list, so a hidden product shortens its strip and nothing behind it can
+ * take the space. Twelve is half a page of slack, which is what lets the *next*
+ * page's strips still be full after this one has been pruned.
+ *
+ * Not unbounded: every placement the server returns costs it a persisted row and
+ * an HMAC, and the ones past the eighth are speculative by construction.
  */
-const FEED_PLACEMENT_LIMIT = 6;
+const FEED_PLACEMENT_LIMIT = 12;
 
 export type FeedCommerceState = {
   /** Ranked placements for this page. Empty whenever the engine has nothing. */

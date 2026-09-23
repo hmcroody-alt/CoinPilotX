@@ -1044,7 +1044,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     if (row.type === "commerce") {
       return (
         <CommerceFeedCard
-          placement={row.placement}
+          placements={row.placements}
           isViewable={viewableRowKeys.has(row.key)}
           visibleDwellMs={commerce.visibleDwellMs}
           edgeInset={12}

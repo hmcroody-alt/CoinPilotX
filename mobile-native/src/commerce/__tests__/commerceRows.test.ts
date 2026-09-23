@@ -139,7 +139,9 @@ describe("injectCommerceRows — cadence", () => {
   });
 
   it("spaces later units by `interval` organic posts", () => {
-    const out = injectCommerceRows(postRows(40), placements(3), { maxRows: 3 });
+    // One product per strip, so "three placements" means "three rows" and the
+    // arithmetic under test is the cadence rather than the window width.
+    const out = injectCommerceRows(postRows(40), placements(3), { maxRows: 3, productsPerRow: 1 });
     const indexes = commerceIndexes(out);
     expect(indexes.length).toBe(3);
     // Each commerce row shifts subsequent indexes by one, so the raw gap
@@ -154,8 +156,67 @@ describe("injectCommerceRows — cadence", () => {
   });
 
   it("treats a cadence of zero as one rather than dividing by it", () => {
-    const out = injectCommerceRows(postRows(40), placements(4), { leadIn: 0, interval: 0, maxRows: 2 });
+    const out = injectCommerceRows(postRows(40), placements(4), {
+      leadIn: 0,
+      interval: 0,
+      maxRows: 2,
+      productsPerRow: 1
+    });
     expect(commerceIndexes(out)).toHaveLength(2);
+  });
+
+  it("treats a strip width of zero as one rather than emitting empty strips", () => {
+    // The same defensive floor the cadence gets. A width of 0 would cut every
+    // window as `slice(0, 0)` and spend both slots on nothing.
+    const out = injectCommerceRows(postRows(40), placements(4), { maxRows: 2, productsPerRow: 0 });
+    expect(commerceIndexes(out)).toHaveLength(2);
+  });
+});
+
+describe("injectCommerceRows — the strip", () => {
+  it("puts several products in one row rather than one product in several rows", () => {
+    // §2. The alternative spends the page's whole commerce budget — two rows —
+    // on two products, which is the thing a rail exists to avoid.
+    const out = injectCommerceRows(postRows(40), placements(4), { maxRows: 1 });
+    const [index] = commerceIndexes(out);
+    const row = out[index];
+    expect(row.type === "commerce" && row.placements.map((p) => p.placementId)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+      "p4"
+    ]);
+  });
+
+  it("gives each slot its own window of the ranked list", () => {
+    const out = injectCommerceRows(postRows(60), placements(8), { maxRows: 2, productsPerRow: 3 });
+    const strips = commerceIndexes(out).map((index) => {
+      const row = out[index];
+      return row.type === "commerce" ? row.placements.map((p) => p.placementId) : [];
+    });
+    // Windows are cut by position, not refilled from the tail: slot 1 gets the
+    // *next* three, and p7/p8 are simply not shown on this page.
+    expect(strips).toEqual([
+      ["p1", "p2", "p3"],
+      ["p4", "p5", "p6"]
+    ]);
+  });
+
+  it("draws a short strip rather than padding it out", () => {
+    // A thin catalogue is the common case in production today. One product with
+    // a heading and a "See all" is correct, not degraded — §9's doorway.
+    const out = injectCommerceRows(postRows(40), placements(1), { maxRows: 2 });
+    const indexes = commerceIndexes(out);
+    expect(indexes).toHaveLength(1);
+    const row = out[indexes[0]];
+    expect(row.type === "commerce" && row.placements).toHaveLength(1);
+  });
+
+  it("emits no row at all for a slot whose window is empty", () => {
+    // Four products, four per row: slot 1's window is `slice(4, 8)` — nothing.
+    // The row must not appear as a heading and a "See all" over no products.
+    const out = injectCommerceRows(postRows(60), placements(4), { maxRows: 2 });
+    expect(commerceIndexes(out)).toHaveLength(1);
   });
 });
 
@@ -179,7 +240,8 @@ describe("injectCommerceRows — the four placement invariants", () => {
         rows.push({ type: "ad", key: `ad:${i}`, ad: { creativeId: i } as never });
       }
     }
-    const out = injectCommerceRows(rows, placements(4), { maxRows: 4 });
+    const out = injectCommerceRows(rows, placements(4), { maxRows: 4, productsPerRow: 1 });
+    expect(commerceIndexes(out).length).toBeGreaterThan(0);
     for (const index of commerceIndexes(out)) {
       // If a commerce row had landed between a post and its ad, the row after
       // it would be that orphaned ad.
@@ -211,15 +273,21 @@ describe("injectCommerceRows — the four placement invariants", () => {
     const out = injectCommerceRows(rows, placements(2), { maxRows: 1 });
     const indexes = commerceIndexes(out);
     expect(indexes).toHaveLength(1);
-    // A position lost to adjacency does not spend a slot, so the *first*
-    // placement is what lands — not the second.
-    expect(out[indexes[0]]).toMatchObject({ slot: 0, placement: { placementId: "p1" } });
+    // A position lost to adjacency does not spend a slot, so slot 0's *own*
+    // window is what lands — the strip still leads with p1 rather than starting
+    // at p2 as it would if the blocked position had consumed the slot.
+    const row = out[indexes[0]];
+    expect(row.type === "commerce" && row.slot).toBe(0);
+    expect(row.type === "commerce" && row.placements[0].placementId).toBe("p1");
   });
 
   it("4. is never the last row", () => {
     // Exactly enough posts that the cadence wants a unit at the very end.
     for (let count = COMMERCE_LEAD_IN; count <= COMMERCE_LEAD_IN + COMMERCE_INTERVAL * 2; count += 1) {
-      const out = injectCommerceRows(postRows(count), placements(3), { maxRows: 3 });
+      const out = injectCommerceRows(postRows(count), placements(3), {
+        maxRows: 3,
+        productsPerRow: 1
+      });
       expect(out[out.length - 1]?.type).toBe("post");
     }
   });
@@ -237,7 +305,8 @@ describe("injectCommerceRows — eligibility", () => {
       { maxRows: 1, now }
     );
     const [index] = commerceIndexes(out);
-    expect(out[index]).toMatchObject({ placement: { placementId: "p2" } });
+    const row = out[index];
+    expect(row.type === "commerce" && row.placements.map((p) => p.placementId)).toEqual(["p2"]);
   });
 
   it("keeps a placement whose expiry is unparseable rather than silently dropping it", () => {
@@ -250,89 +319,129 @@ describe("injectCommerceRows — eligibility", () => {
     expect(commerceIndexes(out)).toHaveLength(1);
   });
 
-  it("shows one card per seller per page", () => {
+  it("does not second-guess the server on seller diversity", () => {
+    // This asserts the *removal* of a client-side rule, so it is worth saying
+    // why out loud. `router._SELLER_CAPS` already caps the feed at two products
+    // per seller, alongside category caps and per-product cooldowns, all
+    // computed against exposure data the client does not have. A second cap here
+    // could only ever discard a product the server had just decided was good for
+    // this feed — shortening the strip for no benefit the shopper can perceive.
     const sameSeller = [
       placement({ placementId: "p1", product: { listingId: 1, sellerUserId: 99 } as never }),
-      placement({ placementId: "p2", product: { listingId: 2, sellerUserId: 99 } as never }),
-      placement({ placementId: "p3", product: { listingId: 3, sellerUserId: 7 } as never })
+      placement({ placementId: "p2", product: { listingId: 2, sellerUserId: 99 } as never })
     ];
-    const out = injectCommerceRows(postRows(60), sameSeller, { maxRows: 3 });
-    const sellers = commerceIndexes(out).map((index) => {
-      const row = out[index];
-      return row.type === "commerce" ? row.placement.product.sellerUserId : 0;
-    });
-    expect(new Set(sellers).size).toBe(sellers.length);
+    const out = injectCommerceRows(postRows(60), sameSeller, { maxRows: 1 });
+    const [index] = commerceIndexes(out);
+    const row = out[index];
+    expect(row.type === "commerce" && row.placements.map((p) => p.placementId)).toEqual(["p1", "p2"]);
   });
 
-  it("shows one card per listing even when the server repeats it", () => {
+  it("shows one tile per listing even when the server repeats it", () => {
+    // Dedup that *does* stay client-side, because the same product twice in one
+    // strip is a rendering defect rather than a policy question.
     const duplicated = [
       placement({ placementId: "p1", product: { listingId: 5, sellerUserId: 1 } as never }),
       placement({ placementId: "p2", product: { listingId: 5, sellerUserId: 2 } as never })
     ];
     const out = injectCommerceRows(postRows(60), duplicated, { maxRows: 2 });
-    expect(commerceIndexes(out)).toHaveLength(1);
+    const indexes = commerceIndexes(out);
+    expect(indexes).toHaveLength(1);
+    const row = out[indexes[0]];
+    expect(row.type === "commerce" && row.placements).toHaveLength(1);
   });
 });
 
-describe("injectCommerceRows — a dismissed slot stays empty", () => {
-  it("does not pull the next product into the hole left by a hidden one", () => {
-    const all = placements(3);
-    const before = injectCommerceRows(postRows(60), all, { maxRows: 3 });
-    const beforeIds = commerceIndexes(before).map((index) => {
-      const row = before[index];
-      return row.type === "commerce" ? row.placement.placementId : "";
-    });
-    expect(beforeIds).toEqual(["p1", "p2", "p3"]);
+/** Every strip in an output, as lists of placement ids. */
+function stripsOf(rows: readonly { type: string }[]): string[][] {
+  return commerceIndexes(rows).map((index) => {
+    const row = rows[index] as { type: string; placements?: CommercePlacement[] };
+    return (row.placements || []).map((p) => p.placementId);
+  });
+}
+
+describe("injectCommerceRows — a dismissed product is never replaced", () => {
+  it("shortens the strip it was in rather than refilling from the next window", () => {
+    // The rule the whole window design exists for. p5 belongs to slot 1 and must
+    // stay there: sliding it forward would put a product the shopper has never
+    // seen exactly where the one they just hid used to be, a frame later.
+    const all = placements(8);
+    const before = injectCommerceRows(postRows(60), all, { maxRows: 2, productsPerRow: 4 });
+    expect(stripsOf(before)).toEqual([
+      ["p1", "p2", "p3", "p4"],
+      ["p5", "p6", "p7", "p8"]
+    ]);
 
     const after = injectCommerceRows(postRows(60), all, {
-      maxRows: 3,
-      dismissedPlacementIds: new Set(["p1"])
+      maxRows: 2,
+      productsPerRow: 4,
+      dismissedPlacementIds: new Set(["p2"])
     });
-    const afterIds = commerceIndexes(after).map((index) => {
-      const row = after[index];
-      return row.type === "commerce" ? row.placement.placementId : "";
-    });
-    // p2 and p3 keep their own slots. If dismissal compacted the list, this
-    // would read ["p2", "p3"] *and* p2 would have moved up to p1's position —
-    // a replacement product appearing where the hidden one was, one frame later.
-    expect(afterIds).toEqual(["p2", "p3"]);
+    expect(stripsOf(after)).toEqual([
+      ["p1", "p3", "p4"],
+      ["p5", "p6", "p7", "p8"]
+    ]);
+  });
 
-    // So the check is that p2 still sits behind the same number of posts it did
-    // before. Its array index legitimately moves up by one — p1's row is gone —
-    // but the post it follows must not change, because that is what the user
-    // sees as "something took its place".
+  it("does not move the rows that follow it", () => {
+    const all = placements(8);
+    const before = injectCommerceRows(postRows(60), all, { maxRows: 2, productsPerRow: 4 });
+    const after = injectCommerceRows(postRows(60), all, {
+      maxRows: 2,
+      productsPerRow: 4,
+      dismissedPlacementIds: new Set(["p2"])
+    });
+    // Both strips still follow the same posts. A strip getting shorter is a
+    // change inside one row; it must not reflow the feed around it.
+    expect(commerceIndexes(after).map((i) => postsAhead(after, i))).toEqual(
+      commerceIndexes(before).map((i) => postsAhead(before, i))
+    );
+  });
+
+  it("emits no row when every product in a window is hidden", () => {
+    // §15: the strip collapses fully. Not a heading and a "See all" over an
+    // empty rail, and not the next window sliding up to take the space.
+    const all = placements(8);
+    const after = injectCommerceRows(postRows(60), all, {
+      maxRows: 2,
+      productsPerRow: 4,
+      dismissedPlacementIds: new Set(["p1", "p2", "p3", "p4"])
+    });
+    expect(stripsOf(after)).toEqual([["p5", "p6", "p7", "p8"]]);
+
+    // And slot 1's row stays where slot 1's row was — it did not inherit slot
+    // 0's position along with its survival.
+    const before = injectCommerceRows(postRows(60), all, { maxRows: 2, productsPerRow: 4 });
     expect(postsAhead(after, commerceIndexes(after)[0])).toBe(
       postsAhead(before, commerceIndexes(before)[1])
     );
   });
 
-  it("leaves the remaining rows at the positions they already had", () => {
-    const all = placements(3);
-    const before = injectCommerceRows(postRows(60), all, { maxRows: 3 });
-    const after = injectCommerceRows(postRows(60), all, {
-      maxRows: 3,
-      dismissedPlacementIds: new Set(["p2"])
+  it("spends the slot even when its whole window was dismissed", () => {
+    // The slot counter counts offers, not rows. If it counted rows, hiding a
+    // whole strip would hand its window to the next eligible position and the
+    // shopper would watch the thing they just dismissed reappear further down.
+    const all = placements(8);
+    const out = injectCommerceRows(postRows(200), all, {
+      maxRows: 2,
+      productsPerRow: 4,
+      dismissedPlacementIds: new Set(["p1", "p2", "p3", "p4"])
     });
-    const [firstBefore] = commerceIndexes(before);
-    const [firstAfter] = commerceIndexes(after);
-    // Hiding the middle card must not make the feed jump under the thumb.
-    expect(firstAfter).toBe(firstBefore);
+    expect(stripsOf(out)).toEqual([["p5", "p6", "p7", "p8"]]);
   });
 
-  it("suppresses every card from a seller the user told us to stop recommending", () => {
+  it("suppresses every product from a seller the user told us to stop recommending", () => {
     const all = [
       placement({ placementId: "p1", product: { listingId: 1, sellerUserId: 42 } as never }),
-      placement({ placementId: "p2", product: { listingId: 2, sellerUserId: 7 } as never })
+      placement({ placementId: "p2", product: { listingId: 2, sellerUserId: 7 } as never }),
+      placement({ placementId: "p3", product: { listingId: 3, sellerUserId: 42 } as never })
     ];
     const out = injectCommerceRows(postRows(60), all, {
-      maxRows: 2,
+      maxRows: 1,
       dismissedSellerIds: new Set([42])
     });
-    const ids = commerceIndexes(out).map((index) => {
-      const row = out[index];
-      return row.type === "commerce" ? row.placement.placementId : "";
-    });
-    expect(ids).toEqual(["p2"]);
+    // Both of seller 42's products go, from inside the same strip — "stop
+    // recommending this seller" is about the seller, not about one card.
+    expect(stripsOf(out)).toEqual([["p2"]]);
   });
 });
 

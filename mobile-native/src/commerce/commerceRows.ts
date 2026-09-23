@@ -33,14 +33,37 @@
  * covering a caption or a reaction bar, and no test of *this* module would see
  * it happen.
  *
- * ## Why a dismissed slot stays empty
+ * ## Why a dismissed slot is never refilled
  *
- * Placements are bound to slots by index, and a dismissed placement leaves its
- * slot empty rather than pulling the next one forward. Re-packing is the
- * obvious implementation and it produces exactly the behaviour the brief
- * forbids: hide a product, and another product appears in the hole a frame
- * later. Leaving the gap also keeps the remaining rows at stable positions, so
- * hiding a card does not make the rest of the feed jump under the user's thumb.
+ * Each slot is handed a fixed *window* of the ranked list — slot 0 gets the
+ * first `productsPerRow`, slot 1 the next, and so on — and that window is
+ * decided before any dismissal is considered. A hidden product is removed from
+ * its window and nothing is drawn forward to replace it, so the strip gets
+ * shorter and the row's reserve stays out of reach.
+ *
+ * Re-packing *across* windows is the obvious implementation and it produces
+ * exactly the behaviour the brief forbids: hide a product and another product —
+ * one the user has never seen — appears in the hole a frame later. Compaction
+ * *within* a window is a different thing and is unavoidable: the remaining tiles
+ * of a rail close up the same way any list does when an item is deleted, and
+ * every one of them was already part of this strip.
+ *
+ * A window whose products have all been dismissed emits no row at all, so the
+ * strip collapses completely rather than leaving an empty titled container —
+ * §15's "no blank gap".
+ *
+ * ## Why seller diversity is not decided here
+ *
+ * It used to be: one card per seller per page, enforced client-side. That is a
+ * second opinion on a policy the server already owns — `router._SELLER_CAPS`
+ * caps the feed at two per seller, alongside category caps, per-product
+ * cooldowns and cross-surface cooldowns, all computed against exposure data the
+ * client does not have. With one card per row the duplication was harmless. With
+ * a strip it is not: the client would silently discard a product the server had
+ * just decided was good for this feed, making the strip shorter for no benefit
+ * the user can perceive. Listing-level dedup stays, because the same product
+ * appearing twice in one strip is a client-visible defect rather than a policy
+ * question.
  */
 import type { CommercePlacement } from "../api/commerceDiscovery";
 import type { HomeRow } from "../discovery/discoveryRows";
@@ -50,7 +73,17 @@ export type CommerceRow = {
   key: string;
   /** 0-based position among commerce rows in this feed, for analytics. */
   slot: number;
-  placement: CommercePlacement;
+  /**
+   * The products this row's strip holds, left to right.
+   *
+   * A list rather than a single placement because §2 asks for a horizontal
+   * strip. The alternative — one row per product — spends the feed's entire
+   * commerce budget (two rows) on two products, so the surface has to choose
+   * between showing more commerce and showing more catalogue. A strip shows
+   * several products for one row's worth of vertical space, which is the whole
+   * reason the pattern exists.
+   */
+  placements: CommercePlacement[];
 };
 
 /** What Home's FlatList renders once commerce discovery is on. */
@@ -63,6 +96,8 @@ export type CommercePlacementOptions = {
   interval?: number;
   /** Hard cap per feed page. Server default: 2. */
   maxRows?: number;
+  /** Products in one strip. See `COMMERCE_PRODUCTS_PER_ROW`. */
+  productsPerRow?: number;
   /** Placement ids the user hid this session, before the refetch catches up. */
   dismissedPlacementIds?: ReadonlySet<string>;
   /** Seller ids the user has told us to stop recommending, same window. */
@@ -85,8 +120,21 @@ export const COMMERCE_LEAD_IN = 6;
 export const COMMERCE_INTERVAL = 8;
 export const COMMERCE_MAX_ROWS = 2;
 
-/** At most one card per seller per page, regardless of how well they ranked. */
-const MAX_PER_SELLER_PER_PAGE = 1;
+/**
+ * Products per strip — a ceiling, not a quota.
+ *
+ * Four is what the rail can hold before the "See all" affordance stops being
+ * the obvious way to see more, which is the behaviour §9 wants: Marketplace is
+ * the commerce-dense destination and the feed is a doorway to it. A longer rail
+ * makes the feed the destination instead.
+ *
+ * A strip is drawn with however many products actually survive ranking,
+ * eligibility and the server's own diversity caps. On a thin catalogue that is
+ * one or two, and a one-product strip is correct rather than degraded — the
+ * heading and "See all" are worth more there than anywhere else, because they
+ * are the only route to the products the feed could not show.
+ */
+export const COMMERCE_PRODUCTS_PER_ROW = 4;
 
 /** Stable, unique, and readable in a `keyExtractor` crash log. */
 export function commerceRowKey(placementId: string, slot: number): string {
@@ -103,30 +151,26 @@ function expired(placement: CommercePlacement, now: number): boolean {
 /**
  * Placements this page may draw from, in rank order.
  *
- * Structural validity only — expiry, a missing token, a duplicate listing, a
- * seller already represented. Dismissals are deliberately **not** applied here:
- * filtering them out would compact the list, and a compacted list is exactly
- * how the next-best product slides into the hole left by the one the user just
- * hid. Dismissal is checked at slot-binding time instead, where skipping leaves
- * the gap.
+ * Structural validity only — expiry, a missing token, a duplicate listing.
+ * Dismissals are deliberately **not** applied here: filtering them out would
+ * compact the list, and a compacted list is how a product from a later window
+ * slides into the hole left by the one the user just hid. Dismissal is applied
+ * after the windows are cut, where it can only shorten the strip it belongs to.
  */
 function usablePlacements(placements: CommercePlacement[], now: number): CommercePlacement[] {
   const seenListings = new Set<number>();
-  const sellerCounts = new Map<number, number>();
   const out: CommercePlacement[] = [];
 
   for (const placement of placements) {
     if (!placement?.placementId || !placement.impressionToken) continue;
     if (!placement.product?.listingId) continue;
     if (expired(placement, now)) continue;
-
-    const sellerId = placement.product.sellerUserId;
+    // The same listing twice in one strip is a rendering defect, not a policy
+    // call, so it is caught here. Seller and category diversity are the
+    // server's — see the header.
     if (seenListings.has(placement.product.listingId)) continue;
-    const sellerCount = sellerId ? sellerCounts.get(sellerId) || 0 : 0;
-    if (sellerId && sellerCount >= MAX_PER_SELLER_PER_PAGE) continue;
 
     seenListings.add(placement.product.listingId);
-    if (sellerId) sellerCounts.set(sellerId, sellerCount + 1);
     out.push(placement);
   }
 
@@ -169,6 +213,7 @@ export function injectCommerceRows<TPost>(
   const leadIn = Math.max(options.leadIn ?? COMMERCE_LEAD_IN, 1);
   const interval = Math.max(options.interval ?? COMMERCE_INTERVAL, 1);
   const maxRows = Math.max(options.maxRows ?? COMMERCE_MAX_ROWS, 0);
+  const perRow = Math.max(options.productsPerRow ?? COMMERCE_PRODUCTS_PER_ROW, 1);
   const now = options.now ?? Date.now();
 
   if (!Array.isArray(placements) || placements.length === 0 || maxRows === 0) {
@@ -180,9 +225,9 @@ export function injectCommerceRows<TPost>(
 
   const out: HomeRowWithCommerce<TPost>[] = [];
   let organicCount = 0;
-  // Counts slots *offered*, not rows placed. A slot skipped for adjacency or
-  // dismissal is spent, which is what stops the next eligible position from
-  // becoming an immediate replacement for the card that was just hidden.
+  // Counts slots *offered*, not rows placed. A slot whose whole window was
+  // dismissed is spent, which is what stops the next eligible position in the
+  // feed from becoming an immediate replacement for the strip just hidden.
   let slot = 0;
 
   for (let index = 0; index < rows.length; index += 1) {
@@ -210,17 +255,27 @@ export function injectCommerceRows<TPost>(
     const previous = out[out.length - 1];
     if (!previous || previous.type !== "post") continue;
 
-    const placement = usable[slot];
+    // This slot's window, cut before dismissals are considered so that a hidden
+    // product can only ever shorten its own strip. Nothing from slot 1's window
+    // can move into slot 0's, which is the rule the whole design turns on.
+    const window = usable.slice(slot * perRow, (slot + 1) * perRow);
     slot += 1;
-    if (!placement) continue;
-    // Spent, not filled. The gap is the point.
-    if (dismissed(placement, options)) continue;
+    if (window.length === 0) continue;
+
+    const visible = window.filter((candidate) => !dismissed(candidate, options));
+    // Every product in this strip has been hidden, so there is no strip. Not an
+    // empty titled container with a heading and a "See all" over nothing —
+    // §15's "collapses fully, no blank gap".
+    if (visible.length === 0) continue;
 
     out.push({
       type: "commerce",
-      key: commerceRowKey(placement.placementId, slot - 1),
+      // Keyed on the window's first placement rather than on the survivors', so
+      // hiding the leading tile does not change the row's identity and make the
+      // FlatList tear down and remount the whole strip mid-dismissal.
+      key: commerceRowKey(window[0].placementId, slot - 1),
       slot: slot - 1,
-      placement
+      placements: visible
     });
   }
 
