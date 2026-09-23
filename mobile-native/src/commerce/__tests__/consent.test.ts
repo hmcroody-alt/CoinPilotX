@@ -298,7 +298,10 @@ describe("starting a pause from a card", () => {
   // the tuple widens to a union no call signature satisfies.
   const snoozable: [string, () => { onFeedback: (p: CommercePlacement, a: CommerceFeedbackAction) => void }][] = [
     ["feed", () => useFeedCommerce()],
-    ["reels", () => useReelsCommerce({ reelIds: ["r1"] })],
+    // Long enough to reach the reels lead-in. A one-reel list has no slot for a
+    // chip, so the hook correctly never asks for one — and the `waitFor` below,
+    // which is what lets each surface settle before the snooze, would hang.
+    ["reels", () => useReelsCommerce({ reelIds: ["r1", "r2", "r3", "r4", "r5", "r6"] })],
     ["messenger", () => useMessengerCommerce()],
     ["marketplace", () => useMarketplaceCommerce()]
   ];

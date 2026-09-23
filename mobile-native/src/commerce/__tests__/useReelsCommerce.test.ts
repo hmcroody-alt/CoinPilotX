@@ -149,10 +149,108 @@ describe("useReelsCommerce — nothing is a valid answer", () => {
     expect(result.current.chipByReelId.size).toBe(0);
   });
 
-  it("binds nothing to an empty reel list", async () => {
+  it("does not even ask for a chip when no reel could carry one", async () => {
+    // Stronger than the "binds nothing to an empty reel list" this replaced. A
+    // list shorter than the lead-in has no slot, so a serve request would spend
+    // a round trip and a server-side placement row on a chip that structurally
+    // cannot render — and would have to go out with no context at all, since
+    // there is no target reel to describe.
     const { result } = renderHook(() => useReelsCommerce({ reelIds: [] }));
-    await waitFor(() => expect(fetchPlacements).toHaveBeenCalled());
-    expect(result.current.chipByReelId.size).toBe(0);
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(0));
+    expect(fetchPlacements).not.toHaveBeenCalled();
+
+    // Same for a list that exists but stops one short of the lead-in.
+    const short = renderHook(() =>
+      useReelsCommerce({ reelIds: REEL_IDS.slice(0, REELS_LEAD_IN) })
+    );
+    await waitFor(() => expect(short.result.current.chipByReelId.size).toBe(0));
+    expect(fetchPlacements).not.toHaveBeenCalled();
+  });
+});
+
+describe("useReelsCommerce — §8 context matching", () => {
+  it("describes the reel the chip will actually land on, not the list", async () => {
+    // The whole point of deriving the target from `reelCommerceSlots`: the reel
+    // we ask the ranker about and the reel the chip binds to are the same video.
+    // If these two ever disagree, the engine is scoring against one reel and the
+    // user is watching another.
+    const resolveContext = jest.fn((reelId: string) => ({ topic: `about ${reelId}` }));
+    const { result } = renderHook(() => useReelsCommerce({ reelIds: REEL_IDS, resolveContext }));
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    expect(resolveContext).toHaveBeenCalledWith(CARRIER);
+    const [, options] = fetchPlacements.mock.calls[0];
+    expect(options?.context).toEqual({ topic: `about ${CARRIER}` });
+    expect([...result.current.chipByReelId.keys()]).toEqual([CARRIER]);
+  });
+
+  it("omits the context entirely when the reel has no topic", async () => {
+    // `{}` and "absent" are not the same request. `ranking.relevance` answers
+    // NEUTRAL for an absent context, which is the honest score for a reel that
+    // says nothing about itself — scoring it against an empty string instead
+    // would push it under the reels floor and silence a perfectly good chip.
+    const resolveContext = jest.fn(() => null);
+    const { result } = renderHook(() => useReelsCommerce({ reelIds: REEL_IDS, resolveContext }));
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    const [, options] = fetchPlacements.mock.calls[0];
+    expect(options?.context).toBeUndefined();
+  });
+
+  it("still serves a chip when the screen passes no resolver at all", async () => {
+    // §8 is additive. A caller that never opted in gets the pre-§8 behaviour
+    // rather than an error or an empty surface.
+    const { result } = renderHook(() => useReelsCommerce({ reelIds: REEL_IDS }));
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+    expect(fetchPlacements.mock.calls[0][1]?.context).toBeUndefined();
+  });
+
+  it("does not refetch when the screen rebuilds the resolver every render", async () => {
+    // The screen's resolver closes over the reel list, so it is a new function
+    // identity on every frame of a scroll. Held in a ref for exactly this
+    // reason: a resolver in the effect's dep array would refire the serve
+    // request — and mint a fresh placement row — sixty times a second.
+    const { result, rerender } = renderHook(
+      ({ tick }: { tick: number }) =>
+        useReelsCommerce({
+          reelIds: REEL_IDS,
+          resolveContext: () => ({ topic: `render ${tick}` })
+        }),
+      { initialProps: { tick: 0 } }
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    rerender({ tick: 1 });
+    rerender({ tick: 2 });
+    rerender({ tick: 3 });
+
+    expect(fetchPlacements).toHaveBeenCalledTimes(1);
+    expect(fetchPlacements.mock.calls[0][1]?.context).toEqual({ topic: "render 0" });
+  });
+
+  it("asks again when a refresh puts a different reel in the carrying slot", async () => {
+    // Pull-to-refresh replaces the list, so the reel the ranker scored against
+    // may no longer be on screen. Re-asking with the new target is the point of
+    // keying the effect on the target id rather than on the list's identity.
+    const resolveContext = (reelId: string) => ({ topic: `about ${reelId}` });
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) => useReelsCommerce({ reelIds: ids, resolveContext }),
+      { initialProps: { ids: REEL_IDS } }
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+    expect(fetchPlacements).toHaveBeenCalledTimes(1);
+
+    // Appending pages does not move the carrier, so it must not refetch.
+    rerender({ ids: [...REEL_IDS, "r21", "r22"] });
+    expect(fetchPlacements).toHaveBeenCalledTimes(1);
+
+    // Prepending does move it.
+    const refreshed = ["n1", "n2", ...REEL_IDS];
+    rerender({ ids: refreshed });
+    await waitFor(() => expect(fetchPlacements).toHaveBeenCalledTimes(2));
+    expect(fetchPlacements.mock.calls[1][1]?.context).toEqual({
+      topic: `about ${refreshed[REELS_LEAD_IN]}`
+    });
   });
 });
 

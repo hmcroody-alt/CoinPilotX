@@ -57,6 +57,7 @@ import { profileNavigationParams, profileTargetFromAuthor } from "../api/profile
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import type { ReelCommerceBinding } from "../components/ReelPlayerCard";
 import { useCallSession } from "../calls/callSessionStore";
+import { reelCommerceContext } from "../commerce/reelContext";
 import { useReelsCommerce } from "../commerce/useReelsCommerce";
 import { ContentTranslation } from "../components/ContentTranslation";
 import { GalacticAtmosphere } from "../components/GalacticAtmosphere";
@@ -273,10 +274,29 @@ export function ReelsScreen({ route, navigation }: Props) {
         .filter((id) => id && id !== "0"),
     [reels]
   );
+  /**
+   * What the reel that will carry the chip is about (§8).
+   *
+   * The hook asks for one id — the one its own slot arithmetic picked — and this
+   * hands back that reel's public topic. Looking the reel up here rather than
+   * precomputing a map keeps the work to one lookup per fetch instead of one per
+   * reel per render, and means the screen never has to know which reel is the
+   * target.
+   */
+  const reelsByIdRef = useRef<Map<string, PulseReel>>(new Map());
+  reelsByIdRef.current = useMemo(
+    () => new Map(reels.map((reel) => [String(reel.id), reel])),
+    [reels]
+  );
+  const resolveCommerceContext = useCallback(
+    (reelId: string) => reelCommerceContext(reelsByIdRef.current.get(reelId)),
+    []
+  );
   const commerce = useReelsCommerce({
     reelIds: commerceReelIds,
     enabled: signedIn && !callSession.sessionActive,
-    refreshToken: commerceRefreshToken
+    refreshToken: commerceRefreshToken,
+    resolveContext: resolveCommerceContext
   });
   /**
    * The chip for one reel, or null — which is the answer for all but one reel.
