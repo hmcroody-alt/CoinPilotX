@@ -232,6 +232,13 @@ export type MarketplaceListing = {
   publication_state?: string;
   publication_label?: string;
   /**
+   * The canonical state, stamped by the server: `live`, `draft`,
+   * `pending_review`, `suppressed` or `removed`. The single answer to "can a
+   * buyer see this and buy it", shared with the seller metrics aggregate.
+   * Absent only on seller payloads cached before the stamp existed.
+   */
+  listing_state?: string;
+  /**
    * Why an approved, published listing is still unreachable — one of
    * `seller_approved`, `seller_named`, `in_stock`, or `""`. Derived by
    * `marketplace_listing_lifecycle.live_blocker` from the same rule table that
@@ -444,9 +451,69 @@ export type MarketplaceSellerOrdersResponse = {
   message?: string;
 };
 
+/**
+ * The seller's numbers, counted once, on the server.
+ *
+ * Every field here is the answer to a question a screen used to answer for
+ * itself out of the raw row lists — Business OS by taking `.length`, the Store
+ * screen by applying its own status filters. Two screens, two definitions, one
+ * store, and a seller told they had 43 live listings (13) and 32 orders (0).
+ *
+ * `GET /api/pulse/marketplace/seller/metrics` is now the only place either
+ * question is answered. Nothing below may be re-derived from `listings` or
+ * `orders`; those arrays are for rendering rows, not for counting.
+ */
+export type SellerMetrics = {
+  total_listings: number;
+  live_listings: number;
+  draft_listings: number;
+  pending_review_listings: number;
+  suppressed_listings: number;
+  removed_listings: number;
+  confirmed_orders: number;
+  open_orders: number;
+  fulfilled_orders: number;
+  refunded_orders: number;
+  cash_pending_orders: number;
+  today_sales_minor: number;
+  sold_last_7_days: number;
+  /** Seven daily totals in minor units, oldest first. */
+  sales_last_7_days_minor: number[];
+  /**
+   * Today against the same weekday last week, as a ratio (0.12 = +12%).
+   * `null` when there is no baseline — a store's first week must not report
+   * "+100%".
+   */
+  sales_trend_ratio: number | null;
+  units_sold_last_7_days_by_listing: Record<string, number>;
+  net_sales_minor: number;
+  currency: string;
+  active_campaigns: number;
+  ad_spend_minor: number;
+  raw_order_rows: number;
+  raw_listing_rows: number;
+  order_breakdown: Record<string, number>;
+  listing_breakdown: Record<string, number>;
+  /** Unconfirmed rows holding a PaymentIntent. A reconciliation signal. */
+  unmatched_payments: number;
+};
+
+export type SellerMetricsResponse = { ok?: boolean; metrics?: SellerMetrics; message?: string };
+
+export async function loadSellerMetrics() {
+  const data = await pulseApi<SellerMetricsResponse>("/api/pulse/marketplace/seller/metrics");
+  return data.metrics || null;
+}
+
 export type SellerStoreSnapshot = {
   listings: MarketplaceListing[];
   orders: MarketplaceSellerOrder[];
+  /**
+   * Authoritative counts. Absent only when the metrics call failed; callers
+   * must render "—" in that case rather than falling back to counting the
+   * arrays, because counting the arrays is the bug.
+   */
+  metrics?: SellerMetrics | null;
   commercial_summary?: MarketplaceCommercialSummary;
   cached_at?: string;
   /**
@@ -496,14 +563,20 @@ export async function cacheSellerStore(snapshot: SellerStoreSnapshot) {
 }
 
 export async function loadSellerStoreSnapshot() {
-  const [sellerListings, orders] = await Promise.allSettled([
+  const [sellerListings, orders, metrics] = await Promise.allSettled([
     listMarketplaceSellerListings({ limit: 80 }),
-    listMarketplaceSellerOrders()
+    listMarketplaceSellerOrders(),
+    loadSellerMetrics()
   ]);
+  // `live` deliberately still turns on the two row lists. Metrics is a third
+  // leg that can fail on its own, and when it does the screens show "—" for the
+  // counts while still rendering the rows — a missing number is honest, a
+  // locally recounted one is not.
   const live = sellerListings.status === "fulfilled" && orders.status === "fulfilled";
   const snapshot: SellerStoreSnapshot = {
     listings: sellerListings.status === "fulfilled" ? sellerListings.value.items || [] : [],
     orders: orders.status === "fulfilled" ? orders.value.orders || [] : [],
+    metrics: metrics.status === "fulfilled" ? metrics.value : null,
     commercial_summary: orders.status === "fulfilled" ? orders.value.commercial_summary : undefined,
     cached_at: new Date().toISOString(),
     live
@@ -1282,6 +1355,10 @@ function normalizeSellerStoreSnapshot(snapshot: SellerStoreSnapshot): SellerStor
       currency: String(order.currency || "USD"),
       status: String(order.status || "pending")
     })),
+    // Carried through verbatim. There is nothing to normalize — the server
+    // computed these and re-deriving any of them here is exactly what this
+    // payload exists to stop.
+    metrics: snapshot?.metrics || null,
     commercial_summary: snapshot?.commercial_summary,
     cached_at: snapshot?.cached_at || ""
   };

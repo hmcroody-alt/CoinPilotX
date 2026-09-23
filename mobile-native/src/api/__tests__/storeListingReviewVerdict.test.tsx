@@ -196,8 +196,7 @@ describe("normalizeMarketplaceListing", () => {
 describe("a seller payload carried all the way to a row", () => {
   const rowsFor = (listings: MarketplaceListing[]) =>
     deriveRows(
-      { listings: normalizeMarketplaceListings(listings), orders: [], cached_at: "" } as never,
-      new Date(2026, 8, 14)
+      { listings: normalizeMarketplaceListings(listings), orders: [], cached_at: "" } as never
     );
 
   it("puts the reason on the row, which is the only place the seller looks", () => {

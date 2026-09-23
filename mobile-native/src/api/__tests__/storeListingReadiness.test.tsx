@@ -242,8 +242,7 @@ describe("a seller payload carried all the way to a row", () => {
         listings: normalizeMarketplaceListings(listings),
         orders: [],
         cached_at: ""
-      } as never,
-      new Date(2026, 6, 15)
+      } as never
     );
 
   it("keeps unknown and sold-out as different answers, through every hop", () => {

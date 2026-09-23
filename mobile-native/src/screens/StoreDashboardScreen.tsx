@@ -877,7 +877,15 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
    * Formatted values
    * -------------------------------------------------------------- */
 
-  const salesText = formatters.currency(kpis.salesTodayMinor / 100, { currency: kpis.currency });
+  // An em dash, not a zero. These figures come from the canonical metrics
+  // endpoint, and when that call fails the honest answer is "we don't know" —
+  // showing $0.00 would be this screen inventing a number again, which is the
+  // whole reason the endpoint exists.
+  const UNKNOWN = "—";
+  const salesText =
+    kpis.salesTodayMinor == null
+      ? UNKNOWN
+      : formatters.currency(kpis.salesTodayMinor / 100, { currency: kpis.currency });
   const salesTrend =
     kpis.salesTrend == null
       ? null
@@ -929,7 +937,7 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
             />
             <StoreKpiCard
               label="Open orders"
-              value={formatters.count(kpis.openOrders)}
+              value={kpis.openOrders == null ? UNKNOWN : formatters.count(kpis.openOrders)}
               // MOCK-DATA: `shippingToday` needs order.ship_by, so the
               // "N ship today" caption is absent rather than guessed.
               caption={kpis.shippingToday == null ? null : `${kpis.shippingToday} ship today`}
@@ -946,9 +954,15 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
           <View style={styles.kpiRow}>
             <StoreKpiCard
               label="Listings live"
-              value={formatters.count(
-                allRows.filter((row) => row.health === "in_stock" || row.health === "low_stock").length
-              )}
+              // The canonical count, not a tally of the rows this screen
+              // happens to be holding. The row list is capped at 80 and the
+              // health column is about stock, not publication; "live" means a
+              // buyer can see it and buy it, and that is decided in one place.
+              value={
+                snapshot.metrics == null
+                  ? UNKNOWN
+                  : formatters.count(snapshot.metrics.live_listings)
+              }
               caption={outCount > 0 ? `${outCount} not buyable` : null}
               onPress={() => {
                 setTab("all");
@@ -960,7 +974,15 @@ export function StoreDashboardScreen({ route, navigation, cardPaymentStatus }: P
             />
             <StoreKpiCard
               label="Sold · 7 days"
-              value={formatters.count(allRows.reduce((sum, row) => sum + row.unitsSold7d, 0))}
+              // Was the sum of a per-row figure this client derived from every
+              // order, filtering out only "cancel" and "refund" — which is how
+              // three abandoned checkouts became "Sold · 7 days: 3" for a store
+              // that had never sold anything.
+              value={
+                snapshot.metrics == null
+                  ? UNKNOWN
+                  : formatters.count(snapshot.metrics.sold_last_7_days)
+              }
               onPress={() => navigation.navigate("BusinessOsInsights", { title: "Store reports" })}
               destinationHint="reports"
               reducedMotion={reducedMotion}

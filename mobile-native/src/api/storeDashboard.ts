@@ -25,12 +25,14 @@ import {
   listMarketplaceSellerListings,
   listMarketplaceSellerOrders,
   loadCachedSellerStore,
+  loadSellerMetrics,
   READINESS_CODES,
   type ListingBulkEligibility,
   type ListingReadiness,
   type ListingReviewVerdict,
   type MarketplaceListing,
   type MarketplaceSellerOrder,
+  type SellerMetrics,
   type SellerStoreSnapshot
 } from "./marketplace";
 import { isFlagValueOn } from "../core/envFlag";
@@ -231,33 +233,44 @@ function serverStockHealth(listing: MarketplaceListing): StoreListingHealth | nu
  */
 export function listingHealth(listing: MarketplaceListing): StoreListingHealth {
   const status = normalizedStatus(listing);
-  const publication = String(listing.publication_state || listing.status || "").toLowerCase();
-  if (!["published", "live", "active"].includes(publication)) {
-    if (publication.includes("draft")) return "draft";
-    // Asked before the `hidden` fallback, because `hidden` is a fallback: the
-    // states it is *meant* to hold are enumerated below (pause/reject/blocked/
-    // removed/delete) and review is not among them. `statusKey` and `sellingTab`
-    // both already branch on pending/review; this was the only one of the three
-    // that did not, and it is the one the Store list reads.
-    //
-    // Note the boundary with `listingAwaitsReview`, which stays as it is. That
-    // function answers the *approval* axis, where a listing can be publicly
-    // active while a re-review runs, and it is right that such a listing keeps
-    // its stock health. This branch is only reachable when the listing is not
-    // public at all — its own status is the awaiting one — so there is no stock
-    // story to tell and no disagreement between the two.
-    if (isAwaitingReview(publication)) return "pending_review";
-    return "hidden";
-  }
-  if (status.includes("draft")) return "draft";
-  if (
-    status.includes("pause") ||
-    status.includes("reject") ||
-    status.includes("blocked") ||
-    status.includes("removed") ||
-    status.includes("delete")
-  ) {
-    return "hidden";
+
+  // Publication first, and from the server.
+  //
+  // `listing_state` is stamped by `pulse_marketplace_seller_listing_payload`
+  // using the same `listing_state()` the seller metrics aggregate counts with,
+  // so the Active tab here and the "Live listings" tile on Business OS are one
+  // definition rather than two that happen to agree. The local branch below
+  // reached the same verdict by substring — and substring matching over this
+  // vocabulary is why an untouched draft carrying
+  // `approval_status='pending_review'` is a trap.
+  const state = String(listing.listing_state || "").toLowerCase();
+  if (state) {
+    if (state === "draft") return "draft";
+    if (state === "pending_review") return "pending_review";
+    // `suppressed` and `removed`: paused, rejected, blocked or deleted. Not
+    // live, and no stock story worth telling.
+    if (state !== "live") return "hidden";
+  } else {
+    // Only reachable for a payload written before the stamp existed — an old
+    // cached snapshot. Kept deliberately small, and it must never be extended:
+    // the moment it gains a rule the server does not have, the two definitions
+    // have forked again.
+    const publication = String(listing.publication_state || listing.status || "").toLowerCase();
+    if (!["published", "live", "active"].includes(publication)) {
+      if (publication.includes("draft")) return "draft";
+      if (isAwaitingReview(publication)) return "pending_review";
+      return "hidden";
+    }
+    if (status.includes("draft")) return "draft";
+    if (
+      status.includes("pause") ||
+      status.includes("reject") ||
+      status.includes("blocked") ||
+      status.includes("removed") ||
+      status.includes("delete")
+    ) {
+      return "hidden";
+    }
   }
 
   const fromServer = serverStockHealth(listing);
@@ -371,36 +384,33 @@ function dayIndex(date: Date): number {
   );
 }
 
-function orderDate(order: MarketplaceSellerOrder): Date | null {
-  if (!order.created_at) return null;
-  const parsed = new Date(order.created_at);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function orderMinorAmount(order: MarketplaceSellerOrder): number {
-  const amount = Number(order.gross_amount_cents ?? order.amount_cents ?? 0);
-  return Number.isFinite(amount) ? amount : 0;
-}
-
-/** Orders that have not been fulfilled yet. */
-const OPEN_ORDER_STATUSES = ["pending", "paid", "processing", "awaiting", "confirmed"];
-
-function isOpenOrder(order: MarketplaceSellerOrder): boolean {
-  const status = String(order.status || "pending").toLowerCase();
-  if (status.includes("cancel") || status.includes("refund")) return false;
-  if (status.includes("complete") || status.includes("delivered") || status.includes("fulfilled")) {
-    return false;
-  }
-  return OPEN_ORDER_STATUSES.some((candidate) => status.includes(candidate));
-}
+/*
+ * `orderDate`, `orderMinorAmount` and `isOpenOrder` used to live here. They
+ * were this screen's private answer to "is this an order" and "is this money",
+ * and they disagreed with Business OS's answer and with the server's. Every one
+ * of them has been deleted rather than reworked: a second definition that
+ * happens to be correct today is still a second definition, and the next status
+ * word added to checkout would have split them again.
+ *
+ * `isOpenOrder` in particular matched by substring over
+ * ["pending","paid","processing","awaiting","confirmed"], in a vocabulary that
+ * contains `cash_pending`, `checkout_created` and `checkout_failed`.
+ *
+ * The answers now come from `snapshot.metrics`, computed by
+ * `services/business_os/marketplace/seller_metrics.py`.
+ */
 
 /* ------------------------------------------------------------------ *
  * KPIs
  * ------------------------------------------------------------------ */
 
 export type StoreKpis = {
-  /** Today's gross, in minor units. Formatted by the caller. */
-  salesTodayMinor: number;
+  /**
+   * Today's confirmed takings, in minor units, from the server. `null` when the
+   * metrics call failed — the screen shows "—" rather than a number this
+   * client made up out of the raw order rows.
+   */
+  salesTodayMinor: number | null;
   currency: string;
   /**
    * Change against the *same weekday* last week, as a ratio (0.12 = +12%).
@@ -409,9 +419,10 @@ export type StoreKpis = {
    * a store's first week should not report "+100%".
    */
   salesTrend: number | null;
-  /** Seven daily totals, oldest first, for the sparkline. */
+  /** Seven daily totals, oldest first, for the sparkline. Empty when unknown. */
   sparkline: number[];
-  openOrders: number;
+  /** Orders awaiting the seller's action. `null` when unknown. */
+  openOrders: number | null;
   // MOCK-DATA: needs order.ship_by.
   shippingToday: number | null;
   // MOCK-DATA: needs a seller impressions endpoint.
@@ -424,41 +435,44 @@ export type StoreKpis = {
 };
 
 /**
- * `now` is injected rather than read from the clock so the whole KPI block is
- * testable, and so a cached snapshot can be rendered against the time it was
- * captured rather than against the time the app was reopened.
+ * Reads the server's canonical metrics. Derives nothing.
+ *
+ * This function used to bucket `snapshot.orders` by day with no status filter
+ * at all, so every checkout a buyer opened and abandoned was counted as money
+ * the seller had taken. Production read $0.00 only because the newest abandoned
+ * checkout happened to be two days old. `openOrders` used a substring filter
+ * over a hand-written status list, which is a second definition of "order"
+ * living on the phone.
+ *
+ * Both questions are now answered once, on the server, by
+ * `services/business_os/marketplace/seller_metrics.py`. When metrics is absent
+ * the money and order figures return `null` — the caller renders "—". A number
+ * this screen invented for itself is what the mission was called to remove, so
+ * there is no local fallback path to fall back to.
  */
-export function deriveKpis(
-  snapshot: SellerStoreSnapshot,
-  now: Date = new Date()
-): StoreKpis {
-  const today = dayIndex(now);
-  const currency = String(snapshot.orders.find((order) => order.currency)?.currency || "USD");
-
-  const byDay = new Map<number, number>();
-  snapshot.orders.forEach((order) => {
-    const date = orderDate(order);
-    if (!date) return;
-    const day = dayIndex(date);
-    byDay.set(day, (byDay.get(day) || 0) + orderMinorAmount(order));
-  });
-
-  const salesTodayMinor = byDay.get(today) || 0;
-  const lastWeekSameDay = byDay.get(today - 7);
-  const salesTrend =
-    lastWeekSameDay && lastWeekSameDay > 0
-      ? (salesTodayMinor - lastWeekSameDay) / lastWeekSameDay
-      : null;
-
-  // Oldest first, so the sparkline reads left to right like a calendar.
-  const sparkline = Array.from({ length: 7 }, (_, offset) => byDay.get(today - 6 + offset) || 0);
+export function deriveKpis(snapshot: SellerStoreSnapshot): StoreKpis {
+  const metrics = snapshot.metrics;
+  if (!metrics) {
+    return {
+      salesTodayMinor: null,
+      currency: "USD",
+      salesTrend: null,
+      sparkline: [],
+      openOrders: null,
+      shippingToday: null,
+      views7d: null,
+      viewsTrend: null,
+      sellerRating: null,
+      onTimeDispatch: null
+    };
+  }
 
   return {
-    salesTodayMinor,
-    currency,
-    salesTrend,
-    sparkline,
-    openOrders: snapshot.orders.filter(isOpenOrder).length,
+    salesTodayMinor: metrics.today_sales_minor,
+    currency: metrics.currency || "USD",
+    salesTrend: metrics.sales_trend_ratio ?? null,
+    sparkline: metrics.sales_last_7_days_minor || [],
+    openOrders: metrics.open_orders,
     shippingToday: null,
     views7d: null,
     viewsTrend: null,
@@ -471,27 +485,26 @@ export function deriveKpis(
  * Listing rows and tabs
  * ------------------------------------------------------------------ */
 
-/** Units sold per listing over the trailing 7 days, keyed by listing id. */
-function unitsSoldByListing(orders: MarketplaceSellerOrder[], now: Date): Map<string, number> {
-  const cutoff = dayIndex(now) - 6;
+/**
+ * Units sold per listing over the trailing 7 days, from the server.
+ *
+ * This was derived here, from every order row, skipping only statuses
+ * containing "cancel" or "refund". That is how the seller's Store screen came
+ * to read **Sold · 7 days: 3** against a store that had never sold anything:
+ * three `checkout_created` rows from 2026-09-20 — buyers who opened checkout
+ * and left — were counted as three units. It also counted rows rather than
+ * units, so a line for three of the same product sold one.
+ */
+function unitsSoldByListing(snapshot: SellerStoreSnapshot): Map<string, number> {
   const counts = new Map<string, number>();
-  orders.forEach((order) => {
-    const date = orderDate(order);
-    if (!date || dayIndex(date) < cutoff) return;
-    const status = String(order.status || "").toLowerCase();
-    if (status.includes("cancel") || status.includes("refund")) return;
-    const key = String(order.item_id ?? "");
-    if (!key) return;
-    counts.set(key, (counts.get(key) || 0) + 1);
-  });
+  const sold = snapshot.metrics?.units_sold_last_7_days_by_listing;
+  if (!sold) return counts;
+  Object.keys(sold).forEach((key) => counts.set(key, Number(sold[key]) || 0));
   return counts;
 }
 
-export function deriveRows(
-  snapshot: SellerStoreSnapshot,
-  now: Date = new Date()
-): StoreListingRow[] {
-  const sold = unitsSoldByListing(snapshot.orders, now);
+export function deriveRows(snapshot: SellerStoreSnapshot): StoreListingRow[] {
+  const sold = unitsSoldByListing(snapshot);
   return snapshot.listings.map((listing) => {
     const id = Number(listing.listing_id ?? listing.id);
     return {
@@ -895,6 +908,12 @@ export type StoreSectionState<T> =
 export type StoreLoadResult = {
   listings: StoreSectionState<MarketplaceListing[]>;
   orders: StoreSectionState<MarketplaceSellerOrder[]>;
+  /**
+   * The canonical counts. A third leg, settled separately: the row lists are
+   * what the seller scrolls and the metrics are what the KPI tiles read, and
+   * either can fail without the other being wrong.
+   */
+  metrics: SellerMetrics | null;
   /** Set when the payload came from cache because the network was unavailable. */
   cachedAt: string | null;
   offline: boolean;
@@ -910,9 +929,10 @@ export type StoreLoadResult = {
  * loader is left alone — other screens depend on its behaviour.
  */
 export async function loadStoreDashboard(): Promise<StoreLoadResult> {
-  const [listings, orders] = await Promise.allSettled([
+  const [listings, orders, metrics] = await Promise.allSettled([
     listMarketplaceSellerListings({ limit: 80 }),
-    listMarketplaceSellerOrders()
+    listMarketplaceSellerOrders(),
+    loadSellerMetrics()
   ]);
 
   const bothFailed = listings.status === "rejected" && orders.status === "rejected";
@@ -924,6 +944,7 @@ export async function loadStoreDashboard(): Promise<StoreLoadResult> {
       return {
         listings: { status: "ok", data: cached.listings },
         orders: { status: "ok", data: cached.orders },
+        metrics: cached.metrics || null,
         cachedAt: cached.cached_at || null,
         offline: true
       };
@@ -939,6 +960,7 @@ export async function loadStoreDashboard(): Promise<StoreLoadResult> {
       orders.status === "fulfilled"
         ? { status: "ok", data: orders.value.orders || [] }
         : { status: "error", message: "Orders didn't load." },
+    metrics: metrics.status === "fulfilled" ? metrics.value : null,
     cachedAt: null,
     offline: false
   };
@@ -949,6 +971,7 @@ export function snapshotFrom(result: StoreLoadResult): SellerStoreSnapshot {
   return {
     listings: result.listings.status === "ok" ? result.listings.data : [],
     orders: result.orders.status === "ok" ? result.orders.data : [],
+    metrics: result.metrics,
     cached_at: result.cachedAt || undefined
   };
 }

@@ -57823,6 +57823,75 @@ def api_pulse_marketplace_seller_listings():
     return jsonify({"ok": True, "items": items, "limit": limit})
 
 
+@webhook_app.route("/api/pulse/marketplace/seller/metrics", methods=["GET"])
+@auth_required
+def api_pulse_marketplace_seller_metrics():
+    """The seller's numbers, counted once, for every screen that shows them.
+
+    Business OS and the Store screen were each handed the same two raw lists and
+    each did its own arithmetic on them. Business OS did none at all: it
+    rendered `listings.length` under the label "Live listings" and
+    `orders.length` under "Orders", so seller 1 was told they had 43 live
+    listings (13) and 32 orders (0). Those were not rendering faults and could
+    not be fixed on the phone — `.length` is a correct count of the list it was
+    given, and the list was never the answer to the question the label asked.
+
+    So the question is answered here instead. `seller_metrics` owns both
+    predicates; this route owns nothing but the two queries and the seller
+    identity. Any surface that needs a seller count reads this and does not
+    count for itself.
+
+    Unbounded on purpose. Both the listing route and the order route take a
+    LIMIT — 80 and 100 — which is right for a list a human scrolls and wrong for
+    a total: a seller with 120 listings would be told they had 80. A COUNT over
+    a seller's own rows is cheap, and being wrong above a threshold is the
+    failure mode a metrics endpoint exists to not have.
+
+    No cache. Recomputed per request from the rows themselves, so there is no
+    stale value to invalidate after a publish, a pause, a payment or a refund —
+    §16 satisfied by not having the problem. If this ever needs a cache, the
+    write paths that must clear it are the ones listed there.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    from services.business_os.marketplace import seller_metrics as _metrics
+
+    seller_id = int(user["user_id"])
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT id, status, approval_status, quantity, product_type, price_label "
+            "FROM marketplace_listings WHERE seller_user_id=?",
+            (seller_id,),
+        )
+        listing_rows = [dict(row) for row in cur.fetchall()]
+        cur.execute(
+            "SELECT id, status, amount_cents, currency, item_id, item_type, "
+            "stripe_payment_intent_id, metadata_json, created_at "
+            "FROM seller_transactions WHERE seller_user_id=?",
+            (seller_id,),
+        )
+        order_rows = [dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    # The seven-day window is the caller's clock, resolved here rather than in
+    # `compute` so the aggregate stays pure and testable.
+    today = datetime.utcnow().date()
+    metrics = _metrics.compute(
+        listing_rows,
+        order_rows,
+        today=today.isoformat(),
+        recent_days=[(today - timedelta(days=offset)).isoformat() for offset in range(7)],
+        baseline_day=(today - timedelta(days=7)).isoformat(),
+    )
+    return jsonify({"ok": True, "metrics": metrics})
+
+
 def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
     """A listing as its own merchant sees it: the public payload plus the verdicts.
 
@@ -57890,6 +57959,19 @@ def pulse_marketplace_seller_listing_payload(row, media_rows, *, supplier=None):
     # back only the structured code and its canonical sentence — never the
     # reviewer's note, which `seller_verdict` does not read.
     payload["review"] = _review.seller_verdict(row)
+    # The one canonical word for what this listing is: live, draft,
+    # pending_review, suppressed or removed. Same function the seller metrics
+    # aggregate counts with, so the Store screen's Active tab and Business OS's
+    # "Live listings" tile cannot draw the line in two different places.
+    #
+    # Stamped here rather than derived on the phone because the phone's version
+    # (`listingHealth`) answers a question about *stock* -- in_stock,
+    # low_stock, out_of_stock -- and was being read as an answer about
+    # publication. A listing can be published with nothing left in it, and it is
+    # still live.
+    from services.business_os.marketplace import seller_metrics as _seller_metrics
+
+    payload["listing_state"] = _seller_metrics.listing_state(row)
     return payload
 
 

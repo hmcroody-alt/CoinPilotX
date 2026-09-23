@@ -48,7 +48,7 @@ function listing(over: Partial<MarketplaceListing> = {}): MarketplaceListing {
  */
 function readinessOf(listings: MarketplaceListing[]) {
   const snapshot = { listings, orders: [] } as unknown as SellerStoreSnapshot;
-  return storeReadiness({ listings, rows: deriveRows(snapshot, NOW) });
+  return storeReadiness({ listings, rows: deriveRows(snapshot) });
 }
 
 function renderChecklist(

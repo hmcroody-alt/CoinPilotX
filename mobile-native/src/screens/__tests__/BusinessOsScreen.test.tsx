@@ -236,10 +236,18 @@ describe("Business OS hub", () => {
     }
   });
 
-  it("reports real counts from the backend rather than placeholder metrics", async () => {
+  it("reports the canonical counts, not the length of the row lists", async () => {
+    // Seller 1's actual production shape, at scale: 43 listing rows of which 13
+    // are live, and 32 order rows of which none is a paid order. The hub used to
+    // render `listings.length` under "Live listings" and `orders.length` under
+    // "Orders", so this seller was told 43 and 32.
+    //
+    // The arrays and the metrics disagree here on purpose. If either number ever
+    // matches an array length again, the derivation is back.
     mockSellerSnapshot.mockResolvedValue({
-      listings: [{ id: 1 }, { id: 2 }, { id: 3 }],
-      orders: [{ id: 9 }]
+      listings: Array.from({ length: 43 }, (_, index) => ({ id: index + 1 })),
+      orders: Array.from({ length: 32 }, (_, index) => ({ id: index + 1 })),
+      metrics: { live_listings: 13, confirmed_orders: 0 }
     });
     mockGetAdAnalytics.mockResolvedValue({
       analytics: {
@@ -254,8 +262,8 @@ describe("Business OS hub", () => {
     });
 
     const view = await renderHub();
-    expect(view.getByLabelText("Live listings: 3")).toBeTruthy();
-    expect(view.getByLabelText("Orders: 1")).toBeTruthy();
+    expect(view.getByLabelText("Live listings: 13")).toBeTruthy();
+    expect(view.getByLabelText("Orders: 0")).toBeTruthy();
     expect(view.getByLabelText("Active campaigns: 2")).toBeTruthy();
     expect(view.getByLabelText("Ad spend: $125.50")).toBeTruthy();
   });
