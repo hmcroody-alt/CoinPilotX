@@ -762,8 +762,46 @@ def test_subscription_list_uses_explicit_bound_shop_and_mutations_remain_gated()
 
 def test_balance_read_is_not_authorization_to_pay():
     adapter, transport, _, _ = make_adapter(Response("42.25"))
-    assert adapter.get_balance() == {"balance": "42.25", "currency": "USD", "funding_enabled": False}
+    assert adapter.get_balance() == {"balance": "42.25", "frozen": None, "non_withdrawable": None,
+                                     "currency": "USD", "funding_enabled": False}
     assert_call(transport, "shopping/pay/getBalance")
+
+
+def test_the_balance_cj_actually_sends_is_read_rather_than_rejected():
+    """CJ sends an object here, and this read used to reject every one of them.
+
+    Measured against the live account on 2026-09-22: the body is
+    ``{"amount": 0.0, "noWithdrawalAmount": 0.0, "freezeAmount": 0.0}``. The
+    old implementation passed that dict straight to ``_money``, which accepts
+    only a scalar, so the call raised ``MALFORMED_PROVIDER_RESPONSE`` every
+    time it was made in production -- a 100% failure rate hidden by the test
+    above, which hands over a bare string CJ has never sent.
+
+    This is the shop-list fault a second time and in a second place, which is
+    the reason it is worth a test of its own rather than an edit: a fixture
+    free to invent the provider's shape will keep agreeing with whatever the
+    code already does.
+    """
+    adapter, transport, _, _ = make_adapter(Response(
+        {"amount": 0.0, "noWithdrawalAmount": 0.0, "freezeAmount": 0.0}))
+    assert adapter.get_balance() == {"balance": "0.0", "frozen": "0.0", "non_withdrawable": "0.0",
+                                     "currency": "USD", "funding_enabled": False}
+    assert_call(transport, "shopping/pay/getBalance")
+
+
+def test_held_money_is_reported_beside_the_balance_and_never_inside_it():
+    """Spendable and held are separate numbers, because spending held money overdraws.
+
+    A funding gate reads ``balance``. If ``freezeAmount`` -- money CJ has
+    already committed against orders in flight -- were summed into it, the
+    first live order would be approved against funds that are not there.
+    """
+    adapter, _, _, _ = make_adapter(Response(
+        {"amount": 10.0, "noWithdrawalAmount": 4.0, "freezeAmount": 25.0}))
+    balance = adapter.get_balance()
+    assert balance["balance"] == "10.0"
+    assert balance["frozen"] == "25.0" and balance["non_withdrawable"] == "4.0"
+    assert balance["funding_enabled"] is False
 
 
 def test_default_requests_transport_cannot_reach_network_without_the_switch(monkeypatch):

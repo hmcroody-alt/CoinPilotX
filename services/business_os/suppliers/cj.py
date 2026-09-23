@@ -785,8 +785,38 @@ class CJAdapter:
         return {"order_id": order_id, "tracking": normalized, "state": "OBSERVED" if normalized else "UNKNOWN"}
 
     def get_balance(self):
+        """CJ answers with an object, not a number, and the parts are not interchangeable.
+
+        The live account sends
+        ``{"amount": 0.0, "noWithdrawalAmount": 0.0, "freezeAmount": 0.0}``.
+        Until 2026-09-22 this handed that whole dict to ``_money``, which takes
+        only a scalar, so every balance read against the real provider raised
+        ``MALFORMED_PROVIDER_RESPONSE`` -- the call has never once succeeded in
+        production. The fixture that kept it green passed a bare ``"42.25"``,
+        a shape CJ does not send, which is the same fault the shop list had:
+        the suite asserting a dialect the provider never speaks.
+
+        ``amount`` is the spendable balance and is the only figure a funding
+        decision may read. ``freezeAmount`` is held against orders already in
+        flight and ``noWithdrawalAmount`` is credit that can buy goods but
+        cannot be withdrawn. Both are reported, because a merchant staring at a
+        zero balance needs to know whether money exists elsewhere -- and
+        neither is folded into ``balance``, because a funding gate that counts
+        held money is a funding gate that overdraws.
+
+        The scalar branch is kept rather than removed. CJ has already been
+        found to answer one question in two shapes (see the envelope note in
+        ``_request``), so reading a number as a number costs one line and
+        assumes nothing.
+        """
         data = self._request("GET", "shopping/pay/getBalance", critical=True)
-        return {"balance": _money(data), "currency": "USD", "funding_enabled": False}
+        if isinstance(data, dict):
+            return {"balance": _money(data.get("amount")),
+                    "frozen": _money(data.get("freezeAmount")),
+                    "non_withdrawable": _money(data.get("noWithdrawalAmount")),
+                    "currency": "USD", "funding_enabled": False}
+        return {"balance": _money(data), "frozen": None, "non_withdrawable": None,
+                "currency": "USD", "funding_enabled": False}
 
     def get_subscriptions(self, shop_id, *, page=1, size=20):
         shop_id = _id(shop_id)
