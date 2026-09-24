@@ -313,11 +313,55 @@ The audit log is **append-only by convention only**: no trigger, no revoked
 grant, no constraint. The property holds because no code violates it, which is
 a statement about this tree and not about the table.
 
+### The migration has been applied
+
+Run against production on 2026-09-24, committed, and verified by a separate
+read-only session rather than by trusting the script's own report. All fifteen
+rows now carry `deployment_state`, `eligibility_policy`, `control_model_version`
+= 2.0, `reconciled_at` and `reconciled_evidence`. Every legacy `state` value is
+byte-identical to the seed, and `capability_audit_results` still holds zero rows
+— the admin matrix page has still never been opened in production.
+
+Two properties made this safe to run, and only one of them was the one everybody
+cites:
+
+* `evaluate_flag` has no call sites. This is the argument usually given, and it
+  is the weaker of the two, because it is a fact about today that one pull
+  request can change.
+* **`evaluate_flag` reads only `state`.** Not `rollout_percentage`, not
+  `public_label`, not `premium_required`. So every column this migration writes
+  is invisible to the legacy engine *by construction* — even if a call site
+  appeared tomorrow, nothing written on 2026-09-24 would change its answer. The
+  columns that were written are read by exactly one chain,
+  `capability_matrix` → `build_capability_matrix` → `admin_capability_matrix_page`,
+  behind `require_admin_page` and `admin_is_owner_level`.
+
+### A gate that could not have passed
+
+Wave 1's entry criteria named `capability_drift_gate.py --strict exits 0`. That
+gate measures the legacy `state` word — the one column the migration is
+forbidden to repair — so it reports four findings permanently and no action
+could ever clear them. The criterion was unsatisfiable, which is worse than
+merely wrong: it does not stop a cutover, it teaches the next operator that the
+entry criteria are decorative.
+
+The criterion now names `capability_activation_check.py --database-url <prod>`,
+which reads the migrated columns, downgrades the legacy-word findings to notes
+for rows it can *see* were migrated, and separately asserts that each migrated
+column still agrees with what this package concluded. Without a database URL it
+blocks — "I could not confirm the migration" and "the migration did not happen"
+deserve the same answer.
+
+The control-plane package still opens nothing. The two scripts are the only
+place it meets a database, which is why their guarantees are tested here rather
+than left to the run that applies them.
+
 ### Status
 
-`activation.readiness()` is **red**, on the four known production findings, and
-goes green once the Stage 11 migration is applied. Both halves are pinned by
-tests — a gate that cannot pass is the same failure as one that cannot fail.
+`activation.readiness()` is **green against migrated production** and **red**
+without migration evidence. Both halves are pinned by tests, and four mutations
+— reverting the entry criterion, neutering the staleness check, ignoring NULL
+`deployment_state`, and removing the fail-closed return — were each caught.
 
 `evaluate_flag` still has zero call sites. Nothing in this package sits on a
-request path.
+request path. No capability has been wired; waves 1–3 remain unstarted.

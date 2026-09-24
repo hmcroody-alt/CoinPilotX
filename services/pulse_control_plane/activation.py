@@ -168,7 +168,14 @@ def waves() -> tuple[Wave, ...]:
             ),
             entry_criteria=(
                 "Stage 11 migration applied; every row reconciles MATCH.",
-                "capability_drift_gate.py --strict exits 0.",
+                # Deliberately not "--strict exits 0". That gate measures the
+                # legacy ``state`` word, which the migration is forbidden to
+                # repair, so it reports four findings permanently and no action
+                # can clear them. Naming it here would have made wave 1
+                # unreachable and taught the next operator that the entry
+                # criteria are decorative. The activation check is the one that
+                # reads the migrated columns and can therefore actually go green.
+                "capability_activation_check.py --database-url <prod> exits 0.",
                 "Shadow diff for these keys is empty.",
             ),
             rollback="Remove the consultation. No stored value changes, so there is nothing to restore.",
