@@ -93,6 +93,11 @@ def assert_no_old_public_text(path: str, html: str) -> None:
 
 
 def main() -> int:
+    from scripts.local_database_guard import require_local_database  # noqa: WPS433
+
+    # Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+    require_local_database("company_name_route_qa")
+
     import bot  # noqa: WPS433
 
     user_id = 9926072402
