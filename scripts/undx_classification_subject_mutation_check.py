@@ -241,8 +241,8 @@ MUTATIONS = [
         # longer read.
         "env contract: stop stripping comments before scanning for reads",
         ENV_CONTRACT,
-        '        text = _without_comments(text)\n',
-        '',
+        '        text = _without_docstrings(_without_comments(text))\n',
+        '        text = _without_docstrings(text)\n',
         "test_every_variable_production_code_reads_is_documented",
         ENV_CONTRACT,
     ),
@@ -255,9 +255,22 @@ MUTATIONS = [
         # out whether it does.
         "env contract: strip string literals as well as comments",
         ENV_CONTRACT,
-        '        if token.type != tokenize.COMMENT:\n',
-        '        if token.type not in (tokenize.COMMENT, tokenize.STRING):\n',
+        '        if token.type == tokenize.COMMENT:\n',
+        '        if token.type in (tokenize.COMMENT, tokenize.STRING):\n',
         "test_the_comment_stripper_hides_prose_without_hiding_code",
+        ENV_CONTRACT,
+    ),
+    (
+        # The same over-strip, aimed at the docstring stripper instead. Blanking a
+        # string because it *is* a string, rather than because it is an entire
+        # statement, is the one way this helper can go blind: the name in
+        # `os.getenv("X")` lives in a string literal too. Distinct from the mutation
+        # above because it survives the comment stripper being correct.
+        "env contract: treat every string as a docstring, not just whole statements",
+        ENV_CONTRACT,
+        '        if token.type == tokenize.STRING and at_statement_start:\n',
+        '        if token.type == tokenize.STRING:\n',
+        "test_the_docstring_stripper_leaves_declared_name_tables_alone",
         ENV_CONTRACT,
     ),
 ]
