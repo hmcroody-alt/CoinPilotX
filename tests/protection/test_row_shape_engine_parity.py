@@ -107,6 +107,30 @@ def test_positional_indexing_is_the_idiom_that_already_agreed():
     for index, expected in enumerate(VALUES):
         assert sqlite_row[index] == expected
         assert compat_row[index] == expected
+    # Named access agrees too, and is what bot.legacy_account_summary now uses.
+    for name, expected in zip(COLUMNS, VALUES):
+        assert sqlite_row[name] == expected
+        assert compat_row[name] == expected
+
+
+def test_slicing_a_row_is_not_positional_access():
+    """``row[:7]`` LOOKS like indexing and is not.
+
+    ``CompatRow.__getitem__`` special-cases ``int`` and nothing else, so a
+    slice falls through to the dict lookup and raises. Pinned because the
+    scanner's slice pattern is only justified by this behaviour -- if CompatRow
+    ever learns slicing, the pattern should go rather than linger as noise.
+    """
+    sliced = _sqlite_row(COLUMNS, VALUES)[:2]
+    assert tuple(sliced) == VALUES[:2]
+    try:
+        CompatRow(COLUMNS, VALUES)[:2]
+    except KeyError:
+        pass
+    else:
+        raise AssertionError(
+            "CompatRow now supports slicing; drop _SLICES from the scanner"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -247,8 +271,23 @@ _UNPACKS = re.compile(
     + _ROW_NAMES + r")\s*(?:#.*)?$"
 )
 
+# row[:7], row[1:], row[::2]. CompatRow.__getitem__ special-cases int and
+# nothing else, so a slice falls through to the dict and raises KeyError --
+# a third way to consume a row as a sequence, and one that looks positional
+# (and therefore safe) at a glance.
+#
+# Bare ``r`` is excluded from THIS pattern only. ``tuple(r)`` is unambiguous,
+# but ``r[:500]`` is overwhelmingly string truncation -- it matched two
+# unrelated ``_need_reason`` helpers -- and a gate that cries wolf gets
+# switched off rather than tightened. ``r`` stays in the other two patterns.
+_SLICES = re.compile(r"\b(?:row|rec|record|_row)\[\s*-?\d*\s*:")
+
 _DANGEROUS = re.compile(
-    "(?:" + _CONSUMES.pattern + ")|(?:" + _UNPACKS.pattern + ")", re.M
+    "|".join(
+        "(?:" + pattern.pattern + ")"
+        for pattern in (_CONSUMES, _UNPACKS, _SLICES)
+    ),
+    re.M,
 )
 
 _SCAN_ROOTS = ("services", "pulse_communications_v2")
@@ -413,6 +452,16 @@ def test_the_scanner_can_actually_fail():
     # Unpacking, which has no call name to key on.
     assert _code_hits('    name, email, plan = row')
     assert _code_hits('        a, b, c, d, e, f = row')
+    # Slicing, which looks positional and is not.
+    assert _code_hits('    a, b, c = row[:3]')
+    assert _code_hits('    rest = row[1:]')
+    assert not _code_hits('    a, b, c = row_values(row)[:3]')
+    assert not _code_hits('    first = row[0]')
+    # Bare ``r`` is out of the slice pattern: this is string truncation, not a
+    # row, and flagging it is how a gate earns a reputation for noise.
+    assert not _code_hits('    return r[:500]')
+    # ...but ``r`` still counts when it is unambiguously consumed as a row.
+    assert _code_hits('    values = tuple(r)')
     # The fixed forms, and the helper itself, must NOT match -- otherwise the
     # scanner flags its own remedy and the next reader deletes the scanner.
     assert not _code_hits('    groups = int(row[0] or 0)')
