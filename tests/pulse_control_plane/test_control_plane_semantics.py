@@ -33,6 +33,7 @@ from services.pulse_control_plane import env_gates
 from services.pulse_control_plane import migration as mig
 from services.pulse_control_plane import observations
 from services.pulse_control_plane import parsing, reconciler, rollout, shadow
+from services.pulse_control_plane import write_security
 from services.pulse_control_plane.model import (
     ADMIN_ONLY,
     ANONYMOUS,
@@ -1846,3 +1847,204 @@ class TestActivationPlanIsReadable:
     def test_the_plan_is_byte_stable(self):
         result = activation.readiness()
         assert activation.plan(result) == activation.plan(result)
+
+
+# ---------------------------------------------------------------------------
+# Stage 24/25 — the guards in front of the capability write.
+#
+# ``bot_source()`` and ``bot_function_source()`` from the Stage 12/26 block
+# above are reused rather than reimplemented: this file already pays for one
+# AST parse of bot.py and a second copy of the same helper is how the suite
+# grew a duplicate class name once before.
+# ---------------------------------------------------------------------------
+
+
+class TestTheGuardsInFrontOfTheWriteAreStillThere:
+    """Re-verify the documented stack against the tree, not against memory.
+
+    ``write_security.py`` states in prose what protects the capability write.
+    Prose goes stale silently. Each guard carries a literal that must still be
+    present in bot.py, and this re-greps them — a deliberately weak check that
+    catches the realistic failure (a refactor dropping a line) and would miss
+    the unrealistic one (somebody rewriting admin authentication correctly but
+    differently).
+    """
+
+    def test_every_documented_guard_is_present(self):
+        missing = write_security.unverified_predicates(bot_source())
+        assert missing == (), (
+            f"guards documented but no longer found in bot.py: {missing}. "
+            "write_security.py is describing a tree that no longer exists."
+        )
+
+    def test_the_owner_check_is_inside_the_post_branch(self):
+        """Narrower on write than on read, and only on write.
+
+        ``system.view`` gates the page; owner level gates the change. If the
+        owner check moved up to cover the whole handler it would hide the
+        matrix from the very admins expected to audit it, and if it vanished
+        every admin who can read the matrix could change production exposure.
+        """
+        handler = bot_function_source(write_security.WRITE_HANDLER)
+        assert 'require_admin_page("system.view")' in handler
+        # Assert presence before indexing: str.index raises ValueError, which
+        # fails the test with a stack trace instead of saying that the owner
+        # guard is gone. A mutation run surfaced exactly that.
+        assert "admin_is_owner_level" in handler, (
+            "the capability write is no longer owner-gated; any admin holding "
+            "system.view could change production exposure"
+        )
+        post_branch = handler.index('if request.method == "POST":')
+        assert handler.index("admin_is_owner_level") > post_branch
+
+    def test_only_one_http_path_writes_the_table(self):
+        """Three writes exist in bot.py; two are seeding, with no request path.
+
+        Broader than ``_feature_flag_updates`` above, which sees ``UPDATE``
+        only. A new ``INSERT`` or ``DELETE`` reachable from a route would be a
+        second way to change production exposure and would not show up there.
+        """
+        writes = [
+            # Strip the surrounding quotes: these are SQL string literals, and
+            # the one-line ones arrive with a leading '"' that would defeat a
+            # startswith check on the statement itself.
+            line.strip().strip("\"'")
+            for line in bot_source().splitlines()
+            if re.search(
+                r"(UPDATE|INSERT\s+(OR\s+IGNORE\s+)?INTO|DELETE\s+FROM)\s+feature_flags",
+                line,
+            )
+        ]
+        assert len(writes) == 3, f"new write path to feature_flags: {writes}"
+        # The two seeding writes, neither reachable from a request.
+        assert sum(1 for w in writes if w.startswith("INSERT OR IGNORE INTO feature_flags")) == 1
+        assert sum(1 for w in writes if w.startswith("UPDATE feature_flags SET label=?")) == 1
+        # And the one that is: the owner-gated admin form.
+        assert sum(
+            1 for w in writes if w.startswith("UPDATE feature_flags") and "label=?" not in w
+        ) == 1
+
+    def test_no_guard_claims_to_stop_everything(self):
+        """Each entry has to say what it misses.
+
+        A stack documented only by what it prevents reads as more complete
+        than it is, and this one has two real gaps.
+        """
+        for guard in write_security.GUARDS:
+            assert guard.does_not_stop.strip()
+
+    def test_the_audit_record_is_not_counted_as_a_guard(self):
+        """It is detection, not prevention, and the list says so."""
+        names = {g.name for g in write_security.preventive_guards()}
+        assert "audit record" not in names
+        assert len(names) == 4
+
+
+class TestCsrfCoverageAndAdminAuthReadOneSessionKey:
+    """The finding: two defences that look independent are keyed on one value.
+
+    ``enforce_admin_form_csrf`` skips enforcement when ``admin_user_id`` is
+    absent from the session. That is safe today only because
+    ``admin_current_user`` returns ``None`` for exactly those requests, so a
+    request the hook declines to check is one the route declines to serve.
+
+    Add a second admin auth leg — a bearer, an API key, an SSO header — and the
+    auth check starts passing on requests where the CSRF hook does not run.
+    Silently, and for all 79 admin form POSTs at once, not just this one.
+    """
+
+    def test_both_functions_read_the_same_session_key(self):
+        key = write_security.SHARED_SESSION_KEY
+        assert f'session.get("{key}")' in bot_function_source("enforce_admin_form_csrf")
+        assert f'session.get("{key}")' in bot_function_source("admin_current_user")
+
+    def test_the_csrf_hook_early_returns_on_a_missing_session(self):
+        """Pin the early return itself, so the coupling stays visible.
+
+        Deleting these two lines would make the hook strictly more protective
+        and would fail this test. That is the right outcome: it should be a
+        deliberate change made with this docstring in view, not a silent one.
+        """
+        hook = bot_function_source("enforce_admin_form_csrf")
+        assert (
+            f'if not session.get("{write_security.SHARED_SESSION_KEY}"):\n        return None'
+            in hook
+        )
+
+    def test_admin_auth_has_exactly_one_leg(self):
+        """The guard on the finding above.
+
+        ``admin_current_user`` resolving an admin from anything but the session
+        cookie is the event that turns the coupling into a hole. It has not
+        happened; this is what notices if it does.
+        """
+        auth = bot_function_source("admin_current_user")
+        for second_leg in ("Authorization", "request.headers", "bearer", "Bearer", "api_key"):
+            assert second_leg not in auth, (
+                f"admin_current_user now reads {second_leg!r}. If an admin can "
+                "authenticate without session['admin_user_id'], "
+                "enforce_admin_form_csrf stops running for those requests — for "
+                "every admin form POST, not just the capability matrix. See "
+                "write_security.py finding 1."
+            )
+
+    def test_verify_csrf_still_refuses_bearer(self):
+        """Somebody has already stood at this spot and said no."""
+        assert "allow_bearer=False" in bot_function_source("verify_csrf")
+
+    def test_the_csrf_exempt_set_is_only_login_and_logout(self):
+        """An addition here is an admin POST a foreign page can forge."""
+        line = next(
+            l for l in bot_source().splitlines() if l.startswith("CSRF_EXEMPT_ADMIN_PATHS")
+        )
+        for path in write_security.CSRF_EXEMPT:
+            assert path in line
+        assert line.count('"') == len(write_security.CSRF_EXEMPT) * 2
+
+    def test_the_capability_route_is_covered_by_the_hook(self):
+        """It is under /admin and not exempt, so the hook reaches it."""
+        assert write_security.WRITE_ROUTE.startswith("/admin")
+        assert write_security.WRITE_ROUTE not in write_security.CSRF_EXEMPT
+
+
+class TestTheAuditLogIsAppendOnlyByConventionOnly:
+    """Stage 25. The qualifier in the name is the whole finding.
+
+    "The audit log is append-only" and "no code currently mutates the audit
+    log" sound alike, and only the second is true. There is no trigger, no
+    revoked grant, no constraint — the property holds because nothing violates
+    it, which is a fact about this tree rather than about the table.
+    """
+
+    def test_no_route_mutates_either_audit_table(self):
+        source = bot_source()
+        for table in ("admin_audit_logs", "admin_activity_logs"):
+            for verb in ("UPDATE", "DELETE FROM"):
+                assert f"{verb} {table}" not in source, (
+                    f"bot.py now issues {verb} against {table}. The capability "
+                    "write's only after-the-fact record stops being append-only."
+                )
+
+    def test_the_only_mutation_in_the_tree_is_the_fixture_script(self):
+        root = pathlib.Path(__file__).resolve().parents[2]
+        offenders = set()
+        for path in list((root / "services").rglob("*.py")) + list(
+            (root / "scripts").rglob("*.py")
+        ):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            for table in ("admin_audit_logs", "admin_activity_logs"):
+                if f"DELETE FROM {table}" in text or f"UPDATE {table}" in text:
+                    offenders.add(str(path.relative_to(root)))
+        assert offenders == {"scripts/prelaunch_user_restriction_audit.py"}, (
+            f"unexpected audit-log mutation: {sorted(offenders)}"
+        )
+
+    def test_the_fixture_script_scopes_its_deletes_to_rows_it_created(self):
+        """Unscoped, those two lines would erase the audit trail of whatever
+        database the script happened to be pointed at."""
+        root = pathlib.Path(__file__).resolve().parents[2]
+        text = (root / "scripts" / "prelaunch_user_restriction_audit.py").read_text()
+        for table in ("admin_audit_logs", "admin_activity_logs"):
+            line = next(l for l in text.splitlines() if f"DELETE FROM {table}" in l)
+            assert "WHERE" in line
+            assert "action LIKE 'prelaunch_%'" in line
