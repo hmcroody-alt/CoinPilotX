@@ -428,14 +428,30 @@ def _index_shape_is_correct(inspected: dict) -> bool:
 
 
 def _count_message_idempotency_duplicates(cur) -> tuple[int, int]:
-    """(groups, rows beyond one per logical message)."""
+    """(groups, rows beyond one per logical message).
+
+    Positional indexing, and never ``list(row)`` — the two disagree by engine.
+
+    SQLite hands back a ``sqlite3.Row``, which is a sequence, so ``list(row)``
+    is ``[18, 46]``. PostgreSQL hands back a ``services.db.CompatRow``, which is
+    a ``Mapping``, so ``list(row)`` is ``['group_count', 'row_total']`` — the
+    column *names*. ``int('group_count')`` is a ValueError.
+
+    That is precisely what production did: this function raised on every boot,
+    the caller's blanket ``except Exception`` recorded ``install_error`` with
+    ``error_class=ValueError``, and the real answer — blocked by 18 groups of
+    historical duplicates, which is a correct and actionable state with a
+    named remedy — never reached the log. The whole suite stayed green because
+    the suite runs on SQLite, where ``list(row)`` means the other thing.
+
+    Both engines agree on ``row[0]``, so ask for the column by position.
+    """
     cur.execute(_MESSAGE_IDEMPOTENCY_DUPLICATE_SQL)
     row = cur.fetchone()
     if not row:
         return 0, 0
-    values = list(row)
-    groups = int(values[0] or 0)
-    total = int(values[1] or 0)
+    groups = int(row[0] or 0)
+    total = int(row[1] or 0)
     return groups, max(total - groups, 0)
 
 
@@ -520,6 +536,25 @@ def _ensure_message_idempotency_index(cur, conn) -> dict:
             conn.rollback()
         except Exception:
             pass
+        # The traceback goes to the log, not into the status dict.
+        #
+        # The status line is deliberately content-free -- no conversation ids,
+        # no sender ids, no client ids -- because operational telemetry is read
+        # by more people and retained in more places than the database is. That
+        # constraint is right, and it is why `error_class` is all the line
+        # carries. But `error_class` alone is not a diagnosis: production said
+        # `ValueError` on every boot for as long as anyone had looked, and the
+        # class name is the same whether the fault is in the catalog query, the
+        # duplicate count, or the row handling in between.
+        #
+        # A traceback names a file and a line and has no user data in it, so it
+        # is both safe here and the thing that was missing. Logged separately at
+        # exception level so the structured line stays machine-parseable.
+        logging.exception(
+            "PULSE_COMM_V2_IDEMPOTENCY_INDEX_FAILED index=%s error_class=%s",
+            MESSAGE_IDEMPOTENCY_INDEX,
+            type(exc).__name__,
+        )
         return _record_message_idempotency_health(
             _idempotency_status(
                 IDEMPOTENCY_INDEX_INSTALL_ERROR,

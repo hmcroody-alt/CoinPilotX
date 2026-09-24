@@ -262,6 +262,167 @@ class PostgresOnlyIndexStateTest(_IndexCase):
         self.assertFalse(status["hard_uniqueness_active"])
 
 
+class ProductionRowShapeTest(unittest.TestCase):
+    """The rows this code reads in production are not the rows it is tested with.
+
+    Every other test in this file runs on SQLite, which hands back a
+    ``sqlite3.Row`` -- a *sequence*, so ``list(row)`` is ``[18, 46]``. Production
+    is PostgreSQL, where ``services.db`` hands back a ``CompatRow``, which is a
+    ``Mapping``, so ``list(row)`` is ``['group_count', 'row_total']`` -- the
+    column *names*.
+
+    ``_count_message_idempotency_duplicates`` used ``list(row)`` and then
+    ``int()``. On SQLite that is ``int(18)``. On PostgreSQL it is
+    ``int('group_count')``, which is a ValueError, and the caller's blanket
+    ``except Exception`` turned it into ``install_error``. So production reported
+    a driver failure while the truth was the ordinary, designed, actionable
+    outcome written directly below it in the same function: blocked by
+    historical duplicates, with counts and a named remedy.
+
+    The suite could not see it -- not because the tests were thin, they cover
+    four outcomes, index shape, validity, readiness and telemetry hygiene, but
+    because every one of them agrees with the code about what a row is. So this
+    class asserts against ``CompatRow`` itself, imported from ``services.db``
+    rather than reimplemented, since a hand-rolled fake of a row type is free to
+    share the bug it is supposed to expose.
+    """
+
+    def setUp(self):
+        from services.db import CompatRow
+
+        self.CompatRow = CompatRow
+
+    def _cursor_returning(self, row):
+        class _Cur:
+            def execute(self, *a, **k):
+                return None
+
+            def fetchone(self):
+                return row
+
+        return _Cur()
+
+    @staticmethod
+    def _sqlite_row():
+        return (
+            sqlite3.connect(":memory:")
+            .execute("SELECT 18 AS group_count, 46 AS row_total")
+            .fetchone()
+        )
+
+    def test_the_two_row_types_disagree_about_iteration(self):
+        """The premise. If this stops being true, the tests below are moot.
+
+        Pinned first so a failure here reads as "the compat layer changed"
+        rather than "the counting broke" -- they would otherwise present
+        identically.
+        """
+        pg_row = self.CompatRow(["group_count", "row_total"], (18, 46))
+        sqlite_row = self._sqlite_row()
+        self.assertEqual(list(pg_row), ["group_count", "row_total"])
+        self.assertEqual(list(sqlite_row), [18, 46])
+        self.assertEqual(
+            pg_row[0], sqlite_row[0], "positional access agrees; iteration does not"
+        )
+
+    def test_duplicates_are_counted_correctly_from_a_postgres_row(self):
+        """The production numbers, as production actually returns them.
+
+        18 groups over 46 rows is 28 rows beyond one per logical message.
+        Before the fix this raised ValueError.
+        """
+        row = self.CompatRow(["group_count", "row_total"], (18, 46))
+        groups, excess = service._count_message_idempotency_duplicates(
+            self._cursor_returning(row)
+        )
+        self.assertEqual((groups, excess), (18, 28))
+
+    def test_both_row_types_give_the_same_answer(self):
+        """The property that was actually violated.
+
+        Asserting the Postgres number alone would let a future edit satisfy this
+        class while breaking SQLite. What matters is that the engine cannot be
+        inferred from the result.
+        """
+        pg = service._count_message_idempotency_duplicates(
+            self._cursor_returning(self.CompatRow(["group_count", "row_total"], (18, 46)))
+        )
+        native = service._count_message_idempotency_duplicates(
+            self._cursor_returning(self._sqlite_row())
+        )
+        self.assertEqual(pg, native)
+
+    def test_a_postgres_row_reaches_blocked_by_duplicates_and_not_install_error(self):
+        """End to end: the state production should have been reporting.
+
+        Counting correctly only matters because it puts the installer in the
+        branch that names the problem. ``blocked_by_duplicates`` carries the
+        counts and has a documented remedy in
+        ``scripts/messenger_idempotency_audit.py``; ``install_error`` carries an
+        exception class and points nowhere.
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        ensure_schema(cur)
+        conn.commit()
+
+        original = service._count_message_idempotency_duplicates
+        pg_cursor = self._cursor_returning(
+            self.CompatRow(["group_count", "row_total"], (18, 46))
+        )
+        service._count_message_idempotency_duplicates = lambda _cur: original(pg_cursor)
+        try:
+            status = service._ensure_message_idempotency_index(cur, conn)
+        finally:
+            service._count_message_idempotency_duplicates = original
+            conn.close()
+
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_BLOCKED_BY_DUPLICATES)
+        self.assertFalse(status["hard_uniqueness_active"])
+        self.assertEqual(status["duplicate_groups"], 18)
+        self.assertEqual(status["duplicate_rows"], 28)
+        self.assertIsNone(status["error_class"], "a counted state is not an error state")
+
+    def test_the_failure_path_keeps_a_traceback(self):
+        """``error_class`` alone is not a diagnosis.
+
+        Production logged ``error_class=ValueError`` on every boot, and the
+        class name is identical whether the fault is in the catalog query, the
+        duplicate count, or the row handling in between. That is why this took a
+        live database to find rather than a log line.
+
+        The structured status line must stay content-free -- no conversation
+        ids, no sender ids, no client ids -- so the traceback goes to a separate
+        exception-level record, which names a file and a line and carries no
+        user data.
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        ensure_schema(cur)
+        conn.commit()
+
+        original = service._inspect_message_idempotency_index
+
+        def _boom(_cur, _conn):
+            raise ValueError("invalid literal for int() with base 10: 'group_count'")
+
+        service._inspect_message_idempotency_index = _boom
+        try:
+            with self.assertLogs(level="ERROR") as captured:
+                status = service._ensure_message_idempotency_index(cur, conn)
+        finally:
+            service._inspect_message_idempotency_index = original
+            conn.close()
+
+        self.assertEqual(status["state"], service.IDEMPOTENCY_INDEX_INSTALL_ERROR)
+        self.assertEqual(status["error_class"], "ValueError")
+        blob = "\n".join(captured.output)
+        self.assertIn("Traceback", blob, "the failure is still undiagnosable")
+        self.assertIn("_boom", blob, "the traceback does not reach the raising frame")
+
+
 class HealthSnapshotTest(_IndexCase):
     """The installer's answer has to survive somewhere a human can read it."""
 
