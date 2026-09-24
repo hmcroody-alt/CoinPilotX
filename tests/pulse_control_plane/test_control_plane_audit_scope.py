@@ -131,10 +131,61 @@ class TestAuditScopeReachesEveryReader:
 class TestAnInventoryMayNotVouchForItself:
     """A source that *names* variables is not a source that *reads* them."""
 
-    def test_the_audit_excludes_its_own_package(self, scanned_files):
+    def test_the_audit_excludes_its_own_packages_prose(self, scanned_files):
+        """Everything in the package except the one module that reads env."""
         scanned = {str(f.relative_to(REPO)) for f in scanned_files}
-        assert not any(p.startswith("services/pulse_control_plane/") for p in scanned)
+        prose = {
+            p
+            for p in scanned
+            if p.startswith("services/pulse_control_plane/")
+            and p not in audit.SELF_READERS
+        }
+        assert not prose, f"inventory modules are being counted as readers: {prose}"
         assert "scripts/control_plane_audit.py" not in scanned
+        assert "scripts/undx_railway_variable_audit.py" not in scanned
+
+    def test_the_packages_one_real_reader_is_still_scanned(self, scanned_files):
+        """Excluding the package wholesale put the arming switch on the dead list.
+
+        ``runtime.py`` reads ``PULSE_CONTROL_PLANE_CONSULTATION`` — the wave-1
+        switch, set on the production service. Excluding the whole package left
+        it with zero readers, so the control plane's own audit was advising that
+        the control plane be disarmed.
+
+        It did no harm only because the name does not match ``GATE_NAME`` and so
+        was never classified. Pinned here because that is luck rather than a
+        safeguard, and the next gate-shaped variable ``runtime.py`` reads would
+        not be so lucky.
+        """
+        scanned = {str(f.relative_to(REPO)) for f in scanned_files}
+        assert "services/pulse_control_plane/runtime.py" in scanned
+
+    def test_the_arming_switch_is_not_reported_dead(self, scanned_files):
+        found = audit.readers_for({"PULSE_CONTROL_PLANE_CONSULTATION"}, scanned_files)
+        assert found["PULSE_CONTROL_PLANE_CONSULTATION"], (
+            "the live wave-1 arming switch has no reader; "
+            "this audit would advise deleting it"
+        )
+
+    def test_the_reader_exception_stays_as_narrow_as_its_justification(self):
+        """The exception is argued from one fact, so it may cover one file.
+
+        ``runtime.py`` is both the only module of the package on a request path
+        and the only one that reads the environment. That coincidence is what
+        justifies re-admitting it. A second entry here would need its own
+        argument, and adding one silently would re-open the self-vouching hole
+        that ``SELF`` exists to close.
+        """
+        assert audit.SELF_READERS == ("services/pulse_control_plane/runtime.py",)
+        env_readers = [
+            path
+            for path in (REPO / "services" / "pulse_control_plane").glob("*.py")
+            if "os.getenv" in path.read_text() or "os.environ" in path.read_text()
+        ]
+        assert [p.name for p in env_readers] == ["runtime.py"], (
+            "another module of the package now reads the environment; "
+            "SELF_READERS is out of step with the package"
+        )
 
     def test_a_rename_map_does_not_resurrect_the_name_it_retires(self, reader_counts):
         """``UNDX_METRICS_ENABLED`` is dead, and its only mention says so.
@@ -193,6 +244,41 @@ class TestTheAuditAgreesWithTheHandWrittenInventory:
             "inventoried as dead but now read by something: "
             f"{resurrected} — do not delete these from Railway"
         )
+
+    def test_env_example_declares_no_gate_that_nothing_reads(self, scanned_files):
+        """The operator contract may not promise a switch that does not exist.
+
+        `.env.example` is what an operator copies and what somebody reaches for
+        under pressure. A gate listed there and read by nothing is a switch that
+        will be set, and believed, on the day it matters.
+
+        The CI job runs the audit against this file for the same reason. Pinned
+        here as well because a workflow step is a line of YAML anybody can
+        delete, while this fails in the suite, next to the argument for it.
+        """
+        declared = audit.load_env(str(REPO / ".env.example"))
+        gates = {k for k in declared if audit.GATE_NAME.search(k)}
+        hits = audit.readers_for(gates, scanned_files)
+        undead = sorted(name for name in gates if not hits[name])
+        assert not undead, (
+            ".env.example declares gates nothing reads: "
+            + ", ".join(undead)
+            + " — remove the declaration, or wire the gate up"
+        )
+
+    def test_the_contract_check_is_not_vacuous(self, scanned_files):
+        """A gate that cannot go red is decoration.
+
+        The assertion above passes on an empty set, which is exactly what it
+        would do if ``GATE_NAME`` stopped matching or ``load_env`` returned
+        nothing. This pins that the file really does declare gates, so the check
+        above is being asked a question with content.
+        """
+        declared = audit.load_env(str(REPO / ".env.example"))
+        gates = {k for k in declared if audit.GATE_NAME.search(k)}
+        assert len(gates) > 50, f"only {len(gates)} gates parsed out of .env.example"
+        hits = audit.readers_for({"TRANSLATION_ENABLED"}, scanned_files)
+        assert hits["TRANSLATION_ENABLED"], "reader detection itself went blind"
 
     def test_the_inventory_is_still_fourteen_gates(self):
         """Pinned as a number so growth is a decision, not a drive-by.

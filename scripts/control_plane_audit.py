@@ -82,6 +82,28 @@ SELF = (
     "scripts/undx_railway_variable_audit.py",
 )
 
+#: Exceptions to :data:`SELF` — files inside an excluded inventory that are
+#: nonetheless genuine readers, and must be scanned.
+#:
+#: Excluding ``services/pulse_control_plane/`` wholesale was too blunt. The
+#: package is almost entirely prose about variables, but ``runtime.py`` is the
+#: one module that actually *reads* one: ``CONSULTATION_ENV`` is
+#: ``PULSE_CONTROL_PLANE_CONSULTATION``, the wave-1 arming switch, set on the
+#: production service. With the package excluded the audit saw zero readers for
+#: it and put the live arming switch on the dead list — advice to disarm the
+#: control plane, from the control plane's own audit.
+#:
+#: It did no harm only because ``PULSE_CONTROL_PLANE_CONSULTATION`` does not
+#: match :data:`GATE_NAME`, so it was never classified and never reported. That
+#: is luck, not a safeguard: the same blindness applies to any gate-shaped
+#: variable this package's runtime ever reads.
+#:
+#: The split is not a special case. ``runtime.py`` is the only module of the
+#: package allowed on a request path, and it is the only module that reads the
+#: environment — the architectural boundary and the reader boundary are the same
+#: line, so keeping them in step is one rule rather than two.
+SELF_READERS = ("services/pulse_control_plane/runtime.py",)
+
 #: Top-level packages that are **not** production readers, and why each is
 #: excluded rather than simply forgotten.
 #:
@@ -139,7 +161,7 @@ def source_files() -> list[pathlib.Path]:
         if not f.exists():
             continue
         rel = str(f.relative_to(REPO))
-        if rel in seen or rel.startswith(SELF):
+        if rel in seen or (rel.startswith(SELF) and rel not in SELF_READERS):
             continue
         seen.add(rel)
         out.append(f)

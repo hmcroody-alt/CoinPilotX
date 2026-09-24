@@ -86,6 +86,42 @@ jobs:
       - name: Control-plane suite
         run: python3 -m pytest tests/pulse_control_plane/ -q
 
+      # `.env.example` is not documentation. `test_environment_contract.py`
+      # requires every `os.getenv` in the tree to appear in it, and it is what
+      # an operator copies -- so a gate listed there that nothing reads is a
+      # switch somebody will set during an incident and then believe. That is
+      # the same lie as a dead Railway variable, caught one step earlier.
+      #
+      # The contract gate already enforces code -> file. This enforces file ->
+      # code, and only for gate-shaped names. Together the two make the
+      # declared gate surface and the real one the same set.
+      #
+      # Why this file and not production: the audit only exits non-zero with
+      # `--env-file`, and a CI runner has no credential-free way to obtain a
+      # production variable dump. Auditing the declared contract needs no
+      # secret, so this stays safe on a fork PR -- the script opens no database
+      # and makes no network call.
+      #
+      # Two things this does NOT do, so a green tick is not misread:
+      #
+      #   * It does not check production. Railway can still hold a dead
+      #     variable this file never mentioned; that is issue #15's other half
+      #     and needs a dump a human runs.
+      #   * It does not see every dead declaration. `GATE_NAME` matches names
+      #     that *look* like switches, and three of the eight removed to make
+      #     this green -- `TRANSLATION_FAIL_OPEN`, `TRANSLATION_PRESERVE_ORIGINAL`,
+      #     `TRANSLATION_SHOW_ORIGINAL_OPTION` -- do not match it. They were
+      #     found by a human root-cause report, not by this gate, and nothing
+      #     stops them coming back.
+      - name: The operator contract declares no dead gate
+        run: |
+          code=0
+          python3 scripts/control_plane_audit.py --env-file .env.example || code=$?
+          if [ "$code" != "0" ]; then
+            echo "::error::.env.example declares a gate that nothing in the tree reads. Remove the declaration, or wire the gate up."
+          fi
+          exit "$code"
+
       - name: Capability drift
         run: |
           code=0
