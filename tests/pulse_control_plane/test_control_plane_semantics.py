@@ -2048,3 +2048,140 @@ class TestTheAuditLogIsAppendOnlyByConventionOnly:
             line = next(l for l in text.splitlines() if f"DELETE FROM {table}" in l)
             assert "WHERE" in line
             assert "action LIKE 'prelaunch_%'" in line
+
+
+# ---------------------------------------------------------------------------
+# Stage 11 execution — the scripts that carry the migration to production.
+#
+# The control-plane package opens nothing. These two scripts are the only place
+# it meets a database, which makes them the only place the package's guarantees
+# can be lost, so they are tested here rather than left to the run that applies
+# them.
+# ---------------------------------------------------------------------------
+
+
+def _load_script(name: str):
+    """Import a file from ``scripts/`` without making it importable by accident.
+
+    ``scripts/`` is not a package and must not become one — adding
+    ``__init__.py`` would put a hundred-odd one-off audit scripts on the import
+    path of every test in the repository.
+    """
+    root = pathlib.Path(__file__).resolve().parents[2]
+    spec = importlib.util.spec_from_file_location(
+        f"_script_{name}", root / "scripts" / f"{name}.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestTheMigrationRefusesAStaleAudit:
+    """The manifest is only as good as the rows it was measured against.
+
+    A compare-and-set catches a row that changes between this process's SELECT
+    and its UPDATE. It does not catch a row that changed last week, because the
+    guard value itself comes from the audit — a stale audit produces a manifest
+    that is internally consistent and wrong. So the recording is compared to
+    live production before a single write is proposed.
+    """
+
+    @pytest.fixture
+    def script(self):
+        return _load_script("capability_migration")
+
+    def _live(self, **overrides):
+        rows = {
+            key: {"feature_key": key, "state": state, "rollout_percentage": 100,
+                  "public_label": "Live"}
+            for key, state in STORED_STATES.items()
+        }
+        rows.update(overrides)
+        return rows
+
+    def test_an_unchanged_production_is_not_stale(self, script):
+        assert script._audit_is_still_current(self._live(), STORED_STATES) == []
+
+    def test_an_edited_state_is_caught(self, script):
+        live = self._live()
+        live["marketplace_checkout"]["state"] = "enabled"
+        stale = script._audit_is_still_current(live, STORED_STATES)
+        assert len(stale) == 1
+        assert "marketplace_checkout" in stale[0]
+        assert "internal-only" in stale[0] and "enabled" in stale[0]
+
+    def test_a_deleted_row_is_caught(self, script):
+        live = self._live()
+        del live["pulse_posts"]
+        stale = script._audit_is_still_current(live, STORED_STATES)
+        assert any("pulse_posts" in s and "no row in production" in s for s in stale)
+
+    def test_a_row_the_audit_never_saw_is_caught(self, script):
+        """A new capability config row is not harmless.
+
+        It has no measured reality behind it, so nothing here can say whether
+        it overstates or understates. Migrating the other fourteen and leaving
+        it unmentioned would report a complete migration of an incomplete
+        table.
+        """
+        live = self._live()
+        live["pulse_events"] = {
+            "feature_key": "pulse_events", "state": "beta",
+            "rollout_percentage": 100, "public_label": "Beta",
+        }
+        stale = script._audit_is_still_current(live, STORED_STATES)
+        assert any("pulse_events" in s and "never saw" in s for s in stale)
+
+    def test_the_legacy_state_column_is_not_in_the_update(self):
+        """The one column the migration must never write.
+
+        ``state`` appears in the statement exactly once, in the WHERE clause,
+        as the compare-and-set guard. Writing it is unsafe in a way that is not
+        obvious from reading the statement: ``normalize_state`` maps every
+        unrecognised word to ``beta``, the legacy engine's most permissive
+        state, so even an edit intended to retire a row would widen it.
+        """
+        set_clause, where_clause = mig._UPDATE.split("WHERE")
+        assert "state" not in set_clause.replace("deployment_state", "").replace(
+            "eligibility_policy", ""
+        )
+        assert "state = ?" in where_clause
+
+
+class TestTheActivationCheckNeedsEvidenceNotOptimism:
+    @pytest.fixture
+    def script(self):
+        return _load_script("capability_activation_check")
+
+    def test_without_a_database_the_check_blocks(self, script, monkeypatch, capsys):
+        """"Could not confirm the migration" and "the migration did not happen"
+        deserve the same answer, and this is the one that fails closed."""
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("DATABASE_PUBLIC_URL", raising=False)
+        monkeypatch.setattr(sys, "argv", ["capability_activation_check.py"])
+        assert script.main() == 1
+
+    def test_wave_one_entry_does_not_name_an_unreachable_gate(self):
+        """``--strict`` measures the legacy word the migration may not repair.
+
+        It therefore reports four findings permanently, and naming it as an
+        entry criterion would have made wave 1 unreachable — which does not
+        stop a cutover, it just teaches the operator that the entry criteria
+        are decorative. The criterion must name a check that can actually go
+        green.
+        """
+        wave_one = activation.waves()[0]
+        assert wave_one.number == 1
+        assert not any("--strict" in c for c in wave_one.entry_criteria), (
+            "wave 1 entry names a gate that can never pass"
+        )
+        assert any(
+            "capability_activation_check" in c for c in wave_one.entry_criteria
+        ), "wave 1 must name the check that reads the migrated columns"
+
+    def test_the_gate_reads_only_migrated_rows(self, script):
+        """A NULL ``deployment_state`` is an unmigrated row, not a migrated one
+        holding nothing. Averaging the two would hide a partial migration."""
+        source = inspect.getsource(script.read_migrated)
+        assert "deployment_state IS NOT NULL" in source
+        assert "readonly=True" in source
