@@ -458,3 +458,131 @@ Note the other `normalize_state` in this codebase — `services/music_authority.
 — is untouched. It falls back to `ACTIVE` and has its own permissive-default
 behaviour, load-bearing across nine call sites in `bot.py`. Same name, different
 subsystem, separate decision.
+
+---
+
+## 9. Wave 1 — the request path consults the plane
+
+Everything in §§1–8 sits off the request path. Wave 1 is the first thing that
+does not, and its content is exactly that and nothing more: **let the request
+path ask the control plane a question.** No answer changes.
+
+### The ten capabilities were chosen for being boring
+
+`services/pulse_control_plane/shadow.py` resolves all 75 subject-capability
+cells under both the legacy engine and the new model. Ten capabilities agree in
+every cell:
+
+```
+ai_assistant            merchant_applications     pulse_posts
+creator_cockpit         pulse_comments_reactions  pulse_reels
+marketplace_browse      pulse_groups              pulse_spaces
+                        pulse_messenger
+```
+
+All ten are `LIVE_GLOBAL` / `STANDARD`, visible and usable for every subject
+under both engines. That is the whole reason they are first: **if production
+behaviour changes during this wave, the wiring is the cause, and there is no
+semantic argument to have about it.** A wave that both rewires and re-decides
+cannot be diagnosed, because every symptom has two candidate explanations.
+
+The five absentees are absent for reasons:
+
+| capability | wave | why not now |
+|---|---|---|
+| `premium_identity`, `premium_advanced_tools` | 2 | wiring them **withdraws** access the legacy row granted by accident |
+| `marketplace_checkout` | 3 | the only widening in the matrix, and the only row touching payment |
+| `pulse_livestream` | none | Agora → Mux, under the realtime hard lock: adding a consultation is a change to that path whatever it returns |
+| `admin_command` | none | `require_admin_page` already works; a second opinion beside a working authorisation check invites the two to disagree |
+
+### Three states, not two
+
+`runtime.consult()` returns `None`, or a decision. `None` means **no opinion**
+and the caller must behave exactly as it did before wave 1. It is returned when
+the process is disarmed, when the key is outside the wave, and when the key is
+unknown. It is never a way of saying no — a denial is a `CapabilityDecision`
+with `usable=False` and a reason code.
+
+This distinction is the one most likely to be lost in a later refactor, because
+an unarmed process and a denying one both produce an empty `capabilities` dict
+at `/api/pulse/capabilities`. The payload therefore carries `consulted`
+explicitly, and `scope` regardless, so a client can tell "not in this wave" from
+"denied" — the two things an absent key would otherwise mean.
+
+### The switch is not an override
+
+`PULSE_CONTROL_PLANE_CONSULTATION` decides **whether the question is asked**,
+never what is answered. When it is off, no decision is produced, so there is no
+decision for it to have overridden. That is why it does not violate the rule in
+`model.evaluate` that nothing may override a capability decision, and why
+`runtime.disarm()` is a legitimate incident response rather than a back door.
+
+Unset or falsy is pre-wave behaviour. That is the rollback, and it needs no
+deploy.
+
+### Arming takes two independent facts
+
+A truthy variable alone does not arm the consultation. At boot,
+`arm_control_plane_consultation()` in `bot.py` reads the migrated
+`feature_flags` columns and `runtime.verify()` compares the ten wave-1 rows
+against the capability registry. Any disagreement — a missing row, a different
+`deployment_state`, a different `eligibility_policy` — refuses to arm and names
+the rows in the log. Verification is all-or-nothing: answering about the nine
+rows that agreed would be more helpful and less honest, since a table with one
+unexplained row is a table nobody reconciled.
+
+`verify()` deliberately ignores the legacy `state` column and every row outside
+wave 1. `marketplace_checkout` disagrees with its `state` **by design** and will
+until wave 3; letting that block wave 1 would make the gate unsatisfiable, and
+an unsatisfiable gate does not stop a cutover — it teaches the next operator
+that the entry criteria are decorative.
+
+A database without the migrated columns — every local, dev and test database,
+since `init_db()` does not recreate what `scripts/capability_migration.py`
+wrote — simply does not arm, and logs `CONTROL_PLANE_ARM_UNMIGRATED`. That is
+pre-wave behaviour, not an outage, and the log says so in those words.
+
+### Why arming happens at boot and not per request
+
+Reading `feature_flags` on every request would invent a third outcome on a path
+that has two: *the control plane could not answer.* Every handling of it is bad.
+Fail open and the plane is decorative. Fail closed and a database blip becomes a
+feature outage. Cache it and the cache is the boot-time read with extra steps
+and a less predictable refresh.
+
+Resolving once at boot and holding the result in memory means a request path
+that cannot reach the database fails for the reason it actually failed. The cost
+is knowingly accepted: a row edited mid-process keeps answering from the
+registry until the workers restart. For ten rows that are not meant to change
+during a cutover wave, that is the correct trade.
+
+Arming is per gunicorn worker, not per deploy. A worker that could not verify
+must not answer, whatever its siblings managed.
+
+### Scope is an allowlist, written out
+
+`runtime.WAVE_1_KEYS` is typed out; `activation.waves()` derives the same set
+from the shadow matrix. Both exist on purpose. The derivation is right for a
+*plan* — it cannot drift out of no-op-first order. It is wrong for an
+*allowlist*, because a derived allowlist grows the moment a capability's
+reconciled state changes, and the scope of a live wave is the last thing that
+should widen without somebody typing it. A test pins the two equal, so they can
+disagree only in a diff a human reviewed, and a second test pins
+`marketplace_checkout` out of scope on its own — so a careless edit to the
+derived plan cannot drag the first test green behind it.
+
+### What is deliberately not here
+
+- **No eligibility verdict.** All ten carry `STANDARD`, which requires no
+  authority, so there is no authority to consult. Supplying a fabricated verdict
+  would make `runtime` the authority — the one thing every module in this
+  package is written not to become. A test asserts the string
+  `EligibilityVerdict(` does not appear in `runtime.py`.
+- **No enforcement.** `/api/pulse/capabilities` grants nothing and gates
+  nothing. Every route behind these ten still performs its own checks, so a
+  client that disbelieves the response meets the same refusals it always would.
+  The failure mode of being wrong here is a mis-drawn tab, not an access-control
+  hole — which is what makes it safe to be the first caller.
+- **The variable is not set.** The code ships disarmed. Setting
+  `PULSE_CONTROL_PLANE_CONSULTATION` in Railway is a separate, deliberate act on
+  its own deploy, after the migration has run against production.

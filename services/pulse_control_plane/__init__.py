@@ -59,8 +59,14 @@ them and measured the gap, still without wiring anything:
     the wave order with the gate that must pass before wave 1, and what guards
     the admin write once it starts meaning something.
 
-Nothing here sits on a request path. ``activation.readiness()`` is what says
-whether that may change.
+``runtime``
+    Wave 1. The one module here that sits on a request path, and therefore the
+    only place in this package where being wrong costs a user something.
+
+Everything above ``runtime`` still sits off the request path. That line is
+worth keeping sharp rather than quietly deleting now that one module has
+crossed it: ``activation.readiness()`` is what says whether anything else may,
+and ``runtime`` itself refuses to answer for any key outside wave 1.
 """
 
 from __future__ import annotations
@@ -76,6 +82,7 @@ from services.pulse_control_plane import (
     parsing,
     reconciler,
     rollout,
+    runtime,
     shadow,
     write_security,
 )
@@ -118,6 +125,7 @@ __all__ = [
     "parsing",
     "reconciler",
     "rollout",
+    "runtime",
     "shadow",
     "write_security",
 ]
