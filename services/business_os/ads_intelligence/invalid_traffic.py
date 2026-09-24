@@ -244,8 +244,10 @@ def _sequence_violations(conn, since: str) -> list:
         "AND e.event_name IN ('ad_viewable', 'ad_click')", (since,)))
     for row in rows:
         # row_values, not row[:7]: CompatRow.__getitem__ only special-cases
-        # int, so a slice falls through to the dict and raises KeyError on
-        # Postgres. This SELECT is also the reason row_values reads by position
+        # int, so a slice falls through to the dict lookup and raises on
+        # Postgres -- TypeError on the 3.11 production runs (slices are
+        # unhashable before 3.12), KeyError on newer. This SELECT is also the
+        # reason row_values reads by position
         # rather than through values() -- decision_id, campaign_id and
         # creative_id each appear TWICE (once from e, once from d), and the
         # mapping half keeps only the last of each, which would silently

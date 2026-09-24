@@ -120,12 +120,22 @@ def test_slicing_a_row_is_not_positional_access():
     slice falls through to the dict lookup and raises. Pinned because the
     scanner's slice pattern is only justified by this behaviour -- if CompatRow
     ever learns slicing, the pattern should go rather than linger as noise.
+
+    The exception TYPE depends on the interpreter, and this test was written on
+    the wrong one. Slice objects became hashable in 3.12, so the dict lookup
+    gets far enough to raise ``KeyError`` there. On **3.11 -- which is what CI
+    and production both run** -- a slice is unhashable and it is ``TypeError``
+    instead. Accepting only ``KeyError`` passed locally and failed CI.
+
+    Both are accepted because both are the same defect. Neither is caught by
+    anything: the one live site, ``_sequence_violations``, was inside no
+    ``try``, so on Postgres it took down the whole invalid-traffic sweep.
     """
     sliced = _sqlite_row(COLUMNS, VALUES)[:2]
     assert tuple(sliced) == VALUES[:2]
     try:
         CompatRow(COLUMNS, VALUES)[:2]
-    except KeyError:
+    except (KeyError, TypeError):
         pass
     else:
         raise AssertionError(
@@ -255,8 +265,9 @@ def test_premium_crypto_access_reads_a_postgres_row(monkeypatch):
 #     ``_int()`` that swallows them and returns 0, so the metric read as zeros
 #     rather than failing
 #
-# Hence two patterns, not one. Both are needed: unpacking has no call syntax to
-# key on, and a bare call name misses ``zip(cols, row)``.
+# Each later pass found another idiom the previous one could not express, so the
+# patterns below are grouped by the SYNTAX they key on rather than by severity:
+# a call, an ``=``, a ``[``, and finally one with no punctuation at all.
 _ROW_NAMES = r"row|r|rec|record|_row"
 
 # tuple(row), list(row), zip(cols, row), sorted(row), ...
@@ -282,10 +293,30 @@ _UNPACKS = re.compile(
 # switched off rather than tightened. ``r`` stays in the other two patterns.
 _SLICES = re.compile(r"\b(?:row|rec|record|_row)\[\s*-?\d*\s*:")
 
+# ``for value in row`` -- as a statement, a comprehension, or a genexp. The
+# plainest way of the four and the last one this file learned, precisely
+# because the three above all key on punctuation (a call, an ``=``, a ``[``)
+# and this one has none. It hid the /admin/analytics table renderer.
+#
+# ``for row in rows`` must NOT match, and it appears everywhere: it is the
+# correct outer loop. What separates them is only which side the row name is
+# on, so the iterable is anchored to a row name and the loop target is not.
+# Bare ``r`` is excluded for the same reason as in _SLICES -- ``for x in r``
+# is as likely to be a list named ``r`` as a row.
+# The terminator is a negative lookahead rather than a list of closing
+# punctuation: a statement ends in ``:``, a genexp in ``)``, a list
+# comprehension in ``]``, and enumerating those got ``]`` wrong on the first
+# try. Anchoring on what must NOT follow covers all three and stays correct
+# for whatever the fourth is. ``row.keys()``, ``row.values()`` and ``row[0]``
+# are all excluded by it, and all three are safe on both engines.
+_ITERATES = re.compile(
+    r"\bfor\s+[A-Za-z_]\w*\s+in\s+(?:row|rec|record|_row)\b(?!\s*[\.\(\[])"
+)
+
 _DANGEROUS = re.compile(
     "|".join(
         "(?:" + pattern.pattern + ")"
-        for pattern in (_CONSUMES, _UNPACKS, _SLICES)
+        for pattern in (_CONSUMES, _UNPACKS, _SLICES, _ITERATES)
     ),
     re.M,
 )
@@ -462,6 +493,19 @@ def test_the_scanner_can_actually_fail():
     assert not _code_hits('    return r[:500]')
     # ...but ``r`` still counts when it is unambiguously consumed as a row.
     assert _code_hits('    values = tuple(r)')
+    # Iteration, which has no punctuation to key on at all.
+    assert _code_hits('    cells = "".join(f"<td>{v}</td>" for v in row)')
+    assert _code_hits('        for value in row:')
+    assert _code_hits('    parts = [str(v) for v in record]')
+    # The outer loop is the CORRECT idiom and is everywhere. If this ever
+    # starts matching, the scanner is unusable and will be deleted wholesale
+    # rather than repaired.
+    assert not _code_hits('    for row in rows:')
+    assert not _code_hits('        for row in cur.fetchall():')
+    assert not _code_hits('    for value in db_service.row_values(row):')
+    # Named iteration is the safe idiom and must stay usable.
+    assert not _code_hits('    for key in row.keys():')
+    assert not _code_hits('    for v in row.values():')
     # The fixed forms, and the helper itself, must NOT match -- otherwise the
     # scanner flags its own remedy and the next reader deletes the scanner.
     assert not _code_hits('    groups = int(row[0] or 0)')

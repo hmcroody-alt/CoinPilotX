@@ -30060,8 +30060,16 @@ def admin_analytics_page():
         def cell(value):
             return html_escape(str(value)[:180])
 
+        # row_values, not ``for value in row``: iterating a row yields its
+        # VALUES on SQLite and its column NAMES on Postgres, so every one of
+        # the fifteen tables on this page rendered the same line of column
+        # names over and over, once per row it was supposed to be showing.
+        # It does not raise -- the names are strings and escape cleanly -- so
+        # the page returns 200 and looks populated. See services.db.row_values.
         body = "".join(
-            "<tr>" + "".join(f"<td>{cell(value)}</td>" for value in row) + "</tr>"
+            "<tr>"
+            + "".join(f"<td>{cell(value)}</td>" for value in db_service.row_values(row))
+            + "</tr>"
             for row in rows
         )
         head = "<tr>" + "".join(f"<th>{html_escape(str(h))}</th>" for h in headers) + "</tr>"
