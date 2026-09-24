@@ -16123,11 +16123,21 @@ def load_admin_by_email(email):
     return dict(row) if row else None
 
 
-def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadata=None):
+def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadata=None, before=None):
+    """Append one admin action to both audit tables.
+
+    ``before`` is the pre-change image of the row, and is optional because
+    ``admin_activity_logs.before_json`` was written as a literal empty string at
+    every call site — the column existed, so the schema looked like it recorded
+    what changed, while in fact it only ever recorded what it changed *to*.
+    Callers that can cheaply read the row first should pass it; the ones that
+    cannot keep the old behaviour rather than guessing at a pre-image.
+    """
     try:
         admin = admin_current_user() if has_request_context() else None
         now = datetime.now().isoformat()
         metadata_text = json.dumps(metadata or {})[:4000]
+        before_text = json.dumps(before, default=str)[:4000] if before is not None else ""
         ip_hash = client_ip_hash() if has_request_context() else ""
         user_agent = request.headers.get("User-Agent", "")[:500] if has_request_context() else ""
         conn = db()
@@ -16162,7 +16172,7 @@ def log_admin_audit(admin_user_id, action, target_type="", target_id="", metadat
                 request.path if has_request_context() else "",
                 target_type,
                 target_id,
-                "",
+                before_text,
                 metadata_text,
                 ip_hash,
                 user_agent,
@@ -103327,11 +103337,20 @@ def admin_capability_matrix_page():
         state = feature_flag_engine.normalize_state(request.form.get("state"))
         rollout = max(0, min(100, safe_int(request.form.get("rollout_percentage"), 0)))
         notes = clean_html(request.form.get("notes") or "")[:1000]
+        # The label the public is told. Now that init_db() no longer overwrites
+        # it on every request this is the only writer, so an omitted field must
+        # leave the stored value alone rather than blanking it.
+        public_label_raw = request.form.get("public_label")
+        public_label = clean_html(public_label_raw or "")[:80] if public_label_raw is not None else None
         now = datetime.utcnow().isoformat(timespec="seconds")
+        cur.execute("SELECT * FROM feature_flags WHERE feature_key=?", (key,))
+        before_row = cur.fetchone()
+        before = dict(before_row) if before_row else None
         cur.execute(
             """
             UPDATE feature_flags
-            SET state=?, rollout_percentage=?, premium_required=?, owner_only=?, internal_only=?, notes=?, updated_at=?
+            SET state=?, rollout_percentage=?, premium_required=?, owner_only=?, internal_only=?, notes=?,
+                public_label=COALESCE(?, public_label), updated_at=?
             WHERE feature_key=?
             """,
             (
@@ -103339,10 +103358,14 @@ def admin_capability_matrix_page():
                 1 if request.form.get("premium_required") else 0,
                 1 if request.form.get("owner_only") else 0,
                 1 if state == "internal-only" or request.form.get("internal_only") else 0,
-                notes, now, key,
+                notes, public_label, now, key,
             ),
         )
-        log_admin_audit(admin.get("id"), "feature_flag_updated", "feature_flag", key, {"state": state, "rollout": rollout})
+        log_admin_audit(
+            admin.get("id"), "feature_flag_updated", "feature_flag", key,
+            {"state": state, "rollout": rollout, "public_label": public_label},
+            before=before,
+        )
         conn.commit()
         message = f"Feature exposure updated for {key}."
     matrix = build_capability_matrix(cur)
@@ -103381,6 +103404,7 @@ def admin_capability_matrix_page():
           <p><span class='pill'>{html_escape(clean_html(row['flag_state']))}</span> <span class='pill'>Risk {html_escape(clean_html(row['risk_level']))}</span> <span class='pill'>Rollout {int(row['rollout_percentage'])}%</span></p>
           <label>State <select name='state'>{''.join(f"<option value='{s}' {'selected' if s == row['flag_state'] else ''}>{s}</option>" for s in sorted(feature_flag_engine.VALID_STATES))}</select></label>
           <label>Rollout <input name='rollout_percentage' type='number' min='0' max='100' value='{int(row['rollout_percentage'])}'></label>
+          <label>Public label <input name='public_label' maxlength='80' value='{html_escape(clean_html(row.get('public_label') or ''))}'></label>
           <label><input type='checkbox' name='premium_required' {'checked' if row['premium_required'] else ''}> Premium required</label>
           <label><input type='checkbox' name='owner_only' {'checked' if row['owner_only'] else ''}> Owner only</label>
           <label><input type='checkbox' name='internal_only' {'checked' if row['internal_only'] else ''}> Internal only</label>
@@ -122053,9 +122077,21 @@ def _init_db_impl():
                 flag["public_label"], flag["notes"], now_flags,
             ),
         )
+        # ``label`` is the admin-facing name of the capability. No route writes
+        # it, so it is owned by the code above and re-asserting it here keeps a
+        # rename in source from needing a data edit.
+        #
+        # ``public_label`` is deliberately NOT re-asserted. It used to be, and
+        # because init_db() runs on every request that meant the seeded value
+        # was restored within milliseconds of any change — so the column was
+        # unwritable in practice, and production has carried
+        # ``marketplace_checkout = "Internal"`` since May while that capability
+        # was taking real orders. An operator could not have corrected it. The
+        # value is operator-owned from here; the INSERT above still seeds a new
+        # row, so a fresh database is unchanged.
         cur.execute(
-            "UPDATE feature_flags SET label=?, public_label=? WHERE feature_key=?",
-            (flag["label"], flag["public_label"], flag["feature_key"]),
+            "UPDATE feature_flags SET label=? WHERE feature_key=?",
+            (flag["label"], flag["feature_key"]),
         )
     for index_sql in [
         "CREATE INDEX IF NOT EXISTS idx_ai_recommendations_status ON ai_recommendations(status)",

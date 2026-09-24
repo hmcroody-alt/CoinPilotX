@@ -307,6 +307,12 @@ def capability_matrix(runtime_status: dict | None = None, flags: list[dict] | No
                 "premium_required": int(flag.get("premium_required") or 0),
                 "owner_only": int(flag.get("owner_only") or 0),
                 "internal_only": int(flag.get("internal_only") or 0),
+                # The stored public label, not the seeded one. It was absent
+                # here for as long as the seeder rewrote it on every request,
+                # so the admin page could neither show it nor edit it. Now that
+                # the column is operator-owned, a matrix row that omitted it
+                # would render a blank field and blank the value on save.
+                "public_label": flag.get("public_label") or definition.get("public_label") or "",
                 "notes": flag.get("notes") or "",
             }
         )
