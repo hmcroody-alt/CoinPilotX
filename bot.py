@@ -103275,6 +103275,70 @@ def load_feature_flags(cur):
     return list(flags.values())
 
 
+@webhook_app.route("/api/pulse/capabilities", methods=["GET"])
+@auth_required
+def api_pulse_capabilities():
+    """What the control plane says the caller may use. Wave 1's request path.
+
+    This is the first thing in production that asks the control plane a
+    question, which is the entire content of wave 1 -- and it is why the wave
+    is scheduled first: every capability it can answer about resolves
+    identically under both the legacy engine and the new model, so if anything
+    changes in production during this wave, the wiring is the cause and there
+    is no semantic argument to have about it.
+
+    It grants nothing and gates nothing. Every route behind these capabilities
+    still performs its own checks, exactly as it did before, so a client that
+    disbelieves this response reaches the same refusals it always would. That
+    property is what makes it safe to be the first caller: the failure mode of
+    being wrong here is a mis-drawn tab, not an access-control hole.
+
+    When the process is unarmed -- the variable is unset, or the stored rows
+    disagreed with the capability registry at boot -- `consulted` is false and
+    `capabilities` is empty. That is "no opinion", and a client must read it as
+    "carry on as before", never as "everything is off". The difference is
+    spelled out in the payload rather than left to be inferred from an empty
+    dict, because an empty dict is exactly what a denial would also look like.
+    """
+    init_db()
+    viewer_id = safe_int(account_user_id(), 0)
+    if not viewer_id and not admin_current_user():
+        return api_error("Sign in to continue.", 401, error_code="auth_required")
+
+    from services.pulse_control_plane import runtime as control_plane_runtime
+
+    arming = control_plane_runtime.arming()
+    consulted = bool(arming and arming.armed)
+
+    decisions = {}
+    if consulted:
+        for key in sorted(control_plane_runtime.WAVE_1_KEYS):
+            decision = control_plane_runtime.consult(key, subject_id=str(viewer_id))
+            if decision is None:
+                continue
+            decisions[key] = {
+                "visible": decision.visible,
+                "usable": decision.usable,
+                "reason_code": decision.reason_code,
+                "deployment_state": decision.deployment_state,
+            }
+
+    return jsonify({
+        "ok": True,
+        # False means "nobody was asked", not "the answer was no". Named
+        # `consulted` rather than `enabled` for that reason: `enabled` would
+        # invite a client to read it as the feature switch it is not.
+        "consulted": consulted,
+        "capabilities": decisions,
+        "wave": 1,
+        "model_version": control_plane_runtime.model_version(),
+        # The keys this endpoint is willing to answer about at all. Reported so
+        # a client can tell "not in this wave" from "denied", which are the two
+        # things an absent key could otherwise mean.
+        "scope": sorted(control_plane_runtime.WAVE_1_KEYS),
+    })
+
+
 def capability_runtime_status(cur):
     now = datetime.utcnow().isoformat(timespec="seconds")
     post_count = admin_safe_count(cur, "SELECT COUNT(*) FROM pulse_posts")
@@ -130580,6 +130644,91 @@ def main():
         keep_web_process_alive_without_telegram()
 
 
+def arm_control_plane_consultation():
+    """Decide once per worker whether this process may consult the control plane.
+
+    Wave 1 of the capability cutover. Runs after `init_db()` because it reads
+    the columns the Stage 11 migration added, and it is deliberately the only
+    place the answer is computed: `services/pulse_control_plane/runtime.py`
+    explains at length why a per-request read would be worse, but the short
+    version is that it would invent a third outcome -- "the control plane could
+    not answer" -- on a path that has two, and every way of handling that
+    outcome is bad.
+
+    Never raises. An arming failure must not stop a boot, because the failure
+    mode of *not* arming is that ten capabilities behave exactly as they did
+    before wave 1, which is the intended rollback rather than an outage.
+
+    The logging is deliberately asymmetric. Armed is one line; refused-because-
+    the-rows-disagree prints every disagreement, because that case means either
+    the migration did not land or something edited `feature_flags` afterwards,
+    and both are worth waking up to.
+    """
+    try:
+        from services.pulse_control_plane import runtime as control_plane_runtime
+    except Exception as exc:
+        logging.warning("CONTROL_PLANE_ARM_IMPORT_FAILED error=%s", exc)
+        return None
+
+    rows = None
+    try:
+        conn = db()
+        try:
+            cur = conn.cursor()
+            if not table_exists(cur, "feature_flags"):
+                logging.info("CONTROL_PLANE_ARM_NO_TABLE feature_flags does not exist here")
+            else:
+                try:
+                    cur.execute(
+                        "SELECT feature_key, deployment_state, eligibility_policy "
+                        "FROM feature_flags"
+                    )
+                    rows = {
+                        row[0]: {"deployment_state": row[1], "eligibility_policy": row[2]}
+                        for row in cur.fetchall()
+                    }
+                except Exception as exc:
+                    # The table is there and the migrated columns are not. A
+                    # distinct case from a read failure, and the one a developer
+                    # is most likely to hit: the Stage 11 migration is a script
+                    # that was run against production, and `init_db()` does not
+                    # recreate its columns by design -- the migration writes
+                    # reconciled truth, and a schema bootstrap has no business
+                    # inventing that. So a freshly built database cannot arm and
+                    # therefore behaves exactly as it did before wave 1. That is
+                    # correct, but it reads as a breakage unless it says so.
+                    logging.info(
+                        "CONTROL_PLANE_ARM_UNMIGRATED feature_flags exists without the "
+                        "migrated columns (%s); run scripts/capability_migration.py "
+                        "--apply against this database. Staying unarmed is pre-wave "
+                        "behaviour, not an outage.",
+                        exc,
+                    )
+        finally:
+            conn.close()
+    except Exception as exc:
+        # Leaving `rows` as None is the honest signal: not "the rows are wrong"
+        # but "the evidence arming requires was never gathered". runtime.arm
+        # distinguishes the two in its reason string.
+        logging.warning("CONTROL_PLANE_ARM_READ_FAILED error=%s", exc)
+
+    try:
+        result = control_plane_runtime.arm(rows)
+    except Exception as exc:
+        logging.exception("CONTROL_PLANE_ARM_FAILED error=%s", exc)
+        return None
+
+    if result.armed:
+        logging.info("CONTROL_PLANE_ARMED %s", result.reason)
+    elif result.blocked_by_disagreement:
+        logging.error("CONTROL_PLANE_ARM_REFUSED %s", result.reason)
+        for line in result.disagreements:
+            logging.error("CONTROL_PLANE_ARM_DISAGREEMENT %s", line)
+    else:
+        logging.info("CONTROL_PLANE_NOT_ARMED %s", result.reason)
+    return result
+
+
 def initialize_database_for_web_startup():
     global INIT_DB_THREAD_STARTED
     if os.getenv("COINPILOTX_INIT_DB_ON_IMPORT", "1").strip().lower() in {"0", "false", "no", "off"}:
@@ -130590,6 +130739,7 @@ def initialize_database_for_web_startup():
         startup_mode = "async" if _deployment_environment_enabled() else "sync"
     if startup_mode == "sync" or os.getenv("COINPILOTX_SYNC_DB_INIT_ON_IMPORT", "").strip().lower() in {"1", "true", "yes", "on"}:
         init_db()
+        arm_control_plane_consultation()
         return
     if INIT_DB_THREAD_STARTED:
         logging.info("DB_INIT_BACKGROUND_SKIPPED_ALREADY_STARTED")
@@ -130601,6 +130751,11 @@ def initialize_database_for_web_startup():
             init_db()
         except Exception as exc:
             logging.exception("DB_INIT_BACKGROUND_FAILED error=%s", exc)
+            # Arming needs the migrated columns, and a failed init_db is
+            # exactly the case where they may not exist yet. Returning leaves
+            # the process unarmed, which is pre-wave behaviour.
+            return
+        arm_control_plane_consultation()
 
     threading.Thread(target=_run_startup_init, name="coinpilotx-db-init", daemon=True).start()
     logging.info("DB_INIT_BACKGROUND_STARTED")
