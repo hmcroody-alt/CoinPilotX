@@ -1,4 +1,10 @@
-"""Stage 19/20 — the environment gates that are set and read by nothing.
+"""Stage 19/20 — the environment gates that were set and read by nothing.
+
+**All fourteen were deleted from the production ``CoinPilotX`` service on
+2026-09-24** (issue #15). This module is now the record of what was removed and
+the rollback for putting it back, not a proposal. See "What was actually done"
+below; the fourteen rows and their audited values are kept exactly as they were,
+because a rollback that does not carry the original values is not a rollback.
 
 Re-audited 2026-09-24 against the live ``CoinPilotX`` Railway service (297
 variables, up from 295) and the source tree at ``e6b61c2de``. Two independent
@@ -20,20 +26,56 @@ That is why the dispositions below are not uniform. Fourteen dead variables are
 fourteen rows of clutter; two of them are dead *kill switches for live
 integrations*, and those are a different severity from a stale UNDX toggle.
 
-Why this module recommends rather than executes
-------------------------------------------------
+Why this module recommended rather than executed
+-------------------------------------------------
 
 Deleting a Railway variable is not a local edit. Railway applies variable
-changes at container boot, so a deletion triggers a redeploy of the production
-service — and the risk being taken is that redeploy, not the removal of a
-variable nothing reads. The redeploy rebuilds from whatever the connected source
-currently resolves to, which is not guaranteed to be the commit production is
-running right now. Fourteen inert variables are not worth an unplanned
-production rebuild, and bundling the two makes the rollback story incoherent:
-if the redeploy goes wrong, re-adding the variables does not undo it.
+changes at container boot, so the risk being taken is a redeploy of the
+production service, not the removal of a variable nothing reads. The redeploy
+rebuilds from whatever the connected source currently resolves to, which is not
+guaranteed to be the commit production is running right now. Fourteen inert
+variables are not worth an unplanned production rebuild, and bundling the two
+makes the rollback story incoherent: if the redeploy goes wrong, re-adding the
+variables does not undo it.
 
-So the catalog is the deliverable, and the deletion is a separate, single,
-deliberate act with its own rollback. Each entry carries the exact command.
+So the catalog was the deliverable, and the deletion was held back as a
+separate, single, deliberate act with its own rollback.
+
+What was actually done
+-----------------------
+
+That act was taken on 2026-09-24, after — and only after — the tool whose output
+authorised it was made trustworthy. Two defects were found in
+``scripts/control_plane_audit.py`` first, both of which invented false DEADs, and
+both of which would have been invisible in this list:
+
+* its scan scope was an enumeration (``bot.py`` + ``services/`` + root), so a
+  registered route pack in a top-level package contributed zero readers;
+* it excluded its own package wholesale to avoid vouching for itself, which also
+  hid ``runtime.py`` — the one module of the package that reads the environment —
+  and so reported the live wave-1 arming switch as dead.
+
+Fixed in PRs #21 and #22. The re-run then matched this list exactly: fourteen
+names, no more and no fewer, with **zero value drift** from the audited values
+below.
+
+The deletion itself was ordered around one empirical finding:
+``railway variable delete`` does **not** trigger a redeploy — verified by
+deleting the least consequential name first (``AGORA_OWNER_LIVE_TEST_ENABLED``)
+and watching the deployment list not move. So all fourteen were removed against a
+running container, and then exactly one restart was taken deliberately
+(``railway redeploy``), rather than fourteen restarts taken by accident.
+
+The restart is the evidence, and it is worth being explicit about why: until the
+container reboots it is still holding the old environment, so a green production
+check before the reboot proves nothing at all. After the reboot the service came
+back with 284 variables, ``/health`` 200, the home page 200, the capabilities
+endpoint 401, no traceback in 182 lines of boot log, and four
+``CONTROL_PLANE_ARMED 10 wave-1 row(s) verified against the registry`` lines —
+one per gunicorn worker. The control plane armed without the fourteen.
+
+Rolling back is ``removal_plan()``'s second half, which restores each name to the
+value recorded here, plus one redeploy.
 """
 
 from __future__ import annotations
@@ -73,12 +115,32 @@ AUDITED_AGAINST = "Railway service CoinPilotX (297 variables) @ e6b61c2de"
 REAUDITED_AT = "2026-09-24"
 REAUDITED_AGAINST = "Railway service CoinPilotX (297 variables) @ 6a57fd162"
 
+#: When the fourteen were actually removed from production, and from what.
+#:
+#: Recorded as its own pair of constants rather than by editing ``AUDITED_*``,
+#: because an audit and a deletion are different events and a reader needs to be
+#: able to tell which one a date refers to. The audit says "these were dead on
+#: that tree"; this says "these are gone from that service".
+RETIRED_AT = "2026-09-24"
+RETIRED_FROM = "Railway service CoinPilotX — 298 variables before, 284 after"
+
+#: The single restart that delivered the removal, and the proof it was survived.
+#:
+#: Named here because the deployment id is the only durable handle on the boot
+#: that tested the change: Railway's log retention drops the lines within days,
+#: and after that a claim about what the service did on 2026-09-24 has nothing
+#: behind it but this constant.
+RETIREMENT_DEPLOYMENT = "b0e86d8a-c7de-403e-8547-9cc8670c0c64"
+
 
 @dataclass(frozen=True)
 class DeadGate:
     """One environment variable that is set in production and read by nothing."""
 
     name: str
+    #: The value the variable held in Railway when it was audited, and
+    #: therefore the value ``restore_command`` puts back. Past tense since
+    #: :data:`RETIRED_AT`: this is the rollback record, not current state.
     production_value: str
     disposition: str
     #: What actually decides this behaviour, or "" when nothing does.
@@ -101,7 +163,34 @@ class DeadGate:
 
     @property
     def removal_command(self) -> str:
-        return f"railway variables --service CoinPilotX --remove {self.name}"
+        """The command that was actually run, in the syntax the CLI accepts.
+
+        This used to read ``railway variables --service CoinPilotX --remove
+        NAME``, which is not a command: ``--remove`` is not a flag the Railway
+        CLI has, and ``variables`` has no such option. It was never executed, so
+        nothing caught it, and it sat in the catalog looking authoritative for
+        two missions.
+
+        Worth leaving the note rather than just the fix, because it is the
+        failure mode of every recorded-but-unrun command — a rollback nobody has
+        tried is a rollback nobody knows is a typo, and it is discovered at the
+        moment it is needed.
+        """
+        return f"railway variable delete {self.name} --service CoinPilotX"
+
+    @property
+    def restore_command(self) -> str:
+        """Put it back with the value it held when audited.
+
+        ``--skip-deploys`` deliberately: a rollback of fourteen variables should
+        cost one restart, taken when the operator chooses, not fourteen taken by
+        the CLI. Setting variables *does* trigger a deploy by default — unlike
+        deleting them, which was measured not to.
+        """
+        return (
+            f"railway variable set {self.name}={self.production_value} "
+            "--service CoinPilotX --skip-deploys"
+        )
 
 
 DEAD_GATES: tuple[DeadGate, ...] = (
@@ -272,38 +361,36 @@ def deceptive_gates() -> tuple[DeadGate, ...]:
 
 
 def removal_plan() -> str:
-    """The exact commands, in one block, with the rollback beside them.
+    """What was run on :data:`RETIRED_AT`, and the rollback that undoes it.
 
-    Printed rather than executed. Each ``--set`` line restores the audited
-    value, so the rollback is complete and does not depend on anybody having
-    written the values down — which, for a variable nothing reads, nobody would.
+    Kept as one block with both halves rather than trimmed to the rollback now
+    that the removal is done. The two are only trustworthy together: the restore
+    lines are checkable against the remove lines — same fourteen names, each
+    carrying the value it is being returned to — and a rollback you cannot check
+    against the thing it reverses is a list of commands you have to take on
+    faith at the worst possible moment.
 
-    Still printed rather than executed after the re-audit, and that is a
-    decision rather than an omission. Railway delivers variables at boot, so
-    running this block restarts production. The entire benefit is that fourteen
-    names stop appearing in a list nobody reads; the cost is a boot of the live
-    application, and this codebase registers optional route packs inside
-    ``except Exception`` blocks, so a failed boot can come back up with a
-    subsystem missing instead of visibly down. Trading that for tidiness is a
-    bad trade, and it is a worse one bundled into a commit about something else.
-    The names are catalogued, the deception is recorded, and the commands are
-    here for whoever decides to spend a deploy on them.
+    Every value here is a boolean that was read by nothing, so this rollback is
+    complete. That is not general. It is safe to write down because none of the
+    fourteen is a secret; a retirement record for a credential must not look
+    like this one.
     """
     lines = [
         f"# Dead environment gates, audited {AUDITED_AT}",
         f"# {AUDITED_AGAINST}",
         f"# re-audited {REAUDITED_AT}: {REAUDITED_AGAINST} — no value drift",
         "#",
-        "# Railway applies variable changes at boot, so this triggers ONE redeploy",
-        "# of production. Run it as a single deliberate act, not alongside other work.",
+        f"# EXECUTED {RETIRED_AT}. {RETIRED_FROM}.",
+        f"# Delivered by deployment {RETIREMENT_DEPLOYMENT}, which came back armed.",
+        "# Deleting a variable does not trigger a deploy; setting one does. The",
+        "# removal was therefore taken against a running container and followed by",
+        "# exactly one deliberate restart, which is the only step that tested it.",
         "",
-        "# --- remove ---",
+        "# --- removed ---",
     ]
     lines.extend(g.removal_command for g in DEAD_GATES)
     lines.append("")
-    lines.append("# --- rollback (restores the exact audited values) ---")
-    lines.extend(
-        f"railway variables --service CoinPilotX --set {g.name}={g.production_value}"
-        for g in DEAD_GATES
-    )
+    lines.append("# --- rollback (restores the exact audited values, then ONE redeploy) ---")
+    lines.extend(g.restore_command for g in DEAD_GATES)
+    lines.append("railway redeploy --service CoinPilotX -y")
     return "\n".join(lines)
