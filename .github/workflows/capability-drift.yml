@@ -73,6 +73,19 @@ jobs:
         # Before trusting a green gate, prove it is capable of going red.
         run: python3 -m pytest tests/pulse_control_plane/ -q -k "Drift or drift"
 
+      # The step above selects `Drift or drift`, which is right for what it is
+      # for -- a non-vacuity probe aimed at the detector. But it was also the
+      # only pytest run in this job, so every other test in the directory was
+      # *collected and then deselected*. Collection alone proves the modules
+      # import; it proves nothing about the assertions, and the wave-1 suite
+      # sat in that state through the whole wave, visible in the job log as a
+      # deselected count that grew by 90 while the passing count did not move.
+      #
+      # Run separately rather than by widening the selector above, so that a
+      # failure still says which of the two things broke.
+      - name: Control-plane suite
+        run: python3 -m pytest tests/pulse_control_plane/ -q
+
       - name: Capability drift
         run: |
           code=0

@@ -55,17 +55,85 @@ GETENV = re.compile(
 FALSY_TEST = re.compile(r"not\s+in\s*[\(\{][^)}]*(?:\"0\"|'0'|\"false\"|'false')")
 
 
-#: This package names dozens of environment variables in its own prose — the
-#: ``real_gate`` field of every legacy row is a variable name. Counting those as
-#: readers would let the inventory vouch for itself, so the audit excludes its
-#: own source from reader detection.
-SELF = ("services/pulse_control_plane/", "scripts/control_plane_audit.py")
+#: Sources that *name* environment variables rather than *read* them, and would
+#: therefore vouch for the very variables they exist to retire.
+#:
+#: ``services/pulse_control_plane/``, ``scripts/control_plane_audit.py``
+#:     This package names dozens of variables in its own prose — the
+#:     ``real_gate`` field of every legacy row is a variable name. Counting
+#:     those as readers would let the inventory vouch for itself.
+#: ``scripts/undx_railway_variable_audit.py``
+#:     A *second* variable inventory, found when widening the scan scope in
+#:     :func:`source_files` silently rescued ``UNDX_METRICS_ENABLED`` from the
+#:     dead list. Its only mention of that name is in an ``EQUIVALENTS`` map of
+#:     old name → new name: a record that the variable was **renamed**, which is
+#:     the strongest possible evidence it is dead, read by this audit as proof it
+#:     is alive. A retirement record must never vouch for what it retires.
+#:
+#: This is an enumeration, and :func:`source_files` argues at length against
+#: enumerations. The difference is direction. A stale entry *there* omits a
+#: package and invents a false DEAD — advice to delete a live switch. A stale
+#: entry *here* omits an inventory and invents a false alive — a dead variable
+#: left in place for someone to check by hand. Only one of those is an outage,
+#: so only one of them may be left to a list somebody has to remember to update.
+SELF = (
+    "services/pulse_control_plane/",
+    "scripts/control_plane_audit.py",
+    "scripts/undx_railway_variable_audit.py",
+)
+
+#: Top-level packages that are **not** production readers, and why each is
+#: excluded rather than simply forgotten.
+#:
+#: ``tests``
+#:     A test that sets a variable is not a reader of it. Counting tests would
+#:     make every gate look alive the moment somebody wrote a fixture for it,
+#:     which is the failure direction that leaves dead variables in place —
+#:     tolerable, but it would make the audit's output useless rather than
+#:     merely conservative.
+#: ``mobile``, ``mobile-native``
+#:     JavaScript/TypeScript. Their ``EXPO_PUBLIC_*`` flags are a different
+#:     control plane with different failure modes (see the note in
+#:     ``services/pulse_control_plane/classify.py``) and are not Railway service
+#:     variables.
+#:
+#: ``scripts`` is deliberately **not** on this list. A one-off script is not a
+#: production gate, but deleting a variable that only a script reads still
+#: breaks that script, and this tool's output is read as "you may delete this".
+NON_READER_DIRS = ("tests", "mobile", "mobile-native")
 
 
 def source_files() -> list[pathlib.Path]:
+    """Every Python file that could plausibly read a gate.
+
+    The scope used to be ``bot.py`` plus ``services/`` plus root-level modules,
+    and that silently defeated the over-counting argument in
+    :func:`readers_for`. A gate read *only* from a top-level package outside
+    that set contributed zero readers and was reported DEAD — advice to delete
+    a live switch, which is the one error this tool must not make.
+
+    ``pulse_communications_v2/`` is the concrete case. It is a registered route
+    pack (``bot.py:1389``), and ``PULSE_COMM_V2_SSE_ENABLED`` gates a real SSE
+    route at ``pulse_communications_v2/routes.py:899``. The audit called it
+    dead. It was saved from doing harm only by the accident that the variable
+    is not currently set in Railway, so the environment comparison never
+    reached it.
+
+    So the scope is now derived — every top-level Python package and every
+    top-level module — rather than enumerated. An enumeration is a list that
+    goes stale the next time somebody adds a package, and goes stale silently,
+    in the direction of false DEAD.
+    """
     files = [REPO / "bot.py"]
-    files += sorted((REPO / "services").rglob("*.py"))
     files += sorted(REPO.glob("*.py"))
+    for entry in sorted(REPO.iterdir()):
+        if not entry.is_dir() or entry.name in NON_READER_DIRS:
+            continue
+        if entry.name.startswith(".") or entry.name == "node_modules":
+            continue
+        if not (entry / "__init__.py").exists() and entry.name != "scripts":
+            continue
+        files += sorted(entry.rglob("*.py"))
     seen, out = set(), []
     for f in files:
         if not f.exists():
