@@ -48,20 +48,56 @@ class TestEngineBehaviourTheInventoryDependsOn:
         assert verdict["usable"] is True
 
     @pytest.mark.parametrize("bogus", ["disabeld", "OFF-ish", "", None, "internal only", "unknown"])
-    def test_an_unrecognised_state_fails_open_to_full_access(self, bogus):
-        """The database plane's polarity, pinned.
+    def test_an_unrecognised_state_now_fails_closed(self, bogus):
+        """The database plane's polarity, pinned — after it was inverted.
 
-        ``normalize_state`` maps anything it does not recognise to ``beta``, and
-        ``beta`` is visible and usable. So a typo in the admin form — including
-        ``"internal only"`` with a space instead of a hyphen, which is the most
-        plausible one — grants full public access rather than erroring.
+        This test used to assert the opposite, and the old docstring is kept
+        below rather than replaced, because the old behaviour is the entire
+        reason the new one exists.
 
-        This is the single most important asymmetry in the whole inventory: the
-        environment plane fails closed, this one fails open.
+        ``normalize_state`` mapped anything it did not recognise to ``beta``,
+        and ``beta`` is visible and usable. So a typo in the admin form —
+        including ``"internal only"`` with a space instead of a hyphen, which
+        is both the most plausible typo and a near-miss of the *most*
+        restrictive state — granted full public access rather than erroring.
+        That was the single most important asymmetry in the inventory: the
+        environment plane failed closed, this one failed open.
+
+        It now agrees with the rest of the codebase. An unrecognised word
+        resolves to ``disabled``: invisible and unusable for every subject,
+        including an owner.
+
+        Note what this does *not* license. The column still must not be written
+        in order to retire a row — the argument for that survived the polarity
+        change, with a different reason. See the semantics suite.
         """
-        assert feature_flag_engine.normalize_state(bogus) == "beta"
+        assert feature_flag_engine.normalize_state(bogus) == "disabled"
         verdict = feature_flag_engine.evaluate_flag({"state": bogus}, {"user_id": 7})
-        assert verdict["usable"] is True
+        assert verdict["visible"] is False
+        assert verdict["usable"] is False
+
+    @pytest.mark.parametrize("bogus", ["disabeld", "internal only", "", None])
+    def test_an_unrecognised_state_is_refused_on_the_way_in(self, bogus):
+        """Reading coerces; writing refuses.
+
+        ``normalize_state`` is handed whatever the column already holds and has
+        to answer something. A write has a third option a read does not —
+        reject the request and change nothing — and taking it is the whole
+        difference between a default and a destructive edit.
+        """
+        with pytest.raises(ValueError):
+            feature_flag_engine.state_for_write(bogus)
+
+    @pytest.mark.parametrize("word", sorted(feature_flag_engine.VALID_STATES))
+    def test_every_valid_state_survives_both_paths(self, word):
+        """The fix must not have narrowed the vocabulary itself.
+
+        A fallback that also rejected legitimate words would look identical in
+        every failing case above and be wrong everywhere else.
+        """
+        assert feature_flag_engine.normalize_state(word) == word
+        assert feature_flag_engine.state_for_write(word) == word
+        assert feature_flag_engine.state_for_write(f"  {word.upper().replace('-', '_')}  ") == word
 
     def test_rollout_percentage_is_not_consulted(self):
         """``rollout_percentage`` is stored, rendered, and ignored.

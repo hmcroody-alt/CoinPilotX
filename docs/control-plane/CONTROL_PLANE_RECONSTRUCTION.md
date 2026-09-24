@@ -83,14 +83,20 @@ This is the finding that makes reconciliation a *rewrite* rather than a copy.
 
 - **Environment plane — fails closed.** Every `BUSINESS_OS_*` gate reads
   `getenv(KEY, "") in {"1","true","yes","on"}`. Unset means off.
-- **Database plane — fails open.** `normalize_state` returns `"beta"` for any
+- **Database plane — failed open.** `normalize_state` returned `"beta"` for any
   unrecognised value, and `evaluate_flag` grants `beta` both `visible` and
   `usable`.
 
 So a state misspelled in the admin form — `"internal only"` with a space rather
-than a hyphen is the most plausible slip — silently grants **full public
+than a hyphen is the most plausible slip — silently granted **full public
 access** instead of erroring. On a page whose entire stated purpose is
 restricting public exposure.
+
+> **Fixed in §8.** `normalize_state` now resolves an unrecognised word to
+> `disabled`, and the admin write path refuses one outright. The finding is kept
+> in the present tense of its own time because it is what made this a rewrite
+> rather than a copy, and because the fix did **not** make the legacy column
+> safe to write — see §8 for which hazard replaced which.
 
 `tests/pulse_control_plane/` pins this, including the space-instead-of-hyphen case.
 
@@ -207,11 +213,16 @@ The plan said repair `feature_flags.state`. The migration instead writes the
 reconciled truth into **new columns** and never touches `state` at all.
 
 Correcting `state` in place sounds strictly better and is not available.
-`normalize_state` maps every word it does not recognise to `beta`, which is the
+`normalize_state` mapped every word it did not recognise to `beta`, which is the
 *most permissive* state the legacy engine has — so the natural way to retire the
 column, writing something like `deprecated` into it, would have widened all
 fifteen rows at once. There is no value meaning "this no longer decides
 anything."
+
+> Still true after §8, with the hazard inverted rather than removed: an
+> unrecognised word now resolves to `disabled`, so that same edit *withdraws*
+> all fifteen rows instead of widening them. The conclusion — never write this
+> column — is unchanged.
 
 So the column keeps its May 2026 words, `marketplace_checkout = 'internal-only'`
 among them, and what makes that safe is only that `evaluate_flag` has no call
@@ -227,6 +238,10 @@ catalog describing a gate.
 behaviour of the engine being replaced, which is currently load-bearing for
 nothing — risk with no matching benefit. Strictness lives in `parsing.py`
 instead, where an ambiguous word raises rather than widening.
+
+> Superseded by §8. The "no matching benefit" half of that trade expired the
+> moment wave 1 was scheduled, because wave 1 is what gives the fail-open engine
+> its first caller.
 
 ### Steps 3 and 4 landed as written
 
@@ -365,3 +380,81 @@ without migration evidence. Both halves are pinned by tests, and four mutations
 
 `evaluate_flag` still has zero call sites. Nothing in this package sits on a
 request path. No capability has been wired; waves 1–3 remain unstarted.
+
+## 8. The fail-open fallback, closed
+
+§7 argued for leaving `normalize_state` alone: changing it would alter the
+behaviour of the engine being replaced, which was load-bearing for nothing, so
+the change was risk with no matching benefit.
+
+Half of that was a statement about the code and stayed true. The other half was
+a statement about the *schedule*, and it expired as soon as wave 1 was written
+down — because wave 1 is precisely the act of giving the fail-open engine its
+first caller. A fallback that is harmless because nothing calls it is harmless
+until the next merge. The cost of fixing it never got lower than it was while
+the blast radius was still zero.
+
+### Reading fails closed; writing refuses
+
+Two functions now, because they face different directions:
+
+| | Handed | On an unrecognised word |
+|---|---|---|
+| `normalize_state` | whatever the column already holds | resolves to `disabled` |
+| `state_for_write` | whatever a form just submitted | raises `ValueError` |
+
+A read has to answer something, so it answers with the closed option —
+`disabled` is the only state `evaluate_flag` refuses to *every* subject,
+including an owner. A write has a third option a read does not: reject the
+request and change nothing.
+
+Coercing on the way in would have been wrong under either polarity. The old
+fallback silently widened the row to `beta`; a fail-closed one would silently
+withdraw the feature to `disabled`. Both answer "I did not understand you" by
+editing production.
+
+`disabled` was chosen over the states that merely *look* restrictive.
+`internal-only` stays usable for an admin and `premium-only` stays visible to
+everyone, so "restrictive" is not one axis in this engine — a fallback landing
+on either would still have handed some subject access to a word nobody can
+interpret. Pinned by `test_no_subject_can_see_through_an_unrecognised_word`.
+
+### What the fix did not do
+
+It did not make `feature_flags.state` safe to write. It changed which rows a
+careless write destroys, and that is the thing most likely to be misread here:
+
+- **Before** — an unrecognised word meant `beta`, so writing `deprecated` to
+  retire a row would have *widened* all fifteen, `admin_command` among them.
+- **After** — an unrecognised word means `disabled`, so the same edit
+  *withdraws* all fifteen, `marketplace_checkout` among them.
+
+An outage instead of a breach is a different incident, not a smaller one. There
+is still no value meaning "this no longer decides anything"; there is now one
+meaning "off", and applying it to a live payment path is its own way of being
+wrong. The rule is unchanged: the column can be left wrong or dropped, never
+written.
+
+### What it did not do either
+
+It did not make the two planes agree in general. The environment gates still
+split into fail-closed and fail-open groups, and no change to the database plane
+touches that. "Both planes now fail closed" is the tidier sentence and the false
+one.
+
+### Blast radius
+
+`feature_flag_engine.normalize_state` has four callers. `default_flags` and
+`capability_matrix` read `FEATURE_DEFINITIONS`, whose fifteen states were
+verified valid, so neither changes answer. `evaluate_flag` has no call sites.
+The fourth is the admin form POST, which now validates instead of coercing and
+returns 400 with nothing written.
+
+All fifteen production rows hold recognised words, so no stored value resolves
+differently today. The change is entirely about what happens to the next
+unrecognised one.
+
+Note the other `normalize_state` in this codebase — `services/music_authority.py`
+— is untouched. It falls back to `ACTIVE` and has its own permissive-default
+behaviour, load-bearing across nine call sites in `bot.py`. Same name, different
+subsystem, separate decision.

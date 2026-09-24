@@ -33,14 +33,21 @@ opposite production behaviours with one word.
 The contrast with the database plane
 ------------------------------------
 
-``feature_flag_engine.normalize_state`` returns ``"beta"`` for any value it does
-not recognise, and ``evaluate_flag`` grants ``beta`` both ``visible`` and
-``usable``. So the database plane fails **open**, on a page whose whole purpose
+``feature_flag_engine.normalize_state`` *used to* return ``"beta"`` for any value
+it did not recognise, and ``evaluate_flag`` grants ``beta`` both ``visible`` and
+``usable``. So the database plane failed **open**, on a page whose whole purpose
 is restricting public exposure: a state misspelled ``"disabeld"`` in the admin
-form silently becomes fully available rather than erroring. The environment
-plane mostly fails closed. Reconciling the two planes therefore cannot be a
-value copy; it is a polarity change, which is why this package describes before
-it wires.
+form silently became fully available rather than erroring. The environment plane
+mostly fails closed. Reconciling the two planes therefore could not be a value
+copy; it was a polarity change, which is why this package described before it
+wired.
+
+That one has since been closed — unrecognised now resolves to ``disabled`` —
+but the observation above is kept rather than deleted, because it is the reason
+this module exists and because **the planes still do not agree in general**. The
+env gates split into fail-closed and fail-open groups (see above), and no single
+fix to the database plane changes that. "Both planes fail closed" would be a
+tidier sentence and a false one.
 """
 
 from __future__ import annotations
