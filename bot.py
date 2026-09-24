@@ -127811,7 +127811,16 @@ def legacy_account_summary(user_id):
     if not row:
         return "Account not found. Use /start first."
 
-    name, email, pro, plan, status, risk, exchange_goal = row
+    # By name, not by unpacking. Unpacking a row yields its VALUES on SQLite
+    # and its column NAMES on Postgres, so this Telegram summary greeted every
+    # production user as "display_name". Both row types index by name.
+    name = row["display_name"]
+    email = row["email"]
+    pro = row["is_pro"]
+    plan = row["subscription_plan"]
+    status = row["subscription_status"]
+    risk = row["risk_profile"]
+    exchange_goal = row["preferred_exchange_goal"]
     return (
         "👤 Account\n\n"
         f"Name: {name or 'Not set'}\n"

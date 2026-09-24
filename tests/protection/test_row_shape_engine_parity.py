@@ -215,10 +215,41 @@ def test_premium_crypto_access_reads_a_postgres_row(monkeypatch):
 # 4. The source-level lock
 # ---------------------------------------------------------------------------
 
-# ``tuple(x)`` / ``list(x)`` where x is a row-ish name. Deliberately broad: a
-# false positive costs one entry on the allowlist below, a false negative ships
-# to production and cannot be caught by any test in this repository.
-_DANGEROUS = re.compile(r"\b(?:list|tuple)\(\s*(row|r|rec|record|_row)\s*\)")
+# Every way of consuming a row AS AN ITERABLE, which is the thing that means
+# two different things by engine. Deliberately broad: a false positive costs one
+# allowlist entry, a false negative ships to production and cannot be caught by
+# any test in this repository.
+#
+# The first version of this scanner only knew ``tuple(row)`` and ``list(row)``,
+# and finding the four sites it caught was mistaken for finding them all. It had
+# missed three more, all of which reach users:
+#
+#   * ``a, b, c = row``            -- Telegram's account summary, which greeted
+#                                     every Postgres user as "display_name"
+#   * ``dict(zip(_COLUMNS, row))`` -- the UNDX provider circuit breaker
+#   * the ads funnel rollup, where the unpacked column names went through an
+#     ``_int()`` that swallows them and returns 0, so the metric read as zeros
+#     rather than failing
+#
+# Hence two patterns, not one. Both are needed: unpacking has no call syntax to
+# key on, and a bare call name misses ``zip(cols, row)``.
+_ROW_NAMES = r"row|r|rec|record|_row"
+
+# tuple(row), list(row), zip(cols, row), sorted(row), ...
+_CONSUMES = re.compile(
+    r"\b(?:list|tuple|set|frozenset|sorted|reversed|zip|enumerate)"
+    r"\(\s*(?:[^()]*,\s*)?(?:" + _ROW_NAMES + r")\s*\)"
+)
+
+# a, b = row  /  a, b, c = row   (but not ``a, b = row_values(row)``)
+_UNPACKS = re.compile(
+    r"^\s*\*?[A-Za-z_]\w*\s*(?:,\s*\*?[A-Za-z_]\w*\s*)+=\s*(?:"
+    + _ROW_NAMES + r")\s*(?:#.*)?$"
+)
+
+_DANGEROUS = re.compile(
+    "(?:" + _CONSUMES.pattern + ")|(?:" + _UNPACKS.pattern + ")", re.M
+)
 
 _SCAN_ROOTS = ("services", "pulse_communications_v2")
 _SCAN_FILES = ("bot.py",)
@@ -230,7 +261,10 @@ _SCAN_FILES = ("bot.py",)
 # ONE guarded helper, and exempting the file would have left the other 130k
 # lines -- including the Messenger dedup this very PR fixes -- unwatched.
 #
-# Adding an entry is a claim that must hold on Postgres, not on SQLite.
+# Adding an entry is a claim, and there are exactly two honest ones: either the
+# dangerous arm cannot be reached on Postgres, or the variable is not a database
+# row at all. Say which. "It passes the tests" is not one of them -- the tests
+# run on the engine where this bug is invisible.
 _ALLOWED = {
     # Defines row_values. Its docstring quotes the idiom it replaces, and its
     # last line -- ``return tuple(row)``, reached only once the Mapping cases
@@ -249,6 +283,12 @@ _ALLOWED = {
     ("bot.py", "admin_safe_count"),
     # SQLite-only path (PRAGMA table_info), and it says so at the call site.
     ("pulse_communications_v2/service.py", "_inspect_index_sqlite"),
+    # NOT A DATABASE ROW. ``row`` here is one element of a request body's
+    # "reqDTOS" list -- a plain dict off the wire -- and ``set(row)`` is
+    # deliberately reading its keys to reject unexpected ones. The scanner keys
+    # on the variable NAME, so this is the cost of keeping the net wide enough
+    # to catch an unpack, and a false positive is the cheap direction.
+    ("services/business_os/suppliers/cj.py", "estimate_shipping"),
 }
 
 _DEF = re.compile(r"^\s*def\s+(\w+)")
@@ -365,10 +405,26 @@ def test_the_allowlist_has_not_gone_stale():
 def test_the_scanner_can_actually_fail():
     """A grep-based lock that matches nothing passes forever. Prove the regex
     fires on the exact line that took comm_v2 down."""
+    # Calls that consume the row as an iterable.
     assert _code_hits('    groups = int(list(row)[0] or 0)')
     assert _code_hits('    return dict(zip(cols, tuple(row)))')
+    assert _code_hits('    out = dict(zip(_COLUMNS, row))')
+    assert _code_hits('    ordered = sorted(row)')
+    # Unpacking, which has no call name to key on.
+    assert _code_hits('    name, email, plan = row')
+    assert _code_hits('        a, b, c, d, e, f = row')
+    # The fixed forms, and the helper itself, must NOT match -- otherwise the
+    # scanner flags its own remedy and the next reader deletes the scanner.
     assert not _code_hits('    groups = int(row[0] or 0)')
     assert not _code_hits('    return dict(zip(cols, row_values(row)))')
+    assert not _code_hits('    out = dict(zip(_COLUMNS, platform_db.row_values(row)))')
+    assert not _code_hits('    name, email, plan = row_values(row)')
+    assert not _code_hits('    name, email, plan = rows')
+    assert not _code_hits('    return {k: row[k] for k in row.keys()}')
+    # Prose is exempt, but only prose: a real call on a line that ALSO quotes
+    # the idiom must still be caught, or the exemption becomes a hiding place.
+    assert not _code_hits('    so ``tuple(row)`` yields the column names.')
+    assert _code_hits('    x = tuple(row)  # unlike ``tuple(row)`` in prose')
     # Prose is exempt, but only prose: a real call on a line that ALSO quotes
     # the idiom must still be caught, or the exemption becomes a hiding place.
     assert not _code_hits('    so ``tuple(row)`` yields the column names.')

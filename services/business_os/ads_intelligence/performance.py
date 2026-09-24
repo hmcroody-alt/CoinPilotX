@@ -53,6 +53,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from services import db as platform_db
+
 from . import taxonomy
 
 _LOG = logging.getLogger(__name__)
@@ -272,7 +274,12 @@ def _funnel_for(conn, *, key_column: str, key_value: str, day: str) -> dict:
 
     subjects = 0
     for row in rows or ():
-        event_name, valid, excluded, invalid, distinct_subjects, dwell = row
+        # row_values, not unpacking: unpacking a row yields its VALUES on
+        # SQLite and its column NAMES on Postgres, so every counter below was
+        # fed the string "valid"/"excluded"/... and _int() quietly made each
+        # one 0. A funnel that reports zeros is worse than one that raises.
+        (event_name, valid, excluded, invalid,
+         distinct_subjects, dwell) = platform_db.row_values(row)
         name = str(event_name or "")
         bucket = _bucket(name)
         if bucket:
