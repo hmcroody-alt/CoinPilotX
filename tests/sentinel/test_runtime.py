@@ -18,6 +18,13 @@ def test_public_kev_sync_records_measured_health(conn, monkeypatch):
 
 
 def test_github_requires_explicit_repository_scope(conn, monkeypatch):
+    # GITHUB_REPOSITORY is this repo's own config key (.env.example:990) and is
+    # ALSO set by GitHub Actions on every step. Inheriting it let this test pass
+    # everywhere except the one place that matters: in CI the ambient value
+    # satisfied the scope check, so the call reached all three capabilities and
+    # returned 3 results instead of 1. Supply the input rather than asking the
+    # environment what it thinks it should be.
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
     monkeypatch.setenv(external_providers.MASTER_SWITCH, "1")
     monkeypatch.setenv("SENTINEL_GITHUB_SECURITY_ENABLED", "1")
     monkeypatch.setenv("SENTINEL_GITHUB_APP_TOKEN", "test-token")
