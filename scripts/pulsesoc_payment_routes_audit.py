@@ -69,6 +69,12 @@ def dynamic_checks() -> None:
     import sys
 
     sys.path.insert(0, str(ROOT))
+
+    from scripts.local_database_guard import require_local_database  # noqa: WPS433,E402
+
+    # Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+    require_local_database("pulsesoc_payment_routes_audit")
+
     import bot  # noqa: WPS433,E402
 
     user_id = 9926072401
