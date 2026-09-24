@@ -73,3 +73,24 @@ jobs:
           done < <(find tests -name 'test_*.py' -type f | sort)
           echo "INVENTORY_SHARD_COMPLETE ${{ matrix.shard }}"
           exit 0
+
+  # One file disagrees between 3.11 (CI, production) and 3.14 (local venv):
+  # tests/sentinel/test_runtime.py passes locally and fails here. That is the
+  # #29 shape exactly, so it gets looked at rather than filed.
+  disagreement:
+    name: Why does sentinel/test_runtime fail on 3.11
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install -r requirements.txt pytest
+      - name: Verbose
+        shell: bash
+        run: |
+          set +e
+          python -m pytest tests/sentinel/test_runtime.py -v -p no:cacheprovider
+          exit 0
