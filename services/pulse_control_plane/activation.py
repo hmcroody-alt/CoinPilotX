@@ -325,10 +325,16 @@ def readiness(
 
     The column also cannot be *neutralised*, which is worth stating because it
     is the first thing anyone will propose. There is no value meaning "this no
-    longer decides anything": ``normalize_state`` maps every unrecognised word
-    to ``beta``, and ``beta`` is the most permissive state the legacy engine
-    has. Writing ``deprecated`` there would widen access. The column can be left
-    wrong or dropped; it cannot be made inert by writing to it.
+    longer decides anything", and that survived the fail-closed fix to
+    ``normalize_state`` with its reason inverted rather than removed.
+
+    Before the fix, every unrecognised word resolved to ``beta`` — the most
+    permissive state — so writing ``deprecated`` there would have *widened* all
+    fifteen rows, ``admin_command`` included. After it, every unrecognised word
+    resolves to ``disabled``, so the same edit *withdraws* all fifteen,
+    ``marketplace_checkout`` included. An outage instead of a breach is a
+    different incident, not a smaller one. The column can be left wrong or
+    dropped; it cannot be made inert by writing to it.
 
     What makes leaving it wrong safe is :func:`legacy_engine_call_sites` being
     empty — nothing consults ``evaluate_flag``, so the stale word reaches no

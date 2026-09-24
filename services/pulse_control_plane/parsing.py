@@ -3,17 +3,24 @@
 The behaviour this replaces
 ---------------------------
 
-``feature_flag_engine.normalize_state`` reads::
+``feature_flag_engine.normalize_state`` used to fall back to ``beta``, which
+grants ``visible`` and ``usable``. So *every* unrecognised input — a typo, an
+empty string, ``None``, a value from a future schema, a truncated write —
+resolved to full public access. On a page whose only purpose is restricting
+public exposure. The most plausible operator slip, ``"internal only"`` with a
+space where the hyphen belongs, published the feature the operator was trying
+to hide.
 
-    value = (state or "beta").strip().lower().replace("_", "-")
-    return value if value in VALID_STATES else "beta"
+That has since been fixed at the source: the legacy engine now falls back to
+``disabled`` and refuses an unrecognised word outright on the way *in*, via
+``feature_flag_engine.state_for_write``. The two modules agree on polarity for
+the first time.
 
-and ``beta`` grants ``visible`` and ``usable``. So *every* unrecognised
-input — a typo, an empty string, ``None``, a value from a future schema, a
-truncated write — resolves to full public access. On a page whose only purpose
-is restricting public exposure. The most plausible operator slip, ``"internal
-only"`` with a space where the hyphen belongs, publishes the feature the
-operator was trying to hide.
+They are still not the same thing, and this one is not redundant. The legacy
+engine coerces, because it must answer for a word already sitting in a column;
+this module *raises*, because nothing downstream of it has a stored value to
+be compatible with. Coercion silently turns a bad input into a decision, which
+is the right trade only when there is no alternative — and here there is.
 
 The rule here
 -------------

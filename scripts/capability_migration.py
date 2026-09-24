@@ -11,10 +11,15 @@ New columns beside the legacy ones, never the legacy ones themselves.
 ``feature_flags.state`` is not in the UPDATE statement at all; it is in the
 ``WHERE`` clause, as the compare-and-set guard. That asymmetry is the whole
 design: the seeded word is what we check the world against, and the thing we
-must not touch, because ``normalize_state`` maps every unrecognised value to
-``beta`` — the most permissive state the legacy engine has. There is no value
-meaning "this no longer decides anything", so the only safe edit to that column
-is none.
+must not touch.
+
+The reason has inverted once since, which is worth knowing before anybody
+concludes the fix removed the hazard. ``normalize_state`` used to map every
+unrecognised value to ``beta`` — the most permissive state — so an edit meant
+to retire a row widened all fifteen. It now maps them to ``disabled``, so the
+same edit withdraws all fifteen, ``marketplace_checkout`` among them. There is
+still no value meaning "this no longer decides anything", so the only safe edit
+to that column is none.
 
 Why it re-reads the rows instead of trusting the audit
 ------------------------------------------------------

@@ -45,11 +45,20 @@ What happened to these rows
 Nothing, and that is deliberate. Mission 2 built the replacement in
 :mod:`services.pulse_control_plane.model` and migrated the reconciled truth
 into *new* columns, leaving every ``state`` value below exactly as recorded
-here. The intuitive tidying — writing ``deprecated`` into the column to mark it
-dead — would have been the worst move available: ``normalize_state`` maps every
-word it does not recognise to ``beta``, and ``beta`` is the most permissive
-state the legacy engine has. So that edit would have *widened* all fifteen
-rows. There is no value meaning "this no longer decides anything".
+here.
+
+The intuitive tidying — writing ``deprecated`` into the column to mark it dead
+— remains the worst move available, and the reason inverted once without the
+conclusion changing. When this module was written, ``normalize_state`` mapped
+every unrecognised word to ``beta``, the most permissive state the engine has,
+so that edit would have *widened* all fifteen rows. It now maps them to
+``disabled``, so the same edit *withdraws* all fifteen — including
+``marketplace_checkout``, which is taking orders. There is still no value
+meaning "this no longer decides anything"; there is now a value meaning "off",
+and applying it to a live payment path is an outage rather than a breach.
+
+The write path refuses those words outright (``state_for_write``), so the trap
+takes a deliberate database session to fall into rather than a form post.
 
 The column therefore still holds its original words, and what makes that safe
 is only that ``evaluate_flag`` has no call sites. This module is not history:

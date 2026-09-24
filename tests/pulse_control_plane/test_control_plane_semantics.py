@@ -1720,19 +1720,63 @@ class TestTheStaleLegacyColumnIsOnlySafeBecauseNothingReadsIt:
         assert any("internal-only" in b and "payment path" in b for b in result.blockers)
 
     def test_the_legacy_column_cannot_be_neutralised_by_writing_to_it(self):
-        """There is no value meaning "this no longer decides anything".
+        """There is still no value meaning "this no longer decides anything".
 
-        Every unrecognised word normalizes to ``beta``, and ``beta`` is the
-        most permissive state the legacy engine has — so the intuitive fix of
-        writing ``deprecated`` into the column would *widen* access on all
-        fifteen rows. The column can be left wrong or dropped; it cannot be
-        made inert.
+        This conclusion survived the fail-closed fix, and the reason inverted —
+        which is worth more than the conclusion, because the obvious reading of
+        that fix is that it made the column safe to write. It did not. It
+        changed which rows a careless write destroys.
+
+        Before, every unrecognised word normalized to ``beta``, the most
+        permissive state the engine has, so writing ``deprecated`` to retire a
+        row would have *widened* all fifteen at once — ``admin_command`` among
+        them, which fronts 199 admin routes.
+
+        Now every unrecognised word normalizes to ``disabled``, so the same
+        edit *withdraws* all fifteen — ``marketplace_checkout`` among them,
+        which has taken 32 real orders. That is an outage rather than a breach,
+        which is a different incident, not a smaller one.
+
+        The column can be left wrong or dropped. It cannot be made inert.
         """
         for word in ("deprecated", "retired", "migrated", "", "   "):
-            assert feature_flag_engine.normalize_state(word) == "beta"
+            assert feature_flag_engine.normalize_state(word) == "disabled"
             assert feature_flag_engine.evaluate_flag({"state": word}, {}) == {
-                "visible": True, "usable": True, "state": "beta", "reason": "Available.",
+                "visible": False, "usable": False, "state": "disabled",
+                "reason": "Feature disabled.",
             }
+
+    def test_no_subject_can_see_through_an_unrecognised_word(self):
+        """Fail-closed must hold for the privileged subjects too.
+
+        ``internal-only`` stays usable for an admin and ``premium-only`` stays
+        visible for everyone, so "restrictive" is not a single axis in this
+        engine. A fallback that merely *looked* restrictive — landing on
+        ``internal-only``, say — would still have handed every admin full
+        access to a word nobody can interpret.
+        """
+        for subject in (
+            {},
+            {"user_id": 7},
+            {"user_id": 1, "is_admin": True},
+            {"user_id": 1, "is_owner": True},
+            {"user_id": 1, "is_premium": True},
+            {"user_id": 1, "is_admin": True, "is_owner": True, "is_premium": True},
+        ):
+            verdict = feature_flag_engine.evaluate_flag({"state": "nonsense"}, subject)
+            assert verdict["visible"] is False, subject
+            assert verdict["usable"] is False, subject
+
+    def test_the_write_path_refuses_the_retirement_words_outright(self):
+        """The one guard that makes the paragraph above hard to trip over.
+
+        Reading an unparseable word has to answer something. Writing one does
+        not, and ``state_for_write`` refuses — so an operator who reaches for
+        ``deprecated`` gets an error instead of fifteen withdrawn capabilities.
+        """
+        for word in ("deprecated", "retired", "migrated", "", "   "):
+            with pytest.raises(ValueError):
+                feature_flag_engine.state_for_write(word)
 
 
 class TestTheCutoverOrderIsDerivedNotDeclared:

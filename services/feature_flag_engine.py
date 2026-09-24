@@ -231,9 +231,60 @@ def now_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+#: What an unrecognised stored word resolves to. ``disabled`` is the only state
+#: :func:`evaluate_flag` answers invisible-and-unusable for every subject
+#: including an owner, which is the answer a value nobody can interpret deserves.
+UNRECOGNISED_STATE = "disabled"
+
+
 def normalize_state(state: str | None) -> str:
-    value = (state or "beta").strip().lower().replace("_", "-")
-    return value if value in VALID_STATES else "beta"
+    """Resolve a stored state word, failing closed on anything unrecognised.
+
+    This used to fall back to ``beta``, which is the *most permissive* state
+    this engine has — ``evaluate_flag`` grants ``beta`` both ``visible`` and
+    ``usable`` unconditionally. So a typo, a truncated write, a word from a
+    newer schema, or a crafted form post all resolved to full public access.
+    The polarity was backwards: the legacy engine widened on doubt while every
+    environment gate in this codebase narrows on doubt.
+
+    It was safe only in the sense that nothing calls :func:`evaluate_flag`
+    today. That is a fact about this week, not a property of the design, and
+    the moment a request path consults this engine the fallback stops being
+    hypothetical. Fixing it while the blast radius is still zero costs nothing;
+    fixing it afterwards would be an incident.
+
+    **Reading is not writing.** This function is for interpreting a word that is
+    already stored, where the safe answer is the closed one. A word on its way
+    *into* the column goes through :func:`state_for_write`, which refuses rather
+    than coercing — silently storing ``disabled`` because an operator sent
+    something unparseable would be a destructive edit disguised as a default.
+    """
+    value = (state or "").strip().lower().replace("_", "-")
+    return value if value in VALID_STATES else UNRECOGNISED_STATE
+
+
+def state_for_write(state: str | None) -> str:
+    """Validate a state word that is about to be stored, or refuse it.
+
+    :func:`normalize_state` coerces, because it is handed whatever the column
+    already holds and has to answer something. A write has a third option that
+    a read does not: rejecting the request and changing nothing.
+
+    Coercing here would be the worse failure in either polarity. Under the old
+    fallback an unparseable post silently widened the row to ``beta``; under the
+    new one it would silently withdraw the feature to ``disabled``. Both answer
+    "I did not understand you" by editing production.
+
+    Raises:
+        ValueError: if ``state`` is not one of :data:`VALID_STATES`.
+    """
+    value = (state or "").strip().lower().replace("_", "-")
+    if value not in VALID_STATES:
+        raise ValueError(
+            f"unrecognised feature state {state!r}; expected one of "
+            + ", ".join(sorted(VALID_STATES))
+        )
+    return value
 
 
 def default_flags() -> list[dict]:

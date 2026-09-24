@@ -103334,7 +103334,22 @@ def admin_capability_matrix_page():
             conn.close()
             return admin_page_html("Capability Matrix", "<h1>Capability Matrix</h1><p>Owner approval is required to change public feature exposure.</p>", admin), 403
         key = clean_html(request.form.get("feature_key") or "")
-        state = feature_flag_engine.normalize_state(request.form.get("state"))
+        # Refuse an unrecognised state rather than coercing one. The <select>
+        # below is populated from VALID_STATES, so a word that fails here did
+        # not come from the form -- and answering "I did not understand you" by
+        # writing a default would edit production on the strength of a guess.
+        # Which default hardly matters: the old fallback silently widened the
+        # row to `beta`, and a fail-closed one would silently withdraw the
+        # feature to `disabled`. Both are changes nobody asked for.
+        try:
+            state = feature_flag_engine.state_for_write(request.form.get("state"))
+        except ValueError:
+            conn.close()
+            return admin_page_html(
+                "Capability Matrix",
+                "<h1>Capability Matrix</h1><p>Unrecognised feature state. Nothing was changed.</p>",
+                admin,
+            ), 400
         rollout = max(0, min(100, safe_int(request.form.get("rollout_percentage"), 0)))
         notes = clean_html(request.form.get("notes") or "")[:1000]
         # The label the public is told. Now that init_db() no longer overwrites
