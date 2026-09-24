@@ -239,11 +239,18 @@ def static_findings(today: Optional[date] = None) -> tuple[DriftFinding, ...]:
 
     # --- the dead-gate catalog must stay true ---
     #
-    # Every entry in env_gates.DEAD_GATES says "delete this, nothing reads it".
-    # The moment somebody adds a reader, that recommendation becomes a proposal
-    # to delete a live gate — and it would still read as a tidy-up. This is the
-    # check that turns a stale catalog into a build failure rather than into an
-    # outage.
+    # This check outlived the act it was written for, and its meaning changed
+    # when that act completed.
+    #
+    # Before 2026-09-24 every entry in env_gates.DEAD_GATES said "delete this,
+    # nothing reads it", and a new reader turned that recommendation into a
+    # proposal to delete a live gate while still reading as a tidy-up.
+    #
+    # The fourteen are now gone from Railway, which makes a new reader worse
+    # rather than moot. Code that reads a name production no longer sets does not
+    # fail; it silently takes its default. So the failure is a feature quietly
+    # running in its fallback configuration, with a variable in the source that
+    # an operator can search for, find, and never locate in the dashboard.
     for gate_name in sorted(g.name for g in env_gates.DEAD_GATES):
         readers = _readers_of(gate_name)
         if readers:
@@ -253,8 +260,11 @@ def static_findings(today: Optional[date] = None) -> tuple[DriftFinding, ...]:
                     "DEAD_GATE_GAINED_A_READER",
                     "STATIC_CONTRACT",
                     "HIGH",
-                    f"{gate_name} is catalogued as dead but is now read by {', '.join(readers)}",
-                    "remove it from env_gates.DEAD_GATES; deleting it from Railway would now change behaviour",
+                    f"{gate_name} was retired from Railway on {env_gates.RETIRED_AT} "
+                    f"but is now read by {', '.join(readers)}",
+                    "the variable is not set in production, so this reader silently takes its "
+                    "default; either give the gate a name that exists or restore it with "
+                    "env_gates.removal_plan()'s rollback half",
                 )
             )
 

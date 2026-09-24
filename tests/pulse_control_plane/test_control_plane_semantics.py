@@ -1310,6 +1310,22 @@ class TestDeadGateCatalog:
         assert len(env_gates.DEAD_GATES) == 14
         assert len({g.name for g in env_gates.DEAD_GATES}) == 14
 
+    def test_the_catalog_records_that_the_removal_happened(self):
+        """The fourteen are gone from Railway, and this file is the only record.
+
+        Pinned because the failure it guards against is the file drifting back
+        into sounding like a proposal. A reader who takes it as one re-runs the
+        removal — harmless — or, much worse, reads ``production_value`` as
+        current state and reasons about production from fourteen values that
+        have not existed since :data:`env_gates.RETIRED_AT`.
+        """
+        assert env_gates.RETIRED_AT == "2026-09-24"
+        assert "284" in env_gates.RETIRED_FROM, "the post-removal count is the claim"
+        assert env_gates.RETIREMENT_DEPLOYMENT, (
+            "the deployment id is the only durable handle on the boot that "
+            "tested the removal; Railway's log retention has already dropped it"
+        )
+
     def test_the_two_deceptive_switches_are_singled_out(self):
         """Fourteen dead variables are clutter; two of them are dead kill
         switches for live integrations, and that is a different problem."""
@@ -1324,8 +1340,38 @@ class TestDeadGateCatalog:
     def test_the_removal_plan_includes_its_own_rollback(self):
         plan = env_gates.removal_plan()
         for gate in env_gates.DEAD_GATES:
-            assert f"--remove {gate.name}" in plan
-            assert f"--set {gate.name}={gate.production_value}" in plan
+            assert f"delete {gate.name}" in plan
+            assert f"set {gate.name}={gate.production_value}" in plan
+
+    def test_every_command_in_the_plan_is_one_the_cli_accepts(self):
+        """The catalogued command was not a command, and running it was the
+        only thing that would have said so.
+
+        It read ``railway variables --service CoinPilotX --remove NAME``.
+        ``--remove`` is not a flag the Railway CLI has. Nobody noticed for two
+        missions because the block was written to be printed, and a printed
+        command is never wrong until somebody is depending on it.
+
+        This asserts the shape against the CLI's real grammar — subcommand
+        first, then flags — which is weaker than running it and stronger than
+        the nothing that was there before. The rollback half additionally has to
+        carry ``--skip-deploys``, or restoring fourteen variables costs fourteen
+        restarts.
+        """
+        lines = [
+            line
+            for line in env_gates.removal_plan().splitlines()
+            if line.startswith("railway variable ")
+        ]
+        assert len(lines) == 28, "fourteen removals and fourteen restores"
+        for line in lines:
+            verb = line.split()[2]
+            assert verb in ("delete", "set"), f"not a CLI subcommand: {line}"
+            assert "--remove" not in line, "the flag that never existed is back"
+            if verb == "set":
+                assert "--skip-deploys" in line, (
+                    f"a restore without --skip-deploys redeploys per variable: {line}"
+                )
 
     def test_the_catalog_going_stale_is_a_blocking_finding(self, monkeypatch):
         """A reader appearing turns "delete this" into "delete a live gate".
