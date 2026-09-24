@@ -56,7 +56,10 @@ jobs:
       - name: Measure
         shell: bash
         run: |
-          set -uo pipefail
+          # `shell: bash` runs `bash -eo pipefail`, so WITHOUT this the first
+          # failing test file aborts the shard -- which is fatal for a job whose
+          # entire purpose is to record which files fail.
+          set +e
           i=0
           while IFS= read -r f; do
             if [ $(( i % 8 )) -eq ${{ matrix.shard }} ]; then
@@ -69,3 +72,4 @@ jobs:
             i=$(( i + 1 ))
           done < <(find tests -name 'test_*.py' -type f | sort)
           echo "INVENTORY_SHARD_COMPLETE ${{ matrix.shard }}"
+          exit 0
