@@ -43,7 +43,15 @@ def _count(conn, sql: str, params: tuple) -> Optional[int]:
         row = conn.execute(sql, params).fetchone()
     except Exception:
         return None
-    return int(row[0] if not hasattr(row, "keys") else list(row)[0])
+    if row is None:
+        return None
+    # Positional, unconditionally. The branch here used to be
+    # ``row[0] if not hasattr(row, "keys") else list(row)[0]``, and BOTH row
+    # types have ``.keys()`` — so Postgres took the ``list(row)[0]`` arm, got
+    # the column NAME, and raised ValueError out of a function whose caller
+    # treats an exception as a 500 rather than as "unavailable". ``row[0]``
+    # means the first value on either engine. See db.row_values.
+    return int(row[0] or 0)
 
 
 def _preview(conn, sql: str, params: tuple, limit: int = MAX_PREVIEW_ITEMS) -> list:

@@ -1806,7 +1806,11 @@ def get_preferences(user_id):
             "SELECT category, in_app, push, email, telegram FROM notification_preferences WHERE user_id=?",
             (user_id,),
         )
-        rows = [tuple(row) + (0,) for row in cur.fetchall()]
+        # Not ``tuple(row)``: on Postgres it yields the column NAMES, so this
+        # older-schema fallback built every preference row out of the strings
+        # "category"/"in_app"/... — and since a non-empty string is truthy, it
+        # turned every channel ON for every category. See db.row_values.
+        rows = [db_service.row_values(row) + (0,) for row in cur.fetchall()]
     existing = {
         row[0]: {
             "in_app": bool(row[1]),

@@ -150,6 +150,39 @@ class CompatRow(Mapping):
         return self._data.items()
 
 
+def row_values(row) -> tuple:
+    """The row's column VALUES, left to right, whatever engine produced it.
+
+    Use this anywhere ``tuple(row)`` or ``list(row)`` was reached for. Those two
+    mean opposite things depending on which database answered, and every test in
+    this repository runs on the engine where they happen to mean the right one:
+
+    * SQLite hands back ``sqlite3.Row``, a *sequence*. ``tuple(row)`` is the
+      values.
+    * Postgres goes through :class:`CompatRow`, a *Mapping*. ``tuple(row)`` is
+      the **column names** — ``Mapping.__iter__`` yields keys.
+
+    So ``dict(zip(columns, tuple(row)))`` silently becomes ``{"user_id":
+    "user_id", ...}`` in production and nowhere else. That is not hypothetical:
+    it is what took the comm_v2 send-idempotency preflight down (issue #25), and
+    it reached production because ``IS_POSTGRES`` decides which row type exists
+    and no test has ever run with it true.
+
+    Positional ``row[0]`` already agrees on both types and stays fine. This
+    helper is for the cases that need the whole row at once.
+    """
+    if row is None:
+        return ()
+    if isinstance(row, CompatRow):
+        # By position, not via ``values()``: CompatRow's mapping half collapses
+        # repeated column names (``SELECT a, a``) while its positional half
+        # keeps both, and a caller zipping against a column list needs both.
+        return tuple(row[index] for index in range(len(row)))
+    if isinstance(row, Mapping):
+        return tuple(row.values())
+    return tuple(row)
+
+
 AUTO_PK_TABLES = {
     "users": "user_id",
     "alerts_history": "id",

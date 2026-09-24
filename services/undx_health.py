@@ -496,7 +496,10 @@ def _local_bucket(provider: str) -> dict[str, Any]:
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
-    out = dict(zip(_COLUMNS, row))
+    # Not ``zip(_COLUMNS, row)``: zip iterates the row, which yields its VALUES
+    # on SQLite and its column NAMES on Postgres. That mapped every column to
+    # its own name, and the int() coercion below then raised on it.
+    out = dict(zip(_COLUMNS, platform_db.row_values(row)))
     for key in ("consecutive_failures", "successes", "failures"):
         out[key] = int(out.get(key) or 0)
     for key in ("opened_at", "probe_started_at", "last_success_at", "last_failure_at"):

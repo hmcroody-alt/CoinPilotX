@@ -30060,8 +30060,16 @@ def admin_analytics_page():
         def cell(value):
             return html_escape(str(value)[:180])
 
+        # row_values, not ``for value in row``: iterating a row yields its
+        # VALUES on SQLite and its column NAMES on Postgres, so every one of
+        # the fifteen tables on this page rendered the same line of column
+        # names over and over, once per row it was supposed to be showing.
+        # It does not raise -- the names are strings and escape cleanly -- so
+        # the page returns 200 and looks populated. See services.db.row_values.
         body = "".join(
-            "<tr>" + "".join(f"<td>{cell(value)}</td>" for value in row) + "</tr>"
+            "<tr>"
+            + "".join(f"<td>{cell(value)}</td>" for value in db_service.row_values(row))
+            + "</tr>"
             for row in rows
         )
         head = "<tr>" + "".join(f"<th>{html_escape(str(h))}</th>" for h in headers) + "</tr>"
@@ -47295,7 +47303,12 @@ def ensure_pulse_messenger_schema(cur, conn=None):
             WHERE user_one_id IS NOT NULL AND user_two_id IS NOT NULL
             GROUP BY user_one_id, user_two_id HAVING COUNT(*) > 1
         """)
-        duplicate_pairs = [tuple(row) for row in cur.fetchall()]
+        # Positional, not ``tuple(row)``: on Postgres the latter yields the
+        # column NAMES, so this reconciliation went looking for the thread whose
+        # user_one_id is the literal string "user_one_id". It found none, and
+        # the duplicate merge that has to happen BEFORE the uniqueness index is
+        # created has therefore never run on the production engine.
+        duplicate_pairs = [(row[0], row[1]) for row in cur.fetchall()]
         for user_one_id, user_two_id in duplicate_pairs:
             cur.execute(
                 "SELECT id, COALESCE(conversation_id,0) AS conversation_id FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? ORDER BY CASE WHEN COALESCE(conversation_id,0)>0 THEN 0 ELSE 1 END, id",
@@ -127806,7 +127819,16 @@ def legacy_account_summary(user_id):
     if not row:
         return "Account not found. Use /start first."
 
-    name, email, pro, plan, status, risk, exchange_goal = row
+    # By name, not by unpacking. Unpacking a row yields its VALUES on SQLite
+    # and its column NAMES on Postgres, so this Telegram summary greeted every
+    # production user as "display_name". Both row types index by name.
+    name = row["display_name"]
+    email = row["email"]
+    pro = row["is_pro"]
+    plan = row["subscription_plan"]
+    status = row["subscription_status"]
+    risk = row["risk_profile"]
+    exchange_goal = row["preferred_exchange_goal"]
     return (
         "👤 Account\n\n"
         f"Name: {name or 'Not set'}\n"

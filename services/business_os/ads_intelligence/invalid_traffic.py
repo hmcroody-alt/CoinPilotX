@@ -57,6 +57,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
+from services import db as platform_db
+
 from . import taxonomy
 
 _LOG = logging.getLogger(__name__)
@@ -241,7 +243,17 @@ def _sequence_violations(conn, since: str) -> list:
         "WHERE e.occurred_at >= ? AND e.validity = 'valid' "
         "AND e.event_name IN ('ad_viewable', 'ad_click')", (since,)))
     for row in rows:
-        event_id, decision_id, camp, creative, d_id, d_camp, d_creative = row[:7]
+        # row_values, not row[:7]: CompatRow.__getitem__ only special-cases
+        # int, so a slice falls through to the dict lookup and raises on
+        # Postgres -- TypeError on the 3.11 production runs (slices are
+        # unhashable before 3.12), KeyError on newer. This SELECT is also the
+        # reason row_values reads by position
+        # rather than through values() -- decision_id, campaign_id and
+        # creative_id each appear TWICE (once from e, once from d), and the
+        # mapping half keeps only the last of each, which would silently
+        # compare a column against itself and report every event as matching.
+        (event_id, decision_id, camp, creative,
+         d_id, d_camp, d_creative) = platform_db.row_values(row)[:7]
         if not decision_id or d_id is None:
             found.append((event_id, "UNKNOWN_DECISION",
                           f"decision {decision_id!r} was never recorded"))
