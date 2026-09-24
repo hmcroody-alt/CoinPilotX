@@ -288,13 +288,26 @@ _READER_ROOTS = ("services", "bot.py", "undx_router.py", "undx_execution_kernel.
 def _searchable_sources() -> tuple[tuple[str, str], ...]:
     """(relative path, text) for every place a gate could be read.
 
-    Substring matching, not ``os.getenv("NAME")`` matching. That choice is
-    Mission 1's, and it is load-bearing: this codebase reads variables through
-    at least four indirections plus one name assembled at runtime, and the
-    precise version reported 51 dead variables of which 38 were alive —
+    Substring matching, rather than matching a literal getenv call. That choice
+    is Mission 1's, and it is load-bearing: this codebase reads variables
+    through at least four indirections plus one name assembled at runtime, and
+    the precise version reported 51 dead variables of which 38 were alive —
     including ``MARKETPLACE_CARD_PAYMENTS_ENABLED``, the gate holding checkout
     open. Over-counting readers leaves a stale variable for a human to check;
     under-counting deletes a live kill switch.
+
+    This paragraph used to spell that call out in full, with a placeholder
+    variable name in the quotes. ``test_every_variable_production_code_reads_is_documented``
+    scans source text, found the placeholder, and failed the protection suite
+    demanding that a variable called NAME be documented in ``.env.example``.
+
+    Which is the fourth time this package has met the same mistake, and the
+    first time it was aimed at the package rather than made by it: an auditor
+    naming a variable is not a reader of it, a catalog describing a gate is not
+    a gate, a definition is not a call site — and an example in a docstring is
+    not an environment read. The phrasing above avoids the trigger rather than
+    fixing the scanner, because that scanner guards the whole repository and a
+    change to it belongs on its own.
     """
     root = pathlib.Path(__file__).resolve().parents[2]
     out: list[tuple[str, str]] = []

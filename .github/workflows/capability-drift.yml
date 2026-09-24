@@ -54,11 +54,21 @@ jobs:
         with:
           python-version: "3.11"
 
-      # No requirements install. The control-plane package imports only the
-      # standard library, which is the property that makes this job fast and
-      # makes it impossible for it to reach a database by accident. If this
-      # step ever needs `pip install`, something in the package grew a
-      # dependency and that is worth noticing.
+      # pytest and nothing else. The control-plane package and its tests import
+      # only the standard library, which is what makes this job fast and makes
+      # it impossible for the job to reach a database by accident. If this list
+      # ever grows past pytest, something in the package acquired a dependency
+      # and that is worth noticing rather than papering over with
+      # `-r requirements.txt`.
+      #
+      # This step is not decoration: the job originally had no install at all,
+      # on the reasoning that the package is pure stdlib. True of the package,
+      # false of the runner — `python3 -m pytest` needs pytest to exist, so the
+      # step below failed on arrival. Verified since against a venv containing
+      # pytest alone.
+      - name: Install pytest
+        run: python3 -m pip install --disable-pip-version-check pytest
+
       - name: The gate can still fail
         # Before trusting a green gate, prove it is capable of going red.
         run: python3 -m pytest tests/pulse_control_plane/ -q -k "Drift or drift"
