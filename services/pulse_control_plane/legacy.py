@@ -38,6 +38,25 @@ everything" is not the fix either:
 False}`` for any user without ``is_admin``. Wiring the engine to the seeded
 table would withdraw checkout from every customer on the platform, and the
 change would look like a configuration cleanup in review.
+
+What happened to these rows
+---------------------------
+
+Nothing, and that is deliberate. Mission 2 built the replacement in
+:mod:`services.pulse_control_plane.model` and migrated the reconciled truth
+into *new* columns, leaving every ``state`` value below exactly as recorded
+here. The intuitive tidying — writing ``deprecated`` into the column to mark it
+dead — would have been the worst move available: ``normalize_state`` maps every
+word it does not recognise to ``beta``, and ``beta`` is the most permissive
+state the legacy engine has. So that edit would have *widened* all fifteen
+rows. There is no value meaning "this no longer decides anything".
+
+The column therefore still holds its original words, and what makes that safe
+is only that ``evaluate_flag`` has no call sites. This module is not history:
+it describes fifteen values sitting in production right now, one act of wiring
+away from mattering again, which is why
+:func:`services.pulse_control_plane.activation.readiness` re-counts those call
+sites on every run.
 """
 
 from __future__ import annotations

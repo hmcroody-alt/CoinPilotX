@@ -1,12 +1,18 @@
 """Percentage rollout, implemented — the column is no longer decorative.
 
 Mission 1 found ``feature_flags.rollout_percentage`` written by the admin form,
-persisted, rendered back to the operator, and indexed by
-``idx_feature_flags_state`` — then read by nothing. A 0% rollout and a 100%
-rollout produced identical verdicts. The choice was to implement it or delete
-it, because a control that looks live and is inert is worse than no control: it
-invites an operator to "ease a feature out to 5%" and then ships it to
-everyone.
+clamped to 0–100, persisted, and rendered straight back to the operator as
+"Rollout N%" — then read by nothing. A 0% rollout and a 100% rollout produced
+identical verdicts. The choice was to implement it or delete it, because a
+control that looks live and is inert is worse than no control: it invites an
+operator to "ease a feature out to 5%" and then ships it to everyone. Same
+shape as ``ENABLE_SMS`` in :mod:`services.pulse_control_plane.env_gates` — a
+control that answers.
+
+(The neighbouring ``idx_feature_flags_state`` index is also dead, but
+harmlessly so: it indexes ``state``, and no query in the tree filters on it.
+An unused index on a fifteen-row table misleads nobody and costs nothing, so
+it is left alone rather than spending a production DDL change on tidiness.)
 
 This implements it.
 
