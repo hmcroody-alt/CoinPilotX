@@ -47295,7 +47295,12 @@ def ensure_pulse_messenger_schema(cur, conn=None):
             WHERE user_one_id IS NOT NULL AND user_two_id IS NOT NULL
             GROUP BY user_one_id, user_two_id HAVING COUNT(*) > 1
         """)
-        duplicate_pairs = [tuple(row) for row in cur.fetchall()]
+        # Positional, not ``tuple(row)``: on Postgres the latter yields the
+        # column NAMES, so this reconciliation went looking for the thread whose
+        # user_one_id is the literal string "user_one_id". It found none, and
+        # the duplicate merge that has to happen BEFORE the uniqueness index is
+        # created has therefore never run on the production engine.
+        duplicate_pairs = [(row[0], row[1]) for row in cur.fetchall()]
         for user_one_id, user_two_id in duplicate_pairs:
             cur.execute(
                 "SELECT id, COALESCE(conversation_id,0) AS conversation_id FROM pulse_message_threads WHERE user_one_id=? AND user_two_id=? ORDER BY CASE WHEN COALESCE(conversation_id,0)>0 THEN 0 ELSE 1 END, id",
