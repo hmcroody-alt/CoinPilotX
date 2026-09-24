@@ -114,6 +114,105 @@ def _production_sources():
                 yield pathlib.Path(directory) / filename
 
 
+def _blank_span(lines, start, end):
+    """Overwrite a token's characters with spaces, in place, keeping every offset.
+
+    Spaces rather than deletion so that character offsets still line up with the
+    original file, and line terminators are stepped over rather than blanked so
+    that row numbers keep addressing the same rows. A multi-line token therefore
+    stays multi-line and the lines it covered stay exactly as long as they were.
+    """
+    (start_row, start_column), (end_row, end_column) = start, end
+    for row in range(start_row, end_row + 1):
+        line = lines[row - 1]
+        for terminator in ("\r\n", "\n", "\r"):
+            if line.endswith(terminator):
+                body, ending = line[: -len(terminator)], terminator
+                break
+        else:
+            body, ending = line, ""
+        first = min(start_column if row == start_row else 0, len(body))
+        last = min(end_column if row == end_row else len(body), len(body))
+        if last > first:
+            body = body[:first] + " " * (last - first) + body[last:]
+        lines[row - 1] = body + ending
+
+
+def _statement_strings(tokens):
+    """Yield the (start, end) of every string literal that is an entire statement.
+
+    A string that occupies a statement by itself is a docstring or a block of
+    prose left where a reader will find it. Either way the interpreter evaluates
+    it to a value and immediately discards it, so no name inside one can reach
+    `os.environ`. That is the same argument that licenses blanking comments, and
+    it is the only argument used here: this does not touch strings that are
+    arguments, elements, or operands, because `os.getenv("X")` is a string
+    literal too and dropping those would blind the scanner completely.
+
+    Detected through `tokenize` rather than `ast` on purpose. `ast` reports
+    columns as UTF-8 byte offsets and splits lines on a different set of
+    characters than `str.splitlines()` does - U+2028 among them, which `bot.py`
+    has carried before - so resolving AST positions against split lines needs a
+    second coordinate system that agrees with the first only by luck. `tokenize`
+    is the one the comment stripper already uses.
+    """
+    # A statement can only begin after one of these, or at the start of a file.
+    boundaries = {tokenize.ENCODING, tokenize.NEWLINE, tokenize.NL,
+                  tokenize.INDENT, tokenize.DEDENT}
+    significant = [t for t in tokens if t.type != tokenize.COMMENT]
+    at_statement_start = True
+    index = 0
+    while index < len(significant):
+        token = significant[index]
+        if token.type == tokenize.STRING and at_statement_start:
+            # Adjacent literals concatenate, so a docstring may be several
+            # tokens. Take the whole run, then confirm the statement ends there.
+            run = index
+            while run < len(significant) and significant[run].type == tokenize.STRING:
+                run += 1
+            if run < len(significant) and significant[run].type == tokenize.NEWLINE:
+                for string_token in significant[index:run]:
+                    yield string_token.start, string_token.end
+                index = run
+                at_statement_start = False
+                continue
+        at_statement_start = token.type in boundaries
+        index += 1
+
+
+def _without_docstrings(text):
+    """Blank out docstrings and bare prose strings, preserving every offset.
+
+    The scanner is a set of regexes over source text, and prose about a read is
+    not a read. `services/pulse_control_plane/drift.py` explains why its own
+    audit deliberately matches loosely by contrasting it with the precise form,
+    quoting a placeholder variable name to do so. Nothing evaluates that
+    sentence, but the regex matched it and the suite demanded that `.env.example`
+    document a variable called NAME. That was worked around by rewording the
+    paragraph, which left the next such sentence free to fail the gate again.
+
+    This deletes the false positive without weakening discovery: every indirect
+    accessor call, alias list and dynamic declaration this suite relies on is
+    real code, and none of it is a string standing alone as a statement.
+
+    Falls back to the untouched text when a file will not tokenize, matching
+    `_without_comments` - an unparseable file over-reports rather than silently
+    contributing nothing, because over-reporting fails loudly here and
+    under-reporting is invisible.
+    """
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (tokenize.TokenError, IndentationError, SyntaxError, ValueError):
+        return text
+    # Split the way the tokenizer read it, so a row number cannot address a
+    # different line here than it did there. `str.splitlines()` breaks on
+    # separators `readline` passes straight through.
+    lines = io.StringIO(text).readlines()
+    for start, end in _statement_strings(tokens):
+        _blank_span(lines, start, end)
+    return "".join(lines)
+
+
 def _without_comments(text):
     """Blank out `#` comments in place, preserving every other character offset.
 
@@ -147,11 +246,8 @@ def _without_comments(text):
         return text
     lines = text.splitlines(keepends=True)
     for token in tokens:
-        if token.type != tokenize.COMMENT:
-            continue
-        (row, start), (_, end) = token.start, token.end
-        line = lines[row - 1]
-        lines[row - 1] = line[:start] + " " * (end - start) + line[end:]
+        if token.type == tokenize.COMMENT:
+            _blank_span(lines, token.start, token.end)
     return "".join(lines)
 
 
@@ -162,7 +258,7 @@ def _variables_read_by_production_code():
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             continue
-        text = _without_comments(text)
+        text = _without_docstrings(_without_comments(text))
         relative = str(path.relative_to(ROOT))
         for match in READ_PATTERN.finditer(text):
             name = match.group(1) or match.group(2) or match.group(3)
@@ -248,6 +344,81 @@ def test_the_comment_stripper_hides_prose_without_hiding_code():
         "The stripper changed the length of the source, so character offsets no "
         "longer line up with the original file."
     )
+
+
+def test_the_docstring_stripper_hides_prose_without_hiding_code():
+    """Same two directions as the comment stripper, for the same reason.
+
+    The fixture is the shape that actually failed: a module docstring that
+    explains a mechanism by quoting the call it is *not* making. The placeholder
+    must disappear, and every real read around it - including the ones whose
+    names only ever appear as arguments to an indirect accessor - must survive.
+    """
+    source = (
+        '"""Substring matching, not os.getenv("NAME") matching.\n'
+        '\n'
+        'Mentions _env_bool("PROSE_ONLY_VARIABLE") too, and evaluates neither.\n'
+        '"""\n'
+        'import os\n'
+        'TIMEOUT = os.getenv("LIVE_REAL_VARIABLE")\n'
+        '\n'
+        'def handler():\n'
+        '    "A one-line docstring naming os.environ[\'DOCSTRING_SUBSCRIPT\']."\n'
+        '    return _env_bool("INDIRECT_REAL_VARIABLE")\n'
+    )
+    cleaned = _without_docstrings(_without_comments(source))
+    found = {m.group(1) or m.group(2) or m.group(3)
+             for m in READ_PATTERN.finditer(cleaned)}
+    assert found == {"LIVE_REAL_VARIABLE", "INDIRECT_REAL_VARIABLE"}, (
+        "The docstring stripper is not separating evaluated reads from prose "
+        f"about reads. Expected the two live reads and no prose name, got {found}."
+    )
+    assert len(cleaned) == len(source), (
+        "The stripper changed the length of the source, so character offsets no "
+        "longer line up with the original file."
+    )
+    assert cleaned.count("\n") == source.count("\n"), (
+        "The stripper removed a line break, so row numbers no longer address the "
+        "rows they did in the original file."
+    )
+
+
+def test_the_docstring_stripper_leaves_declared_name_tables_alone():
+    """Blanking whole string *statements* must not blank strings that are data.
+
+    This suite discovers a large share of its names from declaration tables -
+    alias lists handed to a wrapper, and the `required_env` style registries
+    resolved by a generic loop. Those are string literals sitting on lines of
+    their own inside brackets, which is what a docstring looks like to anything
+    cruder than a tokenizer. If they were blanked the gate would go quiet about
+    precisely the indirect reads it was extended to catch.
+
+    The constant on the last line is the sharpest case, and the reason this test
+    is not just the inverse of the one above: `GATE_FLAG = "..."` is a string
+    that ends its own statement, so a stripper that asked only "does a NEWLINE
+    follow?" would blank it. That shape is how several modules here hold a
+    variable name away from its call site, which makes it the exact indirection
+    a stricter scan is most likely to lose.
+    """
+    source = (
+        'REQUIRED = [\n'
+        '    "TABLE_ELEMENT_VARIABLE",\n'
+        '    "SECOND_TABLE_ELEMENT",\n'
+        ']\n'
+        'BUCKET = _env_value(\n'
+        '    "R2_BUCKET_ALIAS",\n'
+        '    "S3_BUCKET_ALIAS",\n'
+        ')\n'
+        'GATE_FLAG = "MODULE_CONSTANT_VARIABLE"\n'
+    )
+    cleaned = _without_docstrings(source)
+    assert cleaned == source, (
+        "String literals used as data were blanked. Only a string that is an "
+        "entire statement may be treated as prose."
+    )
+    aliases = {name for match in INDIRECT_CALL_PATTERN.finditer(cleaned)
+               for name in ARGUMENT_NAME_PATTERN.findall(match.group(1))}
+    assert aliases == {"R2_BUCKET_ALIAS", "S3_BUCKET_ALIAS"}
 
 
 def test_every_variable_production_code_reads_is_documented():
