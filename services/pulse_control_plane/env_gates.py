@@ -54,6 +54,25 @@ DISPOSITIONS = ("DELETE", "KEEP", "MIGRATE", "UNKNOWN")
 AUDITED_AT = "2026-09-24"
 AUDITED_AGAINST = "Railway service CoinPilotX (297 variables) @ e6b61c2de"
 
+#: Re-audited against live Railway after the Mission 2 merge. All fourteen still
+#: hold their audited values; thirteen have zero mentions anywhere in the tree.
+#:
+#: The fourteenth is worth writing down because it looked like a reader and was
+#: not. ``UNDX_METRICS_ENABLED`` appears exactly once, in the ``EQUIVALENTS``
+#: rename map of ``scripts/undx_railway_variable_audit.py`` — an auditor naming a
+#: variable, which is the same mistake this package has now met five times.
+#:
+#: Following it was still worthwhile, because a rename map raises a question a
+#: mention count cannot answer: deleting the old name is only safe if the new one
+#: carries the same intent. Here it does, but not for the obvious reason. The new
+#: name ``UNDX_BRAIN_METRICS_ENABLED`` is **absent from production entirely** —
+#: it is on because ``services/undx_brain/config.py:649`` defaults it to ``"1"``,
+#: and the dead variable said ``true``. The two agree, so the removal changes
+#: nothing. Had that default been ``"0"``, deleting the old name would have
+#: quietly ratified a setting production was already ignoring.
+REAUDITED_AT = "2026-09-24"
+REAUDITED_AGAINST = "Railway service CoinPilotX (297 variables) @ 6a57fd162"
+
 
 @dataclass(frozen=True)
 class DeadGate:
@@ -258,10 +277,22 @@ def removal_plan() -> str:
     Printed rather than executed. Each ``--set`` line restores the audited
     value, so the rollback is complete and does not depend on anybody having
     written the values down — which, for a variable nothing reads, nobody would.
+
+    Still printed rather than executed after the re-audit, and that is a
+    decision rather than an omission. Railway delivers variables at boot, so
+    running this block restarts production. The entire benefit is that fourteen
+    names stop appearing in a list nobody reads; the cost is a boot of the live
+    application, and this codebase registers optional route packs inside
+    ``except Exception`` blocks, so a failed boot can come back up with a
+    subsystem missing instead of visibly down. Trading that for tidiness is a
+    bad trade, and it is a worse one bundled into a commit about something else.
+    The names are catalogued, the deception is recorded, and the commands are
+    here for whoever decides to spend a deploy on them.
     """
     lines = [
         f"# Dead environment gates, audited {AUDITED_AT}",
         f"# {AUDITED_AGAINST}",
+        f"# re-audited {REAUDITED_AT}: {REAUDITED_AGAINST} — no value drift",
         "#",
         "# Railway applies variable changes at boot, so this triggers ONE redeploy",
         "# of production. Run it as a single deliberate act, not alongside other work.",
