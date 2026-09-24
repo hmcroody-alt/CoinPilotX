@@ -25,6 +25,25 @@ So the gate has two conditions and they fail for different reasons: an
 unreconciled row means *we do not know*, and a regression row means *we know, and
 the answer is no*. Collapsing them into one boolean would lose the distinction
 that tells an operator whether the next step is investigation or repair.
+
+Which gate to call
+------------------
+
+This one is Mission 1's and remains correct, but it is now the narrower of two.
+:func:`services.pulse_control_plane.activation.readiness` is what a cutover
+should consult: it subsumes both conditions here and adds the ones Mission 2
+found were also necessary — that every widening in the shadow matrix has been
+written down individually with its evidence, that no capability on the
+never-wire list is scheduled, that the control plane has not begun inferring
+authentication, and that ``evaluate_flag`` still has no call sites.
+
+That last condition is what keeps this gate honest. Mission 2's migration
+writes the reconciled truth into new columns and deliberately never touches
+legacy ``state``, so the seeded words this gate reasons about are still sitting
+in the table — ``marketplace_checkout = 'internal-only'`` among them. They are
+inert, but only because nothing reads them. The day something does, the
+``regression_if_wired`` condition below stops describing a hypothetical and
+starts describing production.
 """
 
 from __future__ import annotations

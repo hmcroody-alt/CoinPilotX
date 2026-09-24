@@ -192,3 +192,132 @@ It currently raises on `marketplace_checkout`.
 Steps 1–4 are each independently reviewable and independently reversible. None
 is bundled here, because a data repair and a polarity change have different blast
 radii and should not share a rollback.
+
+---
+
+## 7. Mission 2 — what changed, and where the plan above was wrong
+
+Mission 2 worked §6 in order. It departed from it twice, and in both cases the
+plan was wrong: the obvious remedy turned out to be the harmful one. Those two
+are worth more than the list of what landed.
+
+### Step 1 did not repair the stored states
+
+The plan said repair `feature_flags.state`. The migration instead writes the
+reconciled truth into **new columns** and never touches `state` at all.
+
+Correcting `state` in place sounds strictly better and is not available.
+`normalize_state` maps every word it does not recognise to `beta`, which is the
+*most permissive* state the legacy engine has — so the natural way to retire the
+column, writing something like `deprecated` into it, would have widened all
+fifteen rows at once. There is no value meaning "this no longer decides
+anything."
+
+So the column keeps its May 2026 words, `marketplace_checkout = 'internal-only'`
+among them, and what makes that safe is only that `evaluate_flag` has no call
+sites. `activation.readiness()` re-counts them on every run. The first version
+of that count matched the function's own `def` line and declared the legacy
+engine live on a tree where nothing calls it — the third time this package has
+had to separate *mention* from *use*, after an auditor naming a variable and a
+catalog describing a gate.
+
+### Step 2's polarity fix moved rather than landed
+
+`normalize_state` still defaults to `beta`. Changing it would alter the
+behaviour of the engine being replaced, which is currently load-bearing for
+nothing — risk with no matching benefit. Strictness lives in `parsing.py`
+instead, where an ambiguous word raises rather than widening.
+
+### Steps 3 and 4 landed as written
+
+`rollout_percentage` is implemented (`rollout.py`), consulted by `evaluate`,
+refused outright for protected capabilities, and salted by a constant with no
+environment override — rotating a rollout salt silently redistributes who may
+use a feature. The `idx_feature_flags_state` index is left alone: dead, but it
+indexes `state`, no query filters on it, and an unused index on a fifteen-row
+table deceives nobody.
+
+`public_label` turned out to have a writer nobody had noticed. `init_db()` runs
+**per request** and unconditionally re-asserted the seeded value, so an admin's
+edit was overwritten within milliseconds. The column was writable in schema and
+unwritable in practice — which is why production has carried
+`marketplace_checkout = "Internal"` since May on a capability taking real
+orders, and no operator could have corrected it. The seeder now re-asserts
+`label` only, and the admin update coalesces so an omitted field does not blank
+the stored value.
+
+### What Mission 2 added
+
+| Module | What it is |
+|---|---|
+| `model`, `capabilities`, `parsing` | Two axes: `DeploymentState` (a fact about the system) × `EligibilityPolicy` (a policy that *names* an authority and never becomes one) |
+| `observations`, `reconciler`, `drift` | Production truth, the table's claim, and the gap — split into static contract drift (blocks a build) and production-observed drift (reported only) |
+| `rollout` | The percentage column, implemented |
+| `migration` | Additive, compare-and-set, whole-transaction rollback |
+| `shadow` | Both engines' answers across all 75 subject × capability cells |
+| `activation` | Wave order, and the gate that must pass before wave 1 |
+| `write_security` | What guards the admin write once it starts meaning something |
+| `env_gates` | The 14 dead Railway variables, re-audited with dispositions |
+
+### The cutover diff, in full
+
+All 75 cells: **61 agree, 11 narrow, 3 widen.** Every widening is
+`marketplace_checkout`.
+
+The narrowings fall on rows the legacy engine overstates — `premium_identity`
+and `premium_advanced_tools`, where entitlement decides rather than the flag,
+and `admin_command`, where role does. The widenings are the row that has taken
+32 real orders while stored `internal-only`.
+
+Which is why "refuse every widening" is the wrong cutover rule despite being
+the one that sounds safe: it would preserve the single row that is lying about
+money. The direction of a change is not its justification. So each widening
+cell is written down individually with its evidence, and an unreviewed widening
+blocks activation even when it is obviously correct.
+
+Shadow evaluation is exhaustive rather than live because there is no request
+path to shadow — the flags gate nothing — and manufacturing one would be the
+wiring this mission forbids.
+
+### Two capabilities are refused outright, not deferred
+
+- **`admin_command`** governs `/admin/*`, which contains the capability matrix
+  itself. A row that wrongly denied admins would delete the surface needed to
+  fix the row, and now that `init_db()` no longer re-asserts stored values,
+  nothing would restore it — recovery would mean a direct production Postgres
+  session. `require_admin_page` already enforces this correctly across all 199
+  routes.
+- **`pulse_livestream`** sits on the Agora → Mux path, under the change
+  hard-lock in `docs/realtime_audio_change_policy.md`. Adding a runtime
+  consultation to it is a change to it whatever the consultation returns.
+
+### Security of the write path — two findings, recorded not fixed
+
+Four guards stand in front of `/admin/capability-matrix` POST: session auth,
+`system.view`, owner level, CSRF. Each is pinned by a test that re-greps it
+against `bot.py`. Both findings below are documented in `write_security.py`.
+
+1. **CSRF coverage and admin auth are keyed on one value.**
+   `enforce_admin_form_csrf` returns early when `session['admin_user_id']` is
+   absent, which is safe only because `admin_current_user` reads that same key.
+   A second admin auth leg — a bearer, an API key, an SSO header — would make
+   the auth check pass on requests where the CSRF hook does not run. Silently,
+   and across all 79 admin form POSTs rather than just this one. `verify_csrf`
+   already carries `allow_bearer=False`, so somebody has stood here before.
+2. **The owner check sits in the handler body**, after the connection is
+   opened, rather than being a guard — though `require_owner_admin_page()`
+   exists and does exactly this. Left alone because changing it would alter
+   admin behaviour mid-mission.
+
+The audit log is **append-only by convention only**: no trigger, no revoked
+grant, no constraint. The property holds because no code violates it, which is
+a statement about this tree and not about the table.
+
+### Status
+
+`activation.readiness()` is **red**, on the four known production findings, and
+goes green once the Stage 11 migration is applied. Both halves are pinned by
+tests — a gate that cannot pass is the same failure as one that cannot fail.
+
+`evaluate_flag` still has zero call sites. Nothing in this package sits on a
+request path.

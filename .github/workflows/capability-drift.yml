@@ -1,0 +1,84 @@
+# Capability control-plane drift gate.
+#
+# Two kinds of drift, and only one of them can fail this job.
+#
+# STATIC CONTRACT DRIFT is a property of the commit under test: the inventory
+# lost a key, a capability arrived without evidence, the migration started
+# writing the frozen legacy column, a legacy word became parseable at runtime.
+# Reproducible anywhere, caused by the change being tested, so it exits 1.
+#
+# PRODUCTION OBSERVED DRIFT is the stored feature_flags rows disagreeing with
+# measured production. It is real and it is printed at full severity -- there
+# are four findings on a healthy tree today, three of them CRITICAL -- but it
+# does not fail the job. Two reasons:
+#
+#   * Nobody's pull request caused it. `marketplace_checkout` is seeded
+#     `internal-only` while checkout has taken 32 real orders; failing every
+#     unrelated PR until somebody edits a config row teaches people to bypass
+#     the gate, and a bypassed gate still looks like coverage.
+#   * A CI runner cannot reach production Postgres. The observed half reads
+#     `services/pulse_control_plane/observations.py`, a recording dated
+#     MEASURED_AT. Failing on it would be failing on the age of a file.
+#
+# The `--strict` mode, which does fail on observed drift, is for the Stage 23
+# pre-activation check -- the one moment when observed drift *should* stop the
+# process -- and is deliberately not run here.
+#
+# Exit code 3 means the gate could not run. It is not a pass, and this job must
+# never gain `continue-on-error`.
+#
+# The detector opens no database and makes no network call. It is safe to run
+# on a fork PR.
+
+name: Capability drift
+
+on:
+  pull_request:
+    branches: ["**"]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: capability-drift-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # pytest and nothing else. The control-plane package and its tests import
+      # only the standard library, which is what makes this job fast and makes
+      # it impossible for the job to reach a database by accident. If this list
+      # ever grows past pytest, something in the package acquired a dependency
+      # and that is worth noticing rather than papering over with
+      # `-r requirements.txt`.
+      #
+      # This step is not decoration: the job originally had no install at all,
+      # on the reasoning that the package is pure stdlib. True of the package,
+      # false of the runner — `python3 -m pytest` needs pytest to exist, so the
+      # step below failed on arrival. Verified since against a venv containing
+      # pytest alone.
+      - name: Install pytest
+        run: python3 -m pip install --disable-pip-version-check pytest
+
+      - name: The gate can still fail
+        # Before trusting a green gate, prove it is capable of going red.
+        run: python3 -m pytest tests/pulse_control_plane/ -q -k "Drift or drift"
+
+      - name: Capability drift
+        run: |
+          code=0
+          python3 scripts/capability_drift_gate.py || code=$?
+          if [ "$code" = "3" ]; then
+            echo "::error::The capability drift gate could not run. That is not a pass."
+            exit 1
+          fi
+          exit "$code"
