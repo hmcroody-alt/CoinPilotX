@@ -1106,8 +1106,8 @@ _mapped(
     result_card_type=CardType.CONTENT_RESULT,
     implementation_status=_PARTIAL,
     evidence=(
-        "bot.py:41731 /api/pulse/status/rail",
-        "bot.py:41206 /pulse/status renders a page",
+        "bot.py /api/pulse/status/rail",
+        "bot.py /pulse/status renders a page",
     ),
     known_limitations=(
         "The only JSON status endpoint is the rail, which returns the viewer's "
@@ -1126,7 +1126,7 @@ _mapped(
     authorization_scope=_MEMBER, target_field="status_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:38072 /pulse/status/<status_id> renders a page",
+        "bot.py /pulse/status/<status_id> renders a page",
     ),
     known_limitations=(
         "No JSON read of a single status exists; that route renders HTML. Status visibility is "
@@ -1384,7 +1384,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="reel_id",
     undo_capability_id="saved.reel.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:83910 reel save handler",),
+    evidence=("bot.py /api/pulse/reels/<reel_id>/save is the reel save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1399,7 +1399,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id", target_field="listing_id",
     undo_capability_id="saved.listing.set",
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:91012 marketplace save handler",),
+    evidence=("bot.py /api/pulse/marketplace/listings/save is the marketplace save handler",),
     known_limitations=(_SAVED_TOGGLE,),
     toggle_semantics=True,
 )
@@ -1554,7 +1554,7 @@ _mapped(
     authorization_scope=_OTHER, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_NO_SERVICE,
-    evidence=("bot.py:85749 friend accept handler",),
+    evidence=("bot.py /api/pulse/friends/accept is the friend accept handler",),
     known_limitations=("Guards on `AND status = 'pending'`, which is correct, but the "
                        "update is inline in the handler.",),
 )
@@ -1569,7 +1569,7 @@ _mapped(
     authorization_scope=_UNSCOPED, owner_field="user_id", target_field="request_id",
     result_card_type=CardType.RELATIONSHIP_CHANGE_RECEIPT,
     implementation_status=_PARTIAL,
-    evidence=("bot.py:85786 friend decline handler", "bot.py:85749 accept, for contrast"),
+    evidence=("bot.py /api/pulse/friends/decline is the friend decline handler", "bot.py /api/pulse/friends/accept, for contrast"),
     known_limitations=(
         "Decline omits the `AND status = 'pending'` guard that accept has, so it "
         "will transition a request that is already accepted or already declined. "
@@ -1903,7 +1903,7 @@ _mapped(
     output_schema=(("live_id", "int"), ("host_id", "int"), ("title", "str")),
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:47750 /pulse/live renders a page",
+        "bot.py /pulse/live renders a page",
     ),
     known_limitations=(
         "No JSON listing of live sessions exists. The route behind the Live screen renders a "
@@ -2099,7 +2099,7 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:10479 /dashboard/account/health renders a web dashboard page",
+        "bot.py /dashboard/account/health renders a web dashboard page",
     ),
     known_limitations=(
         "Account health exists only as a rendered page on the web dashboard. Nothing returns it "
@@ -2481,8 +2481,8 @@ _mapped(
     authorization_scope=_SELF, owner_field="user_id",
     implementation_status=_NO_SERVICE,
     evidence=(
-        "bot.py:10208 /dashboard/creator renders a page",
-        "bot.py:7339 /api/dashboard/creator/state is the nearest JSON",
+        "bot.py /dashboard/creator renders a page",
+        "bot.py /api/dashboard/creator/state is the nearest JSON",
     ),
     known_limitations=(
         "The creator surface is a web dashboard. /api/dashboard/creator/state "

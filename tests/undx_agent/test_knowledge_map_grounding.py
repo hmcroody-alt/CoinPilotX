@@ -35,9 +35,10 @@ from services.undx_knowledge_map import (
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _BOT = os.path.join(_ROOT, "bot.py")
 
-#: ``bot.py:12345 some description``. The description is what makes the citation
-#: checkable, so it is captured rather than skipped.
-_CITATION = re.compile(r"bot\.py:(\d+)([^\"')]*)")
+#: ``bot.py /some/route some description``. The route is what makes the citation
+#: checkable. There is deliberately no line number to capture -- see
+#: ``test_every_cited_route_is_declared_in_bot`` for why that pin was removed.
+_CITATION = re.compile(r"bot\.py(?!:)([^\"')]*)")
 
 #: Words that describe the citation's role rather than the code at it.
 _NOISE = frozenset({"handler", "route", "renders", "page", "for", "contrast",
@@ -76,7 +77,7 @@ class KnowledgeMapCitationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         with open(_BOT, "r", encoding="utf-8", errors="replace") as handle:
-            cls.lines = handle.read().splitlines()
+            cls.source = handle.read()
         with open(os.path.join(_ROOT, "services", "undx_knowledge_map.py"),
                   "r", encoding="utf-8") as handle:
             cls.citations = sorted(set(_CITATION.findall(handle.read())))
@@ -85,33 +86,52 @@ class KnowledgeMapCitationTests(unittest.TestCase):
         """Guards the regex itself: a test that silently matches nothing proves nothing."""
         self.assertGreaterEqual(len(self.citations), 10)
 
-    def test_every_cited_line_exists(self) -> None:
-        for number, label in self.citations:
-            with self.subTest(citation=f"bot.py:{number}{label}"):
-                self.assertLessEqual(int(number), len(self.lines),
-                                     f"bot.py has {len(self.lines)} lines")
+    def test_enough_citations_name_a_route_to_check(self) -> None:
+        """Guards the test below, which skips any citation without a path.
 
-    def test_every_cited_line_matches_its_description(self) -> None:
-        """The cited line, or its immediate neighbourhood, must contain the thing named.
-
-        A window rather than an exact line, because a citation naming a route
-        legitimately points at either the decorator or the function beneath it, and
-        pinning it tighter would make the test fail on formatting. The window is
-        small enough that an unrelated line cannot drift into it by accident — the
-        six citations this test was written against were off by hundreds of lines.
+        Not every ``bot.py`` citation names a route and they should not be forced to:
+        some name identifiers, and one records an *absence* ("no unfriend route ...
+        exist"), which would be falsified by demanding its words be findable. So the
+        route check skips them -- and a skip-based check needs a floor, or degrading
+        the twelve route citations into vague prose would make it pass by checking
+        nothing.
         """
-        for number, label in self.citations:
-            keywords = _significant(label)
-            if not keywords:
+        with_route = [label for label in self.citations if re.search(r"/[\w/<>:.\-]+", label)]
+        self.assertGreaterEqual(len(with_route), 12, self.citations)
+
+    def test_every_cited_route_is_declared_in_bot(self) -> None:
+        """The cited route exists as a route, not merely as a string somewhere.
+
+        This used to resolve a ``bot.py:12345`` line number against a +/-3 line
+        window. That mechanism is gone because it does not work: it was introduced
+        after six of the twelve citations had drifted, and by the time this file was
+        unquarantined all twelve had -- ``/dashboard/creator`` pointed at a line
+        reading ``return (``. bot.py is a hundred thousand lines and takes dozens of
+        commits a day, so any edit above a citation moves it and nothing complains.
+        Zero for twelve is not drift to be re-pinned; it is a pin that cannot hold.
+
+        Matching the route *declaration* rather than a neighbourhood is also
+        strictly stronger than what the window bought: a path that appears only in a
+        comment, a redirect target or a JavaScript fetch no longer counts as
+        evidence that the route is implemented.
+        """
+        declared = {
+            _normalize(match)
+            for match in re.findall(r'@webhook_app\.route\(\s*"([^"]+)"', self.source)
+        }
+        self.assertGreater(len(declared), 1000, "route scrape looks broken")
+
+        for label in self.citations:
+            path = re.search(r"(/[\w/<>:.\-]+)", label)
+            if path is None:
                 continue
-            index = int(number) - 1
-            window = _normalize(" ".join(self.lines[max(0, index - 3):index + 4]).lower())
-            with self.subTest(citation=f"bot.py:{number}{label}"):
-                missing = [word for word in keywords if word.lower() not in window]
-                self.assertFalse(
-                    missing,
-                    f"bot.py:{number} does not mention {missing}; "
-                    f"line reads: {self.lines[index].strip()[:120]!r}",
+            route = _normalize(path.group(1).rstrip(".,"))
+            with self.subTest(citation=f"bot.py{label}"):
+                # assertTrue, not assertIn: unittest renders the container on
+                # failure and bot.py declares over a thousand routes.
+                self.assertTrue(
+                    route in declared,
+                    f"{route!r} is cited as evidence but bot.py declares no such route",
                 )
 
 
