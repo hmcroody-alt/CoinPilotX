@@ -19,6 +19,11 @@ sys.path.insert(0, str(ROOT))
 # call, so it is honoured either way.
 os.environ.setdefault("PULSESOC_TRUSTED_GEO_HEADER", "CF-IPCountry")
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("failed_login_security_audit")
+
 import bot  # noqa: E402
 
 

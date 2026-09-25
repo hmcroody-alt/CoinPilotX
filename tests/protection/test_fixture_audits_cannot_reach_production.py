@@ -57,6 +57,9 @@ INTENTIONAL_PRODUCTION_TOOLS = {
     # Operator action: activates a real sponsored ad. Its users write is an
     # idempotent "create the promotions account if absent" and it never deletes.
     "scripts/activate_pulse_radio_ad.py",
+    # One-time production cleanup for a single named broken group ("bigboss").
+    # Deleting real rows is the entire point of the script.
+    "scripts/remove_bigboss_group.py",
 }
 
 
@@ -89,7 +92,20 @@ def _target_table(sql):
     return None
 
 
-def _writes_identity_rows(tree):
+def _mutates_real_rows(tree):
+    """True when a script writes identity rows, or deletes rows from any table.
+
+    Two criteria rather than one. Identity writes are the headline hazard, but
+    `pulse_music_picker_audit.py` fabricated a post and cleaned up with
+    `DELETE FROM pulse_posts WHERE id=?`, and `failed_login_security_audit.py`
+    cleaned up with `DELETE FROM auth_events WHERE email_domain=?` - neither
+    touches users, and both destroy real rows if the id or domain matches.
+
+    UPDATE against a non-identity table is deliberately *not* a criterion. The
+    scripts that only do that are prod repair tools (`pulse_media_repair.py`,
+    `cleanup_room_join_messages.py`), and a criterion that swept them in would
+    need an allowlist longer than the rule it enforces.
+    """
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
@@ -99,7 +115,11 @@ def _writes_identity_rows(tree):
         sql = _literal_sql(node)
         if not sql:
             continue
-        if _target_table(" ".join(sql.split())) in IDENTITY_TABLES:
+        normalised = " ".join(sql.split())
+        verb = normalised.split()[0].upper() if normalised.split() else ""
+        if verb in {"DELETE", "DROP", "TRUNCATE"}:
+            return True
+        if _target_table(normalised) in IDENTITY_TABLES:
             return True
     return False
 
@@ -164,7 +184,7 @@ def _scripts_requiring_the_guard():
         if bot_line is None:
             # No bot import means no route through services/db.py to DATABASE_URL.
             continue
-        if not _writes_identity_rows(tree):
+        if not _mutates_real_rows(tree):
             continue
         if _isolates_own_database(tree, bot_line):
             continue
