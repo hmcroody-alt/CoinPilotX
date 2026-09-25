@@ -1,0 +1,119 @@
+# The backend test suite, for the ~90% of it that no workflow used to run.
+#
+# Issue #28: 671 of 733 test files were executed by nothing. PR #26 added five
+# regression tests, passed nine checks, and not one of them loaded the file.
+# A green tick on a PR that adds tests reads as "the tests passed", so the gap
+# was worse than silence.
+#
+# WHY THIS IS NOT `pytest tests/`
+# -------------------------------
+# Three things make the obvious one-liner wrong here:
+#
+#   * Collection aborts on the presence module, so a single invocation returns
+#     nothing rather than most of the answer.
+#   * tests/crypto_premium/, tests/marketplace/ and tests/dropshipping/ each set
+#     their own temp DATABASE_URL at import time. Batching two files produces
+#     failures neither produces alone. crypto-alert-persistence.yml already
+#     works around this with a per-suite loop; this is that shape, generalised.
+#   * There are real pre-existing failures. Turning everything on at once
+#     produces a gate that is red on arrival, and a gate that is red on arrival
+#     gets switched off rather than fixed.
+#
+# So the list of files is explicit, in config/ci_test_manifest.json, alongside a
+# quarantine list that carries a reason per entry and a ceiling that only moves
+# down. tests/protection/test_every_test_file_is_run_by_ci.py asserts every
+# discovered test file is in exactly one of the two, so a new test file cannot
+# join the unrun pile in silence.
+#
+# EXIT CODE 5 IS A FAILURE HERE
+# -----------------------------
+# pytest exits 5 when it collected nothing, and exit 5 with no output looks
+# exactly like a pass in a loop that only checks for non-zero... except it IS
+# non-zero, which is the point: a file that runs no tests must not be able to
+# report success. That is the same property tests/protection/_runner.py
+# enforces inside the protection suite, and the same one #15 was about, where
+# a `-k` filter left the wave-1 control-plane suite collected-and-deselected
+# for an entire wave.
+
+name: Backend tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suite:
+    name: Backend tests ${{ matrix.shard }}/8
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+
+      # 3.11 because that is what nixpacks.toml builds and what Railway runs.
+      # See tests/protection/test_python_version_declarations_agree.py -- the
+      # three declarations straddled 3.12 once and a test pinned the exception
+      # type the wrong interpreter raised (#29).
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - run: python -m pip install -r requirements.txt pytest
+
+      - name: Run shard ${{ matrix.shard }}
+        shell: bash
+        run: |
+          # `shell: bash` is `bash -eo pipefail`; -e would stop the shard at the
+          # first failure and hide every file after it. Collect instead.
+          set +e
+          mapfile -t files < <(python -c "
+          import json
+          print('\n'.join(json.load(open('config/ci_test_manifest.json'))['run']))
+          ")
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::manifest 'run' list is empty"
+            exit 1
+          fi
+
+          failed=()
+          empty=()
+          ran=0
+          for i in "${!files[@]}"; do
+            [ $(( i % 8 )) -ne ${{ matrix.shard }} ] && continue
+            f="${files[$i]}"
+            ran=$(( ran + 1 ))
+            # One process per file. Not a performance mistake -- see above.
+            timeout 300 python -m pytest "$f" -q -p no:cacheprovider
+            rc=$?
+            if [ "$rc" -eq 5 ]; then
+              empty+=("$f")
+            elif [ "$rc" -ne 0 ]; then
+              failed+=("$f")
+            fi
+          done
+
+          echo "shard ${{ matrix.shard }}: ran $ran file(s)"
+          if [ "$ran" -eq 0 ]; then
+            echo "::error::shard ${{ matrix.shard }} executed no files"
+            exit 1
+          fi
+          for f in "${empty[@]}"; do
+            echo "::error file=$f::collected no tests (pytest exit 5). A file that runs nothing must not report success."
+          done
+          for f in "${failed[@]}"; do
+            echo "::error file=$f::failed"
+          done
+          [ "${#empty[@]}" -eq 0 ] && [ "${#failed[@]}" -eq 0 ]
