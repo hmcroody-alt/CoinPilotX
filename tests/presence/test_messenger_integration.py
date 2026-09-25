@@ -251,4 +251,10 @@ for literal in presence_literals:
     check("'assistant' is outside the human vocabulary",
           literal.get("status") not in {"online", "away", "offline"})
 
-summary("test_messenger_integration")
+def test_messenger_integration():
+    """The collectable verdict. See harness.assert_no_failures for why."""
+    harness.assert_no_failures("test_messenger_integration")
+
+
+if __name__ == "__main__":
+    summary("test_messenger_integration")

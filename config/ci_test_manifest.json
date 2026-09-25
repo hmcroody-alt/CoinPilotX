@@ -287,6 +287,9 @@
     "tests/music_authority/test_trending_counters.py",
     "tests/pages/test_page_journeys.py",
     "tests/pages/test_page_os.py",
+    "tests/presence/test_messenger_integration.py",
+    "tests/presence/test_platform_surfaces.py",
+    "tests/presence/test_presence_core.py",
     "tests/presence/test_schema_ddl_once.py",
     "tests/private_office/test_capital_graph.py",
     "tests/private_office/test_capital_overview.py",
@@ -651,9 +654,6 @@
   "quarantined": {
     "tests/business_os_finance/test_db_introspection.py": "fails standalone on 3.11: 1 failed, 10 passed in 0.25s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/crypto_premium/test_premium_trial_lock.py": "fails standalone on 3.11: 1 failed, 12 passed in 0.23s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/presence/test_messenger_integration.py": "collects no tests on 3.11 (pytest exit 5): no tests ran in 0.09s. Either it is script-style and needs a runner, or its module aborts collection. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/presence/test_platform_surfaces.py": "collects no tests on 3.11 (pytest exit 5): no tests ran in 10.65s. Either it is script-style and needs a runner, or its module aborts collection. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/presence/test_presence_core.py": "collects no tests on 3.11 (pytest exit 5): no tests ran in 0.05s. Either it is script-style and needs a runner, or its module aborts collection. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_app_review_support_password.py": "fails standalone on 3.11: 1 failed, 18 passed in 6.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_measured_duration_wiring.py": "fails standalone on 3.11: 2 failed, 19 passed in 3.82s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_notification_system_links.py": "fails standalone on 3.11: 1 failed, 34 passed in 0.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
@@ -675,5 +675,5 @@
     "tests/web_parity/test_marketplace_price_label_rendering.py": "fails standalone on 3.11: 6 failed, 5 passed in 4.25s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/web_surface/test_seller_store_presence_newchat.py": "fails standalone on 3.11: 1 failed, 16 passed in 6.61s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact."
   },
-  "quarantine_ceiling": 25
+  "quarantine_ceiling": 22
 }
