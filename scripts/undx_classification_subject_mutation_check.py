@@ -273,6 +273,46 @@ MUTATIONS = [
         "test_the_docstring_stripper_leaves_declared_name_tables_alone",
         ENV_CONTRACT,
     ),
+    (
+        # Unwire the constant collector. This is the mutation that matters most in this
+        # group, because the damage is *silent*: the scan simply discovers less, and
+        # every completeness assertion in the file is satisfied by discovering less.
+        # What goes quiet first is the UNDX kill switches, which are read only through
+        # name-holding constants.
+        "env contract: stop consulting names held in constants",
+        ENV_CONTRACT,
+        "    for name, sites in _names_held_in_constants().items():\n        read[name] |= sites\n",
+        "",
+        "test_a_name_held_in_a_constant_is_read_and_a_bare_constant_is_not",
+        ENV_CONTRACT,
+    ),
+    (
+        # Drop the accessor half of the two-sided join, so every `NAME = "UPPER"`
+        # assignment counts as a read. The repo is full of uppercase string constants
+        # that are error codes, states and table names; each becomes a phantom key
+        # .env.example must declare, and declaring them teaches operators to set
+        # variables nothing reads.
+        "env contract: treat every uppercase string constant as an environment read",
+        ENV_CONTRACT,
+        "        for match in uses.finditer(text):\n",
+        "        for match in CONSTANT_ASSIGNMENT_PATTERN.finditer(text):\n",
+        "test_a_name_held_in_a_constant_is_read_and_a_bare_constant_is_not",
+        ENV_CONTRACT,
+    ),
+    (
+        # Point the Brain catalog back at the suffix-based name pattern. Every other
+        # declaration site in the table is matched that way, so this is the plausible
+        # tidy-up - and it sees none of the 82 flags, because no Brain flag name ends
+        # in _KEY, _URL, _TOKEN or any other role suffix.
+        "env contract: match Brain catalog names by role suffix",
+        ENV_CONTRACT,
+        "        DECLARED_FLAG_NAME_PATTERN,\n"
+        '        "config.resolve() reads os.environ.get(flag.name) for every CATALOG entry",\n',
+        "        DYNAMIC_NAME_PATTERN,\n"
+        '        "config.resolve() reads os.environ.get(flag.name) for every CATALOG entry",\n',
+        "test_every_undx_brain_catalog_flag_is_discovered",
+        ENV_CONTRACT,
+    ),
 ]
 
 
