@@ -33,6 +33,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from services import db  # noqa: E402
+from services.business_os import schema_bootstrap  # noqa: E402
 from services.business_os.advertising import service as ad  # noqa: E402
 from services.business_os.advertising import funding as adf  # noqa: E402
 from services.business_os.advertising import operations as ado  # noqa: E402
@@ -46,8 +47,11 @@ _uid_seq = [1900]
 
 
 def setup_module(module=None):
-    ad.ensure_schema()
-    ledger.ensure_schema()
+    # The canonical bootstrap, not a hand-picked pair of ensure_schema calls.
+    # Eligibility reads advertising.guardrails, whose table lives behind its own
+    # ensure_schema, and that read fails CLOSED -- so naming only advertising +
+    # ledger refused every advertiser here with account_halt_state_unreadable.
+    schema_bootstrap.ensure_all()
 
 
 def _new_owner():

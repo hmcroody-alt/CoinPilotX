@@ -58,18 +58,17 @@ from services import db                                                      # n
 from services.business_os import confirmations as cf                         # noqa: E402
 from services.business_os import results as res                              # noqa: E402
 from services.business_os.ledger import ledger                               # noqa: E402
+from services.business_os import schema_bootstrap                            # noqa: E402
 from services.business_os.marketplace import schema as mkt_schema            # noqa: E402
 from services.business_os.marketplace import service as mkt                  # noqa: E402
 from services.business_os.marketplace import orders as mkt_orders            # noqa: E402
 from services.business_os.marketplace import assistant as mkt_asst           # noqa: E402
 from services.business_os.marketplace import api as mkt_api                  # noqa: E402
 from services.business_os.marketplace.service import MarketplaceError        # noqa: E402
-from services.business_os.advertising import schema as ad_schema             # noqa: E402
 from services.business_os.advertising import service as ad                   # noqa: E402
 from services.business_os.advertising import pricing as ad_pricing           # noqa: E402
 from services.business_os.advertising import assistant as ad_asst            # noqa: E402
 from services.business_os.advertising.service import AdvertisingError        # noqa: E402
-from services.business_os.undx_actions import schema as undx_schema          # noqa: E402
 from services.business_os.undx_actions import engine as undx_engine          # noqa: E402
 from services import undx_architecture                                       # noqa: E402
 
@@ -81,11 +80,13 @@ PULSE_USER, PULSE_OTHER = 920, 921
 
 
 def setup_module(module=None):
+    # The canonical bootstrap, not a hand-picked set of ensure_schema calls.
+    # Advertising eligibility reads advertising.guardrails, whose table lives
+    # behind its own ensure_schema, and that read fails CLOSED -- so the five
+    # named here refused every advertiser with account_halt_state_unreadable.
+    # marketplace.schema is deliberately still explicit: it is not in _ENSURES.
+    schema_bootstrap.ensure_all()
     mkt_schema.ensure_schema()
-    ad_schema.ensure_schema()
-    undx_schema.ensure_schema()
-    ledger.ensure_schema()
-    cf.ensure_schema()
     ad_pricing.publish_policy("cpm", "usd", 500, actor="admin")
     ad_pricing.publish_policy("cpc", "usd", 25, actor="admin")
     conn = db.connect()

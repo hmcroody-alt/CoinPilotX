@@ -31,6 +31,7 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from services import db  # noqa: E402
+from services.business_os import schema_bootstrap  # noqa: E402
 from services.business_os.advertising import service as ad  # noqa: E402
 
 OWNER = 500
@@ -40,7 +41,11 @@ HELD = 502
 
 
 def setup_module(module=None):
-    ad.ensure_schema()
+    # The canonical bootstrap, not a hand-picked ensure_schema. Eligibility reads
+    # advertising.guardrails, whose table lives behind its own ensure_schema, and
+    # that read fails CLOSED -- so naming only the advertising one refused every
+    # advertiser here with account_halt_state_unreadable.
+    schema_bootstrap.ensure_all()
     conn = db.connect()
     try:
         conn.execute(

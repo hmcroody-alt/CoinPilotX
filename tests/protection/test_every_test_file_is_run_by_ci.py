@@ -225,18 +225,21 @@ def test_every_quarantine_entry_gives_a_reason():
 
 
 def test_the_quarantine_only_shrinks():
-    """A ceiling, so the honest debt cannot quietly become bigger honest debt.
+    """A ratchet, so the honest debt cannot quietly become bigger honest debt.
 
-    The number is deliberately the count at the moment the list was written. It
-    is meant to be edited downward when files are fixed, and a change upward
-    should be a visible, argued decision rather than a side effect.
+    Equality, not ``<=``. A ceiling with slack under it forgives exactly the
+    mistake this file exists to prevent: fixing ten files without lowering the
+    number leaves ten silent slots, and the next ten quarantined files arrive
+    green. The ratchet costs one extra edited line per change and makes both
+    directions visible -- down is the point, up has to be argued for.
     """
     manifest = _manifest()
     ceiling = manifest["quarantine_ceiling"]
     actual = len(manifest["quarantined"])
-    assert actual <= ceiling, (
-        f"{actual} quarantined files, ceiling is {ceiling}. Fix the file, or "
-        "raise the ceiling in the same commit that explains why."
+    assert actual == ceiling, (
+        f"{actual} quarantined files, ceiling says {ceiling}. Move the ceiling "
+        f"to {actual} in the same commit: downward when you fix a file, upward "
+        "only with a reason stated in the commit message."
     )
 
 
