@@ -15,6 +15,31 @@ and ``create_reel`` — in conversation examples that teach UNDX to *decline* th
 in the ``absent_by_design`` block that explains why they are absent. That is precisely
 the condition under which a naive implementation grows a capability from a string, so
 the absence is asserted after ingestion rather than assumed.
+
+One of the four has since stopped being absent. ``messages.send`` was registered by
+``37054ecf3`` as a fully declared write — ``consequential_write``, ``confirmation`` of
+``always``, ``permission`` of ``self_account_only``, a ``message_exists`` verifier and
+``verified_fields`` of ``body`` and ``message_id``, scoped in its own description to a
+conversation the user is already in. That is a deliberate grant, not a string that grew
+into a capability, so the authority half now asserts the gate rather than the absence.
+
+Two things that turned up while establishing that, both recorded rather than papered over:
+
+``FORBIDDEN_TOKENS`` did not catch it. The tokens are ``send_message``, ``create_post``
+and ``create_reel``, matched against the underscored id, and ``messages.send`` becomes
+``messages_send`` — verb last, so it misses. The registry gained a send capability and
+the test written to notice that passed. The fix is not a longer token list, which would
+only move the blind spot: :func:`test_capability_registry_is_unchanged_by_ingestion` now
+compares the registry's key set before and after ingestion, which catches an addition
+under any name.
+
+And the training corpus still teaches the opposite. ``07_SECURITY_AND_AUTHORITY.yaml``
+says "UNDX Chat cannot send messages" and ``10_CONVERSATION_EXAMPLES.yaml`` marks
+``conv.send_message`` a MANDATORY REFUSAL. Those are now false of ``messages.send``,
+though still true of the orphaned tool name ``pulsesoc.send_message`` they actually
+name. A model that refuses a capability it holds fails in the safe direction, so this is
+not a hazard to fix here under a test-fixing change: which side is authoritative, and
+whether the YAML should be rewritten, is a content decision. Tracked as issue #39.
 """
 
 from __future__ import annotations
@@ -53,10 +78,18 @@ QA_QUESTIONS: tuple[tuple[str, str], ...] = (
     ("What does this payment status mean?", "UNDX_TRAINING/"),
 )
 
-#: Capabilities the mission names as absent from UNDX Chat. Matched against the
-#: underscored form of each capability id so ``pulsesoc.send_message`` and
-#: ``messages.send_message`` would both be caught.
+#: Tool names the mission names as absent from UNDX Chat, matched against the underscored
+#: form of an id. Verb-last ids do not match — ``messages.send`` becomes ``messages_send``
+#: — so this catches an orphaned *tool name* reaching the registry and not a capability
+#: registered under the ordinary ``resource.verb`` convention. Registry growth is caught
+#: by :func:`test_capability_registry_is_unchanged_by_ingestion` instead, which needs no
+#: naming assumption at all.
 FORBIDDEN_TOKENS: tuple[str, ...] = ("send_message", "create_post", "create_reel")
+
+#: Ids that are still absent, asserted through the gateway. ``messages.send`` is not here:
+#: it was registered deliberately by ``37054ecf3`` and is covered by
+#: :func:`test_the_registered_send_capability_is_gated_not_open` instead.
+STILL_ABSENT: tuple[str, ...] = ("pulsesoc.send_message", "posts.create", "reels.create")
 
 
 @pytest.fixture(scope="module")
@@ -148,30 +181,73 @@ def test_capability_registry_has_no_send_or_create_capability():
     assert not leaked, f"capability registry gained {leaked}"
 
 
-def test_capability_registry_is_unchanged_by_ingestion(ingested):
-    """Same assertion, but after a full ingest in the same process.
+def test_capability_registry_is_unchanged_by_ingestion():
+    """Ingestion and retrieval must not add a capability — under any name.
 
-    Separated from the test above on purpose: that one proves the registry never had
-    these capabilities, this one proves that loading 320 knowledge records — including
-    records that name all three — did not add them.
+    Asserted as a set comparison rather than as a token scan. The token scan was the
+    weaker form and it has already been caught out once: ``messages.send`` entered the
+    registry and ``FORBIDDEN_TOKENS`` did not see it, because the tokens are verb-first
+    and that id is verb-last. Lengthening the list would only relocate the blind spot,
+    since the thing being defended against is a capability appearing from a *string in the
+    corpus* and the corpus contains many strings.
+
+    Snapshotting the keys assumes nothing about naming. It is also the stronger claim: any
+    addition fails here, not only an addition that happens to be spelled the way the three
+    forbidden tool names are.
     """
     from services import undx_capability_registry as registry_mod
 
-    knowledge.retrieve("send a message for me and create a post and a reel", corpus=ingested)
-    leaked = [
-        cid for cid in registry_mod.REGISTRY
-        if any(token in cid.replace(".", "_") for token in FORBIDDEN_TOKENS)
-    ]
-    assert not leaked, f"capability registry gained {leaked} after retrieval"
+    before = frozenset(registry_mod.REGISTRY)
+    assert before, "empty registry; the snapshot below would compare nothing"
+
+    corpus_mod.reset_cache()
+    loaded = corpus_mod.ingest()
+    assert loaded.ok, f"corpus not usable: {loaded.fatal}"
+    knowledge.retrieve("send a message for me and create a post and a reel", corpus=loaded)
+
+    after = frozenset(registry_mod.REGISTRY)
+    assert after == before, (
+        f"ingesting the corpus changed the capability registry. Added: "
+        f"{sorted(after - before)}. Removed: {sorted(before - after)}"
+    )
 
 
 def test_gateway_refuses_the_absent_capabilities():
     """End of the chain: ask the runtime gateway for them and require a refusal."""
     from services import undx_tool_gateway as gateway
 
-    for capability_id in ("messages.send", "pulsesoc.send_message", "posts.create", "reels.create"):
+    for capability_id in STILL_ABSENT:
         with pytest.raises(Exception):
             gateway.require(capability_id)
+
+
+def test_the_registered_send_capability_is_gated_not_open():
+    """``messages.send`` exists now, so what is asserted is what constrains it.
+
+    Replacing "the gateway refuses this" with nothing at all would be the wrong reading
+    of the change: the boundary did not disappear, it moved from absence to a declared
+    gate, and a gate is only a gate while its declarations hold. Each one below is load
+    bearing — ``confirmation`` of ``always`` means the user sees the message before it is
+    sent, ``self_account_only`` means it cannot reach a conversation the caller is not in,
+    and a verifier with ``verified_fields`` means a success receipt has to be read back
+    from the row rather than inferred from the call returning.
+    """
+    from services import undx_capability_registry as registry_mod
+    from services import undx_tool_gateway as gateway
+
+    gateway.require("messages.send")
+    spec = registry_mod.REGISTRY["messages.send"]
+    assert spec.is_write
+    assert spec.risk == "consequential_write"
+    assert spec.confirmation == "always", "a send that needs no confirmation is not gated"
+    assert spec.permission == "self_account_only"
+    assert spec.requires_authentication
+    assert spec.verifier, "an unverified send can report a success it did not achieve"
+    assert "message_id" in spec.verified_fields
+    assert not spec.idempotent, (
+        "a send is not safe to replay, so declaring it idempotent would license a retry "
+        "to post the message twice"
+    )
 
 
 def test_corpus_files_do_not_claim_the_absent_capabilities_are_available():

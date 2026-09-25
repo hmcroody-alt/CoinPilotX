@@ -555,7 +555,15 @@ def retrieve(
     # category would have moved those too. Substituting only into the lowest-ranked
     # slots leaves every head position decided by score alone, and costs at most two
     # weak matches that were about to be dropped by the limit anyway.
-    if len(kept) >= applied_limit and not any(r.category in CURATED_CATEGORIES for r in kept):
+    # ``applied_limit > 0`` closes a fail-open. At a limit of zero this block's own
+    # precondition is trivially satisfied -- ``len(kept) >= applied_limit`` is
+    # ``0 >= 0`` -- and ``keep_head`` then goes negative, so a reservation written to
+    # protect two tail slots on a full page instead filled a page that was meant to be
+    # empty. ``UNDX_SOURCE_CORPUS_MAX_CONTEXT_RECORDS=0`` is how an operator says that
+    # no repository content may enter a model prompt at all, and it returned a record.
+    if applied_limit > 0 and len(kept) >= applied_limit and not any(
+        r.category in CURATED_CATEGORIES for r in kept
+    ):
         curated = [row[2] for row in scored if row[2].category in CURATED_CATEGORIES]
         if curated:
             keep_head = applied_limit - min(_RESERVED_KNOWLEDGE_SLOTS, len(curated))

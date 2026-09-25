@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from services.undx_brain import knowledge as k  # noqa: E402
 from services.undx_brain.corpus import ingest  # noqa: E402
-from services.undx_brain.truth import TrustLevel, rank  # noqa: E402
+from services.undx_brain.truth import TrustLevel, meets, rank  # noqa: E402
 
 
 CORPUS = ingest()
@@ -106,13 +106,25 @@ class TrustFloorIsEnforced(unittest.TestCase):
 
     def test_a_valid_floor_is_not_second_guessed(self):
         # The correction above must not fire on the values it exists to protect.
+        #
+        # Scoped to the floor's own note rather than asserting ``notes == ()``.
+        # ``notes`` is a shared channel: it also carries "at least one result is stale;
+        # regenerate the corpus", which fires whenever a retrieved file's size differs
+        # from the corpus index. 596 of the 3,066 records are stale on a current
+        # checkout, so an empty-notes assertion was really asserting that the working
+        # tree had not moved since the corpus was generated — in a repository taking
+        # dozens of commits a day.
         for name in ("source_mapped", "documented", "tested"):
             with self.subTest(name=name):
                 result = k.retrieve(
                     "alert", env={"UNDX_KNOWLEDGE_MIN_TRUST_LEVEL": name}, corpus=CORPUS
                 )
                 self.assertIs(result.applied_min_trust, TrustLevel(name))
-                self.assertEqual(result.notes, ())
+                self.assertEqual(
+                    [note for note in result.notes if "MIN_TRUST_LEVEL" in note],
+                    [],
+                    f"a valid floor was second-guessed: {result.notes}",
+                )
 
     def test_exclusions_are_reported_rather_than_silent(self):
         result = k.retrieve("scripts audit", corpus=CORPUS)
@@ -245,12 +257,86 @@ class RankingRegressions(unittest.TestCase):
         _, routes = k._terms("/api/alerts/pause")
         self.assertIn("alerts", routes)
 
-    def test_the_relevance_floor_drops_incidental_one_word_matches(self):
-        result = k.retrieve("services/undx_tool_gateway.py", corpus=CORPUS)
-        self.assertLessEqual(len(result.records), 3)
-        self.assertTrue(
-            any("relevance floor" in note for note in result.withheld),
-            f"expected the floor to be reported, got {result.withheld}",
+    def test_an_exact_path_query_is_not_diluted_by_one_word_collisions(self):
+        """Every result but the reserved curated tail must match more than one term.
+
+        This is what the old ``len(result.records) <= 3`` was reaching for, asserted
+        against the scorer instead of against a count. The count measured the result
+        *limit*, not the floor it was named after: ``applied_limit`` is 6, twelve
+        records clear the floor for this query, and setting ``_RELEVANCE_FLOOR`` to
+        zero changes the returned set not at all. It said 3 when the corpus held
+        roughly 1,700 records; the corpus is now 3,066, so more records clear a
+        *relative* floor and the number went stale without anything breaking.
+
+        Matching term count is the durable form of the claim. ``services`` and
+        ``gateway`` are both path segments of the query, so ``services/admin_gateway.py``
+        is a two-term match and belongs; a record matching ``gateway`` alone is the
+        incidental collision this is about.
+        """
+        query = "services/undx_tool_gateway.py"
+        terms, routes = k._terms(query)
+        result = k.retrieve(query, corpus=CORPUS)
+        self.assertEqual(result.records[0].path, "services/undx_tool_gateway.py")
+
+        # Term hits counted through the production scorer, one term at a time, rather
+        # than against a hand-assembled haystack: _score reads six tiers (stem tokens,
+        # path segments, endpoint tokens, symbols, domain tags, summary text) and a
+        # reimplementation here would be a second scorer to keep in sync.
+        def hits(record) -> int:
+            return sum(1 for term in terms if k._score(record, [term], routes) > 0)
+
+        incidental = [record for record in result.records if hits(record) <= 1]
+        # The curated layer is substituted into the tail by a separate rule with its
+        # own reason (see knowledge.py's CURATED_CATEGORIES block), and that rule is
+        # bounded, so bound the exemption rather than removing it.
+        self.assertLessEqual(
+            len(incidental),
+            k._RESERVED_KNOWLEDGE_SLOTS,
+            f"one-word matches beyond the curated reservation: "
+            f"{[r.path for r in incidental]}",
+        )
+        for record in incidental:
+            with self.subTest(path=record.path):
+                self.assertIn(record.category, k.CURATED_CATEGORIES)
+
+    def test_the_reported_relevance_floor_count_is_the_real_one(self):
+        """The floor's accounting must be truthful, because it is now its only effect.
+
+        With ``applied_limit`` at 6 and typically dozens of records clearing the cut,
+        the floor changes the returned set on roughly one query in two hundred — a
+        sample of 400 path queries found two. So what the floor contributes to almost
+        every answer is the ``withheld`` line, and a number nobody checks is a number
+        that can drift into fiction. Retrieval that misreports what it discarded is
+        the failure ``test_exclusions_are_reported_rather_than_silent`` guards from the
+        other side.
+
+        Recomputed here in the same order the implementation applies its filters —
+        quarantine, then trust, then the relative cut — because getting that order
+        wrong is what would make the count wrong.
+        """
+        query = "services/undx_tool_gateway.py"
+        result = k.retrieve(query, corpus=CORPUS)
+        terms, routes = k._terms(query)
+
+        eligible = sorted(
+            (
+                k._score(record, terms, routes)
+                for record in CORPUS.records
+                if not record.quarantined
+                and k._score(record, terms, routes) > 0
+                and record.trust_level is not TrustLevel.SOURCE_DISCOVERED
+                and meets(record.trust_level, result.applied_min_trust)
+            ),
+            reverse=True,
+        )
+        self.assertTrue(eligible, "the query must match something for this to mean anything")
+        cut = eligible[0] * k._RELEVANCE_FLOOR
+        expected = sum(1 for score in eligible if score < cut)
+        self.assertGreater(expected, 0, "the floor must exclude something here")
+
+        self.assertIn(
+            f"{expected} weak match(es) below the relevance floor excluded",
+            result.withheld,
         )
 
     def test_ordering_is_stable_across_calls(self):
