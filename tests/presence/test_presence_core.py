@@ -239,4 +239,10 @@ check_eq("sweep does not change any reported status", after, before)
 snapshot = ps.health_snapshot(cur, conn())
 check("health snapshot reports live session count", "live_sessions" in snapshot, str(snapshot))
 
-summary("test_presence_core")
+def test_presence_core():
+    """The collectable verdict. See harness.assert_no_failures for why."""
+    harness.assert_no_failures("test_presence_core")
+
+
+if __name__ == "__main__":
+    summary("test_presence_core")
