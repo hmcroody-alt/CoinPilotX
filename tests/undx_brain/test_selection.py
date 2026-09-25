@@ -6,7 +6,7 @@ because it pins the property that makes everything else safe rather than the beh
 this module adds. A ranking that disagreed with ``match_capability`` would be a second
 opinion about what the system is going to do, and a second opinion is worse than none:
 the caller would reason about one capability while the gateway ran another. It is
-checked across all 254 registered phrasings plus the sentences the other tests use.
+checked across every registered phrasing plus the sentences the other tests use.
 
 The rest divides in four. The *loss* tests show what the current matcher discards —
 that on the live registry "stop my alerts" scores a write one point above a read and
@@ -15,8 +15,9 @@ the call site cannot tell. The *threshold* tests defend :data:`NEAR_TIE` the way
 and naming which sentences each one costs, so the number is a measurement and raising it
 later means seeing the bill. The *preference* tests run every rule against real
 capability pairs drawn from the registry rather than fixtures. And the *refusal* tests
-are the point of the module: sixteen pairs of real writes that none of the rules
-separate, every one of them an operation paired with its own inverse.
+are the point of the module: the pairs of real writes that none of the rules separate,
+each one refused because all three rules tie on it rather than because a rule failed to
+fire — which is asserted per pair, since the population changes with the registry.
 """
 
 from __future__ import annotations
@@ -87,6 +88,37 @@ def _all_registered_phrasings() -> list[str]:
 
 def _write_ids() -> list[str]:
     return sorted(spec.capability_id for spec in registry.REGISTRY.values() if spec.is_write)
+
+
+#: Verb pairs that name an operation and its exact inverse. Used to find those pairs in
+#: the registry by their declared ids instead of listing them, so that registering a new
+#: inverse does not silently leave it untested.
+_INVERSE_VERBS = {
+    "like": "unlike",
+    "save": "unsave",
+    "follow": "unfollow",
+    "block": "unblock",
+    "pause": "resume",
+    "add": "remove",
+    "mute": "unmute",
+    "hide": "unhide",
+    "subscribe": "unsubscribe",
+}
+
+
+def _inverse_pairs() -> list[tuple[str, str]]:
+    writes = set(_write_ids())
+    found = set()
+    for capability_id in writes:
+        segments = capability_id.split(".")
+        for index, segment in enumerate(segments):
+            opposite = _INVERSE_VERBS.get(segment)
+            if opposite is None:
+                continue
+            twin = ".".join(segments[:index] + [opposite] + segments[index + 1:])
+            if twin in writes:
+                found.add(tuple(sorted((capability_id, twin))))
+    return sorted(found)
 
 
 def _band(capability_ids) -> list[s.Candidate]:
@@ -297,22 +329,46 @@ class TheNearTieThresholdIsMeasured(unittest.TestCase):
 class TheWritesTheRegistryDeclaresAreNotCloseToEachOther(unittest.TestCase):
     """A near-tie involving a write is never something the registry authored."""
 
-    def test_only_one_registered_write_phrasing_has_a_runner_up_at_all(self):
-        contested_writes = []
+    def test_no_registered_write_phrasing_lands_inside_the_near_tie_band(self):
+        """The class's claim, asserted against the band instead of against a count.
+
+        This used to require that exactly *one* registered write phrasing had a
+        runner-up at all, and then that that one's margin was at least 15. Having a
+        runner-up is not the thing that matters — being close enough to one to be
+        *contested* is, and ``NEAR_TIE`` is where that line sits. The registry has since
+        grown from 254 phrasings to 479 and thirteen write phrasings now have a runner-up
+        somewhere behind them, none of them nearer than six points. Nothing moved closer
+        together; the count was never measuring distance.
+
+        So the assertion is the distance. Every registered write phrasing's nearest rival
+        must sit outside the band, which is what makes "a near-tie involving a write only
+        comes from a sentence somebody typed" true.
+        """
+        margins = []
         for text in _all_registered_phrasings():
             ranked = s.rank(text, env=ON)
             if len(ranked) > 1 and ranked[0].is_write:
-                contested_writes.append((text, ranked[0].capability_id, ranked[1].margin))
-        self.assertEqual(
-            len(contested_writes), 1,
-            f"registered write phrasings with runners-up: {contested_writes}",
-        )
-        _, capability_id, margin = contested_writes[0]
-        self.assertEqual(capability_id, "feed.posts.unlike")
+                margins.append((ranked[1].margin, text, ranked[0].capability_id))
+        margins.sort()
+
+        # Without this the sweep passes by matching no write phrasing at all.
         self.assertGreaterEqual(
-            margin, 15,
-            "the designed write vocabulary has moved closer together; the claim that a "
-            "near-tie involving a write only comes from a typed sentence is now weaker",
+            len(margins), 10,
+            "almost no registered phrasing resolves to a write with a runner-up, so the "
+            "band check below is close to vacuous",
+        )
+        for margin, text, capability_id in margins:
+            with self.subTest(text=text):
+                self.assertGreater(
+                    margin, s.NEAR_TIE,
+                    f"{text!r} puts {capability_id} within the near-tie band of its "
+                    f"runner-up, so the registry now authors a contested write",
+                )
+        self.assertGreaterEqual(
+            margins[0][0], 6,
+            "the designed write vocabulary has moved closer together. Still outside the "
+            f"band at {s.NEAR_TIE}, so nothing is contested yet, but the headroom that "
+            f"made that robust is shrinking: {margins[:3]}",
         )
 
     def test_no_registered_phrasing_produces_two_contested_writes(self):
@@ -410,13 +466,16 @@ class TheSelectorRefusesRatherThanGuesses(unittest.TestCase):
     """The part that makes this selection and not ranking-then-obeying."""
 
     def test_an_operation_and_its_own_inverse_are_never_separated(self):
-        for pair in (
-            ("crypto.alerts.pause", "crypto.alerts.resume"),
-            ("social.follow", "social.unfollow"),
-            ("feed.posts.like", "feed.posts.unlike"),
-            ("reels.save", "reels.unsave"),
-            ("reels.like", "reels.unlike"),
-        ):
+        # Derived from the registry rather than listed. The five that were written out by
+        # hand were the five that existed; ``business.campaign.pause/resume``,
+        # ``crypto.watchlist.add/remove``, ``marketplace.listing.pause/resume`` and
+        # ``profile.block/unblock`` have been registered since and were not covered, which
+        # is the failure mode of a hand-kept list — it does not shrink, it just stops
+        # keeping up. Deriving them means a newly registered inverse is covered the day
+        # it lands.
+        inverses = _inverse_pairs()
+        self.assertGreaterEqual(len(inverses), 9, f"inverse pairs are no longer found: {inverses}")
+        for pair in inverses:
             with self.subTest(pair=pair):
                 band = _band(list(pair))
                 chosen = s._separate_writes(band, tuple(band), pair, (), ON)
@@ -448,53 +507,98 @@ class TheSelectorRefusesRatherThanGuesses(unittest.TestCase):
         self.assertEqual(chosen.capability_id, "")
 
     def test_every_write_pair_in_the_registry_is_separated_or_refused_deliberately(self):
-        # The whole write half of the registry, pairwise. The interesting number is not
-        # how many are separated but *which* are not: every undecided pair is an
-        # operation against its own inverse or two preference updates on different
-        # resources — exactly the cases where a one-point score difference is not
-        # evidence of anything.
+        """The whole write half of the registry, pairwise, without freezing the tally.
+
+        This used to assert three numbers: 136 pairs, 16 of them undecided, and the exact
+        16. All three were the same claim about a registry of 17 writes. There are 48 now,
+        1,128 pairs and 91 refusals, and the enumerated set had become a snapshot of a
+        moment — it would have to be re-typed every time a write is registered, which is
+        the kind of maintenance that gets done by pasting in whatever the run printed.
+        A list regenerated from the output it is meant to check is not a check.
+
+        What the enumeration was reaching for is in its own old comment: the interesting
+        thing is not how many are refused but *why*. So that is asserted directly —
+        every refusal must be a genuine tie on all three declared rules, which is the
+        durable form of "an operation against its own inverse, or two preference updates
+        on different resources". A pair refused while a rule had grounds to separate it
+        would be a rule that failed to fire, and no count would show it.
+        """
         writes = _write_ids()
+        pairs = list(combinations(writes, 2))
         undecided = []
         separators = {}
-        for pair in combinations(writes, 2):
+        for pair in pairs:
             band = _band(list(pair))
             chosen = s._separate_writes(band, tuple(band), pair, (), ON)
             separators[chosen.separator] = separators.get(chosen.separator, 0) + 1
             if not chosen.decided:
                 undecided.append(pair)
+                self.assertIs(chosen.separator, s.Separator.NOTHING_SEPARATED_THEM)
+                self.assertEqual(chosen.capability_id, "")
+                self.assertEqual(chosen.displaced_writes, tuple(sorted(pair)))
+            else:
+                self.assertIsNot(chosen.separator, s.Separator.NOTHING_SEPARATED_THEM)
+                self.assertIn(chosen.capability_id, pair)
 
-        self.assertEqual(len(list(combinations(writes, 2))), 136)
-        self.assertEqual(len(undecided), 16, f"undecided pairs changed: {undecided}")
-        self.assertEqual(
-            set(undecided),
-            {
-                ("crypto.alerts.pause", "crypto.alerts.resume"),
-                ("feed.posts.like", "feed.posts.unlike"),
-                ("feed.posts.like", "social.follow"),
-                ("feed.posts.like", "social.unfollow"),
-                ("feed.posts.unlike", "social.follow"),
-                ("feed.posts.unlike", "social.unfollow"),
-                ("notifications.preference.update", "profile.preferences.update"),
-                ("notifications.preference.update", "saved.post.set"),
-                ("profile.preferences.update", "saved.post.set"),
-                ("reels.like", "reels.save"),
-                ("reels.like", "reels.unlike"),
-                ("reels.like", "reels.unsave"),
-                ("reels.save", "reels.unlike"),
-                ("reels.save", "reels.unsave"),
-                ("reels.unlike", "reels.unsave"),
-                ("social.follow", "social.unfollow"),
-            },
+        # Both floors, because this test is vacuous at either extreme: refusing every
+        # pair would pass every assertion above while making the selector useless, and
+        # separating every pair would mean the refusal path is never reached at all.
+        self.assertGreater(len(pairs), 500, "the registry's write half has shrunk sharply")
+        self.assertGreater(len(undecided), 0, "nothing is refused; the refusal path is dead")
+        self.assertLess(
+            len(undecided), len(pairs) // 2,
+            f"{len(undecided)} of {len(pairs)} write pairs are refused. Refusing is the "
+            f"safe direction but it is not free, and a majority means the declared data "
+            f"has stopped distinguishing capabilities",
         )
-        self.assertGreater(separators.get(s.Separator.REVERSIBLE_OVER_NOT, 0), 0)
-        self.assertGreater(separators.get(s.Separator.NARROWER_BLAST_RADIUS, 0), 0)
-        self.assertEqual(
-            separators.get(s.Separator.CHEAPER_UNDO, 0), 0,
-            "CHEAPER_UNDO now separates a real pair; it was unreachable on this "
-            "registry because reversibility and blast radius always decided first. "
-            "That is worth knowing about — update this expectation rather than "
-            "removing the rule.",
-        )
+
+        # Every refusal is a tie, not a rule that failed to fire.
+        for pair in undecided:
+            with self.subTest(pair=pair):
+                first, second = (prediction_module.predict(c, {}, env=ON) for c in pair)
+                self.assertEqual(
+                    s._reversal_rank(first.reversal), s._reversal_rank(second.reversal),
+                    "refused while reversibility could have separated them",
+                )
+                self.assertEqual(
+                    len(first.conflicting_writes), len(second.conflicting_writes),
+                    "refused while blast radius could have separated them",
+                )
+                self.assertEqual(
+                    first.undo_is_cheap, second.undo_is_cheap,
+                    "refused while undo cost could have separated them",
+                )
+
+        # Every rule that exists is reached by some real pair. CHEAPER_UNDO used to be
+        # unreachable here — reversibility and blast radius always decided first — and
+        # the old expectation pinned it at zero with a note saying to update rather than
+        # remove it if that changed. It has: the wider registry contains pairs that agree
+        # on the first two rules and differ on undo cost.
+        for separator in (s.Separator.REVERSIBLE_OVER_NOT, s.Separator.NARROWER_BLAST_RADIUS,
+                          s.Separator.CHEAPER_UNDO, s.Separator.NOTHING_SEPARATED_THEM):
+            with self.subTest(separator=separator):
+                self.assertGreater(
+                    separators.get(separator, 0), 0,
+                    f"no real write pair reaches {separator}; it is a rule the registry "
+                    f"cannot exercise, so nothing here defends it",
+                )
+
+    def test_separating_two_writes_does_not_depend_on_which_was_named_first(self):
+        # The band arrives in score order and two contested writes score alike, so the
+        # order within it is incidental — whichever the matcher happened to emit first.
+        # A rule that broke a tie on position would be reading that incidental order as
+        # evidence, and it would look perfectly decisive from one side.
+        for pair in combinations(_write_ids(), 2):
+            forward = _band(list(pair))
+            backward = _band(list(pair[::-1]))
+            first = s._separate_writes(forward, tuple(forward), pair, (), ON)
+            second = s._separate_writes(backward, tuple(backward), pair[::-1], (), ON)
+            with self.subTest(pair=pair):
+                self.assertEqual(
+                    (first.decided, first.capability_id, first.separator),
+                    (second.decided, second.capability_id, second.separator),
+                    f"{pair} separates differently when reversed",
+                )
 
     def test_without_prediction_two_contested_writes_are_refused_not_scored(self):
         # The rules read predictions. With the predictor unavailable there is no ground

@@ -31,9 +31,11 @@ were still sitting in ``config.py`` with no reader at all.
 from __future__ import annotations
 
 import ast
+import io
 import os
 import pathlib
 import sys
+import tokenize
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -253,7 +255,7 @@ class ADeclaredCeilingHasAReader(unittest.TestCase):
         flag.name for flag in brain_config.CATALOG if flag.kind == "int"
     })
 
-    #: Declared, described in the present tense, and read by nothing in ``services/``.
+    #: Declared, described in the present tense, and read by nothing in the UNDX layer.
     #:
     #: This list is a finding, not a to-do disguised as one. Each of these is a behaviour
     #: *switch* rather than a ceiling, and wiring eight switches to turn a test green
@@ -270,22 +272,67 @@ class ADeclaredCeilingHasAReader(unittest.TestCase):
     #: opens something. The other four gate features whose call sites do not exist yet.
     #: None of them is a live hazard; all of them are labels on controls that are not
     #: connected to anything.
+    #:
+    #: The list has since turned over, in both directions, and the count staying at
+    #: eight hid that. ``UNDX_AGENT_FAIL_CLOSED``, ``UNDX_AGENT_REQUIRE_AUDIT`` and
+    #: ``UNDX_AGENT_REQUIRE_VERIFICATION`` are now read by
+    #: ``services/undx_agent_policy.py`` — the three fail-closed switches got wired, so
+    #: they leave. Three observability flags arrived to replace them:
+    #: ``UNDX_CORRELATION_IDS_ENABLED``, ``UNDX_TOOL_LATENCY_ENABLED`` and
+    #: ``UNDX_VERIFICATION_METRICS_ENABLED``, each declared ``fail="open"`` with a
+    #: default of ``1`` and each appearing nowhere but its own declaration. They gate
+    #: emitters that do not exist, so they are inert rather than hazardous — but they
+    #: are the growth this test exists to catch, and they are recorded, not wired.
+    #: Wiring three switches to turn a test green is building systems so an audit looks
+    #: productive, which is the thing the mission opens by warning against.
+    #:
+    #: ``UNDX_BRAIN_METRICS_ENABLED`` stays. Its only appearance outside the catalogue
+    #: is a comment in ``services/pulse_control_plane/env_gates.py`` observing that the
+    #: name is absent from production — see ``_unread`` for why that no longer counts.
     KNOWN_UNREAD = frozenset({
-        "UNDX_AGENT_FAIL_CLOSED",
-        "UNDX_AGENT_REQUIRE_AUDIT",
-        "UNDX_AGENT_REQUIRE_VERIFICATION",
         "UNDX_BRAIN_METRICS_ENABLED",
         "UNDX_BRAIN_RESPONSE_ENABLED",
         "UNDX_BRAIN_SKILLS_ENABLED",
+        "UNDX_CORRELATION_IDS_ENABLED",
         "UNDX_DEGRADATION_TRACKING_ENABLED",
         "UNDX_RESPONSE_FACTUALITY_CHECK",
+        "UNDX_TOOL_LATENCY_ENABLED",
+        "UNDX_VERIFICATION_METRICS_ENABLED",
     })
 
     @staticmethod
     def _unread(names) -> list[str]:
+        """Flags with no reader in the UNDX layer, judged on code and not on prose.
+
+        Two corrections to what this used to scan.
+
+        It looked only in ``services/``, but the layer does not live only there:
+        ``UNDX_WORKER_SLEEP_SECONDS`` is read at ``undx_worker.py:97``, by a worker that
+        is in the Procfile, and was reported as a ceiling the system does not have. The
+        root ``undx_*.py`` modules are part of the layer and are scanned too.
+
+        And it matched raw file text, so a flag *named in a comment* counted as a flag
+        that is read. ``UNDX_BRAIN_METRICS_ENABLED`` acquired exactly that: a comment in
+        ``services/pulse_control_plane/env_gates.py`` noting the name is absent from
+        production silently retired it from this list. A pin that prose can satisfy is
+        not a pin. Comments are stripped; string literals are kept, because a reader is
+        ``os.getenv("UNDX_...")`` and the name is a string there.
+        """
+        def code_only(text: str) -> str:
+            try:
+                return "\n".join(
+                    token.string
+                    for token in tokenize.generate_tokens(io.StringIO(text).readline)
+                    if token.type != tokenize.COMMENT
+                )
+            except (tokenize.TokenError, IndentationError, SyntaxError):
+                # An unparseable module is not a licence to call every flag read.
+                return ""
+
+        paths = sorted((ROOT / "services").rglob("*.py")) + sorted(ROOT.glob("undx_*.py"))
         haystack = "\n".join(
-            path.read_text(errors="ignore")
-            for path in sorted((ROOT / "services").rglob("*.py"))
+            code_only(path.read_text(errors="ignore"))
+            for path in paths
             if path.name != "config.py"
         )
         return sorted(name for name in names if name not in haystack)
@@ -347,7 +394,7 @@ class ADeclaredCeilingHasAReader(unittest.TestCase):
     def test_every_numeric_ceiling_is_read_somewhere(self):
         self.assertEqual(
             self._unread(self.NUMERIC), [],
-            "a numeric ceiling declared with no reader anywhere in services/ is a "
+            "a numeric ceiling declared with no reader anywhere in the UNDX layer is a "
             "comment: it names a bound the system does not have",
         )
 
