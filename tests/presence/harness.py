@@ -151,3 +151,31 @@ def summary(label):
             print(f"  - {name}")
         sys.exit(1)
     return True
+
+
+def assert_no_failures(label):
+    """The pytest-collectable counterpart to ``summary``.
+
+    These suites do their work at module scope, so by the time this runs the
+    checks have already been recorded. Two things follow, and both were bugs:
+
+      * ``summary`` ends in ``sys.exit(1)``, and SystemExit raised while pytest
+        is importing a module aborts collection for the *whole* tree, not just
+        this file. That is why ``pytest tests/`` needs ``--ignore=tests/presence``
+        to run at all.
+      * With nothing collectable, a passing file exits 5 ("collected no tests").
+        177 real checks across the three suites ran, passed, and reported
+        nothing -- which is the same class of hole as issue #28 one level down.
+
+    The empty-results assertion is the load-bearing one: without it a module
+    whose body stopped early would report success for running nothing.
+    """
+    assert _RESULTS, (
+        f"{label}: no checks were recorded. The module body must run its checks "
+        "at import; a file that measures nothing must not report success."
+    )
+    failures = [name for name, ok, _ in _RESULTS if not ok]
+    assert not failures, (
+        f"{label}: {len(failures)} of {len(_RESULTS)} checks failed: "
+        + ", ".join(failures)
+    )

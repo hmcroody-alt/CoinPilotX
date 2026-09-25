@@ -537,4 +537,10 @@ check_eq("...and does not leak into the same-numbered Messenger conversation",
          BOB in arena_typing.get("77", {}), False)
 ps.disconnect_all(cur, BOB); conn().commit()
 
-summary("test_platform_surfaces")
+def test_platform_surfaces():
+    """The collectable verdict. See harness.assert_no_failures for why."""
+    harness.assert_no_failures("test_platform_surfaces")
+
+
+if __name__ == "__main__":
+    summary("test_platform_surfaces")
