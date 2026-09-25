@@ -138,15 +138,31 @@ def pill_paragraph(html):
     return None
 
 
-grid = client.get("/pulse/marketplace").get_data(as_text=True)
-report["grid_status"] = 200
+grid_response = client.get("/pulse/marketplace")
+grid = grid_response.get_data(as_text=True)
+report["grid_status"] = grid_response.status_code
 report["grid_invented"] = %(invented)r in grid
+# Which listing a card belongs to is read off the card's own listing-id
+# attribute, not off its link. The link used to be the anchor here and it moved:
+# grid cards now point at `/open/product/<id>?pulse_src=web`, the app-promotion
+# open link, so a pattern matching `/pulse/marketplace/<id>` identified nothing
+# and every card came back unattributed. That failed as "the listing rendered no
+# card in the grid at all" while all three cards were present and correctly
+# priced -- a URL change reported as a missing renderer. The id attribute is also
+# what the client-side twin emits, so the two surfaces stay comparable, and it is
+# not a route, so a second link rename cannot blind this again.
 grid_cards = {}
 for card in CARD.findall(grid):
-    found = re.search(r"/pulse/marketplace/(\d+)'", card)
+    found = re.search(r"data-save-listing='(\d+)'", card)
     if found:
         grid_cards[found.group(1)] = pill_paragraph(card)
 report["grid_paragraphs"] = grid_cards
+report["grid_cards_seen"] = len(CARD.findall(grid))
+# Whether each seeded listing reached the page at all, independently of whether
+# the card extraction above could attribute it. That is the difference between a
+# renderer that emitted nothing and a probe that could not read what it emitted.
+report["grid_ids_present"] = [str(lid) for lid in %(ids)r
+                              if ("Listing %%d" %% lid) in grid]
 
 pages = {}
 for lid in %(ids)r:
@@ -162,9 +178,17 @@ report["pages"] = pages
 
 # The client-side card, lifted out of the served page rather than out of bot.py,
 # so what the test executes is what a browser would have been handed.
+# `marketplaceProductHrefTemplate` and `marketplaceProductHref` are in the list
+# because the card calls the latter to build its own link. They were not, and the
+# card ran until it reached that call and died on a ReferenceError -- which this
+# file reported as "the client-side marketplace card did not run", true but
+# pointing at the card rather than at the harness that had gone one declaration
+# short. Anything the card comes to depend on has to be lifted out with it.
 js = []
 for pattern in (r"const marketplaceCurrentUserId=[^\n]*",
                 r"const marketplaceEsc=[^\n]*",
+                r"const marketplaceProductHrefTemplate=[^\n]*",
+                r"const marketplaceProductHref=[^\n]*",
                 r"function marketplaceListingHtml\(row\)\{[^\n]*"):
     found = re.search(pattern, grid)
     js.append(found.group(0).strip() if found else "")
@@ -210,16 +234,26 @@ def _render_client_side(price_probe, rows):
         pytest.skip("node is not installed; the client-side card cannot be rendered")
     js = price_probe["js"]
     assert all(js), (
-        "the served marketplace page no longer contains the three declarations "
-        "the client-side card is built from (%r); the card was renamed, moved "
-        "or reformatted onto several lines" % (js,))
+        "the served marketplace page no longer contains every declaration the "
+        "client-side card is built from; %d of %d came back empty (%r). The card "
+        "was renamed, moved, reformatted onto several lines, or it gained a "
+        "dependency that is not being lifted out with it"
+        % (sum(1 for j in js if not j), len(js), js))
     harness = "\n".join(js) + (
         "\nconsole.log(JSON.stringify(JSON.parse(process.argv[1])"
         ".map(marketplaceListingHtml)));")
     proc = subprocess.run([node, "-e", harness, json.dumps(rows)],
                           capture_output=True, text=True, timeout=120)
+    # The error line is pulled out ahead of the raw tail. node echoes the
+    # offending source first, and the card is one ~1200-character line, so a
+    # plain tail slice of stderr began mid-token and buried the one sentence that
+    # says what went wrong.
+    named = [line for line in proc.stderr.splitlines()
+             if re.search(r"\b[A-Za-z]*Error\b", line)]
     assert proc.returncode == 0, (
-        "the client-side marketplace card did not run: %s" % proc.stderr[-2000:])
+        "the client-side marketplace card did not run: %s\n--- node stderr "
+        "(tail) ---\n%s" % ("; ".join(named) or "(node named no error)",
+                            proc.stderr[-800:]))
     return json.loads(proc.stdout)
 
 
@@ -267,6 +301,44 @@ def test_the_seed_is_what_these_tests_assume(price_probe):
         "the whitespace listing is no longer whitespace (%r), so the case a "
         "bare `or` fallback misses is not being exercised"
         % seeded[str(WHITESPACE)])
+
+
+def test_every_card_the_grid_rendered_was_attributed_to_a_listing(price_probe):
+    """Guard the probe's card-to-listing step, which is what silently broke.
+
+    Every assertion about the grid below reads ``grid_paragraphs`` and reports a
+    missing entry as "the listing rendered no card". That sentence is only true
+    if the extraction can be trusted, and when the card's link moved it could
+    not: three cards were served, all three correctly priced, and the dictionary
+    was empty. So the suite claimed the renderer had stopped rendering.
+
+    Separating the two makes that distinguishable: a listing whose title is not
+    in the served page failed to render, and a listing whose title is there but
+    whose card the probe could not attribute failed to be read.
+
+    Deliberately not asserted as "every card carries a listing id". The page also
+    serves an unrelated ``<article class='card'>`` of its own -- a "PulseSoc
+    Intelligence" blurb with no listing behind it -- so that invariant is false
+    for reasons that have nothing to do with this file.
+    """
+    assert price_probe["grid_status"] == 200, (
+        "the marketplace grid did not serve (%s), so no assertion below is "
+        "about a rendered card" % price_probe["grid_status"])
+    assert price_probe["grid_cards_seen"], (
+        "the grid served no cards at all; the card pattern no longer matches "
+        "the markup, or the grid rendered nothing")
+    present = set(price_probe["grid_ids_present"])
+    attributed = set(price_probe["grid_paragraphs"])
+    missing = sorted({str(l) for l in ALL_LISTINGS} - present)
+    assert not missing, (
+        "the grid did not render listings %r at all, so the price assertions "
+        "below have nothing to look at. This is the renderer or the discovery "
+        "predicate, not the probe." % (missing,))
+    unread = sorted(present - attributed)
+    assert not unread, (
+        "listings %r are on the served page but the probe could not attribute "
+        "their cards, so they are invisible to every assertion in this file. "
+        "The card's listing-id attribute moved or was renamed." % (unread,))
 
 
 def test_a_priced_listing_still_shows_its_price_in_the_grid(price_probe):

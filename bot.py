@@ -86888,6 +86888,15 @@ PULSE_SELLER_STORE_MODES = {
     "create": "/pulse/marketplace/create",
     "payouts": "/pulse/merchant/payouts",
     "orders": "/pulse/merchant/payouts",
+    # `product` is the app's single-product editor (`PANELS_BY_MODE.product` is
+    # `["inventory"]` and nothing else). The web has no equivalent: `create` is
+    # create-only and takes no listing id, and there is no other listing editor.
+    # So this is the dashboard, which is where a merchant's listings are, and it
+    # is the same answer the app's own `sellerStoreWebUrl` already gives by
+    # falling through. Named rather than left to the `.get` default so that the
+    # *next* mode someone adds fails the parity test instead of silently landing
+    # here too. If a web single-product editor is ever built, this is the line.
+    "product": "/pulse/merchant/dashboard",
     # `profile` is the one mode that depends on a parameter; see below.
     "profile": "/pulse/merchant/dashboard",
 }
