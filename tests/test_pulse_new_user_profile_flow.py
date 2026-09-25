@@ -77,7 +77,13 @@ class PulseNewUserProfileFlowTest(unittest.TestCase):
                 deleted_at TEXT,
                 created_at TEXT,
                 updated_at TEXT,
-                repost_of_post_id INTEGER
+                repost_of_post_id INTEGER,
+                -- Written by pulse_feed_engine.create_post's INSERT. Production
+                -- gets it from add_columns_if_missing rather than the CREATE
+                -- TABLE, so it is easy to miss when mirroring the DDL by hand;
+                -- without it the insert raised OperationalError before reaching
+                -- anything these tests are about.
+                page_id INTEGER
             )
             """
         )

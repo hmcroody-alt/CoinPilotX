@@ -193,8 +193,16 @@ class BootstrapEnsureSchemaPortabilityTest(unittest.TestCase):
 
     The list is read from `_ENSURES` rather than hardcoded, so a newly
     registered subsystem is covered the day it is added. A PRAGMA is allowed
-    only inside a function that also picks the engine — the SQLite arm of a
-    branch is fine; an unconditional PRAGMA is the production bug.
+    only where the engine has already been picked — the SQLite arm of a branch
+    is fine; a PRAGMA reachable on PostgreSQL is the production bug.
+
+    The guard may sit in the function or at every call site. Demanding it inside
+    the body rejects the shape a SQLite-only helper is meant to have: one engine
+    branch, the helper extracted below it and called only from the SQLite arm.
+    That is `_drop_sqlite_order_uniqueness()` in suppliers/fulfillment.py, whose
+    single caller sits in the `else` of `if db.IS_POSTGRES`. Reading only its
+    body reported it as a production defect while the branch above it made the
+    PRAGMA unreachable on PostgreSQL.
     """
 
     GUARD_TOKENS = (
@@ -204,6 +212,34 @@ class BootstrapEnsureSchemaPortabilityTest(unittest.TestCase):
         "information_schema",
         "get_table_columns",
     )
+
+    def _engine_guarded_lines(self, tree, source):
+        """Lines lexically inside either arm of an engine test.
+
+        Both arms, not just the SQLite one: which arm is which depends on how
+        the condition is spelled, and the question here is only whether the
+        engine is known at that point.
+        """
+        guarded = set()
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.If):
+                continue
+            test = ast.get_source_segment(source, node.test) or ""
+            if not any(token in test for token in self.GUARD_TOKENS):
+                continue
+            for statement in node.body + node.orelse:
+                end = statement.end_lineno or statement.lineno
+                guarded.update(range(statement.lineno, end + 1))
+        return guarded
+
+    @staticmethod
+    def _callee_name(call):
+        func = call.func
+        if isinstance(func, ast.Name):
+            return func.id
+        if isinstance(func, ast.Attribute):
+            return func.attr
+        return None
 
     def _module_source(self, dotted):
         base = os.path.join(REPO_ROOT, *dotted.split("."))
@@ -224,17 +260,37 @@ class BootstrapEnsureSchemaPortabilityTest(unittest.TestCase):
             if "PRAGMA" not in source.upper():
                 continue
             tree = ast.parse(source)
+            guarded_lines = self._engine_guarded_lines(tree, source)
             for node in ast.walk(tree):
                 if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
                 body = ast.get_source_segment(source, node) or ""
                 if "PRAGMA" not in body.upper():
                     continue
+                if any(token in body for token in self.GUARD_TOKENS):
+                    continue
+                calls = [
+                    call.lineno for call in ast.walk(tree)
+                    if isinstance(call, ast.Call) and self._callee_name(call) == node.name
+                ]
+                # No in-module caller means the entry point is elsewhere, and
+                # this file cannot prove the engine was picked before the call.
+                # Fail, in the direction that asks for the guard.
                 self.assertTrue(
-                    any(token in body for token in self.GUARD_TOKENS),
+                    calls,
+                    msg=(
+                        f"{path}:{node.lineno} {node.name}() sends PRAGMA, has no "
+                        "engine branch, and is not called in its own module — so "
+                        "nothing here shows it is unreachable on PostgreSQL"
+                    ),
+                )
+                self.assertFalse(
+                    [line for line in calls if line not in guarded_lines],
                     msg=(
                         f"{path}:{node.lineno} {node.name}() sends PRAGMA with no "
-                        "engine branch — raises on the PostgreSQL production runs"
+                        "engine branch, and is called outside one at line(s) "
+                        f"{sorted(line for line in calls if line not in guarded_lines)}"
+                        " — raises on the PostgreSQL production runs"
                     ),
                 )
         self.assertGreater(checked, 20, "bootstrap ensure list looks truncated")
