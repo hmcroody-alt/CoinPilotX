@@ -14,6 +14,11 @@ REPORT = ROOT / "reports" / "production_readiness_audit.md"
 JSON_REPORT = ROOT / "reports" / "production_readiness_audit.json"
 sys.path.insert(0, str(ROOT))
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("production_readiness_audit")
+
 import bot  # noqa: E402
 from services import db as db_service  # noqa: E402
 

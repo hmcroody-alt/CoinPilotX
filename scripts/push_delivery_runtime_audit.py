@@ -13,6 +13,11 @@ os.environ["PUSH_OPPORTUNISTIC_PROCESSOR_ENABLED"] = "0"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("push_delivery_runtime_audit")
+
 import bot  # noqa: E402
 from services import notification_service, push_service  # noqa: E402
 
