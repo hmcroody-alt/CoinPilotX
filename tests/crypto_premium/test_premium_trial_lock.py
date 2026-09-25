@@ -56,18 +56,43 @@ class _EnvIsolatedCase(unittest.TestCase):
 
 
 class _FreshDbCase(_EnvIsolatedCase):
-    """Fresh sqlite DB per test class run (services.db uses ./coinpilotx.db
-    when no DATABASE_URL is set, so chdir into a tempdir isolates it)."""
+    """Fresh sqlite DB per test.
+
+    Pins ``services.db.LOCAL_SQLITE_FILE`` to a path in this test's own tempdir.
+    The chdir this used to rely on is not enough, and the way it failed is worth
+    keeping written down: ``tests/conftest.py`` repoints ``LOCAL_SQLITE_FILE`` at
+    one *absolute* path for the whole pytest process, on purpose, so no test
+    writes the developer's own ``coinpilotx.db``. An absolute path does not care
+    what the working directory is — so under pytest every test in this file
+    shared one database while claiming a fresh one per test.
+
+    That was invisible until it wasn't. ``TrialLifecycleEndToEnd`` leaves a trial
+    grant for ``_UID`` behind, and ``FailClosedPaths`` then asks for a trial as a
+    new signup: the leaked row made it ``already_used``, so the assertion about
+    ``grant_failed`` measured the leak instead of the fail-closed path it names.
+    Running the file under plain ``unittest`` passed, because the conftest is not
+    loaded there, which is exactly how a file can be broken in CI and clean by
+    hand.
+
+    Pinning the attribute is the same mechanism the conftest uses, so the two
+    compose instead of fighting; the chdir stays because it is still what keeps
+    any *other* relative path a test writes inside the tempdir.
+    """
 
     def setUp(self):
         super().setUp()
         self._tmp = tempfile.TemporaryDirectory()
         self._old_cwd = os.getcwd()
         os.chdir(self._tmp.name)
+        from services import db as platform_db
+        self._saved_sqlite_file = platform_db.LOCAL_SQLITE_FILE
+        platform_db.LOCAL_SQLITE_FILE = os.path.join(self._tmp.name, "coinpilotx.db")
         from services.business_os.entitlements import schema
         schema.ensure_ready()
 
     def tearDown(self):
+        from services import db as platform_db
+        platform_db.LOCAL_SQLITE_FILE = self._saved_sqlite_file
         os.chdir(self._old_cwd)
         self._tmp.cleanup()
         super().tearDown()

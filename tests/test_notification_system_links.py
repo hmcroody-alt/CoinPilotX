@@ -64,13 +64,39 @@ def test_sms_links_resolve_to_the_destination_they_name(deep_link, expected_key)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "web_link", ["/account/security", "/privacy", "/terms", "/dashboard/creator"]
-)
+#: Web pages a notification must not try to hand to the app, minus any the
+#: registry has since declared an app destination. `/account/security` was in
+#: this list literally and then grew `overrides_web_intent=True` -- a deliberate
+#: product decision -- so the hardcoded list asserted the opposite of the
+#: shipped behaviour. Subtracting the registry's own override set means the next
+#: such decision moves this test instead of breaking it.
+_WEB_ONLY_LINKS = [
+    path
+    for path in ("/account/security", "/privacy", "/terms", "/dashboard/creator")
+    if path not in app_links.WEB_INTENT_OVERRIDES
+]
+
+
+def test_there_are_still_web_only_links_to_check():
+    # Subtracting a set is only safe while something survives it: if every
+    # sample became an override, the test below would pass by iterating nothing.
+    assert _WEB_ONLY_LINKS
+
+
+@pytest.mark.parametrize("web_link", _WEB_ONLY_LINKS)
 def test_web_intent_sms_links_stay_on_the_web(web_link):
     link = notifications._sms_link(web_link)
     assert link == f"{app_links.CANONICAL_APP_ORIGIN}{web_link}"
     assert app_links.APP_INTENT_PARAM not in link
+
+
+@pytest.mark.parametrize("override", sorted(app_links.WEB_INTENT_OVERRIDES))
+def test_declared_overrides_really_are_promoted(override):
+    # The other half of the same rule. A path is only worth exempting from the
+    # web-intent families if the exemption reaches the SMS channel too.
+    link = notifications._sms_link(override)
+    assert f"{app_links.APP_INTENT_PARAM}=1" in link
+    assert override in link
 
 
 @pytest.mark.parametrize(

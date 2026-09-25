@@ -172,6 +172,7 @@
     "tests/business_os_finance/test_ad_wallet_hardening.py",
     "tests/business_os_finance/test_connect_accounts.py",
     "tests/business_os_finance/test_connect_capability_source_of_truth.py",
+    "tests/business_os_finance/test_db_introspection.py",
     "tests/business_os_finance/test_finance_routes.py",
     "tests/business_os_finance/test_incidents.py",
     "tests/business_os_finance/test_reconciliation.py",
@@ -196,6 +197,7 @@
     "tests/crypto_premium/test_portfolio_intelligence.py",
     "tests/crypto_premium/test_premium_delivery_stop.py",
     "tests/crypto_premium/test_premium_expiry_crypto_lock.py",
+    "tests/crypto_premium/test_premium_trial_lock.py",
     "tests/crypto_premium/test_undx_crypto_tools.py",
     "tests/dropshipping/test_dropship_attention_state.py",
     "tests/dropshipping/test_dropship_autopublish.py",
@@ -469,6 +471,7 @@
     "tests/test_native_app_links.py",
     "tests/test_notification_email_app_links.py",
     "tests/test_notification_email_dedupe.py",
+    "tests/test_notification_system_links.py",
     "tests/test_open_destination_interstitial.py",
     "tests/test_pg_lock_health.py",
     "tests/test_premium_blue_check_gate.py",
@@ -490,6 +493,7 @@
     "tests/test_pulse_insight_identity_media.py",
     "tests/test_pulse_insight_image_pipeline.py",
     "tests/test_pulse_media_still_frames.py",
+    "tests/test_pulse_new_user_profile_flow.py",
     "tests/test_pulse_post_save_wiring.py",
     "tests/test_pulse_region_preferences.py",
     "tests/test_pulse_repost_routes.py",
@@ -652,13 +656,9 @@
     "tests/web_surface/test_undx_action_center_page.py"
   ],
   "quarantined": {
-    "tests/business_os_finance/test_db_introspection.py": "fails standalone on 3.11: 1 failed, 10 passed in 0.25s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/crypto_premium/test_premium_trial_lock.py": "fails standalone on 3.11: 1 failed, 12 passed in 0.23s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_app_review_support_password.py": "fails standalone on 3.11: 1 failed, 18 passed in 6.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_measured_duration_wiring.py": "fails standalone on 3.11: 2 failed, 19 passed in 3.82s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/test_notification_system_links.py": "fails standalone on 3.11: 1 failed, 34 passed in 0.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_pulse_ads_os.py": "fails standalone on 3.11: 1 failed, 15 passed in 4.12s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/test_pulse_new_user_profile_flow.py": "fails standalone on 3.11: 1 failed, 6 passed in 0.42s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/test_pulse_settings_routes.py": "fails standalone on 3.11: 6 failed, 38 passed in 0.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/undx_agent/test_authorization_surface.py": "fails standalone on 3.11: 8 failed in 0.19s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/undx_agent/test_content_graph_intelligence_pack.py": "fails standalone on 3.11: 1 failed, 5 passed, 16 subtests passed in 0.20s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
@@ -675,5 +675,5 @@
     "tests/web_parity/test_marketplace_price_label_rendering.py": "fails standalone on 3.11: 6 failed, 5 passed in 4.25s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/web_surface/test_seller_store_presence_newchat.py": "fails standalone on 3.11: 1 failed, 16 passed in 6.61s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact."
   },
-  "quarantine_ceiling": 22
+  "quarantine_ceiling": 18
 }
