@@ -18,6 +18,11 @@ os.environ["PULSE_LEGACY_SSE_ENABLED"] = "true"
 os.environ.pop("ARENA_SSE_ENABLED", None)
 os.environ.pop("PULSE_MAIN_APP_SSE_ALLOWED", None)
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("pulse_realtime_capacity_audit")
+
 import bot  # noqa: E402
 
 
