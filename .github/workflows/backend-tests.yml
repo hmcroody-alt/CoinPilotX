@@ -95,6 +95,12 @@ jobs:
             [ $(( i % 8 )) -ne ${{ matrix.shard }} ] && continue
             f="${files[$i]}"
             ran=$(( ran + 1 ))
+            # Name the file before running it. `-q` prints only dots for a file
+            # that passes, so without this the log records that 80 files ran but
+            # not WHICH -- and "it says green, but did it load my file?" is the
+            # exact question issue #28 exists to answer. A log that cannot be
+            # audited per-file reproduces the bug one level up.
+            echo "RAN|$f"
             # One process per file. Not a performance mistake -- see above.
             timeout 300 python -m pytest "$f" -q -p no:cacheprovider
             rc=$?
