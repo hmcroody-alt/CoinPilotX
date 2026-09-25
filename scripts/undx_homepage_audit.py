@@ -11,6 +11,11 @@ from datetime import datetime, timezone
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("undx_homepage_audit")
+
 import bot  # noqa: E402
 
 

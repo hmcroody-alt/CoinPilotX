@@ -16,6 +16,11 @@ os.environ.setdefault("BREVO_EMAIL_ENABLED", "0")
 os.environ.setdefault("EMAIL_OPPORTUNISTIC_PROCESSOR_ENABLED", "0")
 os.environ.setdefault("PULSE_MAIN_APP_SSE_ALLOWED", "0")
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("pulsesoc_reliability_audit")
+
 import bot  # noqa: E402
 
 

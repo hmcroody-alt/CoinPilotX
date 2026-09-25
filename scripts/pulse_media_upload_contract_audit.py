@@ -15,6 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# Importing bot runs init_db() against DATABASE_URL, so this has to come first.
+require_local_database("pulse_media_upload_contract_audit")
+
 import bot  # noqa: E402
 from services import media_service, media_storage  # noqa: E402
 
