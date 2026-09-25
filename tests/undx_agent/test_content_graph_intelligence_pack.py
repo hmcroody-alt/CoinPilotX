@@ -47,7 +47,7 @@ class ContentGraphIntelligencePack(unittest.TestCase):
         CREATE TABLE pulse_post_saves(id INTEGER PRIMARY KEY,post_id INTEGER,user_id INTEGER,
           collection_name TEXT,created_at TEXT);
         CREATE TABLE pulse_saved_collections(id INTEGER PRIMARY KEY,user_id INTEGER,name TEXT,
-          slug TEXT,is_default INTEGER,created_at TEXT,updated_at TEXT);
+          slug TEXT,description TEXT,is_default INTEGER,created_at TEXT,updated_at TEXT);
         CREATE TABLE pulse_saved_items(id INTEGER PRIMARY KEY,user_id INTEGER,collection_id INTEGER,
           content_type TEXT,content_id TEXT,title TEXT,preview_text TEXT,thumbnail_url TEXT,
           media_url TEXT,source_url TEXT,metadata_json TEXT,created_at TEXT,updated_at TEXT,

@@ -497,22 +497,50 @@ class TheRegistrationIsAdditive(unittest.TestCase):
             source,
         )
 
-    def test_the_undx_footprint_in_bot_is_three_loader_lines_and_nothing_else(self) -> None:
-        """Every UNDX run route reaches the app through ``_load_route_pack`` and no other way.
+    def test_every_undx_route_module_reaches_the_app_only_through_the_loader(self) -> None:
+        """No UNDX route module is imported into ``bot.py`` by any other means.
 
-        The directive says prefer zero edits to ``bot.py``; three additive lines in an
+        The directive says prefer zero edits to ``bot.py``; an additive line in an
         existing list is the smallest seam available, and this test is what stops it
-        growing into a fourth kind of change.
+        growing into a different *kind* of change.
+
+        What that rule is about is the seam, not the count. This used to pin the
+        loader list to three exact names, which made the sanctioned way of adding a
+        pack -- a fourth `_load_route_pack` line, which is the thing the rule asks
+        for -- fail the test asserting the rule. `undx_fabric_health` is that fourth
+        line. So the check is now over the route modules that exist: every one of
+        them must arrive through the loader, and none may arrive any other way.
         """
         with open(os.path.join(ROOT, "bot.py"), "r", encoding="utf-8") as handle:
             source = handle.read()
-        packs = re.findall(r'_load_route_pack\("(undx_[a-z_]+)"', source)
-        self.assertEqual(
-            packs,
-            ["undx_agent_runs", "undx_agent_run_control", "undx_run_health"],
+
+        modules = sorted(
+            name[: -len(".py")]
+            for name in os.listdir(os.path.join(ROOT, "services"))
+            if name.startswith("undx_") and name.endswith("_routes.py")
         )
-        self.assertNotIn("import services.undx_run_health_routes", source)
-        self.assertNotIn("from services.undx_run_health", source)
+        self.assertIn("undx_run_health_routes", modules, "the pack under test must exist")
+
+        loaded = set(re.findall(r'_load_route_pack\("undx_[a-z_]+", "services\.(\w+)"', source))
+        self.assertEqual(
+            sorted(loaded),
+            modules,
+            "every services/undx_*_routes.py module must be registered via _load_route_pack",
+        )
+
+        # Asserted as a boolean with an explicit message rather than `assertNotIn`
+        # over `source`: unittest renders the haystack on failure, and bot.py is
+        # several megabytes, so a failing assertNotIn floods the CI log.
+        for module in modules:
+            for bypass in (
+                f"import services.{module}",
+                f"from services.{module}",
+                f"from services import {module}",
+            ):
+                self.assertFalse(
+                    bypass in source,
+                    msg=f"bot.py reaches {module} via {bypass!r}, bypassing _load_route_pack",
+                )
 
 
 if __name__ == "__main__":
