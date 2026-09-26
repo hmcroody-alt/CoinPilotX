@@ -24,7 +24,7 @@ import { pulseApi } from "./pulseApi";
  *    the one error in this system with a legal shape.
  */
 
-export type CommerceSurface = "feed" | "reels" | "messenger" | "marketplace";
+export type CommerceSurface = "feed" | "reels" | "messenger" | "marketplace" | "post_detail";
 
 /** Matches `services/commerce_discovery/promotion.py`. Paid never arrives here. */
 export type CommercePromotionClass = "organic" | "house";
