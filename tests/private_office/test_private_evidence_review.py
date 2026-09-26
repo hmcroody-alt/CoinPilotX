@@ -791,6 +791,38 @@ def stage_owner_isolation():
 
 
 # ---------------------------------------------------------------------------
+#: Every value planted above, as a string. None of it may appear in the citation,
+#: audit or history tables under any column — `evidence_ref` is an opaque
+#: identifier resolved through the owning package's own reader, so that a citation
+#: never becomes a way to learn the contents of a document you cannot open.
+_PLANTED = ("AZ-4410", "2026-01-05", "Northgate Mutual", "740000", "5000",
+            "2027-03-31", "12 Rue Test", "620000", "Old Mutual", "500000",
+            "BX-1120", "1850", "2028-06-30", "2026-08-01")
+
+
+def leaking_rows(rows):
+    """Rows carrying a planted fact value in a column the writer did not generate.
+
+    Columns named `*_at` are skipped. They hold an ISO timestamp stamped from the
+    clock, never caller input, and a substring scan of fourteen planted values
+    across four of them is a coin flip rather than a check: `"1850"`, a planted
+    rent, sits inside the microseconds of `2026-09-26T05:57:15.185024+00:00`.
+    That is how this file failed CI on a tree that had not touched the private
+    office at all. Nothing is given up — every column that can carry member
+    content is still scanned in full, `evidence_ref` and `locator` here plus
+    `object_id`, `purpose` and `reason_code` in the audit and history rows — and
+    the sweep is asked to catch a deliberate plant below so that narrowing it
+    cannot quietly narrow it to nothing.
+    """
+    return [
+        r for r in rows
+        if any(secret in str(value)
+               for column, value in r.items()
+               if value is not None and not column.endswith("_at")
+               for secret in _PLANTED)
+    ]
+
+
 def stage_citations_carry_no_member_content():
     """The evidence table is a citation index, not a second copy of the facts."""
     print("\n[no content leak]")
@@ -800,19 +832,10 @@ def stage_citations_carry_no_member_content():
     rows = [dict(r) for r in cur.fetchall()]
     check("citations were recorded", len(rows) >= 1, str(len(rows)))
 
-    # Every value planted above, as a string. None of it may appear in the
-    # citation table under any column — `evidence_ref` is an opaque identifier
-    # resolved through the owning package's own reader, so that a citation never
-    # becomes a way to learn the contents of a document you cannot open.
-    planted = ("AZ-4410", "2026-01-05", "Northgate Mutual", "740000", "5000",
-               "2027-03-31", "12 Rue Test", "620000", "Old Mutual", "500000",
-               "BX-1120", "1850", "2028-06-30", "2026-08-01")
-    leaked = [
-        r for r in rows
-        if any(secret in str(value)
-               for value in r.values() if value is not None
-               for secret in planted)
-    ]
+    check("a planted value in a citation would be caught",
+          leaking_rows([{"evidence_ref": f"lease-{_PLANTED[0]}",
+                         "created_at": "2026-09-26T05:57:15.185024+00:00"}]) != [])
+    leaked = leaking_rows(rows)
     check("no fact value appears anywhere in the citation table",
           leaked == [], str(leaked[:1]))
     check("every citation names a known evidence kind",
@@ -832,12 +855,7 @@ def stage_citations_carry_no_member_content():
     trail = [dict(r) for r in cur.fetchall()]
     check("the audit trail records the attachments and the sweep",
           len(trail) >= 1, str(len(trail)))
-    leaked_audit = [
-        r for r in trail
-        if any(secret in str(value)
-               for value in r.values() if value is not None
-               for secret in planted)
-    ]
+    leaked_audit = leaking_rows(trail)
     check("and carries no fact value either", leaked_audit == [],
           str(leaked_audit[:1]))
 
@@ -845,12 +863,7 @@ def stage_citations_carry_no_member_content():
     # values — the previous value of a revised fact is the superseded row.
     cur.execute(f"SELECT * FROM {schema.FACT_HISTORY_TABLE}")
     history = [dict(r) for r in cur.fetchall()]
-    leaked_history = [
-        r for r in history
-        if any(secret in str(value)
-               for value in r.values() if value is not None
-               for secret in planted)
-    ]
+    leaked_history = leaking_rows(history)
     check("nor does the history table", leaked_history == [],
           str(leaked_history[:1]))
     conn.commit()

@@ -13,6 +13,7 @@ un-blocked by the very same request, which no unit test of either statement woul
 notice.
 """
 
+import datetime
 import os
 import sqlite3
 import tempfile
@@ -29,8 +30,27 @@ NINETY_MINUTES = 5400
 POST_SURFACE = "pulse"
 
 
+def _recent_iso(days_ago=1):
+    """A `created_at` inside the reconciler's age window, whatever day it is.
+
+    That window is trailing — `now - MEDIA_WORKER_DURATION_RECONCILE_MAX_AGE_DAYS`,
+    seven days by default — so a literal date sits inside it for a week and then
+    does not. This fixture defaulted to `2026-09-12`, and thirteen days later the
+    whole poll section was exercising a row that was not a candidate for any
+    reason: two tests failed outright, and four that assert a measured, blocked,
+    aged-out or unconfigured row is *not* polled kept passing while asserting
+    nothing. `candidates == 0` is only evidence when the row would otherwise
+    have been one.
+    """
+    return (
+        datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+        - datetime.timedelta(days=days_ago)
+    ).isoformat(timespec="seconds")
+
+
 def _database(tmp_path, *, context_type=POST_SURFACE, duration_seconds=None,
-              created_at="2026-09-12T00:00:00", asset_id="asset"):
+              created_at=None, asset_id="asset"):
+    created_at = _recent_iso() if created_at is None else created_at
     path = str(tmp_path / "wiring.sqlite3")
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -293,6 +313,10 @@ class TestThePollIsTheGuaranteedPath:
         path = _database(tmp_path)
         outcome = _reconcile(monkeypatch, path, get_asset=_mux_ready(NINETY_MINUTES + 1))
 
+        # The row the rest of this class disqualifies one condition at a time is a
+        # candidate here. Without this, every `candidates == 0` below is satisfied
+        # by a fixture that produced no candidates to begin with.
+        assert outcome["candidates"] == 1
         assert outcome["blocked"] == [1]
         row = _row(path)
         assert row["moderation_status"] == "blocked"

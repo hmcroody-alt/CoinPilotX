@@ -389,6 +389,7 @@
     "tests/test_app_review_qa_account_visibility.py",
     "tests/test_app_review_qa_visibility_and_appeals.py",
     "tests/test_app_review_rooms_groups_messages.py",
+    "tests/test_app_review_support_password.py",
     "tests/test_app_schema.py",
     "tests/test_arena_reputation_upsert_ambiguity.py",
     "tests/test_assistant_response_routing.py",
@@ -440,6 +441,7 @@
     "tests/test_marketplace_store_identity.py",
     "tests/test_marketplace_stripe_response.py",
     "tests/test_marketplace_web_ctas_are_app_first.py",
+    "tests/test_measured_duration_wiring.py",
     "tests/test_measured_video_duration_enforcement.py",
     "tests/test_media_cover_mux_fallback.py",
     "tests/test_media_image_dimensions.py",
@@ -480,6 +482,7 @@
     "tests/test_presence_service.py",
     "tests/test_profile_image_upload_validation.py",
     "tests/test_pulse_ads_analytics.py",
+    "tests/test_pulse_ads_os.py",
     "tests/test_pulse_advertiser_portal_accounts.py",
     "tests/test_pulse_advertiser_portal_activation.py",
     "tests/test_pulse_ai_provider_reconciliation.py",
@@ -499,6 +502,7 @@
     "tests/test_pulse_repost_routes.py",
     "tests/test_pulse_repost_toggle.py",
     "tests/test_pulse_saved_collections_and_media.py",
+    "tests/test_pulse_settings_routes.py",
     "tests/test_pulse_status_media_batching.py",
     "tests/test_pulsesoc_platform_manifest_enrichment.py",
     "tests/test_push_icon_badge_combined.py",
@@ -667,13 +671,9 @@
     "tests/web_surface/test_undx_action_center_page.py"
   ],
   "quarantined": {
-    "tests/test_app_review_support_password.py": "fails standalone on 3.11: 1 failed, 18 passed in 6.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/test_measured_duration_wiring.py": "fails standalone on 3.11: 2 failed, 19 passed in 3.82s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/test_pulse_ads_os.py": "fails standalone on 3.11: 1 failed, 15 passed in 4.12s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
-    "tests/test_pulse_settings_routes.py": "fails standalone on 3.11: 6 failed, 38 passed in 0.47s. Fails the same way on the local 3.14 venv, so it is pre-existing broken code rather than a CI-environment artifact.",
     "tests/undx_agent/test_authorization_surface.py": "fails standalone on 3.11: 8 failed in 0.19s, six of them because undx_capability_registry.authorization_surface() raises on the unmutated registry: 26 registered capabilities have no record in undx_knowledge_map.BY_ID (and 68 map records have no registry entry). Some of those 26 exist in the map under a different naming convention -- registry business.campaign.pause is map ads.campaigns.pause at the same scope -- so the gap is partly a reconciliation and partly genuinely absent records. Writing the missing records means hand-choosing authorization_scope for capabilities including crypto.portfolio.holding.delete, which changes what agent_capability_view() tells the planner. That is an access decision, not a test fix, so it is out of scope for a quarantine slice. authorization_surface() has no live caller (only tests and two siblings in its own module), so this is a dark gate rather than a production outage.",
     "tests/undx_agent/test_deferred_focus_veto.py": "fails standalone on 3.11: 1 failed, 5 passed in 0.54s. The attention layer's vocabulary/budget drifted and promoted crypto.alerts.list out of deferred into the focus for 'Should I pause my Bitcoin alert?', which invalidates check 1's precondition. That precondition is the file's design: its docstring states every focus-shape claim is asserted against the real attention layer so drift fails loudly here instead of quietly testing nothing. Check 1 falsifies 'the answering read is deferred, so the veto widening is what dispatches it'; loosening the precondition to 'some read is deferred' would produce exactly the vacuity the file warns about. Needs a new scenario whose answering read is still deferred under the current budget.",
     "tests/undx_agent/test_knowledge_map.py": "fails standalone on 3.11: 1 failed, 36 passed in 5.15s. Same root cause as tests/undx_agent/test_authorization_surface.py: test_no_write_in_the_stage_target_areas_is_ready_to_wire expects messages.mark_read in the ready-write set, and its own comment says the sweep that gave every registered capability a knowledge-map record made it visible -- that sweep never landed. Unblocked by the same access decision, not by editing this test."
   },
-  "quarantine_ceiling": 7
+  "quarantine_ceiling": 3
 }

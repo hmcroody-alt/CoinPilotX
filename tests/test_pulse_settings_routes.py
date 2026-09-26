@@ -23,6 +23,7 @@ import json
 import os
 import sqlite3
 import sys
+import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,6 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask  # noqa: E402
 
 from services import pulse_settings_routes as settings_routes  # noqa: E402
+from services import pulse_social_graph_service as social_graph  # noqa: E402
+from services import user_context  # noqa: E402
 
 
 # --------------------------------------------------------------------------
@@ -99,6 +102,21 @@ class _FakeBot:
 
 
 class _RoutesTestCase(unittest.TestCase):
+    """Fixture for the route layer.
+
+    Two fakes, not one, because the blueprint no longer owns every write it
+    serves. `POST /blocked` used to be a bare insert on the connection `bot.db()`
+    handed back; it now delegates to `pulse_social_graph_service`, which is the
+    single authority for what a block *is* and which reaches the database on its
+    own terms — `user_context.connect()` for the connection, and a lazy
+    `import bot` for the safety notification. Faking only `bot.db()` left the
+    service opening the process-wide database, where these tests have no rows at
+    all, so six of them failed on `no such table: users` and one
+    (`test_lists_are_scoped_to_the_caller`) *passed* on it: the block 500'd, the
+    list came back empty, and an empty list is what that test asserts. Both fakes
+    below exist so that the write the route performs is the write the test sees.
+    """
+
     def setUp(self):
         self.conn = sqlite3.connect(":memory:")
         self.conn.row_factory = sqlite3.Row
@@ -123,11 +141,51 @@ class _RoutesTestCase(unittest.TestCase):
                 (user_id, username, username.title(), f"{username}@example.com", "en", "public"),
             )
         settings_routes.ensure_settings_schema(cur)
+        # The messaging mirror. `pulse_social_graph_service` writes both
+        # `blocked_users` and `comm_v2_blocks` because `presence_service` reads
+        # both, and a fixture that omits this table would let the mirror silently
+        # skip (`_write_comm_v2_block` returns early when it is absent) — the
+        # exact split-enforcement bug that module was written to close.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS comm_v2_blocks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                blocker_user_id INTEGER NOT NULL,
+                blocked_user_id INTEGER NOT NULL,
+                reason TEXT,
+                status TEXT DEFAULT 'active',
+                created_at TEXT,
+                updated_at TEXT,
+                UNIQUE(blocker_user_id, blocked_user_id)
+            )
+            """
+        )
         self.conn.commit()
 
         self.bot = _FakeBot(self.conn)
         self._real_bot = settings_routes._bot
         settings_routes._bot = lambda: self.bot
+
+        # The service's own connection source, pointed at the same in-memory
+        # database the route reads back through.
+        self._real_connect = user_context.connect
+        user_context.connect = lambda: _KeepAliveConnection(self.conn)
+
+        # The service imports `bot` lazily for the safety notification. Stubbing
+        # it keeps the promise this module's docstring makes — that the real
+        # monolith is never imported here — and records the emissions so a test
+        # can assert the notification the service guarantees.
+        self.safety_events = []
+        stub = types.ModuleType("bot")
+        stub.pulse_emit_comms_safety_event = (
+            lambda cur, actor_id, event_type, target_type, target_id, **kwargs:
+            self.safety_events.append(
+                {"actor_id": actor_id, "event_type": event_type,
+                 "target_type": target_type, "target_id": target_id, **kwargs}
+            )
+        )
+        self._saved_bot_module = sys.modules.get("bot")
+        sys.modules["bot"] = stub
 
         app = Flask(__name__)
         app.config["TESTING"] = True
@@ -137,6 +195,11 @@ class _RoutesTestCase(unittest.TestCase):
 
     def tearDown(self):
         settings_routes._bot = self._real_bot
+        user_context.connect = self._real_connect
+        if self._saved_bot_module is None:
+            sys.modules.pop("bot", None)
+        else:
+            sys.modules["bot"] = self._saved_bot_module
         self.conn.close()
 
     def sign_in(self, user_id):
@@ -422,9 +485,76 @@ class RelationshipEndpointTest(_RoutesTestCase):
         self.assertEqual([entry["id"] for entry in self.body(self.client.get(f"{settings_routes.API_PREFIX}/muted"))["users"]], [3])
 
     def test_lists_are_scoped_to_the_caller(self):
-        self.block(2)
+        # The status assertion is not decoration. Without it this test passed
+        # while the block was failing with a 500: an unblocked list and a broken
+        # block are the same empty list from here.
+        self.assertEqual(self.block(2).status_code, 200)
         self.sign_in(3)
         self.assertEqual(self.body(self.client.get(f"{settings_routes.API_PREFIX}/blocked"))["users"], [])
+
+    def messaging_block(self, blocker, blocked):
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT status FROM comm_v2_blocks WHERE blocker_user_id=? AND blocked_user_id=?",
+            (blocker, blocked),
+        )
+        row = cur.fetchone()
+        return dict(row)["status"] if row else None
+
+    def test_a_block_from_settings_is_mirrored_onto_the_messaging_table(self):
+        # `presence_service` reads `comm_v2_blocks` as well as `blocked_users`, so
+        # a block that writes only one of them is enforced on some surfaces and
+        # not others — whether you disappear from someone's presence would depend
+        # on which screen you blocked them from. Settings is one of those screens.
+        self.assertEqual(self.block(2).status_code, 200)
+        self.assertTrue(settings_routes.is_blocked(self.conn.cursor(), 1, 2))
+        self.assertEqual(self.messaging_block(1, 2), "active")
+
+    def test_unblocking_from_settings_clears_both_readers(self):
+        self.block(2)
+        self.assertEqual(self.client.delete(f"{settings_routes.API_PREFIX}/blocked", json={"user_id": 2}).status_code, 200)
+        self.assertFalse(settings_routes.is_blocked(self.conn.cursor(), 1, 2))
+        # Soft on the messaging side, because that is how the column is modelled
+        # and how the messaging reads test it. A surviving row is not a surviving
+        # block, but a row left at 'active' would be.
+        self.assertEqual(self.messaging_block(1, 2), "inactive")
+
+    def test_a_block_from_settings_is_recorded_in_the_user_s_safety_history(self):
+        # Always notifying is what makes the act visible in the user's own safety
+        # history no matter which screen performed it. Settings used to notify
+        # nobody.
+        self.assertEqual(self.block(2).status_code, 200)
+        events = [e for e in self.safety_events if e["event_type"] == "user_blocked"]
+        self.assertEqual(len(events), 1, f"expected exactly one safety event, got {self.safety_events}")
+        self.assertEqual(events[0]["actor_id"], 1)
+        self.assertEqual(events[0]["target_id"], 2)
+        self.assertEqual(events[0]["extra"]["surface"], "settings")
+
+    def test_a_block_from_settings_files_no_moderation_report(self):
+        # The one behaviour deliberately removed rather than unioned when the four
+        # implementations were merged: `/api/pulse/block` used to open a case on
+        # every block, which conflates "I do not want to see this person" with "I
+        # am accusing this person". If a report table appears in this database, a
+        # caller put it there.
+        self.block(2)
+        cur = self.conn.cursor()
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='pulse_reports'")
+        self.assertIsNone(cur.fetchone(), "blocking from settings created a moderation report")
+
+    def test_the_block_is_audited_with_the_surface_that_placed_it(self):
+        self.block(2)
+        cur = self.conn.cursor()
+        cur.execute(
+            "SELECT operation, actor_user_id, target_id, outcome, actor_surface "
+            "FROM pulse_mutation_audit ORDER BY id"
+        )
+        rows = [dict(row) for row in cur.fetchall()]
+        self.assertEqual(len(rows), 1, f"expected one audit row, got {rows}")
+        self.assertEqual(
+            (rows[0]["operation"], rows[0]["actor_user_id"], rows[0]["target_id"],
+             rows[0]["outcome"], rows[0]["actor_surface"]),
+            ("social_graph.block", 1, "2", "applied", "settings"),
+        )
 
     def test_you_cannot_block_yourself_or_a_missing_account(self):
         self.assertEqual(self.block(1).status_code, 400)
