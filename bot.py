@@ -57795,6 +57795,78 @@ def api_pulse_marketplace_search():
     return jsonify({"ok": True, "items": items, "query": query, "limit": limit})
 
 
+@webhook_app.route("/api/pulse/marketplace/listings/<int:listing_id>", methods=["GET"])
+@auth_required
+def api_pulse_marketplace_listing_detail(listing_id):
+    """One listing, by id, for a buyer who arrived holding only the id.
+
+    Every other buyer-facing read returns a *list* — search, the seller store,
+    the commerce discovery placements. That was survivable while the only way to
+    open a product was to tap a row of one of those lists, because the row could
+    hand the whole listing to the product screen in its navigation params. It
+    stopped being survivable the moment anything navigated with an id alone:
+    commerce discovery (feed, reels, messenger, marketplace shelves), the Page
+    block and the seller store all do, and all six landed on "This item is no
+    longer available" for listings that were on sale — the screen had no way to
+    turn an id into a listing and said the only thing it could.
+
+    It is also the precondition for a product link being openable at all. A URL,
+    a push notification and a shared card all carry an id and nothing else, so a
+    product deep link is not implementable without this route.
+
+    Visibility is `public_sql` — the same gate search uses, and the same one
+    commerce discovery is a strict subset of — so this cannot surface anything a
+    buyer could not already reach by searching for it. The one addition is the
+    owner: a seller opening their own paused or pending listing gets the listing
+    rather than a headstone, which is the difference between "your shop is
+    hidden" and "your shop is gone". Reviewer-only columns never reach either of
+    them; `pulse_marketplace_listing_payload` strips those for every caller.
+    """
+    init_db()
+    user = api_account_user()
+    if not user:
+        return api_error("Login required.", 401)
+    listing_id = max(0, safe_int(listing_id, 0))
+    if not listing_id:
+        return api_error("That listing could not be found.", 404, error_code="LISTING_UNAVAILABLE")
+
+    from services.discovery_visibility import discovery_visible_sql
+
+    viewer_id = safe_int(user.get("user_id"), 0)
+    conn = db()
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute(
+        f"""
+        SELECT l.id, l.seller_user_id, l.title, l.short_description, l.description, l.category, l.price_label, l.currency, l.quantity, l.product_type, l.safety_score,
+               l.approval_status, l.status, l.cover_image_url, l.gallery_json, l.video_url, l.media_url,
+               l.subcategory, l.created_at, l.updated_at, l.featured, l.delivery_type, l.listing_type, l.listing_metadata_json,
+               COALESCE(ms.status,'missing') AS seller_status,
+               {marketplace_seller_identity.store_name_select('ms')},
+               COALESCE(u.username,'') AS seller_username
+        FROM marketplace_listings l
+        LEFT JOIN users u ON u.user_id=l.seller_user_id
+        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+        WHERE l.id=?
+          AND (
+                ({marketplace_listing_lifecycle.public_sql("l", "ms")} AND {discovery_visible_sql("u")})
+                OR (? <> 0 AND COALESCE(l.seller_user_id,0)=?)
+              )
+        LIMIT 1
+        """,
+        (listing_id, viewer_id, viewer_id),
+    )
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return api_error("That listing could not be found.", 404, error_code="LISTING_UNAVAILABLE")
+    row = dict(row)
+    media_rows = pulse_marketplace_media_rows_for_listings(cur, [listing_id]).get(listing_id, [])
+    item = pulse_marketplace_listing_payload(row, media_rows)
+    conn.close()
+    return jsonify({"ok": True, "item": item, "listing": item})
+
+
 @webhook_app.route("/api/pulse/marketplace/seller/listings", methods=["GET"])
 def api_pulse_marketplace_seller_listings():
     init_db()

@@ -432,6 +432,7 @@
     "tests/test_marketplace_cash_payment_pause.py",
     "tests/test_marketplace_delivery_lane.py",
     "tests/test_marketplace_fulfillment.py",
+    "tests/test_marketplace_listing_detail.py",
     "tests/test_marketplace_listing_lifecycle.py",
     "tests/test_marketplace_listing_types.py",
     "tests/test_marketplace_minimum_charge.py",

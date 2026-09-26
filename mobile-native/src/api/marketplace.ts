@@ -7,7 +7,7 @@ import {
   type CheckoutResponse,
   type MarketplacePaymentMode
 } from "./marketplaceCommerce";
-import { pulseApi } from "./pulseApi";
+import { pulseApi, PulseApiError } from "./pulseApi";
 import { sellerStoreName, sellerStoreNameOrEmpty } from "./sellerIdentity";
 
 const MARKETPLACE_CACHE_KEY = "pulsesoc.native.marketplace.search";
@@ -535,6 +535,45 @@ export async function searchMarketplace(params: { query?: string; limit?: number
   const items = normalizeMarketplaceListings(data.items || data.listings || []);
   if (!params.sellerUserId) await cacheMarketplace(items).catch(() => undefined);
   return { ...data, items };
+}
+
+/**
+ * One listing, by id, for a caller that has an id and nothing else.
+ *
+ * Every other buyer-side read here returns a list, and for a long time that was
+ * the whole buyer API — which is why `MarketplaceProductScreen` was written to
+ * render only from a snapshot handed to it in navigation params. Six call sites
+ * navigate with an id alone (the four commerce discovery surfaces, the Page
+ * product block, the seller store) and every one of them landed on "This item
+ * is no longer available" for a listing that was on sale.
+ *
+ * Returns `null` for a listing the viewer may not see and **throws** for
+ * anything else. The distinction is the whole contract: "gone" is a product
+ * state the screen renders, a failed request is not, and collapsing the two
+ * would tell a user on a dropped connection that a shop had removed their item.
+ */
+export async function fetchMarketplaceListing(listingId: number): Promise<MarketplaceListing | null> {
+  const id = Number(listingId) || 0;
+  if (id <= 0) return null;
+  try {
+    const data = await pulseApi<{ ok?: boolean; item?: MarketplaceListing; listing?: MarketplaceListing }>(
+      `/api/pulse/marketplace/listings/${id}`
+    );
+    const raw = data?.item ?? data?.listing;
+    if (!raw) return null;
+    const [item] = normalizeMarketplaceListings([raw]);
+    return item || null;
+  } catch (error) {
+    // The server says LISTING_UNAVAILABLE for both "no such listing" and "not
+    // visible to you". Both are the same thing to a buyer, and neither is an
+    // error worth a retry affordance. Everything else — 401, 5xx, a dropped
+    // connection — is rethrown so the screen can offer a retry instead of
+    // claiming the seller withdrew the item.
+    const code = error instanceof PulseApiError ? error.code : undefined;
+    const status = error instanceof PulseApiError ? error.status : 0;
+    if (code === "LISTING_UNAVAILABLE" || status === 404) return null;
+    throw error;
+  }
 }
 
 export async function listMarketplaceSellerListings(params: { limit?: number } = {}) {
