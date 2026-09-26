@@ -1,10 +1,15 @@
-"""``GET /pulse/marketplace/<id>`` for a reader with no session.
+"""``/pulse/marketplace`` and ``/pulse/marketplace/<id>`` for a reader with no session.
 
 Until this change every web marketplace URL answered ``302 -> /login``, for
 anonymous humans and for Googlebot alike, so the entire catalogue was invisible
-to search. The route now branches on **authentication** — never on user-agent,
+to search. Both routes now branch on **authentication** — never on user-agent,
 because serving a crawler a page a visitor cannot get is cloaking — and this file
 pins both sides of that branch plus the three things that were easy to get wrong.
+
+The two pages are tested together, in one file, because they are one change:
+the product pages are what search needs to reach and the grid is the only
+internal path to them. Testing the grid without the product page would leave
+"the links work" unasserted, which is the single thing the grid exists for.
 
 ## The three
 
@@ -32,7 +37,7 @@ out widened nothing.
 
 Runs against a temp sqlite file, so nothing here touches coinpilotx.db.
 
-Run: python3 -m pytest tests/test_marketplace_product_public_page.py
+Run: python3 -m pytest tests/test_marketplace_public_pages.py
 """
 
 import json
@@ -68,7 +73,7 @@ def pin_database():
     silently owns the database for every test in the process.
 
     Measured: ``pytest tests/protection/test_route_auth.py
-    tests/test_marketplace_seo.py tests/test_marketplace_product_public_page.py``
+    tests/test_marketplace_seo.py tests/test_marketplace_public_pages.py``
     failed all 24 tests in this file while each file passed alone. The failures
     read as missing prices, missing CTAs and missing cache headers -- i.e. as
     twenty-four unrelated regressions in the page -- because every listing this
@@ -93,7 +98,15 @@ DESCRIPTION = ("A washed European linen duvet cover with two pillowcases, prewas
                "so it arrives soft and does not shrink in the first wash.")
 
 
-class MarketplacePublicProductPageTestCase(unittest.TestCase):
+class PublicMarketplaceFixture(unittest.TestCase):
+    """Seeding and session control shared by both pages. Holds no tests itself.
+
+    A base class rather than a second file: the database pinning below is subtle
+    enough that a copy of it in another file would be a copy that drifts, and the
+    two pages have to be able to assert things about each other -- that a card's
+    link resolves to a real product page is the grid's entire purpose.
+    """
+
     @classmethod
     def setUpClass(cls):
         cls.db_path = _DB_PATH
@@ -184,6 +197,10 @@ class MarketplacePublicProductPageTestCase(unittest.TestCase):
         nodes = [node for node in graph if node.get("@type") == "Product"]
         self.assertEqual(len(nodes), 1, "expected exactly one Product node")
         return nodes[0]
+
+
+class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
+    """``GET /pulse/marketplace/<id>`` -- the page a search result lands on."""
 
     # -- an anonymous reader gets a page, not a redirect ----------------------
 
@@ -397,6 +414,189 @@ class MarketplacePublicProductPageTestCase(unittest.TestCase):
         conn.commit()
         conn.close()
         self.assertEqual(self.get(listing_id).status_code, 404)
+
+
+class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
+    """``GET /pulse/marketplace`` -- the grid, which exists for the crawler.
+
+    The grid was opened for the product pages rather than for itself: a sitemap
+    is a hint a crawler may ignore, an internal link is a path it follows. So the
+    assertions that matter most here are about the *links* -- that they are the
+    canonical product URLs and that following one lands on a real page -- and not
+    about how the cards look.
+    """
+
+    def index(self):
+        return self.client.get("/pulse/marketplace")
+
+    def test_an_anonymous_reader_gets_the_grid_rather_than_a_redirect(self):
+        self.make_listing()
+        response = self.index()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Linen Duvet Cover Set", response.get_data(as_text=True))
+
+    def test_googlebot_gets_exactly_what_an_anonymous_person_gets(self):
+        """Byte-for-byte, for the same reason as on the product page."""
+        self.make_listing()
+        human = self.index().get_data(as_text=True)
+        crawler = self.client.get(
+            "/pulse/marketplace",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; "
+                                   "+http://www.google.com/bot.html)"},
+        ).get_data(as_text=True)
+        self.assertEqual(human, crawler)
+
+    def test_a_card_links_to_the_canonical_product_url(self):
+        """Not to the app interstitial the member grid uses.
+
+        This is the assertion the whole page is for. The signed-in grid links
+        each card through `app_first_href('product', id)`, and a crawler
+        following forty of those learns about forty redirects rather than forty
+        products -- the internal link that should strengthen a product page would
+        point at a URL that cannot be indexed.
+        """
+        listing_id = self.make_listing()
+        body = self.index().get_data(as_text=True)
+        self.assertIn(f'href="/pulse/marketplace/{listing_id}"', body)
+        self.assertNotIn("/app/open", body)
+
+    def test_following_a_card_link_reaches_a_real_product_page(self):
+        """The grid's purpose, end to end, in the one way a crawler would find out."""
+        listing_id = self.make_listing()
+        body = self.index().get_data(as_text=True)
+        hrefs = set(re.findall(r'href="(/pulse/marketplace/\d+)"', body))
+        self.assertIn(f"/pulse/marketplace/{listing_id}", hrefs)
+        for href in sorted(hrefs):
+            with self.subTest(href=href):
+                self.assertEqual(self.client.get(href).status_code, 200)
+
+    def test_the_grid_states_the_price_the_row_holds(self):
+        self.make_listing()
+        self.assertIn("465.74", self.index().get_data(as_text=True))
+
+    def test_an_unpriced_listing_gets_no_price_and_no_invented_prose(self):
+        """`Request access` was the member grid's filler for a missing price.
+
+        Same rule as the product page: no price pill rather than an empty one or
+        a sentence standing in for a number.
+        """
+        self.make_listing(price_label="")
+        body = self.index().get_data(as_text=True)
+        self.assertIn("Linen Duvet Cover Set", body)
+        self.assertNotIn("Request access", body)
+
+    def test_the_grid_promotes_the_ios_app_once_rather_than_per_card(self):
+        """Standing product requirement, met without taxing every link."""
+        self.make_listing()
+        body = self.index().get_data(as_text=True)
+        self.assertIn("Open the marketplace in the app", body)
+        self.assertIn("Download on the App Store", body)
+
+    def test_the_grid_renders_no_buttons_that_need_a_session(self):
+        """Contact Seller, Save, Report and Promote are each a POST.
+
+        And the live search field is the same problem in a different shape:
+        `/api/pulse/marketplace/search` requires a session, so a search box here
+        would be an input that fails on submit.
+        """
+        self.make_listing()
+        body = self.index().get_data(as_text=True)
+        for dead in ("data-contact-seller", "data-save-listing", "data-report-listing",
+                     "data-promote-content", "data-marketplace-search"):
+            with self.subTest(control=dead):
+                self.assertNotIn(dead, body)
+
+    def test_the_grid_is_a_collection_page_pointing_at_an_item_list(self):
+        response = self.index()
+        graph = self.ld_json(response)["@graph"]
+        types = [node.get("@type") for node in graph]
+        self.assertEqual(types, ["Organization", "WebSite", "CollectionPage",
+                                 "ItemList", "BreadcrumbList"])
+
+    def test_the_item_list_carries_urls_and_positions_and_nothing_else(self):
+        """One authority per product.
+
+        Restating name, price or image here would publish a second description of
+        every product at a different URL, and the two disagree the moment a seller
+        edits a price -- this page is cached for five minutes and rebuilt from a
+        forty-row query, the product page is not.
+        """
+        listing_id = self.make_listing()
+        graph = self.ld_json(self.index())["@graph"]
+        item_list = next(node for node in graph if node.get("@type") == "ItemList")
+        self.assertEqual(item_list["numberOfItems"], 1)
+        self.assertEqual(item_list["itemListElement"], [{
+            "@type": "ListItem",
+            "position": 1,
+            "url": f"https://pulsesoc.com/pulse/marketplace/{listing_id}",
+        }])
+
+    def test_a_thin_listing_is_linked_but_not_listed(self):
+        """The split the ItemList docstring argues for, measured.
+
+        The HTML link is a crawl path and must stay complete, or a thin listing
+        becomes unreachable and can never recover when its seller writes a
+        description. The ItemList is a claim about what we ask to rank, and
+        naming a `noindex` page there contradicts itself.
+        """
+        thin_id = self.make_listing(description="Nice.")
+        body = self.index().get_data(as_text=True)
+        self.assertIn(f'href="/pulse/marketplace/{thin_id}"', body)
+
+        graph = self.ld_json(self.index())["@graph"]
+        item_list = next(node for node in graph if node.get("@type") == "ItemList")
+        self.assertEqual(item_list["itemListElement"], [])
+        self.assertEqual(item_list["numberOfItems"], 0)
+
+        # And the page it links to really does carry the directive that makes
+        # listing it a contradiction.
+        self.assertIn('content="noindex,follow"',
+                      self.get(thin_id).get_data(as_text=True))
+
+    def test_the_canonical_is_the_index_path_itself(self):
+        self.make_listing()
+        self.assertIn('rel="canonical" href="https://pulsesoc.com/pulse/marketplace"',
+                      self.index().get_data(as_text=True))
+
+    def test_a_populated_grid_asks_to_be_indexed(self):
+        self.make_listing()
+        self.assertIn('content="index,follow', self.index().get_data(as_text=True))
+
+    def test_an_empty_catalogue_keeps_its_page_and_stops_asking_to_be_ranked(self):
+        """A 200 with nothing on it is the soft-404 pattern.
+
+        This is a real state on a new deployment rather than a hypothetical one,
+        which is why the page still renders and explains itself instead of 404ing.
+        """
+        body = self.index().get_data(as_text=True)
+        self.assertIn('content="noindex,follow"', body)
+        self.assertIn("No products are published right now", body)
+
+    def test_the_grid_is_cacheable(self):
+        self.make_listing()
+        self.assertEqual(self.index().headers.get("Cache-Control"), "public, max-age=300")
+
+    def test_a_signed_in_member_on_the_same_url_gets_the_member_grid_and_no_store(self):
+        """Both halves of the branch, and the per-response cache flag.
+
+        The member grid is the surface that carries the session-only buttons, so
+        their presence is what proves the branch went the other way.
+        """
+        self.make_listing()
+        self.login()
+        response = self.index()
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("data-contact-seller", body)
+        self.assertNotIn('<script type="application/ld+json">', body)
+        self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+
+    def test_a_listing_that_is_not_public_is_absent_from_the_grid(self):
+        """The catalogue query is unchanged; being logged out widened nothing."""
+        hidden_id = self.make_listing(status="draft")
+        body = self.index().get_data(as_text=True)
+        self.assertNotIn(f'href="/pulse/marketplace/{hidden_id}"', body)
+        self.assertIn("No products are published right now", body)
 
 
 if __name__ == "__main__":

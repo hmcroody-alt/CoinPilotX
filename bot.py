@@ -57270,17 +57270,69 @@ def pulse_camera_studio_page():
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
 
+def _marketplace_public_index_response(listings):
+    """The marketplace grid for a reader with no session -- including Googlebot.
+
+    Short for the same reason its product-page twin is short: every value on
+    every card comes from ``marketplace_seo.index_card``, which derives it from
+    the same payload the product page renders. Nothing is formatted twice.
+
+    The only judgement here is about search -- whether this page is worth asking
+    to be ranked at all.
+    """
+
+    cards = [marketplace_seo.index_card(listing) for listing in listings]
+
+    # An empty catalogue keeps its page and stops asking to be ranked. A URL that
+    # answers 200 with nothing on it is the soft-404 pattern Google names, and on
+    # a new deployment this is a real state rather than a hypothetical one.
+    # `follow`, not `nofollow`: the outbound links are the help pages and the
+    # sign-in path, which stay crawlable.
+    robots = (search_visibility.robots_meta(request.path) if cards
+              else search_visibility.NOINDEX_FOLLOW)
+
+    response = webhook_app.make_response(render_template(
+        "marketplace_index_public.html",
+        page=marketplace_seo.index_page_meta(listings),
+        robots=robots,
+        schema_json=marketplace_seo.index_page_graph(listings),
+        index_path=marketplace_seo.INDEX_PATH,
+        cards=cards,
+    ))
+    # Same five minutes as the product page, and the same reason for the flag:
+    # `add_pwa_headers` stamps `no-store` on every `/pulse/` response, so setting
+    # the header without the flag would be overwritten on the way out. This page
+    # carries prices too, and it is the URL a crawler re-fetches most often.
+    g.pulse_public_cacheable = True
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
 @webhook_app.route("/pulse/marketplace", methods=["GET"])
+@public_route(reason="Public marketplace grid. Anonymous visitors and Googlebot get the public index -- the only internal crawl path to the product pages -- and signed-in members fall through to the member grid, which reads its own account state.")
 def pulse_marketplace_page():
     init_db()
+    # Not a gate. The product pages became public first, and that left them
+    # reachable only from a sitemap: Google treats a sitemap as a hint it may
+    # ignore, while a linked page in the site's own navigation is how a crawler
+    # finds a URL and decides how often to return. A catalogue whose only inbound
+    # path is a sitemap gets crawled late and shallowly.
+    #
+    # Same rule as the product page and `/app`: the branch is on authentication,
+    # never on user-agent, and the visibility predicates below are untouched.
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
-    seller = dict(cur.fetchone() or {})
+    seller = {}
+    if user:
+        # Only a signed-in reader has a seller row to look up, and the public
+        # index has nowhere to put one -- Apply as Merchant and Create Listing
+        # both need an account before they mean anything. Skipping the query
+        # rather than guarding its result keeps the anonymous page one query
+        # cheaper, on the one page a crawler fetches most often.
+        cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+        seller = dict(cur.fetchone() or {})
     # `discovery_visible_sql` is applied here as well as the lifecycle rule.
     # Without it this grid was the one buyer-side surface in the product that
     # showed listings from QA and deactivated sellers: the search endpoint below
@@ -57301,6 +57353,20 @@ def pulse_marketplace_page():
           AND {discovery_visible_sql('u')}
         ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
     listings = [dict(row) for row in cur.fetchall()]
+    if not user:
+        # The public grid is built from `pulse_marketplace_listing_payload`, the
+        # same shaping function the mobile API and the public product page use,
+        # rather than from the raw rows the member grid below formats itself.
+        # That costs one extra query for the media rows and buys the thing that
+        # matters on a page Google reads: a card cannot disagree with the product
+        # page it links to about the title, the image or the price.
+        listing_ids = [int(row.get("id") or 0) for row in listings]
+        media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
+        conn.close()
+        return _marketplace_public_index_response([
+            pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
+            for row in listings
+        ])
     conn.close()
     def marketplace_card(row):
         listing_id = int(row.get("id") or 0)

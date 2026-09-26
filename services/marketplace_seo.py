@@ -416,3 +416,155 @@ def product_page_graph(listing):
         {"@context": "https://schema.org", "@graph": product_schema_graph(listing)},
         ensure_ascii=False,
     )
+
+
+# --- The index page ----------------------------------------------------------
+#
+# The grid matters to search for a reason that has nothing to do with ranking the
+# grid itself: it is the only internal path to the product pages. A sitemap is a
+# hint Google may ignore and re-check on its own schedule; a linked page in the
+# site's own navigation is how a crawler finds a URL and how it decides how often
+# to come back. Product pages reachable only from a sitemap get crawled late and
+# shallowly, and products nobody links to look like products nobody sells.
+
+
+def index_page_meta(listings):
+    """The ``page`` dict for the public marketplace grid.
+
+    No product count in the description, deliberately. It is the obvious thing to
+    write -- "Browse 14 products" -- and it is a claim that is wrong between the
+    crawl and the click, on a page whose whole job is to be fetched repeatedly. A
+    description that never needs to change is also a description Google will not
+    re-snippet.
+    """
+
+    canonical = seo_schema.SITE_URL + INDEX_PATH
+    return {
+        "canonical": canonical,
+        "title": "Marketplace | PulseSoc",
+        "h1": "PulseSoc Marketplace",
+        "breadcrumb": "Marketplace",
+        "description": (
+            "Products and services from approved PulseSoc sellers. Every listing is "
+            "reviewed before it is published, and orders, delivery updates and seller "
+            "messages happen inside the PulseSoc app."
+        ),
+        "image": seo_schema.SHARE_IMAGE_URL,
+        "store": "",
+    }
+
+
+def index_schema_graph(listings):
+    """``[organization, website, CollectionPage, ItemList, breadcrumb]``.
+
+    The ``ItemList`` carries **positions and URLs only** -- no names, no prices, no
+    images. That is Google's documented summary-page shape, and the reason to
+    follow it here is specific rather than deferential: this page holds up to
+    forty products, each of which already has a ``Product`` node at its own
+    canonical URL. Restating name and price here would publish a second
+    description of every one of those products at a different URL, and the two
+    would disagree the moment a seller edits a price -- the list page is cached
+    for five minutes and rebuilt from a forty-row query, the product page is not.
+    One authority per product; the list says where they are.
+
+    Only rows whose product page is *indexable* are listed, while the HTML below
+    links to every card. That split is not an oversight either. The links are the
+    crawl paths and must stay complete, or a thin listing becomes unreachable and
+    can never recover when its seller writes a description. The ``ItemList`` is a
+    claim about what we are asking to rank, and a list that names pages carrying
+    ``noindex`` contradicts itself.
+    """
+
+    canonical = seo_schema.SITE_URL + INDEX_PATH
+    meta = index_page_meta(listings)
+
+    elements = []
+    for listing in listings or ():
+        if not eligibility(listing).indexable:
+            continue
+        listing_id = int(listing.get("id") or 0)
+        if not listing_id:
+            continue
+        elements.append({
+            "@type": "ListItem",
+            "position": len(elements) + 1,
+            "url": product_url(listing_id),
+        })
+
+    item_list = {
+        "@type": "ItemList",
+        "@id": canonical + "#itemlist",
+        "itemListOrder": "https://schema.org/ItemListOrderDescending",
+        "numberOfItems": len(elements),
+        "itemListElement": elements,
+    }
+
+    collection = {
+        "@type": "CollectionPage",
+        "@id": canonical + "#webpage",
+        "url": canonical,
+        "name": meta["title"],
+        "description": meta["description"],
+        "isPartOf": {"@id": f"{seo_schema.SITE_URL}/#website"},
+        "publisher": {"@id": f"{seo_schema.SITE_URL}/#organization"},
+        "primaryImageOfPage": meta["image"],
+        "mainEntity": {"@id": item_list["@id"]},
+        "inLanguage": "en",
+    }
+
+    breadcrumb = seo_schema.breadcrumb_schema([
+        ("Home", seo_schema.SITE_URL + "/"),
+        ("Marketplace", canonical),
+    ])
+
+    return [
+        seo_schema.organization_schema(),
+        seo_schema.website_schema(),
+        collection,
+        item_list,
+        breadcrumb,
+    ]
+
+
+def index_page_graph(listings):
+    """``index_schema_graph`` serialised for the template, like its product twin."""
+
+    return json.dumps(
+        {"@context": "https://schema.org", "@graph": index_schema_graph(listings)},
+        ensure_ascii=False,
+    )
+
+
+def index_card(listing):
+    """One card's view data, derived from the same payload the product page uses.
+
+    Here rather than in the route because every value on a card is a value the
+    product page also shows, and the two must agree: a grid that formats its own
+    price from the row while the product page parses it through ``parse_price``
+    is how a listing ends up priced on one page and unpriced on the next, for the
+    same product. This returns ``None`` for the price in exactly the cases the
+    product page prints no price pill.
+    """
+
+    listing_id = int(listing.get("id") or 0)
+    return {
+        "id": listing_id,
+        "title": str(listing.get("title") or "").strip() or "PulseSoc Marketplace listing",
+        "path": PRODUCT_PATH.format(listing_id=listing_id),
+        "price": parse_price(listing.get("price_label"), listing.get("currency")),
+        "store": str(listing.get("seller_store_name") or "").strip(),
+        "category": str(listing.get("category") or "").strip(),
+        "image": _first_image(listing),
+        "in_stock": availability(listing) == IN_STOCK,
+        # The one-line summary, cut the way the meta description is cut. Not the
+        # full description: forty of those is a page nobody reads and a crawl
+        # budget spent on text that is already on forty other URLs.
+        "summary": _index_summary(listing),
+    }
+
+
+def _index_summary(listing, limit=120):
+    description = _description(listing)
+    if len(description) <= limit:
+        return description
+    return description[:limit].rsplit(" ", 1)[0].rstrip(",.;:") + "…"

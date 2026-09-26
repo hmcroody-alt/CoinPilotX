@@ -10,7 +10,7 @@ So the absences are the contract.
 
 The module imports no Flask app and touches no database, which is why this file
 does not import ``bot``. The route half — anonymous 200, member shell, 404, the
-``Cache-Control`` header — is ``tests/test_marketplace_product_public_page.py``.
+``Cache-Control`` header — is ``tests/test_marketplace_public_pages.py``.
 
 Run: python3 -m pytest tests/test_marketplace_seo.py
 """

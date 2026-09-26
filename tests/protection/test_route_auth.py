@@ -266,6 +266,14 @@ MEMBER_ROUTES_OPENED_ON_PURPOSE = {
         "that was not already public: the same public_sql + discovery_visible_sql "
         "predicates still decide what may be shown, and a listing that 404ed for "
         "a signed-in member 404s here too.",
+    "pulse_marketplace_page":
+        "The public marketplace grid, opened for the product pages rather than "
+        "for itself: it is the only internal link to them, and a sitemap is a "
+        "hint while a linked page is a crawl path. It reads the same catalogue "
+        "query it always did -- public_sql AND discovery_visible_sql, 40 rows -- "
+        "and the anonymous branch renders strictly less: no seller row, no "
+        "Promote button, no Contact/Save/Report POST buttons, and no live search "
+        "field, because /api/pulse/marketplace/search still requires a session.",
 }
 
 
