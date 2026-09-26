@@ -16,7 +16,7 @@ Values are intentionally not recorded here.
 | `SENTRY_ORG`, `SENTRY_PROJECT` | worker | No | No | Sentry read scope. |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | `CoinPilotX` web service | Yes | Existing | Server-only payment API and verified webhook handling. |
 | `SENTINEL_GITHUB_APP_TOKEN` or `SENTINEL_GITHUB_FINE_GRAINED_TOKEN` | `python alert_worker.py` | Yes | No | Read-only GitHub security alerts; prefer a GitHub App. |
-| `GITHUB_REPOSITORY` | `python alert_worker.py` | No | No | Exact `owner/repository` scope. |
+| `SENTINEL_GITHUB_REPOSITORY` | `python alert_worker.py` | No | No | Exact `owner/repository` scope. The prefix is required: Actions sets a bare `GITHUB_REPOSITORY` on every workflow step. |
 | `NVD_API_KEY` | `python alert_worker.py` | Yes | Optional | Raises NVD quota; keyless mode is rate-limited. |
 | `OSV_API_BASE_URL`, `NVD_API_BASE_URL`, `CISA_KEV_FEED_URL`, `GITHUB_API_BASE_URL` | `python alert_worker.py` | No | No | Optional official HTTPS endpoint overrides. |
 

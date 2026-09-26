@@ -130,7 +130,11 @@ def sync_github_security(conn=None) -> list[RunResult]:
     """Poll open GitHub findings only when explicitly enabled and scoped."""
     if not external_providers.provider_enabled("github_security"):
         return []
-    repository = str(os.getenv("GITHUB_REPOSITORY", "")).strip()
+    # Prefixed deliberately: GitHub Actions sets a bare GITHUB_REPOSITORY on every
+    # step of every workflow, so reading that name would let a runner scope sentinel
+    # to whatever repository the job happens to be in — silently skipping the
+    # fail-closed branch below, which is the whole safety property here.
+    repository = str(os.getenv("SENTINEL_GITHUB_REPOSITORY", "")).strip()
     if not repository:
         return [_record("github_security", "degraded", "repository not configured", conn=conn)]
     results = []
