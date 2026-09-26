@@ -441,6 +441,8 @@
     "tests/test_marketplace_native_payment_sheet.py",
     "tests/test_marketplace_order_lane.py",
     "tests/test_marketplace_price_label_parity.py",
+    "tests/test_marketplace_product_public_page.py",
+    "tests/test_marketplace_seo.py",
     "tests/test_marketplace_store_identity.py",
     "tests/test_marketplace_stripe_response.py",
     "tests/test_marketplace_web_ctas_are_app_first.py",

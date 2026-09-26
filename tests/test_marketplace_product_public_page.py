@@ -1,0 +1,403 @@
+"""``GET /pulse/marketplace/<id>`` for a reader with no session.
+
+Until this change every web marketplace URL answered ``302 -> /login``, for
+anonymous humans and for Googlebot alike, so the entire catalogue was invisible
+to search. The route now branches on **authentication** — never on user-agent,
+because serving a crawler a page a visitor cannot get is cloaking — and this file
+pins both sides of that branch plus the three things that were easy to get wrong.
+
+## The three
+
+1. **The redirect was in two places.** ``pulse_social_shell`` calls
+   ``require_account()`` itself, so removing the route's own guard would have
+   changed nothing. That is why the anonymous reader gets a different template
+   rather than the same one without a gate, and why "anonymous gets a page" and
+   "a member still gets the app shell" are separate cases here.
+
+2. **One URL, two frames.** A second public product path would split one
+   product's ranking signal across two URLs and make the canonical a coin toss,
+   so the canonical is asserted to be the *same* path that was requested.
+
+3. **``Cache-Control``.** ``add_pwa_headers`` stamps ``no-store`` on every
+   ``/pulse/`` response, which is right for the signed-in app and wrong for this
+   page: Googlebot and Merchant Center both fetch it, and ``no-store`` makes
+   every crawl a full re-download. The view opts out through a request-scoped
+   flag, and the member path must keep ``no-store``. Both are asserted, because
+   the first failed silently the first time — the view set the header and the
+   hook overwrote it on the way out.
+
+Visibility is *not* relaxed by any of this. The route applies the same two
+predicates it always did, so the 404 cases are here to prove that being logged
+out widened nothing.
+
+Runs against a temp sqlite file, so nothing here touches coinpilotx.db.
+
+Run: python3 -m pytest tests/test_marketplace_product_public_page.py
+"""
+
+import json
+import os
+import re
+import sqlite3
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+_HANDLE, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="mkt_public_page_")
+os.close(_HANDLE)
+os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
+
+import bot  # noqa: E402
+from services import marketplace_seo  # noqa: E402
+
+
+def pin_database():
+    """Point DATABASE_URL at *this* file's temp sqlite, again, per test.
+
+    Setting it once above the import is not enough, and the reason is a property
+    of the app rather than of pytest: on SQLite, ``services.db.connect()`` re-reads
+    DATABASE_URL on **every call** (services/db.py:1072), so the database a request
+    is answered from is chosen at request time by whatever the environment says
+    then -- not by what this module said when it was imported.
+
+    Several other suites also point DATABASE_URL at a temp file of their own
+    above their own ``import bot``, and pytest imports every selected module
+    during collection, before running a single test. So the last module imported
+    silently owns the database for every test in the process.
+
+    Measured: ``pytest tests/protection/test_route_auth.py
+    tests/test_marketplace_seo.py tests/test_marketplace_product_public_page.py``
+    failed all 24 tests in this file while each file passed alone. The failures
+    read as missing prices, missing CTAs and missing cache headers -- i.e. as
+    twenty-four unrelated regressions in the page -- because every listing this
+    file seeded was invisible to the app and every request 404ed. Nothing in that
+    output pointed at a database.
+
+    Re-pinning here rather than making the other suite defer: that file points
+    DATABASE_URL somewhere harmless for the same reason this one does, and
+    neither can know whether it was imported last. A test that states its own
+    preconditions in ``setUp`` does not depend on collection order at all.
+
+    This is half the fix; ``setUpClass`` holds the other half, because pinning
+    the database only moves the problem to which database has tables.
+    """
+    os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
+
+SELLER = 95101
+MEMBER = 95102
+NOW = "2026-09-01T00:00:00"
+
+DESCRIPTION = ("A washed European linen duvet cover with two pillowcases, prewashed "
+               "so it arrives soft and does not shrink in the first wash.")
+
+
+class MarketplacePublicProductPageTestCase(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.db_path = _DB_PATH
+        pin_database()
+        # `init_db()` returns early on a process global (`INIT_DB_COMPLETED`,
+        # bot.py:117235), which is right in production -- it runs once per worker
+        # -- and wrong for the second suite in a pytest process: the first one
+        # already built the schema, in a temp database of its own, so this call
+        # is a no-op and this file's database has no tables at all. The only sign
+        # is one line on stdout, `DB_INIT_SKIPPED_ALREADY_DONE`, captured and
+        # hidden unless a test fails.
+        #
+        # Clearing the flag rather than exporting FORCE_INIT_DB, which is the
+        # other supported way in: the environment variable is read on every
+        # `init_db()` call, including the ones a request triggers, so leaving it
+        # set changes behaviour well outside this class.
+        bot.INIT_DB_COMPLETED = False
+        bot.init_db()
+        cls._real_require_account = bot.require_account
+        bot.webhook_app.config["TESTING"] = True
+        cls.client = bot.webhook_app.test_client()
+
+    @classmethod
+    def tearDownClass(cls):
+        bot.require_account = cls._real_require_account
+
+    def logout(self):
+        """The case this whole file is about: no session at all."""
+        bot.require_account = lambda *args, **kwargs: None
+
+    def login(self, user_id=MEMBER, username="public_page_member"):
+        bot.require_account = lambda *args, **kwargs: {
+            "user_id": user_id, "username": username, "email": f"{username}@example.com"}
+
+    def setUp(self):
+        pin_database()
+        self.logout()
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute("DELETE FROM marketplace_listings WHERE seller_user_id=?", (SELLER,))
+        cur.execute("DELETE FROM marketplace_sellers WHERE user_id=?", (SELLER,))
+        for user_id, username in ((SELLER, "public_page_seller"), (MEMBER, "public_page_member")):
+            cur.execute("INSERT OR IGNORE INTO users (user_id, username, display_name) VALUES (?,?,?)",
+                        (user_id, username, username))
+        cur.execute(
+            "INSERT INTO marketplace_sellers (user_id, display_name, status, created_at, updated_at) "
+            "VALUES (?,?,?,?,?)",
+            (SELLER, "M&W Store", "approved", NOW, NOW),
+        )
+        conn.commit()
+        conn.close()
+
+    # -- helpers --------------------------------------------------------------
+
+    def make_listing(self, *, status="published", approval_status="approved",
+                     description=DESCRIPTION, price_label="$465.74", currency="USD",
+                     cover="https://cdn.example/bed.jpg", quantity=12,
+                     product_type="physical"):
+        conn = sqlite3.connect(self.db_path)
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO marketplace_listings "
+            "(seller_user_id, title, description, short_description, category, price_label, currency,"
+            " quantity, product_type, listing_type, status, approval_status, cover_image_url,"
+            " safety_score, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (SELLER, "Linen Duvet Cover Set", description, "Washed linen duvet set", "Home",
+             price_label, currency, quantity, product_type, product_type, status, approval_status,
+             cover, 7, NOW, NOW),
+        )
+        listing_id = int(cur.lastrowid)
+        conn.commit()
+        conn.close()
+        return listing_id
+
+    def get(self, listing_id):
+        return self.client.get(f"/pulse/marketplace/{listing_id}")
+
+    def ld_json(self, response):
+        """The page's one JSON-LD block, parsed."""
+        body = response.get_data(as_text=True)
+        match = re.search(r'<script type="application/ld\+json">(.*?)</script>', body, re.S)
+        self.assertIsNotNone(match, "the page carries no ld+json block")
+        return json.loads(match.group(1))
+
+    def product_node(self, response):
+        graph = self.ld_json(response)["@graph"]
+        nodes = [node for node in graph if node.get("@type") == "Product"]
+        self.assertEqual(len(nodes), 1, "expected exactly one Product node")
+        return nodes[0]
+
+    # -- an anonymous reader gets a page, not a redirect ----------------------
+
+    def test_an_anonymous_reader_gets_the_product_page(self):
+        """The whole mission in one assertion: this used to be a 302 to /login."""
+        response = self.get(self.make_listing())
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Linen Duvet Cover Set", response.get_data(as_text=True))
+
+    def test_googlebot_gets_exactly_what_an_anonymous_person_gets(self):
+        """The branch is on authentication, never on user-agent.
+
+        Asserted byte-for-byte rather than by spot-checking fields, because
+        cloaking is not a bug that shows up as a wrong value -- it shows up as
+        two responses, and the only way to see it is to compare them whole.
+        """
+        listing_id = self.make_listing()
+        human = self.get(listing_id).get_data(as_text=True)
+        crawler = self.client.get(
+            f"/pulse/marketplace/{listing_id}",
+            headers={"User-Agent": "Mozilla/5.0 (compatible; Googlebot/2.1; "
+                                   "+http://www.google.com/bot.html)"},
+        ).get_data(as_text=True)
+        self.assertEqual(human, crawler)
+
+    def test_the_page_states_the_price_the_row_holds(self):
+        response = self.get(self.make_listing())
+        self.assertIn("465.74", response.get_data(as_text=True))
+
+    def test_the_page_names_the_store_that_sells_it(self):
+        """HTML-escaped, which is why the ampersand is asserted in its escaped form."""
+        response = self.get(self.make_listing())
+        self.assertIn("M&amp;W Store", response.get_data(as_text=True))
+
+    def test_the_page_promotes_the_ios_app(self):
+        """Standing product requirement: every public web surface routes to the app."""
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertIn("Open in the PulseSoc app", body)
+
+    def test_the_page_offers_sign_in_rather_than_a_dead_buy_button(self):
+        """Contact Seller / Save / Report are each a POST needing a session.
+
+        Rendering them would either fail on click or bounce to /login after the
+        reader had already committed to an action, so the requirement is stated
+        before the click instead.
+        """
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertIn("Sign in to buy", body)
+        self.assertNotIn("Contact Seller", body)
+
+    def test_the_cover_image_is_on_the_page(self):
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertIn("https://cdn.example/bed.jpg", body)
+
+    def test_the_hero_image_is_not_lazy_loaded(self):
+        """``loading="lazy"`` on the LCP element delays the very paint Core Web
+        Vitals measures, so the first image is the one image not deferred."""
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        hero = body.index("https://cdn.example/bed.jpg")
+        self.assertNotIn('loading="lazy"', body[hero:body.index(">", hero)])
+
+    # -- one URL, one canonical ----------------------------------------------
+
+    def test_the_canonical_is_the_url_that_was_requested(self):
+        """Not a second public path. Two paths for one product would split its
+        ranking signal and make this tag a guess."""
+        listing_id = self.make_listing()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertIn(f'<link rel="canonical" href="https://pulsesoc.com/pulse/marketplace/{listing_id}"',
+                      body)
+
+    # -- structured data ------------------------------------------------------
+
+    def test_the_page_carries_a_product_node_with_an_offer(self):
+        offer = self.product_node(self.get(self.make_listing()))["offers"]
+        self.assertEqual(offer["price"], "465.74")
+        self.assertEqual(offer["priceCurrency"], "USD")
+        self.assertEqual(offer["availability"], marketplace_seo.IN_STOCK)
+
+    def test_the_offers_url_is_the_canonical_so_the_feed_and_the_page_agree(self):
+        """Merchant Center compares the feed's ``link`` against what it fetches."""
+        listing_id = self.make_listing()
+        offer = self.product_node(self.get(listing_id))["offers"]
+        self.assertEqual(offer["url"], f"https://pulsesoc.com/pulse/marketplace/{listing_id}")
+
+    def test_a_physical_listing_with_no_stock_has_no_page_to_be_out_of_stock_on(self):
+        """Measured, not assumed: ``public_sql`` withdraws the row before this page.
+
+        The obvious test to write here is "a zero-quantity listing says
+        OutOfStock", and it fails -- ``public_sql``'s last clause requires
+        ``quantity>0`` for anything that is not a stockless type, so the row is
+        not public at all and the page 404s. ``OUT_OF_STOCK`` is therefore
+        unreachable through this route today, and that is recorded in
+        ``marketplace_seo.availability`` rather than removed, because the two
+        predicates being equal is a fact about today's catalogue policy and not a
+        property of this page.
+        """
+        self.assertEqual(self.get(self.make_listing(quantity=0)).status_code, 404)
+
+    def test_a_stockless_listing_is_in_stock_with_no_quantity_at_all(self):
+        """The other side of that clause: a course has nothing to count.
+
+        This is the case that proves ``availability`` is reading the lifecycle
+        rule rather than the ``quantity`` column -- a bare quantity check would
+        call this row unavailable while the catalogue is selling it.
+        """
+        listing_id = self.make_listing(quantity=0, product_type="course")
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.product_node(response)["offers"]["availability"],
+                         marketplace_seo.IN_STOCK)
+
+    def test_an_unpriced_listing_renders_no_offer_and_no_price_pill(self):
+        """No price, no pill -- the same rule the grid and the member page follow.
+
+        An empty pill reads as a price the seller set to nothing, and an Offer
+        with no price is a malformed claim rather than an absent one.
+        """
+        response = self.get(self.make_listing(price_label="Request access"))
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("offers", self.product_node(response))
+        self.assertNotIn("Request access", response.get_data(as_text=True))
+
+    def test_the_graph_does_not_advertise_the_app_and_a_service_alongside_the_product(self):
+        """A product page whose graph also declares ``MobileApplication`` and
+        ``Service`` describes three entities and asks Google to pick."""
+        types = [node.get("@type") for node in self.ld_json(self.get(self.make_listing()))["@graph"]]
+        self.assertEqual(types, ["Organization", "WebSite", "WebPage", "Product", "BreadcrumbList"])
+
+    # -- robots ---------------------------------------------------------------
+
+    def test_a_complete_listing_asks_to_be_indexed(self):
+        body = self.get(self.make_listing()).get_data(as_text=True)
+        self.assertRegex(body, r'<meta name="robots" content="index,follow')
+
+    def test_a_thin_listing_keeps_its_page_and_stops_asking_to_be_ranked(self):
+        """``noindex,follow`` and not ``nofollow``: the outbound links are the
+        marketplace index and the help pages, which are real crawl paths, and
+        ``robots_disallow_prefixes`` only ever disallows ``noindex,nofollow``, so
+        this choice also keeps the section crawlable."""
+        response = self.get(self.make_listing(description="ok"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('<meta name="robots" content="noindex,follow"', response.get_data(as_text=True))
+
+    # -- caching --------------------------------------------------------------
+
+    def test_the_public_page_is_cacheable(self):
+        """The regression that failed silently once already.
+
+        The view sets this header and ``add_pwa_headers`` used to overwrite it
+        with ``no-store`` for everything under ``/pulse/``. A ``no-store``
+        product page makes every crawl a full re-download of an unchanged page.
+        """
+        response = self.get(self.make_listing())
+        self.assertEqual(response.headers.get("Cache-Control"), "public, max-age=300")
+
+    def test_the_public_page_is_not_marked_private(self):
+        response = self.get(self.make_listing())
+        self.assertNotIn("no-store", response.headers.get("Cache-Control", ""))
+        self.assertIsNone(response.headers.get("Pragma"))
+
+    def test_a_signed_in_member_on_the_same_url_still_gets_no_store(self):
+        """The opt-out is per *response*, not per path.
+
+        The same URL renders the signed-in app shell for a member, and that must
+        not enter a shared cache. A path-prefix exemption would have cached it.
+        """
+        listing_id = self.make_listing()
+        self.login()
+        response = self.get(listing_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response.headers.get("Cache-Control", ""))
+
+    # -- a member still gets the app -----------------------------------------
+
+    def test_a_signed_in_member_gets_the_app_shell_and_not_the_public_page(self):
+        """Both halves of the branch, asserted by what only one frame carries.
+
+        The member page has no canonical tag and no JSON-LD; the public page has
+        no left-hand app nav. Checking one marker from each is what proves the
+        branch went the other way rather than that the page merely rendered.
+        """
+        listing_id = self.make_listing()
+        self.login()
+        body = self.get(listing_id).get_data(as_text=True)
+        self.assertNotIn("Sign in to buy", body)
+        self.assertNotIn('<script type="application/ld+json">', body)
+
+    # -- being logged out widened nothing ------------------------------------
+
+    def test_a_listing_that_is_not_public_is_404_for_an_anonymous_reader(self):
+        """The predicates are unchanged: a listing that 404ed for a member 404s here.
+
+        404 and not "this was removed", because naming a withdrawn row would
+        confirm to anyone guessing ids that the row exists.
+        """
+        for status, approval in (("draft", "approved"), ("published", "pending"), ("paused", "approved")):
+            with self.subTest(status=status, approval=approval):
+                listing_id = self.make_listing(status=status, approval_status=approval)
+                self.assertEqual(self.get(listing_id).status_code, 404)
+
+    def test_an_unknown_id_is_a_404_and_not_a_500(self):
+        self.assertEqual(self.get(98765432).status_code, 404)
+
+    def test_a_listing_from_an_unapproved_seller_is_404(self):
+        """Seller state is half of ``public_sql``; opening the page must not
+        bypass the half that is about the seller rather than the row."""
+        listing_id = self.make_listing()
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("UPDATE marketplace_sellers SET status='pending' WHERE user_id=?", (SELLER,))
+        conn.commit()
+        conn.close()
+        self.assertEqual(self.get(listing_id).status_code, 404)
+
+
+if __name__ == "__main__":
+    unittest.main()

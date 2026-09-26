@@ -96,6 +96,18 @@ _RULES = (
     ("/checkout", NOINDEX_NOFOLLOW, "commerce workflow"),
     ("/billing", NOINDEX_NOFOLLOW, "commerce workflow"),
     ("/seller", NOINDEX_NOFOLLOW, "seller administration"),
+    # The two marketplace paths that are still authenticated. Declared for the
+    # reason stated above this block: they must not inherit indexability from
+    # the product pages they sit next to, which are now public.
+    #
+    # Ordering matters here. `_RULES` is first-match-wins, and both of these are
+    # longer than any marketplace prefix in this table, so neither can be
+    # shadowed. `/pulse/marketplace/create` is the seller's listing composer and
+    # `/pulse/merchant/<username>` is a storefront that still calls
+    # `require_account()` -- a URL we cannot fetch is a URL we must not
+    # recommend.
+    ("/pulse/marketplace/create", NOINDEX_NOFOLLOW, "seller listing composer, authenticated"),
+    ("/pulse/merchant", NOINDEX_NOFOLLOW, "seller storefront still behind require_account"),
     ("/private-office", NOINDEX_NOFOLLOW, "restricted workspace"),
 
     # --- Authentication workflow ------------------------------------------
@@ -147,6 +159,21 @@ _RULES = (
     # the `/dashboard` rule above.)
     ("/command-center", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
     ("/intelligence", NOINDEX_NOFOLLOW, "authenticated surface behind a redirect"),
+
+    # `/pulse/marketplace` and `/pulse/marketplace/<id>` are deliberately absent,
+    # for the same reason `/app` is: they branch on authentication and serve a
+    # public page to anonymous readers, so they fall through to `index,follow`
+    # like any other public content. They were absent before this too -- but
+    # then the absence was a latent disagreement of exactly the kind this module
+    # exists to remove, because the table called them indexable and
+    # sitemap-eligible while the routes 302'd every anonymous request. The
+    # classification is the same today; what changed is that it is now true.
+    #
+    # Being indexable by path is not sufficient for a product page to enter the
+    # sitemap. `marketplace_seo.eligibility` decides that per row, because a
+    # public path can still hold a listing with no description or no image --
+    # the same split this module draws between `classify` and
+    # `content_eligibility`.
 )
 
 

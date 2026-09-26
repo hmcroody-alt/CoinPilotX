@@ -328,6 +328,7 @@ from services import (
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     marketplace_order_fulfillment as marketplace_order_fulfillment,
     marketplace_seller_identity as marketplace_seller_identity,
+    marketplace_seo as marketplace_seo,
     media_service,
     media_storage,
     media_upload_sessions,
@@ -2844,9 +2845,27 @@ def add_pwa_headers(response):
         response.headers["Service-Worker-Allowed"] = "/"
         response.headers["Cache-Control"] = "no-store, max-age=0"
     elif request.path == "/pulse" or request.path.startswith("/pulse/") or request.path.startswith("/api/pulse/"):
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+        # `/pulse/*` is the signed-in social app, so the default here is the
+        # strict one: per-user content must never reach a shared cache, and the
+        # back button must not resurface a thread after logout. This assignment
+        # is deliberately not `setdefault` -- a view that forgot is the case the
+        # rule exists for.
+        #
+        # A handful of `/pulse/` URLs now answer anonymous readers with a public
+        # page (the marketplace product page is the first), and for those the
+        # strict default is wrong in a way that costs money: Googlebot and
+        # Merchant Center both fetch this URL, `no-store` forbids any of it
+        # being reused, and the crawler spends budget re-downloading an
+        # unchanged product page. The opt-out is a flag the *view* sets, not a
+        # path prefix, because the same path is private for a signed-in member
+        # and public for a visitor -- only the code that rendered the response
+        # knows which it just produced.
+        if getattr(g, "pulse_public_cacheable", False):
+            response.headers.setdefault("Cache-Control", "public, max-age=300")
+        else:
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
     elif request.path == "/admin" or request.path.startswith("/admin/") or request.path.startswith("/api/admin/"):
         # Admin surfaces must never enter browser/proxy caches: after logout
         # or session expiry the back button must not resurface protected
@@ -57348,6 +57367,73 @@ def pulse_marketplace_page():
     return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
 
 
+def _marketplace_public_product_response(listing_id, listing):
+    """The product page for a reader with no session -- including Googlebot.
+
+    Everything rendered here comes out of ``listing``, which is
+    ``pulse_marketplace_listing_payload``'s output -- the same dict the mobile
+    API returns and the same one the member page renders. That is deliberate and
+    it is the whole reason this function is short: a public page that re-derived
+    the title, image or price from the row would be a second opinion about one
+    product, and the copy Google indexes would drift from the copy a buyer sees.
+
+    The only judgements made here are about *search*, not about content: whether
+    this row is substantial enough to ask to be ranked, and what robots
+    directive follows from that.
+    """
+
+    meta = marketplace_seo.product_page_meta(listing)
+    verdict = marketplace_seo.eligibility(listing)
+
+    # A thin or imageless listing keeps its page and stops asking to be ranked.
+    # `noindex,follow` rather than `nofollow`: the page's outbound links are the
+    # marketplace index and the help pages, which are real crawl paths, and
+    # `search_visibility.robots_disallow_prefixes` only ever disallows
+    # `noindex,nofollow`, so this choice also keeps the section crawlable.
+    robots = (search_visibility.robots_meta(request.path) if verdict.indexable
+              else search_visibility.NOINDEX_FOLLOW)
+
+    price = marketplace_seo.parse_price(listing.get("price_label"), listing.get("currency"))
+    images = [entry.get("media_url") for entry in (listing.get("media") or [])
+              if (entry.get("media_type") or "image") == "image" and entry.get("media_url")]
+    # Paragraphs, not one blob. Supplier descriptions arrive with blank-line
+    # breaks in them and collapsing those into a single <p> is what turns a
+    # readable spec list into a wall.
+    description = [para.strip() for para
+                   in re.split(r"\n\s*\n", str(listing.get("description")
+                                                or listing.get("short_description") or ""))
+                   if para.strip()]
+
+    response = webhook_app.make_response(render_template(
+        "marketplace_product_public.html",
+        page=meta,
+        robots=robots,
+        schema_json=marketplace_seo.product_page_graph(listing),
+        listing_id=listing_id,
+        product_path=marketplace_seo.PRODUCT_PATH.format(listing_id=listing_id),
+        index_path=marketplace_seo.INDEX_PATH,
+        price=price,
+        in_stock=marketplace_seo.availability(listing) == marketplace_seo.IN_STOCK,
+        category=clean_html(listing.get("category") or ""),
+        images=images,
+        description=description,
+    ))
+    # Short rather than long. The page is identical for every anonymous reader,
+    # but price and availability are on it, and a stale price is the one thing
+    # this page must not serve -- Merchant Center compares the feed against what
+    # it fetches from this URL.
+    #
+    # The flag is what makes the header survive. `add_pwa_headers` stamps
+    # `no-store` on every `/pulse/` response, which is right for the signed-in
+    # app and wrong for this one page; setting the header alone would be
+    # overwritten on the way out. Set here and not in the route, because it is
+    # true of *this* response -- the same URL with a session renders the member
+    # shell and must keep `no-store`.
+    g.pulse_public_cacheable = True
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
 # --- A shared marketplace listing link ---------------------------------------
 #
 # `/pulse/marketplace/:listingId` is a registered universal link, so it is a URL
@@ -57383,11 +57469,23 @@ def pulse_marketplace_page():
 # stricter pair; matching the looser grid would have made a shared link show
 # something the app would not.
 @webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
+@public_route(reason="Public product page. Anonymous visitors and Googlebot get the public product shell; signed-in members fall through to the member page, which reads its own account state.")
 def pulse_marketplace_listing_page(listing_id):
     init_db()
+    # Not a gate any more. The branch on this value is below, once the listing
+    # has been read: an anonymous reader gets the public product page, a member
+    # gets the app shell they had before.
+    #
+    # The precedent is `/app`, and its rule is the one that matters here too --
+    # the branch is on authentication, never on user-agent. Googlebot sees
+    # exactly what a logged-out person sees, because serving a crawler something
+    # a visitor cannot get is cloaking, and the point of this change is that the
+    # product pages are genuinely public rather than merely visible to Google.
+    #
+    # The visibility predicates below are unchanged and still decide what may be
+    # shown at all. Nothing about being logged out widens them; a listing that
+    # 404ed for a member 404s here.
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
     from services.discovery_visibility import discovery_visible_sql
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -57418,6 +57516,8 @@ def pulse_marketplace_listing_page(listing_id):
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
 
     seller_id = int(row.get("seller_user_id") or 0)
+    if not user:
+        return _marketplace_public_product_response(listing_id, listing)
     owned = seller_id == int(user.get("user_id") or 0)
     gallery = "".join(
         f"<img src='{html_escape(clean_html(entry.get('media_url')))}' alt='' loading='lazy'>"
