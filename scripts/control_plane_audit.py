@@ -37,7 +37,35 @@ REPO = pathlib.Path(__file__).resolve().parents[1]
 #: Names that look like a switch. Substring match on purpose — the point is to
 #: over-collect and then classify, because a gate this misses is a gate the
 #: inventory never mentions.
-GATE_NAME = re.compile(r"ENABLE|DISABL|FLAG|ROLLOUT|BETA|KILL|ALLOW|FEATURE|BUSINESS_OS")
+#:
+#: The second line is the one that was missing. Three dead declarations —
+#: ``TRANSLATION_FAIL_OPEN``, ``TRANSLATION_PRESERVE_ORIGINAL`` and
+#: ``TRANSLATION_SHOW_ORIGINAL_OPTION`` — were gate-shaped semantically and not
+#: lexically, so this audit never classified them and a human root-cause report
+#: found them instead. ``TRANSLATION_FAIL_OPEN`` is the one that mattered: the
+#: name asserts a failure policy for a live integration, so an operator reaching
+#: for it during a translation outage would have set a variable nothing reads and
+#: come away believing they had changed the behaviour.
+#:
+#: Widening this is safe in a way that widening reader collection is not. It
+#: cannot invent a false DEAD, because it does not change what counts as a
+#: reader — it only enlarges the set of names being judged. The risk is instead a
+#: gate that is red on arrival, which gets the audit disabled rather than fixed,
+#: so each token below was measured against ``.env.example`` before being added.
+#: The added tokens take the matched set from 189 names to 213, and **all 24 of
+#: the newly matched names already have readers** — every one is a real gate this
+#: audit had simply never looked at, so nothing is newly condemned.
+#:
+#: Tokens deliberately *not* added, having been measured and rejected: ``LOCK``,
+#: ``USE_``, ``AUTO_``, ``HIDE_`` and ``GATE`` match numeric thresholds and plain
+#: accidents of spelling (``BLOCKSTREAM_BASE_URL``, ``AGGREGATE_ANALYTICS_``
+#: ``RETENTION_DAYS``, ``PULSESOC_REFRESH_REUSE_GRACE_SECONDS``). Those are false
+#: alives rather than false DEADs and so would do no harm, but they would fill
+#: the inventory with things that are not switches.
+GATE_NAME = re.compile(
+    r"ENABLE|DISABL|FLAG|ROLLOUT|BETA|KILL|ALLOW|FEATURE|BUSINESS_OS"
+    r"|FAIL_OPEN|FAIL_CLOSED|REQUIRE|DRY_RUN|STRICT|FORCE|GUARD|SANDBOX|ONLY|PRESERVE|SHOW_"
+)
 
 #: ``os.getenv("X")`` / ``os.getenv("X", default)`` / ``os.environ.get(...)``.
 #: The default is captured loosely; it is reported verbatim rather than parsed,
