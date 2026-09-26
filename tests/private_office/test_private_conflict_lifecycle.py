@@ -623,12 +623,30 @@ def stage_settlements_carry_no_member_content():
     # settlement table under any column.
     planted = ("2027-03-01", "2027-04-15", "2026-01-05", "2026-02-20", "8200",
                "12 Rue Test", "48 Avenue Other", "1850", "950000")
-    leaked = [
-        r for r in rows
-        if any(secret in str(value)
-               for value in r.values() if value is not None
-               for secret in planted)
-    ]
+
+    def leaking_rows(candidates):
+        """Rows carrying a planted value in a column the writer did not generate.
+
+        Columns named `*_at` are skipped: they hold an ISO timestamp stamped from
+        the clock, never caller input, and a substring scan of short planted
+        values across them is a coin flip rather than a check — `"1850"` sits
+        inside the microseconds of `…T05:57:15.185024+00:00`, which is how the
+        sibling evidence file failed CI on a tree that had not touched the private
+        office. Every column that can carry member content is still scanned in
+        full, and the plant below proves the sweep still bites.
+        """
+        return [
+            r for r in candidates
+            if any(secret in str(value)
+                   for column, value in r.items()
+                   if value is not None and not column.endswith("_at")
+                   for secret in planted)
+        ]
+
+    check("a planted value in a settlement would be caught",
+          leaking_rows([{"resolution": f"kept {planted[0]}",
+                         "created_at": "2026-09-26T05:57:15.185024+00:00"}]) != [])
+    leaked = leaking_rows(rows)
     check("no fact value appears anywhere in the settlement table",
           leaked == [], str(leaked[:1]))
     check("every settlement names a known resolution kind",
@@ -650,12 +668,7 @@ def stage_settlements_carry_no_member_content():
         (audit.ACTION_CONFLICT_RESOLVED,))
     trail = [dict(r) for r in cur.fetchall()]
     check("the audit trail records the settlements", len(trail) >= 1)
-    leaked_audit = [
-        r for r in trail
-        if any(secret in str(value)
-               for value in r.values() if value is not None
-               for secret in planted)
-    ]
+    leaked_audit = leaking_rows(trail)
     check("and carries no fact value either", leaked_audit == [],
           str(leaked_audit[:1]))
     conn.commit()
