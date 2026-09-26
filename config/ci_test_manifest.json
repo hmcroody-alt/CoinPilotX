@@ -649,6 +649,7 @@
     "tests/undx_brain/test_workspace.py",
     "tests/undx_training/test_corpus_covers_the_registry.py",
     "tests/undx_training/test_knowledge_corpus_retrieval.py",
+    "tests/undx_training/test_the_master_index_matches_the_corpus.py",
     "tests/web_parity/test_aasa_claims.py",
     "tests/web_parity/test_admin_analytics_escaping.py",
     "tests/web_parity/test_admin_page_escaping.py",
