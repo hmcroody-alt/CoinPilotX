@@ -1,4 +1,4 @@
-from . import features
+from . import commerce_policies, features
 from .schema import SHARE_IMAGE_URL, SITE_URL
 
 COMMON_FAQS = [
@@ -1109,6 +1109,11 @@ def search_pages(query, limit=12):
 def all_public_paths():
     paths = ["/", "/app", "/about", "/signup", "/support", "/privacy", "/terms", "/quote", "/quote/crypto/BTC", "/quote/crypto/ETH", "/predictions/crypto", "/sports-edge", "/arena-preview"]
     paths += features.all_paths()
+    # The four commerce policy pages. They enter the sitemap through the same
+    # list as every other written page rather than through a special case,
+    # because they are ordinary indexable pages -- what makes them notable is
+    # only that Merchant Center refuses to approve an account without them.
+    paths += commerce_policies.all_paths()
     paths += ["/" + slug for slug in SEO_PAGES]
     paths += ["/markets/" + slug for slug in MARKET_PAGES]
     paths += ["/markets/" + slug + "/prediction" for slug in MARKET_PAGES]

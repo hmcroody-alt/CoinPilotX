@@ -73,13 +73,14 @@ The feed being correct is necessary and not sufficient. Every item below is
 owned by a person, not a commit, and the first three will cause disapproval or
 suspension regardless of feed quality.
 
-1. **Four required pages are 404 today.** Merchant Center requires reachable
-   Return policy, Refund policy, Shipping and Contact pages. `/returns`,
-   `/refund-policy`, `/shipping` and `/contact` do not exist. Policy *text*
-   exists in `docs/marketplace_returns_refunds.md` and
-   `docs/marketplace_compliance.md`, so this is publishable work rather than a
-   drafting problem — but until those URLs resolve the account cannot pass
-   review.
+1. ~~**Four required pages are 404 today.**~~ **Cleared in code.** `/returns`,
+   `/refund-policy`, `/shipping` and `/contact` now answer 200 to an anonymous
+   visitor, are linked from the shared footer of every public page, and are in
+   `/sitemap-pages.xml`. Content and the reasoning behind each claim live in
+   `seo/commerce_policies.py`; `tests/test_commerce_policy_pages.py` asserts both
+   that they resolve and that they do not promise a returns flow this codebase
+   does not have. The one thing left for a person: read them once and confirm
+   they describe the business you intend to run.
 
 2. **Shipping is not configured.** `g:shipping` is omitted from every item on
    purpose: shipping is an account-level setting in Merchant Center, this
@@ -120,7 +121,7 @@ feed disagree with the page.
 
 ## Turning it on
 
-1. Publish the four policy pages (blocker 1).
+1. ~~Publish the four policy pages~~ — done; read them once (blocker 1).
 2. Configure account-level shipping and tax (blocker 2).
 3. In Merchant Center, add a **scheduled fetch** pointing at
    `https://pulsesoc.com/feeds/merchant-center.xml`. Daily is right — the

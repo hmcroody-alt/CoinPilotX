@@ -441,6 +441,7 @@ from services import (
 from services.route_auth import admin_required, auth_required, public_route
 from seo import schema as seo_schema
 from seo import features as seo_features
+from seo import commerce_policies as seo_commerce_policies
 from seo.content import (
     all_public_paths,
     article_page,
@@ -12707,6 +12708,59 @@ def feature_detail_page(slug):
     ))
     response.headers["Cache-Control"] = "public, max-age=600"
     return response
+
+
+# The four commerce policy pages, registered from one list rather than as four
+# copies of the same handler. Merchant Center requires a reachable return policy,
+# refund policy, shipping page and contact page before it will approve a Shopping
+# account, so until these resolve `/feeds/merchant-center.xml` can be perfect and
+# still do nothing. `docs/seo/01_merchant_center_feed.md` tracks that as blocker 1.
+#
+# One handler and a loop, unlike the eight feature pages which share a `<slug>`
+# rule: these are four unrelated top-level URLs (`/returns` is not
+# `/policies/returns`, on purpose -- see `commerce_policies.canonical_path`), so
+# there is no single rule that matches them. What must not happen is four
+# hand-written handlers drifting apart in their cache headers, their robots
+# source or their schema, which is the failure this closure prevents.
+def _register_commerce_policy_route(slug):
+    def handler(slug=slug):
+        page = seo_commerce_policies.page(slug, search_visibility.canonical_url)
+        if not page:
+            # Unreachable while the route table is built from POLICIES, and kept
+            # because the day someone adds a route by hand without a policy
+            # entry, a 404 is the right answer and a 500 is not.
+            abort(404)
+        page["image"] = seo_schema.SHARE_IMAGE_URL
+        response = webhook_app.make_response(render_template(
+            "commerce_policy.html",
+            page=page,
+            robots=search_visibility.robots_meta(seo_commerce_policies.canonical_path(slug)),
+            schema_json=seo_schema.commerce_policy_graph(page),
+        ))
+        # Same as the other written pages. These change when the policy changes,
+        # which is a deliberate act, not a data refresh.
+        response.headers["Cache-Control"] = "public, max-age=600"
+        return response
+
+    handler.__name__ = f"commerce_policy_{slug.replace('-', '_')}_page"
+    handler.__doc__ = (
+        f"`{seo_commerce_policies.canonical_path(slug)}` -- a buyer-facing commerce "
+        "policy page. Content and the reasoning behind every claim on it live in "
+        "`seo/commerce_policies.py`."
+    )
+    handler = public_route(
+        reason=(
+            "Buyer-facing commerce policy page. Google Merchant Center fetches it "
+            "unauthenticated during account review, and a buyer must be able to read "
+            "the return and refund terms before creating an account. No account state "
+            "is read."
+        )
+    )(handler)
+    webhook_app.route(seo_commerce_policies.canonical_path(slug), methods=["GET"])(handler)
+
+
+for _policy in seo_commerce_policies.POLICIES:
+    _register_commerce_policy_route(_policy["slug"])
 
 
 # Answers kept here rather than in the template so the FAQPage JSON-LD and the
@@ -30682,9 +30736,15 @@ def merchant_center_feed_xml():
     `.indexable`; this filters on `.feed_eligible`, which additionally requires
     a price that parses. A product with a real description and image but a blank
     `price_label` belongs in Search and cannot be a Shopping offer, so the two
-    lists are deliberately different lengths. Measured against production on
-    2026-09-26: 39 rows clear the description floor, 21 have a price, 14 have
-    both.
+    lists are deliberately allowed to be different lengths.
+
+    Today they are not, and that is worth stating rather than leaving to be
+    discovered. Measured against production on 2026-09-26 with these same
+    predicates: 15 listings are publishable, all 15 carry a price, and 13 clear
+    the 40-character description floor -- so both lists are 13 long and the two
+    rows they drop (ids 50 and 52) are the same two rows. The asymmetry is real
+    policy with no live instance; the first seller to leave a price blank on a
+    described product creates the case.
 
     The lifecycle and seller predicates are the *same* as the sitemap's --
     `public_sql` and `discovery_visible_sql` -- because a feed item's `link` has

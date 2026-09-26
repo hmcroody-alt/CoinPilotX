@@ -408,6 +408,7 @@
     "tests/test_command_center_ai_routing.py",
     "tests/test_commerce_discovery_surface_registration.py",
     "tests/test_commerce_discovery_thin_catalogue.py",
+    "tests/test_commerce_policy_pages.py",
     "tests/test_connect_onboarding_return_urls.py",
     "tests/test_connect_payout_onboarding.py",
     "tests/test_connect_return_page.py",
