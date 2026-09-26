@@ -599,5 +599,183 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
         self.assertIn("No products are published right now", body)
 
 
+class MarketplaceProductsSitemapTestCase(PublicMarketplaceFixture):
+    """``GET /sitemap-products.xml`` -- the list we hand Google directly.
+
+    Here rather than in ``tests/test_sitemap_integrity.py`` because every
+    assertion below is about which *rows* survive the filter, and the rows are
+    the part that file has no fixture for. That file owns the invariants each
+    child sitemap must satisfy whatever it lists -- no ``noindex`` URL, one host,
+    no duplicates, no fabricated ``lastmod`` -- and it now runs them over this
+    route too.
+
+    The distinction matters because a sitemap route that filters nothing still
+    returns valid XML and passes every structural check in that file.
+    """
+
+    def locs(self):
+        response = self.client.get("/sitemap-products.xml")
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn("<urlset", body)
+        return re.findall(r"<loc>([^<]+)</loc>", body), body
+
+    # -- what is in it --------------------------------------------------------
+
+    def test_a_published_product_is_submitted(self):
+        listing_id = self.make_listing()
+        locs, _body = self.locs()
+        self.assertIn(f"https://pulsesoc.com/pulse/marketplace/{listing_id}", locs)
+
+    def test_the_collection_page_leads_the_list(self):
+        """The grid is in no other child sitemap, and it is the page whose links
+        Google follows to reach every product."""
+        self.make_listing()
+        locs, _body = self.locs()
+        self.assertEqual(locs[0], "https://pulsesoc.com/pulse/marketplace")
+
+    def test_the_collection_page_is_submitted_even_with_nothing_published(self):
+        """An empty catalogue still has a grid, and the grid still explains itself.
+
+        The page sends ``noindex,follow`` in that state, which is a different
+        claim from "do not crawl this" -- the URL is how a crawler finds the
+        products that appear tomorrow.
+        """
+        locs, _body = self.locs()
+        self.assertEqual(locs, ["https://pulsesoc.com/pulse/marketplace"])
+
+    def test_a_submitted_product_carries_the_row_s_own_updated_at(self):
+        """Never today-for-everything: a sitemap that claims the whole catalogue
+        changed this morning teaches Google to ignore the field on the rows that
+        really did change."""
+        listing_id = self.make_listing()
+        _locs, body = self.locs()
+        entry = re.search(
+            rf"<loc>https://pulsesoc\.com/pulse/marketplace/{listing_id}</loc>\s*<lastmod>([^<]+)</lastmod>",
+            body)
+        self.assertIsNotNone(entry, "the product entry carries no lastmod")
+        self.assertTrue(entry.group(1).startswith(NOW[:10]), entry.group(1))
+
+    def test_the_collection_page_claims_no_lastmod(self):
+        """It has no honest one. What changes is the 40 rows it happens to render,
+        and an absent ``lastmod`` says exactly that."""
+        self.make_listing()
+        _locs, body = self.locs()
+        self.assertRegex(
+            body,
+            r"<loc>https://pulsesoc\.com/pulse/marketplace</loc>\s*</url>")
+
+    # -- what is filtered out -------------------------------------------------
+
+    def test_a_thin_listing_is_not_submitted(self):
+        """The same row-level verdict the page itself carries.
+
+        Its product page sends ``noindex,follow``, so submitting the URL would be
+        us asking Google to rank a page we told it not to index -- a
+        contradiction Google resolves in favour of the page, at the cost of the
+        credibility that makes the true entries useful.
+        """
+        thin_id = self.make_listing(description="Nice.")
+        locs, _body = self.locs()
+        self.assertNotIn(f"https://pulsesoc.com/pulse/marketplace/{thin_id}", locs)
+        self.assertIn('content="noindex,follow"', self.get(thin_id).get_data(as_text=True))
+
+    def test_an_imageless_listing_is_not_submitted(self):
+        imageless_id = self.make_listing(cover="")
+        locs, _body = self.locs()
+        self.assertNotIn(f"https://pulsesoc.com/pulse/marketplace/{imageless_id}", locs)
+
+    def test_an_unpriced_listing_is_still_submitted(self):
+        """``indexable``, not ``feed_eligible``.
+
+        A product with a real description and image but an unparseable
+        ``price_label`` is a perfectly good web page that Merchant Center cannot
+        accept as an offer. Filtering the sitemap on the feed's rule would
+        withhold those pages from Search to satisfy a rule Search does not have.
+        """
+        unpriced_id = self.make_listing(price_label="Request access")
+        locs, _body = self.locs()
+        self.assertIn(f"https://pulsesoc.com/pulse/marketplace/{unpriced_id}", locs)
+
+    def test_a_draft_listing_is_not_submitted(self):
+        draft_id = self.make_listing(status="draft")
+        locs, _body = self.locs()
+        self.assertNotIn(f"https://pulsesoc.com/pulse/marketplace/{draft_id}", locs)
+
+    def test_an_unapproved_listing_is_not_submitted(self):
+        pending_id = self.make_listing(approval_status="pending")
+        locs, _body = self.locs()
+        self.assertNotIn(f"https://pulsesoc.com/pulse/marketplace/{pending_id}", locs)
+
+    def test_a_physical_listing_with_no_stock_is_not_submitted(self):
+        """It has no page to submit: the catalogue query excludes it, so the URL
+        404s. The sitemap and the page have to agree about that too."""
+        sold_out_id = self.make_listing(quantity=0)
+        locs, _body = self.locs()
+        self.assertNotIn(f"https://pulsesoc.com/pulse/marketplace/{sold_out_id}", locs)
+        self.assertEqual(self.get(sold_out_id).status_code, 404)
+
+    # -- the two lists have to agree -----------------------------------------
+
+    def test_every_submitted_url_answers_200_and_asks_to_be_indexed(self):
+        """End to end, which is the only version that catches a disagreement
+        between the sitemap's filter and the page's.
+
+        Both call ``marketplace_seo.eligibility``; this asserts they still do,
+        rather than that the code looks like it does.
+        """
+        self.make_listing()
+        self.make_listing(price_label="Request access")
+        self.make_listing(description="Nice.")
+        locs, _body = self.locs()
+        self.assertGreater(len(locs), 2, "nothing was submitted; this proves nothing")
+        for loc in locs:
+            path = loc.replace("https://pulsesoc.com", "")
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertIn('content="index,follow', response.get_data(as_text=True), path)
+
+    def test_the_sitemap_lists_what_the_grid_s_item_list_lists(self):
+        """Two independent statements of the same claim, built by different code.
+
+        The grid's ``ItemList`` and this sitemap both mean "these are the product
+        pages we are asking to rank". They are assembled separately -- one from a
+        40-row page query, one from a 500-row sitemap query -- so they can drift,
+        and a drift means one of the two is lying about the catalogue.
+        """
+        self.make_listing()
+        self.make_listing(description="Nice.")
+        item_list = [node for node in json.loads(re.search(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            self.client.get("/pulse/marketplace").get_data(as_text=True), re.S,
+        ).group(1))["@graph"] if node.get("@type") == "ItemList"][0]
+        listed = {element["url"] for element in item_list["itemListElement"]}
+        locs, _body = self.locs()
+        submitted = set(locs) - {"https://pulsesoc.com/pulse/marketplace"}
+        self.assertEqual(listed, submitted)
+
+    # -- failure is logged, not disguised ------------------------------------
+
+    def test_a_failed_query_is_logged_rather_than_passed_off_as_an_empty_catalogue(self):
+        """An empty products sitemap has two causes and one appearance.
+
+        In production the silence reads as "Search Console discovered 0 URLs"
+        with nothing to point at, which is indistinguishable from a marketplace
+        nobody has listed anything in. The collection page still goes out: it
+        needs no query, and it is the URL that gets the crawler back here.
+        """
+        self.make_listing()
+        real_db = bot.db
+        bot.db = lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError('relation "marketplace_listings" does not exist'))
+        try:
+            with self.assertLogs(level="ERROR") as captured:
+                entries = bot.marketplace_public_entries()
+        finally:
+            bot.db = real_db
+        self.assertEqual(entries, [("/pulse/marketplace", "")])
+        self.assertIn("SITEMAP_PRODUCTS_QUERY_FAILED", "\n".join(captured.output))
+
+
 if __name__ == "__main__":
     unittest.main()

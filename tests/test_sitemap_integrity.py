@@ -45,6 +45,12 @@ from services import search_visibility as sv  # noqa: E402
 SITEMAP_ROUTES = (
     "/sitemap-pages.xml",
     "/sitemap-posts.xml",
+    # Row-level filtering for this one is tested in
+    # `tests/test_marketplace_public_pages.py`, next to the seeded catalogue the
+    # assertions need. What it is here for is the invariants above, which every
+    # child owes regardless of what it lists: no `noindex` URL, no non-canonical
+    # host, no duplicate, no fabricated `lastmod`.
+    "/sitemap-products.xml",
     "/sitemap-live.xml",
     "/sitemap-replays.xml",
 )
@@ -87,6 +93,20 @@ def test_submitted_urls_are_absolute_canonical_and_on_one_host(client, route):
 def test_no_url_is_submitted_twice(client, route):
     locs = _locs(client, route)
     assert len(locs) == len(set(locs))
+
+
+@pytest.mark.parametrize("route", ("/sitemap.xml",) + SITEMAP_ROUTES)
+def test_every_sitemap_is_cacheable_at_the_edge(client, route):
+    """`add_pwa_headers` picks the cache policy from a hardcoded tuple of paths.
+
+    A child sitemap missing from that tuple falls through to the default, which
+    is `no-store` -- so Googlebot re-fetches and Railway re-runs the catalogue
+    query on every request to a document that changes a few times a day. The
+    tuple is a literal list of strings, so the only thing that keeps it in step
+    with `SITEMAP_CHILDREN` is this test.
+    """
+
+    assert client.get(route).headers.get("Cache-Control") == "public, max-age=300", route
 
 
 # ---------------------------------------------------------------------------
