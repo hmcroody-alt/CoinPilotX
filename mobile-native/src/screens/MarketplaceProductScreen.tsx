@@ -6,11 +6,20 @@
  * no route, so it could not be deep-linked, shared, or returned to after
  * checkout, and its back gesture dismissed the product rather than the step.
  *
- * The listing travels in the route params rather than being refetched. There is
- * no read-one endpoint — `/api/pulse/marketplace/search` is the only buyer-side
- * read — so a refetch here would mean a second search and a spinner in front of
- * data the caller already holds. `listingId` is carried alongside so identity
- * (save state, cart writes, reporting) never depends on the snapshot.
+ * A caller may hand over the whole listing or just its id. When the snapshot is
+ * there it is used as-is — a refetch would put a spinner in front of data the
+ * caller already holds — and when it is absent the screen reads
+ * `GET /api/pulse/marketplace/listings/<id>`. That second path is the one that
+ * matters: the four commerce discovery surfaces navigate with an id alone (feed
+ * strip, reels chip, messenger strip, marketplace shelves) and before the
+ * read-one route existed every one of them rendered "This item is no longer
+ * available" for a listing that was on sale. `listingId` is carried alongside either way,
+ * so identity (save state, cart writes, reporting) never depends on the payload.
+ *
+ * Loading, failed and unavailable are three states and exactly one renders. A
+ * request that did not answer is not an empty shelf: telling a buyer on a
+ * dropped connection that the seller withdrew the item is a lie the retry
+ * affordance exists to avoid.
  *
  * What this screen deliberately does not render: `safety_score`,
  * `approval_status`, `publication_state`, `publication_label`, or any other
@@ -26,6 +35,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -38,6 +48,7 @@ import {
   View
 } from "react-native";
 import {
+  fetchMarketplaceListing,
   MarketplaceListing,
   marketplaceSellerAuthor,
   marketplaceWebUrl,
@@ -82,8 +93,21 @@ type ProductAction = "save" | "report" | "message" | "cart" | "buy";
 const MAX_QTY = 20;
 
 export function MarketplaceProductScreen({ route, navigation }: Props) {
-  const listing = route.params?.listing as MarketplaceListing | undefined;
-  const listingId = Number(route.params?.listingId || listing?.id || 0);
+  const snapshot = route.params?.listing as MarketplaceListing | undefined;
+  const listingId = Number(route.params?.listingId || snapshot?.id || 0);
+  /**
+   * The listing the screen renders, and how it got here.
+   *
+   * `load` is deliberately one value rather than three booleans, because the
+   * three outcomes are mutually exclusive and a shape that can express
+   * "failed *and* empty" is a shape that will eventually render both.
+   */
+  const [fetched, setFetched] = useState<MarketplaceListing | null>(null);
+  const [load, setLoad] = useState<"ready" | "loading" | "unavailable" | "failed">(
+    snapshot ? "ready" : listingId > 0 ? "loading" : "unavailable"
+  );
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const listing = snapshot ?? fetched ?? undefined;
   const { width } = useWindowDimensions();
   // This screen is registered `headerShown: false`, so it owns the whole window
   // including the status bar and the Dynamic Island. Without a top inset the
@@ -177,9 +201,72 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
     [listing?.currency, listingId, qty]
   );
 
+  /**
+   * Read the listing when the caller only had its id.
+   *
+   * Skipped entirely when a snapshot arrived in the params, so the grid keeps
+   * its instant open. `fetchMarketplaceListing` returns null only for a listing
+   * the viewer may not see and throws for everything else, which is what lets
+   * the two failure states stay apart here.
+   */
+  useEffect(() => {
+    if (snapshot || !listingId) return;
+    let live = true;
+    setLoad("loading");
+    fetchMarketplaceListing(listingId)
+      .then((item) => {
+        if (!live) return;
+        if (item) {
+          setFetched(item);
+          setLoad("ready");
+        } else {
+          setFetched(null);
+          setLoad("unavailable");
+        }
+      })
+      .catch(() => {
+        if (!live) return;
+        setFetched(null);
+        setLoad("failed");
+      });
+    return () => {
+      live = false;
+    };
+  }, [listingId, reloadNonce, snapshot]);
+
+  if (load === "loading") {
+    return (
+      <View style={styles.unavailable} testID="marketplace-product-loading">
+        <ActivityIndicator color={storeLight.text.link} />
+        <Text style={styles.unavailableSubtitle}>Loading this product…</Text>
+      </View>
+    );
+  }
+
+  if (load === "failed") {
+    return (
+      <View style={styles.unavailable} testID="marketplace-product-error">
+        <Ionicons name="cloud-offline-outline" size={34} color={storeLight.text.muted} />
+        <Text style={styles.unavailableTitle}>We could not load this product.</Text>
+        <Text style={styles.unavailableSubtitle}>Check your connection and try again.</Text>
+        <Pressable
+          accessibilityRole="button"
+          style={styles.unavailableButton}
+          testID="marketplace-product-retry"
+          onPress={() => setReloadNonce((value) => value + 1)}
+        >
+          <Text style={styles.unavailableButtonText}>Try again</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" style={styles.unavailableButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.unavailableButtonText}>Go back</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
   if (!listing || !listingId) {
     return (
-      <View style={styles.unavailable}>
+      <View style={styles.unavailable} testID="marketplace-product-unavailable">
         <Ionicons name="pricetag-outline" size={34} color={storeLight.text.muted} />
         <Text style={styles.unavailableTitle}>This item is no longer available.</Text>
         <Pressable accessibilityRole="button" style={styles.unavailableButton} onPress={() => navigation.goBack()}>
@@ -813,6 +900,7 @@ const styles = createThemedStyles(() => ({
     paddingHorizontal: 22
   },
   unavailableButtonText: { color: storeLight.text.link, fontSize: 14, fontWeight: "800" },
+  unavailableSubtitle: { color: storeLight.text.muted, fontSize: 14, fontWeight: "600", textAlign: "center" },
   unavailableTitle: { color: storeLight.text.primary, fontSize: 17, fontWeight: "900", textAlign: "center" },
   viewStore: { color: storeLight.text.link, fontSize: 13, fontWeight: "800" }
 }));

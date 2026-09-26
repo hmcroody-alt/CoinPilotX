@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 from . import config
@@ -129,11 +130,44 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return max(low, min(high, float(value)))
 
 
+#: A run of letters and digits, which is what a matchable word is here.
+#:
+#: This used to be a whitespace split, and everything punctuation touched was
+#: welded into a token nothing else could produce. It failed in both directions
+#: and only one of them was fixable by a client:
+#:
+#:   * **Context side.** ``#sneakers`` tokenised to ``#sneakers``, so a post
+#:     whose only subject was a hashtag scored 0.0 against a listing that stored
+#:     ``sneakers`` -- not NEUTRAL, a *mismatch*, which is below every surface
+#:     floor in the system. The clients strip the hash before sending for exactly
+#:     this reason, and they still do; that stripping is now belt and braces.
+#:
+#:   * **Listing side, which no client can reach.** A seller who titles a listing
+#:     ``Running Sneakers (Mesh) - Breathable!`` produced the tokens ``(mesh)``
+#:     and ``breathable!``. The words "mesh" and "breathable" could not match
+#:     that listing from any surface, by any context, ever. Sellers write titles
+#:     with parentheses and exclamation marks because titles are advertising, so
+#:     this was not an edge case -- and no amount of care in
+#:     ``postContext``/``reelContext`` could have fixed it.
+#:
+#: Splitting on punctuation rather than stripping only the edges also merges the
+#: two spellings of a compound: a seller's ``anti-slip`` and a caption's ``anti
+#: slip`` are now the same two words. Trailing possessives fall out as a
+#: one-character token and are dropped by the length rule below, which is the
+#: desired reading -- ``women's`` matching on ``women`` is strictly better than
+#: matching on nothing.
+_WORD = re.compile(r"[^\W_]+", re.UNICODE)
+
+
 def _tokens(*values: Any) -> set[str]:
     """Lowercased word set from arbitrary text/JSON-list fields.
 
     Tolerates the three shapes ``tags_json`` actually takes in this table:
     a JSON array, a comma-joined string, and NULL.
+
+    Punctuation is a separator, not part of a word -- see :data:`_WORD` for the
+    two failure modes that cost, and why the client-side hash stripping is kept
+    even though this now makes it redundant.
     """
     out: set[str] = set()
     for value in values:
@@ -148,15 +182,20 @@ def _tokens(*values: Any) -> set[str]:
                     parsed = json.loads(text)
                     items = parsed if isinstance(parsed, list) else [text]
                 except Exception:
-                    items = text.replace(",", " ").split()
+                    items = [text]
             else:
-                items = text.replace(",", " ").split()
+                items = [text]
         for item in items:
-            word = str(item or "").strip().lower()
-            # Two-character words are almost all stopwords and they match far
-            # too eagerly across unrelated categories.
-            if len(word) > 2:
-                out.add(word)
+            # One item can yield several words: a multi-word tag ("3d printing"),
+            # a whole title, or a comma-joined string all arrive here as one
+            # string. The previous code pre-split on commas and spaces, which
+            # this subsumes.
+            for match in _WORD.finditer(str(item or "").lower()):
+                word = match.group(0)
+                # Two-character words are almost all stopwords and they match far
+                # too eagerly across unrelated categories.
+                if len(word) > 2:
+                    out.add(word)
     return out
 
 

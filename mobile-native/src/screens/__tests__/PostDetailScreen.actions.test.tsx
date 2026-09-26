@@ -77,6 +77,25 @@ jest.mock("../../api/pulseApi", () => ({
 }));
 const mockSaveApi = jest.fn();
 
+/**
+ * Just the save requests, out of everything the screen sends through `pulseApi`.
+ *
+ * `pulseApi` is mocked at the transport, so this spy sees *every* call the screen
+ * makes — and since the post-detail commerce surface was added, the first one is
+ * a discovery fetch rather than the save. These cases used to read
+ * `mock.calls[0]` and count `toHaveBeenCalledTimes`, which quietly made them
+ * assertions about the screen's total network traffic instead of about saving.
+ *
+ * Filtering by URL rather than mocking the commerce module out: the claim each
+ * case makes is "one save request, with this body", and that claim should hold
+ * however much unrelated traffic the screen has. Stubbing the other caller away
+ * would restore the positional index and leave the next added request to break
+ * these same two lines again.
+ */
+function saveCalls(): any[][] {
+  return mockSaveApi.mock.calls.filter(([url]) => typeof url === "string" && url.includes("/save"));
+}
+
 import { POST_COMMENT_PAGE_SIZE } from "../../api/feed";
 import { peekSaveState, resetSavedStoreForTests } from "../../social/savedStore";
 import { resetSaveActionsForTests } from "../../social/useSaveAction";
@@ -168,7 +187,7 @@ describe("PostDetailScreen save", () => {
       first = onSave(post());
       second = onSave(post());
     });
-    expect(mockSaveApi).toHaveBeenCalledTimes(1);
+    expect(saveCalls()).toHaveLength(1);
 
     await tap(async () => {
       pending.resolve({ ok: true, saved: true });
@@ -187,7 +206,7 @@ describe("PostDetailScreen save", () => {
       `/api/pulse/posts/${POST_ID}/save`,
       expect.objectContaining({ method: "POST" })
     );
-    expect(JSON.parse(mockSaveApi.mock.calls[0][1].body)).toEqual({ post_id: POST_ID, saved: true });
+    expect(JSON.parse(saveCalls()[0][1].body)).toEqual({ post_id: POST_ID, saved: true });
   });
 
   it("shows the save immediately and then keeps the server's answer", async () => {

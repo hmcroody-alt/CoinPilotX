@@ -65,7 +65,16 @@ SEE_FEWER_WEIGHT = 0.34
 #: about. The settings screen says so to the user in as many words
 #: ("Marketplace keeps recommending products inside Marketplace either way"), so
 #: this is a promise rather than an implementation detail.
-SOCIAL_SURFACES = frozenset({"feed", "reels", "messenger"})
+#: ``post_detail`` belongs here for the same reason the other three do: a reader
+#: who opened a post came for the post. It is the *only* entry that is not a
+#: standalone tab, which is precisely why it is easy to forget — so
+#: ``test_every_social_surface_is_covered_by_the_master_switch`` derives this set
+#: from :data:`schema.SURFACES` and fails if a new surface is added without a
+#: decision being made about it here. Forgetting would not break a test that
+#: mentions this constant; it would silently serve cards to a viewer who had
+#: switched discovery off, which is the failure this module's docstring calls
+#: failing open.
+SOCIAL_SURFACES = frozenset({"feed", "reels", "messenger", "post_detail"})
 
 
 @dataclass(frozen=True)
