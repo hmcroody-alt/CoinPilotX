@@ -350,18 +350,24 @@ def test_web_intent_paths_are_ignored_even_if_someone_appends_the_marker():
 
 def test_non_ios_continues_to_the_web_only_where_a_web_page_genuinely_exists():
     assert fallback_decision("/pulse/post/5", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
-    # No production-ready web surface for a listing or for orders. A desktop
-    # visitor gets the app-only page, not a redirect to an iPhone listing they
-    # cannot install from.
-    assert fallback_decision("/pulse/marketplace/9", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
+    # The two reading surfaces have real public templates now, so a desktop
+    # visitor gets the page. They are submitted in `/sitemap-products.xml`, and
+    # showing the app-only interstitial to the person who arrived from that
+    # search result would be the website refusing the page we asked Google to
+    # rank.
+    assert fallback_decision("/pulse/marketplace", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
+    assert fallback_decision("/pulse/marketplace/9", is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
+    # Order management has no web template. A desktop visitor gets the app-only
+    # page, not a redirect to an iPhone listing they cannot install from.
     assert fallback_decision("/pulse/orders", is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
 
 
 @pytest.mark.parametrize(
     "path",
     [
-        "/pulse/marketplace",
-        "/pulse/marketplace/9",
+        # `/pulse/marketplace` and `/pulse/marketplace/9` were here and have
+        # moved to the web-first test below. Everything left is a *selling* or
+        # order-management surface.
         "/pulse/merchant/acme",
         "/pulse/seller-store",
         "/pulse/merchant/dashboard",
@@ -371,16 +377,30 @@ def test_non_ios_continues_to_the_web_only_where_a_web_page_genuinely_exists():
         "/pulse/purchases",
     ],
 )
-def test_the_whole_marketplace_family_is_app_first_on_every_platform(path):
-    """Mission decision: no visitor is shown the unfinished web Marketplace.
+def test_the_selling_half_of_marketplace_is_app_first_on_every_platform(path):
+    """No visitor is shown the unfinished *seller* Marketplace.
 
     iOS without the app gets the listing; everything else gets the app-only
-    page. The one outcome that must never occur is FALLBACK_WEB, because the
-    web surface behind these paths renders through `pulse_social_shell()` with
-    no template and was never designed for a browser.
+    page. The one outcome that must never occur is FALLBACK_WEB, because the web
+    surface behind these paths renders through `pulse_social_shell()` with no
+    template and was never designed for a browser. Creating a listing, managing
+    a storefront and reconciling orders are all still in that state.
     """
     assert fallback_decision(path, is_ios=True, is_app_intent=True)[0] == FALLBACK_APP_STORE
     assert fallback_decision(path, is_ios=False, is_app_intent=True)[0] == FALLBACK_APP_ONLY
+
+
+@pytest.mark.parametrize("path", ["/pulse/marketplace", "/pulse/marketplace/9"])
+def test_the_buying_half_of_marketplace_is_web_first_off_ios(path):
+    """The other half of the same decision, asserted rather than left implied.
+
+    An iPhone still gets the App Store: that is the app-intent contract and it
+    never depended on whether a web page exists. What changed is the desktop and
+    Android answer, because these two paths now render public templates, carry
+    canonical URLs and structured data, and are submitted to Google.
+    """
+    assert fallback_decision(path, is_ios=True, is_app_intent=True)[0] == FALLBACK_APP_STORE
+    assert fallback_decision(path, is_ios=False, is_app_intent=True)[0] == FALLBACK_WEB
 
 
 def test_unknown_destination_fails_safe_to_our_own_web_surface():

@@ -168,10 +168,28 @@ reached Flask. That inference is the whole mechanism, and on-site it is wrong.
 
 `bot.app_first_href(destination, resource_id=None)` is the single caller. Every
 Marketplace button on the website goes through it. No page hand-writes a
-Marketplace path, and `tests/test_marketplace_web_ctas_are_app_first.py` scans
-the whole of `bot.py` to keep it that way — the source layer is what survives the
-file growing, and the render layer over seven real pages is what proves the
-source layer is measuring something.
+Marketplace path, and `tests/test_marketplace_web_ctas_follow_the_registry.py`
+scans the whole of `bot.py` to keep it that way — the source layer is what
+survives the file growing, and the render layer over seven real pages is what
+proves the source layer is measuring something.
+
+`app_first_href` no longer always produces `/open/...`, and the name is
+historical. It delegates to `app_links.website_href`, which reads the
+destination's `web_equivalent` flag:
+
+- `web_equivalent=False` → `/open/<destination>`, as above. The composer, seller
+  tools, the merchant dashboard, orders and purchases are all here.
+- `web_equivalent=True` → the real path. `/pulse/marketplace` and
+  `/pulse/marketplace/<id>` are here, because they render public templates, are
+  submitted in `/sitemap-products.xml` and carry canonical URLs. A button that
+  sent a visitor to an interstitial instead would mean the website's own
+  navigation refusing the pages we ask Google to rank.
+
+Neither branch is ever the canonical `?pulse_app=1` marker link, which is the
+regression the tests are shaped around. Moving a destination between the two is
+one flag plus deleting its entry from `APP_FIRST_DESPITE_WEB_ROUTE`; nothing else
+keys off the distinction, and the `APP` pill drops automatically because
+`app_promotion.is_app_first_href` asks the URL rather than a list of labels.
 
 ### Cards the browser renders
 
@@ -300,7 +318,7 @@ exists in a **released** binary.
 | `tests/test_app_links.py` | the registry, CTA honesty, `linking.ts` agreement |
 | `tests/test_app_intent_fallback_router.py` | the hook, the interstitial, url_map agreement, security |
 | `tests/test_open_destination_interstitial.py` | `/open/...`, the scheme button, the beacon |
-| `tests/test_marketplace_web_ctas_are_app_first.py` | every website Marketplace CTA, the source scan, the rendered pages, the search-card map, the Stripe exception |
+| `tests/test_marketplace_web_ctas_follow_the_registry.py` | every website Marketplace CTA, the web/app split, the source scan, the rendered pages, the search-card map, the Stripe exception |
 | `tests/test_share_link_app_intent.py` | share links carry the marker |
 | `tests/test_resource_page_app_ctas.py` | resource pages emit honest CTAs |
 | `tests/web_parity/test_aasa_claims.py` | the association file's claims |

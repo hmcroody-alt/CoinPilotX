@@ -42,11 +42,23 @@ over whatever the grid emitted, not as a fixed id list.
 
 ## Why responses, not routes
 
-A rule existing proves nothing here: `require_account()` runs before the lookup,
-so an anonymous client sees `302 /login` for a real listing, a hidden one and a
-nonexistent one alike. Every assertion below is therefore made against a real
-response from a signed-in client, which is the only vantage point that can tell
-the three outcomes apart.
+A rule existing proves nothing here, so every assertion below is made against a
+real response.
+
+Most of them use a signed-in client. That used to be the only vantage point that
+could tell the outcomes apart, because `require_account()` ran before the lookup
+and an anonymous request got `302 /login` for a real listing, a hidden one and a
+nonexistent one alike. It no longer does: the page is public, because it is a
+canonical URL submitted in `/sitemap-products.xml` and a crawler never has a
+session. The signed-in client is kept anyway — it is the vantage point the
+predicates are easiest to read from, since a refusal and a login wall are both
+"not the listing" when seen anonymously.
+
+The two anonymous assertions are at the bottom of the file and divide what that
+change gave up from what it kept: a public listing is readable without a session
+(`test_a_public_listing_is_readable_without_a_session`), and every *refusal*
+still looks identical to one another (`test_every_refusal_looks_the_same_to_a_
+signed_out_visitor`), so the page cannot be used to enumerate withheld listings.
 """
 
 from __future__ import annotations
@@ -97,6 +109,7 @@ _PROBE = r"""
 import json, re, sys, sqlite3
 sys.path.insert(0, %(repo)r)
 import bot
+from services import app_links
 
 app = bot.webhook_app
 app.config["SECRET_KEY"] = "marketplace-listing-links-test"
@@ -158,24 +171,34 @@ grid = client.get("/pulse/marketplace").get_data(as_text=True)
 report["grid"] = {
     "status": 200,
     "shows": {str(l): ("Listing %%d" %% l) in grid for l in %(seeded_ids)r},
-    # Every listing id the served grid links to, server-rendered. The card's
-    # href is the app-first interstitial, not the canonical path -- see
-    # tests/test_marketplace_web_ctas_are_app_first.py -- but it still names a
-    # listing id, and that id is what this file is about.
-    "links": sorted({int(m) for m in re.findall(r"/open/product/(\d+)", grid)}),
+    # Every listing id the served grid links to, server-rendered. The href shape
+    # is whatever `app_links` decides for the `product` destination -- see
+    # tests/test_marketplace_web_ctas_follow_the_registry.py -- so it is asked for
+    # here rather than pattern-matched. It used to be the app-first interstitial
+    # and is now the public product page; either way it names a listing id, and
+    # that id is what this file is about.
+    "links": sorted(l for l in %(seeded_ids)r
+                    if ("href='%%s'" %% bot.app_first_href("product", l)) in grid
+                    or ('href="%%s"' %% bot.app_first_href("product", l)) in grid),
     # The client-rendered card builds the same link from its own row, by
     # substituting an id into a shape the server built.
-    "js_link": "/open/product/__RESOURCE_ID__" in grid,
+    "js_link": app_links.website_href_template("product", source="web") in grid,
 }
 
-# The signed-out view of all three outcomes, to show they are indistinguishable
-# without a session -- which is why nothing above is asserted anonymously.
+# The signed-out view of every outcome. A public listing is now readable without
+# a session -- that is the point of the public product page -- so what is recorded
+# is enough to compare the *refusals* to each other, byte for byte, rather than
+# only their status codes. Length and title stand in for the body: a refusal that
+# leaked the title, or that rendered a different-sized page for a row that exists,
+# would still be a 404.
 anon = app.test_client()
-report["anonymous"] = {
-    str(l): [anon.get("/pulse/marketplace/%%d" %% l).status_code,
-             anon.get("/pulse/marketplace/%%d" %% l).headers.get("Location", "")]
-    for l in (%(public)d, %(hidden)d, %(missing)d)
-}
+_anon = {}
+for l in %(all_ids)r:
+    r = anon.get("/pulse/marketplace/%%d" %% l)
+    b = r.get_data(as_text=True)
+    _anon[str(l)] = [r.status_code, r.headers.get("Location", ""), len(b),
+                     ("Listing %%d" %% l) in b]
+report["anonymous"] = _anon
 
 report["rules"] = sorted({r.rule for r in app.url_map.iter_rules()
                           if r.rule.startswith("/pulse/marketplace")})
@@ -213,7 +236,8 @@ def marketplace_probe():
     code = _PROBE % {
         "repo": REPO, "rows": _ROWS, "paths": paths,
         "seeded_ids": [PUBLIC, PAUSED, UNAPPROVED, HIDDEN_SELLER],
-        "public": PUBLIC, "hidden": HIDDEN_SELLER, "missing": MISSING,
+        "all_ids": [PUBLIC, PAUSED, UNAPPROVED, HIDDEN_SELLER, MISSING],
+        "public": PUBLIC,
     }
     proc = subprocess.run([sys.executable, "-c", code], cwd=REPO, env=env,
                           capture_output=True, text=True, timeout=900)
@@ -338,24 +362,52 @@ def test_the_route_is_registered_for_an_integer_id(marketplace_probe):
         % marketplace_probe["rules"])
 
 
-def test_signed_out_visitors_cannot_tell_the_outcomes_apart(marketplace_probe):
-    """The login redirect happens before the lookup, and must keep doing so.
+def test_a_public_listing_is_readable_without_a_session(marketplace_probe):
+    """The deliberate withdrawal, asserted so it reads as a decision.
 
-    If the row were read first, a 404 for the missing id — or a different
-    destination for the hidden one — would tell an anonymous visitor which ids
-    exist, turning the login wall into an enumeration oracle.
+    This file used to assert that an anonymous request for *any* listing id got
+    the same `302 /login`, because `require_account()` ran before the lookup. That
+    is no longer true and must not be: `/pulse/marketplace/<id>` is submitted in
+    `/sitemap-products.xml` and carries a canonical URL, so a crawler — which
+    never has a session — has to get the page. A login wall there would be a
+    sitemap full of URLs that redirect.
 
-    The redirect target necessarily echoes the requested path, so the assertion
-    is that it echoes *only* that: each answer must be exactly the same function
-    of the URL, carrying nothing drawn from the row behind it.
+    What was given up is narrow, and it is the part that was never worth keeping:
+    a public listing answering 200 tells an anonymous visitor that a public
+    listing exists. It is in the sitemap; that is the same statement.
+    """
+    status, location, _, title = marketplace_probe["anonymous"][str(PUBLIC)]
+    assert status == 200, (
+        "a signed-out visitor cannot read the public listing (%s -> %r), so every "
+        "URL in /sitemap-products.xml is a redirect to Google"
+        % (status, location))
+    assert title, (
+        "the anonymous response was a 200 that does not contain the listing "
+        "title, so it is some other page wearing a success code")
+
+
+def test_every_refusal_looks_the_same_to_a_signed_out_visitor(marketplace_probe):
+    """The privacy property that survives, and now the only one here.
+
+    Opening the public page gave up "you cannot tell a real id from a fake one".
+    It did *not* give up the one that matters: you must not be able to tell a
+    listing that exists but is withheld from one that never existed. Otherwise
+    the page is an enumeration oracle over unapproved and paused inventory and
+    over hidden sellers' catalogues — the three things the two predicates exist
+    to withhold.
+
+    Compared byte-count and title rather than status alone, deliberately. Three
+    404s whose bodies differ in length leak exactly what the status code hides,
+    and a 404 that still renders the title leaks more than the length would.
     """
     answers = marketplace_probe["anonymous"]
-    assert {status for status, _ in answers.values()} == {302}, (
-        "a signed-out visitor gets more than one status across a real, a hidden "
-        "and a nonexistent listing: %s" % answers)
-    for listing_id, (_, location) in answers.items():
-        expected = "/login?next=/pulse/marketplace/%s" % listing_id
-        assert location == expected, (
-            "the signed-out redirect for %s carries something other than the "
-            "requested path (%r), so it can reveal whether the listing exists"
-            % (listing_id, location))
+    refused = {lid: answers[str(lid)] for lid in REFUSED}
+    shapes = {tuple(answer) for answer in refused.values()}
+    assert len(shapes) == 1, (
+        "a signed-out visitor can tell the refusals apart, so the page reveals "
+        "which withheld listings exist: %s"
+        % {REFUSED[lid]: answer for lid, answer in refused.items()})
+    status, location, _, title = shapes.pop()
+    assert status == 404, "refusals answer %s, not 404" % status
+    assert not location, "a refusal carries a redirect target: %r" % location
+    assert not title, "a refusal renders the listing title"
