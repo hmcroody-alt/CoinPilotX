@@ -406,6 +406,7 @@
     "tests/test_call_two_sided_hangup.py",
     "tests/test_clean_html_accepts_row_values.py",
     "tests/test_command_center_ai_routing.py",
+    "tests/test_commerce_discovery_thin_catalogue.py",
     "tests/test_connect_onboarding_return_urls.py",
     "tests/test_connect_payout_onboarding.py",
     "tests/test_connect_return_page.py",

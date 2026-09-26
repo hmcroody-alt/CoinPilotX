@@ -396,6 +396,16 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
 
     qualifying.sort(key=lambda pair: pair[1]["score"], reverse=True)
 
+    # Loosen the diversity caps to the diversity this pool actually holds. On a
+    # many-seller catalogue this is a no-op; on a thin one it is the difference
+    # between a surface that shows a few products and a surface that shows none.
+    branch = router.fit_to_pool(
+        branch,
+        budget=budget,
+        seller_ids=[row.get("seller_user_id") for row, _ in qualifying],
+        categories=[row.get("category") for row, _ in qualifying],
+    )
+
     chosen: list[tuple[dict, dict]] = []
     seller_counts: dict[int, int] = {}
     category_counts: dict[str, int] = {}

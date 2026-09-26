@@ -37,8 +37,8 @@ the client. The absence is load-bearing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, replace
+from typing import Iterable, Optional
 
 from . import config
 
@@ -124,6 +124,65 @@ def _pool_target(surface: str) -> int:
         # rather than by score, and a thin pool would simply come back empty.
         return max(12, base // 2)
     return base
+
+
+def _share(budget: int, distinct: int) -> int:
+    """How many placements one group must carry for ``budget`` to be reachable.
+
+    Ceiling division, with an empty pool answering ``budget`` rather than
+    dividing by zero — a cap of ``budget`` over nothing selects nothing, which
+    is the same answer by a shorter road.
+    """
+    if distinct <= 0:
+        return max(0, budget)
+    return -(-max(0, budget) // distinct)
+
+
+def fit_to_pool(
+    policy: SurfacePolicy,
+    *,
+    budget: int,
+    seller_ids: Iterable,
+    categories: Iterable,
+) -> SurfacePolicy:
+    """The same policy, loosened to the diversity the catalogue can actually supply.
+
+    ``max_per_seller`` and ``max_per_category`` are diversity controls, and a
+    diversity control only means anything when there is diversity to spread the
+    response across. They are written as absolute counts because they were
+    written against the catalogue this engine is designed for — many sellers,
+    many categories — where "at most two from one store" reliably delivers "at
+    least two different stores".
+
+    Against a thin catalogue the identical numbers stop buying variety and start
+    buying emptiness. With one eligible seller, Marketplace's cap of three holds
+    the whole response to three placements; the shelf assembler then splits
+    those across seven reason codes, each of which needs three items to render,
+    so the shop's recommendation rails vanish entirely. Nothing was withheld for
+    variety's sake — there was no variety there to protect. The same arithmetic
+    caps Feed at two cards and reduces Reels and Messenger to one apiece.
+
+    So the caps become floors as well as ceilings: no cap may sit below the
+    share each group would have to carry for the budget to be filled at all,
+    ``ceil(budget / distinct)``. On a diverse pool that share is 1 and every cap
+    already clears it, so this returns the policy untouched. It only ever
+    loosens, and only by exactly what the missing diversity costs.
+
+    Note that it reads the *qualifying* set rather than the raw pool. Diversity
+    that fell below the relevance floor is not diversity the surface could have
+    shown, and counting it would relax the cap on the strength of candidates the
+    response was never allowed to contain.
+    """
+    sellers = {int(value or 0) for value in seller_ids}
+    sellers.discard(0)
+    cats = {str(value or "").strip().lower() for value in categories}
+    cats.discard("")
+
+    max_per_seller = max(policy.max_per_seller, _share(budget, len(sellers)))
+    max_per_category = max(policy.max_per_category, _share(budget, len(cats)))
+    if max_per_seller == policy.max_per_seller and max_per_category == policy.max_per_category:
+        return policy
+    return replace(policy, max_per_seller=max_per_seller, max_per_category=max_per_category)
 
 
 def admissible(
