@@ -79,10 +79,18 @@ _COOLDOWN_FACTORS = {
     "reels": (2.0, 2.0, 2.0),
     "messenger": (1.5, 1.0, 1.5),
     "marketplace": (0.25, 0.5, 0.25),
+    # Post detail sits below a post the user chose to open, so it interrupts
+    # less than reels and more than the shop. The product cooldown is the feed's
+    # because the two surfaces show the same card shape and a product that just
+    # scrolled past in the feed should not be the one waiting under the post the
+    # user tapped. The *seller* cooldown is longer than the feed's: a post-detail
+    # card is one card, so a repeated seller here is not diluted by a second
+    # placement the way it is on a feed page.
+    "post_detail": (1.0, 1.0, 1.5),
 }
 
-_SELLER_CAPS = {"feed": 2, "reels": 1, "messenger": 1, "marketplace": 3}
-_CATEGORY_CAPS = {"feed": 3, "reels": 1, "messenger": 2, "marketplace": 4}
+_SELLER_CAPS = {"feed": 2, "reels": 1, "messenger": 1, "marketplace": 3, "post_detail": 1}
+_CATEGORY_CAPS = {"feed": 3, "reels": 1, "messenger": 2, "marketplace": 4, "post_detail": 1}
 
 
 def policy_for(surface: str) -> SurfacePolicy:
