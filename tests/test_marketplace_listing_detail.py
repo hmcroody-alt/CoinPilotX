@@ -2,10 +2,10 @@
 
 Before this route existed every buyer-facing marketplace read returned a *list*,
 and ``MarketplaceProductScreen`` could only render a listing that arrived whole
-in its navigation params. Six call sites navigate with an id alone — the four
-commerce discovery surfaces, the Page product block and the seller store — and
-all six rendered "This item is no longer available" for listings that were on
-sale. So the cases pinned here are the ones that decide whether a tap on a
+in its navigation params. Four call sites navigate with an id alone — the
+commerce discovery surfaces: feed strip, reels chip, messenger strip and
+marketplace shelves — and all four rendered "This item is no longer available"
+for listings that were on sale. So the cases pinned here are the ones that decide whether a tap on a
 product reaches the product.
 
 Visibility is the same ``public_sql`` gate search uses, with one addition: the

@@ -542,10 +542,10 @@ export async function searchMarketplace(params: { query?: string; limit?: number
  *
  * Every other buyer-side read here returns a list, and for a long time that was
  * the whole buyer API — which is why `MarketplaceProductScreen` was written to
- * render only from a snapshot handed to it in navigation params. Six call sites
- * navigate with an id alone (the four commerce discovery surfaces, the Page
- * product block, the seller store) and every one of them landed on "This item
- * is no longer available" for a listing that was on sale.
+ * render only from a snapshot handed to it in navigation params. The four
+ * commerce discovery surfaces navigate with an id alone (feed strip, reels chip,
+ * messenger strip, marketplace shelves) and every one of them landed on "This
+ * item is no longer available" for a listing that was on sale.
  *
  * Returns `null` for a listing the viewer may not see and **throws** for
  * anything else. The distinction is the whole contract: "gone" is a product

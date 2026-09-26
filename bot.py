@@ -57804,11 +57804,12 @@ def api_pulse_marketplace_listing_detail(listing_id):
     the commerce discovery placements. That was survivable while the only way to
     open a product was to tap a row of one of those lists, because the row could
     hand the whole listing to the product screen in its navigation params. It
-    stopped being survivable the moment anything navigated with an id alone:
-    commerce discovery (feed, reels, messenger, marketplace shelves), the Page
-    block and the seller store all do, and all six landed on "This item is no
-    longer available" for listings that were on sale — the screen had no way to
-    turn an id into a listing and said the only thing it could.
+    stopped being survivable the moment anything navigated with an id alone: all
+    four commerce discovery surfaces do (feed, reels, messenger, marketplace
+    shelves), and all four landed on "This item is no longer available" for
+    listings that were on sale — the screen had no way to turn an id into a
+    listing and said the only thing it could. The Page block and the seller
+    store hand over the whole listing, which is why neither ever showed it.
 
     It is also the precondition for a product link being openable at all. A URL,
     a push notification and a shared card all carry an id and nothing else, so a

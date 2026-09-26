@@ -10,10 +10,10 @@
  * there it is used as-is — a refetch would put a spinner in front of data the
  * caller already holds — and when it is absent the screen reads
  * `GET /api/pulse/marketplace/listings/<id>`. That second path is the one that
- * matters: six call sites navigate with an id alone (the four commerce discovery
- * surfaces, the Page product block, the seller store) and before the read-one
- * route existed every one of them rendered "This item is no longer available"
- * for a listing that was on sale. `listingId` is carried alongside either way,
+ * matters: the four commerce discovery surfaces navigate with an id alone (feed
+ * strip, reels chip, messenger strip, marketplace shelves) and before the
+ * read-one route existed every one of them rendered "This item is no longer
+ * available" for a listing that was on sale. `listingId` is carried alongside either way,
  * so identity (save state, cart writes, reporting) never depends on the payload.
  *
  * Loading, failed and unavailable are three states and exactly one renders. A

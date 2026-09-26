@@ -1,11 +1,12 @@
 /**
  * Arriving at the product page with an id and nothing else.
  *
- * Six call sites navigate to `MarketplaceProduct` carrying only a `listingId` —
- * the four commerce discovery surfaces (feed strip, reels chip, messenger strip,
- * marketplace shelves), the Page product block and the seller store. The screen
- * used to render only from a `listing` snapshot in the route params, so all six
- * showed "This item is no longer available" for listings that were on sale. That
+ * Four call sites navigate to `MarketplaceProduct` carrying only a `listingId`:
+ * the commerce discovery surfaces — feed strip, reels chip, messenger strip and
+ * marketplace shelves. (The Page product block and the seller store both hand
+ * over the whole listing, so neither was ever affected.) The screen used to
+ * render only from a `listing` snapshot in the route params, so all four showed
+ * "This item is no longer available" for listings that were on sale. That
  * is the defect these cases pin: a tap on a product has to reach the product.
  *
  * The four states are asserted separately because the interesting property is
