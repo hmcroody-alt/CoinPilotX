@@ -168,10 +168,20 @@ def fit_to_pool(
     already clears it, so this returns the policy untouched. It only ever
     loosens, and only by exactly what the missing diversity costs.
 
-    Note that it reads the *qualifying* set rather than the raw pool. Diversity
-    that fell below the relevance floor is not diversity the surface could have
-    shown, and counting it would relax the cap on the strength of candidates the
-    response was never allowed to contain.
+    It must be given the **whole scored pool**, not the set that cleared the
+    relevance floor. Cooldowns are expressed as score penalties, so at any
+    moment the qualifying set is narrow precisely *because* the spacing rules
+    are working — a seller shown thirty seconds ago is suppressed, not absent.
+    Measuring there would read a working cooldown as a thin catalogue and relax
+    the cap to let the one remaining seller take every slot, which is the exact
+    behaviour the seller cooldown exists to prevent. Measured over the pool, a
+    ten-seller catalogue yields a share of 1, every cap already clears it, and
+    nothing moves.
+
+    Counting sellers whose only listings are genuinely poor slightly *over*-
+    states diversity and so under-relaxes. That is the safe direction: it can
+    only ever cost a placement, never spend one on a seller who should not have
+    had it.
     """
     sellers = {int(value or 0) for value in seller_ids}
     sellers.discard(0)

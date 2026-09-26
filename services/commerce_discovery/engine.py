@@ -396,14 +396,19 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
 
     qualifying.sort(key=lambda pair: pair[1]["score"], reverse=True)
 
-    # Loosen the diversity caps to the diversity this pool actually holds. On a
-    # many-seller catalogue this is a no-op; on a thin one it is the difference
-    # between a surface that shows a few products and a surface that shows none.
+    # Loosen the diversity caps to the diversity this catalogue actually holds.
+    # On a many-seller catalogue this is a no-op; on a thin one it is the
+    # difference between a surface that shows products and one that shows none.
+    #
+    # Measured over `scored` rather than `qualifying`: cooldowns are score
+    # penalties, so the qualifying set is narrow exactly when the spacing rules
+    # are working, and reading it would let a cooled-down field relax the cap
+    # that the cooldown exists to hold.
     branch = router.fit_to_pool(
         branch,
         budget=budget,
-        seller_ids=[row.get("seller_user_id") for row, _ in qualifying],
-        categories=[row.get("category") for row, _ in qualifying],
+        seller_ids=[row.get("seller_user_id") for row, _ in scored],
+        categories=[row.get("category") for row, _ in scored],
     )
 
     chosen: list[tuple[dict, dict]] = []

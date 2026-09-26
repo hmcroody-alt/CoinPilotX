@@ -120,8 +120,16 @@ def placement_ttl_seconds() -> int:
 
 # --- per-surface cadence ----------------------------------------------------
 def feed_lead_in() -> int:
-    """Organic posts that must render before the first commerce unit."""
-    return _env_int("COMMERCE_DISCOVERY_FEED_LEAD_IN", 6, minimum=1)
+    """Organic posts that must render before the first commerce unit.
+
+    Four rather than six. The lead-in is a politeness rule — it buys the user a
+    stretch of feed that is unambiguously theirs before the app asks for
+    anything — and four posts still buys it. Six put the first product below
+    where most sessions ended, which spent the whole cost of the rule and
+    delivered none of the feature. It remains the largest lead-in of any
+    surface; Reels, the most intrusive one, has the same four.
+    """
+    return _env_int("COMMERCE_DISCOVERY_FEED_LEAD_IN", 4, minimum=1)
 
 
 def feed_interval() -> int:
@@ -135,6 +143,21 @@ def feed_interval() -> int:
 
 
 def feed_max_per_page() -> int:
+    """Commerce units in one page of feed. Two, and this is load-bearing.
+
+    Raising it to three was tried and reverted. With a per-seller cap of two, a
+    three-slot budget forces the selector to fill the third slot from a seller
+    it has already used, so responses take the shape A,A,B. Two existing
+    requirements measure exactly that and both failed: no immediate seller
+    repeat, and a seller owning 40% of the shelf space must not take 40% of the
+    impressions (observed 0.40 against a 0.30 bound).
+
+    So the third card is not available at this per-seller cap on any catalogue
+    that has sellers to protect. It is not a knob that was set conservatively;
+    it is the point where feed density starts being paid for out of seller
+    diversity. The frequency gain in this change comes from the lead-in and
+    from fitting the caps to thin catalogues instead.
+    """
     return _env_int("COMMERCE_DISCOVERY_FEED_MAX_PER_PAGE", 2, minimum=0)
 
 

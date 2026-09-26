@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import pytest
 
-from services.commerce_discovery import engine, metrics
+from services.commerce_discovery import config, engine, metrics, router
 
 
 class TestTheRepetitionFailure:
@@ -326,3 +326,68 @@ class TestPoolReplenishment:
 
         assert len(later) >= 16, "the relaxation ladder did not fire"
         assert len({row["listing_id"] for row in later}) == len(later)
+
+
+class TestASingleSellerCatalogue:
+    """PulseSoc's actual catalogue: 15 publishable listings, one seller.
+
+    Every case above seeds ten sellers, which is the catalogue the engine was
+    designed against and the reason the per-seller caps read as reasonable. In
+    production every publishable listing belongs to user_id=1, and against one
+    seller those caps stop expressing a preference for variety and start
+    expressing a ceiling — there is no second store for them to make room for.
+
+    These two pin the end the caps exist for, at the two ends of the pipeline:
+    the placements the engine returns, and the shelves the Marketplace route
+    builds out of them.
+    """
+
+    def _reseed_as_production(self, market):
+        """Replace the fixture's ten-seller catalogue with production's shape.
+
+        The ``market`` fixture seeds a hundred products across ten sellers,
+        which is correct for every other case in this file. Emptying the three
+        catalogue tables and reseeding is cheaper and clearer than a second
+        fixture that would differ in one argument.
+        """
+        cur = market.conn.cursor()
+        for table in ("marketplace_listings", "marketplace_sellers", "users"):
+            cur.execute(f"DELETE FROM {table}")
+        market.conn.commit()
+        market.seed(products=15, sellers=1)
+
+    def test_the_marketplace_shelves_still_render(self, market):
+        # The route's own assembly, reproduced rather than imported: importing
+        # it would drag in ``bot``. The numbers are the route's numbers.
+        from services.commerce_discovery_routes import MARKETPLACE_MODULES, MIN_MODULE_ITEMS
+
+        self._reseed_as_production(market)
+        placements = market.serve("marketplace", limit=config.marketplace_module_limit() * 6)
+
+        by_reason = {}
+        for placement in placements:
+            by_reason.setdefault(placement.get("reason") or "", []).append(placement)
+        shelves = [
+            key for key, reason in MARKETPLACE_MODULES
+            if len(by_reason.get(reason) or []) >= MIN_MODULE_ITEMS
+        ]
+
+        # Before the caps were fitted to the pool this was zero: a per-seller
+        # cap of three held the whole response to three placements, and three
+        # items split across seven reason codes cannot fill a single shelf.
+        assert len(placements) >= MIN_MODULE_ITEMS, "the shop returned almost nothing to shelve"
+        assert shelves, "the Marketplace recommendation rails rendered nothing"
+
+    def test_the_feed_was_never_the_one_the_caps_starved(self, market):
+        """Recorded so the fix is not credited with more than it did.
+
+        Feed's page budget is 2 and its per-seller cap is 2, so on a one-seller
+        catalogue the two numbers agree and nothing was ever being withheld.
+        Marketplace is where the caps subtracted, because its budget (8) and its
+        cap (3) disagree by a factor of nearly three.
+        """
+        self._reseed_as_production(market)
+        placements = market.serve("feed")
+
+        assert len(placements) == config.feed_max_per_page()
+        assert config.feed_max_per_page() <= router._SELLER_CAPS["feed"]
