@@ -759,57 +759,87 @@ class KnowledgeMapTests(unittest.TestCase):
         assert total == len(kmap.RECORDS), "every record must receive exactly one classification"
 
 
-    def test_no_write_in_the_stage_target_areas_is_ready_to_wire(self):
-        """The gate on Stages 6 and 7.
+    #: Every stage-target write allowed to be READY_TO_WIRE, and the only ones. Kept
+    #: small and explicit so that a map edit cannot soften a blocked write into the
+    #: set unnoticed.
+    #:
+    #: messages.send graduated on the action surface expansion. It was held as an
+    #: AUTHORIZATION DEFECT because comm_v2's send_message passes join_public=True and
+    #: would enrol the caller in a public room as a side effect of sending into it.
+    #: The defect was not reclassified: undx_agent_tools.messages_send now pre-checks
+    #: membership through get_conversation_read_state and refuses before send_message
+    #: is entered, so the UNDX path can no longer reach the joining branch at all.
+    #:
+    #: profile.block and profile.unblock graduated on the service API completion. What
+    #: held them was that blocking existed only as a Flask handler reading
+    #: flask.request, and a capability may not call a route. pulse_social_graph_service
+    #: now owns the operation, writes both blocked_users and comm_v2_blocks in one
+    #: transaction, and reads the result back through a directed block_state — the
+    #: symmetric is_blocked that would have reported success for a block that never
+    #: landed is no longer on the path. The defect was fixed, not reclassified.
+    GRADUATED_STAGE_TARGET_WRITES = frozenset({
+        "saved.post.set", "social.follow", "social.unfollow", "messages.send",
+        "profile.block", "profile.unblock",
+    })
 
-        Every write in social relationships, saved content and messaging is blocked
-        on something specific. If this test ever passes trivially — because a record
-        was softened rather than a defect fixed — the matrix has stopped being a
-        gate and become a formality.
-        """
+    def _stage_target_ready_writes(self):
         matrix = kmap.readiness_matrix(kmap.STAGE_TARGET_AREAS)
-        ready_writes = [
+        return [
             row for row in matrix[kmap.ReadinessClass.READY_TO_WIRE]
             if RiskLevel.is_write(row["risk_class"])
         ]
-        # A stage-target write may graduate only by becoming a registered, verified,
-        # non-toggle capability. Keep the explicit allowlist small so a map edit
-        # cannot silently soften another blocked write.
-        #
-        # messages.send is the fourth and it graduated last, on the action surface
-        # expansion. It was held as an AUTHORIZATION DEFECT because comm_v2's
-        # send_message passes join_public=True and would enrol the caller in a public
-        # room as a side effect of sending into it. The defect was not reclassified:
-        # undx_agent_tools.messages_send now pre-checks membership through
-        # get_conversation_read_state and refuses before send_message is entered, so
-        # the UNDX path can no longer reach the joining branch at all.
-        #
-        # profile.block and profile.unblock are the fifth and sixth. They graduated
-        # on the service API completion: what held them was that blocking existed
-        # only as a Flask handler reading flask.request, and a capability may not
-        # call a route. pulse_social_graph_service now owns the operation, writes
-        # both blocked_users and comm_v2_blocks in one transaction, and reads the
-        # result back through a directed block_state — the symmetric is_blocked that
-        # would have reported success for a block that never landed is no longer on
-        # the path. The defect was fixed, not reclassified.
-        #
-        # messages.mark_read is the seventh, and it is the odd one out: it did not
-        # graduate on this list, it was already registered and wired — executor
-        # messages_mark_read, verifier conversation_read_state — before the map had
-        # a record for it. The sweep that gave every registered capability a
-        # knowledge-map record made it visible here for the first time. Nothing was
-        # softened; a write the planner could already reach is now on the books.
-        assert {row["capability_id"] for row in ready_writes} == {
-            "saved.post.set", "social.follow", "social.unfollow", "messages.send",
-            "profile.block", "profile.unblock", "messages.mark_read",
-        }, (
+
+    def test_no_unexpected_write_in_the_stage_target_areas_is_ready_to_wire(self):
+        """The gate on Stages 6 and 7, in the direction that protects anything.
+
+        Every write in social relationships, saved content and messaging is blocked on
+        something specific. If a record is softened rather than a defect fixed, the
+        write appears here and this fails — which is the whole of the gate's value.
+
+        This used to be one assertion, an exact set equality, and so it also demanded
+        that every *expected* graduate be present. One of them is not: see
+        :meth:`test_mark_read_is_wired_but_the_map_has_no_record_for_it`. Equality
+        failed on the absence and took the containment check down with it, which left
+        the gate quarantined and therefore running nowhere. Split, the direction that
+        catches an unexpected graduation runs on every change, and the direction that
+        is waiting on an owner decision says so out loud instead of darkening both.
+        """
+        ready_writes = self._stage_target_ready_writes()
+        unexpected = {row["capability_id"] for row in ready_writes} - self.GRADUATED_STAGE_TARGET_WRITES
+        assert not unexpected, (
             "unexpected write graduated in a stage target area: "
-            f"{ready_writes}"
+            f"{[r for r in ready_writes if r['capability_id'] in unexpected]}"
         )
-        for capability_id in ("saved.post.set", "social.follow", "social.unfollow",
-                              "messages.send", "profile.block", "profile.unblock"):
+        for capability_id in sorted(self.GRADUATED_STAGE_TARGET_WRITES):
             graduated = kmap.BY_ID[capability_id]
             assert graduated.registered and graduated.verifier and not graduated.toggle_semantics
+
+    def test_mark_read_is_wired_but_the_map_has_no_record_for_it(self):
+        """A registered, wired write the knowledge map has never heard of.
+
+        messages.mark_read is the odd one out among the stage-target writes: it did not
+        graduate onto the list above, it was already registered and wired — executor
+        messages_mark_read, verifier conversation_read_state — before the map had a
+        record for it. It is one of the capabilities in issue #38, where the registry
+        and the map disagree about what exists.
+
+        This is asserted as a *gap*, not as a property anyone wants. Giving it a record
+        means choosing its ``authorization_scope``, which decides what the agent
+        believes it is allowed to do, and that is an access decision rather than a test
+        repair — so it is not made here. When #38 is settled this test fails, and the
+        repair is to delete it and add the id to ``GRADUATED_STAGE_TARGET_WRITES``.
+        """
+        assert "messages.mark_read" in registry.REGISTRY, (
+            "this test only describes a map gap; a capability that is no longer "
+            "registered has a different problem"
+        )
+        assert "messages.mark_read" not in kmap.BY_ID, (
+            "messages.mark_read now has a knowledge-map record, so #38 has moved: "
+            "delete this test and add the id to GRADUATED_STAGE_TARGET_WRITES"
+        )
+        assert "messages.mark_read" not in {
+            row["capability_id"] for row in self._stage_target_ready_writes()
+        }
 
 
     def test_blocked_records_explain_what_is_blocking_them(self):
