@@ -8,9 +8,15 @@ and a push event -- and all five have to reconcile to one row. They reconcile on
 client and enforced as unique on the server. These tests hold both halves.
 """
 
+import ast
+import builtins
+import contextlib
+import importlib.util
 import os
 import sqlite3
+import sys
 import unittest
+from unittest import mock
 
 os.environ.setdefault("DATABASE_URL", "")
 
@@ -179,6 +185,168 @@ class IdempotencyAuditScriptTest(unittest.TestCase):
 
     def test_a_violation_is_a_non_zero_exit(self):
         self.assertIn("return 0 if result[\"index_installable\"] else 1", self.source)
+
+
+AUDIT_SCRIPT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "scripts",
+    "messenger_idempotency_audit.py",
+)
+
+
+def _load_audit_module():
+    spec = importlib.util.spec_from_file_location("_messenger_idempotency_audit", AUDIT_SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _RecordingConnection:
+    """Records what the audit does to a connection, in order."""
+
+    def __init__(self):
+        self.calls = []
+
+    def set_autocommit(self, enabled):
+        self.calls.append(("autocommit", bool(enabled)))
+        return True
+
+    def execute(self, sql, params=None):
+        self.calls.append(("execute", sql))
+        return None
+
+    def commit(self):
+        self.calls.append(("commit", None))
+        return None
+
+
+@contextlib.contextmanager
+def _preserved_database_url():
+    """`_connect` assigns DATABASE_URL, which would leak to the rest of the run."""
+    before = os.environ.get("DATABASE_URL")
+    try:
+        yield
+    finally:
+        if before is None:
+            os.environ.pop("DATABASE_URL", None)
+        else:
+            os.environ["DATABASE_URL"] = before
+
+
+class AuditReachesPostgresWithoutTheMonolithTest(unittest.TestCase):
+    """The audit must be aimable at the database whose duplicates it reports.
+
+    It used to reach any non-sqlite target through `import bot`, and importing
+    the monolith runs `initialize_database_for_web_startup()` at module scope,
+    which calls `init_db()`. When a deployment variable such as
+    `RAILWAY_ENVIRONMENT` is present -- i.e. under `railway run`, the only
+    practical route to production -- that happens on a daemon thread whose
+    failures are swallowed into a log line. So the one tool for inspecting
+    production duplicates could not be pointed at production, which is exactly
+    what resolving them needs.
+    """
+
+    def test_the_script_does_not_import_bot_anywhere(self):
+        with open(AUDIT_SCRIPT, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        self.assertNotIn(
+            "bot",
+            imported,
+            "importing bot runs init_db(); a read-only audit must not carry that",
+        )
+
+    def test_connecting_to_postgres_never_reaches_for_bot(self):
+        """Booby-trapped rather than asserted against `sys.modules`.
+
+        Another test in the same pytest process may already have imported bot,
+        which would make a `sys.modules` check vacuous. Trapping `__import__`
+        catches the attempt either way, and names the consequence when it fires.
+        """
+        module = _load_audit_module()
+        real_import = builtins.__import__
+
+        def _trap(name, *args, **kwargs):
+            if name == "bot" or name.startswith("bot."):
+                raise AssertionError(
+                    "the audit imported bot; that runs init_db() against whatever "
+                    "DATABASE_URL points at, which here would be production"
+                )
+            return real_import(name, *args, **kwargs)
+
+        import services.db as app_db
+
+        with _preserved_database_url(), mock.patch.object(app_db, "IS_POSTGRES", True), mock.patch.object(
+            app_db, "connect", lambda: _RecordingConnection()
+        ), mock.patch.object(builtins, "__import__", _trap):
+            module._connect("postgresql://user:pw@127.0.0.1:5432/example")
+
+    def test_a_postgres_session_is_read_only_at_the_server(self):
+        """Enforced by the database, not by the script's good intentions.
+
+        The commit is the load-bearing half and is asserted as such.
+        `default_transaction_read_only` governs transactions that *start* after
+        it is set, and psycopg2 has already opened one to run the SET. Verified
+        against production: without the commit the GUC reads back as `on` while
+        `SHOW transaction_read_only` stays `off` and an UPDATE is accepted. With
+        it, UPDATE, DELETE and CREATE INDEX all raise `ReadOnlySqlTransaction`.
+
+        `set_autocommit` is deliberately not the mechanism -- on Postgres it is a
+        silent no-op, because `services.db` hands out a SQLAlchemy
+        `_ConnectionFairy` that absorbs the attribute without forwarding it.
+        """
+        module = _load_audit_module()
+        recorded = _RecordingConnection()
+        import services.db as app_db
+
+        with _preserved_database_url(), mock.patch.object(app_db, "IS_POSTGRES", True), mock.patch.object(
+            app_db, "connect", lambda: recorded
+        ):
+            returned = module._connect("postgresql://user:pw@127.0.0.1:5432/example")
+
+        self.assertIs(returned, recorded)
+        statements = [sql for kind, sql in recorded.calls if kind == "execute"]
+        self.assertTrue(
+            any("default_transaction_read_only" in sql.lower() and " on" in sql.lower() for sql in statements),
+            f"no read-only SET was issued; statements were {statements!r}",
+        )
+        kinds = [kind for kind, _ in recorded.calls]
+        self.assertIn(
+            "commit",
+            kinds,
+            "the SET alone leaves the open transaction read-write; production accepted an UPDATE",
+        )
+        self.assertLess(
+            kinds.index("execute"),
+            kinds.index("commit"),
+            "the commit has to follow the SET, or it commits nothing",
+        )
+        self.assertNotIn(
+            ("autocommit", True),
+            recorded.calls,
+            "set_autocommit is a silent no-op on Postgres; relying on it re-opens the hole",
+        )
+
+    def test_a_sqlite_target_is_still_opened_directly(self):
+        """The direct-file path is untouched: no app import, no read-only SET."""
+        module = _load_audit_module()
+        import services.db as app_db
+
+        def _refuse():
+            raise AssertionError("a sqlite file target must not go through services.db")
+
+        with _preserved_database_url(), mock.patch.object(app_db, "connect", _refuse):
+            conn = module._connect("sqlite:///:memory:")
+        try:
+            self.assertIsInstance(conn, sqlite3.Connection)
+            self.assertIs(conn.row_factory, sqlite3.Row)
+        finally:
+            conn.close()
 
 
 def test_messenger_send_idempotency():

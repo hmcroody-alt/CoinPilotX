@@ -66,11 +66,24 @@ def _connect(database_url: str):
     """Open a connection using the app's own accessor so the audit sees exactly
     the database the running service sees, rather than a second guess at it.
 
-    A plain sqlite target is opened directly instead. Importing `bot` pulls in
-    the whole monolith -- a slow, side-effect-heavy operation that also pins the
-    audit to the app's Python version -- and none of that buys anything when the
-    target is a file on disk. The read is identical either way; only the route
-    to it differs.
+    A plain sqlite target is opened directly instead. The read is identical
+    either way; only the route to it differs.
+
+    The route is `services.db` and deliberately not `bot`. Importing the
+    monolith runs `initialize_database_for_web_startup()` at module scope
+    (`bot.py:130827`), which calls `init_db()` -- synchronously, or on a daemon
+    thread whenever a deployment variable such as `RAILWAY_ENVIRONMENT` is set.
+    That is precisely the case when someone reaches production the only
+    practical way, `railway run python3 scripts/...`: the full schema DDL would
+    run against production from a thread whose failures are swallowed into a
+    `DB_INIT_BACKGROUND_FAILED` log line, and which dies unfinished when this
+    short script exits. `services.db` resolves the same `DATABASE_URL` and
+    imports without connecting, so the audit can be aimed at the database whose
+    duplicates it exists to report.
+
+    Raw psycopg2 was the other candidate and would be wrong: every query here
+    uses `?` placeholders, and only the Compat layer rewrites those for
+    psycopg2.
     """
     if database_url:
         os.environ["DATABASE_URL"] = database_url
@@ -81,13 +94,28 @@ def _connect(database_url: str):
         conn.row_factory = sqlite3.Row
         return conn
 
-    import bot  # noqa: E402  -- import after DATABASE_URL is settled
+    import services.db as app_db  # noqa: E402  -- import after DATABASE_URL is settled
 
-    conn = bot.db()
-    try:
-        conn.row_factory = bot.sqlite3.Row
-    except Exception:
-        pass
+    conn = app_db.connect()
+    if app_db.IS_POSTGRES:
+        # Read-only enforced by the server rather than by this script's good
+        # intentions: a stray write then raises `ReadOnlySqlTransaction` instead
+        # of succeeding. Verified against production, because the obvious
+        # spelling of this does not work.
+        #
+        # `default_transaction_read_only` governs transactions that *start*
+        # after it is set, and psycopg2 has already opened one to run the SET.
+        # So the commit is the load-bearing line, not the SET: without it the
+        # GUC reads back as `on` while `SHOW transaction_read_only` stays `off`
+        # and a write is accepted.
+        #
+        # `conn.set_autocommit(True)` is not an alternative. On Postgres it is a
+        # silent no-op -- `services.db` hands out a SQLAlchemy `_ConnectionFairy`,
+        # which absorbs the attribute assignment without forwarding it, so the
+        # call returns True while the real psycopg2 connection stays
+        # `autocommit=False`.
+        conn.execute("SET default_transaction_read_only = on")
+        conn.commit()
     return conn
 
 
