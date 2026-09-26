@@ -591,6 +591,7 @@
     "tests/undx_agent/test_feed_reaction_write_pack.py",
     "tests/undx_agent/test_intent_routing.py",
     "tests/undx_agent/test_investor_and_injection.py",
+    "tests/undx_agent/test_knowledge_map.py",
     "tests/undx_agent/test_knowledge_map_grounding.py",
     "tests/undx_agent/test_market_context_bridge.py",
     "tests/undx_agent/test_messenger_read_pack.py",
@@ -672,8 +673,7 @@
     "tests/web_surface/test_undx_action_center_page.py"
   ],
   "quarantined": {
-    "tests/undx_agent/test_authorization_surface.py": "fails standalone on 3.11: 8 failed in 0.19s, six of them because undx_capability_registry.authorization_surface() raises on the unmutated registry: 26 registered capabilities have no record in undx_knowledge_map.BY_ID (and 68 map records have no registry entry). Some of those 26 exist in the map under a different naming convention -- registry business.campaign.pause is map ads.campaigns.pause at the same scope -- so the gap is partly a reconciliation and partly genuinely absent records. Writing the missing records means hand-choosing authorization_scope for capabilities including crypto.portfolio.holding.delete, which changes what agent_capability_view() tells the planner. That is an access decision, not a test fix, so it is out of scope for a quarantine slice. authorization_surface() has no live caller (only tests and two siblings in its own module), so this is a dark gate rather than a production outage.",
-    "tests/undx_agent/test_knowledge_map.py": "fails standalone on 3.11: 1 failed, 36 passed in 5.15s. Same root cause as tests/undx_agent/test_authorization_surface.py: test_no_write_in_the_stage_target_areas_is_ready_to_wire expects messages.mark_read in the ready-write set, and its own comment says the sweep that gave every registered capability a knowledge-map record made it visible -- that sweep never landed. Unblocked by the same access decision, not by editing this test."
+    "tests/undx_agent/test_authorization_surface.py": "fails standalone on 3.11: 8 failed in 0.19s, six of them because undx_capability_registry.authorization_surface() raises on the unmutated registry: 26 registered capabilities have no record in undx_knowledge_map.BY_ID (and 68 map records have no registry entry). Some of those 26 exist in the map under a different naming convention -- registry business.campaign.pause is map ads.campaigns.pause at the same scope -- so the gap is partly a reconciliation and partly genuinely absent records. Writing the missing records means hand-choosing authorization_scope for capabilities including crypto.portfolio.holding.delete, which changes what agent_capability_view() tells the planner. That is an access decision, not a test fix, so it is out of scope for a quarantine slice. authorization_surface() has no live caller (only tests and two siblings in its own module), so this is a dark gate rather than a production outage."
   },
-  "quarantine_ceiling": 2
+  "quarantine_ceiling": 1
 }
