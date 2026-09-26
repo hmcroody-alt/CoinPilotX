@@ -47,11 +47,9 @@ jest.mock("../reels/ReelPhotoSurface", () => ({ ReelPhotoSurface: () => null }))
 jest.mock("../reels/ReelCarouselSurface", () => ({ ReelCarouselSurface: () => null }));
 jest.mock("../reels/ReelLiveViewerSurface", () => ({ ReelLiveViewerSurface: () => null }));
 jest.mock("../../sharing/nativeShare", () => ({ sharePulseObject: jest.fn().mockResolvedValue({ ok: true }) }));
-jest.mock("../ContentTranslation", () => {
-  const { Text } = jest.requireActual("react-native");
-  const ReactActual = jest.requireActual("react");
-  return { ContentTranslation: ({ text }: any) => ReactActual.createElement(Text, null, text) };
-});
+jest.mock("../ContentTranslation", () =>
+  require("../../testing/contentTranslationStub").contentTranslationStub()
+);
 
 import { markSavePending, observeSavedState, resetSavedStoreForTests } from "../../social/savedStore";
 import { ReelPlayerCard } from "../ReelPlayerCard";

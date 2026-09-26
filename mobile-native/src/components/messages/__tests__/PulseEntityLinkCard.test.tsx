@@ -23,6 +23,7 @@
  * real resolver.
  */
 import React from "react";
+import { StyleSheet } from "react-native";
 import { render, fireEvent, screen } from "@testing-library/react-native";
 
 jest.mock("../../../links/entityPreview", () => ({ useEntityPreview: jest.fn() }));
@@ -277,5 +278,60 @@ describe("opening it", () => {
     const onOpen = show(REEL, ready("reel", REEL, { video: true }));
     fireEvent.press(screen.getByRole("link"));
     expect(onOpen).toHaveBeenCalledWith("https://pulsesoc.com/pulse/reels/38?pulse_app=1&pulse_src=share");
+  });
+});
+
+/**
+ * The width clamp, which is the only thing `variant` moves.
+ *
+ * Asserted on resolved style rather than on a rendered width, because a width is
+ * a layout answer and RNTL has no layout — a test that measured one would be
+ * measuring jsdom's opinion, which is zero for everything. The clamp is a style
+ * declaration, and it is the declaration that travels or fails to.
+ *
+ * `minWidth` is asserted alongside `maxWidth` on purpose. Dropping only the
+ * `maxWidth` would make a feed card *look* right in every screenshot anyone
+ * bothered to take — it would fill the column — while a card whose preview has
+ * no thumbnail and a short author name would still be floored at 216pt and would
+ * still reflow on resolve at narrow widths. Both halves are the bubble's
+ * measurement and both have to go.
+ */
+describe("the width clamp", () => {
+  /** The card's own resolved style. `Pressable` hands its function a pressed flag. */
+  function cardStyle(ref: PulseEntityRef, state: EntityPreviewState, variant?: "bubble" | "content") {
+    preview.useEntityPreview.mockReturnValue(state);
+    render(<PulseEntityLinkCard entity={ref} onOpen={jest.fn()} variant={variant} />);
+    return StyleSheet.flatten(screen.getByRole("link").props.style);
+  }
+
+  it("clamps to a chat bubble when asked for the bubble variant", () => {
+    const style = cardStyle(POST, ready("post", POST), "bubble");
+    expect(style.maxWidth).toBe(260);
+    expect(style.minWidth).toBe(216);
+  });
+
+  it("clamps to a chat bubble when asked for nothing at all", () => {
+    // Messenger predates the prop and passes none. A default of "content" would
+    // have rewidened every card in every conversation as a side effect of a feed
+    // change -- silently, since no chat test names a width.
+    const style = cardStyle(POST, ready("post", POST));
+    expect(style.maxWidth).toBe(260);
+    expect(style.minWidth).toBe(216);
+  });
+
+  it("carries no width of its own in the content variant", () => {
+    const style = cardStyle(POST, ready("post", POST), "content");
+    expect(style.maxWidth).toBeUndefined();
+    expect(style.minWidth).toBeUndefined();
+  });
+
+  it("still draws the same card either way", () => {
+    // The variant is a width, not a redesign. If it ever starts changing the
+    // copy or the shell, the shared-component argument in the docstring stops
+    // being true and this fails.
+    const style = cardStyle(POST, ready("post", POST), "content");
+    expect(style.borderRadius).toBe(14);
+    expect(style.overflow).toBe("hidden");
+    expect(screen.getByText("PULSESOC POST")).toBeTruthy();
   });
 });

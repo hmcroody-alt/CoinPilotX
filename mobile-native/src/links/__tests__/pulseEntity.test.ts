@@ -4,7 +4,7 @@
  * does not claim, an ambiguous body. A card drawn for the wrong object would
  * show one post's author over another post's link, which is worse than no card.
  */
-import { bodyIsOnlyLinks, messageEntity, resolvePulseEntity } from "../pulseEntity";
+import { bodyIsOnlyLinks, bodyEntity, resolvePulseEntity } from "../pulseEntity";
 import { detectLinks } from "../messageLinks";
 
 /** The parser's own output, so the tests exercise the real pairing. */
@@ -182,26 +182,26 @@ describe("resolving a reel link", () => {
 describe("deciding what a message is about", () => {
   it("cards a message whose only content is the post link", () => {
     const body = "https://pulsesoc.com/pulse/post/2432";
-    expect(messageEntity(body, linksIn(body))?.id).toBe(2432);
+    expect(bodyEntity(body, linksIn(body))?.id).toBe(2432);
     expect(bodyIsOnlyLinks(body, linksIn(body))).toBe(true);
   });
 
   it("cards a link wrapped in prose, but keeps the prose", () => {
     const body = "you have to read this https://pulsesoc.com/pulse/post/2432 before tonight";
-    expect(messageEntity(body, linksIn(body))?.id).toBe(2432);
+    expect(bodyEntity(body, linksIn(body))?.id).toBe(2432);
     // The sentence is the sender's; the card is additive, so the text stays.
     expect(bodyIsOnlyLinks(body, linksIn(body))).toBe(false);
   });
 
   it("treats a repeated link to one post as one subject", () => {
     const body = "https://pulsesoc.com/pulse/post/2432 https://pulsesoc.com/pulse/post/2432";
-    expect(messageEntity(body, linksIn(body))?.id).toBe(2432);
+    expect(bodyEntity(body, linksIn(body))?.id).toBe(2432);
   });
 
   it("draws no card when two different posts are named", () => {
     // Promoting the first would be a guess the sender never made.
     const body = "https://pulsesoc.com/pulse/post/1 and https://pulsesoc.com/pulse/post/2";
-    expect(messageEntity(body, linksIn(body))).toBeNull();
+    expect(bodyEntity(body, linksIn(body))).toBeNull();
   });
 
   it("draws no card when a post and a profile are both named", () => {
@@ -210,12 +210,12 @@ describe("deciding what a message is about", () => {
     // and it is the case that would break first if `id` alone became the
     // identity, because a post id and a profile key can be the same string.
     const body = "https://pulsesoc.com/pulse/post/2432 and https://pulsesoc.com/pulse/profile/roody";
-    expect(messageEntity(body, linksIn(body))).toBeNull();
+    expect(bodyEntity(body, linksIn(body))).toBeNull();
   });
 
   it("cards a message whose only content is the reel link", () => {
     const body = "https://pulsesoc.com/pulse/reels/38?pulse_app=1&pulse_src=share";
-    expect(messageEntity(body, linksIn(body))).toMatchObject({ kind: "reel", id: 38 });
+    expect(bodyEntity(body, linksIn(body))).toMatchObject({ kind: "reel", id: 38 });
     expect(bodyIsOnlyLinks(body, linksIn(body))).toBe(true);
   });
 
@@ -227,22 +227,22 @@ describe("deciding what a message is about", () => {
    */
   it("draws no card when a post and a reel share the same number", () => {
     const body = "https://pulsesoc.com/pulse/post/38 and https://pulsesoc.com/pulse/reels/38";
-    expect(messageEntity(body, linksIn(body))).toBeNull();
+    expect(bodyEntity(body, linksIn(body))).toBeNull();
   });
 
   it("treats a repeated link to one reel as one subject", () => {
     const body = "https://pulsesoc.com/pulse/reels/38 https://pulsesoc.com/pulse/reels/38";
-    expect(messageEntity(body, linksIn(body))).toMatchObject({ kind: "reel", id: 38 });
+    expect(bodyEntity(body, linksIn(body))).toMatchObject({ kind: "reel", id: 38 });
   });
 
   it("ignores a non-entity link alongside the post", () => {
     const body = "https://example.com/article and https://pulsesoc.com/pulse/post/2432";
-    expect(messageEntity(body, linksIn(body))?.id).toBe(2432);
+    expect(bodyEntity(body, linksIn(body))?.id).toBe(2432);
     expect(bodyIsOnlyLinks(body, linksIn(body))).toBe(false);
   });
 
   it("draws no card for a message with no links at all", () => {
-    expect(messageEntity("see you at six", [])).toBeNull();
+    expect(bodyEntity("see you at six", [])).toBeNull();
   });
 
   it("counts a link with only whitespace around it as bare", () => {

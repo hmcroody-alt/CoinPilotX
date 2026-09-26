@@ -20,6 +20,11 @@ import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { buildPostShareMetadata } from "../sharing/postShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { LinkedText } from "../links/LinkedText";
+import { openContentLink } from "../links/openContentLink";
+import { detectLinks } from "../links/messageLinks";
+import { bodyEntity, bodyIsOnlyLinks } from "../links/pulseEntity";
+import { PulseEntityLinkCard } from "./messages/PulseEntityLinkCard";
 import { createThemedStyles } from "../theme/themedStyles";
 import { EmbeddedLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { EmojiPicker } from "../emoji";
@@ -219,6 +224,38 @@ function PostCardBody({
   const handle = author.username || author.handle || post.author_username || "";
   const body = post.body || "";
   const showReadMore = !detail && bodyTruncated;
+  /** The URLs in the body, in the same reading `LinkedText` makes them tappable by. */
+  const bodyLinkTexts = useMemo(() => (body ? detectLinks(body).map((token) => token.text) : []), [body]);
+  /**
+   * The PulseSoc object this post's body is about, if it is about exactly one.
+   *
+   * Derived per render, never stored — the same arrangement as chat, and for the
+   * same reason: every post already carrying a link becomes a card the first time
+   * it is drawn, with nothing to backfill and no body this code has never parsed
+   * to guess at.
+   *
+   * The self-reference guard is new here and has no equivalent in chat, because a
+   * message cannot link to itself. A post can: the share sheet hands out
+   * `pulsePostUrl(post)`, so pasting a post's own share link back into its body —
+   * or a repost wrapper quoting the original it already wraps — is an ordinary
+   * accident. Without this the card resolves, fetches, and draws a picture of the
+   * post the reader is already looking at, with a "View post →" that navigates to
+   * where they already are. Compared by `kind` as well as `id` because a reel id
+   * and a post id are unrelated numbers from different tables that collide freely.
+   */
+  const bodyCardEntity = useMemo(() => {
+    const resolved = bodyEntity(body, bodyLinkTexts);
+    if (!resolved) return null;
+    if (resolved.kind === "post" && resolved.id === Number(post.id)) return null;
+    return resolved;
+  }, [body, bodyLinkTexts, post.id]);
+  /**
+   * A body that is nothing but the link keeps no prose worth showing, so the card
+   * stands in for it and the bare URL is never drawn. A body with a sentence
+   * around the link keeps the sentence — that part is the author's.
+   */
+  const cardReplacesBody = Boolean(bodyCardEntity) && bodyIsOnlyLinks(body, bodyLinkTexts);
+  const showBodyText = Boolean(body) && !cardReplacesBody;
   const visibilityKey = String(post.visibility || "public").toLowerCase();
   const visibilityIcon = VISIBILITY_ICON[visibilityKey] || "globe-outline";
   const visibilityLabel = visibilityKey.charAt(0).toUpperCase() + visibilityKey.slice(1);
@@ -380,7 +417,7 @@ function PostCardBody({
           {post.title}
         </Text>
       ) : null}
-      {body && !detail ? (
+      {showBodyText && !detail ? (
         <Text
           style={[styles.body, styles.bodyMeasure]}
           onTextLayout={(event) => setBodyTruncated(event.nativeEvent.lines.length > COLLAPSED_BODY_LINES)}
@@ -388,19 +425,47 @@ function PostCardBody({
           {body}
         </Text>
       ) : null}
-      {body ? (
+      {showBodyText ? (
         <ContentTranslation
           contentType="post"
           contentRef={post.id}
           text={body}
           textStyle={styles.body}
           numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
+          // `renderText` replaces the plain `<Text>` entirely, so `textStyle`
+          // and `numberOfLines` above stop being applied and have to be passed
+          // through by hand -- they are left in place because the *untranslated*
+          // path and the measuring copy above still read them.
+          //
+          // The translated body is linkified too, not just the original: this
+          // receives whichever string is currently on screen, so a URL that
+          // survives translation stays tappable and one that translation mangles
+          // simply renders as prose. Same arrangement as `ChatScreen`.
+          renderText={(visible) => (
+            <LinkedText
+              text={visible}
+              style={styles.body}
+              linkStyle={styles.bodyLink}
+              numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
+              onLinkPress={openContentLink}
+            />
+          )}
         />
       ) : null}
       {showReadMore ? (
         <Pressable accessibilityRole="button" accessibilityLabel={bodyExpanded ? "Collapse post" : "Read full post"} onPress={(event) => { event.stopPropagation(); setBodyExpanded((value) => !value); }}>
           <Text style={styles.readMore}>{bodyExpanded ? "Show less" : "Read more"}</Text>
         </Pressable>
+      ) : null}
+      {/* After the prose rather than before it, which is the opposite of chat and
+          deliberate: a message is usually *just* the link, so the card leads;
+          a post is usually a thought that happens to cite something, so the
+          thought leads and the card is what it cites. `variant="content"` drops
+          the chat bubble's width clamp so the card fills the text column. */}
+      {bodyCardEntity ? (
+        <View style={styles.bodyCard}>
+          <PulseEntityLinkCard entity={bodyCardEntity} variant="content" onOpen={openContentLink} />
+        </View>
       ) : null}
       </View>
 
@@ -1310,6 +1375,20 @@ const styles = createThemedStyles(() => ({
     ...logiNexus.typography.home.cardBody,
     fontSize: 15,
     lineHeight: 22,
+    marginTop: 10
+  },
+  // `LinkedText`'s built-in link colour is `chatGraphite.senderAccent`, chosen
+  // for contrast against a chat bubble rather than a feed card. This overrides
+  // the colour only; the underline it sets survives, and it is the underline
+  // doing the accessibility work here.
+  bodyLink: {
+    color: colors.accent
+  },
+  // The gap above the card, owned by the caller rather than the card. The card
+  // carries `marginBottom` for the chat bubble it was born in; a feed post needs
+  // space on the other side, and putting that here keeps the two surfaces from
+  // arguing over one margin.
+  bodyCard: {
     marginTop: 10
   },
   bodyMeasure: {
