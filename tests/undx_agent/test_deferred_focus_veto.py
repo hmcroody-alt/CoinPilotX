@@ -15,7 +15,7 @@ selection choose badly" (it has its own suite) but "if it ever did, what stands
 behind the veto". A veto that is only safe while the layer in front of it is perfect
 is not a veto.
 
-The six checks, and what each would falsify:
+The seven checks, and what each would falsify:
 
 1. QUESTION — "Should I pause my Bitcoin alert?" reads context; the pause write does
    not run. Falsified if the deferred read's dispatch comes with a write.
@@ -34,6 +34,13 @@ The six checks, and what each would falsify:
    still stopped by the layers the veto was never a substitute for (hedged text is
    not explicit, so a contextual write gets a card, not an execution). Falsified if
    overflow plus the widened veto adds up to an unconfirmed write.
+7. PLANNER GATE — the same widening on the *other* veto. Checks 1-6 all enter through
+   the selection gate, so narrowing the planner gate back to ``capability_ids`` alone
+   left all six green: the second half of the change was untested. A model proposal
+   for a deferred capability is now inside the focus and reaches confirmation; one
+   for a capability in neither set is still dropped to a conversation. Falsified if
+   the planner's widening escalates past confirmation, or if it admits a proposal
+   attention never judged relevant.
 
 Every focus-shape claim a test relies on is asserted as a precondition against the
 real attention layer, so a vocabulary or budget change that invalidates the scenario
@@ -42,6 +49,7 @@ fails loudly here instead of quietly testing nothing.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 import unittest
@@ -64,10 +72,22 @@ BRAIN = {
     "UNDX_BRAIN_PREDICTION_ENABLED": "1",
 }
 
-#: The overflow question. Eleven capabilities are relevant to it — six make the
-#: focus, five are deferred — which makes it both check 1 and the substrate for
-#: check 6.
+#: The overflow question. Nine capabilities are relevant to it — six make the
+#: focus, three are deferred — which is what check 6 needs.
 PAUSE_QUESTION = "Should I pause my Bitcoin alert?"
+
+#: Check 1's question, and it has to be a different one. This file's premise is
+#: that a *deferred* capability now counts as inside the focus, so check 1 needs a
+#: turn whose answering read is deferred rather than in the focus. The pause
+#: question used to be one: eleven capabilities were relevant, `crypto.alerts.list`
+#: ranked seventh, and the read that answers "should I?" was therefore deferred.
+#: Two capabilities have since left that relevant set, `list` moved up into the
+#: six, and the scenario quietly stopped being a scenario — which is what the
+#: preconditions below are for, and why this file failed loudly instead of passing
+#: while testing nothing. Asking about a *delete* keeps the shape: the read is
+#: deferred, the write sitting in the focus is the more dangerous one, and the turn
+#: must still come back as a read.
+DELETE_QUESTION = "Should I delete my Bitcoin alert?"
 
 
 def _selection(**fields):
@@ -82,6 +102,23 @@ def _forced(selection):
         "services.undx_brain.selection.select",
         lambda text, **kwargs: selection,
     )
+
+
+def _planner(capability_id):
+    """Turn the planner on and make it propose ``capability_id``.
+
+    Returns a list of context managers. The planner is only consulted once every
+    deterministic layer has declined, so reaching it takes a forced selection that
+    the veto itself rejects — which is why check 7 stacks these on top of a
+    ``messages.send`` selection rather than calling ``say`` plainly.
+    """
+    from services import undx_capability_planner as planner
+
+    result = planner.PlannerResult(ok=True, capability_id=capability_id, confidence=0.9)
+    return [
+        mock.patch.object(planner, "enabled", lambda: True),
+        mock.patch.object(planner, "plan", lambda text, **kwargs: result),
+    ]
 
 
 class DeferredFocusVetoFalsification(unittest.TestCase):
@@ -121,12 +158,12 @@ class DeferredFocusVetoFalsification(unittest.TestCase):
         silent conversational fallthrough. The change makes it a read — and must
         make it nothing more.
         """
-        focus = self.focus(PAUSE_QUESTION)
-        self.assertIn("crypto.alerts.pause", focus.capability_ids)
+        focus = self.focus(DELETE_QUESTION)
+        self.assertIn("crypto.alerts.delete", focus.capability_ids)
         self.assertIn("crypto.alerts.list", focus.deferred)
         self.assertNotIn("crypto.alerts.list", focus.capability_ids)
 
-        response = self.say(PAUSE_QUESTION)
+        response = self.say(DELETE_QUESTION)
         self.assertTrue(response.handled)
         self.assertIsNotNone(response.receipt)
         self.assertEqual(response.receipt.risk_level, "read_only")
@@ -240,6 +277,51 @@ class DeferredFocusVetoFalsification(unittest.TestCase):
         self.assertNotEqual(response.status, "verified_success")
         self.assertEqual(response.card["status"], "confirmation_required")
         self.assertFalse(response.card["may_claim_done"])
+        self.assertEqual(self.fx.alert_status(self.alert_id), "active")
+
+    # -- 7. PLANNER GATE --------------------------------------------------
+
+    def _planned(self, text, capability_id):
+        """Drive ``text`` through the planner with a proposal of ``capability_id``."""
+        outside_the_focus = _selection(ok=True, decided=True, capability_id="messages.send")
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(_forced(outside_the_focus))
+            for patch in _planner(capability_id):
+                stack.enter_context(patch)
+            return self.say(text)
+
+    def test_planner_gate_widens_to_deferred_without_escalating(self):
+        """The change's other half, which checks 1-6 do not reach.
+
+        Narrowing the planner gate back to ``capability_ids`` alone leaves every other
+        check in this file green, so that half of the change was asserted by nobody.
+        Here a proposal for a deferred capability is inside the focus and gets as far
+        as confirmation — and no further, because a proposal is not an instruction.
+        """
+        focus = self.focus(PAUSE_QUESTION)
+        self.assertIn("crypto.alerts.resume", focus.deferred)
+        self.assertNotIn("crypto.alerts.resume", focus.capability_ids)
+
+        response = self._planned(PAUSE_QUESTION, "crypto.alerts.resume")
+        self.assertTrue(response.handled)
+        self.assertNotEqual(response.status, "verified_success")
+        self.assertEqual(response.card["status"], "confirmation_required")
+        self.assertFalse(response.card["may_claim_done"])
+        self.assertEqual(self.fx.alert_status(self.alert_id), "active")
+
+    def test_planner_proposal_outside_the_focus_is_still_dropped(self):
+        """Widening to deferred is not widening to anything.
+
+        The positive control for the test above: with the planner gate reached the
+        same way, a proposal attention placed in neither set must end the turn as a
+        conversation, so that check 7 cannot pass by the gate having stopped vetoing.
+        """
+        focus = self.focus(PAUSE_QUESTION)
+        self.assertNotIn("messages.send", focus.capability_ids + focus.deferred)
+
+        response = self._planned(PAUSE_QUESTION, "messages.send")
+        self.assertFalse(response.handled)
+        self.assertIsNone(response.receipt)
         self.assertEqual(self.fx.alert_status(self.alert_id), "active")
 
 
