@@ -565,6 +565,7 @@
     "tests/undx_agent/test_agent_runs.py",
     "tests/undx_agent/test_argument_resolution.py",
     "tests/undx_agent/test_audit_durability.py",
+    "tests/undx_agent/test_authorization_widening_detector.py",
     "tests/undx_agent/test_availability_diagnosis.py",
     "tests/undx_agent/test_brain_runtime_activation.py",
     "tests/undx_agent/test_capability_lifecycle.py",
@@ -673,7 +674,7 @@
     "tests/web_surface/test_undx_action_center_page.py"
   ],
   "quarantined": {
-    "tests/undx_agent/test_authorization_surface.py": "fails standalone on 3.11: 8 failed in 0.19s, six of them because undx_capability_registry.authorization_surface() raises on the unmutated registry: 26 registered capabilities have no record in undx_knowledge_map.BY_ID (and 68 map records have no registry entry). Some of those 26 exist in the map under a different naming convention -- registry business.campaign.pause is map ads.campaigns.pause at the same scope -- so the gap is partly a reconciliation and partly genuinely absent records. Writing the missing records means hand-choosing authorization_scope for capabilities including crypto.portfolio.holding.delete, which changes what agent_capability_view() tells the planner. That is an access decision, not a test fix, so it is out of scope for a quarantine slice. authorization_surface() has no live caller (only tests and two siblings in its own module), so this is a dark gate rather than a production outage."
+    "tests/undx_agent/test_authorization_surface.py": "fails standalone on 3.11: 8 failed in 0.19s. All eight share one root -- undx_capability_registry.authorization_surface() raises on the unmutated registry because 26 registered capabilities have no record in undx_knowledge_map.BY_ID. Six fail with that AuthorizationRecordConflict raw; the other two inject a conflict of their own and get the pre-existing one instead ('knowledge_map' != 'authorization_scope'), so they cannot reach their subject either. The 26 records are not unwritten work: they were added, with reviewed scopes, in bd6333f69 and then dropped by merge c1623b2fe, which resolved the knowledge map to the other side while keeping this test file and its baseline. tests/undx_agent/authorization_surface_baseline.py agrees with that lost map on authorization_scope 69/69, so 25 of the 26 scopes are already ratified in-tree; only presence.privacy.update has no baseline row. Restoring is still not a pure revert -- main's map holds ads.campaigns.pause (owner_field advertiser_id) where the lost record was business.campaign.pause (owner_field advertiser_user_id), so the business.*/ads.* pairs need reconciling -- and it changes what agent_capability_view() reports to the planner, which is an access decision rather than a test fix. See #38. The half of this file that does not need the real surface has been extracted to tests/undx_agent/test_authorization_widening_detector.py and runs, so the widening detector is no longer dark while this waits."
   },
   "quarantine_ceiling": 1
 }
