@@ -77,13 +77,81 @@ class TestRelevanceIsATwoSidedBet:
         bare = ranking.relevance(self.LISTING, {"category": "shoes"})
         assert bare >= 0.85
 
-    def test_a_hash_prefixed_tag_matches_nothing(self):
-        # Pinning the exact trap `reelCommerceContext` strips for: the listing
-        # side stores `sneakers`, so `#sneakers` is a total miss that looks like
-        # a perfectly well-formed request. A client that stopped stripping the
-        # hash would silence its own chips and nothing would report an error.
-        assert ranking.relevance(self.LISTING, {"tags": ["#sneakers"]}) == 0.0
-        assert ranking.relevance(self.LISTING, {"tags": ["sneakers"]}) > 0.0
+    def test_a_hash_prefixed_tag_matches_what_the_bare_word_matches(self):
+        """Punctuation is a separator, so the hash costs nothing.
+
+        This case used to assert the opposite -- that ``#sneakers`` scored 0.0
+        against a listing storing ``sneakers`` -- and it was correct at the time:
+        ``_tokens`` split on whitespace only, so the hash welded itself to the
+        word and produced a token the listing side could never produce. It was
+        pinned here as the trap ``reelCommerceContext`` strips for.
+
+        It was reversed deliberately, because that contract could only ever hold
+        up one side. A client can normalise what it sends; nothing can normalise
+        what a *seller* typed. A listing titled ``Running Sneakers (Mesh) -
+        Breathable!`` had the tokens ``(mesh)`` and ``breathable!``, so the words
+        "mesh" and "breathable" could not match it from any surface by any
+        context -- see the case below, which is the half that had no client-side
+        remedy and is why the tokenizer changed rather than a fifth context
+        builder being written more carefully.
+
+        The clients still strip the hash before sending. That is now belt and
+        braces rather than load-bearing, and it is still worth doing: a context
+        carries twelve tag slots, and ``#sneakers`` alongside ``sneakers`` would
+        spend two of them on one word.
+        """
+        assert ranking.relevance(self.LISTING, {"tags": ["#sneakers"]}) == ranking.relevance(
+            self.LISTING, {"tags": ["sneakers"]}
+        )
+        assert ranking.relevance(self.LISTING, {"tags": ["#sneakers"]}) > ranking.NEUTRAL
+
+    def test_a_word_a_seller_put_in_brackets_is_still_a_word(self):
+        """The half of the tokenizer bug no client could have fixed.
+
+        Titles are advertising, so sellers write them with parentheses, dashes and
+        exclamation marks. Each one used to make the adjacent word unmatchable,
+        permanently and silently -- the listing stayed eligible, kept scoring on
+        quality and history, and simply could not be reached by the word
+        describing it.
+        """
+        listing = {
+            "category": "shoes",
+            "subcategory": "",
+            "title": "Running Sneakers (Mesh) - Breathable!",
+            "tags_json": None,
+        }
+        for word in ("mesh", "breathable"):
+            assert ranking.relevance(listing, {"topic": word}) > ranking.NEUTRAL, word
+
+    def test_punctuation_does_not_change_the_score(self):
+        """The general form: the same words score the same however they are typed.
+
+        Stated as an equality rather than as "punctuation scores higher", because
+        the first draft of this case asserted that ``"I love these sneakers."``
+        clears NEUTRAL and it does not -- it scores 0.3333, with or without the
+        full stop. The *filler* is what dilutes it: ``_overlap`` divides by the
+        smaller set, so "love" and "these" are two thirds of a context that
+        matches on one word. That is pre-existing, unchanged, and correct -- and
+        it is exactly why the client context builders pull hashtags out into
+        ``tags`` instead of relying on the prose in ``topic``.
+
+        What changed is the punctuation, so that is what this pins.
+        """
+        for punctuated, bare in (
+            ("I love these sneakers.", "I love these sneakers"),
+            ("sneakers!", "sneakers"),
+            ("(sneakers)", "sneakers"),
+            ("#sneakers", "sneakers"),
+        ):
+            assert ranking.relevance(self.LISTING, {"topic": punctuated}) == ranking.relevance(
+                self.LISTING, {"topic": bare}
+            ), punctuated
+
+    def test_a_single_punctuated_word_is_a_full_match_rather_than_a_miss(self):
+        # The size of the change, on the shape that is most common on a post: a
+        # short subject and nothing else. This scored 0.0 -- an active mismatch,
+        # below every surface floor -- and now scores a saturated match.
+        assert ranking.relevance(self.LISTING, {"topic": "sneakers."}) == 1.0
 
     def test_a_two_character_tag_cannot_contribute(self):
         # Why the client drops them rather than spending one of its twelve
