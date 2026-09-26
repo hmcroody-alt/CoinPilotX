@@ -46,6 +46,14 @@ jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: { user: { 
 // alone cannot tell them apart, and that is the whole subject of the document
 // tests below.
 const BUBBLE_BODY_TEST_ID = "bubble-body";
+// This is the one `ContentTranslation` stub in the repo that does NOT defer to
+// `src/testing/contentTranslationStub`, and the line above is why: this stub
+// *invents* `bubble-body`, a testID the real component does not carry, so that
+// this file can point at the body without matching on its text. The shared stub
+// deliberately hands out no testIDs of its own — one that did would let a test
+// somewhere else find an element that does not exist on a device. So this
+// requirement stays local. The part the shared stub exists to guarantee,
+// honouring `renderText`, is done here too.
 jest.mock("../../components/ContentTranslation", () => {
   const { Text } = jest.requireActual("react-native");
   const ReactActual = jest.requireActual("react");

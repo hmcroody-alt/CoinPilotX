@@ -40,11 +40,9 @@ jest.mock("expo-av", () => {
   const ReactActual = jest.requireActual("react");
   return { ResizeMode: { COVER: "cover", CONTAIN: "contain" }, Video: ReactActual.forwardRef(() => null) };
 });
-jest.mock("../../components/ContentTranslation", () => {
-  const { Text } = jest.requireActual("react-native");
-  const ReactActual = jest.requireActual("react");
-  return { ContentTranslation: ({ text }: any) => ReactActual.createElement(Text, null, text) };
-});
+jest.mock("../../components/ContentTranslation", () =>
+  require("../../testing/contentTranslationStub").contentTranslationStub()
+);
 jest.mock("../../core/eventSync", () => ({
   invalidateNativeSync: jest.fn().mockResolvedValue(undefined),
   registerSyncInvalidation: jest.fn(() => () => undefined)

@@ -13,13 +13,15 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: jest.fn()
 }));
 
-// ContentTranslation reaches for the translation API and a provider. The thread
-// contract under test is which controls appear and what they do, not how a body
-// is translated, so it is stubbed down to the text it renders.
-jest.mock("../../components/ContentTranslation", () => {
-  const { Text } = require("react-native");
-  return { ContentTranslation: ({ text }: { text: string }) => <Text>{text}</Text> };
-});
+// ContentTranslation reaches for the translation API and a provider, and the
+// thread contract under test is which controls appear and what they do. The
+// shared stub honours `renderText`, which matters most here of anywhere: both of
+// a comment body's decorations -- link spans and mention spans -- are produced
+// inside that callback, so a stub that dropped it would let the mention and link
+// cases below pass against a `CommentBody` that had stopped decorating at all.
+jest.mock("../../components/ContentTranslation", () =>
+  require("../../testing/contentTranslationStub").contentTranslationStub()
+);
 
 import type { PulseComment } from "../../api/feed";
 import { CommentThread, replyToggleLabel, viewerMayDeleteComment, viewerMayEditComment } from "../CommentThread";
@@ -262,6 +264,79 @@ describe("mentions", () => {
   it("keeps the body readable when a screen wires no mention handler", () => {
     const { queryByText } = render(<CommentThread comment={comment({ body: "thanks @roody" })} handlers={{}} />);
     expect(queryByText("thanks @roody")).not.toBeNull();
+  });
+});
+
+describe("links in a comment body", () => {
+  // `CommentBody` used to choose: a mention handler meant the body was
+  // segmented, no handler meant one plain `<Text>`, and links were not looked
+  // for on either branch. The cases here are the ones that choice made
+  // impossible to satisfy.
+
+  it("renders a URL as its own tappable span", () => {
+    const { getByTestId } = render(
+      <CommentThread comment={comment({ body: "see https://pulsesoc.com/pulse/post/12" })} handlers={allHandlers()} />
+    );
+    expect(getByTestId("comment-link-1-1")).not.toBeNull();
+  });
+
+  it("makes a link tappable on a screen that wired no mention handler", () => {
+    // The reason layering replaced the either/or. A link needs nothing from the
+    // screen -- `openContentLink` brings its own navigation -- so a screen that
+    // does not route mentions must still get working links. Under the old
+    // exclusive branch this body rendered as prose.
+    const { getByTestId } = render(
+      <CommentThread comment={comment({ body: "see https://pulsesoc.com/pulse/post/12" })} handlers={{}} />
+    );
+    expect(getByTestId("comment-link-1-1")).not.toBeNull();
+  });
+
+  it("decorates a mention and a link in the same body, not one or the other", () => {
+    const { getByTestId } = render(
+      <CommentThread
+        comment={comment({ body: "hi @roody look at https://pulsesoc.com/pulse/post/12" })}
+        handlers={allHandlers()}
+      />
+    );
+    expect(getByTestId("comment-mention-1-roody")).not.toBeNull();
+    // Matched by pattern, not by index: the link's position in the segment list
+    // depends on how many runs the mention pass produced before it, which is an
+    // implementation detail of the composition and not what this case is about.
+    expect(getByTestId(/^comment-link-1-\d+$/)).not.toBeNull();
+  });
+
+  it("does not let a mention handler receive the @ inside a link's path", () => {
+    // The composition hazard, asserted at the level a user would notice it: a
+    // profile URL must open the profile URL, and must not also report a mention
+    // of the handle in its path. See `richBody.test.ts` for the segmenter-level
+    // measurement of the wrong ordering.
+    const handlers = allHandlers();
+    const { queryByTestId } = render(
+      <CommentThread comment={comment({ body: "see https://pulsesoc.com/@bob" })} handlers={handlers} />
+    );
+    expect(queryByTestId("comment-mention-1-bob")).toBeNull();
+    expect(handlers.onMentionPress).not.toHaveBeenCalled();
+  });
+
+  it("does not also fire the row's own press when a link is tapped", () => {
+    // The link span stops propagation. Without it a tap would both navigate and
+    // count as a tap on the comment, so a screen that opens a thread on row
+    // press would open the thread *and* leave for the link's destination.
+    const handlers = allHandlers();
+    const { getByTestId } = render(
+      <CommentThread comment={comment({ body: "see https://pulsesoc.com/pulse/post/12" })} handlers={handlers} />
+    );
+    fireEvent.press(getByTestId("comment-link-1-1"));
+    expect(handlers.onAuthorPress).not.toHaveBeenCalled();
+    expect(handlers.onReply).not.toHaveBeenCalled();
+  });
+
+  it("leaves a body with no link as undecorated prose", () => {
+    const { queryByTestId, queryByText } = render(
+      <CommentThread comment={comment({ body: "just a sentence" })} handlers={allHandlers()} />
+    );
+    expect(queryByTestId("comment-link-1-0")).toBeNull();
+    expect(queryByText("just a sentence")).not.toBeNull();
   });
 });
 

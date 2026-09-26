@@ -20,6 +20,8 @@ import { formatShortTime } from "../utils/format";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { buildPostShareMetadata } from "../sharing/postShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { LinkedText } from "../links/LinkedText";
+import { openContentLink } from "../links/openContentLink";
 import { createThemedStyles } from "../theme/themedStyles";
 import { EmbeddedLiveViewerSurface } from "./reels/ReelLiveViewerSurface";
 import { EmojiPicker } from "../emoji";
@@ -395,6 +397,24 @@ function PostCardBody({
           text={body}
           textStyle={styles.body}
           numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
+          // `renderText` replaces the plain `<Text>` entirely, so `textStyle`
+          // and `numberOfLines` above stop being applied and have to be passed
+          // through by hand -- they are left in place because the *untranslated*
+          // path and the measuring copy above still read them.
+          //
+          // The translated body is linkified too, not just the original: this
+          // receives whichever string is currently on screen, so a URL that
+          // survives translation stays tappable and one that translation mangles
+          // simply renders as prose. Same arrangement as `ChatScreen`.
+          renderText={(visible) => (
+            <LinkedText
+              text={visible}
+              style={styles.body}
+              linkStyle={styles.bodyLink}
+              numberOfLines={detail || bodyExpanded ? undefined : COLLAPSED_BODY_LINES}
+              onLinkPress={openContentLink}
+            />
+          )}
         />
       ) : null}
       {showReadMore ? (
@@ -1311,6 +1331,13 @@ const styles = createThemedStyles(() => ({
     fontSize: 15,
     lineHeight: 22,
     marginTop: 10
+  },
+  // `LinkedText`'s built-in link colour is `chatGraphite.senderAccent`, chosen
+  // for contrast against a chat bubble rather than a feed card. This overrides
+  // the colour only; the underline it sets survives, and it is the underline
+  // doing the accessibility work here.
+  bodyLink: {
+    color: colors.accent
   },
   bodyMeasure: {
     position: "absolute",

@@ -28,19 +28,9 @@ jest.mock("expo-file-system", () => ({ File: class {} }));
 jest.mock("expo-document-picker", () => ({ getDocumentAsync: jest.fn() }));
 jest.mock("expo-image-picker", () => ({ launchImageLibraryAsync: jest.fn(), requestMediaLibraryPermissionsAsync: jest.fn() }));
 jest.mock("../../session/auth", () => ({ useAuth: () => ({ authState: { user: { user_id: 7 } } }) }));
-jest.mock("../../components/ContentTranslation", () => {
-  const { Text } = jest.requireActual("react-native");
-  const ReactActual = jest.requireActual("react");
-  return {
-    // `renderText` is honoured rather than ignored: the bubble passes one so
-    // URLs in the body become link segments, and dropping it would render a
-    // body of `undefined` while still reporting green.
-    ContentTranslation: ({ text, textStyle, renderText }: { text?: string; textStyle?: unknown; renderText?: (value: string, translated: boolean) => unknown }) =>
-      renderText
-        ? renderText(String(text ?? ""), false)
-        : ReactActual.createElement(Text, { style: textStyle }, text)
-  };
-});
+jest.mock("../../components/ContentTranslation", () =>
+  require("../../testing/contentTranslationStub").contentTranslationStub()
+);
 
 const CONVERSATION_ID = 6105;
 const MESSAGE_ID = 512;

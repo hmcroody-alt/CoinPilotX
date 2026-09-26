@@ -30,11 +30,9 @@ jest.mock("expo-secure-store", () => ({
   deleteItemAsync: jest.fn()
 }));
 jest.mock("expo-haptics", () => ({ impactAsync: jest.fn(), ImpactFeedbackStyle: { Light: "light" } }));
-jest.mock("../../components/ContentTranslation", () => {
-  const { Text } = jest.requireActual("react-native");
-  const ReactActual = jest.requireActual("react");
-  return { ContentTranslation: ({ text }: any) => ReactActual.createElement(Text, null, text) };
-});
+jest.mock("../../components/ContentTranslation", () =>
+  require("../../testing/contentTranslationStub").contentTranslationStub()
+);
 jest.mock("../../core/eventSync", () => ({
   invalidateNativeSync: jest.fn().mockResolvedValue(undefined),
   registerSyncInvalidation: jest.fn(() => () => undefined)
