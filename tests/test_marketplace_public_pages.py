@@ -763,6 +763,12 @@ class MarketplaceProductsSitemapTestCase(PublicMarketplaceFixture):
         with nothing to point at, which is indistinguishable from a marketplace
         nobody has listed anything in. The collection page still goes out: it
         needs no query, and it is the URL that gets the crawler back here.
+
+        The log line is `MARKETPLACE_PUBLIC_QUERY_FAILED` rather than the
+        `SITEMAP_PRODUCTS_QUERY_FAILED` it used to be, because the query moved
+        into `marketplace_public_listings` and now has two readers -- the sitemap
+        and the Merchant Center feed. A name that says "sitemap" would send
+        whoever reads it in production to one of the two surfaces it broke.
         """
         self.make_listing()
         real_db = bot.db
@@ -774,7 +780,28 @@ class MarketplaceProductsSitemapTestCase(PublicMarketplaceFixture):
         finally:
             bot.db = real_db
         self.assertEqual(entries, [("/pulse/marketplace", "")])
-        self.assertIn("SITEMAP_PRODUCTS_QUERY_FAILED", "\n".join(captured.output))
+        self.assertIn("MARKETPLACE_PUBLIC_QUERY_FAILED", "\n".join(captured.output))
+
+    def test_a_failed_query_empties_the_feed_too_rather_than_500ing(self):
+        """The other reader of the same query, asserted at the same time.
+
+        The shared helper is the reason this case is worth a second test: its
+        `except` returns `[]`, and the sitemap turns that into "just the
+        collection page" while the feed turns it into an empty `<channel>`. Both
+        are the right answer to a crawler and neither is a 500 -- but they are
+        different code paths reading one failure, so a change that fixed the
+        sitemap's handling and broke the feed's would otherwise stay green.
+        """
+        self.make_listing()
+        real_db = bot.db
+        bot.db = lambda *args, **kwargs: (_ for _ in ()).throw(
+            RuntimeError('relation "marketplace_listings" does not exist'))
+        try:
+            with self.assertLogs(level="ERROR"):
+                listings = bot.marketplace_feed_listings()
+        finally:
+            bot.db = real_db
+        self.assertEqual(listings, [])
 
 
 if __name__ == "__main__":

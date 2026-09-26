@@ -131,6 +131,20 @@ _RULES = (
     # indexed; "follow" keeps the result links crawlable.
     ("/search", NOINDEX_FOLLOW, "internal search results"),
 
+    # --- Machine-readable product feed ------------------------------------
+    # `/feeds/merchant-center.xml` is fetched by Merchant Center on a schedule,
+    # so it must stay crawlable -- but it is an XML file whose entire content is
+    # duplicated from the product pages it links to. Indexing it would put a raw
+    # feed in the results competing with the pages that earned the ranking.
+    #
+    # `noindex` and not a `Disallow`, for the reason `robots_disallow_prefixes`
+    # states at length: this is a URL we positively want fetched. It is also why
+    # this rule is `NOINDEX_FOLLOW` rather than `NOINDEX_NOFOLLOW` -- "nofollow"
+    # would make it eligible for the Disallow list, which would block the very
+    # fetch the feed exists for. The `follow` half is true on its own terms too:
+    # every `<link>` in the feed is a product page we want crawled.
+    ("/feeds/", NOINDEX_FOLLOW, "machine-readable product feed"),
+
     # --- Scaled templated pages -------------------------------------------
     # /markets/<symbol>{,/prediction,/live} and /country-intelligence/<slug>
     # are produced by substituting a name into one shared template. Measured

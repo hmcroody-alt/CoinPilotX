@@ -329,6 +329,7 @@ from services import (
     marketplace_order_fulfillment as marketplace_order_fulfillment,
     marketplace_seller_identity as marketplace_seller_identity,
     marketplace_seo as marketplace_seo,
+    merchant_center_feed as merchant_center_feed,
     media_service,
     media_storage,
     media_upload_sessions,
@@ -2875,7 +2876,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -30518,37 +30519,35 @@ def pulse_public_paths(limit=200):
     return [path for path, _lastmod in pulse_public_entries(limit)]
 
 
-def marketplace_public_entries(limit=500):
-    """Published products as `(path, lastmod)`, plus the grid that links them.
+def marketplace_public_listings(limit=500):
+    """Every publishable listing, payload-shaped, for Search and for Shopping.
 
-    Two filters, in the same shape as the posts sitemap above: the SQL is the
-    prefilter and the policy is the answer. The SQL clauses are the *same two*
-    the grid and the product page apply -- `public_sql` for the lifecycle and
-    `discovery_visible_sql` for the seller -- because a sitemap that selects on
-    looser predicates than the page it submits is a list of URLs that 404.
+    One query with two consumers: `marketplace_public_entries` below builds the
+    sitemap from it and `/feeds/merchant-center.xml` builds the Shopping feed
+    from it. Shared deliberately rather than written twice, because the two
+    surfaces have to agree about *which rows exist* even though they disagree
+    about which of those rows they publish. A second copy of this query is how a
+    feed ends up advertising a product the sitemap has already dropped, and the
+    landing page for that product 404s.
 
-    Then `marketplace_seo.eligibility` decides per row, and the verdict this
-    reads is `.indexable`, never `.feed_eligible`. The two are different
-    questions and the narrower one belongs to Merchant Center: a product with a
-    real description and image but an unparseable `price_label` is a perfectly
-    good web page that cannot be submitted as a Shopping offer. Filtering the
-    sitemap on `feed_eligible` would quietly withhold those pages from Search
-    to satisfy a rule Search does not have.
+    The SQL clauses are the *same two* the grid and the product page apply --
+    `public_sql` for the lifecycle and `discovery_visible_sql` for the seller --
+    because a list that selects on looser predicates than the page it submits is
+    a list of URLs that 404.
 
-    The rows are shaped by `pulse_marketplace_listing_payload` rather than read
-    raw, for one specific reason: `eligibility` asks whether the listing has an
-    image, and the answer lives in the payload's resolved `media` list, not in
-    any single column. A raw row would report "no image" for every product whose
-    cover came from `gallery_json`, and the symptom would be a sitemap that is
-    valid, green and half the size it should be.
+    Rows are shaped by `pulse_marketplace_listing_payload` rather than read raw,
+    for one specific reason: `marketplace_seo.eligibility` asks whether the
+    listing has an image, and the answer lives in the payload's resolved `media`
+    list, not in any single column. A raw row would report "no image" for every
+    product whose cover came from `gallery_json`, and the symptom would be a
+    sitemap and a feed that are both valid, green and half the size they should
+    be.
 
-    `/pulse/marketplace` leads the list with no `lastmod`. It belongs in a
-    sitemap -- it is the collection page and it is in no other child -- and it
-    has no honest modification date, since what changes is the 40 rows it
-    happens to render. An absent `lastmod` says that; today's date would not.
+    Returns `(row, listing)` pairs. The raw row is carried alongside the payload
+    because the sitemap needs `updated_at` for its `lastmod` and the payload does
+    not preserve it.
     """
 
-    entries = [(marketplace_seo.INDEX_PATH, "")]
     try:
         from services.discovery_visibility import discovery_visible_sql
 
@@ -30567,15 +30566,56 @@ def marketplace_public_entries(limit=500):
             cur, [int(row.get("id") or 0) for row in rows])
         conn.close()
     except Exception:
-        # Same reasoning as the posts sitemap: an empty `<urlset>` is a better
-        # answer to Googlebot than a 500, and it is indistinguishable from a
-        # catalogue with nothing published in it. Without this line the only
-        # symptom of a broken query is a coverage number that never moves.
-        logging.exception("SITEMAP_PRODUCTS_QUERY_FAILED serving the collection page alone")
-        return entries
+        # Same reasoning as the posts sitemap: an empty `<urlset>` -- or an empty
+        # feed -- is a better answer to a crawler than a 500, and it is
+        # indistinguishable from a catalogue with nothing published in it.
+        # Without this line the only symptom of a broken query is a coverage
+        # number that never moves.
+        logging.exception("MARKETPLACE_PUBLIC_QUERY_FAILED serving an empty list")
+        return []
 
-    for row in rows:
-        listing = pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
+    return [
+        (row, pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])))
+        for row in rows
+    ]
+
+
+def marketplace_feed_listings(limit=500):
+    """Payloads for the Shopping feed, without the sitemap's `lastmod` baggage.
+
+    The eligibility verdict is applied by `merchant_center_feed.feed_row`, not
+    here, so that the module that knows Merchant Center's required fields is the
+    one that decides whether a row satisfies them. This function's only job is
+    to hand over the same rows the sitemap saw.
+    """
+
+    return [listing for _row, listing in marketplace_public_listings(limit)]
+
+
+def marketplace_public_entries(limit=500):
+    """Published products as `(path, lastmod)`, plus the grid that links them.
+
+    Two filters, in the same shape as the posts sitemap above: the SQL in
+    `marketplace_public_listings` is the prefilter and the policy is the answer.
+
+    `marketplace_seo.eligibility` decides per row, and the verdict this reads is
+    `.indexable`, never `.feed_eligible`. The two are different questions and the
+    narrower one belongs to Merchant Center: a product with a real description
+    and image but an unparseable `price_label` is a perfectly good web page that
+    cannot be submitted as a Shopping offer. Filtering the sitemap on
+    `feed_eligible` would quietly withhold those pages from Search to satisfy a
+    rule Search does not have. Production has 21 priced rows against 39 with a
+    real description, so the gap the two verdicts describe is most of the
+    catalogue, not an edge case.
+
+    `/pulse/marketplace` leads the list with no `lastmod`. It belongs in a
+    sitemap -- it is the collection page and it is in no other child -- and it
+    has no honest modification date, since what changes is the 40 rows it
+    happens to render. An absent `lastmod` says that; today's date would not.
+    """
+
+    entries = [(marketplace_seo.INDEX_PATH, "")]
+    for row, listing in marketplace_public_listings(limit):
         if not marketplace_seo.eligibility(listing).indexable:
             continue
         path = marketplace_seo.PRODUCT_PATH.format(listing_id=int(row.get("id") or 0))
@@ -30630,6 +30670,41 @@ def sitemap_products_xml():
     """
 
     return Response(seo_engine.sitemap_xml(marketplace_public_entries()), mimetype="application/xml")
+
+
+@webhook_app.route(merchant_center_feed.FEED_PATH, methods=["GET"])
+@public_route(reason="Google Merchant Center fetches this feed unauthenticated on a schedule. It contains only listings the feed-eligibility policy already cleared, which is a strict subset of what the public product pages already show.")
+def merchant_center_feed_xml():
+    """The Shopping feed, built from the same rows as `/sitemap-products.xml`.
+
+    Two sitemaps' worth of filtering separate this from that one, and the
+    difference is the point. `marketplace_public_entries` filters on
+    `.indexable`; this filters on `.feed_eligible`, which additionally requires
+    a price that parses. A product with a real description and image but a blank
+    `price_label` belongs in Search and cannot be a Shopping offer, so the two
+    lists are deliberately different lengths. Measured against production on
+    2026-09-26: 39 rows clear the description floor, 21 have a price, 14 have
+    both.
+
+    The lifecycle and seller predicates are the *same* as the sitemap's --
+    `public_sql` and `discovery_visible_sql` -- because a feed item's `link` has
+    to be fetchable. Submitting a URL that 404s is a disapproval in Merchant
+    Center, and the direction a looser query would drift is a feed advertising
+    products whose pages have been withdrawn.
+
+    The `noindex` arrives as `X-Robots-Tag`, not as a meta tag, because there is
+    nowhere in an XML document to put one. `search_visibility` classifies
+    `/feeds/` as `noindex,follow` and for an HTML page that verdict is delivered
+    by `robots_meta()` in the `<head>`; a feed has no head, so declaring the
+    policy without setting the header would have been a rule that governs
+    nothing. Read from `robots_meta` rather than hardcoded so the header cannot
+    drift from the table that decides it.
+    """
+
+    response = Response(
+        merchant_center_feed.feed_xml(marketplace_feed_listings()), mimetype="application/xml")
+    response.headers["X-Robots-Tag"] = search_visibility.robots_meta(merchant_center_feed.FEED_PATH)
+    return response
 
 
 @webhook_app.route("/sitemap-live.xml", methods=["GET"])

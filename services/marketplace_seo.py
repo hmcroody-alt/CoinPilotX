@@ -202,8 +202,16 @@ def availability(listing):
     is an ordinary catalogue decision — it is how a retailer keeps a ranked URL
     alive through a restock — and the day someone loosens that ``OR`` clause,
     delegation means this page starts telling the truth without anyone
-    remembering it exists. And ``availability`` is called by the feed builder as
-    well, where the rows are not filtered by the same query.
+    remembering it exists. And ``availability`` is called by
+    ``merchant_center_feed`` as well, which maps the result onto Merchant
+    Center's own ``in_stock`` / ``out_of_stock`` tokens -- so the branch has a
+    second reader whose vocabulary depends on it staying a branch.
+
+    The feed selects on the *same* query, deliberately, so the equivalence above
+    makes ``OUT_OF_STOCK`` unreachable there too. That is the right trade for a
+    feed even though Merchant Center would rather be told ``out_of_stock`` than
+    have an item disappear: the item's landing page 404s once ``public_sql``
+    drops it, and submitting a URL that 404s is a disapproval, not a nuance.
     """
 
     return IN_STOCK if marketplace_listing_lifecycle.inventory_available(listing) else OUT_OF_STOCK
@@ -213,8 +221,16 @@ def product_url(listing_id):
     return search_visibility.CANONICAL_ORIGIN + PRODUCT_PATH.format(listing_id=int(listing_id or 0))
 
 
-def _first_image(listing):
+def cover_image(listing):
     """The cover image URL, or ``""``.
+
+    Public, along with ``listing_description`` below, because
+    ``merchant_center_feed`` needs exactly these two fields and re-deriving them
+    there is the thing that must not happen: Merchant Center compares the feed's
+    ``image_link`` and ``description`` against the landing page, so a second
+    reader of the same columns is a way to fail that comparison. (They were
+    ``_first_image`` / ``_description`` until the feed existed. The rename is not
+    cosmetic -- an underscore would have invited a copy.)
 
     Reads the ``media`` list that ``pulse_marketplace_listing_payload`` built
     rather than the raw columns, so the page shows the same image the app and
@@ -230,7 +246,7 @@ def _first_image(listing):
     return ""
 
 
-def _description(listing):
+def listing_description(listing):
     return str(listing.get("description") or listing.get("short_description") or "").strip()
 
 
@@ -264,8 +280,8 @@ def eligibility(listing):
         return Eligibility(False, False, "no title")
 
     price = parse_price(listing.get("price_label"), listing.get("currency"))
-    image = _first_image(listing)
-    description = _description(listing)
+    image = cover_image(listing)
+    description = listing_description(listing)
 
     if len(description) < MIN_DESCRIPTION_CHARS:
         # Not indexable: a priced page with no sentence is the thin-content case.
@@ -292,7 +308,7 @@ def product_page_meta(listing):
     listing_id = int(listing.get("id") or 0)
     title = str(listing.get("title") or "").strip()
     store = str(listing.get("seller_store_name") or "").strip()
-    description = _description(listing)
+    description = listing_description(listing)
     # Google truncates around 155-160; cutting on a word boundary rather than
     # mid-word because a snippet ending in half a word reads as broken.
     if len(description) > 155:
@@ -307,7 +323,7 @@ def product_page_meta(listing):
         "h1": title or "PulseSoc Marketplace listing",
         "breadcrumb": title or "Listing",
         "description": description,
-        "image": _first_image(listing) or seo_schema.SHARE_IMAGE_URL,
+        "image": cover_image(listing) or seo_schema.SHARE_IMAGE_URL,
         "store": store,
     }
 
@@ -327,13 +343,13 @@ def product_schema_graph(listing):
     meta = product_page_meta(listing)
     canonical = meta["canonical"]
     price = parse_price(listing.get("price_label"), listing.get("currency"))
-    image = _first_image(listing)
+    image = cover_image(listing)
 
     product = {
         "@type": "Product",
         "@id": canonical + "#product",
         "name": meta["h1"],
-        "description": _description(listing) or meta["description"],
+        "description": listing_description(listing) or meta["description"],
         "url": canonical,
         "mainEntityOfPage": {"@id": canonical + "#webpage"},
     }
@@ -554,7 +570,7 @@ def index_card(listing):
         "price": parse_price(listing.get("price_label"), listing.get("currency")),
         "store": str(listing.get("seller_store_name") or "").strip(),
         "category": str(listing.get("category") or "").strip(),
-        "image": _first_image(listing),
+        "image": cover_image(listing),
         "in_stock": availability(listing) == IN_STOCK,
         # The one-line summary, cut the way the meta description is cut. Not the
         # full description: forty of those is a page nobody reads and a crawl
@@ -564,7 +580,7 @@ def index_card(listing):
 
 
 def _index_summary(listing, limit=120):
-    description = _description(listing)
+    description = listing_description(listing)
     if len(description) <= limit:
         return description
     return description[:limit].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
