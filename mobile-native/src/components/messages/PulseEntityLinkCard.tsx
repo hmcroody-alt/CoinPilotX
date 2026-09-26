@@ -47,6 +47,26 @@
  * Dropping back to a raw URL would be worse in both directions: the sender's
  * message would look broken, and the URL itself would be the one thing still
  * on screen, which is the part that carries no information the viewer can use.
+ *
+ * ## Two variants, and why only one thing differs between them
+ *
+ * Messenger was the first caller; post bodies and comments are now callers too.
+ * The audit of what was actually Messenger-specific came back shorter than
+ * expected, and the unchanged parts are worth naming because they are the parts a
+ * fork would have duplicated: `chatGraphite.primaryText`, `secondaryText` and
+ * `quietDivider` are re-exports of the shared `graphite` tokens, not chat values,
+ * and `insetSurface` is translucent precisely so one token works over different
+ * backgrounds — over the feed it composites the same way it composites inside a
+ * bubble.
+ *
+ * What genuinely does not travel is the width. `maxWidth: 260 / minWidth: 216`
+ * is a chat bubble's measurement, and inside a full-width feed card it renders a
+ * narrow card floating in a wide column. So `variant` swaps the width clamp and
+ * nothing else. It is a prop rather than a second component because every
+ * failure this file's docstring is about — the shell that must not reflow, the
+ * unavailable state that must stop being tappable, the badge that may only be
+ * drawn over a thumbnail that exists — is identical on both surfaces, and a fork
+ * is how one of them gets fixed and the other does not.
  */
 
 import React from "react";
@@ -129,14 +149,26 @@ function cardCopy(kind: PulseEntityRef["kind"], t: (key: string, vars?: Record<s
   };
 }
 
+/**
+ * Which width clamp the card wears. See the "Two variants" note above.
+ *
+ * `"bubble"` is the default so that Messenger — the caller that predates the
+ * prop — keeps rendering exactly what it rendered before, without having to be
+ * edited to say so. A default of `"content"` would have silently rewidened every
+ * card in every conversation as a side effect of a feed change.
+ */
+export type PulseEntityLinkCardVariant = "bubble" | "content";
+
 export function PulseEntityLinkCard({
   entity,
   onOpen,
-  onLongPress
+  onLongPress,
+  variant = "bubble"
 }: {
   entity: PulseEntityRef;
   onOpen: (url: string) => void;
   onLongPress?: () => void;
+  variant?: PulseEntityLinkCardVariant;
 }) {
   const { t } = useTranslation();
   const state = useEntityPreview(entity);
@@ -171,7 +203,12 @@ export function PulseEntityLinkCard({
       disabled={state.status === "unavailable"}
       onPress={() => onOpen(entity.url)}
       onLongPress={onLongPress}
-      style={({ pressed }) => [styles.card, pressed && styles.pressed, state.status === "unavailable" && styles.cardQuiet]}
+      style={({ pressed }) => [
+        styles.card,
+        variant === "content" ? styles.cardContent : styles.cardBubble,
+        pressed && styles.pressed,
+        state.status === "unavailable" && styles.cardQuiet
+      ]}
     >
       {preview?.thumbnailUrl ? (
         <View style={styles.mediaFrame}>
@@ -246,10 +283,22 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: StyleSheet.hairlineWidth,
     marginBottom: 6,
-    maxWidth: 260,
-    minWidth: 216,
     overflow: "hidden"
   },
+  /**
+   * A chat bubble's measurement. `minWidth` is the half that matters least
+   * visually and most structurally: without it a card whose preview has no
+   * thumbnail and a one-word author shrinks to the width of that word, and the
+   * shell then *does* reflow on resolve — the thing the loading state exists to
+   * prevent.
+   */
+  cardBubble: { maxWidth: 260, minWidth: 216 },
+  /**
+   * No clamp at all: the card fills the column it is given. `alignSelf:
+   * "stretch"` rather than `width: "100%"` so it still behaves inside a row —
+   * a percentage width would resolve against the wrong axis in one.
+   */
+  cardContent: { alignSelf: "stretch" },
   cardQuiet: { borderColor: chatGraphite.quietDivider },
   pressed: { opacity: 0.82 },
   mediaFrame: { aspectRatio: 1.6, backgroundColor: "rgba(0,0,0,0.28)", width: "100%" },

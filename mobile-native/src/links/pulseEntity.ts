@@ -164,19 +164,24 @@ export function resolvePulseEntity(rawUrl: string): PulseEntityRef | null {
 }
 
 /**
- * The entity a message is *about*, if it is about exactly one.
+ * The entity a body of user text is *about*, if it is about exactly one.
+ *
+ * Was `bodyEntity`, and nothing about it was ever message-specific — it takes
+ * a string and a list of links. Renamed when post bodies and comments started
+ * getting cards too, because a name saying "message" is the kind of thing that
+ * makes the next person write a second copy for their own surface.
  *
  * A body with two entity links is not given a card. The card is a claim that
- * this message is that object, and with two candidates the claim is a guess —
+ * this body is that object, and with two candidates the claim is a guess —
  * whichever one came first would be promoted over the other for no reason the
- * sender chose. Those bodies keep their inline tappable links, which is the
+ * author chose. Those bodies keep their inline tappable links, which is the
  * honest rendering of "here are two things".
  *
  * A body with one entity link keeps its links too. The card is additive; it
- * never replaces the text, because the sender may have written a sentence
+ * never replaces the text, because the author may have written a sentence
  * around the link and that sentence is theirs.
  */
-export function messageEntity(body: string, links: readonly string[]): PulseEntityRef | null {
+export function bodyEntity(body: string, links: readonly string[]): PulseEntityRef | null {
   return uniqueEntity(body, links);
 }
 

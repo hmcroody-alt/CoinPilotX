@@ -1,9 +1,13 @@
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import type { PulseComment } from "../api/feed";
 import { ContentTranslation } from "../components/ContentTranslation";
+import { PulseEntityLinkCard } from "../components/messages/PulseEntityLinkCard";
 import { colors } from "../theme/colors";
 import { formatShortTime } from "../utils/format";
 import { segmentRichBody } from "./richBody";
+import { detectLinks } from "../links/messageLinks";
+import { bodyEntity, bodyIsOnlyLinks } from "../links/pulseEntity";
 import { openContentLink } from "../links/openContentLink";
 import { createThemedStyles } from "../theme/themedStyles";
 
@@ -280,57 +284,89 @@ export function commentReactionTotal(comment: PulseComment): number {
  * a mention stays plain text. A link needs nothing from the screen —
  * `openContentLink` supplies its own navigation — so links are live in every
  * thread that renders, with no call site required to remember them.
+ *
+ * ## The card is a sibling of the text, not part of it
+ *
+ * A comment that links one PulseSoc object also gets that object's card, the
+ * same card chat and post bodies draw. It renders *outside* the `<Text>` and not
+ * as another span, because the card is a `Pressable` wrapping a `View` and a
+ * `View` inside a `<Text>` is not a layout React Native has — the spans above are
+ * spans precisely because they are text, and the card is not.
+ *
+ * `PostCard` skips a card that points at the post it is drawn inside. This cannot
+ * do the equivalent for a comment that links the post it is a comment on,
+ * because the component is presentational by design and is handed no post — see
+ * the note at the top of the file. Left as it is rather than threading a post id
+ * through every screen that renders a thread: the wasted card is a correct card
+ * for a real destination, which is a much smaller fault than the plumbing.
  */
 function CommentBody({ comment, depth, onMentionPress }: { comment: PulseComment; depth: number; onMentionPress?: (username: string) => void }) {
   const contentType = depth > 0 || comment.parent_comment_id ? "reply" : "comment";
+  const body = comment.body || "";
+  const linkTexts = useMemo(() => (body ? detectLinks(body).map((token) => token.text) : []), [body]);
+  const entity = useMemo(() => bodyEntity(body, linkTexts), [body, linkTexts]);
+  /**
+   * A comment that is nothing but the link has no sentence to keep, so the card
+   * stands in for it entirely. A comment with words around the link keeps them.
+   */
+  const showBodyText = Boolean(body) && !(entity && bodyIsOnlyLinks(body, linkTexts));
   return (
-    <ContentTranslation
-      contentType={contentType}
-      contentRef={comment.id || comment.comment_id}
-      text={comment.body}
-      textStyle={styles.body}
-      renderText={(visible) => (
-        <Text style={styles.body}>
-          {segmentRichBody(visible).map((segment, index) => {
-            if (segment.url) {
-              const url = segment.url;
-              return (
-                <Text
-                  key={`link-${index}`}
-                  accessibilityRole="link"
-                  testID={`comment-link-${comment.id}-${index}`}
-                  style={styles.link}
-                  onPress={(event) => {
-                    // Without this the row's own press handling runs too and a
-                    // tap on a link would also count as a tap on the comment.
-                    event?.stopPropagation?.();
-                    openContentLink(url);
-                  }}
-                >
-                  {segment.text}
-                </Text>
-              );
-            }
-            if (segment.username && onMentionPress) {
-              const username = segment.username;
-              return (
-                <Text
-                  key={`mention-${index}`}
-                  accessibilityRole="link"
-                  accessibilityLabel={`Open @${username} profile`}
-                  testID={`comment-mention-${comment.id}-${username}`}
-                  style={styles.mention}
-                  onPress={() => onMentionPress(username)}
-                >
-                  {segment.text}
-                </Text>
-              );
-            }
-            return <Text key={`text-${index}`}>{segment.text}</Text>;
-          })}
-        </Text>
-      )}
-    />
+    <View>
+      {showBodyText ? (
+        <ContentTranslation
+          contentType={contentType}
+          contentRef={comment.id || comment.comment_id}
+          text={comment.body}
+          textStyle={styles.body}
+          renderText={(visible) => (
+            <Text style={styles.body}>
+              {segmentRichBody(visible).map((segment, index) => {
+                if (segment.url) {
+                  const url = segment.url;
+                  return (
+                    <Text
+                      key={`link-${index}`}
+                      accessibilityRole="link"
+                      testID={`comment-link-${comment.id}-${index}`}
+                      style={styles.link}
+                      onPress={(event) => {
+                        // Without this the row's own press handling runs too and a
+                        // tap on a link would also count as a tap on the comment.
+                        event?.stopPropagation?.();
+                        openContentLink(url);
+                      }}
+                    >
+                      {segment.text}
+                    </Text>
+                  );
+                }
+                if (segment.username && onMentionPress) {
+                  const username = segment.username;
+                  return (
+                    <Text
+                      key={`mention-${index}`}
+                      accessibilityRole="link"
+                      accessibilityLabel={`Open @${username} profile`}
+                      testID={`comment-mention-${comment.id}-${username}`}
+                      style={styles.mention}
+                      onPress={() => onMentionPress(username)}
+                    >
+                      {segment.text}
+                    </Text>
+                  );
+                }
+                return <Text key={`text-${index}`}>{segment.text}</Text>;
+              })}
+            </Text>
+          )}
+        />
+      ) : null}
+      {entity ? (
+        <View style={styles.linkCard}>
+          <PulseEntityLinkCard entity={entity} variant="content" onOpen={openContentLink} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -402,6 +438,12 @@ const styles = createThemedStyles(() => ({
   link: {
     color: colors.accent,
     textDecorationLine: "underline"
+  },
+  // Space above the card only. The card supplies its own `marginBottom`, and a
+  // deeply indented reply is already narrow, so the card takes the width it is
+  // given rather than asking for one.
+  linkCard: {
+    marginTop: 8
   },
   mention: {
     color: colors.accent,

@@ -23,8 +23,36 @@ jest.mock("../../components/ContentTranslation", () =>
   require("../../testing/contentTranslationStub").contentTranslationStub()
 );
 
+/**
+ * The entity card's data source, so the card renders deterministically.
+ *
+ * The card itself is real: whether a comment linking one PulseSoc object *gets* a
+ * card is `CommentBody`'s decision and is asserted below. What the card then says
+ * is `messages/__tests__/PulseEntityLinkCard.test.tsx`'s question, asked there
+ * against every kind. Replacing the hook rather than the component keeps this
+ * file's cases off `act()`: the state is resolved on first render, so "a card
+ * appeared" is not a race with a promise.
+ */
+jest.mock("../../links/entityPreview", () => ({ useEntityPreview: jest.fn() }));
+
 import type { PulseComment } from "../../api/feed";
+import { activateLocale } from "../../i18n/engine";
 import { CommentThread, replyToggleLabel, viewerMayDeleteComment, viewerMayEditComment } from "../CommentThread";
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const previewModule = require("../../links/entityPreview") as { useEntityPreview: jest.Mock };
+
+beforeAll(async () => {
+  // The engine humanises unknown keys into plausible English, so "PULSESOC POST"
+  // would resolve to "Eyebrow" and an assertion on it would pass against an empty
+  // catalog. Loading the real one makes the card's words mean something.
+  await activateLocale("en");
+});
+
+beforeEach(() => {
+  previewModule.useEntityPreview.mockReset();
+  previewModule.useEntityPreview.mockReturnValue({ status: "loading" });
+});
 
 const VIEWER = 7;
 
@@ -371,5 +399,102 @@ describe("inline edit session", () => {
     const { getByTestId } = render(<CommentThread comment={comment()} currentUserId={VIEWER} edit={edit} handlers={allHandlers()} />);
     fireEvent.press(getByTestId("comment-edit-save-1"));
     expect(edit.onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The card a comment gets when it links one PulseSoc object.
+ *
+ * These sit alongside "links in a comment body" rather than inside it because the
+ * two are separate promises over the same text: that the URL is *tappable*, which
+ * the spans above hold, and that the object it names is *shown*, which is this.
+ * A comment could pass every case above while drawing no card at all.
+ *
+ * What the card was asked about is read off `useEntityPreview`'s argument. That is
+ * a more exact question than "is a card on screen": the card renders for every
+ * kind, so a `CommentBody` that resolved a profile link into a post ref would still
+ * put a card in the tree, and only the argument shows which object it is about.
+ */
+describe("the entity card under a comment", () => {
+  /** What the card was asked to resolve, or `null` if no card was drawn. */
+  function askedFor() {
+    const call = previewModule.useEntityPreview.mock.calls[0];
+    return call ? call[0] : null;
+  }
+
+  it("draws the card for the object the comment names", () => {
+    render(<CommentThread comment={comment({ body: "see https://pulsesoc.com/pulse/post/12" })} />);
+    expect(askedFor()).toMatchObject({ kind: "post", id: 12 });
+  });
+
+  it("draws a profile's card for a profile link", () => {
+    render(<CommentThread comment={comment({ body: "ask https://pulsesoc.com/pulse/profile/roody" })} />);
+    expect(askedFor()).toMatchObject({ kind: "profile", id: "roody" });
+  });
+
+  it("keeps the words the commenter wrote around the link", () => {
+    const { getAllByText } = render(
+      <CommentThread comment={comment({ body: "see https://pulsesoc.com/pulse/post/12" })} />
+    );
+    expect(getAllByText(/see/).length).toBeGreaterThan(0);
+  });
+
+  it("drops the bare URL when the comment is nothing else", () => {
+    // Same rule as chat and post bodies: with no sentence to keep, the card is the
+    // comment, and the URL is the part of it that tells a reader nothing.
+    const { queryAllByText } = render(
+      <CommentThread comment={comment({ body: "https://pulsesoc.com/pulse/post/12" })} />
+    );
+    expect(queryAllByText("https://pulsesoc.com/pulse/post/12")).toHaveLength(0);
+    expect(askedFor()).toMatchObject({ kind: "post", id: 12 });
+  });
+
+  it("draws no card for an external link", () => {
+    render(<CommentThread comment={comment({ body: "via https://apple.com/newsroom" })} />);
+    expect(askedFor()).toBeNull();
+  });
+
+  it("draws no card when the comment names two different objects", () => {
+    render(
+      <CommentThread
+        comment={comment({ body: "https://pulsesoc.com/pulse/post/12 vs https://pulsesoc.com/pulse/post/13" })}
+      />
+    );
+    expect(askedFor()).toBeNull();
+  });
+
+  it("draws the card on a nested reply too, not only a top-level comment", () => {
+    // `CommentBody` takes `depth` and uses it to pick the translation content
+    // type. A card wired inside the wrong branch of that would work at depth 0 and
+    // silently vanish in every reply, which is where most links in a thread are.
+    render(
+      <CommentThread
+        comment={comment({ body: "https://pulsesoc.com/pulse/post/12", parent_comment_id: 9 })}
+        depth={2}
+      />
+    );
+    expect(askedFor()).toMatchObject({ kind: "post", id: 12 });
+  });
+
+  it("draws no card while the comment is being edited", () => {
+    // The edit composer replaces the body with a TextInput. A card left rendering
+    // beside it would be previewing a link from the text the author is in the
+    // middle of changing.
+    render(
+      <CommentThread
+        comment={comment({ body: "https://pulsesoc.com/pulse/post/12" })}
+        currentUserId={VIEWER}
+        edit={{
+          comment: comment({ body: "https://pulsesoc.com/pulse/post/12" }),
+          body: "https://pulsesoc.com/pulse/post/12",
+          busy: false,
+          onChangeBody: jest.fn(),
+          onSubmit: jest.fn(),
+          onCancel: jest.fn()
+        }}
+        handlers={allHandlers()}
+      />
+    );
+    expect(askedFor()).toBeNull();
   });
 });

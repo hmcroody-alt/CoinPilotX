@@ -115,7 +115,7 @@ import { RootStackParamList } from "../navigation/types";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { LinkedText } from "../links/LinkedText";
 import { detectLinks } from "../links/messageLinks";
-import { bodyIsOnlyLinks, messageEntity } from "../links/pulseEntity";
+import { bodyIsOnlyLinks, bodyEntity } from "../links/pulseEntity";
 import { PulseEntityLinkCard } from "../components/messages/PulseEntityLinkCard";
 import { openMessageLink } from "../links/openMessageLink";
 import { presenceActivityText } from "../api/presence";
@@ -2698,7 +2698,7 @@ function MessageBubble({
    * a link sent long before cards existed becomes a card the first time it is
    * drawn — no resend, no backfill, nothing to migrate.
    */
-  const entity = useMemo(() => messageEntity(body, linkTexts), [body, linkTexts]);
+  const entity = useMemo(() => bodyEntity(body, linkTexts), [body, linkTexts]);
   /**
    * A body that is nothing but the link has no sentence worth keeping, so the
    * card stands in for it and the raw URL is never drawn. A body with prose

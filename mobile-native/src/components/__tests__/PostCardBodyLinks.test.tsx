@@ -73,6 +73,26 @@ jest.mock("../../media/mediaAccess", () => ({
 // app's router; whether it resolves correctly is that module's own test.
 jest.mock("../../links/openContentLink", () => ({ openContentLink: jest.fn(() => "internal") }));
 
+/**
+ * The entity card, stubbed out — and the reason is worth recording, because this
+ * mock was added in response to a failure rather than in anticipation of one.
+ *
+ * `PostCard` now draws a `PulseEntityLinkCard` under a body that links exactly one
+ * PulseSoc object, and the card is itself an `accessibilityRole="link"`. Most
+ * bodies below link a post, so the card appeared in the tree and
+ * `linkSpans()` — which asks for every link role — started counting it. The
+ * parity assertion in "makes every URL in the body tappable" saw 1 span where it
+ * expected an even number and failed. That was the test working: a new link role
+ * had appeared in the body's column and it said so.
+ *
+ * Stubbing rather than widening the count, because the two questions are
+ * different. This file asks what the *paragraph* does with a URL. Whether the card
+ * appears, and for which bodies, is `PostCardEntityCard.test.tsx`. Leaving the
+ * real card in would also mean every case here made a preview request through
+ * `useEntityPreview` and resolved it outside `act()`.
+ */
+jest.mock("../messages/PulseEntityLinkCard", () => ({ PulseEntityLinkCard: () => null }));
+
 import { PulsePost } from "../../api/feed";
 import { openContentLink } from "../../links/openContentLink";
 import { PostCard } from "../PostCard";
