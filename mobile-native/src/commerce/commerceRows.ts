@@ -115,8 +115,14 @@ export type CommercePlacementOptions = {
  * win when a response carries them; these are what the list looks like until
  * then. 6 and 8 sit inside the brief's 6–10 band and interleave with — rather
  * than collide with — the ad cadence (3/5) and the discovery cadence (5/7).
+ *
+ * The lead-in is 4 rather than 6: six put the first product below where most
+ * sessions ended. The interval stays 8 for the interleaving reason above — it
+ * is the one of the three that a smaller number would genuinely cost. Max rows
+ * stays 2: a third row forces the server to fill it from a seller it has
+ * already used, which two existing distribution requirements forbid.
  */
-export const COMMERCE_LEAD_IN = 6;
+export const COMMERCE_LEAD_IN = 4;
 export const COMMERCE_INTERVAL = 8;
 export const COMMERCE_MAX_ROWS = 2;
 

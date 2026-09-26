@@ -37,8 +37,8 @@ the client. The absence is load-bearing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, replace
+from typing import Iterable, Optional
 
 from . import config
 
@@ -79,10 +79,18 @@ _COOLDOWN_FACTORS = {
     "reels": (2.0, 2.0, 2.0),
     "messenger": (1.5, 1.0, 1.5),
     "marketplace": (0.25, 0.5, 0.25),
+    # Post detail sits below a post the user chose to open, so it interrupts
+    # less than reels and more than the shop. The product cooldown is the feed's
+    # because the two surfaces show the same card shape and a product that just
+    # scrolled past in the feed should not be the one waiting under the post the
+    # user tapped. The *seller* cooldown is longer than the feed's: a post-detail
+    # card is one card, so a repeated seller here is not diluted by a second
+    # placement the way it is on a feed page.
+    "post_detail": (1.0, 1.0, 1.5),
 }
 
-_SELLER_CAPS = {"feed": 2, "reels": 1, "messenger": 1, "marketplace": 3}
-_CATEGORY_CAPS = {"feed": 3, "reels": 1, "messenger": 2, "marketplace": 4}
+_SELLER_CAPS = {"feed": 2, "reels": 1, "messenger": 1, "marketplace": 3, "post_detail": 1}
+_CATEGORY_CAPS = {"feed": 3, "reels": 1, "messenger": 2, "marketplace": 4, "post_detail": 1}
 
 
 def policy_for(surface: str) -> SurfacePolicy:
@@ -124,6 +132,75 @@ def _pool_target(surface: str) -> int:
         # rather than by score, and a thin pool would simply come back empty.
         return max(12, base // 2)
     return base
+
+
+def _share(budget: int, distinct: int) -> int:
+    """How many placements one group must carry for ``budget`` to be reachable.
+
+    Ceiling division, with an empty pool answering ``budget`` rather than
+    dividing by zero — a cap of ``budget`` over nothing selects nothing, which
+    is the same answer by a shorter road.
+    """
+    if distinct <= 0:
+        return max(0, budget)
+    return -(-max(0, budget) // distinct)
+
+
+def fit_to_pool(
+    policy: SurfacePolicy,
+    *,
+    budget: int,
+    seller_ids: Iterable,
+    categories: Iterable,
+) -> SurfacePolicy:
+    """The same policy, loosened to the diversity the catalogue can actually supply.
+
+    ``max_per_seller`` and ``max_per_category`` are diversity controls, and a
+    diversity control only means anything when there is diversity to spread the
+    response across. They are written as absolute counts because they were
+    written against the catalogue this engine is designed for — many sellers,
+    many categories — where "at most two from one store" reliably delivers "at
+    least two different stores".
+
+    Against a thin catalogue the identical numbers stop buying variety and start
+    buying emptiness. With one eligible seller, Marketplace's cap of three holds
+    the whole response to three placements; the shelf assembler then splits
+    those across seven reason codes, each of which needs three items to render,
+    so the shop's recommendation rails vanish entirely. Nothing was withheld for
+    variety's sake — there was no variety there to protect. The same arithmetic
+    caps Feed at two cards and reduces Reels and Messenger to one apiece.
+
+    So the caps become floors as well as ceilings: no cap may sit below the
+    share each group would have to carry for the budget to be filled at all,
+    ``ceil(budget / distinct)``. On a diverse pool that share is 1 and every cap
+    already clears it, so this returns the policy untouched. It only ever
+    loosens, and only by exactly what the missing diversity costs.
+
+    It must be given the **whole scored pool**, not the set that cleared the
+    relevance floor. Cooldowns are expressed as score penalties, so at any
+    moment the qualifying set is narrow precisely *because* the spacing rules
+    are working — a seller shown thirty seconds ago is suppressed, not absent.
+    Measuring there would read a working cooldown as a thin catalogue and relax
+    the cap to let the one remaining seller take every slot, which is the exact
+    behaviour the seller cooldown exists to prevent. Measured over the pool, a
+    ten-seller catalogue yields a share of 1, every cap already clears it, and
+    nothing moves.
+
+    Counting sellers whose only listings are genuinely poor slightly *over*-
+    states diversity and so under-relaxes. That is the safe direction: it can
+    only ever cost a placement, never spend one on a seller who should not have
+    had it.
+    """
+    sellers = {int(value or 0) for value in seller_ids}
+    sellers.discard(0)
+    cats = {str(value or "").strip().lower() for value in categories}
+    cats.discard("")
+
+    max_per_seller = max(policy.max_per_seller, _share(budget, len(sellers)))
+    max_per_category = max(policy.max_per_category, _share(budget, len(cats)))
+    if max_per_seller == policy.max_per_seller and max_per_category == policy.max_per_category:
+        return policy
+    return replace(policy, max_per_seller=max_per_seller, max_per_category=max_per_category)
 
 
 def admissible(

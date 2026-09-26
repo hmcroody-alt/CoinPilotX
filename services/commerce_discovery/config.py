@@ -120,8 +120,16 @@ def placement_ttl_seconds() -> int:
 
 # --- per-surface cadence ----------------------------------------------------
 def feed_lead_in() -> int:
-    """Organic posts that must render before the first commerce unit."""
-    return _env_int("COMMERCE_DISCOVERY_FEED_LEAD_IN", 6, minimum=1)
+    """Organic posts that must render before the first commerce unit.
+
+    Four rather than six. The lead-in is a politeness rule — it buys the user a
+    stretch of feed that is unambiguously theirs before the app asks for
+    anything — and four posts still buys it. Six put the first product below
+    where most sessions ended, which spent the whole cost of the rule and
+    delivered none of the feature. It remains the largest lead-in of any
+    surface; Reels, the most intrusive one, has the same four.
+    """
+    return _env_int("COMMERCE_DISCOVERY_FEED_LEAD_IN", 4, minimum=1)
 
 
 def feed_interval() -> int:
@@ -135,6 +143,21 @@ def feed_interval() -> int:
 
 
 def feed_max_per_page() -> int:
+    """Commerce units in one page of feed. Two, and this is load-bearing.
+
+    Raising it to three was tried and reverted. With a per-seller cap of two, a
+    three-slot budget forces the selector to fill the third slot from a seller
+    it has already used, so responses take the shape A,A,B. Two existing
+    requirements measure exactly that and both failed: no immediate seller
+    repeat, and a seller owning 40% of the shelf space must not take 40% of the
+    impressions (observed 0.40 against a 0.30 bound).
+
+    So the third card is not available at this per-seller cap on any catalogue
+    that has sellers to protect. It is not a knob that was set conservatively;
+    it is the point where feed density starts being paid for out of seller
+    diversity. The frequency gain in this change comes from the lead-in and
+    from fitting the caps to thin catalogues instead.
+    """
     return _env_int("COMMERCE_DISCOVERY_FEED_MAX_PER_PAGE", 2, minimum=0)
 
 
@@ -181,6 +204,13 @@ def cadence(surface: str) -> dict:
         }
     if surface == "messenger":
         return {"lead_in": 0, "interval": 1, "max_per_page": surface_caps()["messenger"][0]}
+    if surface == "post_detail":
+        # No lead-in and an interval of one: the screen holds a single post, so
+        # there is nothing for a card to be spaced against. The rhythm this
+        # surface is paced by is the per-session cap and the seller cooldown,
+        # both of which are enforced server-side, so there is no client-side
+        # cadence left to describe.
+        return {"lead_in": 0, "interval": 1, "max_per_page": surface_caps()["post_detail"][0]}
     if surface == "marketplace":
         return {"lead_in": 0, "interval": 1, "max_per_page": marketplace_module_limit()}
     return {
@@ -192,6 +222,25 @@ def cadence(surface: str) -> dict:
 
 def messenger_max_per_session() -> int:
     return _env_int("COMMERCE_DISCOVERY_MESSENGER_MAX_PER_SESSION", 1, minimum=0)
+
+
+def post_detail_max_per_session() -> int:
+    """Post-detail cards one viewer may see per session.
+
+    Six, matching the feed, and the reasoning is that a post-detail card *is* a
+    feed card that followed the user through a tap. The surface shows one card
+    per response, so this is a count of posts-with-a-card in a session rather
+    than a density: a reader who opens twenty posts sees a product under six of
+    them, and the seller cooldown decides which six.
+
+    Not 1. Reels and Messenger Home are each a single continuous surface, so
+    "once per session" there means one interruption. Post detail is entered
+    deliberately, once per post, and a viewer who opens twelve posts in a sitting
+    has given twelve separate signals about what they are interested in. Holding
+    that to one card would make the most intentful surface in the app the
+    quietest one.
+    """
+    return _env_int("COMMERCE_DISCOVERY_POST_DETAIL_MAX_PER_SESSION", 6, minimum=0)
 
 
 def marketplace_module_limit() -> int:
@@ -207,6 +256,7 @@ def surface_caps() -> dict[str, tuple[int, int]]:
         "reels": (1, reels_max_per_session()),
         "messenger": (1, messenger_max_per_session()),
         "marketplace": (marketplace_module_limit(), 1000),
+        "post_detail": (1, post_detail_max_per_session()),
     }
 
 
@@ -220,7 +270,19 @@ def min_score(surface: str) -> float:
     content the user is actively watching.
     """
     base = _env_float("COMMERCE_DISCOVERY_MIN_SCORE", 0.35, minimum=0.0, maximum=1.0)
-    lift = {"reels": 0.20, "messenger": 0.10, "feed": 0.0, "marketplace": -0.15}
+    lift = {
+        "reels": 0.20,
+        "messenger": 0.10,
+        "feed": 0.0,
+        "marketplace": -0.15,
+        # Above the feed's floor, below reels'. Post detail is the one social
+        # surface that always sends a ranking context, so a card that surfaces
+        # here has had its relevance actually measured rather than defaulted to
+        # NEUTRAL. A surface that can tell a match from a miss should be held to
+        # the match: the extra tenth is what turns "we know this is unrelated"
+        # into "so we showed nothing".
+        "post_detail": 0.10,
+    }
     return max(0.0, min(1.0, base + lift.get(surface, 0.0)))
 
 

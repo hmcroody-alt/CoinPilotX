@@ -49,7 +49,7 @@ LOGGER = logging.getLogger(__name__)
 #: Surfaces a placement may be served to. A strict allowlist rather than free
 #: text: an unrecognised surface would silently escape every per-surface
 #: frequency cap, because the caps are keyed by this exact string.
-SURFACES = ("feed", "reels", "messenger", "marketplace")
+SURFACES = ("feed", "reels", "messenger", "marketplace", "post_detail")
 
 #: What a user can tell us, and what each one suppresses.
 FEEDBACK_ACTIONS = (
