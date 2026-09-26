@@ -252,7 +252,7 @@ sys.stdout.write("<<<REPORT>>>" + json.dumps(report))
 #: Every mode the app has, plus the two shapes a real link takes: no mode at
 #: all, and a mode nobody has ever shipped.
 QUERIES = ["", "?mode=overview", "?mode=dashboard", "?mode=apply", "?mode=create",
-           "?mode=payouts", "?mode=orders", "?mode=profile",
+           "?mode=payouts", "?mode=orders", "?mode=product", "?mode=profile",
            "?mode=profile&sellerId=ada", "?mode=not-a-mode"]
 
 
@@ -282,8 +282,51 @@ def test_every_mode_the_app_has_is_routed(probe):
     for a mode that was added last week: the member asks for Payouts, gets the
     store, and nothing anywhere reports a problem. So the table is required to
     name every mode the app defines, and this fails when a new one appears.
+
+    Which is what it did, and the report was misleading. `product`, the
+    single-product editor, was added to `PANELS_BY_MODE` and not here; comparing
+    two sorted lists shifted every key after it, so the diff named `profile` --
+    a mode that was fine -- and the failure read as being about the wrong thing.
+    The sets are compared directly now, and in both directions: a web entry for a
+    mode the app no longer defines is dead routing, which the list form could see
+    but did not say either.
     """
-    assert sorted(probe["modes"]) == sorted(native_seller_store_modes())
+    web = set(probe["modes"])
+    app = set(native_seller_store_modes())
+    assert not app - web, (
+        "the app defines mode(s) %r that the web router does not name, so a link "
+        "asking for one of them lands on the dashboard with nothing reporting it. "
+        "Add each to PULSE_SELLER_STORE_MODES: the dashboard is a fine "
+        "destination where the web has no equivalent surface, but it has to be "
+        "chosen there rather than inherited from the `.get` default."
+        % sorted(app - web))
+    assert not web - app, (
+        "the web router names mode(s) %r that the app does not define. Either a "
+        "mode was dropped from PANELS_BY_MODE and this entry is now dead, or the "
+        "web invented one the app will never ask for." % sorted(web - app))
+
+
+def test_the_router_actually_sends_each_mode_where_the_table_says(probe):
+    """The table is a declaration; this is the redirect it is supposed to cause.
+
+    Every assertion above reads `PULSE_SELLER_STORE_MODES` and none of them makes
+    the router run, so an entry the router ignored -- a mode handled by a branch
+    above the lookup, say -- would satisfy all of them. `profile` is excluded
+    because it is the one mode whose destination is built from a parameter; its
+    two shapes have their own tests below.
+    """
+    routed = {mode: path for mode, path in probe["modes"].items() if mode != "profile"}
+    assert len(routed) >= 7, (
+        "only %d modes to check; QUERIES no longer covers the table" % len(routed))
+    for mode, path in sorted(routed.items()):
+        query = "?mode=%s" % mode
+        assert query in probe["redirects"], (
+            "mode %r is in the table but QUERIES never asks for it, so nothing "
+            "here proves the router honours the entry" % mode)
+        status, location = probe["redirects"][query]
+        assert (status, location) == (302, path), (
+            "mode %r is mapped to %s but the router answered %s %s"
+            % (mode, path, status, location))
 
 
 def test_the_router_agrees_with_the_app_about_where_each_mode_lives(probe):

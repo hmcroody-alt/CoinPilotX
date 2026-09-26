@@ -59,7 +59,21 @@ def base_unit(text: str) -> int:
 
 
 def resolve_px(text: str, name: str) -> int:
-    """Resolve a token that is either a literal px or a multiple of the base unit."""
+    """Resolve a token that is either a literal px or a multiple of the base unit.
+
+    A token that is not declared at all is reported as such. It used to fall
+    through to the grid assertion below and report that the token "must be a px
+    literal or a multiple of --pulse-base-unit" -- a sentence about the *form* of
+    a declaration that does not exist. So a rename read as someone having written
+    an off-grid value, and the remedy it suggested was to go and edit a line that
+    was not there.
+    """
+    assert name in set(css_var_defs(text)), (
+        f"{name} is asserted to be on the grid, but the token layer does not "
+        f"declare it. If it was renamed, rename it in GRID_TOKENS; if it was "
+        f"retired, drop it from that list. Re-adding the token to make this pass "
+        f"would reinstate whatever the rename was fixing."
+    )
     literal = re.search(rf"{re.escape(name)}:\s*(\d+(?:\.\d+)?)px", text)
     if literal:
         return float(literal.group(1))
@@ -110,7 +124,13 @@ def test_no_dangling_var_references():
 GRID_TOKENS = [
     "--spacing-2xs", "--spacing-xs", "--spacing-sm", "--spacing-md",
     "--spacing-lg", "--spacing-xl", "--spacing-2xl", "--spacing-section",
-    "--radius-xs", "--radius-sm", "--radius-card", "--radius-lg",
+    # ``--pulse-radius-sm`` carries the prefix because the plain name collided:
+    # the web client's own token file declares ``--radius-sm`` as 8px, traced from
+    # native, where this layer had always meant 12. Same name, two meanings, and
+    # no failure -- just a control that came out 4px rounder or squarer depending
+    # on stylesheet order. Renamed by 3382cdc3b; the protection suite keeps the
+    # collision itself from coming back.
+    "--radius-xs", "--pulse-radius-sm", "--radius-card", "--radius-lg",
     "--touch-target-min", "--topbar-h", "--sidebar-w", "--bottom-nav-h",
 ]
 
