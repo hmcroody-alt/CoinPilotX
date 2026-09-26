@@ -289,3 +289,65 @@ class TestTheAuditAgreesWithTheHandWrittenInventory:
         """
         assert len(env_gates.DEAD_GATES) == 14
         assert len({g.name for g in env_gates.DEAD_GATES}) == 14, "duplicate name"
+
+
+#: Dead declarations that were gate-shaped semantically but not lexically, and so
+#: were invisible to the tool built to find them. They came out of `.env.example`
+#: on the word of a human root-cause report
+#: (``docs/appearance_translation_root_cause_report.md:116``), not of this audit.
+_MISSED_BY_NAME_SHAPE = (
+    "TRANSLATION_FAIL_OPEN",
+    "TRANSLATION_PRESERVE_ORIGINAL",
+    "TRANSLATION_SHOW_ORIGINAL_OPTION",
+)
+
+
+class TestGateNameSeesSemanticallyShapedGates:
+    """``GATE_NAME`` has to match a switch that is not spelled like one.
+
+    The checks above all assume the name reached the classifier. These three did
+    not. They are pinned here rather than as a fixture tree because the thing
+    under test is a repository-wide judgement — "would this be condemned if it
+    came back" — and that cannot be asked of a synthetic file.
+    """
+
+    @pytest.mark.parametrize("name", _MISSED_BY_NAME_SHAPE)
+    def test_a_semantic_gate_is_classified_at_all(self, name):
+        """The regex is the gate before every other gate.
+
+        A name this does not match is never judged, never reported, and cannot
+        fail any assertion in this file — so narrowing the regex would silently
+        re-open the hole rather than turn something red.
+        """
+        assert audit.GATE_NAME.search(name), (
+            f"{name} asserts a policy for a live integration and would not be "
+            "classified; an operator could set it and believe it"
+        )
+
+    @pytest.mark.parametrize("name", _MISSED_BY_NAME_SHAPE)
+    def test_nothing_reads_them_so_matching_is_enough_to_condemn_them(
+        self, name, scanned_files
+    ):
+        """Matching the regex only helps if the verdict that follows is DEAD.
+
+        Asserted separately because the two halves fail for different reasons. If
+        one of these ever acquires a reader it stops being a regression fixture
+        and becomes a live gate, and this test — not the one above — is the one
+        that should go red and be deleted along with its entry.
+        """
+        assert not audit.readers_for({name}, scanned_files)[name], (
+            f"{name} now has a reader; it is no longer a dead declaration and "
+            "should come out of _MISSED_BY_NAME_SHAPE"
+        )
+
+    def test_they_are_not_declared_today(self):
+        """They were removed in #22. This is the regression half.
+
+        Together with the two above: the names match, nothing reads them, and
+        they are absent — so re-adding any one of them to `.env.example` fails
+        ``test_env_example_declares_no_gate_that_nothing_reads``, which is what
+        was not true before this regex changed.
+        """
+        declared = audit.load_env(str(REPO / ".env.example"))
+        back = [name for name in _MISSED_BY_NAME_SHAPE if name in declared]
+        assert not back, f"dead declarations are back in .env.example: {back}"
