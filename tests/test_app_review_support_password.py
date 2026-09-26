@@ -11,6 +11,7 @@ Covers:
 Runs against a temp sqlite file so nothing touches coinpilotx.db.
 """
 
+import json
 import os
 import re
 import sqlite3
@@ -439,24 +440,66 @@ class PasswordResetHardeningTest(unittest.TestCase):
         self.assertIn("single-use", args[3])
         self.assertEqual(kwargs.get("email_type"), "password_reset")
 
+    def _latest_reset_job(self, user_id):
+        conn = bot.db()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT status, max_attempts, metadata FROM failed_email_queue "
+            "WHERE user_id=? AND email_type='password_reset' ORDER BY id DESC LIMIT 1",
+            (user_id,),
+        )
+        row = cur.fetchone()
+        conn.close()
+        return row
+
     def test_provider_failure_persists_retryable_email_job(self):
-        with patch.object(bot.email_service_service, "send_email", return_value={"ok": False, "status_code": 503, "response": {}}):
+        """A configured provider that answers 503 must report failure and leave a job.
+
+        The readiness patch is the whole test. `send_platform_email` now hands the
+        message straight to the outbox when the running process holds no Brevo
+        credentials, without calling the provider at all — so in a test process,
+        which has none, patching `send_email` patched something that was never
+        reached. The call returned True because the mail really had been queued,
+        and this test read that as the provider failing open. It was asserting
+        nothing about provider failures. Saying `ready` out loud puts the 503 back
+        in the path; the deferral it was accidentally exercising is asserted on its
+        own below.
+        """
+        ready = {**bot.email_service_service.provider_status(), "ready": True, "api_key_configured": True, "missing_fields": []}
+        calls = []
+
+        def _fail(*args, **kwargs):
+            calls.append((args, kwargs))
+            return {"ok": False, "status_code": 503, "response": {}}
+
+        with patch.object(bot.email_service_service, "provider_status", return_value=ready), \
+             patch.object(bot.email_service_service, "send_email", side_effect=_fail):
             sent = bot.send_password_reset_email(
                 {"user_id": 905, "email": "retry@example.com", "display_name": "Retry"},
                 "https://pulsesoc.com/reset-password/retry-safe-token",
             )
+        self.assertEqual(len(calls), 1, "the provider was never asked, so nothing here is about a provider failure")
         self.assertFalse(sent)
-        conn = bot.db()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT status, max_attempts FROM failed_email_queue WHERE user_id=? AND email_type='password_reset' ORDER BY id DESC LIMIT 1",
-            (905,),
-        )
-        row = cur.fetchone()
-        conn.close()
+        row = self._latest_reset_job(905)
         self.assertIsNotNone(row)
         self.assertEqual(row[0], "pending")
         self.assertGreaterEqual(int(row[1]), 1)
+
+    def test_a_process_without_credentials_defers_the_reset_mail_instead_of_sending_it(self):
+        unready = {**bot.email_service_service.provider_status(), "ready": False, "api_key_configured": False, "missing_fields": ["BREVO_API_KEY"]}
+        calls = []
+        with patch.object(bot.email_service_service, "provider_status", return_value=unready), \
+             patch.object(bot.email_service_service, "send_email", side_effect=lambda *a, **k: calls.append(1) or {"ok": True}):
+            sent = bot.send_password_reset_email(
+                {"user_id": 906, "email": "deferred@example.com", "display_name": "Deferred"},
+                "https://pulsesoc.com/reset-password/deferred-safe-token",
+            )
+        self.assertEqual(calls, [], "a process with no API key must not spend the attempt on the provider")
+        row = self._latest_reset_job(906)
+        self.assertIsNotNone(row, "the mail is neither sent nor stored, so the reset link is lost")
+        self.assertEqual(row[0], "pending")
+        self.assertEqual(json.loads(row[2] or "{}").get("deferred_reason"), "provider_not_ready_in_this_process")
+        self.assertTrue(sent, "the durable job above is the delivery, so the caller is told the mail is on its way")
 
     def test_token_expiry_and_single_use_are_enforced_by_reset_endpoint(self):
         user_id = 9911
