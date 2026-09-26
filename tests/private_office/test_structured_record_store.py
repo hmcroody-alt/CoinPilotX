@@ -550,14 +550,31 @@ def stage_read_never_decrypts() -> None:
     # There must be no argument that changes this. A flag like
     # `include_values=True` is correct for two releases and then becomes a
     # default on a list endpoint.
+    #
+    # Stated as a closed parameter set rather than a list of names to refuse. The
+    # five-name denylist this replaced — include_values, reveal, decrypt, raw,
+    # unmasked — delivered the sentence above only for a flag someone spelled one
+    # of those five ways: `with_values`, `show_values`, `plaintext`, `unredacted`,
+    # `expand`, `full` or `detail` all passed it. A gate on raw private field
+    # values cannot rest on guessing the name of the flag that leaks them.
+    #
+    # Adding a query filter here is expected and fine. Add it to the set in the
+    # same diff — the cost is one line, and it buys the guarantee that a
+    # parameter which returns raw values cannot arrive unnoticed.
     import inspect
-    signature = inspect.signature(store.get_record)
-    check("get_record has no parameter that could return raw values",
-          not {"include_values", "reveal", "decrypt", "raw", "unmasked"}
-          & set(signature.parameters), str(list(signature.parameters)))
-    check("list_records has no parameter that could return raw values",
-          not {"include_values", "include_fields", "reveal", "decrypt", "raw"}
-          & set(inspect.signature(store.list_records).parameters))
+    check("get_record accepts exactly its declared parameters, so none that "
+          "returns raw values can be added without this failing",
+          set(inspect.signature(store.get_record).parameters) == {
+              "cur", "owner_user_id", "record_id", "record_key_value",
+              "audit", "actor_user_id", "purpose",
+          }, str(sorted(inspect.signature(store.get_record).parameters)))
+    check("list_records accepts exactly its declared parameters",
+          set(inspect.signature(store.list_records).parameters) == {
+              "cur", "owner_user_id", "template_key", "ia_domain",
+              "lifecycle_state", "verification_state", "needs_review_only",
+              "expiring_before", "limit", "offset", "actor_user_id", "audit",
+              "purpose",
+          }, str(sorted(inspect.signature(store.list_records).parameters)))
 
     listed = store.list_records(cur, owner_user_id=USER_A)
     check("a list returns no field values at all",
