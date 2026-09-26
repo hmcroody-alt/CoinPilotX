@@ -22,7 +22,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _HANDLE, _DB_PATH = tempfile.mkstemp(suffix=".db", prefix="app_intent_router_")
 os.close(_HANDLE)
 os.environ["DATABASE_URL"] = f"sqlite:///{_DB_PATH}"
-# The hook runs before any view, so none of these assertions need a schema.
+# Every assertion here is about what the hook decides, and it decides before any
+# view runs -- so no schema. The consequence, which the tests below lean on
+# deliberately rather than work around: when the hook declines to intercept, the
+# request continues into a view that may fail for lack of tables. That failure is
+# the evidence of pass-through. It is only usable as evidence because the thing
+# being ruled out (a 302 to the App Store, or the interstitial's own markup) is
+# something a broken view cannot accidentally produce.
 os.environ["COINPILOTX_INIT_DB_ON_IMPORT"] = "0"
 
 from werkzeug.exceptions import MethodNotAllowed, NotFound  # noqa: E402
@@ -155,8 +161,15 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
         page the visitor could do nothing with. Since the Marketplace family
         became app-first it would also have been the single most common desktop
         outcome on the site.
+
+        The two paths are the *selling* half of Marketplace. `/pulse/marketplace`
+        and `/pulse/marketplace/<id>` used to be here and were moved to
+        `test_non_ios_reaches_the_page_for_the_buying_half_of_marketplace` below,
+        because they now render real public templates: asserting they produce an
+        interstitial would be asserting that the website refuses the pages
+        `/sitemap-products.xml` submits to Google.
         """
-        for path in ("/pulse/marketplace/9", "/pulse/orders"):
+        for path in ("/pulse/marketplace/create", "/pulse/orders"):
             with self.subTest(path=path):
                 response = self.client.get(f"{path}?pulse_app=1", headers=MAC)
                 self.assertEqual(response.status_code, 200)
@@ -176,14 +189,41 @@ class AppIntentFallbackRouterTest(unittest.TestCase):
         Two different destinations must produce two different headings, or the
         page is not carrying the member's intent through at all.
         """
-        listing = self.client.get(
-            "/pulse/marketplace/9?pulse_app=1", headers=MAC
+        composer = self.client.get(
+            "/pulse/marketplace/create?pulse_app=1", headers=MAC
         ).get_data(as_text=True)
         orders = self.client.get(
             "/pulse/orders?pulse_app=1", headers=MAC
         ).get_data(as_text=True)
-        self.assertIn("This listing is available in the PulseSoc iPhone app", listing)
+        self.assertIn(
+            "The listing composer is available in the PulseSoc iPhone app", composer
+        )
         self.assertIn("Order history is available in the PulseSoc iPhone app", orders)
+
+    def test_non_ios_reaches_the_page_for_the_buying_half_of_marketplace(self):
+        """The other side of the same split, stated rather than left implied.
+
+        `web_equivalent=True` on `marketplace` and `product` means the hook must
+        decline: a desktop visitor who follows a marked link to a product gets the
+        product, not an advert for the app. That is not cosmetic -- the same two
+        URLs are the ones `/sitemap-products.xml` hands Google, so an interstitial
+        here would be a page that ranks and then refuses to load.
+
+        What is asserted is the *decline*, not the page: there is no schema in this
+        process (see the module header), so the view may well fail. Two things a
+        failing view cannot fake are checked instead -- a 302 to the App Store, and
+        the interstitial's QR asset, which only `render_app_only_destination`
+        emits. `tests/test_marketplace_public_pages.py` owns what the page renders
+        once a schema exists.
+        """
+        for path in ("/pulse/marketplace", "/pulse/marketplace/9"):
+            for headers in (MAC, ANDROID):
+                with self.subTest(path=path, ua=headers["User-Agent"][:24]):
+                    response = self.client.get(f"{path}?pulse_app=1", headers=headers)
+                    self.assertNotEqual(response.headers.get("Location"), APP_STORE)
+                    self.assertNotIn(
+                        app_links.APP_STORE_QR_ASSET, response.get_data(as_text=True)
+                    )
 
     def test_the_interstitial_is_not_indexable(self):
         # It is a handoff, not content; the resource is indexed at its own URL.

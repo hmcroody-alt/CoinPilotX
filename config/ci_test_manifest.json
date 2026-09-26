@@ -445,7 +445,7 @@
     "tests/test_marketplace_seo.py",
     "tests/test_marketplace_store_identity.py",
     "tests/test_marketplace_stripe_response.py",
-    "tests/test_marketplace_web_ctas_are_app_first.py",
+    "tests/test_marketplace_web_ctas_follow_the_registry.py",
     "tests/test_measured_duration_wiring.py",
     "tests/test_measured_video_duration_enforcement.py",
     "tests/test_media_cover_mux_fallback.py",

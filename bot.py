@@ -3783,21 +3783,30 @@ def enforce_admin_form_csrf():
 
 
 def app_first_href(destination, resource_id=None):
-    """The href for a website button whose destination lives in the app.
+    """The href for a website button whose destination the app registry owns.
 
     Every Marketplace button on pulsesoc.com goes through here, so that the
-    decision about what opens the app is made in one place instead of being
-    re-derived at each of the two dozen sites that render one.
+    decision is made in one place instead of being re-derived at each of the two
+    dozen sites that render one. The name is historical and the function is no
+    longer always app-first: `app_links.website_href` reads `web_equivalent` and
+    returns the real web page for a destination that has one, the `/open/...`
+    interstitial for one that does not.
 
-    Marketplace is app-first while the web one is unbuilt, so these buttons
-    must not reach `/pulse/marketplace...`. They cannot use the canonical
-    `?pulse_app=1` link either: that link is tapped from the same domain it
-    points at, and iOS does not consult associated domains for a same-domain
-    tap, so an installed member would land in Safari and get 302'd to the
-    App Store. `open_interstitial_url` explains that in full.
+    That is what changed when `/pulse/marketplace` and `/pulse/marketplace/<id>`
+    became real public templates. They are in `/sitemap-products.xml` and carry
+    canonical URLs, so the website's own navigation has to be able to reach
+    them -- a button that refuses the page we are asking Google to rank is a
+    contradiction a visitor experiences as a dead end. The seller surfaces below
+    them are unchanged and still interstitial: nothing was built for the web
+    there.
+
+    Neither branch is ever the canonical `?pulse_app=1` marker link. That link is
+    tapped from the same domain it points at, and iOS does not consult associated
+    domains for a same-domain tap, so an installed member would land in Safari
+    and get 302'd to the App Store. `open_interstitial_url` explains it in full.
     """
 
-    return app_links.open_interstitial_url(destination, resource_id, source="web")
+    return app_links.website_href(destination, resource_id, source="web")
 
 
 def app_first_link_map_script():
@@ -3816,11 +3825,19 @@ def app_first_link_map_script():
 
     Keyed by the result `type` the search API sets, so a card type with no entry
     keeps its canonical url and nothing has to be excluded by hand.
+
+    The map is kept even though `product` is now web-first and the template it
+    emits is the canonical path -- i.e. the same URL the card's own payload
+    already carries. Deleting the entry would work today and would silently stop
+    working the day a destination moves back to app-first, because the JS would
+    then have no mechanism to rewrite anything. `website_href_template` answers
+    for both cases, so the browser keeps asking the one question and the registry
+    keeps deciding.
     """
 
     payload = {
         "marketplace": {
-            "template": app_links.open_interstitial_url_template("product", source="web"),
+            "template": app_links.website_href_template("product", source="web"),
             "fallback": app_first_href("marketplace"),
             "token": app_links.CLIENT_ID_TOKEN,
         }
@@ -57506,7 +57523,14 @@ def pulse_marketplace_page():
         int(user.get("user_id") or 0),
         # The URL shape is built by `app_links`, never by this script. The
         # browser substitutes an id into it and nothing else.
-        json.dumps(app_links.open_interstitial_url_template("product", source="web")),
+        #
+        # `website_href_template` rather than `open_interstitial_url_template`:
+        # the shape now follows the `product` destination's `web_equivalent`
+        # flag, so these browser-rendered cards land on the same public product
+        # page a server-rendered card and a Google result land on. Hardcoding
+        # the interstitial here would mean a member searching the grid could not
+        # reach a page an anonymous visitor can.
+        json.dumps(app_links.website_href_template("product", source="web")),
         json.dumps(app_links.CLIENT_ID_TOKEN),
     )
     search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
