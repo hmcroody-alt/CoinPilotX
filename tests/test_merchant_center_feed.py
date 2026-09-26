@@ -21,11 +21,15 @@ agree with itself.
 ``/sitemap-products.xml`` reads ``.indexable``, this feed reads
 ``.feed_eligible``. A listing with a real description and image but an
 unparseable ``price_label`` belongs in Search and cannot be a Shopping offer.
-Production on 2026-09-26 had 39 rows over the description floor and 21 with a
-price, so this gap is most of the catalogue rather than an edge case -- which is
-exactly why a future "fix" that collapses the two verdicts would look like a
-cleanup and would either withhold pages from Search or put unpriced items into
-Shopping.
+
+Production has **no such row today**, and that is why these tests carry the
+whole weight. Counted with the predicates the two surfaces actually select on,
+2026-09-26 had 15 publishable listings, all 15 priced, 13 over the description
+floor -- so the only two exclusions fail on description, which bars them from
+Search too. Nothing live currently distinguishes the two verdicts. A future "fix"
+that collapses them would look like a cleanup, would pass any test that only
+watched production-shaped data, and would either withhold pages from Search or
+put unpriced items into Shopping the moment a seller left a price blank.
 
 Pinning it took three tests rather than one, and the reason is worth recording.
 ``test_a_priced_page_and_an_unpriced_page_split_between_the_two`` reads like
@@ -327,9 +331,11 @@ class FeedEligibilityTestCase(FeedFixture):
     def test_a_listing_with_no_parseable_price_is_not_in_the_feed(self):
         """``price_label`` is TEXT and sellers leave it blank.
 
-        Production had 26 of 47 rows with no price on 2026-09-26. The feed cannot
-        carry them -- ``g:price`` is required -- and guessing zero would publish
-        "free" for a product that charges.
+        No *publishable* row lacked a price on 2026-09-26 -- the 26 unpriced rows
+        were all drafts -- so this is the case the catalogue does not currently
+        exhibit rather than the common one. Asserted anyway: ``g:price`` is
+        required, and guessing zero would publish "free" for a product that
+        charges.
         """
 
         self.make_listing(price_label="")
@@ -521,14 +527,15 @@ class FeedEscapingTestCase(FeedFixture):
 class FeedTitleTruncationTestCase(FeedFixture):
     """Google's 150-character title limit.
 
-    Not hypothetical: production row 14 is a 160-character bed title, 1 of 47.
+    Not hypothetical: production row 14 is a 160-character bed title, 1 of the 15
+    publishable listings.
     Truncating is a transformation ``marketplace_seo`` deliberately refuses to
     make, and it is justified here only because the alternative is dropping the
     product from Shopping entirely.
     """
 
     def test_a_title_over_the_limit_is_truncated_on_a_word_boundary(self):
-        # Shaped after production row 14, the one listing of 47 that exceeds the
+        # Shaped after production row 14, the one publishable listing exceeding the
         # limit. Length asserted rather than assumed: an earlier draft of this
         # fixture was accidentally exactly 150 characters and the test passed
         # while truncating nothing.

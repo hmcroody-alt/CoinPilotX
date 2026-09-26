@@ -64,20 +64,38 @@ that it is the string buyers search for and a rewrite makes the page disagree
 with the feed. This module truncates it anyway, at 150 characters, on a word
 boundary — because Google's limit is 150 and the alternative to truncating is
 dropping the product entirely. Measured against production on 2026-09-26 this
-affects exactly **1 of 47** listings (id 14, a 160-character bed title), so it
-is a real case and a rare one. Truncation preserves the leading words, which is
-where a supplier title puts the product; it is a different act from rewriting,
-which would change them.
+affects exactly **1 of the 15** publishable listings (id 14, a 160-character bed
+title), so it is a real case and a rare one. Truncation preserves the leading
+words, which is where a supplier title puts the product; it is a different act
+from rewriting, which would change them.
 
 HOW BIG THIS FEED ACTUALLY IS
 -----------------------------
-Worth stating plainly, because a feed builder that returns two items looks
-broken. Of 47 rows in production on 2026-09-26: 39 have a description of 40+
-characters, 21 have a non-empty ``price_label``, and **14 have both**. The
-remainder are not defects in this module — ``price_label`` is a TEXT column that
-sellers leave blank, and a listing with no price cannot be a Shopping offer.
-The number this feed publishes is a statement about catalogue completeness, and
-the fix lives in the listing composer, not here.
+Worth stating plainly, because a feed builder that returns thirteen items looks
+broken. Measured against production on 2026-09-26, counted with the *same*
+predicates this feed selects on: **15** listings are publishable, all 15 carry a
+price, all 15 carry a cover image, and **13** clear the 40-character description
+floor. So the feed publishes 13, and the two it drops (ids 50 and 52) have
+descriptions of 2 and 0 characters.
+
+The count to be careful with is 47. That is every row in ``marketplace_listings``
+including drafts and unapproved ones, and an earlier draft of this docstring
+quoted it — along with "21 priced" and "39 described" — as though it described
+the feed. It does not: those numbers are measured before the lifecycle and
+seller-approval predicates, and they invert the finding. Among rows that actually
+reach this module nothing is missing a price; **description** is the only field
+that excludes anything. A feed whose size is explained by the wrong column is a
+feed someone will "fix" in the wrong place, so: the gap is two empty
+descriptions, and it lives in the listing composer, not here.
+
+One consequence worth stating because the tests depend on it. The
+indexable-but-not-feed-eligible case — a real page with an unparseable price —
+has **zero** instances in production today: the only two excluded rows fail the
+description floor, which bars them from Search as well. The asymmetry
+``eligibility`` exists to express is therefore not currently exercised by any
+live row, which means the test suite is the only thing defending it. That is an
+argument for the tests being explicit rather than incidental, not an argument
+that the distinction is theoretical.
 """
 
 from __future__ import annotations
@@ -112,8 +130,9 @@ CONDITION = "new"
 IDENTIFIER_EXISTS = "no"
 
 #: Google's limits. The title is truncated to fit; the description is too, at a
-#: bound so far above anything in the catalogue (longest is 1,101 characters)
-#: that it exists only so a pathological row cannot produce an oversized feed.
+#: bound well above anything in the catalogue (the longest publishable
+#: description is 2,708 characters, id 14) so it exists only to stop a
+#: pathological row producing an oversized feed.
 MAX_TITLE_CHARS = 150
 MAX_DESCRIPTION_CHARS = 5000
 
@@ -139,8 +158,9 @@ def feed_row(listing):
     """One feed item as a dict of tag -> text, or ``None`` if it cannot be sent.
 
     Returning ``None`` rather than raising for an ineligible row, because
-    ineligibility is the ordinary case here, not an error: two thirds of the
-    catalogue has no parseable price. Raising is reserved for the two cases the
+    ineligibility is an ordinary outcome here, not an error: a seller can publish
+    a product with no description, and 2 of the 15 publishable rows have done so.
+    Raising is reserved for the two cases the
     module cannot reason about — an availability value with no feed spelling,
     and an eligibility verdict that contradicts the price it was based on —
     where continuing would publish a wrong claim rather than skip a row.

@@ -35,29 +35,37 @@ The `noindex` is a header and not a `<meta>` tag because an XML file has no
 
 ## How many products it carries, and why that number is small
 
-Measured against production on 2026-09-26 — 47 published listings:
+Measured against production on 2026-09-26, counted with the **same predicates
+the feed selects on** — lifecycle, listing approval and seller approval:
 
 | | rows |
 |---|---|
-| published and approved | 47 |
-| description ≥ 40 chars | 39 |
-| non-empty `price_label` | 21 |
-| **both — i.e. in the feed** | **14** |
+| publishable (what the query returns) | 15 |
+| non-empty, parseable `price_label` | 15 |
+| cover image present | 15 |
+| description ≥ 40 chars | 13 |
+| **in the feed** | **13** |
 
-A feed builder that returns 14 of 47 looks broken and is not. `price_label` is a
-free-text column sellers leave blank, and a listing with no price cannot be a
-Shopping offer. **The remaining 26 rows are a listing-composer gap, not a feed
-bug** — the fix is upstream, in whatever lets a product be published without a
-price.
+**Do not quote the number 47.** That is every row in `marketplace_listings`,
+drafts and unapproved rows included, and it is the count an earlier draft of this
+document used. Measuring before the predicates does not just inflate the total,
+it inverts the diagnosis: it suggests price is what holds products back, when
+among rows that actually reach the feed nothing is missing a price and
+**description is the only field excluding anything**. Two rows (ids 50 and 52)
+have descriptions of 2 and 0 characters. That is the listing-composer gap, and it
+is two rows, not twenty-six.
 
-Note the asymmetry this creates and keep it: an unpriced listing is a perfectly
-good web page and stays in `/sitemap-products.xml`; it is only barred from
-Shopping. `marketplace_seo.eligibility` returns two verdicts for exactly this
-reason and the feed consumes only the narrower one. Collapsing them looks like a
-cleanup and would either withhold pages from Search or submit unpriced items to
-Shopping. Three tests pin it; one of them is a source-level assertion that this
-module never reads `.indexable`, because a mutation probe showed the behavioural
-tests alone did not catch the collapse.
+One more consequence, and it is the reason the tests matter more than they look
+like they should. The asymmetry this whole design rests on — a listing that is a
+good web page but not a Shopping offer — has **zero live instances**. The only
+two excluded rows fail the description floor, which bars them from Search as
+well, so no production row currently distinguishes `indexable` from
+`feed_eligible`. Keep the distinction anyway: it costs nothing and the first
+seller to leave a price blank on a described product creates the case. Because no
+live data exercises it, the test suite is its only defence — which is why one of
+the three tests is a source-level assertion that this module never reads
+`.indexable`. A mutation probe showed the behavioural tests alone did not catch
+the collapse.
 
 ## Blockers the code cannot clear
 
@@ -105,8 +113,8 @@ product rather than facts read from a row:
   filler is worse than the gap.
 
 One field is transformed: the title is truncated to 150 characters on a word
-boundary, with no ellipsis. This affects 1 of 47 listings (id 14, 160
-characters). Truncating preserves the leading words, where a supplier title puts
+boundary, with no ellipsis. This affects 1 of the 15 publishable listings (id 14,
+160 characters). Truncating preserves the leading words, where a supplier title puts
 the product name; it is a different act from rewriting, which would make the
 feed disagree with the page.
 
@@ -119,7 +127,7 @@ feed disagree with the page.
    `max-age=300` only affects edge caching, not fetch frequency.
 4. Expect a diagnostics pass with warnings for missing GTIN/brand. Those are
    warnings, not errors, and are the intended state (see above).
-5. Verify the fetched item count matches the 14-of-47 arithmetic. A count of
+5. Verify the fetched item count is 13, per the table above. A count of
    zero means the query broke, not that the catalogue emptied — the route logs
    `MARKETPLACE_PUBLIC_QUERY_FAILED` and returns a valid empty feed rather than
    a 500, so an empty feed is silent by design and has to be checked for.
