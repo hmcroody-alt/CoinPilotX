@@ -328,6 +328,8 @@ from services import (
     marketplace_listing_lifecycle as marketplace_listing_lifecycle,
     marketplace_order_fulfillment as marketplace_order_fulfillment,
     marketplace_seller_identity as marketplace_seller_identity,
+    marketplace_seo as marketplace_seo,
+    merchant_center_feed as merchant_center_feed,
     media_service,
     media_storage,
     media_upload_sessions,
@@ -439,6 +441,7 @@ from services import (
 from services.route_auth import admin_required, auth_required, public_route
 from seo import schema as seo_schema
 from seo import features as seo_features
+from seo import commerce_policies as seo_commerce_policies
 from seo.content import (
     all_public_paths,
     article_page,
@@ -2844,9 +2847,27 @@ def add_pwa_headers(response):
         response.headers["Service-Worker-Allowed"] = "/"
         response.headers["Cache-Control"] = "no-store, max-age=0"
     elif request.path == "/pulse" or request.path.startswith("/pulse/") or request.path.startswith("/api/pulse/"):
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
+        # `/pulse/*` is the signed-in social app, so the default here is the
+        # strict one: per-user content must never reach a shared cache, and the
+        # back button must not resurface a thread after logout. This assignment
+        # is deliberately not `setdefault` -- a view that forgot is the case the
+        # rule exists for.
+        #
+        # A handful of `/pulse/` URLs now answer anonymous readers with a public
+        # page (the marketplace product page is the first), and for those the
+        # strict default is wrong in a way that costs money: Googlebot and
+        # Merchant Center both fetch this URL, `no-store` forbids any of it
+        # being reused, and the crawler spends budget re-downloading an
+        # unchanged product page. The opt-out is a flag the *view* sets, not a
+        # path prefix, because the same path is private for a signed-in member
+        # and public for a visitor -- only the code that rendered the response
+        # knows which it just produced.
+        if getattr(g, "pulse_public_cacheable", False):
+            response.headers.setdefault("Cache-Control", "public, max-age=300")
+        else:
+            response.headers["Cache-Control"] = "no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
     elif request.path == "/admin" or request.path.startswith("/admin/") or request.path.startswith("/api/admin/"):
         # Admin surfaces must never enter browser/proxy caches: after logout
         # or session expiry the back button must not resurface protected
@@ -2856,7 +2877,7 @@ def add_pwa_headers(response):
         response.headers["Expires"] = "0"
     elif request.path.startswith(("/static/", "/icons/")):
         response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-live.xml", "/sitemap-replays.xml", "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
+    elif request.path in ("/sitemap.xml", "/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml", merchant_center_feed.FEED_PATH, "/robots.txt", "/llms.txt", "/ai-index.json", "/manifest.json", "/site.webmanifest"):
         response.headers["Cache-Control"] = "public, max-age=300"
     if (
         response.status_code == 200
@@ -3764,21 +3785,30 @@ def enforce_admin_form_csrf():
 
 
 def app_first_href(destination, resource_id=None):
-    """The href for a website button whose destination lives in the app.
+    """The href for a website button whose destination the app registry owns.
 
     Every Marketplace button on pulsesoc.com goes through here, so that the
-    decision about what opens the app is made in one place instead of being
-    re-derived at each of the two dozen sites that render one.
+    decision is made in one place instead of being re-derived at each of the two
+    dozen sites that render one. The name is historical and the function is no
+    longer always app-first: `app_links.website_href` reads `web_equivalent` and
+    returns the real web page for a destination that has one, the `/open/...`
+    interstitial for one that does not.
 
-    Marketplace is app-first while the web one is unbuilt, so these buttons
-    must not reach `/pulse/marketplace...`. They cannot use the canonical
-    `?pulse_app=1` link either: that link is tapped from the same domain it
-    points at, and iOS does not consult associated domains for a same-domain
-    tap, so an installed member would land in Safari and get 302'd to the
-    App Store. `open_interstitial_url` explains that in full.
+    That is what changed when `/pulse/marketplace` and `/pulse/marketplace/<id>`
+    became real public templates. They are in `/sitemap-products.xml` and carry
+    canonical URLs, so the website's own navigation has to be able to reach
+    them -- a button that refuses the page we are asking Google to rank is a
+    contradiction a visitor experiences as a dead end. The seller surfaces below
+    them are unchanged and still interstitial: nothing was built for the web
+    there.
+
+    Neither branch is ever the canonical `?pulse_app=1` marker link. That link is
+    tapped from the same domain it points at, and iOS does not consult associated
+    domains for a same-domain tap, so an installed member would land in Safari
+    and get 302'd to the App Store. `open_interstitial_url` explains it in full.
     """
 
-    return app_links.open_interstitial_url(destination, resource_id, source="web")
+    return app_links.website_href(destination, resource_id, source="web")
 
 
 def app_first_link_map_script():
@@ -3797,11 +3827,19 @@ def app_first_link_map_script():
 
     Keyed by the result `type` the search API sets, so a card type with no entry
     keeps its canonical url and nothing has to be excluded by hand.
+
+    The map is kept even though `product` is now web-first and the template it
+    emits is the canonical path -- i.e. the same URL the card's own payload
+    already carries. Deleting the entry would work today and would silently stop
+    working the day a destination moves back to app-first, because the JS would
+    then have no mechanism to rewrite anything. `website_href_template` answers
+    for both cases, so the browser keeps asking the one question and the registry
+    keeps deciding.
     """
 
     payload = {
         "marketplace": {
-            "template": app_links.open_interstitial_url_template("product", source="web"),
+            "template": app_links.website_href_template("product", source="web"),
             "fallback": app_first_href("marketplace"),
             "token": app_links.CLIENT_ID_TOKEN,
         }
@@ -12670,6 +12708,59 @@ def feature_detail_page(slug):
     ))
     response.headers["Cache-Control"] = "public, max-age=600"
     return response
+
+
+# The four commerce policy pages, registered from one list rather than as four
+# copies of the same handler. Merchant Center requires a reachable return policy,
+# refund policy, shipping page and contact page before it will approve a Shopping
+# account, so until these resolve `/feeds/merchant-center.xml` can be perfect and
+# still do nothing. `docs/seo/01_merchant_center_feed.md` tracks that as blocker 1.
+#
+# One handler and a loop, unlike the eight feature pages which share a `<slug>`
+# rule: these are four unrelated top-level URLs (`/returns` is not
+# `/policies/returns`, on purpose -- see `commerce_policies.canonical_path`), so
+# there is no single rule that matches them. What must not happen is four
+# hand-written handlers drifting apart in their cache headers, their robots
+# source or their schema, which is the failure this closure prevents.
+def _register_commerce_policy_route(slug):
+    def handler(slug=slug):
+        page = seo_commerce_policies.page(slug, search_visibility.canonical_url)
+        if not page:
+            # Unreachable while the route table is built from POLICIES, and kept
+            # because the day someone adds a route by hand without a policy
+            # entry, a 404 is the right answer and a 500 is not.
+            abort(404)
+        page["image"] = seo_schema.SHARE_IMAGE_URL
+        response = webhook_app.make_response(render_template(
+            "commerce_policy.html",
+            page=page,
+            robots=search_visibility.robots_meta(seo_commerce_policies.canonical_path(slug)),
+            schema_json=seo_schema.commerce_policy_graph(page),
+        ))
+        # Same as the other written pages. These change when the policy changes,
+        # which is a deliberate act, not a data refresh.
+        response.headers["Cache-Control"] = "public, max-age=600"
+        return response
+
+    handler.__name__ = f"commerce_policy_{slug.replace('-', '_')}_page"
+    handler.__doc__ = (
+        f"`{seo_commerce_policies.canonical_path(slug)}` -- a buyer-facing commerce "
+        "policy page. Content and the reasoning behind every claim on it live in "
+        "`seo/commerce_policies.py`."
+    )
+    handler = public_route(
+        reason=(
+            "Buyer-facing commerce policy page. Google Merchant Center fetches it "
+            "unauthenticated during account review, and a buyer must be able to read "
+            "the return and refund terms before creating an account. No account state "
+            "is read."
+        )
+    )(handler)
+    webhook_app.route(seo_commerce_policies.canonical_path(slug), methods=["GET"])(handler)
+
+
+for _policy in seo_commerce_policies.POLICIES:
+    _register_commerce_policy_route(_policy["slug"])
 
 
 # Answers kept here rather than in the template so the FAQPage JSON-LD and the
@@ -30482,8 +30573,114 @@ def pulse_public_paths(limit=200):
     return [path for path, _lastmod in pulse_public_entries(limit)]
 
 
+def marketplace_public_listings(limit=500):
+    """Every publishable listing, payload-shaped, for Search and for Shopping.
+
+    One query with two consumers: `marketplace_public_entries` below builds the
+    sitemap from it and `/feeds/merchant-center.xml` builds the Shopping feed
+    from it. Shared deliberately rather than written twice, because the two
+    surfaces have to agree about *which rows exist* even though they disagree
+    about which of those rows they publish. A second copy of this query is how a
+    feed ends up advertising a product the sitemap has already dropped, and the
+    landing page for that product 404s.
+
+    The SQL clauses are the *same two* the grid and the product page apply --
+    `public_sql` for the lifecycle and `discovery_visible_sql` for the seller --
+    because a list that selects on looser predicates than the page it submits is
+    a list of URLs that 404.
+
+    Rows are shaped by `pulse_marketplace_listing_payload` rather than read raw,
+    for one specific reason: `marketplace_seo.eligibility` asks whether the
+    listing has an image, and the answer lives in the payload's resolved `media`
+    list, not in any single column. A raw row would report "no image" for every
+    product whose cover came from `gallery_json`, and the symptom would be a
+    sitemap and a feed that are both valid, green and half the size they should
+    be.
+
+    Returns `(row, listing)` pairs. The raw row is carried alongside the payload
+    because the sitemap needs `updated_at` for its `lastmod` and the payload does
+    not preserve it.
+    """
+
+    try:
+        from services.discovery_visibility import discovery_visible_sql
+
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
+            FROM marketplace_listings l
+            LEFT JOIN users u ON u.user_id=l.seller_user_id
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+              AND {discovery_visible_sql('u')}
+            ORDER BY l.id DESC LIMIT ?""", (int(limit),))
+        rows = [dict(row) for row in cur.fetchall()]
+        media_by_listing = pulse_marketplace_media_rows_for_listings(
+            cur, [int(row.get("id") or 0) for row in rows])
+        conn.close()
+    except Exception:
+        # Same reasoning as the posts sitemap: an empty `<urlset>` -- or an empty
+        # feed -- is a better answer to a crawler than a 500, and it is
+        # indistinguishable from a catalogue with nothing published in it.
+        # Without this line the only symptom of a broken query is a coverage
+        # number that never moves.
+        logging.exception("MARKETPLACE_PUBLIC_QUERY_FAILED serving an empty list")
+        return []
+
+    return [
+        (row, pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), [])))
+        for row in rows
+    ]
+
+
+def marketplace_feed_listings(limit=500):
+    """Payloads for the Shopping feed, without the sitemap's `lastmod` baggage.
+
+    The eligibility verdict is applied by `merchant_center_feed.feed_row`, not
+    here, so that the module that knows Merchant Center's required fields is the
+    one that decides whether a row satisfies them. This function's only job is
+    to hand over the same rows the sitemap saw.
+    """
+
+    return [listing for _row, listing in marketplace_public_listings(limit)]
+
+
+def marketplace_public_entries(limit=500):
+    """Published products as `(path, lastmod)`, plus the grid that links them.
+
+    Two filters, in the same shape as the posts sitemap above: the SQL in
+    `marketplace_public_listings` is the prefilter and the policy is the answer.
+
+    `marketplace_seo.eligibility` decides per row, and the verdict this reads is
+    `.indexable`, never `.feed_eligible`. The two are different questions and the
+    narrower one belongs to Merchant Center: a product with a real description
+    and image but an unparseable `price_label` is a perfectly good web page that
+    cannot be submitted as a Shopping offer. Filtering the sitemap on
+    `feed_eligible` would quietly withhold those pages from Search to satisfy a
+    rule Search does not have. Production has 21 priced rows against 39 with a
+    real description, so the gap the two verdicts describe is most of the
+    catalogue, not an edge case.
+
+    `/pulse/marketplace` leads the list with no `lastmod`. It belongs in a
+    sitemap -- it is the collection page and it is in no other child -- and it
+    has no honest modification date, since what changes is the 40 rows it
+    happens to render. An absent `lastmod` says that; today's date would not.
+    """
+
+    entries = [(marketplace_seo.INDEX_PATH, "")]
+    for row, listing in marketplace_public_listings(limit):
+        if not marketplace_seo.eligibility(listing).indexable:
+            continue
+        path = marketplace_seo.PRODUCT_PATH.format(listing_id=int(row.get("id") or 0))
+        if not search_visibility.sitemap_eligible(path):
+            continue
+        entries.append((path, row.get("updated_at") or row.get("created_at") or ""))
+    return entries
+
+
 #: Child sitemaps, in the order `/sitemap.xml` lists them.
-SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
+SITEMAP_CHILDREN = ("/sitemap-pages.xml", "/sitemap-posts.xml", "/sitemap-products.xml", "/sitemap-live.xml", "/sitemap-replays.xml")
 
 
 @webhook_app.route("/sitemap.xml", methods=["GET"])
@@ -30512,6 +30709,62 @@ def sitemap_posts_xml():
     """Member posts, each with its own real `updated_at`."""
 
     return Response(seo_engine.sitemap_xml(pulse_public_entries()), mimetype="application/xml")
+
+
+@webhook_app.route("/sitemap-products.xml", methods=["GET"])
+@public_route(reason="Sitemap for crawlers. Lists the public marketplace grid and only those product pages the listing-eligibility policy already cleared for public search.")
+def sitemap_products_xml():
+    """Products in their own child sitemap, not folded into `/sitemap-pages.xml`.
+
+    Search Console reports coverage per submitted sitemap, and products are the
+    one section where partial indexing has a specific, fixable cause -- a seller
+    who wrote no description, or a listing with no image. Mixed in with the
+    marketing pages, "38 of 41" hides that; on its own, "9 of 15 products" names
+    the work.
+    """
+
+    return Response(seo_engine.sitemap_xml(marketplace_public_entries()), mimetype="application/xml")
+
+
+@webhook_app.route(merchant_center_feed.FEED_PATH, methods=["GET"])
+@public_route(reason="Google Merchant Center fetches this feed unauthenticated on a schedule. It contains only listings the feed-eligibility policy already cleared, which is a strict subset of what the public product pages already show.")
+def merchant_center_feed_xml():
+    """The Shopping feed, built from the same rows as `/sitemap-products.xml`.
+
+    Two sitemaps' worth of filtering separate this from that one, and the
+    difference is the point. `marketplace_public_entries` filters on
+    `.indexable`; this filters on `.feed_eligible`, which additionally requires
+    a price that parses. A product with a real description and image but a blank
+    `price_label` belongs in Search and cannot be a Shopping offer, so the two
+    lists are deliberately allowed to be different lengths.
+
+    Today they are not, and that is worth stating rather than leaving to be
+    discovered. Measured against production on 2026-09-26 with these same
+    predicates: 15 listings are publishable, all 15 carry a price, and 13 clear
+    the 40-character description floor -- so both lists are 13 long and the two
+    rows they drop (ids 50 and 52) are the same two rows. The asymmetry is real
+    policy with no live instance; the first seller to leave a price blank on a
+    described product creates the case.
+
+    The lifecycle and seller predicates are the *same* as the sitemap's --
+    `public_sql` and `discovery_visible_sql` -- because a feed item's `link` has
+    to be fetchable. Submitting a URL that 404s is a disapproval in Merchant
+    Center, and the direction a looser query would drift is a feed advertising
+    products whose pages have been withdrawn.
+
+    The `noindex` arrives as `X-Robots-Tag`, not as a meta tag, because there is
+    nowhere in an XML document to put one. `search_visibility` classifies
+    `/feeds/` as `noindex,follow` and for an HTML page that verdict is delivered
+    by `robots_meta()` in the `<head>`; a feed has no head, so declaring the
+    policy without setting the header would have been a rule that governs
+    nothing. Read from `robots_meta` rather than hardcoded so the header cannot
+    drift from the table that decides it.
+    """
+
+    response = Response(
+        merchant_center_feed.feed_xml(marketplace_feed_listings()), mimetype="application/xml")
+    response.headers["X-Robots-Tag"] = search_visibility.robots_meta(merchant_center_feed.FEED_PATH)
+    return response
 
 
 @webhook_app.route("/sitemap-live.xml", methods=["GET"])
@@ -57251,17 +57504,69 @@ def pulse_camera_studio_page():
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
 
+def _marketplace_public_index_response(listings):
+    """The marketplace grid for a reader with no session -- including Googlebot.
+
+    Short for the same reason its product-page twin is short: every value on
+    every card comes from ``marketplace_seo.index_card``, which derives it from
+    the same payload the product page renders. Nothing is formatted twice.
+
+    The only judgement here is about search -- whether this page is worth asking
+    to be ranked at all.
+    """
+
+    cards = [marketplace_seo.index_card(listing) for listing in listings]
+
+    # An empty catalogue keeps its page and stops asking to be ranked. A URL that
+    # answers 200 with nothing on it is the soft-404 pattern Google names, and on
+    # a new deployment this is a real state rather than a hypothetical one.
+    # `follow`, not `nofollow`: the outbound links are the help pages and the
+    # sign-in path, which stay crawlable.
+    robots = (search_visibility.robots_meta(request.path) if cards
+              else search_visibility.NOINDEX_FOLLOW)
+
+    response = webhook_app.make_response(render_template(
+        "marketplace_index_public.html",
+        page=marketplace_seo.index_page_meta(listings),
+        robots=robots,
+        schema_json=marketplace_seo.index_page_graph(listings),
+        index_path=marketplace_seo.INDEX_PATH,
+        cards=cards,
+    ))
+    # Same five minutes as the product page, and the same reason for the flag:
+    # `add_pwa_headers` stamps `no-store` on every `/pulse/` response, so setting
+    # the header without the flag would be overwritten on the way out. This page
+    # carries prices too, and it is the URL a crawler re-fetches most often.
+    g.pulse_public_cacheable = True
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
 @webhook_app.route("/pulse/marketplace", methods=["GET"])
+@public_route(reason="Public marketplace grid. Anonymous visitors and Googlebot get the public index -- the only internal crawl path to the product pages -- and signed-in members fall through to the member grid, which reads its own account state.")
 def pulse_marketplace_page():
     init_db()
+    # Not a gate. The product pages became public first, and that left them
+    # reachable only from a sitemap: Google treats a sitemap as a hint it may
+    # ignore, while a linked page in the site's own navigation is how a crawler
+    # finds a URL and decides how often to return. A catalogue whose only inbound
+    # path is a sitemap gets crawled late and shallowly.
+    #
+    # Same rule as the product page and `/app`: the branch is on authentication,
+    # never on user-agent, and the visibility predicates below are untouched.
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
     conn = db()
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
-    seller = dict(cur.fetchone() or {})
+    seller = {}
+    if user:
+        # Only a signed-in reader has a seller row to look up, and the public
+        # index has nowhere to put one -- Apply as Merchant and Create Listing
+        # both need an account before they mean anything. Skipping the query
+        # rather than guarding its result keeps the anonymous page one query
+        # cheaper, on the one page a crawler fetches most often.
+        cur.execute("SELECT * FROM marketplace_sellers WHERE user_id=? LIMIT 1", (user["user_id"],))
+        seller = dict(cur.fetchone() or {})
     # `discovery_visible_sql` is applied here as well as the lifecycle rule.
     # Without it this grid was the one buyer-side surface in the product that
     # showed listings from QA and deactivated sellers: the search endpoint below
@@ -57282,6 +57587,20 @@ def pulse_marketplace_page():
           AND {discovery_visible_sql('u')}
         ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
     listings = [dict(row) for row in cur.fetchall()]
+    if not user:
+        # The public grid is built from `pulse_marketplace_listing_payload`, the
+        # same shaping function the mobile API and the public product page use,
+        # rather than from the raw rows the member grid below formats itself.
+        # That costs one extra query for the media rows and buys the thing that
+        # matters on a page Google reads: a card cannot disagree with the product
+        # page it links to about the title, the image or the price.
+        listing_ids = [int(row.get("id") or 0) for row in listings]
+        media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
+        conn.close()
+        return _marketplace_public_index_response([
+            pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
+            for row in listings
+        ])
     conn.close()
     def marketplace_card(row):
         listing_id = int(row.get("id") or 0)
@@ -57339,13 +57658,87 @@ def pulse_marketplace_page():
         int(user.get("user_id") or 0),
         # The URL shape is built by `app_links`, never by this script. The
         # browser substitutes an id into it and nothing else.
-        json.dumps(app_links.open_interstitial_url_template("product", source="web")),
+        #
+        # `website_href_template` rather than `open_interstitial_url_template`:
+        # the shape now follows the `product` destination's `web_equivalent`
+        # flag, so these browser-rendered cards land on the same public product
+        # page a server-rendered card and a Google result land on. Hardcoding
+        # the interstitial here would mean a member searching the grid could not
+        # reach a page an anonymous visitor can.
+        json.dumps(app_links.website_href_template("product", source="web")),
         json.dumps(app_links.CLIENT_ID_TOKEN),
     )
     search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
     listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
     main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
     return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
+
+
+def _marketplace_public_product_response(listing_id, listing):
+    """The product page for a reader with no session -- including Googlebot.
+
+    Everything rendered here comes out of ``listing``, which is
+    ``pulse_marketplace_listing_payload``'s output -- the same dict the mobile
+    API returns and the same one the member page renders. That is deliberate and
+    it is the whole reason this function is short: a public page that re-derived
+    the title, image or price from the row would be a second opinion about one
+    product, and the copy Google indexes would drift from the copy a buyer sees.
+
+    The only judgements made here are about *search*, not about content: whether
+    this row is substantial enough to ask to be ranked, and what robots
+    directive follows from that.
+    """
+
+    meta = marketplace_seo.product_page_meta(listing)
+    verdict = marketplace_seo.eligibility(listing)
+
+    # A thin or imageless listing keeps its page and stops asking to be ranked.
+    # `noindex,follow` rather than `nofollow`: the page's outbound links are the
+    # marketplace index and the help pages, which are real crawl paths, and
+    # `search_visibility.robots_disallow_prefixes` only ever disallows
+    # `noindex,nofollow`, so this choice also keeps the section crawlable.
+    robots = (search_visibility.robots_meta(request.path) if verdict.indexable
+              else search_visibility.NOINDEX_FOLLOW)
+
+    price = marketplace_seo.parse_price(listing.get("price_label"), listing.get("currency"))
+    images = [entry.get("media_url") for entry in (listing.get("media") or [])
+              if (entry.get("media_type") or "image") == "image" and entry.get("media_url")]
+    # Paragraphs, not one blob. Supplier descriptions arrive with blank-line
+    # breaks in them and collapsing those into a single <p> is what turns a
+    # readable spec list into a wall.
+    description = [para.strip() for para
+                   in re.split(r"\n\s*\n", str(listing.get("description")
+                                                or listing.get("short_description") or ""))
+                   if para.strip()]
+
+    response = webhook_app.make_response(render_template(
+        "marketplace_product_public.html",
+        page=meta,
+        robots=robots,
+        schema_json=marketplace_seo.product_page_graph(listing),
+        listing_id=listing_id,
+        product_path=marketplace_seo.PRODUCT_PATH.format(listing_id=listing_id),
+        index_path=marketplace_seo.INDEX_PATH,
+        price=price,
+        in_stock=marketplace_seo.availability(listing) == marketplace_seo.IN_STOCK,
+        category=clean_html(listing.get("category") or ""),
+        images=images,
+        description=description,
+    ))
+    # Short rather than long. The page is identical for every anonymous reader,
+    # but price and availability are on it, and a stale price is the one thing
+    # this page must not serve -- Merchant Center compares the feed against what
+    # it fetches from this URL.
+    #
+    # The flag is what makes the header survive. `add_pwa_headers` stamps
+    # `no-store` on every `/pulse/` response, which is right for the signed-in
+    # app and wrong for this one page; setting the header alone would be
+    # overwritten on the way out. Set here and not in the route, because it is
+    # true of *this* response -- the same URL with a session renders the member
+    # shell and must keep `no-store`.
+    g.pulse_public_cacheable = True
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
 
 
 # --- A shared marketplace listing link ---------------------------------------
@@ -57383,11 +57776,23 @@ def pulse_marketplace_page():
 # stricter pair; matching the looser grid would have made a shared link show
 # something the app would not.
 @webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
+@public_route(reason="Public product page. Anonymous visitors and Googlebot get the public product shell; signed-in members fall through to the member page, which reads its own account state.")
 def pulse_marketplace_listing_page(listing_id):
     init_db()
+    # Not a gate any more. The branch on this value is below, once the listing
+    # has been read: an anonymous reader gets the public product page, a member
+    # gets the app shell they had before.
+    #
+    # The precedent is `/app`, and its rule is the one that matters here too --
+    # the branch is on authentication, never on user-agent. Googlebot sees
+    # exactly what a logged-out person sees, because serving a crawler something
+    # a visitor cannot get is cloaking, and the point of this change is that the
+    # product pages are genuinely public rather than merely visible to Google.
+    #
+    # The visibility predicates below are unchanged and still decide what may be
+    # shown at all. Nothing about being logged out widens them; a listing that
+    # 404ed for a member 404s here.
     user = require_account()
-    if not user:
-        return redirect(url_for("login_page", next=request.path))
     from services.discovery_visibility import discovery_visible_sql
     conn = db()
     conn.row_factory = sqlite3.Row
@@ -57418,6 +57823,8 @@ def pulse_marketplace_listing_page(listing_id):
     listing = pulse_marketplace_listing_payload(row, media_by_listing.get(listing_id, []))
 
     seller_id = int(row.get("seller_user_id") or 0)
+    if not user:
+        return _marketplace_public_product_response(listing_id, listing)
     owned = seller_id == int(user.get("user_id") or 0)
     gallery = "".join(
         f"<img src='{html_escape(clean_html(entry.get('media_url')))}' alt='' loading='lazy'>"

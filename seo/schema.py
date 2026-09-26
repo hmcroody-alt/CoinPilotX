@@ -161,6 +161,45 @@ def app_page_graph(page, trail=()):
     return json.dumps({"@context": "https://schema.org", "@graph": graph}, ensure_ascii=False)
 
 
+def commerce_policy_graph(page):
+    """The graph for `/returns`, `/refund-policy`, `/shipping` and `/contact`.
+
+    A third hand-composed graph rather than a reuse, and the omission is the
+    reason. `app_page_graph` attaches `mobile_app_schema()` to every page it
+    builds, which is right for a page whose subject is the iPhone app and wrong
+    here: a returns policy is not a claim about an app, and a `MobileApplication`
+    node on it invites Google to read the page as app marketing. `schema_graph`
+    would additionally attach a `Service` node with `serviceType` defaulting to
+    "AI intelligence", which on a shipping page is simply false.
+
+    What is left is what is true: who publishes the page (Organization), which
+    site it belongs to (WebSite), what the page is (WebPage), and where it sits
+    (BreadcrumbList). Merchant Center's reviewers read the rendered page rather
+    than the JSON-LD, so nothing here is load-bearing for approval -- which is
+    precisely why it must not overclaim to buy something.
+
+    `/contact` gets one extra node, a `ContactPage` type on the WebPage itself
+    rather than a separate entity, because that is the one page of the four
+    whose subject schema.org has a specific type for.
+    """
+
+    webpage = webpage_schema(page)
+    if page.get("page_type"):
+        webpage["@type"] = page["page_type"]
+    return json.dumps({
+        "@context": "https://schema.org",
+        "@graph": [
+            organization_schema(),
+            website_schema(),
+            webpage,
+            breadcrumb_schema([
+                ("Home", SITE_URL + "/"),
+                (page["breadcrumb"], page["canonical"]),
+            ]),
+        ],
+    }, ensure_ascii=False)
+
+
 def service_schema(page):
     return {
         "@type": "Service",

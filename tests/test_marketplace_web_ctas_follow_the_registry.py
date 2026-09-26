@@ -1,30 +1,43 @@
-"""Every Marketplace button on pulsesoc.com opens the app, and none of them
-re-derives how.
+"""Every Marketplace button on pulsesoc.com asks the registry where to go, and
+none of them re-derives the answer.
 
-Marketplace is app-first: the web one was never designed, the native one is the
-product. So a visitor who clicks "Marketplace" on the website must not land on
-the unfinished web grid. That much is a product decision.
+The Marketplace family is split, and the split is a product decision recorded in
+one place: `web_equivalent` on each `app_links.Destination`.
 
-The *shape* of the link is not, and it is the part that is easy to get wrong in
-a way nothing catches. The obvious implementation is the canonical app-intent
-link, `/pulse/marketplace?pulse_app=1`. It is correct in an email and wrong
-here: iOS does not consult associated domains for a tap whose destination is
-the same domain as the page, so the request reaches Flask, the fallback router
-sees iOS plus the marker, and 302s to the App Store -- handing a listing for
-PulseSoc to a member holding PulseSoc. Nothing about that failure is visible
-from the server, because "no app installed" and "same-domain navigation" arrive
-looking identical.
+  * The two *reading* surfaces are web-first. `/pulse/marketplace` and
+    `/pulse/marketplace/<id>` render real public templates, answer an anonymous
+    request, carry canonical URLs and structured data, and are submitted in
+    `/sitemap-products.xml`. A button that refused them would mean the website's
+    own navigation declining the pages we ask Google to rank.
+  * Everything below them -- the composer, seller tools, the merchant dashboard,
+    orders, purchases -- is app-first. Those web screens were never designed;
+    the native ones are the product.
 
-`/open/<destination>` is the shape that is right for both groups, so these tests
-assert it specifically rather than asserting "not the web marketplace". A test
-that only banned `/pulse/marketplace` would pass on the canonical marker link,
-which is the regression actually worth catching.
+This file used to assert the first group was app-first too, and it was right
+until the public templates landed. What survives unchanged is the part that was
+never about which group a destination is in: *no call site decides for itself.*
+
+The shape of an app-first link is the part that is easy to get wrong in a way
+nothing catches. The obvious implementation is the canonical app-intent link,
+`/pulse/marketplace?pulse_app=1`. It is correct in an email and wrong here: iOS
+does not consult associated domains for a tap whose destination is the same
+domain as the page, so the request reaches Flask, the fallback router sees iOS
+plus the marker, and 302s to the App Store -- handing a listing for PulseSoc to
+a member holding PulseSoc. Nothing about that failure is visible from the
+server, because "no app installed" and "same-domain navigation" arrive looking
+identical. So the app-first tests below assert `/open/<destination>`
+specifically rather than asserting "not the web marketplace": a test that only
+banned `/pulse/marketplace` would pass on the marker link, which is the
+regression actually worth catching.
 
 Three layers, because each one alone is satisfiable by a broken page:
 
-  1. the builder -- `app_first_href` produces `/open/...`, never a marker link;
+  1. the builder -- `app_first_href` reads `web_equivalent` and produces either
+     `/open/...` or the real path, never a marker link;
   2. the source -- no Marketplace href literal survives anywhere in bot.py, so
-     a new CTA cannot be hand-written next to a converted one;
+     a new CTA cannot be hand-written next to a converted one. This layer is
+     unchanged by the split: a hand-written `/pulse/marketplace` happens to be
+     right *today*, and would silently stop being right the day the flag moves;
   3. the render -- seven real pages, rendered, with every emitted Marketplace
      href compared against the builder's output.
 
@@ -35,7 +48,7 @@ interpolated into a CSS block.
 This module sets DATABASE_URL at import time, so it must run in its own pytest
 process.
 
-Run: python3 -m pytest tests/test_marketplace_web_ctas_are_app_first.py
+Run: python3 -m pytest tests/test_marketplace_web_ctas_follow_the_registry.py
 """
 
 import ast
@@ -66,12 +79,19 @@ from services import app_links  # noqa: E402
 # enforce_https 301s anything that does not look like it arrived over TLS.
 HTTPS = {"X-Forwarded-Proto": "https"}
 
-# Every destination the app-first Marketplace decision covers, with a resource
-# id for the four that name one thing rather than a section.
-MARKETPLACE_DESTINATIONS = {
+# The Marketplace family, split the way the registry splits it, with a resource
+# id for the ones that name one thing rather than a section.
+#
+# Two dicts rather than one plus a lookup, because the split is the subject of
+# this file: a destination moving between them is a product decision that should
+# read as a decision in the diff.
+WEB_FIRST_DESTINATIONS = {
     "marketplace": None,
-    "marketplace_create": None,
     "product": 4271,
+}
+
+APP_FIRST_DESTINATIONS = {
+    "marketplace_create": None,
     "store": "ada-goods",
     "seller": None,
     "seller_apply": None,
@@ -80,6 +100,8 @@ MARKETPLACE_DESTINATIONS = {
     "order": 88,
     "purchases": None,
 }
+
+MARKETPLACE_DESTINATIONS = {**WEB_FIRST_DESTINATIONS, **APP_FIRST_DESTINATIONS}
 
 OPEN_HREF = re.compile(r"/open/[a-z_]+(?:/[^\"'?\s]*)?\?pulse_src=web")
 
@@ -144,13 +166,47 @@ def render(client, path):
 # ---------------------------------------------------------------------------
 
 
-def test_the_helper_produces_the_interstitial_for_every_marketplace_destination():
-    for key, resource_id in MARKETPLACE_DESTINATIONS.items():
+def test_the_helper_produces_the_interstitial_for_every_app_first_destination():
+    for key, resource_id in APP_FIRST_DESTINATIONS.items():
+        assert not app_links.DESTINATIONS[key].web_equivalent, key
         href = bot.app_first_href(key, resource_id)
         assert href.startswith(f"/open/{key}"), key
         assert href == app_links.open_interstitial_url(
             key, resource_id, source="web"
         ), key
+
+
+def test_the_helper_produces_the_real_page_for_every_web_first_destination():
+    """The other half of the same helper, asserted rather than left implied.
+
+    `/pulse/marketplace` and `/pulse/marketplace/<id>` are the two URLs
+    `/sitemap-products.xml` submits. If this helper handed back an interstitial
+    for them, every Marketplace button on the site would refuse a page Google is
+    ranking -- and the failure would be invisible from the sitemap, which would
+    still be valid, still be green, and still list URLs that render fine when
+    typed directly.
+    """
+    for key, resource_id in WEB_FIRST_DESTINATIONS.items():
+        assert app_links.DESTINATIONS[key].web_equivalent, key
+        href = bot.app_first_href(key, resource_id)
+        assert href.startswith("/pulse/marketplace"), key
+        assert "/open/" not in href, key
+        assert href == app_links.resolve_destination_path(
+            app_links.DESTINATIONS[key], resource_id
+        ), key
+
+
+def test_the_two_halves_partition_the_family_with_nothing_left_over():
+    """Anti-vacuity for the split itself.
+
+    Both tests above iterate a dict this file writes down. If a destination were
+    in neither dict, or in the wrong one, both would pass while covering less
+    than they claim. The registry is the authority; these dicts have to match it.
+    """
+    assert not (set(WEB_FIRST_DESTINATIONS) & set(APP_FIRST_DESTINATIONS))
+    for key in MARKETPLACE_DESTINATIONS:
+        expected = key in WEB_FIRST_DESTINATIONS
+        assert app_links.DESTINATIONS[key].web_equivalent is expected, key
 
 
 def test_an_on_site_cta_is_never_the_canonical_marker_link():
@@ -159,25 +215,44 @@ def test_an_on_site_cta_is_never_the_canonical_marker_link():
     `build_app_link` is the right builder for an email and the wrong one here.
     Reaching for it would look like a tidy consolidation and would send every
     installed iOS member to the App Store.
+
+    This one spans both halves, because it is the only assertion in the file that
+    never depended on which half a destination is in. A web-first href starting
+    `/pulse/` is correct; the same href carrying `?pulse_app=1` is the bug.
     """
     for key, resource_id in MARKETPLACE_DESTINATIONS.items():
         href = bot.app_first_href(key, resource_id)
         assert app_links.APP_INTENT_PARAM not in href, key
-        assert not href.startswith("/pulse/"), key
+        if key in APP_FIRST_DESTINATIONS:
+            assert not href.startswith("/pulse/"), key
 
 
 def test_the_helper_carries_a_resource_id_through():
-    assert bot.app_first_href("product", 4271) == "/open/product/4271?pulse_src=web"
+    assert bot.app_first_href("product", 4271) == "/pulse/marketplace/4271"
     assert bot.app_first_href("order", 88).startswith("/open/order/88?")
 
 
-def test_the_helper_refuses_a_destination_the_shipped_binary_cannot_open():
-    # CTA honesty, enforced at the render that creates the button rather than
-    # under the member who taps it.
+def test_the_helper_refuses_an_unopenable_destination_only_where_it_promises_the_app():
+    """CTA honesty, narrowed by the split rather than dropped.
+
+    The rule was: never render a button that promises the app for something the
+    shipped binary cannot open. It is enforced at the render that creates the
+    button rather than under the member who taps it.
+
+    All three unopenable destinations happen to have web pages, so `app_first_href`
+    no longer raises for any of them -- and that is correct, because the button it
+    builds for them promises a web page and delivers one. The guard itself is
+    still live; it lives in the branch these three no longer take, which is what
+    the second half of this test pins. A future destination that is app-only *and*
+    unopenable would still be refused.
+    """
     for key in ("collections", "roast_battle"):
-        assert not app_links.DESTINATIONS[key].native_supported
+        spec = app_links.DESTINATIONS[key]
+        assert not spec.native_supported, key
+        assert spec.web_equivalent, key
+        assert bot.app_first_href(key) == spec.path_template, key
         with pytest.raises(app_links.AppLinkError):
-            bot.app_first_href(key)
+            app_links.open_interstitial_url(key, source="web")
 
 
 def test_the_helper_refuses_an_unknown_destination_and_a_bad_id():
@@ -195,21 +270,49 @@ def test_the_client_side_template_is_the_same_url_the_server_would_have_built():
     card link to different places for the same listing, and only one of them is
     covered by a route test.
     """
-    template = app_links.open_interstitial_url_template("product", source="web")
+    template = app_links.website_href_template("product", source="web")
     assert template.count(app_links.CLIENT_ID_TOKEN) == 1
     for listing_id in (1, 9, 4271):
         assert template.replace(
             app_links.CLIENT_ID_TOKEN, str(listing_id)
-        ) == app_links.open_interstitial_url("product", listing_id, source="web")
+        ) == bot.app_first_href("product", listing_id)
+
+
+def test_the_template_follows_the_same_flag_the_url_builder_follows():
+    """A template that ignored `web_equivalent` would be the worst of the two.
+
+    Server-rendered cards would reach the product page and browser-rendered cards
+    would reach the interstitial, for the same listing, on the same grid -- and
+    only the server half is covered by a route test.
+    """
+    assert app_links.website_href_template(
+        "product", source="web"
+    ) == app_links.DESTINATIONS["product"].path_template.replace(
+        "{id}", app_links.CLIENT_ID_TOKEN
+    )
+    assert app_links.website_href_template("order", source="web").startswith("/open/")
 
 
 def test_the_template_refuses_the_same_things_the_url_builder_refuses():
-    with pytest.raises(app_links.AppLinkError):
-        app_links.open_interstitial_url_template("collections")
-    with pytest.raises(app_links.AppLinkError):
-        app_links.open_interstitial_url_template("marketplace")  # takes no id
-    with pytest.raises(app_links.AppLinkError):
-        app_links.open_interstitial_url_template("nonsense")
+    for builder in (
+        app_links.open_interstitial_url_template,
+        app_links.website_href_template,
+    ):
+        with pytest.raises(app_links.AppLinkError):
+            builder("nonsense")
+        with pytest.raises(app_links.AppLinkError):
+            builder("marketplace")  # takes no id, so it needs no template
+    # `collections` is refused by both, but not for the same reason, and the
+    # difference is the point: the interstitial builder refuses it because the
+    # binary cannot open it, the web builder because it takes no id. Asserting
+    # the messages keeps a future reader from concluding the native-support guard
+    # runs on the web branch, where it deliberately does not.
+    for builder, because in (
+        (app_links.open_interstitial_url_template, "no route in the shipped binary"),
+        (app_links.website_href_template, "takes no resource id"),
+    ):
+        with pytest.raises(app_links.AppLinkError, match=because):
+            builder("collections")
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +354,12 @@ def test_no_marketplace_destination_is_hand_written_as_an_href_in_bot_py():
     The rendered tests below cover seven pages; bot.py renders roughly 1,500
     routes. This is what stops the next Marketplace button from being written
     the old way three screens from any page anyone thought to render.
+
+    Unchanged by the web/app split, and the two web-first paths are the reason to
+    say so: a literal `href='/pulse/marketplace'` produces exactly the right URL
+    today. It is still banned, because what it does not do is ask the registry --
+    so it would keep producing that URL on the day the flag moves, and the button
+    would be the one place on the site still pointing at the old answer.
     """
     offenders = []
     for line_number, line in enumerate(_bot_source().splitlines(), start=1):
@@ -260,8 +369,9 @@ def test_no_marketplace_destination_is_hand_written_as_an_href_in_bot_py():
                 continue
             offenders.append(f"bot.py:{line_number}  href={href!r}")
     assert not offenders, (
-        "These hrefs bypass `app_first_href`. Marketplace is app-first, so a "
-        "website button must not reach the web grid:\n  " + "\n  ".join(offenders)
+        "These hrefs bypass `app_first_href`, so they answer the web-vs-app "
+        "question themselves instead of asking the registry:\n  "
+        + "\n  ".join(offenders)
     )
 
 
@@ -318,44 +428,85 @@ def test_every_documented_exception_is_still_present_in_the_source():
 # ---------------------------------------------------------------------------
 
 
-# path -> the destinations that page is expected to offer. `seller` is the
-# "Seller Tools" nav entry, which every shell renders, so it is on all of them.
+# path -> the *app-first* destinations that page is expected to offer. `seller` is
+# the "Seller Tools" nav entry, which every shell renders, so it is on all of them.
+#
+# `marketplace` and `product` used to be in every one of these sets and are
+# deliberately in none of them: the sets describe `/open/...` hrefs, and those two
+# destinations no longer produce one. What they produce instead is asserted by
+# `test_every_marketplace_path_on_the_page_is_one_the_registry_produces` below,
+# which is the assertion that would fail if the flag flip half-landed.
 PAGES = {
-    # `product` here is the search-card template in the injected link map, not a
-    # rendered listing: the home page ships the shape, the browser fills the id.
-    "/pulse": {"marketplace", "marketplace_create", "product", "seller"},
+    "/pulse": {"marketplace_create", "seller"},
     "/pulse/marketplace": {
-        "marketplace",
         "marketplace_create",
-        "product",
         "seller",
         "seller_apply",
         "seller_dashboard",
     },
-    "/pulse/creator-studio": {"marketplace", "marketplace_create", "seller"},
-    "/pulse/creator-monetization": {"marketplace", "marketplace_create", "seller"},
+    "/pulse/creator-studio": {"marketplace_create", "seller"},
+    "/pulse/creator-monetization": {"marketplace_create", "seller"},
     "/pulse/merchant/dashboard": {
-        "marketplace",
         "marketplace_create",
         "seller",
         "seller_apply",
     },
-    "/pulse/videos": {"marketplace", "marketplace_create", "seller"},
+    "/pulse/videos": {"marketplace_create", "seller"},
     "/pulse/marketplace/create": {
-        "marketplace",
         "marketplace_create",
         "seller",
         "seller_apply",
     },
 }
 
+# The same lookbehind as `HREF_LITERAL`, for the same reason: a CSS attribute
+# selector and a `location.href=` are not buttons.
+RENDERED_WEB_HREF = re.compile(
+    r"""(?<![.\[])href=['"]((?:/pulse/(?:marketplace|merchant|store|seller|orders|purchases)|/pulse/seller-tools)[^'"]*)['"]"""
+)
+
+# A rendered product link carries a real listing id, so it cannot be compared
+# against a fixed string the way the section paths can.
+RENDERED_PRODUCT_HREF = re.compile(r"^/pulse/marketplace/\d+$")
+
 
 @pytest.mark.parametrize("path", sorted(PAGES))
-def test_the_page_emits_no_web_marketplace_href(client, path):
-    body = render(client, path)
-    assert "href='/pulse/marketplace" not in body
-    assert 'href="/pulse/marketplace' not in body
-    assert "href='/pulse/merchant/apply'" not in body
+def test_every_marketplace_path_on_the_page_is_one_the_registry_produces(client, path):
+    """Replaces a blanket ban on `/pulse/marketplace` hrefs, which is now wrong.
+
+    The ban was the right test while the whole family was app-first. Now two
+    destinations legitimately render as `/pulse/...`, and the interesting question
+    is no longer "is there a web href" but "is every web href one the registry
+    asked for". A hand-written link and a registry-built one are byte-identical in
+    the HTML, so this is checked against the builder's output rather than by shape
+    -- `test_no_marketplace_destination_is_hand_written_as_an_href_in_bot_py` is
+    what covers provenance.
+    """
+    allowed = {
+        bot.app_first_href(key, resource_id)
+        for key, resource_id in WEB_FIRST_DESTINATIONS.items()
+    } | set(SOURCE_EXCEPTIONS)
+    found = RENDERED_WEB_HREF.findall(render(client, path))
+    # Anti-vacuity: an all-`/open/` page would satisfy the loop below by having
+    # nothing to iterate, which is exactly the state this test replaced. Every
+    # shell renders the Marketplace nav entry, so every page has at least one.
+    assert bot.app_first_href("marketplace") in found, path
+    offenders = [
+        href
+        for href in found
+        if href not in allowed and not RENDERED_PRODUCT_HREF.match(href)
+    ]
+    assert not offenders, f"{path} emits web Marketplace hrefs nothing built: {offenders}"
+
+
+@pytest.mark.parametrize("path", sorted(PAGES))
+def test_the_merchant_application_is_never_linked_on_the_web(client, path):
+    # `/pulse/merchant/apply` has no public template at all; the destination for
+    # that intent is `seller_apply`, which is app-first. Kept as its own
+    # assertion because the test above would accept it via SOURCE_EXCEPTIONS if
+    # anyone ever added it there to make a render pass.
+    assert "/pulse/merchant/apply" not in SOURCE_EXCEPTIONS
+    assert "href='/pulse/merchant/apply'" not in render(client, path)
 
 
 @pytest.mark.parametrize("path", sorted(PAGES))
@@ -367,8 +518,16 @@ def test_the_page_offers_exactly_the_app_first_destinations_expected(client, pat
 
 
 def test_the_grid_ships_the_client_side_product_template(client):
+    """The grid's browser-rendered cards use the registry's shape, not their own.
+
+    This is the assertion that caught the half-landing: after the flag flipped,
+    the shell's injected link map followed it and this script did not, so a
+    server-rendered card on the grid linked to the product page while a card the
+    same grid drew from `/api/pulse/marketplace/search` linked to the interstitial.
+    """
     body = render(client, "/pulse/marketplace")
-    assert app_links.open_interstitial_url_template("product", source="web") in body
+    assert app_links.website_href_template("product", source="web") in body
+    assert app_links.open_interstitial_url_template("product", source="web") not in body
 
 
 def test_the_merchant_dashboard_keeps_payouts_on_the_web(approved_merchant):
@@ -439,7 +598,7 @@ def test_the_page_that_renders_search_results_injects_the_link_map(client):
 
 def test_the_injected_map_is_built_by_app_links_not_by_hand(client):
     shape = _injected_link_map(render(client, "/pulse"))["marketplace"]
-    assert shape["template"] == app_links.open_interstitial_url_template(
+    assert shape["template"] == app_links.website_href_template(
         "product", source="web"
     )
     assert shape["fallback"] == bot.app_first_href("marketplace")
@@ -457,7 +616,7 @@ def test_the_browser_substitution_lands_on_the_real_url(client):
     for listing_id in (1, 4271, 99999):
         assert shape["template"].replace(
             shape["token"], str(listing_id)
-        ) == app_links.open_interstitial_url("product", listing_id, source="web")
+        ) == bot.app_first_href("product", listing_id)
 
 
 @pytest.mark.parametrize("name", SEARCH_RENDERERS)

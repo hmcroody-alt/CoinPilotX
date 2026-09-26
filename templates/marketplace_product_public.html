@@ -1,0 +1,115 @@
+{#
+  The product page an anonymous visitor sees -- which is the same page Googlebot
+  sees, because the branch upstream is on authentication and not on user-agent.
+
+  WHY THIS TEMPLATE EXISTS AT ALL
+  -------------------------------
+  `/pulse/marketplace/<id>` already rendered a complete product page, through
+  `pulse_social_shell`. That shell calls `require_account()` itself and 302s, so
+  it can never serve a logged-out reader no matter what the route does: the
+  redirect was in two places, not one. It is also the signed-in app chrome --
+  a left nav with Messenger, Settings and Log Out -- which is the right frame
+  for a member and the wrong frame for someone arriving from a search result
+  who has no account yet.
+
+  So a signed-in member keeps the shell they had, and this template serves
+  everyone else. One URL, one canonical, two frames. The alternative -- a second
+  product path for the public version -- would split one product's ranking
+  signal across two URLs and make the canonical tag a coin toss.
+
+  WHAT IS DELIBERATELY ABSENT
+  ---------------------------
+  The three buyer verbs the signed-in page offers (Contact Seller, Save, Report)
+  are not here as dead buttons. Each is a POST that needs a session, so
+  rendering them would either fail on click or bounce to /login after the
+  reader had already committed to an action. The sign-in link states the
+  requirement before the click instead.
+
+  No price is printed when the row's `price_label` did not parse. This is the
+  same rule the signed-in page and the grid already follow -- no price, no pill
+  -- and it matters more here, because this page's price is also a structured
+  claim to a search engine.
+#}
+{% extends "_public_shell.html" %}
+{% from "_app_link_cta.html" import app_cta, app_store_badge with context %}
+
+{% block content %}
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> &rsaquo;
+    <a href="{{ index_path }}">Marketplace</a> &rsaquo;
+    <span>{{ page.h1 }}</span>
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+
+    {% if price %}
+      <p class="lede" style="font-size:clamp(22px,3vw,30px);color:#f2fbff;font-weight:800;margin:0 0 6px">
+        {{ price.amount }} {{ price.currency }}
+      </p>
+      <p class="meta" style="margin-top:0">
+        {% if in_stock %}In stock{% else %}Currently unavailable{% endif %}
+        {%- if page.store %} &middot; sold by {{ page.store }}{% endif %}
+      </p>
+    {% else %}
+      {# No price pill rather than an empty one: an empty pill reads as a price
+         the seller set to nothing. Same rule as the grid and the member page. #}
+      <p class="meta" style="margin-top:0">
+        {% if page.store %}Sold by {{ page.store }}{% endif %}
+      </p>
+    {% endif %}
+
+    {% if category %}<p class="meta" style="margin-top:4px">{{ category }}</p>{% endif %}
+
+    <div class="actions">
+      {{ app_cta("product", resource_id=listing_id, label="Open in the PulseSoc app") }}
+      <a class="button" href="/login?next={{ product_path }}">Sign in to buy</a>
+    </div>
+    <p class="meta">
+      Buying, messaging the seller and saving this item happen inside PulseSoc.
+      Creating an account is free.
+    </p>
+  </section>
+
+  {% if images %}
+    <section>
+      <h2>Product images</h2>
+      <div class="shots">
+        {% for src in images %}
+          {# The first image is the LCP element on this page, so it is the one
+             image not lazy-loaded: `loading="lazy"` on an in-viewport hero
+             delays the very paint Core Web Vitals measures. #}
+          <img src="{{ src }}" alt="{{ page.h1 }}"
+               {% if not loop.first %}loading="lazy"{% endif %}
+               decoding="async">
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  {% if description %}
+    <section>
+      <h2>About this item</h2>
+      <div class="prose">
+        {% for para in description %}<p>{{ para }}</p>{% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
+  <section>
+    <h2>Buying on PulseSoc</h2>
+    <p>
+      Every listing on the PulseSoc Marketplace is reviewed before it can be
+      published, and sellers are approved before they can list. Orders, delivery
+      updates and messages with the seller all live in the PulseSoc app.
+    </p>
+    <div class="actions">
+      {{ app_store_badge() }}
+      <a class="button" href="{{ index_path }}">Browse the marketplace</a>
+    </div>
+    <p class="meta">
+      Questions about an order? <a href="/help">Visit help</a> or
+      <a href="/support">contact support</a>.
+    </p>
+  </section>
+{% endblock %}

@@ -243,6 +243,107 @@ def test_admin_routes_do_not_become_member_routes():
     )
 
 
+#: Routes that were member-only in the baseline and are now deliberately public.
+#:
+#: An allowlist rather than a baseline regeneration, and the distinction is load-
+#: bearing: **do not regenerate the baseline to settle an entry in here.** The test
+#: below detects the transition by comparing today's classification against a
+#: baseline that still records `user`. Regenerating writes `declared:public` into
+#: the baseline, `was["auth"] != AUTH_USER` stops matching, and the check silently
+#: stops looking at that route forever -- so the next person to re-gate or re-open
+#: it gets no signal in either direction.
+#:
+#: The baseline therefore stays as the frozen record of what the route used to
+#: require, and this dict is the reviewed record of why that changed. A named entry
+#: with a reason survives into every future run and has to be argued with; a
+#: regenerated baseline is a diff nobody reads twice.
+MEMBER_ROUTES_OPENED_ON_PURPOSE = {
+    "pulse_marketplace_listing_page":
+        "The public product page. Marketplace listings could not be indexed at "
+        "all while every /pulse/marketplace URL answered 302 -> /login, so this "
+        "route now serves a public product shell to anonymous readers and falls "
+        "through to the member page when there is a session. It opens no data "
+        "that was not already public: the same public_sql + discovery_visible_sql "
+        "predicates still decide what may be shown, and a listing that 404ed for "
+        "a signed-in member 404s here too.",
+    "pulse_marketplace_page":
+        "The public marketplace grid, opened for the product pages rather than "
+        "for itself: it is the only internal link to them, and a sitemap is a "
+        "hint while a linked page is a crawl path. It reads the same catalogue "
+        "query it always did -- public_sql AND discovery_visible_sql, 40 rows -- "
+        "and the anonymous branch renders strictly less: no seller row, no "
+        "Promote button, no Contact/Save/Report POST buttons, and no live search "
+        "field, because /api/pulse/marketplace/search still requires a session.",
+}
+
+
+def test_member_routes_do_not_become_public_routes():
+    """A member route going fully public, which evidence rank cannot see.
+
+    This is the same hole as `test_admin_routes_do_not_become_member_routes`, one
+    privilege level down, and it is worth stating why the regression test above
+    misses it. `declared` is rank 6 -- the *highest* -- because an explicit
+    declaration is the best possible evidence of what a route's auth is. But
+    `declared:public` is excellent evidence of **no authentication**, so removing
+    `require_account()` and adding `@public_route` moves a route from rank 4 to
+    rank 6. `test_no_route_loses_its_gate` reads that as an improvement and
+    passes. The rank measures how well we know the answer, not how strong the
+    answer is, and those two come apart exactly here.
+
+    Measured when the first such transition was made: opening one product page
+    turned a member-gated route public and the whole protection suite stayed
+    green.
+
+    Deliberate openings go in `MEMBER_ROUTES_OPENED_ON_PURPOSE` with the reason.
+    The bar for adding one is not "the page looks harmless" -- it is that the
+    view's own data-visibility predicates are unchanged, so being logged out
+    grants no read a member did not already have.
+    """
+    baseline, current = load_baseline(), audit_by_endpoint()
+    opened = []
+    for endpoint, was in baseline["routes"].items():
+        now = current.get(endpoint)
+        if now is None or was["auth"] != route_auth.AUTH_USER:
+            continue
+        if now["auth"] == route_auth.AUTH_PUBLIC and endpoint not in MEMBER_ROUTES_OPENED_ON_PURPOSE:
+            opened.append(
+                f"{endpoint} ({', '.join(sorted(now['rules']))})\n"
+                f"      was: {was['evidence']}\n"
+                f"      now: {now['evidence']}"
+            )
+
+    assert opened == [], (
+        "These routes required a signed-in member in the baseline and are now "
+        "public:\n  " + "\n  ".join(opened)
+        + "\n\nThis is not caught by evidence rank -- `declared:public` outranks "
+        "`identity+refusal`, so an explicit public declaration looks like an "
+        "improvement. If the route is meant to be public, add it to "
+        "MEMBER_ROUTES_OPENED_ON_PURPOSE in this file with a reason that says "
+        "what stops it exposing data the member gate was protecting."
+    )
+
+
+def test_the_deliberate_openings_list_does_not_outlive_its_entries():
+    """The allowlist is default-deny in both directions.
+
+    A stale entry is not harmless here. It is a standing permission for one named
+    endpoint to be public, so an entry left behind after a route was renamed or
+    re-gated would quietly cover whatever later takes that name.
+    """
+    current = audit_by_endpoint()
+    stale = sorted(
+        endpoint for endpoint in MEMBER_ROUTES_OPENED_ON_PURPOSE
+        if (current.get(endpoint) or {}).get("auth") != route_auth.AUTH_PUBLIC
+    )
+    assert stale == [], (
+        "These endpoints are listed as deliberately-opened member routes but are "
+        f"not public in this process:\n  {chr(10) + '  '.join(stale)}\n\n"
+        "Either the route was re-gated (remove the entry) or it was renamed "
+        "(update it). Leaving it grants a blanket exemption to a name nothing "
+        "currently owns."
+    )
+
+
 def test_no_new_route_hides_behind_the_weak_admin_gate():
     """`require_admin_password()` must not spread.
 

@@ -465,28 +465,38 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
     ),
     # --- commerce --------------------------------------------------------
     #
-    # The whole Marketplace family is app-first, and `web_equivalent=False` is
-    # how that is expressed rather than a special case somewhere downstream.
+    # The Marketplace family splits in two, and `web_equivalent` is where the
+    # split is expressed rather than in a special case somewhere downstream.
     #
-    # It is a statement about the *website*, not about the app: `/pulse/
-    # marketplace`, `/pulse/marketplace/<id>` and the seller surfaces do have
-    # Flask routes, but they render through `pulse_social_shell()` with no
-    # template behind them and were never designed for the browser. Marking them
-    # `web_equivalent=True` -- which `marketplace` and `store` previously were --
-    # meant `fallback_decision` sent desktop visitors *into* that unfinished
-    # surface. Flipping the flag routes them to the app-only interstitial
-    # instead, which is the honest answer until the web Marketplace ships.
+    # The two *reading* surfaces are web-first: `/pulse/marketplace` and
+    # `/pulse/marketplace/<id>` now render real public templates
+    # (`marketplace_index_public.html`, `marketplace_product_public.html`),
+    # answer an anonymous request, carry canonical URLs and structured data, and
+    # are submitted in `/sitemap-products.xml`. A page a search engine is asked to
+    # rank has to be a page a person can also arrive at from our own navigation;
+    # sending that visitor to an app-only interstitial instead would mean the
+    # website's own buttons refuse the page Google is ranking.
     #
-    # To return a row to web-first: flip this flag back, delete its entry from
-    # MARKETPLACE_WEB_PATHS in bot.py, and re-run tests/test_app_links.py. The
-    # procedure is written out in docs/routing/.
+    # Everything below them stays app-first, and for a reason that did not
+    # change: creating a listing, managing a store, seller onboarding, the seller
+    # dashboard and order management have Flask routes that render through
+    # `pulse_social_shell()` with no template behind them. `web_equivalent=False`
+    # keeps `fallback_decision` and `website_href` out of that unfinished
+    # surface; they are listed in `APP_FIRST_DESPITE_WEB_ROUTE` below, which is
+    # where a row states that its web route exists and is withheld on purpose.
+    #
+    # To move one of those rows to web-first: build the public template, flip
+    # `web_equivalent`, delete its entry from `APP_FIRST_DESPITE_WEB_ROUTE`, and
+    # re-run tests/test_app_links.py, tests/test_app_intent_fallback_router.py and
+    # tests/test_marketplace_web_ctas_follow_the_registry.py. Nothing else keys
+    # off the distinction -- `website_href` reads the flag, so the CTAs follow.
     _d(
         "marketplace",
         "/pulse/marketplace",
         native_screen="Tabs>Marketplace",
-        web_equivalent=False,
+        web_equivalent=True,
         label="Open Marketplace in PulseSoc",
-        notes="App-first: the web Marketplace is not production-ready.",
+        notes="Web-first: /pulse/marketplace renders the public grid for an anonymous reader.",
         display_name="Marketplace",
     ),
     _d(
@@ -495,9 +505,9 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         id_kind=ID_KIND_POSITIVE_INT,
         id_required=True,
         native_screen="MarketplaceDetail",
-        web_equivalent=False,
+        web_equivalent=True,
         label="Open this listing in PulseSoc",
-        notes="App-first: no production-ready web route for a single listing.",
+        notes="Web-first: the public product page is the canonical URL for a listing.",
         display_name="This listing",
     ),
     _d(
@@ -891,9 +901,12 @@ WEB_INTENT_PREFIXES = (
 # False is no longer a harmless annotation. It takes a working web page away from
 # someone who could have used it.
 APP_FIRST_DESPITE_WEB_ROUTE: dict[str, str] = {
-    "marketplace": "Marketplace is app-first by decision until the web Marketplace is rebuilt.",
+    # `marketplace` and `product` were here and are deliberately gone: both now
+    # render a real public template, so withholding them would be withholding a
+    # finished page. Removing an entry is the *whole* procedure -- the equality
+    # check in test_app_intent_fallback_router then requires the flag to match
+    # the url_map, and a row cannot be quietly half-migrated.
     "marketplace_create": "Listing creation is app-first with the rest of Marketplace.",
-    "product": "Listing detail is app-first with the rest of Marketplace.",
     "store": "Merchant storefronts are app-first with the rest of Marketplace.",
     "seller": "Seller tools are app-first with the rest of Marketplace.",
     "seller_apply": "Seller onboarding is app-first with the rest of Marketplace.",
@@ -1214,6 +1227,74 @@ def open_interstitial_url_template(
     return f"/open/{quote(key, safe='')}/{CLIENT_ID_TOKEN}?{query}"
 
 
+def website_href(
+    destination: str,
+    resource_id: str | int | None = None,
+    source: str = DEFAULT_APP_LINK_SOURCE,
+) -> str:
+    """The href a button *on pulsesoc.com* should carry for a destination.
+
+    One question with two right answers, and the registry already holds which:
+
+    * `web_equivalent=True` -- the destination has a finished web page, so the
+      button goes to it. The app is still promoted on that page, by the
+      `app_cta` / `app_store_badge` macros, which is promotion as an offer
+      rather than as a toll on every link.
+    * `web_equivalent=False` -- there is no finished web page, so the button
+      goes to `/open/<destination>`, the interstitial that names the destination
+      and offers the App Store plus a QR code.
+
+    Why this is a function and not a conditional at each call site: there are
+    two dozen Marketplace buttons in `bot.py`, and the two answers have to stay
+    consistent across all of them. When `/pulse/marketplace` and
+    `/pulse/marketplace/<id>` became real public pages, every one of those
+    buttons had to change at once -- otherwise the website's own navigation
+    would refuse the pages we submit to Google, while the sitemap asks Google to
+    rank them. That is the failure mode this centralisation is for: the flag
+    moves, the CTAs follow, and nothing has to be swept.
+
+    Deliberately *not* the canonical `?pulse_app=1` marker link in either
+    branch. `open_interstitial_url` explains why at length: iOS does not consult
+    associated domains for a same-domain tap, so a marker link tapped on
+    pulsesoc.com reaches Flask, and the fallback router 302s an iPhone that
+    already has PulseSoc installed to the App Store.
+    """
+
+    key = str(destination or "").strip().lower()
+    spec = DESTINATIONS.get(key)
+    if spec is None:
+        raise AppLinkError(f"Unknown app link destination: {destination!r}")
+    if spec.web_equivalent:
+        # Raises on a bad id, exactly as the interstitial branch does, so a
+        # web-first destination is not the lenient one.
+        return resolve_destination_path(spec, resource_id)
+    return open_interstitial_url(key, resource_id, source=source)
+
+
+def website_href_template(
+    destination: str,
+    source: str = DEFAULT_APP_LINK_SOURCE,
+) -> str:
+    """`website_href` for a card whose id only exists in the browser.
+
+    Same split, same reason as `open_interstitial_url_template`: the shape is
+    built here so no script literal re-derives it and goes on working while the
+    URL shape changes underneath it.
+    """
+
+    key = str(destination or "").strip().lower()
+    spec = DESTINATIONS.get(key)
+    if spec is None:
+        raise AppLinkError(f"Unknown app link destination: {destination!r}")
+    if not spec.web_equivalent:
+        return open_interstitial_url_template(key, source=source)
+    if not spec.supports_resource:
+        raise AppLinkError(
+            f"Destination {key!r} takes no resource id, so it needs no template."
+        )
+    return spec.path_template.replace("{id}", CLIENT_ID_TOKEN)
+
+
 # --------------------------------------------------------------------------
 # Reverse matching -- used by the adapter and by the server-side fallback router
 # --------------------------------------------------------------------------
@@ -1413,4 +1494,6 @@ __all__ = [
     "match_destination",
     "normalize_source",
     "resolve_destination_path",
+    "website_href",
+    "website_href_template",
 ]

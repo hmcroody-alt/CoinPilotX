@@ -1,0 +1,49 @@
+{#
+  /returns, /refund-policy, /shipping and /contact -- the four pages Google
+  Merchant Center will not approve a Shopping account without.
+
+  Section bodies render `|safe` for the same reason `feature_page.html` does:
+  they carry `mailto:` links, internal links and the occasional <strong>, and
+  they come from `seo/commerce_policies.py`, which is source code. Nothing on
+  this page came from a seller, a buyer or the database.
+
+  There is deliberately no App Store badge and no "get the app" block, which
+  every other page on this shell carries. A buyer who arrived here from a
+  Shopping result is looking for the return window, and an install prompt in
+  front of a policy they were sent to read is the thing that makes a policy page
+  read as marketing. The footer link to /app is enough.
+#}
+{% extends "_public_shell.html" %}
+
+{% block content %}
+
+  <nav class="crumbs" aria-label="Breadcrumb">
+    <a href="/">Home</a> › {{ page.breadcrumb }}
+  </nav>
+
+  <section>
+    <h1>{{ page.h1 }}</h1>
+    <p class="lede">{{ page.lede }}</p>
+  </section>
+
+  {% for section in page.sections %}
+  <section class="prose">
+    <h2>{{ section.heading }}</h2>
+    {% for paragraph in section.body %}
+    <p>{{ paragraph|safe }}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+
+  <section>
+    <h2>The other policies</h2>
+    <div class="grid">
+      {% for other in page.related %}
+      <article class="card">
+        <h3><a href="{{ other.path }}">{{ other.h1 }}</a></h3>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+{% endblock %}
