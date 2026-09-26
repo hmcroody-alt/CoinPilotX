@@ -391,3 +391,26 @@ class TestASingleSellerCatalogue:
 
         assert len(placements) == config.feed_max_per_page()
         assert config.feed_max_per_page() <= router._SELLER_CAPS["feed"]
+
+    def test_the_one_card_surfaces_still_place_their_one_card(self, market):
+        """Reels and messenger are at budget on a one-seller catalogue.
+
+        Both surfaces cap a response at a single placement, so their share of a
+        one-seller pool is ``ceil(1/1) == 1`` and ``fit_to_pool`` cannot move
+        them — by construction, not by luck. That makes them the cheapest
+        available check that the caps change did not cost anything elsewhere:
+        if a later edit ever relaxes a cap these two surfaces read, the first
+        visible symptom would be a second chip on a surface whose whole design
+        is that it interrupts once.
+
+        Asserted as equality against the configured cap rather than ``>= 1``, so
+        the case fails in both directions — an empty strip and a doubled one are
+        both wrong, and only one of them is the bug anyone would expect.
+        """
+        self._reseed_as_production(market)
+
+        for surface in ("reels", "messenger"):
+            placements = market.serve(surface)
+            budget = config.surface_caps()[surface][0]
+            assert budget == 1, f"{surface} is no longer a one-card surface; this case needs rewriting"
+            assert len(placements) == budget, f"{surface} placed {len(placements)}, wanted {budget}"
