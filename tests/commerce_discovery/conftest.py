@@ -563,11 +563,56 @@ def market(clock, monkeypatch) -> SimulatedMarketplace:
 #: the two together so a rename cannot quietly disarm the guard.
 SERVE_FAILED_PREFIX = "COMMERCE_DISCOVERY_SERVE_FAILED"
 
+#: `commerce_discovery_routes.commerce_discovery_serve` has a *second* fail-safe
+#: wrapping the engine's, and it is the more dangerous of the two: it returns
+#: ``{"ok": True, "placements": []}`` with **HTTP 200**, so a crashed route is
+#: indistinguishable from "no products for you" to a test, to the client, and to
+#: a dashboard.
+#:
+#: This is not covered by the prefix above, twice over, and both traps are worth
+#: stating because each looks like it should work:
+#:
+#: 1. ``COMMERCE_DISCOVERY_SERVE_ROUTE_FAILED`` does not *start with*
+#:    ``COMMERCE_DISCOVERY_SERVE_FAILED`` — the words diverge right after
+#:    ``SERVE_``. A `startswith` on the engine's prefix misses it.
+#: 2. `logging` propagates records to *ancestors*. ``commerce_discovery_routes``
+#:    is a sibling of ``commerce_discovery.engine``, not a descendant, so a
+#:    handler on the engine's logger never sees it however the message is spelled.
+#:
+#: Measured 2026-09-27 by raising `TypeError` on the route handler's first line:
+#: **37 tests stayed green**, and they are the suitability tests — the ones that
+#: certify PulseSoc does not put a shopping card next to a bereavement post.
+#: Those tests already carry a second assertion against exactly this class of
+#: mistake, `assert not serve.called`, and the crash satisfies it *more*
+#: thoroughly than a real refusal does. A stronger assertion in the same
+#: direction is still the same direction.
+ROUTE_FAILED_PREFIX = "COMMERCE_DISCOVERY_SERVE_ROUTE_FAILED"
+
+#: Both fail-safes, and the loggers to watch them on. A tuple rather than two
+#: code paths so that adding the next fail-safe is one line and cannot forget the
+#: report, the marker, or the teardown.
+WATCHED_FAILSAFES = (
+    ("services.commerce_discovery.engine", SERVE_FAILED_PREFIX),
+    ("services.commerce_discovery_routes", ROUTE_FAILED_PREFIX),
+)
+
 _RECORDER_KEY = pytest.StashKey["_SwallowedServeFailures"]()
 
 
 class _SwallowedServeFailures(logging.Handler):
-    """Collects `serve`'s fail-safe log records for the duration of one test."""
+    """Collects every watched fail-safe's log records for one test.
+
+    One handler instance is attached to each logger in `WATCHED_FAILSAFES`, but it
+    filters on *all* the prefixes rather than only the one belonging to the logger
+    it is attached to. That is deliberate: if a fail-safe is ever moved between
+    modules the guard keeps working, and the alternative — a per-logger prefix —
+    would silently stop watching the moved one.
+    """
+
+    #: Matched against the *start* of the message. Longest first is not needed
+    #: (they are checked with `any`), but note that `SERVE_FAILED` is **not** a
+    #: prefix of `SERVE_ROUTE_FAILED`, which is why both must be listed.
+    PREFIXES = tuple(prefix for _logger, prefix in WATCHED_FAILSAFES)
 
     def __init__(self):
         super().__init__(level=logging.ERROR)
@@ -578,8 +623,14 @@ class _SwallowedServeFailures(logging.Handler):
             message = record.getMessage()
         except Exception:  # pragma: no cover - a broken record is not our business
             return
-        if message.startswith(SERVE_FAILED_PREFIX):
-            self.records.append(record)
+        if not any(message.startswith(prefix) for prefix in self.PREFIXES):
+            return
+        # One instance is attached to several loggers, and a record can reach it
+        # more than once if those loggers are ever nested. Identity-dedupe rather
+        # than trusting the hierarchy to stay flat.
+        if any(seen is record for seen in self.records):
+            return
+        self.records.append(record)
 
     def detail(self) -> str:
         formatter = logging.Formatter()
@@ -610,10 +661,16 @@ def swallowed_failure_report(item, report) -> str:
     recorder = item.stash.get(_RECORDER_KEY, None)
     if recorder is None or not recorder.records:
         return ""
+    # Name the module that actually swallowed it. "engine.serve failed" sent
+    # someone to read the wrong file the first time the route fail-safe fired.
+    where = sorted({record.name for record in recorder.records}) or ["a fail-safe"]
     return (
-        "This test passed, but `engine.serve` swallowed an exception while it ran, "
-        "so whatever it asserted about the result was asserted about the fail-safe's "
-        "empty list rather than about a decision the engine made.\n\n"
+        f"This test passed, but {', '.join(where)} swallowed an exception while it "
+        "ran, so whatever it asserted about the result was asserted about a "
+        "fail-safe's empty list rather than about a decision anything made.\n\n"
+        "Note that an empty-result assertion is not enough to catch this, and "
+        "neither is a stronger assertion in the same direction: `assert not "
+        "serve.called` is satisfied by a crash before retrieval too.\n\n"
         "Fix the exception. If the failure is the point of the test, mark it "
         "`@pytest.mark.commerce_serve_may_fail`.\n\n"
         + recorder.detail()
@@ -630,18 +687,27 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def swallowed_serve_failures(request):
-    """Watch `engine`'s logger for the whole test, and hand the recorder to the
-    report hook through the item's stash.
+    """Watch every fail-safe logger for the whole test, and hand the recorder to
+    the report hook through the item's stash.
+
+    Attached by logger *name* rather than by importing the modules.
+    ``commerce_discovery_routes`` imports `bot` at call time, and a conftest that
+    imported it at collection would make every test in the package pay for 111k
+    lines to answer a question about a log record. `logging.getLogger` on a name
+    that has not been imported yet is legal and returns the same object the module
+    will use when it is.
 
     Yielded as well as stashed so a test can assert on it directly."""
-    logger = logging.getLogger(engine.__name__)
     recorder = _SwallowedServeFailures()
     request.node.stash[_RECORDER_KEY] = recorder
-    logger.addHandler(recorder)
+    loggers = [logging.getLogger(name) for name, _prefix in WATCHED_FAILSAFES]
+    for logger in loggers:
+        logger.addHandler(recorder)
     try:
         yield recorder
     finally:
-        logger.removeHandler(recorder)
+        for logger in loggers:
+            logger.removeHandler(recorder)
 
 
 @pytest.hookimpl(wrapper=True)

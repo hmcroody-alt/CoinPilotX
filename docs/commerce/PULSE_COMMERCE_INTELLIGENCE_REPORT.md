@@ -1,7 +1,7 @@
 # Pulse Commerce Intelligence — delivery report
 
 **Status: not deployed.** Nothing in this report is live. The work is committed on the
-local branch `commerce-discovery-audit` (head `dc95a6fb5`) in a worktree, and has **not**
+local branch `commerce-discovery-audit` (head `ad6858882`) in a worktree, and has **not**
 been pushed, merged, or rolled out. Committed is not deployed, and the distinction matters
 here: §16 lists changes that alter what feed, reels, post-detail, Messenger, Marketplace
 and product-page users see, with no per-surface kill switch to stage them behind. §16 also
@@ -16,7 +16,7 @@ it, and the fixes for those defects. Section 3 is an honest ledger of what pre-e
 versus what I added, because the difference is most of the value of this document.
 
 **On the shape of this report.** The brief specified a final report of 41 numbered
-sections. This one has 20. That is a deliberate departure, and the reason is the same
+sections. This one has 21. That is a deliberate departure, and the reason is the same
 reason the engine was not rebuilt: the section list was written on the assumption that
 all of it would be new construction. Roughly two thirds of the headings — embeddings,
 the vector index, the new worker framework, the experimentation platform, the load
@@ -1226,3 +1226,132 @@ handlers here. The availability half — that a caller still cannot distinguish 
 decision — is unchanged, and §82 is the reason it stays that way.
 
 Verified: 697 package tests and 663 protection tests green, plus the audit re-run above.
+
+---
+
+## 21. There were two fail-safes. The tests about bereavement were green against the broken one.
+
+§19 closed the engine's fail-safe and ended with a caveat: the guard is scoped to
+`tests/commerce_discovery/`, and "the route-level tests elsewhere in the tree call `serve`
+through Flask and are not covered".
+
+That caveat was wrong in both directions, and the second one is the section.
+
+**Wrong the harmless way:** there are no serve-route tests elsewhere in the tree. Only one
+file posts to `/api/pulse/commerce/discovery/<surface>`, and it is inside
+`tests/commerce_discovery/`, so it was already in scope.
+
+**Wrong the way that matters:** being in scope was not the same as being covered.
+`commerce_discovery_routes.commerce_discovery_serve` has **its own** `except Exception`
+wrapping the engine's, and the guard could not see it for two independent reasons, each of
+which looks like it ought to work:
+
+1. It logs `COMMERCE_DISCOVERY_SERVE_ROUTE_FAILED`. That does **not** start with
+   `COMMERCE_DISCOVERY_SERVE_FAILED` — the words diverge immediately after `SERVE_`.
+2. `logging` propagates records to *ancestors*. `services.commerce_discovery_routes` is a
+   sibling of `services.commerce_discovery.engine`, not a descendant, so a handler on the
+   engine's logger never sees it however the message is spelled.
+
+And the outer fail-safe is the more dangerous of the two, because of what it returns:
+
+```python
+def _empty():
+    """The one shape every serve failure returns."""
+    return _json({"ok": True, "placements": []})
+```
+
+**HTTP 200, `ok: True`.** A crashed route is indistinguishable from "no products for you" —
+not only to a test, but to the mobile client and to anything counting empty responses. Three
+unrelated conditions collapse into that one value: an unknown surface name, a rate-limited
+client, and a total failure of the handler.
+
+### The measurement
+
+`raise TypeError` on the route handler's first line, so the route could not answer anything:
+
+| | failed | passed |
+| --- | --- | --- |
+| guard watching the engine's logger only | 48 | 649 |
+| guard watching both | **77** | 620 |
+
+**29 tests changed sides, and they are the suitability tests.** The ones that certify
+PulseSoc does not put a shopping card beside a bereavement post:
+`test_a_sensitive_context_is_refused_before_retrieval`,
+`test_grief_expressed_through_an_object_is_refused_too`,
+`test_a_bereavement_in_the_caption_refuses_before_retrieval`,
+`test_an_uncleared_reel_refuses_over_a_cleared_post`, and
+`test_post_detail_is_gated_on_its_own_body`.
+
+These are the tests behind the mission's central ethical promise, and every one of them was
+green against a route that could not run.
+
+### Why this is not a story about careless tests
+
+It would be comfortable to call those tests lazy. They are not. Look at what they assert:
+
+```python
+response = ask(client, surface, GRIEF)
+
+assert response.status_code == 200
+assert response.get_json() == {"ok": True, "placements": []}
+assert not serve.called, (
+    "the candidate pool was built for a post commerce must stay away "
+    "from; a refusal that runs after retrieval has already written the "
+    "exposure ledger and minted an impression token"
+)
+```
+
+`assert not serve.called` is a *second* assertion, written deliberately to catch a refusal
+that happens too late — a real and specific failure mode, correctly anticipated, with the
+reasoning spelled out. And a crash before retrieval satisfies it **more** thoroughly than a
+genuine refusal does.
+
+That is the transferable lesson, and it is the same one as §19 and §18.6 in a third costume:
+**a stronger assertion in the same direction is still the same direction.** No amount of care
+inside a test substitutes for something watching from outside it. The eight tests that
+survived the mutation legitimately never touch the route — they call
+`suitability.assess_adjacency` directly — which is §11a's point restated: the goal was never
+zero survivors.
+
+### The fix
+
+One list, in `conftest`:
+
+```python
+WATCHED_FAILSAFES = (
+    ("services.commerce_discovery.engine", SERVE_FAILED_PREFIX),
+    ("services.commerce_discovery_routes", ROUTE_FAILED_PREFIX),
+)
+```
+
+The recorder attaches to every logger named there and matches *all* the prefixes on each, so
+moving a fail-safe between modules cannot disarm it. Loggers are attached by **name**, never
+by importing the module: `commerce_discovery_routes` imports `bot` — 111k lines — and a
+conftest that imported it at collection time would make every test in the package pay for
+that to answer a question about a log record. Records are identity-deduped, because one
+handler instance on several loggers would otherwise list a single failure twice and read like
+two bugs. The failure text now names the module that swallowed the exception, because
+"`engine.serve` failed" sent me to read the wrong file the first time the route fail-safe
+fired.
+
+Still **zero production change**, for §19's reason: a strict mode that re-raises under test
+makes the tested path differ from the shipped one, which is what §18.6 was about.
+
+Eight new tests pin it, including the two traps above stated as assertions
+(`test_the_route_prefix_is_not_caught_by_the_engine_prefix`) so that anyone "simplifying" the
+two prefixes into one `startswith` gets a red suite instead of a silently narrower guard, and
+one asserting that `_empty()` still answers `ok: True` — not as a complaint, but so that if
+anyone ever does make the route answer 5xx on a crash, the test fails and points them at the
+guard they can then delete.
+
+### What this does not fix
+
+The availability half is still untouched, and deliberately: §82 requires the post to render
+when commerce does not. What has changed twice now is that a *test* can no longer be fooled
+by it. Both times, the gap was found by mutation rather than by reading — §19's four
+hand-listed paths did not include either of the two that mattered here. That is worth saying
+plainly in a report that recommends mutation harnesses: I wrote the list by reading, and the
+list was wrong.
+
+Verified: 697 package tests and 663 protection tests green; the 77/620 mutation above,
+reverted and confirmed byte-identical to `HEAD`.
