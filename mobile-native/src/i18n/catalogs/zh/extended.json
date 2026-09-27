@@ -2570,6 +2570,26 @@
       "upcomingBody": "正在开发中。开放后会显示在这里。",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS 的这一部分还没有页面。返回 Business OS 选择其他板块。"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "热门",
+        "newDrop": "新品",
+        "popular": "受欢迎",
+        "topPick": "精选",
+        "discovery": "发现"
+      },
+      "availability": {
+        "unavailable": "已停售",
+        "notPriced": "暂未定价"
+      },
+      "cta": {
+        "viewProduct": "查看商品"
+      },
+      "seller": {
+        "openSeller": "打开 {{name}} 的店铺",
+        "visitStore": "查看店铺"
+      }
     }
   },
   "discovery": {

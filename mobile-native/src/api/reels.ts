@@ -4,6 +4,8 @@ import { mediaDisplayUrl, PulseAuthor, PulseComment, PulseMedia, normalizeCommen
 import { pulseApi } from "./pulseApi";
 import { isLikelyExpiringMediaUrl, mediaRecordForCache } from "../media/mediaContract";
 import { readJsonCacheEntry, writeJsonCache } from "../core/cache";
+import type { PulseCommerceOverlay } from "./pulseCommerceOverlay";
+import { commerceOverlayForCache } from "./pulseCommerceOverlay";
 
 const REELS_CACHE_KEY = "pulsesoc.native.reels.feed";
 const REELS_CACHE_META_KEY = "pulsesoc.native.reels.feed.meta";
@@ -86,6 +88,14 @@ export type PulseReel = {
   post_type?: string;
   live_session_id?: number;
   viewer_follows_author?: boolean;
+  /**
+   * Live commerce, present only on a PulseDrop publication.
+   *
+   * Absent -- not null -- on every ordinary Reel, so `reel.commerce` is a
+   * truthiness test rather than a two-step one. Never cached: see
+   * `commerceOverlayForCache`, which the reels cache writer runs first.
+   */
+  commerce?: PulseCommerceOverlay;
   live?: {
     live_session_id?: number;
     status?: string;
@@ -578,7 +588,20 @@ function reelForCache(reel: PulseReel): PulseReel {
   if (audio?.audio_url && isLikelyExpiringMediaUrl(audio.audio_url)) delete audio.audio_url;
   if (audio?.attached_audio_url && isLikelyExpiringMediaUrl(audio.attached_audio_url)) delete audio.attached_audio_url;
   if (audio?.preview_url && isLikelyExpiringMediaUrl(audio.preview_url)) delete audio.preview_url;
-  return { ...reel, media: (reel.media || []).map(mediaRecordForCache), audio };
+  // The commerce overlay is stripped of everything perishable before it is
+  // written, for the same reason an expiring media URL is: a cached value that
+  // *looks* current is worse than a missing one. Pixels, captions and author
+  // names do not change, so they cache correctly. Price, stock, availability
+  // and the call to action change constantly, and a restored reel showing
+  // "$49.00" from three days ago is a specific false claim under a verified
+  // badge. What survives is which product it is and who sells it, which renders
+  // as a product card awaiting refresh.
+  return {
+    ...reel,
+    media: (reel.media || []).map(mediaRecordForCache),
+    audio,
+    commerce: commerceOverlayForCache(reel.commerce),
+  };
 }
 
 function reelsQaFixtures(): PulseReel[] {

@@ -23,6 +23,9 @@ import { colors } from "../theme/colors";
 import { sharePulseObject } from "../sharing/nativeShare";
 import { buildReelShareMetadata } from "../sharing/reelShare";
 import { ContentTranslation } from "./ContentTranslation";
+import { CommerceOverlay } from "./commerce/CommerceOverlay";
+import type { PulseCommerceOverlay } from "../api/pulseCommerceOverlay";
+import { isPulseCommerceOverlay } from "../api/pulseCommerceOverlay";
 import { createThemedStyles } from "../theme/themedStyles";
 
 /**
@@ -103,8 +106,25 @@ type ReelPlayerCardProps = {
    * that renders this card — keeps the exact layout it had. The chip is additive
    * in the strongest sense available: with this prop absent there is no extra
    * element in the tree at all, not a zero-height one.
+   *
+   * Distinct from the two `onOpenCommerce*` props below, and the distinction is
+   * the whole reason both exist. This is a *recommendation*: a product the
+   * discovery engine chose to put in front of this viewer, which the reel itself
+   * is not about. Those are a *disclosure*: the live price and stock of the one
+   * product a PulseDrop Reel was published to sell. `ReelsScreen` keeps them
+   * from ever landing on the same reel — see `commerceReelIds`.
    */
   commerce?: ReelCommerceBinding | null;
+  /**
+   * Open the product a PulseDrop Reel is about.
+   *
+   * Optional, and the overlay renders only when it is supplied, because a
+   * surface that cannot navigate must not show a call to action it cannot
+   * honour. A Reel with no `commerce` field ignores both of these entirely.
+   */
+  onOpenCommerceProduct?: (commerce: PulseCommerceOverlay) => void;
+  /** Open the merchant's store. A different destination from the product. */
+  onOpenCommerceSeller?: (commerce: PulseCommerceOverlay) => void;
 };
 
 export function ReelPlayerCard({
@@ -134,7 +154,9 @@ export function ReelPlayerCard({
   onOpenMore,
   onJoinLive,
   onViewable,
-  commerce = null
+  commerce = null,
+  onOpenCommerceProduct,
+  onOpenCommerceSeller
 }: ReelPlayerCardProps) {
   const videoRef = useRef<Video>(null);
   const attachedSoundRef = useRef<Audio.Sound | null>(null);
@@ -600,6 +622,27 @@ export function ReelPlayerCard({
       </View>
 
       <View style={[styles.caption, fullBleed ? { bottom: contentBottom } : null]}>
+        {/*
+          Above the caption and inside this block, so it inherits the offsets
+          that already clear the action rail, the navigator and the home
+          indicator. Rendered only when the caller can actually navigate: a
+          screen that cannot open the product must not show a button promising
+          it can. An ordinary Reel has no `commerce` field and renders nothing.
+
+          Never co-renders with the recommendation chip below. That is enforced
+          at the source — `ReelsScreen.commerceReelIds` withholds a slot from a
+          reel carrying this overlay — rather than by a branch here, following
+          the same rule the Live exclusion already follows: a slot that is bound
+          and then suppressed is a slot the next eligible reel never gets.
+        */}
+        {isPulseCommerceOverlay(reel.commerce) && onOpenCommerceProduct ? (
+          <CommerceOverlay
+            commerce={reel.commerce}
+            surface="reel"
+            onOpenProduct={onOpenCommerceProduct}
+            onOpenSeller={onOpenCommerceSeller || onOpenCommerceProduct}
+          />
+        ) : null}
         {/* First child of a *bottom-anchored* column, which is the entire
             no-overlap argument: adding a row at the top grows the column
             upward, so the handle, caption, music chip and mute button do not

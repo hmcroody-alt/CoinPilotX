@@ -54,6 +54,8 @@ import {
 import { PulseApiError } from "../api/pulseApi";
 import { describeDeleteError } from "../api/deleteErrors";
 import { profileNavigationParams, profileTargetFromAuthor } from "../api/profileTarget";
+import { chipEligibleReelIds } from "../commerce/reelChipEligibility";
+import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { ReelPlayerCard } from "../components/ReelPlayerCard";
 import type { ReelCommerceBinding } from "../components/ReelPlayerCard";
 import { useCallSession } from "../calls/callSessionStore";
@@ -104,6 +106,7 @@ const QA_RECOVERY_STATES = new Set<ConnectionState>(["loading", "connecting", "o
 
 export function ReelsScreen({ route, navigation }: Props) {
   const { authState, requestReauthentication } = useAuth();
+  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const insets = useSafeAreaInsets();
   // Scroll-driven dock hiding reads vertical deltas, which a horizontal pager
   // never produces. Opting out in spatial mode makes that explicit rather than
@@ -260,20 +263,12 @@ export function ReelsScreen({ route, navigation }: Props) {
   /**
    * Which reels are even candidates to carry a chip.
    *
-   * Live reels are excluded rather than filtered later: a Live is one of the
-   * brief's no-interruption zones, and dropping it from the id list means the
-   * binder never considers it, so the chip lands on the next eligible reel
-   * instead of being bound and then suppressed. Binding is by id throughout —
-   * pagination appends and a refresh replaces, both of which shift indices.
+   * The rule moved to `reelChipEligibility` when a second exclusion joined the
+   * Live one — read it there. It lives outside the component because it is a
+   * pure function of the list and the decision it encodes ("not a candidate",
+   * never "candidate whose chip is hidden") is worth testing directly.
    */
-  const commerceReelIds = useMemo(
-    () =>
-      reels
-        .filter((reel) => !(reel.live_session_id || reel.live?.live_session_id))
-        .map((reel) => String(reel.id))
-        .filter((id) => id && id !== "0"),
-    [reels]
-  );
+  const commerceReelIds = useMemo(() => chipEligibleReelIds(reels), [reels]);
   /**
    * What the reel that will carry the chip is about (§8).
    *
@@ -1035,6 +1030,11 @@ export function ReelsScreen({ route, navigation }: Props) {
                 const params = profileNavigationParams(target, reel.author?.display_name || "Profile");
                 if (params) navigation.navigate("ProfileDetail", params);
               }}
+              // Shared with every other surface that renders the overlay, so a
+              // product tap lands in the same place from a Reel, the feed, a
+              // post detail or the profile viewer.
+              onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
+              onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
               onOpenMusic={setMusicReel}
               onOpenMore={setMoreReel}
               onJoinLive={joinLiveReel}

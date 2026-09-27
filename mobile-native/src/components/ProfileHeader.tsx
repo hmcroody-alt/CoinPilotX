@@ -227,8 +227,29 @@ export function ProfileHeader({
   const tierLabel = premium ? String(profile.premium_status || "premium").replace(/_/g, " ") : "";
   const online = String(profile.account_status || "active").toLowerCase() === "active";
   const automated = profile.automated === true || profile.account_type === "PULSESOC_AUTOMATED";
-  const galacticAccountCover = profile.public_player_id === "pulsesoc_insight"
-    && Boolean(profile.cover_url?.includes("pulsesoc-insight-cover-20260825.png"));
+  // A first-party *designed banner* rather than a photograph: shown whole, at
+  // its own shape, instead of cropped to fill the hero. Both facts come from the
+  // server (`brand_cover_fit`, `brand_cover_aspect_ratio`).
+  //
+  // This was a filename match — `public_player_id === "pulsesoc_insight"` and
+  // `cover_url.includes("pulsesoc-insight-cover-20260825.png")` — with the shape
+  // hard-coded as `aspectRatio: 1600 / 640` in the stylesheet below. Two things
+  // were wrong with that. The dated filename *is* the cache-busting mechanism
+  // for brand assets, so shipping new artwork for that account would have
+  // silently reverted its cover to a crop, with nothing failing to say so. And a
+  // second official account could not be given the treatment at all without an
+  // app release, which is precisely what @pulsedrop needed.
+  //
+  // The ratio is required, not defaulted: a fitted box has to know its height,
+  // and inventing one would letterbox or clip the banner by a guess. A server
+  // that asks for `contain` without a usable ratio gets the ordinary fill, which
+  // is a worse crop but never a wrong one.
+  const brandCoverRatio = profile.brand_cover_aspect_ratio;
+  const brandCover = profile.brand_cover_fit === "contain"
+    && Boolean(profile.cover_url)
+    && typeof brandCoverRatio === "number"
+    && Number.isFinite(brandCoverRatio)
+    && brandCoverRatio > 0;
   // The energy field below is a *generated cover* for accounts that never set
   // one, so its normal strength is calibrated to be the image rather than to
   // sit over one. When the user has supplied a photo the same geometry drops to
@@ -242,7 +263,7 @@ export function ProfileHeader({
   // field stays dim forever behind nothing. The step-down therefore waits for
   // the picture to actually arrive, and the field is the placeholder until it
   // does.
-  const coverUrl = galacticAccountCover ? "" : profile.cover_url || "";
+  const coverUrl = brandCover ? "" : profile.cover_url || "";
   const [coverLoaded, setCoverLoaded] = useState(false);
   useEffect(() => { setCoverLoaded(false); }, [coverUrl]);
   const hasCover = Boolean(coverUrl) && coverLoaded;
@@ -273,11 +294,21 @@ export function ProfileHeader({
 
   const shareTarget = owner ? profile.public_player_id || profile.username : publicKey;
 
-  // Built here rather than inline so the automated-account omissions stay a
-  // single decision, and so the divider logic can key off real position.
+  // Built here rather than inline so the omissions stay a single decision, and
+  // so the divider logic can key off real position.
+  //
+  // The follow counts drop out when the account has no social graph — not when
+  // it is automated. Those looked like the same condition while PulseSoc Insight
+  // was the only automated account: it lives at `user_id=0`, no follow row can
+  // point at it, and its follower count is undefined rather than zero, so
+  // printing "0 Followers" would have been a made-up fact. @pulsedrop is equally
+  // automated and genuinely followable, and keying on `automated` would have
+  // hidden its real, non-zero counts. The server answers the narrower question
+  // directly; `normalizeProfile` defaults it to true, so ordinary profiles and
+  // older servers are unaffected.
   const statEntries: { key: ProfileStatKey; label: string; icon: keyof typeof Ionicons.glyphMap; value: number }[] = [
     { key: "posts", label: "Posts", icon: "grid-outline", value: profile.post_count || 0 },
-    ...(!automated
+    ...(profile.has_social_graph !== false
       ? ([
           { key: "followers", label: "Followers", icon: "people-outline", value: profile.follower_count || 0 },
           { key: "following", label: "Following", icon: "person-add-outline", value: profile.following_count || 0 }
@@ -357,9 +388,9 @@ export function ProfileHeader({
           style={StyleSheet.absoluteFill}
           pointerEvents="none"
         />
-        {galacticAccountCover ? (
+        {brandCover ? (
           <Image testID="automated-account-brand-cover" source={{ uri: profile.cover_url }}
-            style={styles.automatedBrandCover} resizeMode="contain" />
+            style={[styles.automatedBrandCover, { aspectRatio: brandCoverRatio }]} resizeMode="contain" />
         ) : null}
       </View>
 
@@ -507,14 +538,40 @@ export function ProfileHeader({
               }).catch(() => undefined); }} />
             </>
           ) : automated ? (
-            <Action label="Share" icon="share-outline" primary accent={accent} onPress={() => { haptic(); sharePulseObject({
-              kind: "profile",
-              url: profileWebUrl(shareTarget),
-              title: profile.display_name || "PulseSoc Insight",
-              description: profile.automation_disclosure || profile.bio,
-              author: profile.display_name,
-              previewImageUrl: profile.avatar_url
-            }).catch(() => undefined); }} />
+            // Message, Call and Video are withheld because there is nobody on
+            // the other end — that is true of any automated account and stays
+            // keyed on `automated`.
+            //
+            // Follow is not in that category. It was dropped here along with
+            // them, which was invisible while the only automated account lived
+            // at `user_id=0` and could not be followed by anyone. @pulsedrop
+            // exists as an ordinary `users` row for the sole purpose of being
+            // followable, so an automated profile with a social graph keeps the
+            // control; the server says which is which. Without this the account
+            // is a wall: the app would render a Followers count next to no way
+            // to become one.
+            <>
+              {profile.has_social_graph !== false ? (
+                <Action
+                  label={profile.viewer_follows ? "Following" : "Follow"}
+                  icon={profile.viewer_follows ? "checkmark-done-outline" : "person-add-outline"}
+                  primary={!profile.viewer_follows}
+                  accent={accent}
+                  selected={profile.viewer_follows}
+                  disabled={followBusy}
+                  onPress={() => { haptic(); onFollow?.(); }}
+                />
+              ) : null}
+              <Action label="Share" icon="share-outline" primary={profile.has_social_graph === false} accent={accent} onPress={() => { haptic(); sharePulseObject({
+                kind: "profile",
+                url: profileWebUrl(shareTarget),
+                // Was hard-coded to the one automated account that existed.
+                title: profile.display_name || profile.username || "PulseSoc profile",
+                description: profile.automation_disclosure || profile.bio,
+                author: profile.display_name,
+                previewImageUrl: profile.avatar_url
+              }).catch(() => undefined); }} />
+            </>
           ) : (
             <>
               <Action label="Message" icon="chatbubble-ellipses-outline" primary accent={accent} onPress={() => { haptic(); onMessage?.(); }} />
@@ -739,7 +796,10 @@ const styles = createThemedStyles(() => {
   root: { backgroundColor: "transparent" },
   hero: { overflow: "hidden", width: "100%" },
   coverImage: { ...StyleSheet.absoluteFillObject, height: undefined, width: undefined },
-  automatedBrandCover: { position: "absolute", top: 0, width: "100%", aspectRatio: 1600 / 640 },
+  // `aspectRatio` is supplied per profile from `brand_cover_aspect_ratio`; it is
+  // the one thing here that differs between covers, so it cannot live in a
+  // shared stylesheet.
+  automatedBrandCover: { position: "absolute", top: 0, width: "100%" },
   nebula: { borderRadius: 220, height: 300, position: "absolute", right: -90, top: -70, width: 300 },
   nebulaTwo: { borderRadius: 160, height: 220, left: -70, position: "absolute", top: 40, width: 220 },
   // Oversized circle: only the top arc falls inside the hero, so it reads as a

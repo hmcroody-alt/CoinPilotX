@@ -2585,6 +2585,26 @@
       "upcomingBody": "बनाया जा रहा है। तैयार होते ही ये यहाँ दिखेंगी।",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS के इस हिस्से का पेज अभी नहीं है। दूसरा सेक्शन चुनने के लिए Business OS पर लौटें।"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "ट्रेंडिंग",
+        "newDrop": "नई पेशकश",
+        "popular": "लोकप्रिय",
+        "topPick": "टॉप पिक",
+        "discovery": "खोजें"
+      },
+      "availability": {
+        "unavailable": "अब उपलब्ध नहीं",
+        "notPriced": "कीमत तय नहीं"
+      },
+      "cta": {
+        "viewProduct": "प्रोडक्ट देखें"
+      },
+      "seller": {
+        "openSeller": "{{name}} का स्टोर खोलें",
+        "visitStore": "स्टोर देखें"
+      }
     }
   },
   "discovery": {

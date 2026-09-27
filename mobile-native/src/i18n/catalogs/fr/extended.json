@@ -2585,6 +2585,26 @@
       "upcomingBody": "En cours de création. Elles apparaîtront ici dès leur ouverture.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Cette partie de Business OS n'a pas encore de page. Retournez à Business OS pour choisir une autre section."
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "Tendances",
+        "newDrop": "Nouveauté",
+        "popular": "Populaire",
+        "topPick": "Notre sélection",
+        "discovery": "Découvrir"
+      },
+      "availability": {
+        "unavailable": "Plus disponible",
+        "notPriced": "Prix non défini"
+      },
+      "cta": {
+        "viewProduct": "Voir le produit"
+      },
+      "seller": {
+        "openSeller": "Ouvrir la boutique de {{name}}",
+        "visitStore": "Voir la boutique"
+      }
     }
   },
   "discovery": {
