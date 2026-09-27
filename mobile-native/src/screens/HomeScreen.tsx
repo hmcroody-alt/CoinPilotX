@@ -907,6 +907,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
    * loaded a page or a badge poll landed. That only holds if the ~20 callbacks
    * below keep their identities across a parent render.
    */
+  /**
+   * The same destination Profile OS's Marketplace tile uses, deliberately. The
+   * header is the *discovery* entry and the tile is the *management* entry, but
+   * a second route object for one screen is how the two drift apart, so both
+   * name the registered tab.
+   */
+  const openMarketplaceTab = useCallback(() => navigation.navigate("Tabs", { screen: "Marketplace" }), [navigation]);
   const openSearchTab = useCallback(() => navigation.navigate("Tabs", { screen: "Search" }), [navigation]);
   const openActivityInbox = useCallback(() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" }), [navigation]);
   const openProfileTab = useCallback(() => navigation.navigate("Tabs", { screen: "Profile" }), [navigation]);
@@ -1171,6 +1178,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             offline={offline}
             ageMs={feedAgeMs}
             onOpenDrawer={openDrawer}
+            onOpenMarketplace={openMarketplaceTab}
             onOpenSearch={openSearchTab}
             onOpenActivity={openActivityInbox}
             onOpenProfile={openProfileTab}
@@ -1289,6 +1297,7 @@ const HomeHeader = memo(function HomeHeader({
   offline,
   ageMs,
   onOpenDrawer,
+  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1325,6 +1334,7 @@ const HomeHeader = memo(function HomeHeader({
   offline: boolean;
   ageMs: number | null;
   onOpenDrawer: () => void;
+  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1355,7 +1365,7 @@ const HomeHeader = memo(function HomeHeader({
   const wideCanvas = width >= 900;
   return (
     <View style={styles.header}>
-      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
+      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenMarketplace={onOpenMarketplace} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
         {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenRadioLibrary} /> : null}
         <View style={styles.homePrimaryColumn}>
@@ -1484,6 +1494,7 @@ function HomeCommandRail({
 
 function HomeTopBar({
   onOpenDrawer,
+  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1491,6 +1502,7 @@ function HomeTopBar({
   identity
 }: {
   onOpenDrawer: () => void;
+  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1503,6 +1515,7 @@ function HomeTopBar({
       mode="home"
       showDrawer
       onOpenDrawer={onOpenDrawer}
+      onOpenMarketplace={onOpenMarketplace}
       onOpenSearch={onOpenSearch}
       onOpenActivity={onOpenActivity}
       onOpenProfile={onOpenProfile}
