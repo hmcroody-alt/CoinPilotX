@@ -42,6 +42,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from services import marketplace_cart_web
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
 from services import marketplace_listing_lifecycle as listing_lifecycle
@@ -508,6 +509,12 @@ def cart_list():
         return _json({
             "ok": True,
             "lines": lines,
+            # The units `/checkout` actually transacts in. Additive: a client
+            # that renders one flat list ignores it. It is computed here rather
+            # than by each caller because every refusal in it is a refusal this
+            # module makes, and a client deriving them would be deriving them
+            # from a copy of these rules. See `marketplace_cart_web`.
+            "groups": marketplace_cart_web.group_lines(lines),
             "badge_count": sum(l["qty"] for l in lines if l["state"] in {"available", "price_changed", "low_stock"}),
             "checkoutable_count": len(checkoutable),
         })
@@ -815,19 +822,18 @@ def cart_checkout():
             if lane_error:
                 return _error("Choose how you want this order fulfilled before you pay.", 400, code=lane_error)
             line_kinds.append(kind)
-        scheduled = [k for k in line_kinds if k.startswith(("service_", "booking_", "event_"))]
+        scheduled = marketplace_cart_web.scheduled_kinds(line_kinds)
         if scheduled and len(lines) > 1:
             return _error(
                 "Bookings, services and events are checked out one at a time. Buy this item on its own.",
                 409, code="ITEM_NEEDS_OWN_CHECKOUT")
         # One address for the group, asked for only when something in it travels.
-        details_kind = next((k for k in line_kinds if marketplace_fulfillment.needs_shipping_address(k)), "")
+        # The rule itself lives in `marketplace_cart_web` so that the form the
+        # buyer is offered before paying is built from the same rule that decides
+        # which submission is accepted here.
+        details_kind = marketplace_cart_web.details_kind_for(line_kinds)
         group_details: dict = {}
         stripe_shipping_object: dict = {}
-        if not details_kind and scheduled:
-            details_kind = scheduled[0]
-        if not details_kind:
-            details_kind = next((k for k in line_kinds if k == "pickup"), "")
         if details_kind:
             details_ok, group_details = marketplace_fulfillment.validate_details(
                 details_kind, payload.get("fulfillment_details"),

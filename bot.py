@@ -58079,18 +58079,26 @@ def pulse_marketplace_cart_page():
     web can take a card: "add it here, pay in the app" is a real path.
 
     No new API. `templates/marketplace_cart.html` and
-    `static/js/pulsesoc_cart.js` drive the six endpoints in
+    `static/js/pulsesoc_cart.js` drive the seven endpoints in
     `services/marketplace_cart_routes.py` that have answered the native app all
-    along. Its `_require_user()` resolves through `api_account_user()`, which
-    accepts the web session cookie, so the browser is already an authenticated
-    caller; that module's own `_error()` docstring says its messages stay human
-    "because web and admin surfaces render it directly", and this is the surface
-    it was anticipating.
+    along -- including `/checkout`, whose hosted-Stripe-session lane returns
+    `success_url` and `cancel_url` pointing at *web* routes and so was built for
+    a browser before there was a browser calling it. Its `_require_user()`
+    resolves through `api_account_user()`, which accepts the web session cookie,
+    so the browser is already an authenticated caller; that module's own
+    `_error()` docstring says its messages stay human "because web and admin
+    surfaces render it directly", and this is the surface it was anticipating.
     """
     init_db()
     main = render_template(
         "marketplace_cart.html",
         app_href=app_links.open_interstitial_url("cart", source="web"),
+        # The registry's template form, with `__RESOURCE_ID__` where the listing
+        # id goes. Passed instead of letting the script concatenate a path,
+        # because `app_links` is the only thing that decides where a product
+        # lives and a literal in a script would keep working through a change to
+        # it while every other surface moved.
+        product_href=app_links.website_href_template("product", source="web"),
     )
     # The page's script tag rides in `main_html`, which is the precedent set by
     # `pulse_marketplace_listing_page` and its promotions bundle. `script_html`
@@ -61490,15 +61498,106 @@ def pulse_teacher_payouts_refresh_page():
     return seller_payout_return_page("teacher", expired=True)
 
 
+def _marketplace_order_return(transaction_id):
+    """Whether this Stripe return belongs to a Marketplace order of the viewer's.
+
+    Both Stripe result pages are shared: the cart lane, the buy-now lane and
+    every course, ad and Premium session land on the same two URLs with a
+    `transaction_id`. So the copy can only be specialised for the flow it can
+    *prove* it is looking at, and it proves it from the row rather than from the
+    query string -- `?transaction_id=` is attacker-controlled and the only thing
+    stopping this from confirming a stranger's order is the buyer check below.
+
+    Returns True only for a Marketplace product transaction whose buyer is the
+    signed-in account. Anything else -- another flow, a transaction that is not
+    the viewer's, a signed-out visitor, a malformed id, a database that will not
+    answer -- falls through to the generic wording, which has been correct for
+    every flow since before the cart existed.
+    """
+    try:
+        tx_id = int(str(transaction_id or "").strip())
+    except (TypeError, ValueError):
+        return False
+    if tx_id <= 0:
+        return False
+    viewer = require_account()
+    if not viewer:
+        return False
+    conn = None
+    try:
+        conn = db()
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT buyer_user_id, item_type FROM seller_transactions WHERE id=? LIMIT 1",
+            (tx_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return False
+        return (int(row["buyer_user_id"] or 0) == int(viewer["user_id"])
+                and str(row["item_type"] or "") == "marketplace_product")
+    except Exception:
+        # A result page that 500s after a real charge is worse than one that
+        # prints the generic sentence, which is true of a Marketplace order too.
+        logging.getLogger(__name__).exception("PAYMENT_RESULT_LOOKUP_FAILED tx=%s", tx_id)
+        return False
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
 @webhook_app.route("/pulse/payments/success", methods=["GET"])
 @webhook_app.route("/payments/success", methods=["GET"])
 def pulse_payment_success_page():
+    if _marketplace_order_return(request.args.get("transaction_id")):
+        # Deliberately not "your order is confirmed". Stripe has taken the
+        # payment, but the order becomes an order in PulseSoc when
+        # `checkout.session.completed` arrives, and the cart's own lines are
+        # cleared by that webhook and not by this page. Saying "confirmed" here
+        # would be the page claiming something it has not been told.
+        return pulse_social_shell(
+            "Payment Complete",
+            "Stripe received your payment. Your order appears in your orders once the confirmation reaches PulseSoc.",
+            "<section class='card'><h2>Payment received</h2>"
+            "<p>Stripe has taken your payment. Your order shows up in your orders as soon as "
+            "the confirmation reaches PulseSoc &mdash; usually within a few seconds. The seller "
+            "is notified at the same time.</p>"
+            "<p class='muted'>Items stay in your cart until that confirmation lands, so do not be "
+            "surprised to see them there for a moment.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse/orders'>View your orders</a>"
+            # `app_first_href` and not the literal, even though the literal is the
+            # right URL today: the registry owns whether `marketplace` is a web page
+            # or an `/open/...` handoff, and a button written here would be the one
+            # place on the site still pointing at the old answer after that flips.
+            f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
+            "</div></section>")
     return pulse_social_shell("Payment Complete", "Your payment was received. Access and seller payout status update through Stripe webhooks.", "<section class='card'><h2>Payment received</h2><p>Thank you. If this was a course or product, access will update shortly.</p><a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
 
 
 @webhook_app.route("/pulse/payments/cancel", methods=["GET"])
 @webhook_app.route("/payments/cancel", methods=["GET"])
 def pulse_payment_cancel_page():
+    if _marketplace_order_return(request.args.get("transaction_id")):
+        # The cart is the one thing a buyer who just backed out of a payment
+        # wants, and the generic page sent them to the feed instead. Nothing was
+        # lost: `cart_checkout` empties no line, and the reservation it took is
+        # released by the sweeper on its own deadline.
+        return pulse_social_shell(
+            "Checkout Canceled",
+            "No card was charged and your cart is exactly as you left it.",
+            "<section class='card'><h2>Checkout canceled</h2>"
+            "<p>No payment was taken. Everything is still in your cart &mdash; nothing was removed "
+            "and nothing was charged.</p>"
+            "<div class='actions'><a class='button primary' href='/pulse/cart'>Back to your cart</a>"
+            # Through the registry for the same reason as the success page above:
+            # this button's destination is the registry's to decide, not this
+            # route's.
+            f"<a class='button' href='{app_first_href('marketplace')}'>Keep browsing</a>"
+            "</div></section>")
     return pulse_social_shell("Payment Canceled", "No card was charged.", "<section class='card'><h2>Checkout canceled</h2><p>No payment was completed.</p><a class='button primary' href='/pulse'>Back to PulseSoc</a></section>")
 
 
