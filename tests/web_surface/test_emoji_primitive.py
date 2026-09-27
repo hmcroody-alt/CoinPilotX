@@ -175,6 +175,43 @@ def test_no_second_emoji_picker_on_the_web():
     )
 
 
+def test_no_emoji_affordance_hardcodes_its_own_glyph():
+    """The density scan walks static/ and templates/. bot.py is neither.
+
+    /pulse ships its entire runtime twice: `pulse_home_core.js` under the
+    default `core` boot profile, and a ~130KB inline `<script
+    data-pulse-shell-runtime>` fallback that the diagnostic profiles
+    (?boot_profile=normal, status_off, media_off, …) serve instead. The
+    fallback had its own comment-emoji handler that appended one hardcoded
+    fire emoji, and no file-walking scan could see it because it lives inside
+    a Python string literal. An emoji button whose glyph is chosen by whoever
+    wrote the line is the exact thing this landing exists to delete, so assert
+    the shape -- a literal emoji being written into an input's value -- rather
+    than that one glyph.
+    """
+    bot_py = read(os.path.join(ROOT, "bot.py"))
+    appends = [
+        m.group(0)
+        for m in re.finditer(r"\.value\s*=[^;\n]{0,120}", bot_py)
+        if EMOJI_LITERAL.search(m.group(0))
+    ]
+    assert not appends, (
+        "bot.py writes a hardcoded emoji into an input; open window.PulseEmoji "
+        "and let the user choose: " + repr(appends[:5])
+    )
+    for marker in ("data-comment-emoji]", "data-composer-emoji]"):
+        for part in bot_py.split(marker)[1:]:
+            branch = part[:600]
+            # `.open({` specifically, not the bare name: a branch that merely
+            # mentions PulseEmoji while doing something else -- say, keeping
+            # the insertAtCaret call but never opening anything -- is still a
+            # button that does nothing.
+            assert "PulseEmoji.open({" in branch, (
+                f"an emoji handler for {marker} does not open the shared "
+                "picker: " + repr(branch[:200])
+            )
+
+
 def test_no_surface_fetches_the_dataset_directly():
     """Only the primitive may load emoji.json; everyone else goes through it."""
     offenders = []
