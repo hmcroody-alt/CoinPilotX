@@ -237,6 +237,36 @@ def resolve_kind(listing_type: Any, delivery_type: Any, metadata: Any = None) ->
     return "shipping"
 
 
+#: Undecided kind -> the answers :func:`resolve_choice` accepts, in the order a
+#: chooser should offer them. The first spelling of each lane is the canonical
+#: one; the later ones are accepted because older clients send them.
+_LANE_ANSWERS: dict[str, tuple[str, ...]] = {
+    "shipping_or_pickup": ("shipping", "pickup"),
+    "service_choice": ("service_remote", "service_in_person", "remote", "in_person"),
+}
+
+#: The two lanes of ``service_choice`` collapse four accepted answers onto two
+#: real choices, so a chooser built from ``_LANE_ANSWERS`` alone would offer the
+#: same lane twice.
+_LANE_CHOICES: dict[str, tuple[tuple[str, str], ...]] = {
+    "shipping_or_pickup": (("shipping", "Deliver to me"), ("pickup", "Collect in person")),
+    "service_choice": (("service_remote", "Remotely"), ("service_in_person", "In person")),
+}
+
+
+def lane_options(kind: str) -> tuple[dict[str, str], ...]:
+    """The lanes a buyer may pick between for ``kind``, with their labels.
+
+    Exists so a checkout form does not have to carry its own copy of the answers
+    :func:`resolve_choice` accepts. A form offering a word this function does not
+    return is a form whose submission the server refuses — which is the
+    "rejection after the form is filled" the whole pre-flight exists to avoid.
+    Empty for every kind that is already decided.
+    """
+    return tuple({"value": value, "label": label}
+                 for value, label in _LANE_CHOICES.get(kind, ()))
+
+
 def resolve_choice(kind: str, chosen: Any) -> tuple[str, str]:
     """Settle an undecided kind with the buyer's answer.
 
@@ -247,10 +277,7 @@ def resolve_choice(kind: str, chosen: Any) -> tuple[str, str]:
     if kind not in UNDECIDED_KINDS:
         return kind, ""
     answer = str(chosen or "").strip().lower()
-    allowed = {
-        "shipping_or_pickup": {"shipping", "pickup"},
-        "service_choice": {"service_remote", "service_in_person", "remote", "in_person"},
-    }[kind]
+    allowed = set(_LANE_ANSWERS[kind])
     if answer not in allowed:
         return kind, LANE_REQUIRED_CODE
     if kind == "service_choice":
@@ -339,6 +366,41 @@ def field_spec(kind: str, metadata: Any = None) -> tuple[dict[str, Any], ...]:
             continue
         spec.append({"key": key, "type": field_type, "required": required})
     return tuple(spec)
+
+
+#: The HTML autofill token for each field, so a browser form can offer the
+#: address the buyer has already saved. It lives beside the label table for the
+#: same reason the label table lives here: it is a property of the question, and
+#: a surface that had to derive it would be deriving it from a copy of the field
+#: keys. Absent keys get no token, which is the correct answer for a note.
+_AUTOCOMPLETE = {
+    "contact_name": "name",
+    "contact_phone": "tel",
+    "attendee_name": "name",
+    "address_line1": "address-line1",
+    "address_line2": "address-line2",
+    "address_city": "address-level2",
+    "address_region": "address-level1",
+    "address_postal_code": "postal-code",
+    "address_country": "country",
+}
+
+
+def buyer_form(kind: str, metadata: Any = None) -> tuple[dict[str, Any], ...]:
+    """:func:`field_spec` with the label each field is asked under.
+
+    The label table already existed here, one file away from the field list, and
+    was private — so every surface that rendered these questions wrote its own
+    copy of it. This returns both halves together so a form can be *generated*
+    from this module rather than ported from it. ``mobile-native``'s
+    ``marketplaceFulfillment.ts`` is such a port, declares itself one, and is
+    pinned to this module by a test on each side; the web cart is generated from
+    this function instead and so has nothing to pin.
+    """
+    return tuple({**field,
+                  "label": _LABELS.get(field["key"], field["key"]),
+                  "autocomplete": _AUTOCOMPLETE.get(field["key"], "")}
+                 for field in field_spec(kind, metadata))
 
 
 # ---------------------------------------------------------------------------
