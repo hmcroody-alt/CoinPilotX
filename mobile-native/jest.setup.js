@@ -88,3 +88,34 @@ global.fetch = (input) =>
  * so read that warning as a real handle, not as fallout from the change that
  * revealed it.
  */
+
+/**
+ * The English catalogs, resident before any suite renders anything.
+ *
+ * `t()` reads a module-level cache that nothing in a test populates, so a
+ * component rendered without this saw *every* key miss. That does not fail a
+ * test — `translate()` humanizes a missed key, and "Translated Label" for
+ * `translation:translatedLabel` is plausible enough to read as real copy — so
+ * it surfaced only as noise: 515 `[i18n] missing key` warnings across 27
+ * suites, which is exactly the volume that makes the one real missing key
+ * invisible. Warming here for the same reason AsyncStorage is mocked here: a
+ * new test should not fail, or warn, for a reason that has nothing to do with
+ * what it is testing.
+ *
+ * This is also the honest model of production. `I18nProvider` holds the first
+ * visible frame until the core tier is resident and warms the extended tier one
+ * microtask later, so by the time any screen under test could really be on
+ * screen, every namespace is loaded. A cold engine was the less realistic
+ * default, not the safer one.
+ *
+ * Two things this deliberately does not do. It does not replace the explicit
+ * `await activateLocale("en")` in the suites that already assert copy
+ * literally — those state their dependency where a reader will see it. And it
+ * does not reach a suite that calls `jest.resetModules()` and re-requires the
+ * engine afterwards, because the reset hands that suite a fresh module registry
+ * with an empty cache; `i18n/__tests__/launchGate.test.ts` depends on exactly
+ * that to observe the pre-`ready` frame, and still does.
+ */
+beforeAll(async () => {
+  await require("./src/i18n/engine").activateLocale("en");
+});
