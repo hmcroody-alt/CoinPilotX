@@ -87,10 +87,34 @@ _COOLDOWN_FACTORS = {
     # card is one card, so a repeated seller here is not diluted by a second
     # placement the way it is on a feed page.
     "post_detail": (1.0, 1.0, 1.5),
+    # The shop's factors, for the shop's reason: the user is looking at a
+    # product. A fifteen-minute product cooldown here would mean browsing back to
+    # a page you visited earlier in the session shows an empty related row, which
+    # reads as a broken screen rather than as considerate spacing.
+    "product_detail": (0.25, 0.5, 0.25),
 }
 
-_SELLER_CAPS = {"feed": 2, "reels": 1, "messenger": 1, "marketplace": 3, "post_detail": 1}
-_CATEGORY_CAPS = {"feed": 3, "reels": 1, "messenger": 2, "marketplace": 4, "post_detail": 1}
+_SELLER_CAPS = {
+    "feed": 2,
+    "reels": 1,
+    "messenger": 1,
+    "marketplace": 3,
+    "post_detail": 1,
+    "product_detail": 3,
+}
+_CATEGORY_CAPS = {
+    "feed": 3,
+    "reels": 1,
+    "messenger": 2,
+    "marketplace": 4,
+    "post_detail": 1,
+    # Deliberately the whole row. Everywhere else a category cap buys variety;
+    # here it would delete the feature, because on a product page relatedness
+    # *is* category similarity — six items that pass the relevance floor are
+    # six items from roughly one category by construction. Seller diversity is
+    # what this surface protects instead, and _SELLER_CAPS does that.
+    "product_detail": 6,
+}
 
 
 def policy_for(surface: str) -> SurfacePolicy:

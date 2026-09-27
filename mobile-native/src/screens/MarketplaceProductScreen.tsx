@@ -58,6 +58,8 @@ import {
 import { addToCart } from "../api/marketplaceCommerce";
 import { CommerceEngagementAction, recordCommerceEngagement } from "../api/commerceDiscovery";
 import { commerceAttributionFor } from "../commerce/attribution";
+import { MarketplaceDiscoveryShelves } from "../commerce/MarketplaceDiscoveryShelves";
+import { useProductDetailCommerce } from "../commerce/useProductDetailCommerce";
 import {
   canPurchaseMarketplaceListing as canPurchaseListing,
   isStocklessMarketplaceListing as isStockless,
@@ -123,6 +125,14 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
   const viewerUserId = Number(authState.user?.user_id || 0);
   const sellerUserId = Number(listing?.seller_user_id || 0);
   const isOwnListing = viewerUserId > 0 && sellerUserId > 0 && viewerUserId === sellerUserId;
+  // Gated on `load === "ready"` rather than on `listingId`, because the server
+  // reads this listing's own category to justify the row's heading. Asking before
+  // the product resolved would be asking about a product that may not exist.
+  const relatedCommerce = useProductDetailCommerce({
+    listingId,
+    enabled: load === "ready",
+    refreshToken: reloadNonce
+  });
   const [qty, setQty] = useState(1);
   // One action at a time, but each action reports its own progress. A shared
   // "busy" boolean made every button read "Please wait…" while a different
@@ -631,6 +641,19 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
         </View>
 
         {notice ? <Text style={styles.notice} accessibilityLiveRegion="polite">{notice}</Text> : null}
+
+        {/* Last in the scroll, below every affordance for buying *this* product.
+            A related-products rail placed above the buy button competes with the
+            conversion this screen exists for; placed here it is the way onward
+            for someone who has decided this one is not it. Renders nothing at all
+            when there is nothing to show — the hook returns an empty array and
+            the shelf answers null, so there is no empty container holding space
+            above the purchase bar. */}
+        <MarketplaceDiscoveryShelves
+          modules={relatedCommerce.modules}
+          navigation={navigation}
+          onFeedback={relatedCommerce.onFeedback}
+        />
       </ScrollView>
 
       {isOwnListing ? (

@@ -1241,6 +1241,7 @@
         "matches_your_interests": "بناءً على ما يعجبك",
         "because_you_viewed": "لأنك شاهدت عناصر مشابهة",
         "related_to_this_post": "متعلق بما تتصفحه",
+        "similar_to_this_product": "مشابه لهذا المنتج",
         "from_sellers_you_follow": "من بائعين تتابعهم",
         "trending": "رائج على PulseSoc الآن",
         "new_arrival": "أُضيف حديثًا إلى المتجر",
@@ -1282,6 +1283,8 @@
       "module": {
         "recommended_for_you": "موصى به لك",
         "because_you_viewed": "لأنك شاهدت",
+        "similar_to_this_product": "منتجات مشابهة",
+        "you_might_also_like": "قد يعجبك أيضًا",
         "trending": "الرائج",
         "new_arrivals": "وصل حديثًا",
         "from_sellers_you_follow": "من بائعين تتابعهم",
