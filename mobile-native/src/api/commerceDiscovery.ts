@@ -388,10 +388,25 @@ export type CommerceEngagementAction =
   | "checkout_started"
   | "purchase";
 
+/**
+ * Report one post-impression outcome.
+ *
+ * Neither field states an amount, and that is the point. This function used to
+ * send `value_minor` and `currency`, computed on the device as `unitMinor * qty`,
+ * and the server stored them verbatim — so the money credited to a placement was
+ * a number asserted by the party that benefits from it, in a column an analyst
+ * would eventually sum.
+ *
+ * The server now prices every event itself: a purchase from the buyer's own paid
+ * order, a cart addition or checkout entry from the listing's price. What it
+ * cannot know is how many the buyer chose, because "Buy now" bypasses the cart —
+ * so `quantity` is sent, named as the claim it is, and clamped server-side to the
+ * listing's stock. `orderRef` identifies an order; it does not value it.
+ */
 export async function recordCommerceEngagement(
   placement: PlacementIdentity,
   action: CommerceEngagementAction,
-  extra: { valueMinor?: number; currency?: string; orderRef?: string } = {}
+  extra: { orderRef?: string; quantity?: number } = {}
 ): Promise<boolean> {
   if (!placement.placementId) return false;
   try {
@@ -399,9 +414,8 @@ export async function recordCommerceEngagement(
       method: "POST",
       body: identityBody(placement, {
         action,
-        value_minor: Math.max(0, Math.round(extra.valueMinor || 0)),
-        currency: extra.currency || "",
-        order_ref: extra.orderRef || ""
+        order_ref: extra.orderRef || "",
+        quantity: Math.max(1, Math.round(extra.quantity || 1))
       })
     });
     return Boolean(result?.ok);

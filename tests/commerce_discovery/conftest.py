@@ -35,7 +35,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from services.commerce_discovery import engine, events, preferences, schema, subject
+from services.commerce_discovery import engine, events, pool, preferences, schema, subject
 
 #: Deliberately not "now". A fixed start makes a failure reproducible, and an
 #: hour that is not the hour the suite happens to run in catches code that
@@ -97,7 +97,18 @@ _MARKETPLACE_DDL = (
         buyer_user_id INTEGER,
         seller_user_id INTEGER,
         listing_id INTEGER,
+        quantity INTEGER DEFAULT 1,
+        unit_price_cents INTEGER DEFAULT 0,
+        -- The money columns are here because they are in production
+        -- (`bot.init_db`, `CREATE TABLE IF NOT EXISTS marketplace_orders`) and
+        -- because value reconciliation reads them. A fixture missing them would
+        -- send `_reconciled_value` down its exception path on every call, where
+        -- it fails soft to zero — so the tests would pass while proving that the
+        -- lookup never works.
+        amount_cents INTEGER DEFAULT 0,
+        currency TEXT DEFAULT 'USD',
         status TEXT,
+        provider_payment_id TEXT,
         paid_at TEXT,
         created_at TEXT
     )
@@ -116,6 +127,21 @@ _MARKETPLACE_DDL = (
         user_id INTEGER,
         listing_id INTEGER,
         qty INTEGER DEFAULT 1
+    )
+    """,
+    # The platform's social follow graph, shaped as `bot.init_db` creates it. It
+    # lives in this marketplace fixture because a seller is a user, so the shop's
+    # "from sellers you follow" claim is answered by the social graph and not by
+    # any commerce table. Present here so the read is *exercised* rather than
+    # failing soft to an empty set — a fail-soft path that no test ever leaves is
+    # indistinguishable from a read that does not work.
+    """
+    CREATE TABLE pulse_follows (
+        follower_user_id INTEGER,
+        followed_user_id INTEGER,
+        followed_public_player_id TEXT,
+        created_at TEXT,
+        PRIMARY KEY (follower_user_id, followed_user_id)
     )
     """,
 )
@@ -227,7 +253,14 @@ class SimulatedMarketplace:
     def category_of(self, listing_id) -> str:
         return self._categories.get(int(listing_id), "")
 
-    def history(self, listing_ids, *, impressions: int = 0, clicks: int = 0) -> None:
+    def history(
+        self,
+        listing_ids,
+        *,
+        impressions: int = 0,
+        clicks: int = 0,
+        age_days: float = 1.0,
+    ) -> None:
         """Give some listings a past, earned by *other* shoppers.
 
         Written under a different ``subject_ref`` on purpose. ``_listing_stats``
@@ -235,9 +268,16 @@ class SimulatedMarketplace:
         or trending, and therefore what makes the marketplace produce more than
         one shelf. The viewer's own exposure read filters on ``subject_ref``, so
         none of it counts as something *this* person has already been shown.
+
+        ``age_days`` is how long ago it happened, and it matters: engagement is
+        counted over a window, so history written at ``age_days=1`` is current
+        evidence and the same history at ``age_days=30`` is a listing's
+        biography. A fixture that can only write recent history cannot tell a
+        windowed read from an unwindowed one, which is how the unwindowed read
+        survived this long.
         """
         cur = self.conn.cursor()
-        stamp = subject.iso(self.clock.now - timedelta(days=1))
+        stamp = subject.iso(self.clock.now - timedelta(days=age_days))
         for listing_id in listing_ids:
             listing_id = int(listing_id)
             seller_id = 1001 + ((listing_id - 1) % 10)
@@ -331,20 +371,39 @@ class SimulatedMarketplace:
         return list(self.log[start:])
 
     # -- signals the brief asks the router to respect ------------------------
-    def purchase(self, listing_id: int) -> None:
+    def purchase(
+        self,
+        listing_id: int,
+        *,
+        amount_cents: int = 0,
+        currency: str = "USD",
+        status: str = "paid",
+        provider_payment_id: str = "",
+        buyer_user_id: int | None = None,
+    ) -> int:
+        """Place an order, and return its id — which is what an engagement event
+        cites as ``order_ref`` when it claims a sale."""
         cur = self.conn.cursor()
+        stamp = subject.iso(self.clock.now)
         cur.execute(
-            "INSERT INTO marketplace_orders (buyer_user_id, listing_id, status, paid_at, created_at) "
-            "VALUES (?,?,?,?,?)",
-            (self.viewer_id, int(listing_id), "paid", subject.iso(self.clock.now), subject.iso(self.clock.now)),
+            "INSERT INTO marketplace_orders "
+            "(buyer_user_id, listing_id, amount_cents, currency, status, "
+            " provider_payment_id, paid_at, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                int(self.viewer_id if buyer_user_id is None else buyer_user_id),
+                int(listing_id), int(amount_cents), currency, status,
+                provider_payment_id or None, stamp, stamp,
+            ),
         )
+        order_id = int(cur.lastrowid)
         self.conn.commit()
+        return order_id
 
-    def add_to_cart(self, listing_id: int) -> None:
+    def add_to_cart(self, listing_id: int, qty: int = 1) -> None:
         cur = self.conn.cursor()
         cur.execute(
-            "INSERT INTO marketplace_cart_items (user_id, listing_id, qty) VALUES (?,?,1)",
-            (self.viewer_id, int(listing_id)),
+            "INSERT INTO marketplace_cart_items (user_id, listing_id, qty) VALUES (?,?,?)",
+            (self.viewer_id, int(listing_id), int(qty)),
         )
         self.conn.commit()
 
@@ -355,6 +414,52 @@ class SimulatedMarketplace:
             (self.viewer_id, int(listing_id), subject.iso(self.clock.now)),
         )
         self.conn.commit()
+
+    def follow_seller(self, seller_user_id: int) -> None:
+        """Follow a seller socially, which is the only thing that licenses the
+        "from sellers you follow" claim."""
+        cur = self.conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO pulse_follows "
+            "(follower_user_id, followed_user_id, created_at) VALUES (?,?,?)",
+            (self.viewer_id, int(seller_user_id), subject.iso(self.clock.now)),
+        )
+        self.conn.commit()
+
+    def engage(
+        self,
+        placement: dict,
+        action: str = "click",
+        *,
+        order_ref: str = "",
+        quantity=None,
+        parse_price=parse_price,
+    ) -> dict:
+        """A positive outcome on a placement — click, product_view, purchase.
+
+        Distinct from :meth:`feedback`, which is the *negative* path ("not
+        interested", "hide seller") and rejects these verbs. Both exist because
+        the two write to different tables and mean opposite things; naming only
+        one of them ``feedback`` is what makes the confusion possible.
+
+        ``parse_price`` defaults to the fixture's parser rather than to ``None``
+        so the *priced* branch is the one tests take by default. Leaving it out
+        would have left every intent event on the no-parser short circuit, worth
+        zero for a reason that has nothing to do with what is being tested —
+        a fail-soft path no test ever leaves. Pass ``parse_price=None``
+        explicitly to exercise that branch.
+        """
+        return events.record_engagement(
+            self.conn.cursor(),
+            placement["placement_id"],
+            placement["impression_token"],
+            action,
+            conn=self.conn,
+            buyer_user_id=self.viewer_id,
+            order_ref=order_ref,
+            claimed_quantity=quantity,
+            parse_price=parse_price,
+        )
 
     def feedback(self, placement: dict, action: str) -> dict:
         return events.record_feedback(
@@ -387,6 +492,14 @@ def market(clock, monkeypatch) -> SimulatedMarketplace:
     schema.ensure_schema.reset()
     schema.ensure_schema(conn)
     conn.commit()
+
+    # Same class of hazard, one module over. `pool.catalogue_span` caches the
+    # eligible catalogue size per process for a rotation period, so without this
+    # the second test in a file inherits the first test's catalogue size and its
+    # rotation offsets are computed for a marketplace that no longer exists. It
+    # was caught by a reachability probe reporting an unchanged number after the
+    # span was wired up — the span was correct and stale.
+    pool.reset_span_cache()
 
     def stub_preferences(_cur, _user_id):
         return {"commerce": {}}, None, None

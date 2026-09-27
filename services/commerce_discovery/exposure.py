@@ -54,7 +54,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
 
-from . import config, subject
+from . import config, subject, taxonomy
 
 LOGGER = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class ExposureState:
         return int(self.seller_counts.get(_int(seller_id), 0))
 
     def category_seen(self, category: Any) -> int:
-        return int(self.category_counts.get(_text(category), 0))
+        return int(self.category_counts.get(_category(category), 0))
 
     def seconds_since_other_surface(self, listing_id: Any, surface: str) -> float:
         """Age of the most recent sighting on a surface that is **not** this one.
@@ -158,6 +158,19 @@ def _int(value: Any) -> int:
 
 def _text(value: Any) -> str:
     return str(value or "").strip().lower()
+
+
+def _category(value: Any) -> str:
+    """The bucket a category counts into, folded to canonical identity.
+
+    Lower-casing alone treats ``Jewelry & Watches > Rings`` and
+    ``jewelry watches / rings`` as two categories, so a viewer who has seen four
+    rings under two spellings reads as two sightings of each and clears a cap of
+    three. Store and lookup both route through here, so the two can only ever
+    agree — which is why ``category_seen`` folds its argument rather than trusting
+    the caller to have folded it.
+    """
+    return taxonomy.category_key(value)
 
 
 def _rows(cur) -> list[dict]:
@@ -269,7 +282,7 @@ def _fold(rows: list[dict]) -> dict:
         if not listing_id:
             continue
         seller_id = _int(row.get("seller_user_id"))
-        category = _text(row.get("category"))
+        category = _category(row.get("category"))
         surface = _text(row.get("surface"))
 
         seen_at = subject.parse_iso(row.get("event_at"))
@@ -375,7 +388,8 @@ def _load_saved(cur, user_id: Any) -> tuple[set[int], bool]:
         return set(), False
 
 
-def rotation_offset(ref: str, *, batch: Optional[int] = None) -> int:
+def rotation_offset(ref: str, *, batch: Optional[int] = None,
+                    span: Optional[int] = None) -> int:
     """Where in the candidate ordering this viewer's pool starts, right now.
 
     Two inputs: the viewer, so two people browsing at the same moment do not
@@ -383,9 +397,43 @@ def rotation_offset(ref: str, *, batch: Optional[int] = None) -> int:
     browsing at two different times does not either. Deterministic within an
     epoch, because a pool that reshuffled between the two requests of a single
     pull-to-refresh would serve the same products twice as often, not less.
+
+    ``span`` is how many rows there are to rotate over — see
+    :func:`pool.catalogue_span`. Without it the offset space is
+    ``rotation_slots`` values and nothing else, which is a *constant* and was
+    measured to be the binding limit on how much of a catalogue can ever be
+    served:
+
+        catalogue   distinct listings ever fetched   deepest reached
+             300              300 (100%)             the whole catalogue
+            2000              374 ( 18.7%)           nothing past row ~585
+
+    Sixty rotation epochs, four surfaces, impressions recorded so cooldowns
+    rotate the head as they are meant to. The shipped defaults make the offset
+    one of ``{0, 60, 120, 180}`` and allow six batches of 60 after it, so no
+    request can read past row 540 of the ordering however large the catalogue
+    is. On 2000 listings that leaves 70.8% of the shop permanently dark; at the
+    100K the brief asks about it would be 99.5%.
+
+    This function's own docstring used to claim rotation "reaches the deep end",
+    and ``config.rotation_period_seconds`` still says that without it "a listing
+    ranked 500th is never fetched at all". Both were true about row 500 and
+    false about row 600, which is the kind of claim that survives because the
+    fixtures are small enough for it to hold.
+
+    So when the span is known, the slot count becomes "enough slots to cover the
+    catalogue, one batch apart", and ``config.rotation_slots`` is a floor rather
+    than the answer. An offset that lands past the end is already safe: ``_scan``
+    wraps to zero once, which is the behaviour that lets a 40-listing shop
+    tolerate an offset of 120 today.
     """
     period = config.rotation_period_seconds()
+    batch = int(batch or config.candidate_batch_size())
     slots = config.rotation_slots()
+    if span and int(span) > 0:
+        # Ceiling division: the last partial batch still deserves a slot, or the
+        # tail of the catalogue is exactly the part that stays unreachable.
+        slots = max(slots, -(-int(span) // max(1, batch)))
     if period <= 0 or slots <= 1:
         return 0
     epoch = int(subject.now_utc().timestamp()) // period
@@ -395,4 +443,4 @@ def rotation_offset(ref: str, *, batch: Optional[int] = None) -> int:
     digest = 0
     for char in seed:
         digest = (digest * 131 + ord(char)) & 0xFFFFFFFF
-    return (digest % slots) * int(batch or config.candidate_batch_size())
+    return (digest % slots) * batch

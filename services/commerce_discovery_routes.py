@@ -452,13 +452,20 @@ def commerce_discovery_impression():
 @auth_required
 def commerce_discovery_engagement():
     def runner(cur, conn, user, payload, placement_id, token):
+        # `value_minor` and `currency` are deliberately not read from the payload.
+        # A client cannot be allowed to state what an event was worth; the recorder
+        # prices it from the buyer's paid order or from the listing itself. A body
+        # that still sends them is ignored rather than rejected — the event is real
+        # and worth keeping, and an app build already in the store must not lose
+        # its funnel events to a field it has no way to stop sending.
         result = events.record_engagement(
             cur, placement_id, token,
             str(payload.get("action") or ""),
             conn=conn,
-            value_minor=payload.get("value_minor") or 0,
-            currency=str(payload.get("currency") or ""),
+            buyer_user_id=user["user_id"],
             order_ref=str(payload.get("order_ref") or ""),
+            claimed_quantity=payload.get("quantity"),
+            parse_price=_bot().parse_price_label_to_cents,
             request_meta=_request_meta(),
         )
         return {"ok": True, "duplicate": bool(result.get("duplicate"))}

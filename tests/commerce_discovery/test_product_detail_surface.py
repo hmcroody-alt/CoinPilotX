@@ -126,12 +126,18 @@ class TestTheRowNeverContainsItsOwnProduct:
         """
         anchor = sorted(ids_of(market.serve("product_detail")))[0]
 
+        # The stub drops `excluded_ids` and forwards everything else untouched.
+        # `*args, **kwargs` rather than a fixed parameter list, because a stub
+        # that restates the signature makes every future argument to the real
+        # function a TypeError here — and `engine.serve` catches broadly, so that
+        # TypeError presents as an empty surface rather than as a failure anyone
+        # can read. It did exactly that when `product_cap` was added.
         real = pool._hard_exclusions
         monkeypatch.setattr(
             pool,
             "_hard_exclusions",
-            lambda policy, state, cooldown, excluded_ids=frozenset(): real(
-                policy, state, cooldown, frozenset()
+            lambda policy, state, cooldown, _excluded=frozenset(), *args, **kwargs: real(
+                policy, state, cooldown, frozenset(), *args, **kwargs
             ),
         )
         placements = market.serve("product_detail", exclude_listing_ids=(anchor,))

@@ -61,6 +61,7 @@ from . import (
     config,
     eligibility,
     exposure,
+    metrics,
     pool,
     preferences,
     promotion,
@@ -68,6 +69,7 @@ from . import (
     router,
     schema,
     subject,
+    taxonomy,
 )
 from .preferences import ViewerPolicy
 from .router import SurfacePolicy
@@ -172,6 +174,31 @@ def _serve(
     # what keeps the batching loop from fetching pages of products this viewer
     # has already been shown.
     state = exposure.load(cur, policy.subject_ref, user_id)
+    # The cap is handed to the observer so it can alert when an *enforced* limit
+    # did not hold. The check is nearly free and it is the only thing in
+    # production that would notice the enforcement regressing — the symptom
+    # otherwise is a feed that quietly gets more repetitive.
+    _observe_repetition(
+        state, surface=surface, subject_ref=policy.subject_ref, product_cap=branch.product_cap
+    )
+
+    # Read before the pool, not after. It used to be read after, which was fine
+    # while it only fed the ranker — but ranking can only reorder rows retrieval
+    # already returned, and retrieval mentioned the viewer exactly once, to exclude
+    # their own listings. Measured 2026-09-27: a viewer whose only twenty clicks
+    # were all on cameras, against a catalogue 10% cameras, was served 14.1%
+    # cameras. The affinity bonus was firing; it had nothing to fire on. So the
+    # profile now also chooses *which questions retrieval asks* — see
+    # `pool._sources`.
+    #
+    # The `personalized` gate is load-bearing in both places. A viewer who opted
+    # out must get the untargeted query, which means passing no interests here, not
+    # merely declining to score them afterwards.
+    profile = (
+        _interest_profile(cur, user_id, subject_ref=policy.subject_ref)
+        if policy.personalized
+        else {}
+    )
 
     built = pool.build(
         cur,
@@ -182,19 +209,38 @@ def _serve(
         surface=surface,
         product_cooldown=branch.product_cooldown_seconds,
         seller_cooldown=branch.seller_cooldown_seconds,
+        product_cap=branch.product_cap,
         target=branch.pool_target,
-        rotation_offset=exposure.rotation_offset(policy.subject_ref),
+        # The span is what lets the offset reach past row 540 of the candidate
+        # ordering. Without it the offset space is four fixed values and 70.8% of
+        # a 2000-listing catalogue can never be fetched by anybody; see
+        # `exposure.rotation_offset` for the measurement. `catalogue_span` is
+        # cached for a rotation period, so this is one COUNT per process per hour
+        # rather than one per request.
+        rotation_offset=exposure.rotation_offset(
+            policy.subject_ref, span=pool.catalogue_span(cur)
+        ),
         exclude_listing_ids=exclude_listing_ids,
+        # `topics` (saved products) is deliberately not fed to retrieval. A saved
+        # product is a strong interest signal and a weak *novelty* signal — the
+        # viewer already found it — so widening retrieval by it would spend quota
+        # fetching things they have already decided about. It still feeds the
+        # ranker, where it belongs.
+        interests=profile.get("viewed_categories", ()),
+        followed_sellers=tuple(profile.get("followed_sellers", ()) or ()),
     )
+    # Before the empty-pool return, not after: a pool that came back empty is
+    # exactly when an operator most needs to know which questions were asked.
+    metrics.observe_sources(built.sources, surface=surface)
+
     candidates = list(built.rows)
     if not candidates:
         LOGGER.debug(
-            "COMMERCE_DISCOVERY_POOL_EMPTY surface=%s scanned=%d batches=%d dropped=%s",
-            surface, built.scanned, built.batches, built.dropped,
+            "COMMERCE_DISCOVERY_POOL_EMPTY surface=%s scanned=%d batches=%d dropped=%s sources=%s",
+            surface, built.scanned, built.batches, built.dropped, built.sources,
         )
         return []
 
-    profile = _interest_profile(cur, user_id) if policy.personalized else {}
     stats = _listing_stats(cur, [row["id"] for row in candidates])
 
     # The context signal is the same computation on every surface; the *claim* it
@@ -231,6 +277,11 @@ def _serve(
             in_cart=listing_id in state.in_cart,
             saved=state.is_saved(listing_id),
             hidden_strength=policy.hidden_strength(row),
+            # Neutral on purpose, and not the whole story: diversity is a
+            # property of the candidate *and the partial response*, which does
+            # not exist yet. `_select` recomputes it per pick via
+            # `ranking.rescore_diversity`. Reading a real value here would be
+            # reading it from an empty response, which is what 1.0 means.
             diversity=1.0,
             parse_iso=subject.parse_iso,
             now=now,
@@ -252,6 +303,34 @@ def _serve(
         surface=surface, session_id=session_id, klass=klass,
         parse_price=parse_price, serialize=serialize,
     )
+
+
+# --- observability ----------------------------------------------------------
+def _observe_repetition(state, *, surface: str, subject_ref: str, product_cap: int = 0) -> None:
+    """Log how repetitive this viewer's recent window is. Never fails the request.
+
+    Placed immediately after the exposure read, and deliberately *before* the
+    pool is built, for two reasons. The state is the only input here, so nothing
+    downstream can change the answer; and putting it before the two early returns
+    below (empty pool, everything below the floor) means a surface that has gone
+    quiet is still measured. A stuck feed and an empty one look identical from the
+    outside, and the numbers are how you tell them apart — so the path that
+    returns nothing is exactly the path that must not skip the measurement.
+
+    Wrapped because this is instrumentation on a path whose job is something else.
+    :func:`serve` already catches everything, but that fail-safe turns a bug here
+    into an empty surface; catching locally turns it into a missing log line,
+    which is the correct blast radius for a metric.
+    """
+    try:
+        metrics.observe(
+            metrics.from_state(state),
+            surface=surface,
+            subject_ref=subject_ref,
+            product_cap=product_cap,
+        )
+    except Exception:
+        LOGGER.warning("COMMERCE_DISCOVERY_REPETITION_OBSERVE_FAILED surface=%s", surface, exc_info=True)
 
 
 # --- budget and session caps ------------------------------------------------
@@ -295,7 +374,7 @@ def _session_cap_reached(cur, ref: str, surface: str) -> bool:
 
 # --- candidate retrieval ----------------------------------------------------
 def _listing_stats(cur, listing_ids: Sequence[int]) -> dict[int, dict]:
-    """Impressions, clicks, orders and refunds per listing.
+    """Impressions, clicks, orders and refunds per listing — lifetime and recent.
 
     Two queries, not one join: the event tables and ``marketplace_orders`` have
     no useful join key beyond ``listing_id``, and a full outer join between two
@@ -304,29 +383,61 @@ def _listing_stats(cur, listing_ids: Sequence[int]) -> dict[int, dict]:
     A failure here returns ``{}``, which scores every listing at the neutral
     prior. That is the right degradation — ranking gets less sharp, nothing
     breaks, and no listing is unfairly penalised for a query that did not run.
+
+    Why both totals and a window
+    ----------------------------
+
+    Every count here used to be lifetime, and a lifetime count cannot express
+    the one thing a commerce ranker most needs to know: whether interest is
+    happening *now*. Worse, it cannot decay — a listing that earned ten clicks
+    last year is indistinguishable from one earning ten a day, and the "trending"
+    label it bought is permanent, because the counter only rises.
+
+    So the window is collected alongside rather than instead of. Two reasons it is
+    not a replacement. Production has very little engagement history, so a
+    window-only rate would be a rate over single digits for nearly every listing,
+    and the smoothing prior would flatten it to a constant. And the two answer
+    different questions that both matter: lifetime says whether a listing has
+    ever worked, the window says whether it is working. ``ranking`` decides which
+    to trust per signal, and says so at each site.
+
+    The recent counts are cheap. Both reads are covered by indexes that already
+    exist and already lead with the columns being filtered —
+    ``idx_cd_impr_listing`` and ``idx_cd_engage_listing (listing_id, action,
+    event_at)`` — so adding ``event_at >`` narrows a range scan rather than
+    forcing a new one.
     """
     if not listing_ids:
         return {}
     ids = [int(i) for i in listing_ids]
     marks = ",".join("?" for _ in ids)
     stats: dict[int, dict] = {i: {} for i in ids}
+    trend_start = subject.window_start_iso(config.trend_window_seconds())
 
     try:
         cur.execute(
-            "SELECT listing_id, COUNT(*) AS impressions FROM commerce_discovery_impression_events "
+            "SELECT listing_id, COUNT(*) AS impressions, "
+            "SUM(CASE WHEN event_at>? THEN 1 ELSE 0 END) AS recent_impressions "
+            "FROM commerce_discovery_impression_events "
             f"WHERE visible=1 AND listing_id IN ({marks}) GROUP BY listing_id",
-            ids,
+            [trend_start] + ids,
         )
         for row in _rows(cur):
-            stats.setdefault(int(row["listing_id"]), {})["impressions"] = int(row["impressions"] or 0)
+            entry = stats.setdefault(int(row["listing_id"]), {})
+            entry["impressions"] = int(row["impressions"] or 0)
+            entry["recent_impressions"] = int(row.get("recent_impressions") or 0)
 
         cur.execute(
-            "SELECT listing_id, COUNT(*) AS clicks FROM commerce_discovery_engagement_events "
+            "SELECT listing_id, COUNT(*) AS clicks, "
+            "SUM(CASE WHEN event_at>? THEN 1 ELSE 0 END) AS recent_clicks "
+            "FROM commerce_discovery_engagement_events "
             f"WHERE action='click' AND listing_id IN ({marks}) GROUP BY listing_id",
-            ids,
+            [trend_start] + ids,
         )
         for row in _rows(cur):
-            stats.setdefault(int(row["listing_id"]), {})["clicks"] = int(row["clicks"] or 0)
+            entry = stats.setdefault(int(row["listing_id"]), {})
+            entry["clicks"] = int(row["clicks"] or 0)
+            entry["recent_clicks"] = int(row.get("recent_clicks") or 0)
     except Exception:
         LOGGER.debug("COMMERCE_DISCOVERY_STATS_UNAVAILABLE", exc_info=True)
 
@@ -348,42 +459,102 @@ def _listing_stats(cur, listing_ids: Sequence[int]) -> dict[int, dict]:
     return stats
 
 
-def _interest_profile(cur, user_id: Any) -> dict:
-    """Durable signals about what this viewer likes.
+def _interest_profile(cur, user_id: Any, *, subject_ref: str = "") -> dict:
+    """Durable signals about what this viewer likes, each from the source it claims.
 
-    Read from surfaces the user already engaged with by choice — saved
-    products, followed sellers — rather than from anything inferred about them.
-    Every failure mode returns fewer signals, never wrong ones, and an empty
-    profile scores at the neutral prior rather than against the user.
+    Read from things the user did deliberately — saved a product, followed a
+    seller, opened a product page — rather than from anything inferred about
+    them. Every failure mode returns fewer signals, never wrong ones, and an
+    empty profile scores at the neutral prior rather than against the user.
+
+    On the three keys being three different reads
+    ---------------------------------------------
+
+    They were one read. ``marketplace_saved_products`` filled ``topics``,
+    ``viewed_categories`` *and* ``followed_sellers``, which broke two separate
+    things at once.
+
+    It made the engine lie to the user. ``ranking.choose_reason`` is scrupulous
+    about only claiming what fired, but it can only be as truthful as its inputs,
+    and it was handed saved products in a parameter named ``viewed_categories``
+    and again in one named ``followed_sellers``. So the card said "Because you
+    viewed Rings" to someone who had never opened a ring, and "From sellers you
+    follow" about a seller they had never followed. A reason code is a factual
+    claim addressed to the person best placed to notice it is false.
+
+    And it double-counted. ``predicted_interest`` takes
+    ``max(topic_score, viewed_score * 1.1)`` — a deliberate choice to let the
+    stronger purchase-intent signal dominate rather than average away. With both
+    arguments derived from one table the comparison was between a value and
+    itself, so the 1.1 made the viewed branch win unconditionally and the topic
+    branch was unreachable. Two real sources make that ``max`` mean what it says.
+
+    ``followed_sellers`` is read for the claim alone — it feeds no score term —
+    so correcting its source cannot move a ranking. ``viewed_categories`` does
+    feed a score, and now feeds it real view history.
     """
     profile: dict[str, Any] = {"topics": (), "viewed_categories": (), "followed_sellers": frozenset()}
+    viewer = int(user_id or 0)
+
+    # Saved products are an interest, not a view. This is the honest home for
+    # them: `topics` is what the viewer has told us they care about.
     try:
         cur.execute(
             "SELECT DISTINCT l.category FROM marketplace_saved_products s "
             "JOIN marketplace_listings l ON l.id=s.listing_id "
             "WHERE s.user_id=? AND NULLIF(TRIM(COALESCE(l.category,'')),'') IS NOT NULL "
             "LIMIT 20",
-            (int(user_id or 0),),
+            (viewer,),
         )
-        profile["viewed_categories"] = tuple(
+        profile["topics"] = tuple(
             str(row.get("category") or "") for row in _rows(cur) if row.get("category")
         )
     except Exception:
         LOGGER.debug("COMMERCE_DISCOVERY_SAVED_PRODUCTS_UNAVAILABLE", exc_info=True)
 
+    # Actual views, from the engagement log. Keyed by `subject_ref` because that
+    # is what the discovery tables hold — reaching for `user_id` here would mean
+    # joining the pseudonymous event store back onto the account it exists to
+    # keep separate from.
+    #
+    # `click` counts as a view: on every surface the card leads to the product
+    # page, so a click is a viewer opening the product. `product_view` is the
+    # explicit event, which the client does not emit on every path. Taking both
+    # is the difference between a signal that works and one that is technically
+    # purer and almost always empty.
+    if subject_ref:
+        try:
+            cur.execute(
+                "SELECT DISTINCT l.category FROM commerce_discovery_engagement_events e "
+                "JOIN marketplace_listings l ON l.id=e.listing_id "
+                "WHERE e.subject_ref=? AND e.action IN ('click','product_view') "
+                "AND e.event_at>? "
+                "AND NULLIF(TRIM(COALESCE(l.category,'')),'') IS NOT NULL "
+                "LIMIT 20",
+                (subject_ref, subject.window_start_iso(config.exposure_lookback_seconds())),
+            )
+            profile["viewed_categories"] = tuple(
+                str(row.get("category") or "") for row in _rows(cur) if row.get("category")
+            )
+        except Exception:
+            LOGGER.debug("COMMERCE_DISCOVERY_VIEW_HISTORY_UNAVAILABLE", exc_info=True)
+
+    # Real follows. `pulse_follows` is the platform's own follow graph, so a
+    # seller a viewer follows socially is a seller the shop may name.
     try:
         cur.execute(
-            "SELECT DISTINCT l.seller_user_id FROM marketplace_saved_products s "
-            "JOIN marketplace_listings l ON l.id=s.listing_id WHERE s.user_id=? LIMIT 50",
-            (int(user_id or 0),),
+            "SELECT DISTINCT followed_user_id FROM pulse_follows "
+            "WHERE follower_user_id=? AND followed_user_id IS NOT NULL LIMIT 200",
+            (viewer,),
         )
         profile["followed_sellers"] = frozenset(
-            int(row["seller_user_id"]) for row in _rows(cur) if row.get("seller_user_id")
+            int(row["followed_user_id"]) for row in _rows(cur) if row.get("followed_user_id")
         )
     except Exception:
-        LOGGER.debug("COMMERCE_DISCOVERY_FOLLOWED_SELLERS_UNAVAILABLE", exc_info=True)
+        # Fewer claims, never wrong ones: without this read no card says "from
+        # sellers you follow", which is the correct answer when we cannot tell.
+        LOGGER.debug("COMMERCE_DISCOVERY_FOLLOWS_UNAVAILABLE", exc_info=True)
 
-    profile["topics"] = profile["viewed_categories"]
     return profile
 
 
@@ -405,6 +576,40 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
     below the floor. Exploration means "surface something unproven", never
     "surface something bad": a listing that failed the relevance floor is not
     a discovery opportunity, it is a wrong answer.
+
+    The floor is tested against the *pre-diversity* score and the ordering
+    against the post-diversity one, and that split is the design rather than an
+    accident of sequencing. The floor asks "is this a good answer for this
+    person" — a relevance question, about the listing and the viewer. Diversity
+    asks "does this belong in *this* response alongside what is already in it" —
+    an exposure question, about composition. Letting a diversity penalty push a
+    candidate below the relevance floor would let the second question veto on the
+    first one's authority, and would mean the same listing was "irrelevant" or
+    not depending on what happened to be picked before it.
+
+    Why it is written this way now
+    ------------------------------
+
+    The previous implementation scored every candidate with ``diversity=1.0``,
+    walked the statically-sorted list, and then — after the response was already
+    decided — looped over the picks writing a computed ``diversity_bonus`` into
+    each verdict's ``signals``. Three things followed, and all three were live:
+
+    * ``score`` and ``contributions`` had already been computed from the constant
+      in ``ranking.score_listing``, so the term contributed nothing to any
+      ordering. Its weight of 0.07 was a constant added to every candidate.
+    * The loop's comment said "then reorder". It did not reorder.
+    * ``explain()`` reads ``contributions``, so the persisted
+      ``score_breakdown_json`` disagreed with itself: ``signals`` recorded a term
+      that had fired and ``contributions`` recorded one that had not.
+
+    On the production catalogue this was the only diversity control capable of
+    acting at all, because the cap arithmetic had quietly gone inert on both main
+    surfaces: Feed's budget of 2 sits at its per-seller cap of 2 and below its
+    per-category cap of 3, so neither could ever be reached, and Marketplace's
+    per-category cap of 4 was counted on full leaf paths whose largest bucket held
+    3. See ``router._SEGMENT_CAPS`` for the coarse cap that closes that half, and
+    ``taxonomy`` for why leaf paths alone cannot see it.
     """
     qualifying = [pair for pair in scored if pair[1]["score"] >= floor]
     if not qualifying:
@@ -424,30 +629,90 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
         branch,
         budget=budget,
         seller_ids=[row.get("seller_user_id") for row, _ in scored],
-        categories=[row.get("category") for row, _ in scored],
+        # Folded keys, so a catalogue spelling one category two ways is not
+        # counted as two kinds of diversity and used to relax the cap that its
+        # duplicates would then fill.
+        categories=[taxonomy.category_key(row.get("category")) for row, _ in scored],
+        segments=[taxonomy.segment_root(row.get("category")) for row, _ in scored],
     )
 
     chosen: list[tuple[dict, dict]] = []
+    #: The diversity keys of each placement already taken, in pick order. This is
+    #: the "partial response" that `ranking.diversity_factor` measures against.
+    taken: list[dict] = []
     seller_counts: dict[int, int] = {}
     category_counts: dict[str, int] = {}
+    segment_counts: dict[str, int] = {}
+    weights = config.weights()
 
-    def admissible(row: dict) -> bool:
+    def keys_for(row: dict) -> dict:
+        return {
+            "seller_id": int(row.get("seller_user_id") or 0),
+            "category_key": taxonomy.category_key(row.get("category")),
+            "segment_root": taxonomy.segment_root(row.get("category")),
+        }
+
+    def admissible(keys: dict) -> bool:
         return router.admissible(
             branch,
-            seller_id=int(row.get("seller_user_id") or 0),
-            category=str(row.get("category") or "").strip().lower(),
+            seller_id=keys["seller_id"],
+            category=keys["category_key"],
             seller_counts=seller_counts,
             category_counts=category_counts,
+            segment=keys["segment_root"],
+            segment_counts=segment_counts,
         )
 
-    def take(pair: tuple[dict, dict]) -> None:
-        row, _ = pair
-        seller = int(row.get("seller_user_id") or 0)
-        category = str(row.get("category") or "").strip().lower()
-        seller_counts[seller] = seller_counts.get(seller, 0) + 1
-        if category:
-            category_counts[category] = category_counts.get(category, 0) + 1
-        chosen.append(pair)
+    def diversity_of(keys: dict) -> float:
+        return ranking.diversity_factor(
+            seller_id=keys["seller_id"],
+            category_key=keys["category_key"],
+            segment_root=keys["segment_root"],
+            chosen=taken,
+        )
+
+    def take(pair: tuple[dict, dict], keys: dict, verdict: dict) -> None:
+        """Commit one placement, with the verdict that justified choosing it.
+
+        ``verdict`` is the diversity-adjusted one rather than ``pair[1]``, so the
+        breakdown persisted against the placement is the arithmetic that actually
+        selected it — including the case where this candidate won *because* the
+        higher-scoring one ahead of it repeated something already taken.
+        """
+        seller_counts[keys["seller_id"]] = seller_counts.get(keys["seller_id"], 0) + 1
+        if keys["category_key"]:
+            category_counts[keys["category_key"]] = category_counts.get(keys["category_key"], 0) + 1
+        if keys["segment_root"]:
+            segment_counts[keys["segment_root"]] = segment_counts.get(keys["segment_root"], 0) + 1
+        taken.append(keys)
+        chosen.append((pair[0], verdict))
+
+    def best_remaining(pool: list) -> Optional[tuple]:
+        """The admissible candidate with the highest diversity-adjusted score.
+
+        Re-measured against ``taken`` on every pass, which is what makes the
+        diversity term an input to selection rather than an annotation on it.
+        Cost is ``budget × len(pool)`` rescores — at most a few hundred
+        multiply-adds over a dict, against a request that has already run several
+        SQL queries.
+
+        ``pool`` is sorted by base score descending and the comparison is strict
+        ``>``, so a tie on the adjusted score resolves to the better base score
+        and the outcome is deterministic. Two candidates identical on both are
+        ordered by the pool's own order, which ``pool.sort`` has already made
+        stable.
+        """
+        best: Optional[tuple] = None
+        best_score = float("-inf")
+        for pair in pool:
+            keys = keys_for(pair[0])
+            if not admissible(keys):
+                continue
+            adjusted = ranking.rescore_diversity(pair[1], diversity_of(keys), weights=weights)
+            if adjusted["score"] > best_score:
+                best = (pair, keys, adjusted)
+                best_score = adjusted["score"]
+        return best
 
     # Reserve at most one slot for exploration, and only when the budget can
     # actually spare it — a single-slot surface (Reels) gives its one slot to
@@ -455,44 +720,41 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
     # the feature.
     explore_slots = 1 if (budget >= 2 and config.exploration_rate() > 0) else 0
 
-    for pair in qualifying:
-        if len(chosen) >= budget - explore_slots:
+    remaining = list(qualifying)
+    while len(chosen) < budget - explore_slots:
+        pick = best_remaining(remaining)
+        if pick is None:
             break
-        if admissible(pair[0]):
-            take(pair)
+        pair, keys, verdict = pick
+        take(pair, keys, verdict)
+        remaining.remove(pair)
 
     if explore_slots and len(chosen) < budget:
-        picked_ids = {int(row.get("id") or 0) for row, _ in chosen}
         explorable = [
-            pair for pair in qualifying
-            if int(pair[0].get("id") or 0) not in picked_ids
-            and pair[1]["signals"].get("exploration_bonus", 0.0) >= 0.7
-            and admissible(pair[0])
+            pair for pair in remaining
+            if pair[1]["signals"].get("exploration_bonus", 0.0) >= 0.7
+            and admissible(keys_for(pair[0]))
         ]
         if explorable:
-            take(max(explorable, key=lambda pair: pair[1]["signals"]["exploration_bonus"]))
+            # Chosen on exploration bonus alone, deliberately: the point of the
+            # slot is to surface something unproven, and picking the *most*
+            # unproven admissible candidate is the whole of that. Its verdict is
+            # still rescored, so the breakdown records what the response cost in
+            # diversity to spend a slot this way.
+            pair = max(explorable, key=lambda pair: pair[1]["signals"]["exploration_bonus"])
+            keys = keys_for(pair[0])
+            take(pair, keys, ranking.rescore_diversity(pair[1], diversity_of(keys), weights=weights))
+            remaining.remove(pair)
         else:
             # No unproven listing qualified: spend the slot on the next best
             # ordinary candidate rather than returning a shorter list.
-            for pair in qualifying:
-                if len(chosen) >= budget:
+            while len(chosen) < budget:
+                pick = best_remaining(remaining)
+                if pick is None:
                     break
-                if int(pair[0].get("id") or 0) in picked_ids:
-                    continue
-                if admissible(pair[0]):
-                    take(pair)
-
-    # Re-apply the diversity term now that the response is known, then reorder.
-    # This is the only point at which "too similar to its neighbour" is a fact
-    # that exists at all.
-    for index, (row, verdict) in enumerate(chosen):
-        penalty = 0.0
-        for other, _ in chosen[:index]:
-            if str(other.get("category") or "") == str(row.get("category") or ""):
-                penalty += 0.3
-            if int(other.get("seller_user_id") or 0) == int(row.get("seller_user_id") or 0):
-                penalty += 0.4
-        verdict["signals"]["diversity_bonus"] = max(0.0, 1.0 - penalty)
+                pair, keys, verdict = pick
+                take(pair, keys, verdict)
+                remaining.remove(pair)
 
     return chosen[:budget]
 

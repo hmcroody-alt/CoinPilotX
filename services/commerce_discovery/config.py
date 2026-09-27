@@ -492,6 +492,114 @@ def exploration_rate() -> float:
     return _env_float("COMMERCE_DISCOVERY_EXPLORATION_RATE", 0.15, minimum=0.0, maximum=0.5)
 
 
+# --- trend velocity ---------------------------------------------------------
+# "Trending" was a lifetime click count: ten clicks ever, and the listing was
+# labelled trending permanently, because a lifetime counter only goes up. That
+# makes the set of trending products monotonically growing and the claim
+# unfalsifiable — the one property a user-facing explanation must not have. These
+# bound it to a window, which is what turns a total into a rate.
+def trend_window_seconds() -> int:
+    """How recent an engagement has to be to count toward trending.
+
+    Two days. Long enough that a product with steady interest stays in and a
+    single lucky hour does not put one in; short enough that "trending" means
+    something a user could verify by looking. Shorter would make the label
+    flicker between requests on this catalogue's traffic, which reads as a bug
+    even when the arithmetic is right.
+    """
+    return _env_int("COMMERCE_DISCOVERY_TREND_WINDOW", 172800, minimum=3600)
+
+
+def trend_min_clicks() -> int:
+    """Clicks inside the window before a listing may be called trending.
+
+    Lower than the lifetime threshold it replaces (ten) because the window makes
+    it much harder to reach: five clicks in two days on a marketplace with this
+    catalogue's traffic is a real signal, where ten clicks ever is a listing that
+    has simply existed for a while.
+    """
+    return _env_int("COMMERCE_DISCOVERY_TREND_MIN_CLICKS", 5, minimum=1)
+
+
+def conversion_window_min_impressions() -> int:
+    """Windowed impressions needed before recent data overrides lifetime data.
+
+    Conversion probability has the same recency problem as trending, but it
+    cannot simply be switched to the window: production has almost no engagement
+    history, so a windowed rate would be a rate over two impressions for nearly
+    every listing, and the smoothing prior would swamp it into a constant. So the
+    window is used only once it carries enough volume to mean anything, and the
+    lifetime figure is the fallback rather than the answer. As traffic arrives
+    more listings cross this line and the signal gets sharper on its own.
+    """
+    return _env_int("COMMERCE_DISCOVERY_CONVERSION_MIN_WINDOW", 30, minimum=1)
+
+
+# --- repetition alerting ----------------------------------------------------
+# `metrics` can compute how repetitive a viewer's recent window was. Until these
+# knobs existed nothing called it, so the answer was never computed in
+# production: every anti-repetition control in the package was verified by tests
+# and unobserved in the thing it was built for. These turn the measurement into
+# a log line on a path that actually runs.
+def repetition_alerts_enabled() -> bool:
+    """Whether the serve path emits its repetition observation at all.
+
+    On by default, and cheap by construction — the observation is arithmetic over
+    an exposure state the request has already loaded and paid for, with no extra
+    query. The switch exists for the case where a surface is so hot that one
+    extra log line per request is itself the cost, not because the measurement is
+    expensive.
+    """
+    return _flag("COMMERCE_DISCOVERY_REPETITION_ALERTS", True)
+
+
+def repetition_min_sample() -> int:
+    """Impressions below which the *rate* alerts are not evaluated.
+
+    A viewer with three impressions in their window has a category
+    concentration of 1.0 if two of them share a category, and that is not a
+    finding — it is a sample of three. Alerting on it would bury the real signal
+    under every new user on the platform. The absolute invariants (a product
+    following itself) are deliberately exempt from this gate: they are wrong at
+    any sample size.
+    """
+    return _env_int("COMMERCE_DISCOVERY_REPETITION_MIN_SAMPLE", 12, minimum=1)
+
+
+def repetition_max_concentration() -> float:
+    """Share of a viewer's window one seller, category or aisle may hold.
+
+    There is no correct value, which is why this is a knob and not a constant.
+    A user who shops for one thing *should* see that category concentrated, so
+    the threshold is set where concentration stops being intent and starts being
+    the pipeline failing to find anything else: three impressions in four.
+    """
+    return _env_float("COMMERCE_DISCOVERY_REPETITION_MAX_CONCENTRATION", 0.75)
+
+
+def repetition_max_repeat_rate() -> float:
+    """Share of a viewer's window that may be re-sightings of a known product.
+
+    Distinct from concentration, and the distinction matters for diagnosis: a
+    high concentration with a low repeat rate is a catalogue that is thin in one
+    aisle, which is a merchandising problem. A high repeat rate is the engine
+    re-serving what it already served, which is this package's own bug.
+    """
+    return _env_float("COMMERCE_DISCOVERY_REPETITION_MAX_REPEAT_RATE", 0.60)
+
+
+def repetition_max_cross_surface_rate() -> float:
+    """Share of a viewer's window that may be the same product on two surfaces.
+
+    Held tighter than the others because the cross-surface cooldown is the
+    largest negative weight in the model apart from owning and hiding: feed then
+    reels then messenger, same shoes, inside a minute is the failure the brief
+    names first, and a rate much above noise means the cooldown is not reaching
+    the output.
+    """
+    return _env_float("COMMERCE_DISCOVERY_REPETITION_MAX_CROSS_SURFACE", 0.25)
+
+
 # --- ranking weights --------------------------------------------------------
 #: The scoring model, as a vector. Positive terms earn a slot, negative terms
 #: spend one. Magnitudes are intentionally blunt for v1 — a hand-tuned model

@@ -226,6 +226,165 @@ def record_impression(
     )
 
 
+#: Verbs that carry an intent value rather than a settled one. A cart addition
+#: and a checkout entry are both worth the line total of the thing being bought,
+#: and neither is revenue — nothing has been paid. They are kept because the
+#: funnel is the point: knowing that £400 of intent entered checkout and £40 came
+#: out is a different and more useful fact than two counts.
+_INTENT_VERBS = ("add_to_cart", "checkout_started")
+
+#: Ceiling on a claimed quantity, applied when the listing declares no stock of
+#: its own. Not a business rule — a bound, so that one malformed or hostile
+#: request cannot contribute a number large enough to dominate an aggregate.
+_MAX_CLAIMED_QUANTITY = 99
+
+
+def _settled_value(cur, *, order_ref: str, listing_id: int, buyer_user_id: Any) -> tuple[int, str]:
+    """What a purchase was actually worth, read from the order that proves it.
+
+    The lookup is scoped by buyer *and* listing, which is what makes a guessed or
+    borrowed ``order_ref`` worthless: it can only ever resolve to an order this
+    viewer really placed for the product this placement really showed. Unpaid
+    orders are not revenue, so the status filter is part of the check rather than
+    a refinement of it.
+
+    Returns ``(0, "")`` for anything it cannot substantiate — including a database
+    failure, because a read that did not run must not be reported as a sale that
+    was worth nothing. The two failures log under different codes for exactly that
+    reason.
+    """
+    try:
+        cur.execute(
+            "SELECT amount_cents, currency FROM marketplace_orders "
+            "WHERE buyer_user_id=? AND listing_id=? "
+            "AND (CAST(id AS TEXT)=? OR provider_payment_id=?) "
+            "AND LOWER(COALESCE(status,'')) IN ('paid','fulfilled','completed') "
+            "LIMIT 1",
+            (int(buyer_user_id), int(listing_id), str(order_ref), str(order_ref)),
+        )
+        row = _one(cur)
+    except Exception:
+        LOGGER.warning("COMMERCE_DISCOVERY_VALUE_LOOKUP_FAILED listing=%s", listing_id, exc_info=True)
+        return 0, ""
+    if not row:
+        # Logged rather than raised: the purchase happened and the event is worth
+        # keeping. What is not worth keeping is an unverifiable amount attached to
+        # it, and a silent zero would be indistinguishable from a free product.
+        LOGGER.warning(
+            "COMMERCE_DISCOVERY_VALUE_UNRECONCILED listing=%s order_ref=%s",
+            listing_id, str(order_ref)[:24],
+        )
+        return 0, ""
+    return max(0, int(row.get("amount_cents") or 0)), str(row.get("currency") or "").upper()[:8]
+
+
+def _intent_value(cur, *, listing_id: int, buyer_user_id: Any, claimed_quantity: Any, parse_price) -> tuple[int, str]:
+    """The line total a cart addition or checkout entry represents.
+
+    Price is a fact; quantity is a claim. That distinction is the whole design
+    here, and it is forced by the product: "Buy now" deliberately bypasses the
+    cart — see ``MarketplaceProductScreen.handleBuyNow`` — so at the moment
+    ``checkout_started`` fires there is no server-side row stating how many the
+    buyer chose. A fully derived value is therefore not available for that verb,
+    and pretending otherwise would mean either dropping the funnel signal or
+    quietly trusting a total again.
+
+    So the unit price comes from the listing, through the same parser the
+    eligibility gate uses, and the quantity is the *server's* cart row when one
+    exists — ``add_to_cart`` is emitted after the cart write completes, so it
+    usually does — and otherwise the caller's claim clamped to what the listing
+    can actually sell. The worst a hostile client can now do is overstate how many
+    of a real product it intended to buy, bounded by that product's own stock.
+    """
+    if not parse_price:
+        # Without the parser there is no authoritative price, and a value derived
+        # from no price is a made-up number. Silence beats invention.
+        return 0, ""
+    try:
+        cur.execute(
+            "SELECT price_label, currency, quantity FROM marketplace_listings WHERE id=? LIMIT 1",
+            (int(listing_id),),
+        )
+        listing = _one(cur)
+    except Exception:
+        LOGGER.warning("COMMERCE_DISCOVERY_VALUE_LOOKUP_FAILED listing=%s", listing_id, exc_info=True)
+        return 0, ""
+    if not listing:
+        return 0, ""
+
+    from . import eligibility
+
+    priced = eligibility.resolvable_price(listing, parse_price)
+    if priced is None:
+        # "Request access" and friends. An unpriced listing has no line total, and
+        # the eligibility gate already refuses to place it.
+        return 0, ""
+    unit_minor, currency = priced
+
+    stock = int(listing.get("quantity") or 0)
+    ceiling = stock if stock > 0 else _MAX_CLAIMED_QUANTITY
+    quantity = 0
+    if buyer_user_id:
+        try:
+            cur.execute(
+                "SELECT qty FROM marketplace_cart_items WHERE user_id=? AND listing_id=? LIMIT 1",
+                (int(buyer_user_id), int(listing_id)),
+            )
+            cart = _one(cur)
+            quantity = int(cart.get("qty") or 0) if cart else 0
+        except Exception:
+            LOGGER.debug("COMMERCE_DISCOVERY_CART_QTY_UNAVAILABLE listing=%s", listing_id, exc_info=True)
+    if quantity <= 0:
+        try:
+            quantity = int(claimed_quantity or 1)
+        except (TypeError, ValueError):
+            quantity = 1
+    quantity = max(1, min(quantity, ceiling))
+    return unit_minor * quantity, (currency or "").upper()[:8]
+
+
+def _reconciled_value(
+    cur,
+    *,
+    verb: str,
+    order_ref: str,
+    listing_id: int,
+    buyer_user_id: Any,
+    claimed_quantity: Any = None,
+    parse_price=None,
+) -> tuple[int, str]:
+    """The money this event is worth, derived rather than accepted.
+
+    ``value_minor`` used to be whatever number the request body contained, and it
+    was reaching production: ``MarketplaceProductScreen`` sends ``unitMinor * qty``
+    on every cart addition and checkout entry, both computed on the device. The
+    column is named after money, typed like money, and sits in a table an analyst
+    will eventually sum — so the amount credited to a placement was an assertion
+    by the party that benefits from it, and nothing in the schema or the signature
+    said so.
+
+    Three cases, in descending order of how much can be proven:
+
+    * ``purchase`` — settled money, read from the buyer's own paid order.
+    * ``add_to_cart`` / ``checkout_started`` — intent, priced from the listing.
+    * everything else — nothing. A click is not worth its product's price, and
+      storing the number anyway is how a view would later be summed as a sale.
+    """
+    if verb == "purchase":
+        if not order_ref or not buyer_user_id:
+            return 0, ""
+        return _settled_value(cur, order_ref=order_ref, listing_id=listing_id, buyer_user_id=buyer_user_id)
+    if verb in _INTENT_VERBS:
+        return _intent_value(
+            cur,
+            listing_id=listing_id,
+            buyer_user_id=buyer_user_id,
+            claimed_quantity=claimed_quantity,
+            parse_price=parse_price,
+        )
+    return 0, ""
+
+
 def record_engagement(
     cur,
     placement_id: Any,
@@ -233,9 +392,10 @@ def record_engagement(
     action: str,
     *,
     conn,
-    value_minor: int = 0,
-    currency: str = "",
+    buyer_user_id: Any = None,
     order_ref: str = "",
+    claimed_quantity: Any = None,
+    parse_price=None,
     request_meta: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Record one post-impression outcome.
@@ -246,6 +406,17 @@ def record_engagement(
     deep link is a real sequence — and refusing the click would lose the more
     valuable of the two events to protect an integrity property that nobody is
     being billed against.
+
+    There is deliberately no ``value_minor`` or ``currency`` parameter. Both are
+    derived — see :func:`_reconciled_value` — because a caller that *can* state a
+    revenue figure is a caller whose figure someone will one day trust.
+    ``claimed_quantity`` is named for what it is: the one remaining client input,
+    used only to multiply a server-owned unit price and clamped to the listing's
+    own stock.
+
+    ``buyer_user_id`` is used for those lookups and is never stored. This table is
+    keyed by ``subject_ref`` on purpose, and the account identity is here to
+    authorise a read, not to be recorded alongside the behaviour.
     """
     schema.ensure_schema(conn)
     verb = str(action or "").strip().lower()
@@ -268,6 +439,15 @@ def record_engagement(
         (pid,),
     )
     impression_event_id = _one(cur).get("event_id")
+    value_minor, currency = _reconciled_value(
+        cur,
+        verb=verb,
+        order_ref=order_ref,
+        listing_id=int(row["listing_id"]),
+        buyer_user_id=buyer_user_id,
+        claimed_quantity=claimed_quantity,
+        parse_price=parse_price,
+    )
 
     now = subject.now_iso()
     return _insert_idempotent(
@@ -283,8 +463,8 @@ def record_engagement(
             subject.new_id("cd_eng"), pid, impression_event_id, row["subject_ref"],
             row["surface"], int(row["listing_id"]), int(row.get("seller_user_id") or 0),
             row["promotion_class"], row.get("reason_code") or "", row["ranking_version"],
-            row.get("session_id") or "", verb, max(0, int(value_minor or 0)),
-            (currency or "").upper()[:8] or None, (order_ref or "")[:120] or None,
+            row.get("session_id") or "", verb, value_minor,
+            currency or None, (order_ref or "")[:120] or None,
             _meta(request_meta), now, dedup_key, now,
         ],
         dedup_key,

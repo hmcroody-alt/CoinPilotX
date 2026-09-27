@@ -309,22 +309,41 @@ describe("writes speak the server's field names", () => {
     expect(sentBody()).toMatchObject({ view_duration_ms: 0 });
   });
 
-  it("sends an engagement with its action and its optional value", async () => {
+  it("sends an engagement with its action and the order it refers to", async () => {
     api.mockResolvedValue({ ok: true } as never);
-    await recordCommerceEngagement(identity, "purchase", {
-      valueMinor: 4999,
-      currency: "USD",
-      orderRef: "ord_9"
-    });
+    await recordCommerceEngagement(identity, "purchase", { orderRef: "ord_9" });
     expect(api.mock.calls[0][0]).toBe("/api/pulse/commerce/discovery/events/engagement");
+    // `toEqual`, not `toMatchObject`: the point of this assertion is the *absence*
+    // of `value_minor` and `currency`. What a sale was worth is read from the
+    // buyer's own order row on the server, so a client that can state an amount is
+    // a client that can inflate the revenue credited to a placement — and the only
+    // way to keep that true is to assert the whole body.
+    //
+    // `quantity` is here and price is not, and that asymmetry is the design: the
+    // server owns the price (it has the listing row) but for Buy Now it has no
+    // cart row to read a quantity from, so the count is a claim it clamps to the
+    // listing's own stock rather than a number it can derive.
     expect(sentBody()).toEqual({
       placement_id: "pl_1",
       impression_token: "tok_1",
       action: "purchase",
-      value_minor: 4999,
-      currency: "USD",
-      order_ref: "ord_9"
+      order_ref: "ord_9",
+      quantity: 1
     });
+  });
+
+  it.each([
+    ["a fractional count", 2.4, 2],
+    ["a negative count", -3, 1],
+    ["zero", 0, 1],
+    ["an omitted count", undefined, 1]
+  ])("normalises %s before sending it", async (_label, quantity, expected) => {
+    api.mockResolvedValue({ ok: true } as never);
+    await recordCommerceEngagement(identity, "add_to_cart", { quantity });
+    // The server clamps this again — it has to, since the clamp is the security
+    // boundary and this side of it is not trusted. Normalising here too keeps a
+    // stepper glitch from being logged as a rejected event on the server.
+    expect(sentBody()).toMatchObject({ quantity: expected });
   });
 
   it("sends the feedback verb the user chose", async () => {
