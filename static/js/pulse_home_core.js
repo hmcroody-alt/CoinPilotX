@@ -1073,7 +1073,10 @@
       button.setAttribute("role", "menuitemradio");
       button.setAttribute("aria-label", `${label} reaction`);
       button.setAttribute("aria-checked", post.viewer_reaction === reaction ? "true" : "false");
-      button.append(element("span", "", emoji), element("small", "", label));
+      // A closed tray must not be eleven tab stops per post. The Like button
+      // owns the only stop; arrow keys move focus once the tray is open.
+      button.tabIndex = -1;
+      button.append(element("span", "pulse-feed-reaction-choice-emoji", emoji), element("small", "pulse-feed-reaction-choice-label", label));
       palette.appendChild(button);
     });
     card.appendChild(palette);
@@ -1498,6 +1501,10 @@
     like.dataset.postLikeReaction = activeReaction || "like";
     like.dataset.longPressReactions = post.id;
     like.setAttribute("aria-haspopup", "menu");
+    // aria-haspopup promises a menu, so the state of that menu has to be
+    // reported too -- otherwise a screen reader announces a popup that it can
+    // never tell the user is open.
+    like.setAttribute("aria-expanded", "false");
     like.setAttribute("aria-pressed", post.viewer_reaction ? "true" : "false");
     if (post.viewer_reaction) like.classList.add("active");
     const save = feedActionChip("🔖", "Save", { savePost: post.id, action: "save" }, "");
@@ -1771,19 +1778,109 @@
       const open = exceptPostId && palette.dataset.feedReactionPicker === String(exceptPostId);
       palette.classList.toggle("open", !!open);
       palette.setAttribute("aria-hidden", open ? "false" : "true");
+      // Only a tray the user can see may hold focus stops.
+      palette.querySelectorAll("[data-feed-reaction-choice]").forEach(choice => {
+        choice.tabIndex = open ? 0 : -1;
+      });
+      const anchor = document.querySelector(`[data-post-like="${CSS.escape(String(palette.dataset.feedReactionPicker || ""))}"]`);
+      anchor?.setAttribute("aria-expanded", open ? "true" : "false");
     });
   }
 
   function openFeedReactionPicker(postId, anchor) {
     if (!postId) return false;
-    closeFeedReactionPickers(postId);
     const palette = document.querySelector(`[data-feed-reaction-picker="${CSS.escape(String(postId))}"]`);
-    const card = anchor?.closest?.("[data-post-id]");
-    if (!palette || !card) return false;
-    card.classList.add("is-choosing-reaction");
-    window.setTimeout(() => card.classList.remove("is-choosing-reaction"), 1600);
+    if (!palette) return false;
+    closeFeedReactionPickers(postId);
+    // The card was previously required via `anchor.closest("[data-post-id]")`,
+    // so an open triggered by hovering the tray itself -- or by a keyboard with
+    // no anchor -- returned false and the tray stayed shut. The card is only
+    // wanted for the choosing highlight, so it is now optional.
+    const card = anchor?.closest?.("[data-post-id]") || palette.closest("[data-post-id]");
+    if (card) {
+      card.classList.add("is-choosing-reaction");
+      window.clearTimeout(Number(card.dataset.choosingTimer || 0));
+      card.dataset.choosingTimer = String(window.setTimeout(() => card.classList.remove("is-choosing-reaction"), 1600));
+    }
     return true;
   }
+
+  // Hover is the desktop equivalent of the app's long press, but it must never
+  // be the only way in: the same tray opens from the keyboard below, and the
+  // 420ms press still serves touch. A short intent delay keeps the tray from
+  // flashing open while the pointer crosses the action bar on its way
+  // somewhere else, and a longer close delay leaves time to travel from the
+  // Like button up to the tray without it shutting in the gap.
+  const REACTION_HOVER_IN = 170;
+  const REACTION_HOVER_OUT = 280;
+  const REACTION_TRAY_TARGETS = "[data-post-like],[data-feed-reaction-picker]";
+  let reactionHoverTimer = 0;
+  let reactionCloseTimer = 0;
+
+  function isMouseLike(event) {
+    // A missing pointerType means a synthetic event; treat it as a mouse so
+    // tests and assistive tooling get the hover path rather than silence.
+    return !event.pointerType || event.pointerType === "mouse";
+  }
+
+  document.addEventListener("pointerover", event => {
+    if (!isMouseLike(event)) return;
+    const target = event.target.closest?.(REACTION_TRAY_TARGETS);
+    if (!target) return;
+    window.clearTimeout(reactionCloseTimer);
+    // Already inside the open tray: keep it, do not re-open it.
+    if (target.matches("[data-feed-reaction-picker]")) return;
+    const postId = target.dataset.postLike;
+    window.clearTimeout(reactionHoverTimer);
+    reactionHoverTimer = window.setTimeout(() => openFeedReactionPicker(postId, target), REACTION_HOVER_IN);
+  });
+
+  document.addEventListener("pointerout", event => {
+    if (!isMouseLike(event)) return;
+    if (!event.target.closest?.(REACTION_TRAY_TARGETS)) return;
+    // Moving between the Like button and its tray is not leaving.
+    if (event.relatedTarget?.closest?.(REACTION_TRAY_TARGETS)) return;
+    window.clearTimeout(reactionHoverTimer);
+    window.clearTimeout(reactionCloseTimer);
+    reactionCloseTimer = window.setTimeout(() => closeFeedReactionPickers(), REACTION_HOVER_OUT);
+  });
+
+  // The keyboard path. `aria-haspopup="menu"` on the Like button promises the
+  // standard menu-button interaction, so that is what this implements: Down or
+  // Up opens the tray and lands on the first choice, arrows walk it, Escape
+  // closes and hands focus back. Plain focus deliberately does NOT open the
+  // tray -- tabbing through a feed would otherwise pop one open per post.
+  document.addEventListener("keydown", event => {
+    const palette = event.target.closest?.("[data-feed-reaction-picker]");
+    const like = palette ? null : event.target.closest?.("[data-post-like]");
+    if (like) {
+      if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      if (!openFeedReactionPicker(like.dataset.postLike, like)) return;
+      const first = document.querySelector(`[data-feed-reaction-picker="${CSS.escape(String(like.dataset.postLike))}"] [data-feed-reaction-choice]`);
+      first?.focus();
+      return;
+    }
+    if (!palette) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      const anchor = document.querySelector(`[data-post-like="${CSS.escape(String(palette.dataset.feedReactionPicker))}"]`);
+      closeFeedReactionPickers();
+      anchor?.focus();
+      return;
+    }
+    const choices = Array.from(palette.querySelectorAll("[data-feed-reaction-choice]"));
+    if (!choices.length) return;
+    const here = choices.indexOf(event.target.closest("[data-feed-reaction-choice]"));
+    let next = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") next = here + 1;
+    else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = here - 1;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = choices.length - 1;
+    if (next === null) return;
+    event.preventDefault();
+    choices[(next + choices.length) % choices.length]?.focus();
+  });
 
   function syncFeedReactionUi(postId, reactionType, removed, counts = {}) {
     const total = Object.values(counts || {}).reduce((sum, value) => sum + count(value), 0);

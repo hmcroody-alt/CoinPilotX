@@ -1013,3 +1013,94 @@ body.pulse-home-os
     display: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Reactions: the desktop half of the app's long-press tray.
+ *
+ * `pulse_home_core.js` already rendered the tray itself -- eleven choices,
+ * `role="menu"`, `aria-haspopup="menu"` on the Like button -- and
+ * `pulse_desktop_feed.css:4329` already styled and revealed it. What was
+ * missing was a way for a desktop user to get to it: the only trigger was a
+ * 420ms press, which is the app's gesture, not a mouse's, and there was no
+ * keyboard path at all despite the button promising a menu. That wiring is in
+ * the JS alongside this; what lives here is the styling those new entry points
+ * need, and it is here rather than in the feed sheet for two reasons.
+ *
+ * It is the last stylesheet on /pulse (bot.py:43324), so its `.open` reveal
+ * cannot be undone by a later sheet no matter which container the tray ends up
+ * in. And the closed and open states are restated unprefixed -- no
+ * `.feed > .pulse-feed-post-v3` ancestor requirement, no `!important` on the
+ * closed half -- so the tray is correct anywhere the renderer puts it while
+ * the feed sheet keeps winning wherever its own prefix does match.
+ *
+ * A caution for whoever measures this next: computed opacity here is
+ * transition-driven, and Chrome stops advancing transitions in a tab that is
+ * not rendering. Reading `getComputedStyle(...).opacity` in a backgrounded tab
+ * returns the start value forever and looks exactly like a tray that opens
+ * invisibly. Verify with a screenshot of a focused tab, not a style read.
+ */
+.pulse-feed-reaction-picker-v3 {
+  position: absolute;
+  left: 18px;
+  bottom: 92px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px;
+  border-radius: 999px;
+  opacity: 0;
+  transform: translateY(8px) scale(.96);
+  pointer-events: none;
+  transition: opacity .16s ease, transform .16s ease;
+}
+
+.pulse-feed-reaction-picker-v3.open {
+  opacity: 1 !important;
+  transform: none !important;
+  pointer-events: auto !important;
+}
+
+/* The app renders each choice as emoji over label (mobile-native PostCard's
+   reaction tray). Restated unprefixed for the same reason as above; the sizes
+   match what the feed sheet already declares so nothing moves where both
+   apply. */
+.pulse-feed-reaction-choice-v3 {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  min-width: 46px;
+  padding: 4px;
+  border: 0;
+  border-radius: 14px;
+  background: none;
+  color: var(--text-secondary, #9fb5c0);
+  font: inherit;
+  cursor: pointer;
+  transition: transform .12s ease, background .12s ease;
+}
+
+.pulse-feed-reaction-choice-v3:hover,
+.pulse-feed-reaction-choice-v3:focus-visible {
+  background: rgba(255, 255, 255, .1);
+  transform: translateY(-3px) scale(1.06);
+  color: var(--text-primary, #f2fbff);
+}
+
+.pulse-feed-reaction-choice-emoji {
+  font-size: 23px;
+  line-height: 1;
+}
+
+.pulse-feed-reaction-choice-label {
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-feed-reaction-picker-v3,
+  .pulse-feed-reaction-choice-v3 {
+    transition: none;
+  }
+}
