@@ -202,6 +202,7 @@
     "tests/commerce_discovery/test_signals_tell_the_truth.py",
     "tests/commerce_discovery/test_suitability_gate_is_wired.py",
     "tests/commerce_discovery/test_the_catalogue_is_reachable.py",
+    "tests/commerce_discovery/test_the_suite_can_see_a_broken_engine.py",
     "tests/commerce_discovery/test_value_is_reconciled.py",
     "tests/commerce_discovery/test_viewer_policy.py",
     "tests/community/test_groups_rooms_activation.py",

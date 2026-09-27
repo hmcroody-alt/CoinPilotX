@@ -29,6 +29,7 @@ showed is the rows it actually wrote.
 
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -528,3 +529,126 @@ def market(clock, monkeypatch) -> SimulatedMarketplace:
     finally:
         conn.close()
         schema.ensure_schema.reset()
+
+
+# --------------------------------------------------------------------------- #
+# The suite's blind spot, closed.
+#
+# `engine.serve` wraps `_serve` in `except Exception: return []`. That fail-safe
+# is correct and must stay — a post has to render when commerce breaks. But it
+# means a crash and a decision are the same value to a caller, and *most of the
+# assertions in this package are about that value*. Measured 2026-09-27 by
+# raising `TypeError` on `_serve`'s first line: 110 tests went red and **558
+# stayed green**. Some of those legitimately never call `serve`. The rest are
+# every negative assertion in the package — opted-out viewer, cap reached,
+# surface suppressed, pool empty — and each one passes just as well when the
+# engine is a smoking hole, because `[] == []`.
+#
+# So the guard below reads the signal that already exists. `serve`'s fail-safe
+# logs `COMMERCE_DISCOVERY_SERVE_FAILED` with the traceback; if that line was
+# emitted during a test that otherwise passed, the test did not measure what it
+# says it measured, and the report is flipped to a failure naming the exception.
+#
+# Deliberately not a production change. The alternative — a strict mode that
+# re-raises under test — makes the tested code path differ from the shipped one,
+# which is the class of mistake §18.6 was about.
+#
+# A test that *wants* a swallowed failure marks itself `commerce_serve_may_fail`.
+# --------------------------------------------------------------------------- #
+
+#: The prefix `engine.serve`'s fail-safe logs. Kept as a literal rather than
+#: imported because there is nothing to import: it is a log message, and the
+#: point of this guard is to notice if it starts being emitted, not to agree with
+#: the engine about its spelling. `test_the_engine_still_logs_this_prefix` pins
+#: the two together so a rename cannot quietly disarm the guard.
+SERVE_FAILED_PREFIX = "COMMERCE_DISCOVERY_SERVE_FAILED"
+
+_RECORDER_KEY = pytest.StashKey["_SwallowedServeFailures"]()
+
+
+class _SwallowedServeFailures(logging.Handler):
+    """Collects `serve`'s fail-safe log records for the duration of one test."""
+
+    def __init__(self):
+        super().__init__(level=logging.ERROR)
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = record.getMessage()
+        except Exception:  # pragma: no cover - a broken record is not our business
+            return
+        if message.startswith(SERVE_FAILED_PREFIX):
+            self.records.append(record)
+
+    def detail(self) -> str:
+        formatter = logging.Formatter()
+        chunks = []
+        for record in self.records:
+            chunks.append(record.getMessage())
+            if record.exc_info:
+                chunks.append(formatter.formatException(record.exc_info))
+        return "\n".join(chunks)
+
+
+def swallowed_failure_report(item, report) -> str:
+    """The text to fail ``report`` with, or ``""`` to let it stand.
+
+    Split out of the hook so it can be tested as a function. Three conditions,
+    each of which exists to stop the guard being noise:
+
+    * only the ``call`` phase — a setup or teardown report has its own story.
+    * only a report that otherwise **passed**. A test that already failed does
+      not need a second opinion, and flipping it would double every failure in a
+      run where the engine is genuinely broken.
+    * only without the opt-out marker.
+    """
+    if getattr(report, "when", "") != "call" or not getattr(report, "passed", False):
+        return ""
+    if item.get_closest_marker("commerce_serve_may_fail") is not None:
+        return ""
+    recorder = item.stash.get(_RECORDER_KEY, None)
+    if recorder is None or not recorder.records:
+        return ""
+    return (
+        "This test passed, but `engine.serve` swallowed an exception while it ran, "
+        "so whatever it asserted about the result was asserted about the fail-safe's "
+        "empty list rather than about a decision the engine made.\n\n"
+        "Fix the exception. If the failure is the point of the test, mark it "
+        "`@pytest.mark.commerce_serve_may_fail`.\n\n"
+        + recorder.detail()
+    )
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "commerce_serve_may_fail: this test expects `engine.serve` to swallow an "
+        "exception; do not treat the fail-safe log line as a defect.",
+    )
+
+
+@pytest.fixture(autouse=True)
+def swallowed_serve_failures(request):
+    """Watch `engine`'s logger for the whole test, and hand the recorder to the
+    report hook through the item's stash.
+
+    Yielded as well as stashed so a test can assert on it directly."""
+    logger = logging.getLogger(engine.__name__)
+    recorder = _SwallowedServeFailures()
+    request.node.stash[_RECORDER_KEY] = recorder
+    logger.addHandler(recorder)
+    try:
+        yield recorder
+    finally:
+        logger.removeHandler(recorder)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    report = yield
+    detail = swallowed_failure_report(item, report)
+    if detail:
+        report.outcome = "failed"
+        report.longrepr = detail
+    return report
