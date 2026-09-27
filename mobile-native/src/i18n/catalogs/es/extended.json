@@ -1220,9 +1220,18 @@
       "verification": "Verificación",
       "trustCopy": "Los formularios fiscales avanzados, el alta bancaria, las disputas, los reembolsos, la preparación de pedidos y la revisión administrativa se quedan en los flujos seguros de web y proveedor hasta que los controles nativos de calidad estén listos.",
       "storeMediaViewerTitle": "Contenido de la tienda",
-      "statusApprovedLive": "Aprobado o publicado",
-      "statusPendingReview": "Pendiente de revisión",
-      "statusRemoved": "Retirado"
+      "status": {
+        "live": "Aprobado o publicado",
+        "pending": "Pendiente",
+        "out_of_stock": "Sin existencias",
+        "removed": "Retirado",
+        "rejected": "Rechazada",
+        "paused": "En pausa",
+        "sold": "Vendido",
+        "draft": "Borrador",
+        "store_offline": "Tienda no activa",
+        "store_name_needed": "Falta el nombre de la tienda"
+      }
     },
     "orders": {
       "title": "Pedidos",

@@ -1205,9 +1205,18 @@
       "verification": "认证",
       "trustCopy": "在原生 QA 关卡就绪之前，高级税务表单、银行开户、纠纷、退款、履约和后台审核仍走安全的网页 / 服务方流程。",
       "storeMediaViewerTitle": "店铺媒体",
-      "statusApprovedLive": "已通过 / 在售",
-      "statusPendingReview": "审核中",
-      "statusRemoved": "已下架"
+      "status": {
+        "live": "已通过 / 在售",
+        "pending": "待处理",
+        "out_of_stock": "缺货",
+        "removed": "已下架",
+        "rejected": "已拒绝",
+        "paused": "已暂停",
+        "sold": "已售出",
+        "draft": "草稿",
+        "store_offline": "店铺未上线",
+        "store_name_needed": "需填写店铺名称"
+      }
     },
     "orders": {
       "title": "订单",

@@ -1220,9 +1220,18 @@
       "verification": "Verifizierung",
       "trustCopy": "Erweiterte Steuerformulare, Bankanbindung, Streitfälle, Erstattungen, Versand und die Freigabe durch Admins bleiben in den sicheren Web- und Anbieter-Abläufen, bis die nativen QA-Freigaben stehen.",
       "storeMediaViewerTitle": "Shop-Medien",
-      "statusApprovedLive": "Freigegeben / live",
-      "statusPendingReview": "Prüfung ausstehend",
-      "statusRemoved": "Entfernt"
+      "status": {
+        "live": "Freigegeben / live",
+        "pending": "Ausstehend",
+        "out_of_stock": "Nicht auf Lager",
+        "removed": "Entfernt",
+        "rejected": "Abgelehnt",
+        "paused": "Pausiert",
+        "sold": "Verkauft",
+        "draft": "Entwurf",
+        "store_offline": "Shop nicht live",
+        "store_name_needed": "Shopname erforderlich"
+      }
     },
     "orders": {
       "title": "Bestellungen",

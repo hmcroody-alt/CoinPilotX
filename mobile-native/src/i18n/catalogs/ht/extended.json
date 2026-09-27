@@ -1205,9 +1205,18 @@
       "verification": "Verifikasyon",
       "trustCopy": "Fòm taks avanse, konfigirasyon bank, konfli, ranbousman, livrezon ak revizyon administratif rete sou wout wèb/founisè ki an sekirite yo toutan pòt kontwòl QA natif yo poko pare.",
       "storeMediaViewerTitle": "Medya boutik",
-      "statusApprovedLive": "Apwouve/ann dirèk",
-      "statusPendingReview": "K ap tann revizyon",
-      "statusRemoved": "Retire"
+      "status": {
+        "live": "Apwouve/ann dirèk",
+        "pending": "K ap tann",
+        "out_of_stock": "Li fini",
+        "removed": "Retire",
+        "rejected": "Rejte",
+        "paused": "An poz",
+        "sold": "Vandi",
+        "draft": "Bouyon",
+        "store_offline": "Boutik la pa aktif",
+        "store_name_needed": "Non boutik obligatwa"
+      }
     },
     "orders": {
       "title": "Kòmann",

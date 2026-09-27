@@ -1205,9 +1205,18 @@
       "verification": "인증",
       "trustCopy": "고급 세금 서류, 계좌 등록, 분쟁, 환불, 배송, 관리자 검토는 네이티브 QA 준비가 끝날 때까지 안전한 웹/제공업체 화면에서 처리해요.",
       "storeMediaViewerTitle": "스토어 미디어",
-      "statusApprovedLive": "승인/판매 중",
-      "statusPendingReview": "검토 대기",
-      "statusRemoved": "삭제됨"
+      "status": {
+        "live": "승인/판매 중",
+        "pending": "대기 중",
+        "out_of_stock": "품절",
+        "removed": "삭제됨",
+        "rejected": "거부됨",
+        "paused": "일시중지됨",
+        "sold": "판매 완료",
+        "draft": "임시저장",
+        "store_offline": "스토어 비활성",
+        "store_name_needed": "스토어 이름 필요"
+      }
     },
     "orders": {
       "title": "주문",
