@@ -49,7 +49,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [offline, setOffline] = useState(false);
   const [busy, setBusy] = useState("");
-  const [message, setMessage] = useState("");
+  const [notice, setNotice] = useState<{ text: string; tone: "error" | "info" } | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [editingListingId, setEditingListingId] = useState(0);
@@ -110,7 +110,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     // One marketplace write invalidates all three channels registered below in
     // the same tick. Ungated, that is three concurrent copies of this load.
     if (loadInFlight.current) return loadInFlight.current;
-    setMessage("");
+    setNotice(null);
     const run = (async () => {
       // The cache read runs alongside the network, not in front of it: awaiting
       // it first would put a bridge hop between the tap and every request.
@@ -139,7 +139,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         setOffline(true);
         if (!painted) {
           const error = snapshot.status === "rejected" ? snapshot.reason : null;
-          setMessage(error instanceof Error ? error.message : "Seller tools could not load.");
+          setNotice({
+            text: error instanceof Error ? error.message : t("commerce:marketplace.sellerToolsLoadFailed"),
+            tone: "error"
+          });
         }
       }
 
@@ -198,12 +201,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   async function startPayoutConnect() {
     setBusy("payout");
-    setMessage("");
+    setNotice(null);
     try {
       const result = await connectMarketplacePayout();
-      setMessage(result.message || t("commerce:marketplace.payoutChecked"));
+      setNotice({ text: result.message || t("commerce:marketplace.payoutChecked"), tone: "info" });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.payoutUnavailable"));
+      setNotice({
+        text: error instanceof Error ? error.message : t("commerce:marketplace.payoutUnavailable"),
+        tone: "error"
+      });
     } finally {
       setBusy("");
     }
@@ -211,9 +217,18 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   async function acceptTerms() {
     setBusy("terms");
-    try { await acceptMarketplaceCommercialTerms(); setTermsAccepted(true); setMessage("Marketplace Fees & Terms accepted."); }
-    catch (error) { setMessage(error instanceof Error ? error.message : "Terms acceptance could not be saved."); }
-    finally { setBusy(""); }
+    try {
+      await acceptMarketplaceCommercialTerms();
+      setTermsAccepted(true);
+      setNotice({ text: t("commerce:marketplace.termsAcceptedNotice"), tone: "info" });
+    } catch (error) {
+      setNotice({
+        text: error instanceof Error ? error.message : t("commerce:marketplace.termsAcceptFailed"),
+        tone: "error"
+      });
+    } finally {
+      setBusy("");
+    }
   }
 
   function startListingEdit(listing: MarketplaceListing) {
@@ -232,7 +247,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     // seller's own answer -- so opening the editor and saving anything at all
     // marked the listing sold out. A null quantity is a question, not a zero.
     setEditQuantity(listing.quantity == null ? "" : String(listing.quantity));
-    setMessage("");
+    setNotice(null);
   }
 
   function applyListingResponse(listing?: MarketplaceListing) {
@@ -255,7 +270,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
   async function saveListingEdit() {
     if (!editingListingId) return;
     setBusy(`edit:${editingListingId}`);
-    setMessage("");
+    setNotice(null);
     try {
       const result = await updateMarketplaceSellerListing(editingListingId, {
         title: editTitle.trim(),
@@ -278,13 +293,16 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         ...(editQuantity.trim() === "" ? {} : { quantity: Number(editQuantity) })
       });
       applyListingResponse(result.listing);
-      setMessage(result.message || "Listing updated and sent through review.");
+      setNotice({ text: result.message || t("commerce:marketplace.listingUpdatedReview"), tone: "info" });
       // The edited price/inventory is authoritative for every other surface
       // holding this listing — the Store dashboard and the buyer-facing
       // Marketplace tab both refetch off these channels.
       await invalidateNativeSync(["seller_inventory", "marketplace"], "listing_edit_saved");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"));
+      setNotice({
+        text: error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"),
+        tone: "error"
+      });
     } finally {
       setBusy("");
     }
@@ -300,7 +318,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
    * dead button §31 is about.
    */
   function focusFix(fix: ListingFix) {
-    setMessage("");
+    setNotice(null);
     switch (storeFixTarget(fix.section)) {
       case "camera":
         navigation.navigate("CameraStudio", {
@@ -315,9 +333,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
         quantityInput.current?.focus();
         return;
       case "policy":
-        setMessage(
-          "This one needs a policy review we can't clear from the app. Change the product details, or contact support on pulsesoc.com."
-        );
+        setNotice({ text: t("commerce:marketplace.policyFixNeedsReview"), tone: "info" });
         return;
       default:
         titleInput.current?.focus();
@@ -340,17 +356,20 @@ export function SellerStoreScreen({ route, navigation }: Props) {
     if (publishInFlight.current === listing.id) return;
     publishInFlight.current = listing.id;
     setBusy(`publish:${listing.id}`);
-    setMessage("");
+    setNotice(null);
     try {
       const result = await submitMarketplaceSellerListing(listing.id);
       // The read-back §31 asks for. The submit route re-evaluates readiness and
       // sends the row back, so the panel above redraws from the server's answer
       // rather than from an optimistic guess about what publishing did.
       applyListingResponse(result.listing);
-      setMessage(result.message || t("commerce:marketplace.listingUpdated"));
+      setNotice({ text: result.message || t("commerce:marketplace.listingUpdated"), tone: "info" });
       await invalidateNativeSync(["seller_inventory", "marketplace"], "listing_published");
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"));
+      setNotice({
+        text: error instanceof Error ? error.message : t("commerce:marketplace.listingUpdateFailed"),
+        tone: "error"
+      });
     } finally {
       publishInFlight.current = 0;
       setBusy("");
@@ -359,7 +378,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   async function mutateListingStatus(listing: MarketplaceListing, action: "pause" | "resume" | "delete") {
     setBusy(`${action}:${listing.id}`);
-    setMessage("");
+    setNotice(null);
     try {
       const result =
         action === "pause"
@@ -368,9 +387,12 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             ? await resumeMarketplaceSellerListing(listing.id)
             : await deleteMarketplaceSellerListing(listing.id);
       applyListingResponse(result.listing);
-      setMessage(result.message || t("commerce:marketplace.listingUpdated"));
+      setNotice({ text: result.message || t("commerce:marketplace.listingUpdated"), tone: "info" });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : t("commerce:marketplace.listingStatusUpdateFailed"));
+      setNotice({
+        text: error instanceof Error ? error.message : t("commerce:marketplace.listingStatusUpdateFailed"),
+        tone: "error"
+      });
     } finally {
       setBusy("");
     }
@@ -470,21 +492,21 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
   return (
     <Screen surface="business" title={heading.title} subtitle={heading.subtitle}>
-      {offline ? <Text style={styles.warning}>Showing saved seller/store metadata.</Text> : null}
-      {message ? <Text style={message.toLowerCase().includes("required") || message.toLowerCase().includes("failed") ? styles.error : styles.notice}>{message}</Text> : null}
+      {offline ? <Text style={styles.warning}>{t("commerce:marketplace.storeOfflineNotice")}</Text> : null}
+      {notice ? <Text style={notice.tone === "error" ? styles.error : styles.notice}>{notice.text}</Text> : null}
 
       {shows("hero") ? (
       <Panel>
         <View style={styles.hero}>
-          <Text style={styles.kicker}>Marketplace Command</Text>
-          <Text style={styles.heroTitle}>Storefront readiness</Text>
-          <Text style={styles.heroCopy}>Seller approval, product review, payments, payouts, and fulfillment are all decided by PulseSoc.</Text>
+          <Text style={styles.kicker}>{t("commerce:marketplace.storeKicker")}</Text>
+          <Text style={styles.heroTitle}>{t("commerce:marketplace.storefrontReadiness")}</Text>
+          <Text style={styles.heroCopy}>{t("commerce:marketplace.storeHeroCopy")}</Text>
         </View>
         <View style={styles.metricGrid}>
-          <Metric label="Listings loaded" value={String(listings.length)} />
-          <Metric label="Published" value={String(activeListings.length)} />
-          <Metric label="Pending review" value={String(pendingListings.length)} />
-          <Metric label="Orders loaded" value={String(orders.length)} />
+          <Metric label={t("commerce:marketplace.metricListingsLoaded")} value={String(listings.length)} />
+          <Metric label={t("commerce:marketplace.metricPublished")} value={String(activeListings.length)} />
+          <Metric label={t("commerce:marketplace.metricPendingReview")} value={String(pendingListings.length)} />
+          <Metric label={t("commerce:marketplace.metricOrdersLoaded")} value={String(orders.length)} />
         </View>
         <View style={styles.actionRow}>
           <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={() => navigation.navigate("Tabs", { screen: "Marketplace" })}>
@@ -496,7 +518,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("application") ? (
       <Panel>
-        <Text style={styles.sectionTitle}>Merchant application</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.merchantApplication")}</Text>
         {/*
           This panel used to be the application: two free-text boxes posted
           straight at the seller endpoint. It now points at the real one. Two
@@ -504,15 +526,15 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           and a reviewer with no way to tell which is current, so this is a door
           rather than a second form.
         */}
-        <Text style={styles.copy}>Apply to sell on PulseSoc. The application walks you through who you are, what you sell, and the documents we verify. Your answers save as you go, and every decision is made by a person on our review team.</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.merchantApplicationCopy")}</Text>
         <View style={styles.actionRow}>
           <Pressable
             accessibilityRole="button"
-            accessibilityHint="Opens the seller application, where you can start or continue your answers"
+            accessibilityHint={t("commerce:marketplace.openSellerApplicationHint")}
             style={styles.primaryButton}
             onPress={() => navigation.navigate("MerchantApply")}
           >
-            <Text style={styles.primaryText}>Open Seller Application</Text>
+            <Text style={styles.primaryText}>{t("commerce:marketplace.openSellerApplication")}</Text>
           </Pressable>
         </View>
       </Panel>
@@ -596,7 +618,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
               style={styles.input}
               value={editShortDescription}
               onChangeText={setEditShortDescription}
-              placeholder="Short description"
+              placeholder={t("commerce:marketplace.shortDescriptionPlaceholder")}
               placeholderTextColor={colors.muted}
             />
             <TextInput
@@ -652,7 +674,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
                 <Text style={styles.dangerText}>{busy === `delete:${editingListing.id}` ? t("commerce:marketplace.removing") : t("common:actions.remove")}</Text>
               </Pressable>
             </View>
-            <Text style={styles.meta}>Your edits are saved to your PulseSoc store, and the listing goes back through marketplace review whenever its content changes. Checkout, payouts, fulfillment, and disputes are handled on pulsesoc.com.</Text>
+            <Text style={styles.meta}>{t("commerce:marketplace.editorFooterNote")}</Text>
           </View>
         ) : null}
       </Panel>
@@ -660,8 +682,8 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("media") ? (
       <Panel>
-        <Text style={styles.sectionTitle}>Product media gallery</Text>
-        <Text style={styles.copy}>Tap any item to open it full screen. Anything the viewer cannot play falls back to a still preview.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.productMediaGallery")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.productMediaGalleryCopy")}</Text>
         <View style={styles.mediaGrid}>
           {mediaItems.slice(0, 8).map((item, index) => (
             <Pressable
@@ -685,20 +707,29 @@ export function SellerStoreScreen({ route, navigation }: Props) {
 
       {shows("orders") ? (
       <Panel>
-        <Text style={styles.sectionTitle}>Orders and payouts</Text>
-        <Text style={styles.copy}>Your applied fee is shown per order. Current Marketplace terms remain 10%; the proposed 5% policy is not active.</Text>
+        <Text style={styles.sectionTitle}>{t("commerce:marketplace.ordersAndPayouts")}</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.ordersAndPayoutsCopy")}</Text>
         <View style={styles.actionRow}>
-          {Object.entries(liability).map(([state, amount]) => <View key={state} style={styles.orderRow}><Text style={styles.orderTitle}>{state.replace(/_/g, " ")}</Text><Text style={styles.orderMeta}>{formatMoney(amount, "USD")}</Text></View>)}
+          {Object.entries(liability).map(([state, amount]) => <View key={state} style={styles.orderRow}><Text style={styles.orderTitle}>{state.replace(/_/g, " ")}</Text><Text style={styles.orderMeta}>{formatMoney(amount, "USD", fmt)}</Text></View>)}
         </View>
         {orders.slice(0, 4).map((order) => (
           <View key={`${order.id}-${order.created_at}`} style={styles.orderRow}>
-            <Text style={styles.orderTitle}>{order.item_type || "Order"} #{order.item_id || order.id || "pending"}</Text>
-            <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD")} · {order.status || "pending"}</Text>
+            <Text style={styles.orderTitle}>{order.item_type || t("commerce:orders.orderFallbackTitle")} #{order.item_id || order.id || "pending"}</Text>
+            <Text style={styles.orderMeta}>{formatMoney(order.amount_cents || order.gross_amount_cents || 0, order.currency || "USD", fmt)} · {order.status || "pending"}</Text>
             {order.commercial_economics ? <>
-              <Text style={styles.orderMeta}>Merchandise {formatMoney(order.commercial_economics.merchandise_net_minor || 0, order.currency || "USD")} · Shipping credit {formatMoney(order.commercial_economics.seller_shipping_credit_minor || 0, order.currency || "USD")}</Text>
-              <Text style={styles.orderMeta}>PulseSoc fee {(Number(order.commercial_economics.fee_rate_bps || 0) / 100).toFixed(2)}% · Refund adjustments {formatMoney(order.commercial_economics.seller_reversed_minor || 0, order.currency || "USD")}</Text>
-              <Text style={styles.orderMeta}>Net earnings {formatMoney(order.commercial_economics.net_seller_earnings_minor || 0, order.currency || "USD")} · {(order.commercial_economics.payout_state || "pending").replace(/_/g, " ")}</Text>
-              {order.commercial_economics.blocker_code ? <Text style={styles.meta}>Blocked: {order.commercial_economics.blocker_code.replace(/_/g, " ")}. Resolve this issue before payout.</Text> : null}
+              <Text style={styles.orderMeta}>{t("commerce:marketplace.orderMerchandiseLine", {
+                merchandise: formatMoney(order.commercial_economics.merchandise_net_minor || 0, order.currency || "USD", fmt),
+                shipping: formatMoney(order.commercial_economics.seller_shipping_credit_minor || 0, order.currency || "USD", fmt)
+              })}</Text>
+              <Text style={styles.orderMeta}>{t("commerce:marketplace.orderFeeLine", {
+                rate: fmt.percent(Number(order.commercial_economics.fee_rate_bps || 0) / 100, { alreadyScaled: true, maximumFractionDigits: 2 }),
+                refunds: formatMoney(order.commercial_economics.seller_reversed_minor || 0, order.currency || "USD", fmt)
+              })}</Text>
+              <Text style={styles.orderMeta}>{t("commerce:marketplace.orderNetEarningsLine", {
+                net: formatMoney(order.commercial_economics.net_seller_earnings_minor || 0, order.currency || "USD", fmt),
+                state: (order.commercial_economics.payout_state || "pending").replace(/_/g, " ")
+              })}</Text>
+              {order.commercial_economics.blocker_code ? <Text style={styles.meta}>{t("commerce:marketplace.orderBlockedLine", { reason: order.commercial_economics.blocker_code.replace(/_/g, " ") })}</Text> : null}
             </> : null}
           </View>
         ))}
@@ -713,10 +744,10 @@ export function SellerStoreScreen({ route, navigation }: Props) {
           <Text style={styles.meta}>{t("commerce:marketplace.payoutManagedNote")}</Text>
         )}
         <View style={styles.orderRow}>
-          <Text style={styles.orderTitle}>Marketplace Fees &amp; Terms</Text>
-          <Text style={styles.orderMeta}>Seller Terms · 10% current platform fee · Returns · Payouts · Prohibited Goods · Appeals</Text>
+          <Text style={styles.orderTitle}>{t("commerce:marketplace.feesAndTerms")}</Text>
+          <Text style={styles.orderMeta}>{t("commerce:marketplace.feesAndTermsSummary")}</Text>
           <Pressable accessibilityRole="button" accessibilityState={{ disabled: termsAccepted || busy === "terms" }} style={styles.secondaryButton} disabled={termsAccepted || busy === "terms"} onPress={acceptTerms}>
-            <Text style={styles.secondaryText}>{termsAccepted ? "Accepted" : busy === "terms" ? "Saving..." : "Review and Accept"}</Text>
+            <Text style={styles.secondaryText}>{termsAccepted ? t("commerce:marketplace.termsAcceptedLabel") : busy === "terms" ? t("commerce:marketplace.saving") : t("commerce:marketplace.reviewAndAccept")}</Text>
           </Pressable>
         </View>
       </Panel>
@@ -736,7 +767,7 @@ export function SellerStoreScreen({ route, navigation }: Props) {
             <Text style={styles.secondaryText}>{t("common:screens.premium")}</Text>
           </Pressable>
         </View>
-        <Text style={styles.copy}>Tax forms, bank setup, disputes, refunds, fulfillment, and PulseSoc review are handled on the PulseSoc website for now, not in the app.</Text>
+        <Text style={styles.copy}>{t("commerce:marketplace.trustCopy")}</Text>
       </Panel>
       ) : null}
 
