@@ -12,6 +12,7 @@
  * So these render the actual screen and press the actual buttons.
  */
 import React from "react";
+import { StyleProp, StyleSheet, TextStyle } from "react-native";
 import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 
 jest.mock("react-native-safe-area-context", () => ({
@@ -108,6 +109,20 @@ function listing(over: Record<string, unknown> = {}) {
     },
     ...over
   };
+}
+
+/**
+ * The status banner has two looks, and which one it wears is a claim about what
+ * just happened. It used to choose by searching the message for the English
+ * words "failed" or "required" — so every other language, and plenty of English
+ * ("Network is down"), drew a failure in success green. The colour is the only
+ * observable side of that classification, so assert on it directly.
+ */
+const FAILURE_RED = "rgba(255, 107, 107, 0.28)";
+const SUCCESS_GREEN = "rgba(37, 208, 167, 0.28)";
+
+function bannerColor(node: { props: { style?: StyleProp<TextStyle> } }) {
+  return StyleSheet.flatten(node.props.style)?.borderColor;
 }
 
 beforeEach(() => {
@@ -298,6 +313,7 @@ describe("the Publish button", () => {
 
     expect(mockSubmit).toHaveBeenCalledWith(42);
     await waitFor(() => expect(view.getByText("Sent for review.")).toBeTruthy());
+    expect(bannerColor(view.getByText("Sent for review."))).toBe(SUCCESS_GREEN);
     // The read-back: the button now wears the server's new answer.
     await waitFor(() => expect(view.getByLabelText("Already published")).toBeTruthy());
     expect(mockInvalidate).toHaveBeenCalledWith(
@@ -344,6 +360,9 @@ describe("the Publish button", () => {
     });
 
     await waitFor(() => expect(view.getByText("Network is down")).toBeTruthy());
+    // And it must not *look* like one either. This message contains neither
+    // "failed" nor "required", which is exactly how it used to come out green.
+    expect(bannerColor(view.getByText("Network is down"))).toBe(FAILURE_RED);
     const cta = view.getByLabelText("Publish");
     expect(cta.props.accessibilityState.disabled).toBe(false);
     await act(async () => {
