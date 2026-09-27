@@ -1358,9 +1358,19 @@
       "verification": "Vérification",
       "trustCopy": "Les formulaires fiscaux avancés, l'enregistrement bancaire, les litiges, les remboursements, l'expédition et l'examen par l'équipe restent sur les parcours web/prestataire sécurisés jusqu'à ce que les contrôles qualité natifs soient prêts.",
       "storeMediaViewerTitle": "Médias de la boutique",
-      "statusApprovedLive": "Approuvée/en ligne",
-      "statusPendingReview": "En attente d'examen",
-      "statusRemoved": "Retirée"
+      "statusRemoved": "Retirée",
+      "status": {
+        "live": "Approuvée/en ligne",
+        "pending": "En attente",
+        "out_of_stock": "Rupture de stock",
+        "removed": "Retirée",
+        "rejected": "Refusée",
+        "paused": "En pause",
+        "sold": "Vendu",
+        "draft": "Brouillon",
+        "store_offline": "Boutique non active",
+        "store_name_needed": "Nom de boutique requis"
+      }
     },
     "orders": {
       "title": "Commandes",

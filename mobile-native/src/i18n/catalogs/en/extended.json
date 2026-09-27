@@ -1358,9 +1358,19 @@
       "verification": "Verification",
       "trustCopy": "Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.",
       "storeMediaViewerTitle": "Store media",
-      "statusApprovedLive": "Approved/live",
-      "statusPendingReview": "Pending review",
-      "statusRemoved": "Removed"
+      "statusRemoved": "Removed",
+      "status": {
+        "live": "Live",
+        "pending": "Pending",
+        "out_of_stock": "Out of stock",
+        "removed": "Removed",
+        "rejected": "Rejected",
+        "paused": "Paused",
+        "sold": "Sold",
+        "draft": "Draft",
+        "store_offline": "Store offline",
+        "store_name_needed": "Store name needed"
+      }
     },
     "orders": {
       "title": "Orders",

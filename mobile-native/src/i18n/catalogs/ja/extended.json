@@ -1343,9 +1343,19 @@
       "verification": "認証",
       "trustCopy": "高度な税務書類、銀行口座の登録、異議申し立て、返金、発送、管理者の審査は、ネイティブのQA基準が整うまで安全なウェブ / プロバイダーのフローで行います。",
       "storeMediaViewerTitle": "ストアのメディア",
-      "statusApprovedLive": "承認済み / 公開中",
-      "statusPendingReview": "審査中",
-      "statusRemoved": "削除済み"
+      "statusRemoved": "削除済み",
+      "status": {
+        "live": "承認済み / 公開中",
+        "pending": "処理待ち",
+        "out_of_stock": "在庫切れ",
+        "removed": "削除済み",
+        "rejected": "却下",
+        "paused": "停止中",
+        "sold": "売り切れ",
+        "draft": "下書き",
+        "store_offline": "ストア未公開",
+        "store_name_needed": "ストア名が必要"
+      }
     },
     "orders": {
       "title": "注文",
