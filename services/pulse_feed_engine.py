@@ -92,6 +92,22 @@ MEMBER_000_LEGACY_AVATAR_PATHS = (
     "/static/brand/pulsesoc-member-000-avatar.png",
 )
 
+#: How a client should lay the cover out, and the shape of the file it is laying
+#: out. The cover is a designed banner with a centred wordmark, not a
+#: photograph, so cropping it to fill a hero cuts the wordmark in half -- hence
+#: ``contain``, and hence the app needs the true ratio to reserve the right box.
+#:
+#: These are declared here, next to the asset they describe, because the app
+#: used to carry both facts itself: it matched on the literal filename above and
+#: hard-coded ``aspectRatio: 1600 / 640`` in a stylesheet. That works for exactly
+#: one account and only until the artwork is replaced -- a new dated filename
+#: (which is the whole cache-busting mechanism) silently turns the treatment off,
+#: and a second official account cannot have it at all without shipping a build.
+#: The ratio is written as the asset's own pixel dimensions rather than as 2.5 so
+#: that replacing the file means editing the two numbers printed beside it.
+MEMBER_000_COVER_FIT = "contain"
+MEMBER_000_COVER_ASPECT_RATIO = 1600 / 640
+
 
 def _brand_media_url(path: str) -> str:
     """Absolute URL for a first-party brand asset.
@@ -666,6 +682,91 @@ def _media_for_posts(post_ids):
         conn.close()
 
 
+def _commerce_for_posts(post_ids):
+    """Live commerce overlay for any PulseDrop posts in this page.
+
+    One query for the whole page, in the same shape as :func:`_media_for_posts`,
+    because a payload builder that opens a connection per row is a recorded
+    outage in this codebase and the pool is eight with a three-second timeout.
+
+    Posts that are not PulseDrop publications are simply absent from the result,
+    so the cost on an ordinary feed page is one statement that matches no rows.
+
+    Imported inside the function, and wrapped, for the reason the optional route
+    packs in ``bot.py`` are: PulseDrop is a subsystem with a kill switch, and a
+    deployment that has never run it does not have the tables this reads. The
+    feed must not fail for that. A PulseDrop post with no overlay renders as an
+    ordinary post by ``@pulsedrop`` — true, and harmless.
+
+    Why the overlay is not baked into the post at publication time is argued at
+    length in ``services/pulsedrop/hydration.py``: price, stock, availability,
+    the store's name and the call to action are live facts, and a price frozen
+    into ``pulse_posts.content`` becomes a lie the platform published under a
+    verified badge the moment the seller re-prices it.
+    """
+    if not post_ids:
+        return {}
+    conn = None
+    try:
+        from services.pulsedrop import hydration
+
+        conn = user_context.connect()
+        return hydration.commerce_for_posts(conn.cursor(), post_ids)
+    except Exception as exc:
+        logging.warning("PulseDrop commerce hydration skipped: %s", exc)
+        return {}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _attach_commerce(posts):
+    """Merge the overlay into already-serialized posts. Returns the same list.
+
+    Applied after ``_public_post`` rather than threaded through its twelve
+    arguments, and applied before ranking so a ranker could read commerce state
+    if one ever needs to. ``commerce`` is absent, not null, on ordinary posts:
+    a client testing for the key gets a boolean, and no ordinary post grows a
+    field for a subsystem it has nothing to do with.
+
+    **This also covers Reels, and that is why it is called here and nowhere
+    else.** A PulseDrop Reel carries no price, no CTA and no availability in its
+    pixels -- ``reel_composer`` renders none of them into the video on purpose,
+    so that a March Reel can still show September's price. The overlay beside
+    the video is therefore the only thing that makes it shoppable. Both Reel
+    read paths already run through here: ``bot.pulse_reel_feed_payload`` builds
+    the scrolling feed on ``list_feed(feed='reels')``, and
+    ``bot.pulse_reel_payload`` -- the single builder behind the deep link, the
+    share target, the playable-video supplement and fourteen interaction routes
+    that each return the refreshed reel -- builds on ``get_post``. Every reel
+    transform between here and the wire (``reel_prioritize_video_media``,
+    ``pulse_reel_apply_management_flags``, ``score_reel``, ``rank_reels``,
+    ``pulse_merge_live_reel_items``) either mutates in place or copies with
+    ``dict(reel)``, so nothing whitelists the key away.
+
+    So do not add a second enricher in ``bot.py`` for the Reels surface. It
+    would be a duplicate query per page against a pool of eight, and the two
+    copies would eventually disagree about the same listing on the same screen.
+    """
+    items = [post for post in (posts or []) if isinstance(post, dict)]
+    if not items:
+        return posts
+    overlays = _commerce_for_posts([post.get("id") for post in items])
+    if not overlays:
+        return posts
+    for post in items:
+        try:
+            found = overlays.get(int(post.get("id") or 0))
+        except (TypeError, ValueError):
+            continue
+        if found:
+            post["commerce"] = found
+    return posts
+
+
 def _music_for_posts(post_ids):
     """Hydrate creator-safe music attached to feed posts in one query.
 
@@ -1155,7 +1256,7 @@ def _repost_originals(cur, rows, viewer_user_id=None):
     viewer_state = _viewer_post_state(cur, originals, viewer_user_id)
     media = _media_for_posts(hydrated_ids)
     music = _music_for_posts(hydrated_ids)
-    return {
+    originals_by_id = {
         int(row["id"]): _public_post(
             row,
             media.get(int(row["id"]), []),
@@ -1172,6 +1273,13 @@ def _repost_originals(cur, rows, viewer_user_id=None):
         )
         for row in originals
     }
+    # A repost renders the original nested inside it, so a resharing user is a
+    # distribution path for a PulseDrop Signal -- and the nested card is the one
+    # that carries the product. Without this the reshare shows the picture and
+    # the caption and no price, which is the worst of the three states. The
+    # outer repost is not itself a publication and correctly gets no overlay.
+    _attach_commerce(list(originals_by_id.values()))
+    return originals_by_id
 
 
 def normalize_feed(feed):
@@ -1412,7 +1520,7 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
     conn.close()
     media = _media_for_posts(post_ids)
     music = _music_for_posts(post_ids)
-    return _public_post(
+    post = _public_post(
         row,
         media.get(int(post_id), []),
         reactions.get(int(post_id), {}),
@@ -1426,6 +1534,8 @@ def get_post(post_id, viewer_user_id=None, include_private=False):
         int(row.get("user_id") or 0) in viewer_state["following"],
         reposts=reposts.get(int(post_id), 0),
     )
+    _attach_commerce([post])
+    return post
 
 
 def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_player_id="", limit=20, offset=0):
@@ -1594,6 +1704,7 @@ def list_feed(viewer_user_id=None, feed="for_you", topic="", profile_public_play
         )
         for row in rows
     ]
+    _attach_commerce(posts)
     try:
         if feed == "trending" or (feed == "for_you" and (topic or profile_public_player_id)):
             posts = pulse_feed_ranking_engine.rank_posts(posts, {"viewer_user_id": viewer_user_id})
@@ -1675,6 +1786,7 @@ def list_user_posts(user_id, viewer_user_id=None, limit=20, offset=0):
         )
         for row in rows
     ]
+    _attach_commerce(posts)
     return {"ok": True, "feed": "my_posts", "topic": "", "posts": posts, "next_offset": offset + len(posts), "has_more": len(posts) == limit, "intelligence": safe_intelligence_panel("")}
 
 
