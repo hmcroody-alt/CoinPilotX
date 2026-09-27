@@ -45,17 +45,117 @@ BOT = os.path.join(REPO, "bot.py")
 #: digest here. Updating the digest *without* bumping the token puts the bug back
 #: -- the point of recording them together is that the diff shows you doing it.
 CACHE_PINNED_ASSETS = {
-    "static/js/pulse_home_core.js": (
-        "reaction-catalogue-20260927h",
-        "1aeeccee65767efcd3210bfab59b4ef827a01b42fb05abe6f50132e23fa38c24",
+    "static/css/admin_ops_center.css": (
+        "opsv2-20260914c",
+        "7f28cbd39f65dd2753229c00125b2854ca1b622a2ac2c248ff3f75df32e7024f",
+    ),
+    "static/css/pulse_cinematic_media.css": (
+        "static-bg-20260806a",
+        "98035d84a5d8d6f93044e2a55373bfa63ac2f5e0c915fddabd3f92bfff7ecc71",
+    ),
+    "static/css/pulse_composer_premium.css": (
+        "music-modal-20260621c",
+        "55bfe05a13cfe8f72f5cd5f188f239c369fa557eeeebe50497d171bcef15452b",
+    ),
+    "static/css/pulse_design_system.css": (
+        "cache-sweep-20260927j",
+        "e2ede95b4f8c395304bcfb42a36582c902a2894f3205804ffe61265e83b7b668",
+    ),
+    "static/css/pulse_desktop_feed.css": (
+        "cache-sweep-20260927j",
+        "a2a4977df6326cdb009223c580fd1bddad9ba491b1721e9b529c1bdce4bb96e7",
     ),
     "static/css/pulse_desktop_shell.css": (
         "reaction-catalogue-20260927h",
         "401375580f970d043ded8b961b8bb9c583a300a5e63498f2300f46dd2a7c5c00",
     ),
+    "static/css/pulse_home_os.css": (
+        "desktop-dock-20260927a",
+        "96fb6cc7716175a17ebe2696f4b61d565c1208557796f371c067264a854b3ca3",
+    ),
+    "static/css/pulse_live_studio.css": (
+        "cache-sweep-20260927j",
+        "38a99e03d858dcebb0e5912b74df1cfd96134b75ae0f45a9f3b342b30413d961",
+    ),
     "static/css/pulse_reaction_system.css": (
         "video-action-fit-20260927i",
         "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
+    ),
+    "static/css/pulse_sci_fi_system.css": (
+        "cache-sweep-20260927j",
+        "684f146c3b92f617ebc450763eaf201ff2d310d1eff8e55f1d57407a465663b5",
+    ),
+    "static/css/pulse_status_system.css": (
+        "cache-sweep-20260927j",
+        "63b2a0808303d6dc57a73c71f43146ce0c90262377e633bfe53f38e19c9d0921",
+    ),
+    "static/css/pulse_undx_action_center.css": (
+        "undx-actions-20260910a",
+        "99b422167935c3861e3e5e007777e6696c6945b4ea656f9a989517675c40e61d",
+    ),
+    "static/css/pulsesoc-tokens.css": (
+        "cache-sweep-20260927j",
+        "f01265e8f32a948729a463d51d1da7b730792541ca445ba574b3902d920d588a",
+    ),
+    "static/css/pulsesoc_global_call_overlay.css": (
+        "fullscreen-incoming-20260704",
+        "816191de56d96455e5e48c8fb25742ec46212c938d4b9fc3afb755d9919a82fc",
+    ),
+    "static/js/admin_ops_center.js": (
+        "opsv2-20260722i",
+        "9c1dfbbef0332f46212a76565e1df6c60d9df078aac126982a8d6de7616e2de0",
+    ),
+    "static/js/pulse_ads_hooks.js": (
+        "pulse-sci-fi-ads-20260626b",
+        "edb876c680772f4296b970d31d82c70e17c9247110b261af9ff70e22644012df",
+    ),
+    "static/js/pulse_emoji.js": (
+        "emoji-primitive-20260927b",
+        "289f19e250bba16f1c5e64c7a55333f9252f4a8de87b0c96831856cac1ffd0c7",
+    ),
+    "static/js/pulse_environment_engine.js": (
+        "static-bg-20260806a",
+        "34016c93804f65bfa1f23c117757f2c049aaa117b1982f13f08af92f85be7f11",
+    ),
+    "static/js/pulse_home_core.js": (
+        "reaction-catalogue-20260927h",
+        "1aeeccee65767efcd3210bfab59b4ef827a01b42fb05abe6f50132e23fa38c24",
+    ),
+    "static/js/pulse_i18n.js": (
+        "cache-sweep-20260927j",
+        "6852a673c94f5d4ad3ecfaf00d919b0927258ab7eff2d04d135822ad1ccca2b7",
+    ),
+    "static/js/pulse_media_renderer.js": (
+        "cache-sweep-20260927j",
+        "2b8f78a12d5d938c110234ea9b96f3e0237489234bc4af1995ff3d8dcfca59e3",
+    ),
+    "static/js/pulse_pwa_install.js": (
+        "cache-sweep-20260927j",
+        "1075e13753e32b324ef746a0eb1ba1bf37716b188053bc1e9703a901b63b3a0a",
+    ),
+    "static/js/pulse_radio.js": (
+        "pulse-radio-20260623a",
+        "86cc0e5cdadfd0c6e082a4061ddc648d1aa34f2b1df8c3b22d814f2503c62f65",
+    ),
+    "static/js/pulse_reaction_system.js": (
+        "cache-sweep-20260927j",
+        "0ce98ae4b1ab16da5578e154253841dd2d7a4b348600a5f7d17701cff9b4ecbb",
+    ),
+    "static/js/pulse_search_bridge.js": (
+        "cache-sweep-20260927j",
+        "dd7d53183767b6e7f177a49032415aa7e74191d05442f01c69951b1c2b3d6d71",
+    ),
+    "static/js/pulse_status_viewer.js": (
+        "status-v4-20260703b",
+        "c1a109a8a7a7098e511ee97da03eafdc27ad37cf96a72445d24b8afd42419485",
+    ),
+    "static/js/pulse_upload_manager.js": (
+        "cache-sweep-20260927j",
+        "b711b0816cbdbadcdf1e51d78792e7156ba034c4203b01d01e261d5e6952f94c",
+    ),
+    "static/js/pulseshell_bridge.js": (
+        "cache-sweep-20260927j",
+        "d6dfa4bd27c573000815964c04e1adf076386c202912454582e4db8230c6b16b",
     ),
 }
 
@@ -324,3 +424,34 @@ def test_catalog_payload_is_json_serialisable_and_complete():
     payload = json.loads(json.dumps(pulse_reactions.catalog_payload()))
     assert [entry["key"] for entry in payload] == [key for key, _e, _l in pulse_reactions.REACTION_CATALOG]
     assert all(entry["emoji"] and entry["label"] for entry in payload)
+
+
+def test_every_cache_busted_asset_is_pinned():
+    """The pin is only worth what it covers.
+
+    It used to list the two files someone had already been burned by, so every
+    other `?v=`-served asset could be edited under a stale token with CI fully
+    green -- which is exactly how a /pulse/videos fix shipped undeliverable, and
+    how eleven further assets came to be serving bytes no returning visitor had.
+    Deriving the expected set from bot.py means a newly tokenized asset fails
+    here until someone records its digest.
+    """
+    served = {
+        "static/" + rel
+        for rel, _token in re.findall(
+            r"/static/((?:css|js)/[A-Za-z0-9_.-]+\.(?:css|js))\?v=([\w.-]+)", read(BOT)
+        )
+    }
+    unpinned = sorted(served - set(CACHE_PINNED_ASSETS))
+    assert not unpinned, (
+        f"{len(unpinned)} asset(s) are served with a ?v= token but absent from "
+        f"CACHE_PINNED_ASSETS: {unpinned}. Until an asset is pinned, editing it "
+        "without bumping its token is invisible to CI and the change never "
+        "reaches a returning visitor. Add each with its token and sha256."
+    )
+
+    missing = sorted(set(CACHE_PINNED_ASSETS) - served)
+    assert not missing, (
+        f"CACHE_PINNED_ASSETS pins {missing}, which bot.py no longer serves with "
+        "a ?v= token. Drop the entry, or restore the token it is guarding."
+    )
