@@ -312,6 +312,7 @@ def static_safety_gates() -> list[Gate]:
     sw_source = read("static/sw.js")
     service_worker_source = read("static/service-worker.js")
     payment_provider = read("services/payment_provider.py")
+    webhook_verifier = read("services/stripe_webhook_verification.py")
     app_tsx = read("mobile/pulse-react-native/App.tsx")
     app_json = read("mobile/pulse-react-native/app.json")
 
@@ -326,7 +327,10 @@ def static_safety_gates() -> list[Gate]:
     ]
     combined = "\n".join([bot_source, push_source, notification_source, app_tsx, app_json])
     checks.append(gate("security", "no obvious committed secrets", not any(re.search(pattern, combined) for pattern in secret_patterns), "secret-like assignment patterns were not found", "static scan"))
-    checks.append(gate("security", "Stripe webhook signature", "stripe.Webhook.construct_event" in bot_source and "STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook" in bot_source and "verify_webhook_signature" in payment_provider, "unsigned live webhooks are rejected", "bot.py/services/payment_provider.py"))
+    # construct_event lives in services/stripe_webhook_verification.py, not bot.py, so
+    # one verifier can serve several Stripe destinations that each sign with their own
+    # secret. Follow the call path: handler delegates, verifier does Stripe's HMAC check.
+    checks.append(gate("security", "Stripe webhook signature", "stripe.Webhook.construct_event" in webhook_verifier and "stripe_webhook_verification.verify(" in bot_source and "STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook" in bot_source and "verify_webhook_signature" in payment_provider, "unsigned live webhooks are rejected", "bot.py/services/stripe_webhook_verification.py/services/payment_provider.py"))
     checks.append(gate("security", "PulseShell secrets", all(token not in app_tsx for token in ["STRIPE_SECRET", "BREVO_API_KEY", "LIVEKIT_API_SECRET", "DATABASE_URL", "FCM_PRIVATE_KEY"]), "mobile shell does not expose server secrets", "mobile/pulse-react-native/App.tsx"))
     checks.append(gate("security", "account deletion reachable", "/account/delete" in bot_source and "Permanently Delete Account" in read("templates/account.html"), "delete account UI/API are present", "templates/account.html"))
     checks.append(gate("security", "report/block reachable", "Report Profile" in bot_source and "Block User" in bot_source and "block_user" in read("pulse_communications_v2/routes.py"), "report/block surfaces remain wired", "bot.py/pulse_communications_v2/routes.py"))
