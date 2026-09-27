@@ -634,6 +634,73 @@ def _js(name):
     return (ROOT / name).read_text(encoding="utf-8")
 
 
+# ---------------------------------------------------------------------------
+# No script builds a product path of its own
+# ---------------------------------------------------------------------------
+# `SEARCH_RENDERERS` above is a named list, and the guards on it read for
+# search-specific things -- `window.PULSE_APP_FIRST_LINKS`, `item.url`. That
+# made it the wrong instrument for a script that is not a search renderer, and
+# `static/js/pulsesoc_cart.js` duly shipped `"/pulse/marketplace/" +
+# esc(line.listing_id)` without this file noticing: it was not on the list, and
+# the two prohibitions that *are* general (`bot.py`'s, above) match only `${`
+# interpolation, so a `+` concatenation walked past both.
+#
+# So this is a scan rather than a list. Every file under static/js is read, and
+# the product path may not appear in any of them by any means -- interpolated,
+# concatenated, or written out whole. `/api/pulse/marketplace/...` is a different
+# thing (an endpoint, owned by the blueprint, not by the link registry) and is
+# excluded by the lookbehind rather than by an allowlist, because an allowlist is
+# what failed here the first time.
+
+#: `/pulse/marketplace/<something>` where the `<something>` is a resource, not
+#: the `cart`/`listings` API tail. The lookbehind lets `/api/pulse/marketplace/`
+#: through; nothing else gets through.
+_PRODUCT_PATH_IN_SCRIPT = re.compile(r"(?<!api)/pulse/marketplace/")
+
+
+def _static_scripts():
+    return sorted((ROOT / "static" / "js").rglob("*.js"))
+
+
+@pytest.mark.parametrize(
+    "path", [p for p in _static_scripts()], ids=lambda p: p.name)
+def test_no_static_script_writes_a_marketplace_product_path(path):
+    """A product's url comes from the registry or it does not come from a script.
+
+    The positive half -- that the cart's links really are the registry's -- is
+    asserted by substitution in ``test_the_cart_links_products_through_the_registry``
+    in ``tests/test_web_cart_checkout.py``. This half is the prohibition, and it
+    is here because this is the file that owns "who decides what a PulseSoc
+    destination's link looks like".
+    """
+    source = path.read_text(encoding="utf-8")
+    hit = _PRODUCT_PATH_IN_SCRIPT.search(source)
+    assert hit is None, (
+        f"{path.relative_to(ROOT)} builds a Marketplace product path itself "
+        f"(at offset {hit.start() if hit else 0}). Inject "
+        f"`app_links.website_href_template('product', source='web')` from the "
+        f"template and substitute `__RESOURCE_ID__` instead -- a path written "
+        f"here keeps working through a change to the registry, which is worse "
+        f"than breaking."
+    )
+
+
+def test_mutation_the_product_path_scan_can_fail():
+    """The scan above is a search over files; an empty file set would pass it.
+
+    Two things are checked, because the scan has two ways to be vacuous: it
+    could be reading no files, or its pattern could match nothing anywhere.
+    """
+    assert len(_static_scripts()) > 20, "the static/js scan found almost no files"
+    assert _PRODUCT_PATH_IN_SCRIPT.search("href='/pulse/marketplace/' + id"), (
+        "the pattern does not match the concatenation that got past this file")
+    assert _PRODUCT_PATH_IN_SCRIPT.search("href=`/pulse/marketplace/${id}`"), (
+        "the pattern does not match an interpolated product path")
+    assert not _PRODUCT_PATH_IN_SCRIPT.search('pulseApi("/api/pulse/marketplace/cart")'), (
+        "the pattern rejects the cart API, which is a blueprint endpoint and not "
+        "a link the registry owns")
+
+
 def _injected_link_map(body):
     """The `window.PULSE_APP_FIRST_LINKS` object, parsed out of a rendered page."""
 

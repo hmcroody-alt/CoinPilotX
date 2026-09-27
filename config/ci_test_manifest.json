@@ -580,6 +580,7 @@
     "tests/test_verification_telemetry.py",
     "tests/test_voip_pushkit_delivery.py",
     "tests/test_watchlists_activation.py",
+    "tests/test_web_cart_checkout.py",
     "tests/test_web_marketplace_cart.py",
     "tests/test_web_native_parity.py",
     "tests/test_website_app_link_ctas.py",
