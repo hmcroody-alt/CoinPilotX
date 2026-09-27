@@ -195,27 +195,28 @@ def test_setup_code_cannot_confer_auth_standing():
     to `bot.py` exactly like the private helpers the delegation walk exists to
     follow. It leads to `_init_db_impl` -- 8,800 lines of DDL -- and from there to
     `ensure_owner_admin_with_cursor`, which provisions the owner administrator at
-    boot. So one admin-vocabulary call landing anywhere in that subtree
-    reclassifies every ungated route as `admin`, and the ungated routes here are
-    `/api/mobile/auth/login`, registration, recovery, password reset, email
-    confirmation, the Brevo webhook and `/reset-password`: the unauthenticated
-    surface, entire. An open route presenting as protected is the one outcome
-    `services/route_auth.py` is built never to produce.
+    boot. So one admin-vocabulary *mention* anywhere in that subtree reclassifies
+    every ungated route as `admin` -- and on `main` one already does, so eight
+    endpoints classify `admin` today: `/api/mobile/auth/login`, registration,
+    recovery, password reset, email confirmation, the Brevo webhook and
+    `/reset-password`, the unauthenticated surface entire. An open route
+    presenting as protected is the one outcome `services/route_auth.py` is built
+    never to produce.
 
-    **Pinned by simulating that call, not by asserting today's answer.** Today
-    nothing in the setup chain is in the vocabulary, so login already classifies
-    `unknown` and a test asserting `unknown` would pass against the broken
-    traversal while proving nothing. That is this file's own warning about a guard
-    degrading in the same direction as the thing it guards, and it is why the
-    injection below is the assertion rather than a convenience.
+    **Pinned by injecting the offending name rather than by asserting today's
+    answer**, though today's answer would also catch it. What triggers the live
+    case is a prose comment at `bot.py:124875` describing an `account_user_id`
+    column, because `_CALL` is a regex over source text and cannot tell a comment
+    from a call. A test keyed to that would go green the day somebody rewords the
+    comment, while the traversal stayed exactly as wrong. Injecting keeps the
+    assertion about the walk refusing to enter setup code, which is the property
+    being defended.
 
     Which ingredient does the damage is worth knowing, because it is not the
     obvious one: `_init_db_impl` cannot refuse anybody, so on its own it is only
     `identity-without-refusal`. What upgrades it is `_caller_refuses` flowing
-    *down* from the view -- the `401` the login route returns for a wrong
-    password. The route's own rejection of bad credentials is what ends up
-    vouching for the bootstrap. `/api/mobile/auth/recover` is the control: it
-    tells everybody "if an account exists", never refuses, and never flips.
+    *down* from the view. The route's own rejection of a bad password is what
+    ends up vouching for the bootstrap.
     """
     view = bot.app.view_functions.get(_OPEN_VIEW_ENDPOINT)
     assert view is not None, (

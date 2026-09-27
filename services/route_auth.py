@@ -422,21 +422,34 @@ MAX_DELEGATION_DEPTH = 2
 #: admin-vocabulary call landing anywhere in that subtree gives every ungated
 #: route the evidence `via:init_db>via:_init_db_impl>identity+refusal:...`.
 #:
-#: Measured on this tree by adding exactly one such call: 7 endpoints flip to
-#: `admin`, and they are `/api/mobile/auth/login`, `register`, `reset-password`,
-#: `confirm-email`, `confirmation-status`, the Brevo webhook and `/reset-password`
-#: — the unauthenticated surface, entire. That is the one outcome this module is
-#: built never to produce. It also raises their evidence rank permanently, so the
-#: next honest regeneration fails `test_no_route_loses_its_gate` and the repair
-#: that looks obvious is to freeze the lie.
+#: This is not a forecast. It is already happening on `main`. Eight endpoints
+#: classify `admin` today on the evidence
+#: `via:init_db>via:_init_db_impl>identity+refusal:admin_current_user`, and they
+#: are `/api/mobile/auth/login`, `register`, `recover`, `reset-password`,
+#: `confirm-email`, `confirmation-status`, the Brevo webhook and
+#: `/reset-password` — the unauthenticated surface, entire. That is the one
+#: outcome this module is built never to produce.
+#:
+#: What put them there is a **comment**. `_CALL` is a regex over source text, so
+#: the prose at `bot.py:124875` — "`admin_current_user()` reads
+#: session["admin_user_id"]", explaining an `account_user_id` column inside the
+#: DDL — is indistinguishable from a call. Nobody added admin code to the
+#: bootstrap. Somebody documented a column. The subtree is 8,913 lines of schema
+#: and any sentence in it naming a gate helper has the same effect, which is why
+#: the fix is to refuse the subtree rather than to fix the sentence.
+#:
+#: The whole protection suite is blind to it, and blind in the dangerous
+#: direction: `test_no_route_loses_its_gate` compares evidence *rank* and fails
+#: only on a drop, so a route inflating from `unknown` to `admin` passes. The
+#: cost is paid later — the next honest baseline regeneration writes `admin` for
+#: the login route, and from then on the record says the unauthenticated surface
+#: is administrative and no test can tell otherwise.
 #:
 #: Worth knowing which ingredient does the damage, because it is not the obvious
 #: one: `_init_db_impl` cannot refuse anybody, so alone it is only
 #: `identity-without-refusal`. What upgrades it is `_caller_refuses` flowing
-#: *down* from the view — the `401` the login route returns for a wrong password.
-#: The route's own rejection of bad credentials is what ends up vouching for the
-#: bootstrap. `/api/mobile/auth/recover` is the control: it answers "if an account
-#: exists" to everybody, never refuses, and so never flips.
+#: *down* from the view. The route's own rejection of a bad password is what
+#: ends up vouching for the bootstrap.
 #:
 #: A name list rather than reachability analysis, for the reason at the top of
 #: this file — a resolver that decided for itself which functions run per-request
