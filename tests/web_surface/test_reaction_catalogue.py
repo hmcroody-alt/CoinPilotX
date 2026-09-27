@@ -204,6 +204,55 @@ def test_the_two_reproduced_bugs_stay_fixed(key, expected):
     assert pulse_reactions.emoji_for(key) == expected
 
 
+def test_the_native_app_agrees_with_the_server_catalogue():
+    """The app cannot read the injected catalogue, so its copy is checked here.
+
+    ``PostCard.tsx`` has to carry its own table -- it is a React Native bundle,
+    there is no page for the server to inject into. That makes it the one place
+    a second table is unavoidable, and therefore the one place that needs a
+    cross-language test. Without it the app and the web drift apart silently,
+    which is the whole class of bug this catalogue exists to end.
+
+    Note this is the *display* map, not the app's six-key tray. The tray being
+    short is a deliberate product choice; the display map must be complete,
+    because a phone renders posts carrying reactions sent from the web.
+    """
+    post_card = os.path.join(REPO, "mobile-native", "src", "components", "PostCard.tsx")
+    source = read(post_card)
+    block = re.search(r"const REACTION_EMOJI: Record<string, string> = \{(.*?)\n\};", source, re.S)
+    assert block, "REACTION_EMOJI is gone from PostCard.tsx; the app has no display catalogue"
+    native = dict(re.findall(r"(\w+):\s*\"([^\"]+)\"", block.group(1)))
+
+    assert native == pulse_reactions.EMOJI, (
+        "mobile-native/src/components/PostCard.tsx has drifted from "
+        "services/pulse_reactions.py. The same reaction would render as a "
+        "different feeling on the app than on the web.\n"
+        f"  only in the app:    {sorted(set(native) - set(pulse_reactions.EMOJI))}\n"
+        f"  missing in the app: {sorted(set(pulse_reactions.EMOJI) - set(native))}\n"
+        f"  different glyph:    "
+        f"{sorted(k for k in set(native) & set(pulse_reactions.EMOJI) if native[k] != pulse_reactions.EMOJI[k])}"
+    )
+
+
+def test_the_app_summary_is_driven_by_counts_not_by_its_tray():
+    """A reaction outside the app's six-key tray must still be displayed.
+
+    ``reactionSummary`` used to filter the server's counts through the tray, so
+    a post whose only reactions were ``whale`` or ``bullish`` -- both perfectly
+    sendable from the web -- summarised as the empty-state heart on a phone.
+    """
+    post_card = os.path.join(REPO, "mobile-native", "src", "components", "PostCard.tsx")
+    body = re.search(r"function reactionSummary\(counts: Record<string, number>\) \{(.*?)\n\}", read(post_card), re.S)
+    assert body, "reactionSummary is gone or was reshaped; re-check this guard"
+    assert "REACTIONS.filter" not in body.group(1), (
+        "reactionSummary filters the server's counts through the six-key tray "
+        "again, so reactions sent from the web read as 'no reactions' on a phone"
+    )
+    assert "Object.keys(counts" in body.group(1), (
+        "reactionSummary must be driven by the counts the server sent"
+    )
+
+
 def test_catalog_payload_is_json_serialisable_and_complete():
     """It is injected with `json.dumps`, so it has to survive the round trip."""
     payload = json.loads(json.dumps(pulse_reactions.catalog_payload()))

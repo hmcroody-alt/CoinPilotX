@@ -1297,11 +1297,45 @@ const REACTIONS = [
   { key: "rocket", emoji: "🚀", label: "Rocket" }
 ] as const;
 
+// The glyph for every reaction the API accepts, not just the six the tray
+// offers. Mirrors services/pulse_reactions.py, which is the source of truth;
+// tests/web_surface/test_reaction_catalogue.py fails if the two drift apart.
+//
+// REACTIONS above stays six on purpose -- that is the tray, a deliberate
+// choice about what is one tap away. This map is about *display*, and it has
+// to cover everything, because posts arrive carrying reactions sent from the
+// web, where all eighteen are reachable.
+const REACTION_EMOJI: Record<string, string> = {
+  like: "👍",
+  love: "❤️",
+  funny: "😂",
+  wow: "😮",
+  brutal: "😢",
+  scam_alert: "😡",
+  fire: "🔥",
+  fast_signal: "⚡",
+  elite: "💎",
+  rocket: "🚀",
+  clap: "👏",
+  hundred: "💯",
+  target: "🎯",
+  smart: "🧠",
+  shield: "🛡️",
+  whale: "🐳",
+  bullish: "📈",
+  bearish: "📉"
+};
+
 function reactionSummary(counts: Record<string, number>) {
-  const active = REACTIONS.filter((reaction) => Number(counts[reaction.key] || 0) > 0)
-    .sort((left, right) => Number(counts[right.key] || 0) - Number(counts[left.key] || 0))
+  // Driven by the counts the server actually sent, not by the tray. Filtering
+  // by the tray meant a post whose only reactions were e.g. `whale` or
+  // `bullish` summarised as "♡" -- the no-reactions state -- while real people
+  // had reacted to it.
+  const active = Object.keys(counts || {})
+    .filter((key) => Number(counts[key] || 0) > 0 && REACTION_EMOJI[key])
+    .sort((left, right) => Number(counts[right] || 0) - Number(counts[left] || 0))
     .slice(0, 3)
-    .map((reaction) => reaction.emoji);
+    .map((key) => REACTION_EMOJI[key]);
   return active.length ? active.join("") : "♡";
 }
 
