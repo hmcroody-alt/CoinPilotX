@@ -41734,6 +41734,14 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         ("Notifications", "/pulse/notifications", "A"),
         ("Pulse Radio", "/pulse/music#pulse-radio", "R"),
         ("Creator Studio", "/pulse/creator-studio", "✦"),
+        # Two entries, deliberately. /business is the browser counterpart of the
+        # app's Business tile -- fourteen named sections, each labelled with what
+        # the web can actually do for it today. /business-os is the older
+        # token-styled console that drives the 199 /api/business-os endpoints
+        # directly through forms. They are different products for different
+        # people, so collapsing them would either hide the console from the
+        # members who use it or dress it up as the section hub, which it is not.
+        ("Business", "/business", "◧"),
         ("Business OS", "/business-os", "◈"),
         ("UNDX AI", "/pulse/assistant", "AI"),
         # Gated on the same flag as the page and every /api/business-os/undx

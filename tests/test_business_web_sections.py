@@ -429,3 +429,71 @@ def test_the_page_shows_the_coverage_rather_than_only_the_cards(client, app):
     counts = bws.coverage(app)
     assert str(counts["web"]) in body
     assert "work in this browser" in body
+
+
+# --------------------------------------------------------------------------
+# Reachability
+# --------------------------------------------------------------------------
+
+
+def test_the_navigation_offers_the_hub(app):
+    """A hub nothing links to is not accessible, whatever it answers.
+
+    The first cut of this feature shipped the route, the registry and eighteen
+    passing tests, and no page on the site linked to ``/business`` -- the only
+    way in was to type the URL. Every check above would have stayed green
+    forever. ``pulse_shell_rail_items`` is the single catalogue both web shells
+    read, so an entry there is an entry everywhere, and this is the assertion
+    that it exists at all.
+    """
+
+    hrefs = [href for _label, href, _icon in bot.pulse_shell_rail_items()]
+    assert bws.HUB_PATH in hrefs, (
+        f"nothing in the navigation catalogue points at {bws.HUB_PATH}: {hrefs}"
+    )
+
+
+def test_the_hub_is_reachable_from_a_page_a_member_actually_lands_on(client):
+    """End-to-end, through the shell, not through the catalogue function.
+
+    ``pulse_shell_rail_items`` returning the right list proves nothing if the
+    shell that renders it drops entries -- which is precisely the regression
+    ``tests/web_surface/test_shell_nav_parity.py`` was written for, where one
+    shell rendered twenty-three destinations and the other rendered seven. So
+    this fetches a rendered page and looks for the link in the markup.
+    """
+
+    body = client.get("/pulse/settings").get_data(as_text=True)
+    assert f"href='{bws.HUB_PATH}'" in body or f'href="{bws.HUB_PATH}"' in body, (
+        "a signed-in member on /pulse/settings is offered no link to the "
+        "Business hub, so the navigation entry is not surviving the shell"
+    )
+
+
+def test_the_hub_names_the_console_it_does_not_replace(client):
+    """``/business-os`` predates this hub and still drives real forms.
+
+    Several sections the hub greys out -- Store, Orders, the marketplace
+    composer -- do have a working form inside that console. The hub keeps
+    calling them "App" because the console is not the product page those cards
+    are waiting on, but a page that greys a section while a working form for it
+    exists one click away, unnamed, understates the website. This pins the link
+    so the two surfaces cannot drift into one hiding the other.
+
+    The substring ``/business-os`` on its own is useless here: the console is
+    also an entry in the shared navigation catalogue, so it is in this page's
+    markup either way. Written that loosely the check passed against code with
+    no mention of the console in the hub at all. It matches the hub's own
+    paragraph instead.
+    """
+
+    body = client.get(bws.HUB_PATH).get_data(as_text=True)
+    start = body.find('class="console"')
+    assert start != -1, (
+        "the hub does not mention the Business OS console, so the page looks "
+        "less capable than the website is"
+    )
+    paragraph = body[start:body.find("</p>", start)]
+    assert 'href="/business-os"' in paragraph, (
+        f"the hub's console paragraph does not link to it: {paragraph!r}"
+    )
