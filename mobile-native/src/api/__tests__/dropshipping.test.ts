@@ -80,6 +80,7 @@ import {
   getSupplierStatus,
   importNeedsReview,
   importSelected,
+  isBatchTooLarge,
   listImportedProducts,
   listSupplierConnections,
   previewPricing,
@@ -758,6 +759,68 @@ describe("bulk import reports each item, not one verdict", () => {
     });
     expect(importNeedsReview(await importSelected(SCOPE, "c1", { itemIds: ["i1"] }))).toBe(false);
   });
+
+  it("carries the rows the run did not reach, and the cap that stopped it", async () => {
+    // The production failure's wire shape. `requested` is what the seller asked
+    // for and `deferred` is what one run could not take, so a screen can say
+    // "25 of 30" instead of promising all 30 and then reporting five phantom
+    // failures.
+    mockPulseApi.mockResolvedValue({
+      requested: 3,
+      imported: 2,
+      deferred: 1,
+      max_per_import: 2,
+      results: [
+        { item_id: "i1", outcome: "PUBLISHED", listing_id: 5 },
+        { item_id: "i2", outcome: "PUBLISHED", listing_id: 6 },
+        { item_id: "i3", outcome: "DEFERRED" }
+      ]
+    });
+    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2", "i3"] });
+    expect(run.requested).toBe(3);
+    expect(run.deferred).toBe(1);
+    expect(run.maxPerImport).toBe(2);
+  });
+
+  it("counts the deferred rows itself when the server did not total them", async () => {
+    // A server that names the outcome per row but omits the total must not
+    // collapse to "0 deferred" — that reads as a finished run and the rows left
+    // in the cart never get a second tap.
+    mockPulseApi.mockResolvedValue({
+      requested: 2,
+      imported: 1,
+      results: [{ item_id: "i1", outcome: "PUBLISHED" }, { item_id: "i2", outcome: "DEFERRED" }]
+    });
+    const run = await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] });
+    expect(run.deferred).toBe(1);
+    expect(run.maxPerImport).toBeNull();
+  });
+
+  it("does not ask the merchant to review a run that only deferred rows", async () => {
+    // A deferred row is not a problem to look at. Counting it as one would put
+    // a warning on every large cart.
+    mockPulseApi.mockResolvedValue({
+      requested: 2,
+      imported: 1,
+      deferred: 1,
+      results: [{ item_id: "i1", outcome: "PUBLISHED" }, { item_id: "i2", outcome: "DEFERRED" }]
+    });
+    expect(importNeedsReview(await importSelected(SCOPE, "c1", { itemIds: ["i1", "i2"] }))).toBe(false);
+  });
+
+  it("names an over-cap refusal, which stateForError can only call ERROR", async () => {
+    // `batch_too_large` arrives as a 400, which matches none of stateForError's
+    // status classes, so it falls to a bare ERROR and the screen says "That
+    // import didn't run." That fallthrough was the whole of what a seller with
+    // 58 products in the cart was told, which is why this code gets a
+    // predicate of its own rather than another state.
+    const overCap = new PulseApiError("too many", 400, "batch_too_large");
+    expect(isBatchTooLarge(overCap)).toBe(true);
+    expect(stateForError(overCap)).toBe("ERROR");
+    expect(isBatchTooLarge(new PulseApiError("down", 503, "provider_unavailable"))).toBe(false);
+    expect(isBatchTooLarge(new Error("boom"))).toBe(false);
+    expect(isBatchTooLarge(null)).toBe(false);
+  });
 });
 
 /* ------------------------------------------------------------------ *
@@ -781,6 +844,18 @@ describe("the cart is its own layer", () => {
     mockPulseApi.mockResolvedValue({ items: [{ item_id: "i1", external_product_id: "p1" }], count: 1 });
     const cart = await getImportCart(SCOPE, "c1");
     expect(cart.items[0].preview).toBeNull();
+  });
+
+  it("reports how many of a cart one import will take, and null when unsaid", async () => {
+    // The cart can hold more than one run imports. The screen needs the run's
+    // cap from the server rather than a constant of its own, and `null` has to
+    // stay distinguishable from a number so an older server means "do not claim
+    // a limit" rather than "the limit is zero".
+    mockPulseApi.mockResolvedValue({ items: [], count: 0, max_per_import: 25 });
+    expect((await getImportCart(SCOPE, "c1")).maxPerImport).toBe(25);
+
+    mockPulseApi.mockResolvedValue({ items: [], count: 0 });
+    expect((await getImportCart(SCOPE, "c1")).maxPerImport).toBeNull();
   });
 });
 
