@@ -76,6 +76,47 @@ from .router import SurfacePolicy
 
 LOGGER = logging.getLogger(__name__)
 
+#: What a relatedness claim would be *pointing at*, per surface.
+#:
+#: The reason code is a user-visible assertion, so it may only name something the
+#: viewer can actually look at. Three surfaces have a post on screen and one has a
+#: product; Messenger and Marketplace have neither, so a card there earns no
+#: relatedness claim however well it scored — `choose_reason` reads the absence as
+#: "no context claim available" and the card falls through to a reason that is
+#: true, or to "popular".
+#:
+#: Written as an explicit map over `schema.SURFACES` rather than as
+#: `SIMILAR_PRODUCT if surface == "product_detail" else CONTEXT`. That form was
+#: correct for the surfaces it was written for and silently wrong for the other
+#: two: it answered "related to this post" for a Messenger strip inside a
+#: conversation and for a Marketplace shelf on the shop tab. Neither is reachable
+#: from the shipped clients today — `useMessengerCommerce` and
+#: `useMarketplaceCommerce` send no context — but the serve route accepts a
+#: context for any surface in `SURFACES`, so the claim was one new caller away,
+#: and the web build is the next new caller. A default of `None` also means a
+#: surface added later has to declare its own wording instead of inheriting the
+#: most specific claim in the vocabulary.
+#:
+#: On Messenger the mislabel would be worse than inaccurate. The code renders
+#: through `commerce:discovery.subtitle.related_to_this_post`, whose English is
+#: "Related to what you're reading" — printed under a product inside a private
+#: conversation, that tells the reader their messages were read in order to pick
+#: it. They were not: `useMessengerCommerce` sends nothing about the thread, and
+#: nothing in this pipeline can see a message. A caption that invents a
+#: surveillance capability the product does not have costs more than a missing
+#: caption by a wide margin.
+#:
+#: This deliberately coincides with `suitability.CONTENT_SURFACES` without
+#: reading it. Same three surfaces, two unrelated questions: that set is about
+#: whether commerce may appear beside content, this map is about what a card may
+#: claim once it does.
+CONTEXT_CLAIM: Mapping[str, str] = {
+    "feed": ranking.REASON_CONTEXT,
+    "reels": ranking.REASON_CONTEXT,
+    "post_detail": ranking.REASON_CONTEXT,
+    "product_detail": ranking.REASON_SIMILAR_PRODUCT,
+}
+
 
 def _rows(cur) -> list[dict]:
     try:
@@ -246,9 +287,7 @@ def _serve(
     # The context signal is the same computation on every surface; the *claim* it
     # justifies is not. Resolved here, where the surface is known, rather than
     # inside the ranker, which is deliberately surface-agnostic.
-    context_reason = (
-        ranking.REASON_SIMILAR_PRODUCT if surface == "product_detail" else ranking.REASON_CONTEXT
-    )
+    context_reason = CONTEXT_CLAIM.get(surface)
 
     scored = []
     now = subject.now_utc()

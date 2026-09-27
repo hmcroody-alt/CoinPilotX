@@ -184,8 +184,12 @@ class TestTheRelatednessClaimIsTrue:
             assert placement["reason"] != ranking.REASON_SIMILAR_PRODUCT
 
     def test_both_context_reasons_are_known_to_the_priority_order(self):
-        # `choose_reason` falls back to the post wording for a code it does not
-        # recognise, so an unregistered code would silently reintroduce exactly
-        # the mislabelling this file is about.
+        # `choose_reason` drops a code it does not recognise, so an unregistered
+        # code would take the relatedness claim off this surface entirely — the
+        # product page would serve the same row under "popular". It used to
+        # substitute the *post* wording instead, which reintroduced exactly the
+        # mislabelling this file is about; see
+        # `TestARelatednessClaimNamesSomethingOnScreen` in
+        # `test_signals_tell_the_truth.py` for why silence is the safer fallback.
         assert ranking.REASON_SIMILAR_PRODUCT in ranking.REASON_PRIORITY
         assert ranking.REASON_CONTEXT in ranking.REASON_PRIORITY

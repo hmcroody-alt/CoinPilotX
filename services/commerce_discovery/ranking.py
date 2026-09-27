@@ -69,7 +69,9 @@ REASON_CONTEXT = "related_to_this_post"
 #: Two codes rather than one generic "related to this" because the reason string
 #: is the user-visible claim, and "related to this post" under a product is a
 #: false statement about what the engine matched on. Which one applies is the
-#: caller's to declare — see ``context_reason`` on :func:`choose_reason`.
+#: caller's to declare — see ``context_reason`` on :func:`choose_reason`, which
+#: also takes ``None`` for a surface where *neither* wording is true because
+#: there is nothing on screen for the card to be related to.
 REASON_SIMILAR_PRODUCT = "similar_to_this_product"
 REASON_SELLER_FOLLOWED = "from_sellers_you_follow"
 REASON_TRENDING = "trending"
@@ -712,7 +714,7 @@ def score_listing(
     parse_iso=None,
     now=None,
     weights: Optional[Mapping[str, float]] = None,
-    context_reason: str = REASON_CONTEXT,
+    context_reason: Optional[str] = REASON_CONTEXT,
 ) -> dict:
     """``{score, reason, signals, contributions}`` for one listing.
 
@@ -783,7 +785,7 @@ def choose_reason(
     stats: Optional[Mapping[str, Any]] = None,
     has_context: bool = False,
     viewed_categories: Sequence[str] = (),
-    context_reason: str = REASON_CONTEXT,
+    context_reason: Optional[str] = REASON_CONTEXT,
 ) -> str:
     """The most specific *true* explanation, never the most flattering one.
 
@@ -792,13 +794,25 @@ def choose_reason(
     a card labelled "Because you viewed Shoes" for someone who never viewed
     shoes is worse than no label, because it is a claim about the user's own
     history that they can check.
+
+    ``context_reason`` is the caller's declaration of what the context *was*, and
+    ``None`` is a legitimate answer: a Messenger strip and a Marketplace shelf
+    have no post and no product on screen, so a relatedness claim there names
+    nothing the viewer can look at. A card with no context claim is not
+    unexplained — it still earns one of the reasons below, or "popular".
     """
     claims: set[str] = set()
 
     if viewed_categories and _tokens(listing.get("category")) & _tokens(*viewed_categories):
         claims.add(REASON_BECAUSE_YOU_VIEWED)
-    if has_context and signals.get("relevance", 0.0) >= 0.6:
-        claims.add(context_reason if context_reason in REASON_PRIORITY else REASON_CONTEXT)
+    # An unregistered code drops the claim rather than substituting
+    # `REASON_CONTEXT`. The substitution was the wrong direction for a fallback:
+    # it answered an unrecognised declaration with the single most specific claim
+    # in the vocabulary, so a typo or a newly added surface got "related to this
+    # post" by default — the one failure this module's docstring names. Silence is
+    # the safe answer to "I don't know what to call this".
+    if has_context and context_reason in REASON_PRIORITY and signals.get("relevance", 0.0) >= 0.6:
+        claims.add(context_reason)
     try:
         if int(listing.get("seller_user_id") or 0) in followed_sellers:
             claims.add(REASON_SELLER_FOLLOWED)

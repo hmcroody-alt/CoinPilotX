@@ -24,7 +24,7 @@ its own body, the wrong answer it would have gotten.
 
 from __future__ import annotations
 
-from services.commerce_discovery import config, engine, preferences, ranking
+from services.commerce_discovery import config, engine, preferences, ranking, schema
 
 
 class TestTrendingIsAClaimAboutNow:
@@ -251,3 +251,107 @@ class TestBothInterestBranchesAreReachable:
     def test_an_unrelated_interest_does_not_score(self, market):
         listing = {"category": "lamps", "title": "Product 9"}
         assert ranking.predicted_interest(listing, ("shoes",), ("shoes",)) == 0
+
+
+class TestARelatednessClaimNamesSomethingOnScreen:
+    """"Related to this post" is a claim about the frame, not about the viewer.
+
+    Every other reason code is falsifiable from the viewer's own history, which is
+    what the rest of this file is about. This one is falsifiable at a glance: the
+    viewer either can see the thing the card says it relates to, or they cannot.
+
+    It was not true on two of the six surfaces. `engine` picked the wording as
+    ``REASON_SIMILAR_PRODUCT if surface == "product_detail" else REASON_CONTEXT``,
+    so a Messenger strip inside a conversation and a Marketplace shelf on the shop
+    tab both said "related to this post" with no post anywhere on the screen —
+    measured at eight of eight cards on the Marketplace shelf. Neither is reachable
+    from the shipped clients, which send no context for those surfaces, but the
+    serve route accepts a context for any surface in ``SURFACES``; the claim was one
+    new caller away, and the web build is the next new caller.
+
+    On Messenger it is not merely inaccurate. The code renders through
+    ``commerce:discovery.subtitle.related_to_this_post``, whose English reads
+    "Related to what you're reading" — under a product inside a private
+    conversation, that tells the reader their messages were read to choose it.
+    Nothing in this pipeline can see a message. The caption would be advertising a
+    capability the product does not have.
+
+    The tests below pass a context to every surface, because a context is the only
+    way to make the claim fire at all — and the point is that a *supplied* context
+    is not by itself a licence to claim relatedness.
+    """
+
+    #: Matches the conftest catalogue, so relevance saturates and the claim fires
+    #: wherever it is permitted. A context that matched nothing would make every
+    #: assertion below pass for the wrong reason.
+    CONTEXT = {"category": "shoes"}
+
+    def reasons(self, market, surface):
+        return [placement["reason"] for placement in market.serve(surface, context=self.CONTEXT)]
+
+    def test_a_messenger_card_does_not_claim_to_relate_to_a_post(self, market):
+        reasons = self.reasons(market, "messenger")
+        assert reasons, "control: the surface must still be servable with a context"
+        assert ranking.REASON_CONTEXT not in reasons
+
+    def test_a_marketplace_shelf_card_does_not_claim_to_relate_to_a_post(self, market):
+        reasons = self.reasons(market, "marketplace")
+        assert reasons, "control: the surface must still be servable with a context"
+        assert ranking.REASON_CONTEXT not in reasons
+
+    def test_neither_surface_claims_similarity_to_a_product_either(self, market):
+        # The wrong fix, named so it cannot be mistaken for the right one. There is
+        # no product on screen on these surfaces any more than there is a post, so
+        # swapping one wording for the other would move the false claim rather than
+        # remove it.
+        for surface in ("messenger", "marketplace"):
+            assert ranking.REASON_SIMILAR_PRODUCT not in self.reasons(market, surface)
+
+    def test_the_cards_are_still_served_and_still_explained(self, market):
+        # Dropping the claim must not drop the card or leave it captionless. The
+        # viewer still gets a reason; it is just one that is true.
+        for surface in ("messenger", "marketplace"):
+            reasons = self.reasons(market, surface)
+            assert reasons
+            assert all(reason in ranking.REASON_PRIORITY for reason in reasons)
+
+    def test_the_claim_is_unchanged_where_there_is_a_post(self, market):
+        # The other half. A rule that removed the claim everywhere would pass all
+        # four tests above and destroy the feature.
+        for surface in ("feed", "reels", "post_detail"):
+            assert ranking.REASON_CONTEXT in self.reasons(market, surface)
+
+    def test_every_surface_declares_its_own_wording_or_none(self, market):
+        # The map is exhaustive over the registered surfaces, so a surface added
+        # later is a missing key — which reads as "no claim" — rather than
+        # inheriting the most specific claim in the vocabulary by default.
+        for surface in schema.SURFACES:
+            assert engine.CONTEXT_CLAIM.get(surface) in (
+                None, ranking.REASON_CONTEXT, ranking.REASON_SIMILAR_PRODUCT
+            )
+        assert set(engine.CONTEXT_CLAIM) < set(schema.SURFACES)
+
+    def test_an_unregistered_wording_produces_no_claim(self, market):
+        # `choose_reason` used to answer an unrecognised declaration with
+        # `REASON_CONTEXT` — the single most specific claim available — so a typo
+        # became the exact mislabelling this class is about. Silence is the safe
+        # answer to "I don't know what to call this".
+        reason = ranking.choose_reason(
+            {"category": "shoes"},
+            {"relevance": 1.0},
+            has_context=True,
+            context_reason="not_a_registered_code",
+        )
+        assert reason != ranking.REASON_CONTEXT
+
+    def test_none_is_an_accepted_declaration(self, market):
+        # Not a TypeError and not a fallback: the caller is allowed to say that no
+        # relatedness wording applies.
+        reason = ranking.choose_reason(
+            {"category": "shoes"},
+            {"relevance": 1.0},
+            has_context=True,
+            context_reason=None,
+        )
+        assert reason in ranking.REASON_PRIORITY
+        assert reason != ranking.REASON_CONTEXT
