@@ -16923,6 +16923,9 @@ def admin_page_html(title, body, admin=None):
             ("☎", "Calls", "/admin/calls", False),
         ]),
         ("Commerce", [
+            # The curator publishes on its own schedule, so the kill switch has
+            # to be somewhere an operator can find without knowing it exists.
+            ("◇", "PulseDrop", "/admin/pulsedrop", False),
             ("$", "Transactions", "/admin/transactions", False),
             ("◈", "Payments Command Center", "/admin/payments-command-center", False),
             ("⚠", "Unmatched Payments", "/admin/unmatched-payments", False),
@@ -110300,6 +110303,197 @@ def admin_ai_command_page():
     return admin_page_html("AI Admin Command", body, admin)
 
 
+def _pulsedrop_cell(value) -> str:
+    return html_escape(clean_html("" if value is None else str(value)))
+
+
+def _pulsedrop_setting_card(item, may_edit):
+    """One tunable, its provenance, and the controls to change it.
+
+    The provenance pill is the reason this is a card rather than a table row.
+    ``PulseDrop enabled: off`` is two different incidents depending on whether a
+    human switched it off or the deployment never set the variable, and an
+    operator who cannot tell them apart will either re-break a deliberate
+    shutdown or wait for a worker that was never configured to run.
+    """
+    overridden = bool(item.get("overridden"))
+    source = "Set here" if overridden else "From environment"
+    pill = f"<span class='pill{' on' if overridden else ''}'>{source}</span>"
+    clear = (
+        f"<button name='form_action' value='clear'>Clear</button>"
+        if overridden and may_edit else ""
+    )
+    if not may_edit:
+        control = "<span class='muted'>Read only</span>"
+    elif item.get("kind") == "flag":
+        # Only the button that changes something, so a kill switch is one
+        # unambiguous click during an incident rather than a select plus a save.
+        turning_on = not item.get("value")
+        control = (
+            f"<input type='hidden' name='value' value='{'true' if turning_on else 'false'}'>"
+            f"<button class='primary' name='form_action' value='set'>"
+            f"{'Turn on' if turning_on else 'Turn off'}</button>{clear}"
+        )
+    else:
+        spec = item.get("spec")
+        control = (
+            f"<input type='number' name='value' value='{_pulsedrop_cell(item.get('value'))}' "
+            f"min='{int(getattr(spec, 'low', 0))}' max='{int(getattr(spec, 'high', 0))}'>"
+            f"<button class='primary' name='form_action' value='set'>Save</button>{clear}"
+        )
+    return (
+        "<div class='card'>"
+        f"<h3>{_pulsedrop_cell(item.get('label'))}</h3>"
+        f"<p class='metric'>{_pulsedrop_cell(item.get('display'))}</p>"
+        f"<p>{pill} <span class='pill'>{_pulsedrop_cell(item.get('key'))}</span></p>"
+        f"<p class='muted'>{_pulsedrop_cell(item.get('help'))}</p>"
+        "<form method='post'>"
+        f"<input type='hidden' name='key' value='{_pulsedrop_cell(item.get('key'))}'>"
+        f"{control}</form></div>"
+    )
+
+
+@webhook_app.route("/admin/pulsedrop", methods=["GET", "POST"])
+@admin_required
+def admin_pulsedrop_page():
+    """Operator surface for the commerce curator: is it on, is it working, what did it do.
+
+    All of the reading and all of the writing live in ``services.pulsedrop.ops``
+    and ``services.pulsedrop.config``; what is here is the admin session, the
+    permission split, the audit line and the markup.
+    """
+    admin, denied = require_admin_page("system.view")
+    if denied:
+        return denied
+    from services.pulsedrop import ops as pulsedrop_ops
+
+    message = ""
+    if request.method == "POST":
+        # Viewing is a ``system.view`` question and changing is a
+        # ``settings.edit`` one, because they have different right answers:
+        # everyone on call should be able to see whether PulseDrop is publishing,
+        # and a much smaller group should be able to change what it publishes.
+        if not admin_has_permission(admin, "settings.edit"):
+            log_admin_audit(admin.get("id"), "admin_permission_denied", "permission", "settings.edit", {"path": request.path})
+            return Response("Forbidden", status=403)
+        action = clean_html(request.form.get("form_action") or "")[:40]
+        key = clean_html(request.form.get("key") or "")[:80]
+        raw = clean_html(request.form.get("value") or "")[:80]
+        changed, message = pulsedrop_ops.apply_action(action, key, raw, admin_user_id=int(admin.get("id") or 0))
+        if changed:
+            log_admin_audit(admin.get("id"), f"pulsedrop_{action}", "pulsedrop_setting", key, {"value": raw})
+
+    data = pulsedrop_ops.dashboard()
+    acct = data["account"]
+    health = data["health"]
+    schedule = data["schedule"]
+    may_edit = admin_has_permission(admin, "settings.edit")
+
+    if acct.get("provisioned"):
+        # The login assertion is on the page because it is the security property
+        # of a system account, and because a hand-edited row could turn it back
+        # on without anything else noticing.
+        login_pill = "<span class='pill on'>Login disabled</span>" if acct.get("login_disabled") else "<span class='pill warn'>LOGIN ENABLED</span>"
+        account_card = (
+            "<div class='card'><h2>Account</h2>"
+            f"<p class='metric'>@{_pulsedrop_cell(acct.get('username'))}</p>"
+            f"<p>{_pulsedrop_cell(acct.get('display_name'))} · user_id {_pulsedrop_cell(acct.get('user_id'))} · "
+            f"{_pulsedrop_cell(acct.get('follower_count'))} followers</p>"
+            f"<p>{login_pill} <span class='pill'>{_pulsedrop_cell(acct.get('status'))}</span></p></div>"
+        )
+    else:
+        # Not an error state. The worker provisions the account on its first
+        # cycle, so this is simply what a deployment that has never run looks
+        # like, and saying so stops it being reported as a fault.
+        account_card = (
+            "<div class='card'><h2>Account</h2><p class='metric'>Not provisioned</p>"
+            "<p class='muted'>@pulsedrop is created by the worker's first cycle. "
+            "If PulseDrop is enabled and this still says not provisioned, the worker is not running.</p></div>"
+        )
+
+    lease_line = (
+        f"a tick is running now (held by {_pulsedrop_cell(schedule.get('held_by'))})"
+        if schedule.get("held")
+        else f"next evaluation {_pulsedrop_cell(schedule.get('due_in') or 'unknown')}"
+    )
+    run_now = (
+        "<form method='post' style='display:inline'>"
+        "<input type='hidden' name='key' value=''>"
+        "<button name='form_action' value='run_now'>Evaluate on next cycle</button></form>"
+        if may_edit else ""
+    )
+
+    health_cards = (
+        "<section class='grid'>"
+        f"{account_card}"
+        f"<div class='card'><h2>Last run</h2><p class='metric'>{_pulsedrop_cell(health.get('last_run_outcome') or 'never')}</p>"
+        f"<p>{_pulsedrop_cell(health.get('last_run_at'))}</p>"
+        f"<p class='muted'>{lease_line}</p><p>{run_now}</p></div>"
+        # Reported next to the last run, not instead of it, because the gap
+        # between the two is the diagnosis: most ticks are supposed to publish
+        # nothing, so an old publication beside a recent run is health, and a
+        # stale run is the worker being down.
+        f"<div class='card'><h2>Last publication</h2><p class='metric'>{_pulsedrop_cell(health.get('last_publication_at') or 'none yet')}</p>"
+        f"<p class='muted'>{_pulsedrop_cell(health.get('failures_shown'))} failed of the last {_pulsedrop_cell(health.get('runs_shown'))} runs</p></div>"
+        f"<div class='card'><h2>Renders</h2><p class='metric'>{_pulsedrop_cell(health.get('renders_failed'))} failed</p>"
+        f"<p class='muted'>{_pulsedrop_cell(health.get('renders_stuck'))} stuck over {pulsedrop_ops.STALL_MINUTES} min</p></div>"
+        "</section>"
+    )
+
+    setting_sections = "".join(
+        f"<h2>{_pulsedrop_cell(group)}</h2><section class='grid'>"
+        + "".join(_pulsedrop_setting_card(item, may_edit) for item in items)
+        + "</section>"
+        for group, items in data["groups"]
+    )
+
+    run_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(r.get('started_at'))}</td><td>{_pulsedrop_cell(r.get('outcome'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('reason'))}</td><td>{_pulsedrop_cell(r.get('decision'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('eligible'))}/{_pulsedrop_cell(r.get('evaluated'))}</td>"
+        f"<td>{_pulsedrop_cell(', '.join(f'{k} {v}' for k, v in sorted((r.get('rejected') or {}).items())))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('duration_ms'))} ms</td></tr>"
+        for r in data["runs"]
+    )
+    pub_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(p.get('published_at'))}</td><td>{_pulsedrop_cell(p.get('surface'))}</td>"
+        f"<td>{_pulsedrop_cell(p.get('state'))}</td>"
+        f"<td><a href='/pulse/marketplace/{_pulsedrop_cell(p.get('listing_id'))}'>{_pulsedrop_cell(p.get('listing_title') or p.get('listing_id'))}</a></td>"
+        f"<td>{_pulsedrop_cell(p.get('seller_username') or p.get('seller_user_id'))}</td>"
+        f"<td>{_pulsedrop_cell(p.get('category'))}</td><td>{_pulsedrop_cell(p.get('post_id'))}</td></tr>"
+        for p in data["publications"]
+    )
+    render_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(r.get('updated_at'))}</td><td>{_pulsedrop_cell(r.get('listing_id'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('source_kind'))}</td><td>{_pulsedrop_cell(r.get('state'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('attempts'))}/{_pulsedrop_cell(r.get('max_attempts'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('failure_reason'))}</td>"
+        f"<td>{_pulsedrop_cell(r.get('duration_seconds'))}s</td></tr>"
+        for r in data["renders"]
+    )
+
+    body = f"""
+    <h1>PulseDrop</h1>
+    <p class='muted'>The autonomous commerce curator. It publishes as @pulsedrop and never as the seller:
+    every post names the merchant and links to their listing.</p>
+    <p>{html_escape(clean_html(message))}</p>
+    {health_cards}
+    {setting_sections}
+    <h2>Run log</h2>
+    <section class='card'><p class='muted'>PulseDrop publishing nothing is its normal healthy state — an empty
+    catalog, everything on cooldown and a crash all look identical from outside, so every tick writes its outcome here.</p>
+    <table class='table'><tr><th>Started</th><th>Outcome</th><th>Reason</th><th>Decision</th><th>Eligible</th><th>Rejected</th><th>Took</th></tr>
+    {run_rows or '<tr><td colspan=7>No runs recorded yet.</td></tr>'}</table></section>
+    <h2>Publications</h2>
+    <section class='card'><table class='table'><tr><th>Published</th><th>Surface</th><th>State</th><th>Listing</th><th>Seller</th><th>Category</th><th>Post</th></tr>
+    {pub_rows or '<tr><td colspan=7>Nothing published yet.</td></tr>'}</table></section>
+    <h2>Reel renders</h2>
+    <section class='card'><table class='table'><tr><th>Updated</th><th>Listing</th><th>Source</th><th>State</th><th>Attempts</th><th>Failure</th><th>Duration</th></tr>
+    {render_rows or '<tr><td colspan=7>No renders yet.</td></tr>'}</table></section>
+    """
+    return admin_page_html("PulseDrop", body, admin)
+
+
 @webhook_app.route("/api/media/upload", methods=["POST"])
 def api_media_upload():
     init_db()
@@ -111160,6 +111354,19 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             "system_account_label": pulse_feed_engine.MEMBER_000_SYSTEM_LABEL,
             "automation_disclosure": "This account is operated automatically by PulseSoc. It is not a human user.",
             "transparency_disclosure": "Automated posts are generated by PulseSoc systems and remain subject to platform safety and quality controls.",
+            # Lay the banner out whole instead of cropping it to fill the hero.
+            # Declared by the server because the app previously inferred it from
+            # the cover's *filename*, which stops being true the moment the
+            # artwork is redated. See pulse_feed_engine for the full note.
+            "brand_cover_fit": pulse_feed_engine.MEMBER_000_COVER_FIT,
+            "brand_cover_aspect_ratio": pulse_feed_engine.MEMBER_000_COVER_ASPECT_RATIO,
+            # This account has no social graph, and that is a property of living
+            # at ``user_id=0`` rather than of being automated: no
+            # ``pulse_follows`` row can point at it, so its follower count is not
+            # zero, it is undefined. The counts are therefore omitted below and
+            # the client is told why, so that a *followable* automated account
+            # -- @pulsedrop is one -- still shows its real ones.
+            "has_social_graph": False,
             "profile_visibility": "public",
             "account_status": "active",
             "profile_state": "available",
@@ -111234,6 +111441,20 @@ def pulse_native_profile_payload(cur, target_user_id, viewer_user_id):
             cur, target_user_id, viewer_user_id, account=account
         ),
     })
+    # @pulsedrop is an ordinary ``users`` row on purpose, so everything above --
+    # the real follower count, the real post count, this viewer's real
+    # ``viewer_follows`` -- is already correct for it and must not be replaced.
+    # The overlay only *adds* the fields that make the profile honest about being
+    # automated, which is why it is merged last and merged narrowly. A failure
+    # here costs the disclosure, not the profile, so it degrades rather than
+    # 500s: the account is followable and visible either way.
+    try:
+        from services.pulsedrop import account as pulsedrop_account
+
+        if pulsedrop_account.is_pulsedrop(target_user_id, cur):
+            payload.update(pulsedrop_account.profile_overlay())
+    except Exception:
+        logging.getLogger(__name__).exception("PULSEDROP_PROFILE_OVERLAY_FAILED user_id=%s", target_user_id)
     return payload
 
 
