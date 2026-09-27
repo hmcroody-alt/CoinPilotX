@@ -3,26 +3,28 @@
 This answers the 64 items §100 of the brief asks for, in its order and with its numbering.
 
 **Read this with `PULSE_COMMERCE_INTELLIGENCE_REPORT.md`, not instead of it.** That document
-is the evidence: 23 sections, every defect with the measurement that found it and the
+is the evidence: 24 sections, every defect with the measurement that found it and the
 mutation that proved the test could fail. This one is the index — each item below answers
 the question, names the file, and points at the section that proves the answer. Where an
 item is not built, it says so in the first sentence.
 
 **Status: nothing here is deployed.** Branch `commerce-discovery-audit` in a worktree, not
-pushed, not merged. It is also **22 commits behind `origin/main`** as of writing, which is a
-rollout input and not a footnote — see item 59.
+pushed, not merged. It is **23 commits ahead of and 32 behind `origin/main`** as of writing,
+which is a rollout input and not a footnote — see item 59. That gap grows on its own:
+`origin/main` takes roughly 60 commits a day from parallel sessions.
 
 ### How to regenerate every figure in this report
 
 ```
 cd <worktree>
-.venv/bin/python -m pytest tests/commerce_discovery -q          # 763 pass
+.venv/bin/python -m pytest tests/commerce_discovery -q          # 827 pass
 .venv/bin/python -m pytest tests/protection -q                  # 663 pass
 python3 scripts/protection/measure_commerce_discovery_reachability.py
 python3 scripts/protection/audit_commerce_discovery_failsoft.py
 python3 scripts/protection/prove_commerce_discovery_sources.py
 python3 scripts/protection/prove_commerce_discovery_fatigue.py
 python3 scripts/protection/prove_commerce_discovery_value_tiers.py
+python3 scripts/protection/creator_tagging_mutation_matrix.py    # 12/12 killed
 python3 scripts/measure_commerce_suitability_cost.py
 ```
 
@@ -41,17 +43,19 @@ ledger and per-surface relevance floors. So this work is not a new engine. It is
 that found and fixed **four defects** in the existing one (a cap that counted nothing,
 fatigue that did not escalate, 70.8% of the catalogue unreachable, retrieval that was
 viewer-blind), the **suitability gate the brief's §13/§14 asked for and that did not exist
-in any form**, a **payload leak** closed, and — the largest single body of work — the
-**mutation harnesses and fail-soft audit** that established the tests can actually fail.
-Two things the brief asked for are **not built**: web, and the creator-tagging write path.
+in any form**, a **payload leak** closed, the **creator-tagging write path** (the one relation
+that genuinely did not exist anywhere), and — the largest single body of work — the **mutation
+harnesses and fail-soft audit** that established the tests can actually fail. Two things the
+brief asked for remain **not built**: web, and the composer UI that would let a creator
+actually use tagging.
 
 ---
 
 ## 1. Repository architecture discovered
 
 Flask monolith `bot.py` (~120k lines, ~1,538 routes) over `services/` (239 modules).
-Commerce discovery is a package, `services/commerce_discovery/` — 18 modules, 7,964 lines —
-plus `services/commerce_discovery_routes.py` (839 lines), which sits *outside* the package
+Commerce discovery is a package, `services/commerce_discovery/` — 19 modules, 8,551 lines —
+plus `services/commerce_discovery_routes.py` (856 lines), which sits *outside* the package
 because it imports `bot` and the package deliberately does not. That boundary is real and
 load-bearing; it is also what made the fail-soft audit miss the whole request layer for two
 increments (§22).
@@ -75,18 +79,32 @@ brief names: `bot.pulse_marketplace_listing_payload` (the card payload),
 
 ## 3. New architecture introduced
 
-Four modules that did not exist:
+Five modules that did not exist:
 
 | module | lines | what it is |
 |---|---|---|
 | `suitability.py` | 614 | the content→commerce permission gate (items 11, 12) |
-| `relationship.py` | 264 | provenance vocabulary: *why* is this product here (items 14, 7) |
+| `relationship.py` | 309 | provenance vocabulary: *why* is this product here (items 14, 7) |
+| `tagging.py` | 291 | the creator's own statement about what is in their post (item 7) |
 | `content.py` | 219 | server-side context derivation from a post (item 9) |
 | `taxonomy.py` | 88 | category-path handling, shared by dedup and diversity |
 
-Plus `suitability.annotate` called from the feed response in `bot.py:90531`, which is the
-only `bot.py` change in the entire branch (16 lines, and 10 of them are the comment
-explaining why it has its own `except`).
+`bot.py` is **+212 / −0** across the branch, in three unrelated places, and it is worth
+saying what they are rather than quoting a line count:
+
+* `_cd_suitability.annotate` on the feed response (`bot.py:90626`) — 16 lines, 10 of them
+  the comment explaining why it carries its own `except`.
+* The composer write path: `PULSE_PRODUCT_TAG_REQUEST_LIMIT` (`bot.py:45046`),
+  `pulse_attach_products_to_content` (`:45049`), `pulse_product_tag_ids_from_payload`
+  (`:45114`), and the call sites in the post and reel creation routes. This is the half of
+  item 7 that has to live in `bot.py`, because the thing that knows a post was just created
+  is the route that created it.
+* The `pulse_content_products` DDL in `init_db` (`bot.py:120360`). Schema for this table is
+  owned by `bot.init_db`, beside `pulse_content_music`, rather than by this package's
+  `schema.ensure_schema` — see §6 for why the writer, not the reader, owns it.
+
+An earlier version of this report claimed the `annotate` call was the *only* `bot.py` change
+in the branch. That was true when it was written and stopped being true when item 7 landed.
 
 ## 4. Architecture diagram
 
@@ -168,8 +186,11 @@ One column, nullable, no backfill: `commerce_discovery_placements.relationship T
 *unknown* rather than silently as `catalogue` — the distinction matters because
 `catalogue` is a servable value and unknown is not.
 
-Nothing else. No new table, and in particular **no post↔listing relation table**, which is
-item 7's whole answer.
+Since that was written, one table has been added: `pulse_content_products`, the post↔listing
+relation item 7 reported did not exist anywhere. It is owned by `bot.init_db` beside
+`pulse_content_music` rather than by this package's `schema.ensure_schema`, because the
+writer is the composer and making a post save depend on the discovery package's schema guard
+would point that dependency the wrong way. Nothing in this package's own schema changed.
 
 The ALTER-after-CREATE ordering and its PostgreSQL translation are pinned by tests
 (`test_schema_durability.py`) rather than argued for in prose, because the repo has no
@@ -178,21 +199,49 @@ to be idempotent.
 
 ## 7. Creator product-tagging architecture
 
-**Not built.** This is the largest single gap and it is honest to lead with that.
+**Built** (`a89f741b1`), after this report first said it was the largest single gap. Not
+deployed — see item 59.
 
-`relationship.CREATOR_TAGGED` exists as a constant and is in
-`UNIMPLEMENTED_RELATIONSHIPS`, which `assert_servable` refuses. So the vocabulary is
-reserved and the engine will not serve a value it cannot produce — but there is no write
-path, because **no post↔product relation exists anywhere in the repository.** Greps for
-`content_product`, `post_product`, `signal_product`, `product_tag`, `tagged_product`,
-`post_listing`, `listing_post`, `attached_product`, `marketplace_attachment` are all empty.
-`pulse_posts` (`bot.py:119204`) has no listing reference.
+`services/commerce_discovery/tagging.py`, the write path
+`bot.pulse_attach_products_to_content`, and `pulse_content_products` in `bot.init_db`.
+`CREATOR_TAGGED` has left `UNIMPLEMENTED_RELATIONSHIPS`, so `assert_servable` now permits a
+value the system can actually produce.
 
-The precedent shape for when it is built is `pulse_content_music` — a join table with the
-post id, the entity id, and a position — and the reason to follow it rather than invent is
-that it already solved moderation and deletion cascade for a post-attached entity.
+It follows `pulse_content_music` as the earlier version of this section predicted — same
+polymorphic `(content_type, content_id)` key, written by the composer, resolved by a reader —
+with two departures:
 
-`COMPLEMENTARY` and `PULSEDROP_CURATED` are in the same state for the same reason.
+* **`seller_user_id` is stored** and re-checked against the live listing on every read, in
+  the JOIN rather than in Python. It is the seller the tag was *authorised against*; a
+  listing that changes hands afterwards carries a permission its new owner never granted,
+  and the read drops it rather than serving it.
+* **Nothing else is snapshotted.** Music snapshots a licence because a stale song is still
+  the song. Price, title and availability are read live from `marketplace_listings` on every
+  serve, because a stale price is not a stale copy of the truth, it is a lie to a buyer.
+
+**A creator may only tag a listing they own** (`REFUSED_NOT_OWNER`). Tagging someone else's
+product is affiliate marketing: it needs a commission model, a disclosure obligation that
+differs by jurisdiction, and a decision about whether PulseSoc takes a cut. None of those are
+engineering decisions and all are much harder to withdraw than to delay, so the check is
+ownership and `AUTHORITY_OWNER` is recorded on every row — the day a second authority exists,
+rows written under this one are still distinguishable.
+
+In the engine the tag is a **precedence tier in `_select`, not a ranking weight**.
+`ranking.score_listing` normalises `score` by the sum of positive weights, so adding a weight
+would have shifted every relevance threshold in the system. It is taken ahead of the
+relevance floor (relevance to the content is exactly what the tag establishes by fiat, and a
+tagged product scoring below the floor is usually a brand-new listing the scorer has no
+signal for) and ahead of the per-seller diversity cap (every tagged row is one seller *by
+construction*, so the cap would silently truncate every creator's tags to two and look like a
+composer bug). It is **not** exempt from `eligibility`, `promotion.assert_unpaid`, the surface
+budget, `MAX_TAGGED_PER_CONTENT`, or the forward-feeding counts — so a two-slot surface filled
+by tags serves no inferred rows at all.
+
+Evidence report §24. 64 tests, and all 12 controls are proven observed by
+`scripts/protection/creator_tagging_mutation_matrix.py`.
+
+`COMPLEMENTARY` remains unimplemented and genuinely needs a product↔product relation that
+does not exist. **`PULSEDROP_CURATED` does not** — see the correction at item 30.
 
 ## 8. Permission model
 
@@ -432,8 +481,29 @@ should land inside rather than beside.
 
 ## 30. Creator workflow
 
-**Not built** — it is the client half of item 7, and there is nothing to build a workflow
-over until the relation table exists.
+**Server side built, client side not.** The relation table now exists (item 7), so the
+sentence this section used to carry — "there is nothing to build a workflow over" — is no
+longer true.
+
+What a client can do today: send `product_listing_ids` (or `listing_ids`, or `product_ids` —
+three keys because three clients, and every id is ownership-checked regardless of which one
+carried it) on post create or reel create. `bot.pulse_attach_products_to_content` accepts up
+to `PULSE_PRODUCT_TAG_REQUEST_LIMIT` ids, returns `{ok, attached, refused}` with a per-id
+reason, and cannot lose the post: on the post path the row is already committed by the time
+tags are written, so the attach runs on its own connection inside `try/except/finally` (§82);
+on the reel path it runs inside the reel's own transaction, where rolling back with a failed
+reel is the correct outcome. A reel that is shared to the feed gets its products attached to
+the mirror post as well, because the mirror row is what makes a reel's products actually
+appear — the same thing `pulse_attach_music_to_content` does for a track.
+
+**What is missing is the UI.** No composer screen sends any of the three keys yet, and the
+multipart/form post path does not carry them at all — only the JSON path does. So the feature
+is reachable by an API client and by nothing a user can tap. That is the honest status and it
+is deliberately not hidden behind "built".
+
+Refusals a client must render: `not_listing_owner` (the common one, and it is the system
+working — logged at info, not warning), `listing_not_found`, `too_many_products`,
+`invalid_reference`, `unknown_content_type`.
 
 ## 31. See All contextual Marketplace experience
 
@@ -443,8 +513,21 @@ marketplace view that visibly preserves "from this Signal" — is not built on e
 
 ## 32. PulseDrop integration
 
-`relationship.PULSEDROP_CURATED` is reserved and unimplemented (item 7).
-`PULSEDROP_ENABLED` is off everywhere in production.
+`relationship.PULSEDROP_CURATED` is reserved and unimplemented. `PULSEDROP_ENABLED` is off
+everywhere in production.
+
+**Correction.** Earlier drafts of this report grouped `PULSEDROP_CURATED` with
+`CREATOR_TAGGED` and `COMPLEMENTARY` as "blocked on a table that does not exist." That was
+wrong, and it stayed wrong here for one increment after `relationship.py` itself was
+corrected — which is the more useful lesson: fixing the claim at its source does not fix the
+copy of it in the report, and a report is exactly where a wrong blocker survives longest.
+
+`pulsedrop_publications` (`services/pulsedrop/schema.py:86`) already carries `(surface,
+listing_id, post_id, state, seller_user_id, category)` — every column a retrieval source
+needs. `PULSEDROP_CURATED` is a **read away, with no new table**, which is what brief §4
+("do not create parallel commerce infrastructure where canonical systems already exist")
+asks for. It is not built because of the frequency-ledger finding immediately below, not
+because of a missing relation.
 
 The finding worth carrying forward: **the two curators share no viewer-level frequency
 ledger.** PulseDrop counts publications per *platform*; commerce_discovery counts
@@ -770,25 +853,31 @@ that a previous version cannot read.
 
 ## 61. Files/components/services changed
 
-59 files, +16,859 / −218 against the merge base — this document included, which is why the
+62 files, +18,782 / −222 against the merge base — this document included, which is why the
 figure moves when it is written. `git diff --stat $(git merge-base HEAD origin/main)..HEAD`
 regenerates it. Breakdown:
 
-- **`services/commerce_discovery/`** — 16 modules touched, 4 of them new (item 3).
-- **`services/commerce_discovery_routes.py`** — +322.
-- **`bot.py`** — +16 (item 3; the whole change is item 5's annotate call and its guard).
-- **`tests/commerce_discovery/`** — 20 files, 17 new; +9,640 total lines in the directory.
-- **`scripts/protection/`** — 6 new harnesses; **`scripts/`** — 1 (`measure_commerce_suitability_cost.py`).
-- **`mobile-native/src/`** — 10 files (items 26, 27, 29).
-- **`config/ci_test_manifest.json`** — +16 (every new test file; the gate is default-deny).
-- **`.env.example`** — +62 (item 58; the env-contract gate requires every new `os.getenv`).
-- **`docs/commerce/`** — +1,519 evidence report, +837 this document.
+- **`services/commerce_discovery/`** — 19 modules, 5 of them new (`content`, `relationship`,
+  `suitability`, `taxonomy`, `tagging`); +3,945 / −160.
+- **`services/commerce_discovery_routes.py`** — +336 / −3.
+- **`bot.py`** — +212: item 5's annotate call and its guard, plus item 30's composer write
+  path on the post and reel create routes.
+- **`tests/commerce_discovery/`** — 29 files, 18 new; +8,330 / −17.
+- **`scripts/protection/`** — 8 new harnesses, +2,080; **`scripts/`** — 1
+  (`measure_commerce_suitability_cost.py`, +382).
+- **`mobile-native/src/`** — +911 / −42 (items 26, 27, 29).
+- **`config/ci_test_manifest.json`** — +18 (every new test file; the gate is default-deny).
+- **`.env.example`** — +76 (item 58; the env-contract gate requires every new `os.getenv`).
+- **`docs/commerce/`** — +2,492 across both documents.
 
 ## 62. Known limitations
 
 1. **No web commerce discovery at all** (28).
-2. **No creator tagging**, because no post↔product relation exists anywhere (7, 30) — and
-   with it `COMPLEMENTARY` and `PULSEDROP_CURATED`.
+2. **Creator tagging has no UI** (7, 30). The server accepts tags, ownership-checks them and
+   serves them ahead of the scorer; no composer screen sends them, and the multipart/form
+   post path does not carry them at all. So the feature is reachable by an API client and by
+   nothing a user can tap. `COMPLEMENTARY` is still genuinely blocked on a product↔product
+   relation; `PULSEDROP_CURATED` never was (32).
 3. **No multimodal understanding.** "Shop this look" is text matching (10).
 4. **No inventory check at serve time.** A sold-out product can be served (42).
 5. **No attribution**; events are recorded and never joined to an order (44).
@@ -826,10 +915,24 @@ In this order, and the order is the recommendation:
 
 1. **Ship stage 1.** The payload leak is live. Everything else on this list can wait; that
    cannot, and it is the cheapest change in the report.
-2. **Build the post↔product relation table.** It unblocks creator tagging, complementary
-   products, PulseDrop curation, and any meaningful "Shop this look" — four of the brief's
-   named experiences behind one table, modelled on `pulse_content_music`. This is the
-   highest-leverage build remaining and it is a day of work, not a quarter.
+2. ~~**Build the post↔product relation table.**~~ **Done — `pulse_content_products`, §24.**
+   It unblocked creator tagging as predicted. Two corrections to what this item claimed,
+   both worth keeping visible rather than editing away:
+
+   * It claimed the table unblocked **four** named experiences. It unblocked one. PulseDrop
+     curation never needed it (`pulsedrop_publications` already has every column — item 32),
+     "Shop this look" needs multimodal understanding rather than a relation, and
+     `COMPLEMENTARY` needs a product↔product relation which this is not. Counting a
+     dependency four times is how one table comes to look like the highest-leverage build
+     remaining.
+   * "A day of work, not a quarter" was right about the table and wrong about the feature.
+     The write path, the precedence tier, the stale-authorisation drop and 63 tests are the
+     day. **The composer UI is not built and is the remaining majority of the user-visible
+     work** (item 30).
+
+   What replaces this item at position 2: **build the composer UI**, and while doing it
+   decide whether the multipart/form post path should carry `product_listing_ids` too, or
+   whether the client should always use the JSON path when tagging.
 3. ~~**Add a per-surface kill switch** before stage 3, not after.~~ **Done — §23**, and it
    moved to the top of this list from below it once it was clear that the item making the
    rollout expensive was cheaper than the rollout. It is left struck through rather than
@@ -862,5 +965,13 @@ Every one of those was found by **breaking the code and checking that something 
 None was found by reading, including the ones I went looking for by reading, in a section
 specifically about what I had missed.
 
-`scripts/protection/` has seven harnesses in it now. They are slower than reading and they
+It kept being true after that was written. The creator-tagging increment (§24) shipped with
+11 controls and a mutation matrix over them, and **two of the 11 mutations survived the first
+pass — both in tests written that same hour, by someone who had just finished writing this
+paragraph.** One of them was a single line handing every surface the client's post id, and it
+survived the entire 826-test package as it then stood, because the guard over it was a regex asserting the
+*correct* assignment still existed. An addition defeats that; a behavioural assertion on the
+value the engine actually received does not.
+
+`scripts/protection/` has eight harnesses in it now. They are slower than reading and they
 are the only part of this delivery I would defend without qualification.

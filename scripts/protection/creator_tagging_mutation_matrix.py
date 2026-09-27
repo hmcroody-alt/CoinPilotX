@@ -190,6 +190,19 @@ MUTATIONS = [
         new="        verdict = None if engine.serve else _content_refusal(cur, payload, context, surface)",
         suites=[TAGS, GATE],
     ),
+    dict(
+        name="absent-post-permitted-instead-of-refused",
+        control=(
+            "A post the server cannot see is refused, not treated as no evidence. "
+            "Deletion in PulseSoc is soft and there is no cascade — for this table "
+            "or for pulse_content_music — so this refusal is the only thing that "
+            "stops a deleted post serving the products its creator tagged on it."
+        ),
+        path=ROUTES,
+        old="    outcome, row = _content_post(cur, post_id)\n    if outcome == _ROW_UNREADABLE:\n        return None",
+        new="    outcome, row = _content_post(cur, post_id)\n    if outcome in (_ROW_UNREADABLE, _ROW_ABSENT):\n        return None",
+        suites=[TAGS, GATE],
+    ),
 ]
 
 

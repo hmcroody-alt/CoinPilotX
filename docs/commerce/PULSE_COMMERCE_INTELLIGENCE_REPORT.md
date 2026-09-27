@@ -7,9 +7,10 @@ the test could fail. It is long because that is what it is for.
 
 **Status: not deployed.** Nothing in this report is live. The work is committed on the
 local branch `commerce-discovery-audit` in a worktree, and has **not** been pushed, merged,
-or rolled out. The last increment described below is §23; the commit before it is
-`1cc3f5317`, so if `git log --oneline 1cc3f5317..commerce-discovery-audit` prints more than
-§23's own commit, the branch has moved past what is written here. Read the figures below as
+or rolled out. The last increment described below is §24; the commit before it is
+`31e2ef257`, so if `git log --oneline 31e2ef257..commerce-discovery-audit` prints more than
+§24's own commit and this document's, the branch has moved past what is written here. Read
+the figures below as
 measurements of that point, not of whatever is currently checked out. (The head is named
 this way rather than pinned because a pinned head SHA is wrong the moment it is written —
 it cannot name the commit that contains it. The first three revisions of this line were all
@@ -24,12 +25,14 @@ explains why the rollout decision itself is not mine to take.
 to be built. One already existed, live in production across six surfaces. The brief
 anticipated this — *"DO NOT blindly implement instructions in this mission if repository
 evidence shows that PulseSoc already has a stronger mechanism. Inspect first"* — so what
-follows is not a new engine. It is an audit of the existing one, four defects found in
-it, and the fixes for those defects. Section 3 is an honest ledger of what pre-existed
-versus what I added, because the difference is most of the value of this document.
+follows is not a new engine. It is an audit of the existing one, four defects found in it,
+and the fixes for those defects — plus two things the audit established were missing rather
+than broken, and which are therefore features and labelled as such: the per-surface kill
+switch (§23) and the creator-tagging write path (§24). Section 3 is an honest ledger of what
+pre-existed versus what I added, because the difference is most of the value of this document.
 
 **On the shape of this report.** The brief specified a final report of 41 numbered
-sections. This one has 22. That is a deliberate departure, and the reason is the same
+sections. This one has 24. That is a deliberate departure, and the reason is the same
 reason the engine was not rebuilt: the section list was written on the assumption that
 all of it would be new construction. Roughly two thirds of the headings — embeddings,
 the vector index, the new worker framework, the experimentation platform, the load
@@ -615,6 +618,33 @@ falls under that instruction rather than against it.
 | Chaos tests, security audit | partial | the harnesses cover failure injection for the paths I touched (dropped table, failed query, empty pool). A security audit was not performed. |
 | Data retention | not touched | no new table was created, so no new retention question arises. |
 | Repetition metrics + alerting | **see §12** | the counters exist and are misleading. I documented that rather than building a dashboard on top of numbers I know to be wrong. |
+| Creator product tagging | **built after this table was written — §24** | it was the one item here that turned out to be neither forbidden by the brief's no-new-infrastructure rule nor already present under another name. `pulse_content_products` is a join table modelled on `pulse_content_music`, which is the opposite of a parallel system. The **composer UI** is still not built and is now the larger half of the remaining work. |
+
+One row of that table needs correcting rather than quietly editing: "Data retention — not
+touched — no new table was created, so no new retention question arises." §24 created one, so
+here is the retention answer, checked rather than assumed.
+
+`pulse_content_products` holds two user ids, both already foreign keys throughout this schema,
+and no other personal data. **Its rows outlive a deleted post**, and that is not an oversight
+inherited from `pulse_content_music` — I went looking for the cascade that precedent was
+supposed to provide and **there isn't one, for music either.** Post deletion in PulseSoc is
+*soft* (`UPDATE pulse_posts SET deleted_at=…`, six call sites); the row stays and so do its
+attachments. The two `DELETE FROM pulse_content_music` statements in `bot.py` are in the
+*audio-replacement* route, not a deletion path.
+
+So what stops a deleted post serving its tags is **not** referential cleanup. It is the
+suitability gate: `_content_post` filters `deleted_at IS NULL` in the query, an absent row is
+`_ROW_ABSENT`, and `_content_refusal` refuses on absent — so retrieval never runs and the tags
+are never resolved. That is a real protection and it is already tested
+(`test_a_deleted_post_is_filtered_in_the_query_not_afterwards`), but it means the property
+"a deleted post shows no products" rests on the gate rather than on the data, which is worth
+knowing before anybody moves the gate. `test_a_deleted_post_serves_no_tags_and_the_rows_remain`
+now pins both halves in one place, including the retention fact, so the next reader does not
+have to re-derive that there is no cascade.
+
+The residual retention question is genuine and belongs at delivery-report item 62: tag rows
+for hard-deleted listings are dropped from every *read* by the JOIN, but are never *removed*.
+That is a storage question, not a correctness or privacy one.
 
 ## 16. Rollout
 
@@ -1624,3 +1654,202 @@ the tests that name it: guard below `ensure_schema` (5 red), `surface_enabled` i
 master switch (3 red), unknown token failing closed (2 red); all three reverted and both
 source files confirmed restored. The fail-soft handler audit reports the same 74 handlers and
 25 unreached as before — the switch adds no `except` (§82's handlers are untouched).
+
+---
+
+## 24. The one relationship in the system that is a statement rather than a guess
+
+Like §23, this is a feature rather than an audit finding, and like §23 the audit is what
+identified it. §15 ("what the brief asked for that I did not build") and item 7 of the
+delivery report both said the same thing: `relationship.CREATOR_TAGGED` had been a documented
+constant sitting in `UNIMPLEMENTED_RELATIONSHIPS` the whole time, because **no post↔listing
+relation existed anywhere in the repository, under any name.** Greps for `content_product`,
+`post_product`, `product_tag`, `tagged_product`, `post_listing`, `attached_product` and five
+other spellings were all empty; `pulse_posts` has no listing reference.
+
+### Why this, ahead of the other unbuilt items
+
+Not because it was the biggest. Because of what it *is*.
+
+Every other retrieval source in `pool` is an **inference** — this viewer likes cameras, this
+post mentions a tripod, the crowd is looking at lenses. Ranking exists to order guesses. A
+creator tag is the only edge in the system that is a **statement**: the person who made the
+post says this is the product in it. That makes it simultaneously the most useful signal
+available and the one with the least excuse for being wrong, and it is why `tagging.py` is
+mostly refusals — 5 of them, enumerated in a `REFUSALS` frozenset so a test can assert
+`attach` never returns a reason outside it rather than restating the list.
+
+### What was built
+
+`services/commerce_discovery/tagging.py` (write + read), `pulse_content_products` in
+`bot.init_db`, `bot.pulse_attach_products_to_content` (the composer path, wired into post
+create and reel create), the `preferred` precedence tier in `engine._select`, and
+`CREATOR_TAGGED` leaving `UNIMPLEMENTED_RELATIONSHIPS`.
+
+Shaped after `pulse_content_music` — same polymorphic `(content_type, content_id)` key,
+written by the composer, resolved by a reader — because it already solved deletion and
+moderation for a post-attached entity. Two departures:
+
+* **`seller_user_id` is stored** and re-checked against the live listing on every read. It is
+  the seller the tag was *authorised against*. A listing that changes hands afterwards
+  carries a permission its new owner never granted, and the read drops it. The check is in
+  the JOIN (`l.seller_user_id = p.seller_user_id`) rather than in Python, so a transferred
+  listing costs nothing to exclude.
+* **Nothing else is snapshotted.** Music snapshots a licence because a stale song is still
+  the song. Price, title and availability are read live on every serve, because a stale price
+  is not a stale copy of the truth — it is a lie to a buyer.
+
+### The decision worth arguing with: a precedence tier, not a ranking weight
+
+The obvious implementation is a `tagged` weight in `ranking.score_listing`. That was wrong,
+and the reason is arithmetic rather than taste: `score_listing` normalises `score` by the sum
+of positive weights, so adding one **shifts every relevance threshold in the system** — six
+surfaces' floors, the fatigue escalation bands, the `diversity_bonus` pinned at 0.07. A
+feature that is supposed to add one retrieval source would have silently re-tuned the entire
+engine, and the tests that pin those thresholds would have been updated to match, which is
+how that kind of change becomes invisible.
+
+So tags are taken **first in `_select`**, ahead of the floor and ahead of the caps. Each
+exemption is argued separately in the docstring, because they are separate claims:
+
+* *Ahead of the score* — a tag is a statement about what the post is of; everything else in
+  the list is a guess about what the viewer wants.
+* *Ahead of the relevance floor* — the floor asks "is this a good answer for this person",
+  and relevance to the content is precisely what the tag establishes by fiat. A tagged
+  product below the floor is usually a **brand-new listing the scorer has no signal for**,
+  which is exactly the product a creator is most likely to be posting about.
+* *Ahead of the per-seller diversity cap* — the cap exists so one store cannot dominate a
+  session. On a post whose creator tagged three of their own products that reasoning does not
+  apply: every tagged row is one seller **by construction**. Applying the cap would silently
+  truncate every creator's tags to two and look like a bug in the composer.
+
+What is **not** exempt: `eligibility`, `promotion.assert_unpaid`, the surface budget,
+`MAX_TAGGED_PER_CONTENT`, and the forward-feeding counts. So a two-slot surface filled by tags
+serves no inferred rows at all — the creator's statement displaces the guesses rather than
+being appended to them.
+
+### The refusal that is a product decision, not an engineering one
+
+**A creator may only tag a listing they own.** Tagging someone else's product is affiliate
+marketing. It needs a commission model, a disclosure obligation that differs by jurisdiction,
+and a decision about whether PulseSoc takes a cut. None of those are mine, and all of them are
+much harder to withdraw than to delay. So the check is ownership, the refusal is explicit
+(`REFUSED_NOT_OWNER`), and `AUTHORITY_OWNER` is recorded on **every** row so that the day a
+second authority exists, rows written under this one are still distinguishable. A test asserts
+nothing writes any other value.
+
+### Two defects found by writing the tests
+
+1. **`engine.py` did not run.** It arrived referencing `tagging` without importing it and
+   `content_post_id` without accepting it as a parameter — a `NameError` on *any* serve, on
+   every surface. Not a subtle break; the package's 763 tests were green because the fixture
+   called `engine.serve` with the arguments it had before.
+2. **`_int(2.5)` returned 2.** A lossy coercion, caught by a parametrized test rather than by
+   review. It matters more than it looks: `content_id` spaces overlap across
+   `pulse_posts`/`pulse_reels`/`pulse_status`, so a tag filed against a truncated id points at
+   a stranger's content, is not even obviously orphaned, and shows no symptom to anybody. Now
+   refused. `2.0` is still accepted, because JSON has no integer type and a client sending
+   `4242.0` meant 4242 — the test is integrality, not type.
+
+There was also a third thing that looked like a defect and was not: `placement["relationship"]`
+read `None`. That is deliberate. `PIPELINE_ONLY_FIELDS` strips it because `_payload`'s
+serializer is a **denylist**, and §18 is the section about what a denylist ships by accident. A
+test asserting `placement["relationship"] == CREATOR_TAGGED` would have been **asserting the
+leak exists**, so the assertion reads the persisted column instead and a new test
+(`test_the_provenance_does_not_reach_the_buyers_device`) pins the absence.
+
+### The mutation matrix, and the two mutations that survived it
+
+12 controls, each deleted from real source with the named suites run against it. The harness
+is committed — `scripts/protection/creator_tagging_mutation_matrix.py` — per §14: evidence
+nobody can regenerate is a defect, and the first version of this run was ad-hoc bash that
+existed only in a transcript.
+
+| # | control deleted | killed by |
+|---|---|---|
+| 1 | stale-seller JOIN condition | `test_the_tag_is_dropped_once_the_listing_changes_hands` |
+| 2 | the reader's own `LIMIT` | `test_the_reader_stops_at_the_cap_even_when_the_writer_did_not` |
+| 3 | ownership check on write | `test_a_stranger_may_not`, `test_the_viewer_may_not_tag_a_sellers_product` |
+| 4 | write-side cap | `test_the_writer_stops_at_the_cap` |
+| 5 | lossy-id refusal | 3 red |
+| 6 | `AUTHORITY_OWNER` on the row | 3 red, incl. `test_nothing_writes_an_authority_other_than_owner` |
+| 7 | tagged outranking contextual in `classify` | 3 red |
+| 8 | `_select`'s preference for tags | 3 red |
+| 9 | tagged lookup moved inside the personalisation gate | `test_an_opted_out_viewer_still_sees_the_creators_product` |
+| 10 | route resolving the post id on every surface | **survived — see below** |
+| 11 | suitability refusal never called | **survived — see below** |
+| 12 | an absent post permitted instead of refused | `test_a_deleted_post_serves_no_tags_and_the_rows_remain` |
+
+Ten of twelve is not the finding. (Entry 12 was written after the first eleven, when the
+retention question below turned out to have a real answer; it was killed first time.) The finding is that **the two survivors guarded the two
+most safety-relevant properties in the increment, and both were defects in tests written the
+same hour by someone who had just finished writing §19, §21 and §22 about exactly this.**
+
+**#11 — the suitability gate stops refusing anything.** Mutation:
+`verdict = None if engine.serve else _content_refusal(...)`. Commerce is then served onto
+bereavement, medical and distress posts. Both guards in the new file survived it:
+
+* `test_the_lookup_is_below_the_gate_in_the_route` compared **line numbers**, and the mutation
+  keeps `_content_refusal` textually above the `engine.serve` call.
+* `test_the_refusal_returns_before_retrieval` **never invoked the route at all.** It called
+  `suitability.assess(...)` directly and then asserted `not served.called` — vacuously true,
+  because nothing had called the handler. It was a test that could not fail.
+
+The mitigating fact, established by re-running the mutation against the whole package rather
+than one file: **41 tests in `test_suitability_gate_is_wired.py` do kill it.** That file was
+written for precisely this reason and it works. So #11 was a gap in one file, not in the
+suite — which is itself worth recording, because running a mutation against only the suite
+you just wrote is how a covered property gets reported as uncovered, and it is the mirror
+image of the §22 mistake.
+
+**#10 — every surface gets the client's post id.** Mutation: one line, moving
+`content_post_id = _content_post_id(payload)` above the `if surface == "product_detail"`
+branch. Effect: a creator's product can be served into a **Messenger conversation** or a
+Marketplace shelf, labelled as tagged on a post that is not on screen and that the viewer may
+not be able to see. This one **survived the entire 826-test package.** It was a real hole.
+
+It survived because `test_the_route_only_supplies_a_post_id_where_a_post_is_on_screen` was a
+regex asserting the assignment *inside* the `CONTENT_SURFACES` branch still existed. It does
+still exist. An *additional* unconditional assignment above it leaves the regex satisfied.
+**A structural test that asserts the presence of the right code cannot detect the addition of
+wrong code** — and "assert the guard is still there" is the natural way to write that test,
+which is why this is worth a paragraph rather than a line.
+
+Fixed three ways, because the single behavioural test is not sufficient on its own:
+
+* `test_a_surface_with_no_post_on_screen_ignores_a_post_id`, parametrized over
+  `frozenset(schema.SURFACES) - CONTENT_SURFACES` (derived, never listed — a hand-written
+  list goes stale in the safe-looking direction, by silently not testing a new surface), which
+  drives the **real Flask route** and asserts on the `content_post_id` the engine was actually
+  handed. A mutant cannot satisfy that by addition.
+* `test_every_surface_that_does_have_a_post_uses_it`, the other half, so the first cannot be
+  satisfied by hard-wiring 0. Each direction is trivially passable alone; the pair is the rule.
+* `test_the_post_id_is_resolved_in_exactly_one_place`, an AST walk **counting** call sites
+  inside `handler` and checking the nearest enclosing `If` tests `CONTENT_SURFACES`. This
+  covers the seventh surface that does not exist yet, which the parametrized test cannot.
+
+The AST walker had its own bug on the first attempt, worth naming because it is a general
+trap: **`elif` is an `If` node inside the outer `If`'s `orelse`**, so a walker that only
+inspects its children's tests and never a node's own reports every call site as unguarded. It
+failed loudly rather than passing vacuously, which is the only reason it was caught.
+
+`test_the_refusal_returns_before_retrieval` was also rewritten to drive the route, and a
+second test — `test_a_tag_cannot_be_resolved_on_a_refused_post` — now watches
+`tagging.tagged_listing_ids` directly, so a future route that resolves tags itself "to avoid a
+wasted engine call on untagged posts" fails even though `serve` was still not called.
+
+### What is not built
+
+**The composer UI.** No client screen sends `product_listing_ids`, and the multipart/form post
+path does not carry them at all — only the JSON path does. The feature is reachable by an API
+client and by nothing a user can tap. Delivery report item 30 states this; it is repeated here
+because a section this long about a feature reads as "shipped" unless told otherwise.
+
+### Verified
+
+827 package tests and 663 protection tests green (1,490 in one run). All 12 mutations killed,
+zero survivors, every source file confirmed restored byte-identical afterwards. The fail-soft
+handler audit is unchanged: `tagging.py` adds one `except` — the reader's — and it is the
+logged kind, not the silent kind, because this is the one source whose absence downgrades an
+explicit creator statement to a guess and the symptom (a tagged post showing unrelated
+products) looks exactly like a ranking complaint.

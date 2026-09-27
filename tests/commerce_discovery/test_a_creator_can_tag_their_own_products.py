@@ -760,6 +760,55 @@ class TestTheSuitabilityGateIsUpstreamOfAllOfThis:
             f"a content surface did not pass the post id through: {spy.calls}"
         )
 
+    def test_a_deleted_post_serves_no_tags_and_the_rows_remain(self, route, market):
+        """Deletion in PulseSoc is *soft*, and there is no cascade — not for this
+        table and not for `pulse_content_music` either. I went looking for the one
+        the precedent was supposed to provide; the only `DELETE FROM
+        pulse_content_music` statements in `bot.py` are in the audio-*replacement*
+        route.
+
+        So "a deleted post shows no products" rests on the suitability gate, not on
+        the data: `_content_post` filters `deleted_at IS NULL` in the query, an
+        absent row is `_ROW_ABSENT`, and `_content_refusal` refuses on absent. Both
+        halves are asserted here in one place — the refusal, and the rows surviving
+        — because the second is the retention fact and the first is what makes it
+        harmless. Anybody moving the gate needs to see them together.
+        """
+        market.tag(1, post_id=POST)
+        before = _rows(market)
+        assert before, "nothing was tagged, so this proves nothing"
+
+        client, spy, rows = route
+
+        # A *benign* post first, and the assertion that it serves. Without this the
+        # test would be the §23 defect it is about: the `route` fixture's post is a
+        # bereavement post, so removing it proves nothing — absence and grief would
+        # refuse identically and the test could not tell which one it measured.
+        rows.posts[POST] = {**BEREAVEMENT_POST,
+                            "title": "my new running shoes",
+                            "body": "finally found a pair that fits"}
+        _ask(client, "post_detail", post_id=POST)
+        assert spy.post_ids == [POST], (
+            "the benign control did not reach retrieval, so the absence below "
+            "cannot be what refuses"
+        )
+        spy.calls.clear()
+
+        # Now the row is gone, which is exactly what a soft-deleted post looks like
+        # to `_content_post` — it filters `deleted_at IS NULL` in the query.
+        rows.posts.pop(POST, None)
+        response = _ask(client, "post_detail", post_id=POST)
+        assert response.status_code == 200
+        assert not spy.called, (
+            "a post the server cannot see reached retrieval, so its creator tags "
+            "would have been resolved"
+        )
+        assert _rows(market) == before, (
+            "the tag rows were cleaned up somewhere. That is not wrong, but this "
+            "test and the retention note in §24 both say they are not, so one of "
+            "the two is now lying."
+        )
+
     def test_the_post_id_is_resolved_in_exactly_one_place(self):
         """Structural backstop, counting the call sites rather than matching one.
 
