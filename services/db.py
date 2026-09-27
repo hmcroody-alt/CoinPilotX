@@ -150,6 +150,37 @@ class CompatRow(Mapping):
         return self._data.items()
 
 
+#: PostgreSQL SQLSTATE for a unique-constraint violation. Named because the bare
+#: string in an ``except`` branch reads like a magic number.
+POSTGRES_UNIQUE_VIOLATION = "23505"
+
+
+def is_unique_violation(exc) -> bool:
+    """Whether ``exc`` is "that row already exists", on either engine.
+
+    This exists because the obvious spelling is wrong in production. ``connect()``
+    hands back a real ``sqlite3.Connection`` locally and a psycopg2 cursor behind
+    ``CompatConnection`` on PostgreSQL, so the exception classes share no ancestor
+    that means "uniqueness": a duplicate raises ``sqlite3.IntegrityError`` on one
+    engine and ``psycopg2.errors.UniqueViolation`` on the other.
+
+    So ``except sqlite3.IntegrityError`` -- which is what every hand-rolled site
+    in this repo writes -- catches nothing at all in production. The local suite
+    cannot see that, because locally it is the only engine there is.
+
+    Matched by SQLSTATE rather than by class so psycopg2 need not be importable
+    for this module to load, and so a DBAPI swap does not silently un-match.
+    Deliberately narrow: a foreign-key or not-null violation is a different bug
+    and must not be mistaken for a duplicate.
+    """
+    if isinstance(exc, sqlite3.IntegrityError):
+        # SQLite folds several constraint kinds into one class, so the class alone
+        # is not the answer; the message names which one fired.
+        return "unique" in str(exc).lower()
+    code = getattr(exc, "pgcode", None) or getattr(getattr(exc, "diag", None), "sqlstate", None)
+    return str(code or "") == POSTGRES_UNIQUE_VIOLATION
+
+
 def row_values(row) -> tuple:
     """The row's column VALUES, left to right, whatever engine produced it.
 

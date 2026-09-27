@@ -157,6 +157,18 @@ REFUSAL_GATES: dict[str, str] = {
     # denial is what makes it a gate rather than a lookup, and it is why the
     # name is trusted here even though it resolves to ten different functions.
     "_require_user": AUTH_USER,
+    # `marketplace_cart_routes`' replacement for its own `_require_user`. Same
+    # contract — resolve, or *return a 401 response* the caller propagates — but
+    # it resolves a cart *owner*, which for a signed-in shopper is the account and
+    # for nobody else is anything at all.
+    #
+    # `AUTH_USER` is therefore true only while `GUEST_CARTS_ENABLED` is False,
+    # which it is. When guest carts land, this entry is a lie and these seven
+    # routes need a class this vocabulary does not yet have: reachable without an
+    # account, but bound to a server-signed identity and not public. That is named
+    # here, and at the flag, so the flip cannot quietly downgrade seven endpoints
+    # while the gate keeps reporting `user`.
+    "_require_cart_owner": AUTH_USER,
     # The Private Office `(user, refusal)` family. Same contract as
     # `_require_user`, one per surface because each also applies that surface's
     # tier gate and, for most of them, the second lock.
