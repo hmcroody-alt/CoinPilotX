@@ -398,6 +398,7 @@
     "tests/test_automated_posts_text_only.py",
     "tests/test_badge_counts_connection_leak.py",
     "tests/test_brevo_delivery_semantics.py",
+    "tests/test_business_web_sections.py",
     "tests/test_call_accept_race.py",
     "tests/test_call_acceptance_sync.py",
     "tests/test_call_answered_elsewhere_self_cancel.py",

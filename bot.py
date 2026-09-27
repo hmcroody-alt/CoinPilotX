@@ -439,6 +439,10 @@ from services import (
 # routes are defined well before it. `services.route_auth` imports nothing from
 # this package, so hoisting it cannot create a cycle.
 from services.route_auth import admin_required, auth_required, public_route
+# Hoisted alongside `route_auth` for the same reason: `/business` declares its
+# auth at `def` time and the hub's registry is read inside that view. The module
+# imports only `services.app_links`, so it cannot create a cycle back to here.
+from services import business_web_sections
 from seo import schema as seo_schema
 from seo import features as seo_features
 from seo import commerce_policies as seo_commerce_policies
@@ -60815,6 +60819,39 @@ def pulse_merchant_apply_page():
     </form>
     """
     return pulse_social_shell("Merchant Application", "A serious, trust-first application before marketplace selling unlocks.", main)
+
+
+@webhook_app.route("/business", methods=["GET"])
+@auth_required
+def business_hub_page():
+    """The web Business hub -- the browser counterpart of the app's Business tile.
+
+    Answers the question the website could not previously answer: of the fourteen
+    things the Business tile does, which ones can I do in a browser? Every card's
+    state is derived in `services/business_web_sections.resolve()` from
+    `services/app_links.py` and this app's own url_map, so the page cannot claim
+    a capability the codebase does not have.
+
+    `/business-os` is a different page and stays where it is. It renders the
+    newer `/api/business-os/*` surface, whose commerce tables are live but empty,
+    and its own taxonomy (Overview / Advertising / Commerce) does not correspond
+    to the app's sections -- which is precisely why nobody could tell what was
+    covered. This page is about the sections a member actually sees on their
+    phone, and it links to `/business-os` from no card because no app section
+    corresponds to it either.
+    """
+    init_db()
+    app_obj = webhook_app
+    main = render_template(
+        "business_hub.html",
+        cards=business_web_sections.hub_cards(app_obj),
+        coverage=business_web_sections.coverage(app_obj),
+    )
+    return pulse_social_shell(
+        "Business",
+        "Run your business on PulseSoc, and see what the website can do today.",
+        main,
+    )
 
 
 @webhook_app.route("/pulse/merchant/dashboard", methods=["GET"])
