@@ -52,6 +52,31 @@ REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 PACKAGE = os.path.join(REPO, "services", "commerce_discovery")
 TESTS = os.path.join(REPO, "tests", "commerce_discovery")
 
+#: The request path is not in the package. `commerce_discovery_routes.py` sits a
+#: directory up because it imports `bot`, and the package deliberately does not.
+#: Scoping this audit to the package alone was a real omission and not a small
+#: one: the route module holds a *second* fail-safe above the engine's, answering
+#: HTTP 200 with an empty list, and 29 of the suitability tests were green against
+#: it. An audit of "what happens when commerce breaks" that stops before the layer
+#: that forms the response is answering a narrower question than it appears to.
+EXTRA_SOURCES = (os.path.join(REPO, "services", "commerce_discovery_routes.py"),)
+
+
+def _sources() -> list[str]:
+    """Every file whose handlers this audit is responsible for.
+
+    Kept as a function rather than a module constant so that a missing extra file
+    is reported by `inventory` rather than crashing at import — the route module
+    has moved once already.
+    """
+    paths = [
+        os.path.join(PACKAGE, name)
+        for name in sorted(os.listdir(PACKAGE))
+        if name.endswith(".py")
+    ]
+    paths.extend(path for path in EXTRA_SOURCES if os.path.exists(path))
+    return paths
+
 
 @dataclass
 class Handler:
@@ -121,10 +146,8 @@ def _reraises(handler: ast.ExceptHandler) -> bool:
 
 def inventory() -> list[Handler]:
     found: list[Handler] = []
-    for name in sorted(os.listdir(PACKAGE)):
-        if not name.endswith(".py"):
-            continue
-        path = os.path.join(PACKAGE, name)
+    for path in _sources():
+        name = os.path.basename(path)
         with open(path, encoding="utf-8") as fh:
             tree = ast.parse(fh.read(), filename=path)
         owners = _enclosing_functions(tree)
@@ -151,6 +174,12 @@ def run_suite_under_tracer(handlers: list[Handler]) -> int:
         (handler.module, handler.watch): handler for handler in handlers
     }
     package = PACKAGE + os.sep
+    #: Matched exactly, not by prefix. `services/commerce_discovery_routes.py`
+    #: would be caught by a `startswith("services/commerce_discovery")` test along
+    #: with the package directory, which is how the two got conflated in the first
+    #: place — and it would also catch any future `commerce_discovery_*.py` this
+    #: audit has not been told about, silently.
+    extra = frozenset(os.path.abspath(path) for path in EXTRA_SOURCES)
 
     def local_trace(frame, event, _arg):
         if event == "line":
@@ -161,9 +190,10 @@ def run_suite_under_tracer(handlers: list[Handler]) -> int:
         return local_trace
 
     def global_trace(frame, event, arg):
-        # The filter that makes this affordable: every frame outside the package
-        # gets no line tracing at all.
-        if frame.f_code.co_filename.startswith(package):
+        # The filter that makes this affordable: every frame outside the audited
+        # files gets no line tracing at all.
+        filename = frame.f_code.co_filename
+        if filename.startswith(package) or filename in extra:
             return local_trace(frame, event, arg)
         return None
 
@@ -185,7 +215,10 @@ def report(handlers: list[Handler]) -> None:
     total = len(handlers)
     print()
     print("=" * 78)
-    print(f"{total} fail-soft handlers in services/commerce_discovery/")
+    print(f"{total} fail-soft handlers across {len(_sources())} files")
+    print("  services/commerce_discovery/*.py + " + ", ".join(
+        os.path.relpath(path, REPO) for path in EXTRA_SOURCES
+    ))
     print("=" * 78)
     for state, blurb in (
         ("never", "NEVER REACHED by any test in the package"),

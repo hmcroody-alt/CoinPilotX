@@ -16,7 +16,7 @@ it, and the fixes for those defects. Section 3 is an honest ledger of what pre-e
 versus what I added, because the difference is most of the value of this document.
 
 **On the shape of this report.** The brief specified a final report of 41 numbered
-sections. This one has 21. That is a deliberate departure, and the reason is the same
+sections. This one has 22. That is a deliberate departure, and the reason is the same
 reason the engine was not rebuilt: the section list was written on the assumption that
 all of it would be new construction. Roughly two thirds of the headings — embeddings,
 the vector index, the new worker framework, the experimentation platform, the load
@@ -1355,3 +1355,121 @@ list was wrong.
 
 Verified: 697 package tests and 663 protection tests green; the 77/620 mutation above,
 reverted and confirmed byte-identical to `HEAD`.
+
+---
+
+## 22. The audit had the same blind spot the suite did
+
+§20 built an audit of fail-soft handlers and scoped it to `services/commerce_discovery/`.
+§21 then found the most expensive unwatched fail-soft path in the feature sitting in
+`services/commerce_discovery_routes.py` — one directory up, because it imports `bot` and the
+package deliberately does not.
+
+So the audit inherited the boundary that caused the problem it was built to find. Widened:
+
+```
+74 fail-soft handlers across 19 files
+31 NEVER REACHED by any test in the package
+12 reached, but neither logged nor re-raised
+31 reached, and says so
+
+per module (never / total)
+      commerce_discovery_routes.py  13 /  18      <-- worst in the feature
+      ranking.py                     4 /   5
+      events.py                      4 /   9
+      ...
+```
+
+The request layer was **13 of 18 unreached** — proportionally worse than any module inside
+the package, and it is the layer that actually forms the response a buyer's device receives.
+An audit of "what happens when commerce breaks" that stops before that layer is answering a
+narrower question than its name suggests. The scope is now a named list with a comment
+explaining why the extra file is not discovered by pattern: a
+`startswith("services/commerce_discovery")` test would match the routes module *and* any
+future `commerce_discovery_*.py` nobody had told the audit about, silently — which is how the
+two got conflated in the first place.
+
+### Three of the thirteen were load-bearing
+
+`tests/commerce_discovery/test_the_request_layer_fails_soft_correctly.py` (19 tests) takes
+those three and leaves the other ten, for §20's reasons about coercion guards.
+
+**1. `_with_db` — a written prediction of an outage in unrelated features.** Its docstring:
+
+> `close()` is in a `finally`, not on the success path. A close reachable only when nothing
+> raised leaks one pooled connection per failure, and this pool is 8+8 with a 3s timeout — a
+> few dozen failures is an outage on every other feature sharing it.
+
+All four of its handlers were unreached. This is §20's `_persist` finding again — a confident
+sentence about a blast radius that nothing had checked — and the lesson had not generalised
+far enough: I audited the package's confident sentences and not the route's.
+
+Now tested: commits and closes on success; **rolls back and closes on failure, in that
+order** (the reverse rolls back a closed connection, which raises on some drivers and
+silently does nothing on others); re-raises rather than returning a sentinel, which is the
+line that makes the route's own fail-safe reachable at all; a `rollback()` that itself fails
+does not skip the close or mask the original exception; and a `close()` that fails on the
+*success* path does not throw away placements that were already computed and committed —
+turning a pool problem into a blank shelf.
+
+Proved by mutation: moving `close()` from `finally` to `else` turns **4 tests red**. Worth
+recording *why* `else` is not a near-miss but a total failure — the success path `return`s
+from inside the `try`, so an `else` clause never runs at all. The leak would have been
+complete, not occasional.
+
+**2. `commerce_discovery_serve`'s own fail-safe had never run — including when §21 shipped a
+guard keyed to its log line.** §21 extended `conftest` to watch for
+`COMMERCE_DISCOVERY_SERVE_ROUTE_FAILED`, and the audit says the handler emitting that string
+had never executed in a test. A guard matching an unexercised log line fails open on a typo:
+misspell the message and 29 suitability tests go quietly back to being vacuous, with the
+guard still in place and still green.
+
+That loop is now closed by making a real request crash and asserting the real record — the
+prefix, that it carries a traceback (`LOGGER.exception`, not `LOGGER.error`, or an operator
+gets a prefix and no stack), and that it lands in the recorder the report hook reads. Every
+other test of the guard builds a `LogRecord` by hand; this one does not. The tests carry
+`@pytest.mark.commerce_serve_may_fail`, because they deliberately cause the line the guard
+exists to catch — the same self-reference §19's file hit.
+
+**3. `_event_route`'s error vocabulary, including a security property written as a comment.**
+Its docstring says three copies of this logic "would be three places to forget that a
+`DiscoveryEventError` is a 400 and everything else is a 500 that must not leak its message."
+Both handlers were unreached, so neither half was checked.
+
+Now tested: a known event error returns 400 carrying its own code in **both** `error_code`
+and `error` (the older web handlers read the second; setting only the first collapses every
+failure to a generic message — a trap this repo has hit before), and an unexpected failure
+returns a 500 that does not contain the exception text. Proved by mutation: making the 500
+interpolate `str(exc)` turns the security test red, with a planted message naming a column
+and a table.
+
+It is also asserted that the unexpected failure is still **logged**. Not returning detail to
+the client is only correct if somebody can see it; a 500 that is silent on both sides is
+unfixable. And one test asserts `COMMERCE_DISCOVERY_EVENT_FAILED` does **not** trip §21's
+guard — it is on a watched logger but is not a watched prefix, and it should not be: a failed
+event write is a 500 the client can see and retry, not a silently empty shelf. A guard that
+fires on already-visible errors is a guard that gets deleted.
+
+### Also pinned while here
+
+The route normalises `surface` once and reuses it. Its own comment records the bug: the check
+used to lowercase a copy and leave the original in play, so `/REELS` cleared the gate and was
+then served feed cadence and reported its events under a surface name nothing else writes.
+That is now a test — and a second one asserts the converse, that no surface is *declared* in
+a form the normaliser would reject, since such a surface could never be requested at all.
+
+Two tests assert that the unknown-surface and rate-limited paths return the empty shape
+**without** logging a fail-safe line. Those are decisions, not failures, and if they logged
+one the guard would flip every test that asks about a suppressed surface — the noise problem
+§19 spent three conditions avoiding.
+
+### Still open
+
+`ranking.py` remains 4 of 5 unreached, all coercion guards. The twelve `silent` handlers now
+include three in the route module (`_anchor_listing_id`, `_anchor_context`,
+`_content_post_id`), all `int()`-shaped, all left alone on the same reasoning. And §20's
+`_listing_stats` debug-logging finding is unchanged and still the one item here worth acting
+on in production.
+
+Verified: 724 package tests and 663 protection tests green; both mutations above reverted,
+`services/commerce_discovery_routes.py` confirmed byte-identical to `HEAD`.
