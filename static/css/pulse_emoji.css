@@ -74,6 +74,33 @@
   to { opacity: 1; transform: none; }
 }
 
+/* No measurable anchor: centre the panel rather than leave it in the corner,
+   where the default top/left of an unpositioned popover would put it. */
+.pulse-emoji-root.is-centered .pulse-emoji-panel {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pulse-emoji-root.is-centered .pulse-emoji-backdrop {
+  background: rgba(0, 0, 0, .38);
+}
+
+/* The shared entrance animation ends on `transform: none`, which would undo
+   the centring for its whole duration. Centred gets its own keyframe. */
+.pulse-emoji-root.is-centered .pulse-emoji-panel {
+  animation: pulse-emoji-in-centered .14s ease-out;
+}
+
+.pulse-emoji-root.is-static.is-centered .pulse-emoji-panel {
+  animation: none;
+}
+
+@keyframes pulse-emoji-in-centered {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 4px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
 .pulse-emoji-root.is-sheet .pulse-emoji-panel {
   left: 0;
   right: 0;

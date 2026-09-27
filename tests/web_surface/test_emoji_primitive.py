@@ -391,3 +391,130 @@ def test_neither_platform_fakes_a_feeling_by_editing_the_authors_body():
     assert 'data-composer-rail="feeling"' not in markup, (
         "the composer's ☺ button is back on the text-splicing rail"
     )
+
+
+def test_a_surface_opts_in_with_an_attribute_not_with_its_own_handler():
+    """One listener for the whole product, or this becomes seven pickers again.
+
+    `attachToInput` needs both the trigger and the field in hand and binds one
+    listener per pair. That cannot serve a feed whose cards are rendered after
+    load, so every such surface would have to write its own click handler --
+    and a bespoke handler per surface is precisely the shape the mission
+    forbids ("One system. Not seven unrelated emoji implementations."). The
+    fix is a single document-level delegated listener keyed on
+    `data-emoji-for`, so a new surface ships a button attribute and nothing
+    else.
+
+    Asserted here: the delegated listener exists and really opens the picker,
+    it resolves the field it was pointed at, and the Status reply -- the first
+    surface converted to it -- goes through the attribute rather than around
+    it.
+    """
+    picker = strip_js_comments(read(WEB_PICKER))
+    assert 'closest("[data-emoji-for]")' in picker, (
+        "the delegated data-emoji-for listener is gone; every surface that "
+        "renders after load now needs its own bespoke emoji handler"
+    )
+    # Slice from the listener's own registration so a match cannot be borrowed
+    # from openPicker's internals or from attachToInput further up the file.
+    hook = picker.split('closest("[data-emoji-for]")')[1]
+    hook = hook[: hook.index("\n  });")]
+    assert "openPicker({" in hook, (
+        "the data-emoji-for listener no longer opens the picker"
+    )
+    assert "insertAtCaret(input" in hook, (
+        "the data-emoji-for listener no longer inserts into the target field"
+    )
+    assert 'getAttribute("data-emoji-for")' in hook, (
+        "the listener stopped reading the selector, so every opted-in button "
+        "would write into whichever field it found first"
+    )
+
+    markup = read(os.path.join(ROOT, "bot.py"))
+    assert 'data-emoji-for="[data-status-story-reply]"' in markup, (
+        "the Status reply box lost its emoji trigger"
+    )
+    assert "data-status-story-emoji" not in markup, (
+        "the Status reply grew a bespoke handler hook again; point it at the "
+        "shared data-emoji-for listener instead"
+    )
+
+
+def test_an_unmeasurable_anchor_centres_the_panel_instead_of_cornering_it():
+    """A zero-area anchor must not pin the picker to (8, 8).
+
+    Every offset in the anchored branch derives from the anchor's rect, so a
+    rect of zero width and height computes a top-left position -- and it stays
+    there, because the only thing that repositions an open panel is a scroll or
+    a resize. Observed for real: a click on the Status reply trigger while the
+    viewer was still animating in produced panel [8, 8, 368, 420] against
+    anchor [1079, 631, 48, 48].
+
+    A trigger measures zero more often than it looks: inside a container that
+    is mid-transition, inside a `display: none` tab, on a card the feed has not
+    laid out yet. So the guard is not "fix that one viewer" -- it is that an
+    unmeasurable anchor takes the same path as no anchor at all.
+    """
+    picker = strip_js_comments(read(WEB_PICKER))
+    body = function_body(picker, "PickerInstance.prototype.position = function () {")
+
+    assert "getBoundingClientRect" in body, "position() stopped measuring the anchor"
+    # The rect must be read ONCE, before the branch, and the branch must test
+    # its area. Reading it inside the anchored path is what made the zero case
+    # unreachable in the first place.
+    assert re.search(r"!anchorRect\.width\s*\|\|\s*!anchorRect\.height", body), (
+        "position() no longer treats a zero-area anchor as unpositionable; a "
+        "trigger with no layout will pin the panel to the corner of the screen"
+    )
+    # One condition, not two. Two separate assertions -- "the area is tested
+    # somewhere" and "the early return exists somewhere" -- are satisfiable by
+    # two different places: a branch that notes the zero case and falls through
+    # into the offset math anyway, plus an untouched early return next to it.
+    # That mutation survived the first version of this test. So the area test
+    # has to be read out of the early return's OWN condition. The condition
+    # contains no parentheses of its own, which is what makes `[^)]*` a safe
+    # way to say "still inside this if".
+    guard = re.search(
+        r"if\s*\(\s*sheet\s*\|\|[^)]*!anchorRect\.width[^)]*!anchorRect\.height[^)]*\)\s*\{",
+        body,
+    )
+    assert guard, (
+        "the zero-area check must gate the SAME early return as the missing "
+        "anchor, not a separate branch that falls through to the offset math"
+    )
+    assert 'classList.toggle("is-centered", !sheet)' in body, (
+        "the unanchored branch must centre the panel, and must not centre it "
+        "when the panel is the bottom sheet"
+    )
+    assert 'classList.remove("is-centered")' in body, (
+        "a successful reposition must drop is-centered or the CSS transform "
+        "will keep overriding the computed left/top"
+    )
+
+    # Centring is a transform, and the shared entrance keyframe ends on
+    # `transform: none` -- which would undo it for the animation's whole
+    # duration. The centred state needs its own keyframe or it flies to the
+    # corner on the way in, which is the bug wearing a different hat.
+    css = read(os.path.join(ROOT, "static", "css", "pulse_emoji.css"))
+    assert ".pulse-emoji-root.is-centered .pulse-emoji-panel" in css, (
+        "is-centered has no stylesheet writer, so the JS class does nothing"
+    )
+    assert "@keyframes pulse-emoji-in-centered" in css, (
+        "the centred panel is animating with pulse-emoji-in, whose final "
+        "`transform: none` cancels the centring translate"
+    )
+    centred = css.split("@keyframes pulse-emoji-in-centered")[1]
+    # To the block's own closing brace at column 0 -- not the first `}\n`,
+    # which is the end of the `from {` line.
+    centred = centred[: centred.index("\n}")]
+    assert "translate(-50%, -50%)" in centred, (
+        "the centred keyframe must land on the centring transform, not on none"
+    )
+
+    # And the panel must be re-measured once the dataset lands: the first
+    # position() ran against an empty panel, so an anchor that had no layout
+    # then gets a second, truthful measurement rather than keeping the guess.
+    assert re.search(r"self\.rebuild\(\);\s*self\.position\(\);", picker), (
+        "position() is no longer re-run after the dataset renders, so the "
+        "panel keeps whatever placement it computed while it was empty"
+    )

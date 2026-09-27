@@ -570,6 +570,13 @@
       self.status.textContent = "";
       self.buildTabs();
       self.rebuild();
+      // The first position() ran against an empty panel, before 1,914 emoji
+      // and nine category tabs existed to measure. Re-run it now that the
+      // panel is the size it will actually be -- and so a trigger that had no
+      // layout at open time (a viewer still animating in) gets a second,
+      // truthful measurement instead of staying where the zero-rect guess
+      // parked it.
+      self.position();
     }).catch(function (error) {
       if (self.destroyed) return;
       // A failed dataset load is not an empty dataset. Say which one it is,
@@ -598,7 +605,18 @@
     if (this.destroyed) return;
     var sheet = isSheetWidth();
     this.root.classList.toggle("is-sheet", sheet);
-    if (sheet || !this.anchor || !this.anchor.getBoundingClientRect) {
+    // An anchor with no area cannot be positioned against: every offset
+    // computes from zero and the panel pins itself to the top-left corner,
+    // which is where it then stays, because nothing repositions it afterwards.
+    // A trigger measures zero more often than it looks -- inside a viewer that
+    // is still opening, a tab that is display:none, a card mid-transition. A
+    // centred panel is a worse guess than a correct anchor and a much better
+    // one than the corner of the screen.
+    var anchorRect = this.anchor && this.anchor.getBoundingClientRect
+      ? this.anchor.getBoundingClientRect()
+      : null;
+    if (sheet || !anchorRect || !anchorRect.width || !anchorRect.height) {
+      this.root.classList.toggle("is-centered", !sheet);
       this.panel.style.left = "";
       this.panel.style.top = "";
       // A picker that was shortened to clear a cramped anchor keeps that
@@ -612,12 +630,13 @@
       }
       return;
     }
+    this.root.classList.remove("is-centered");
     var previousHeight = this.panel.style.height;
     // Measure the panel at its natural height. A previous call may have
     // shortened it for a cramped anchor; carrying that over would make the
     // panel ratchet smaller on every reposition and never grow back.
     this.panel.style.height = "";
-    var rect = this.anchor.getBoundingClientRect();
+    var rect = anchorRect;
     var panelRect = this.panel.getBoundingClientRect();
     var width = panelRect.width || 360;
     var height = panelRect.height || 420;
@@ -1057,6 +1076,41 @@
       });
     });
   }
+
+  /**
+   * Declarative opt-in: `data-emoji-for` on any button wires it to a field.
+   *
+   *   <button data-emoji-for="[data-status-story-reply]" aria-label="Add emoji">☺</button>
+   *
+   * `attachToInput` needs both elements in hand and binds one listener per
+   * pair, which cannot serve a feed that renders its cards after load. This is
+   * one document-level listener for the whole product instead, so a surface
+   * opts in with an attribute rather than by writing its own handler -- which
+   * is how a picker stays one system instead of becoming seven. An empty value
+   * means "the field next to me": the nearest text input or textarea in the
+   * trigger's own form or `data-emoji-scope`.
+   */
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    var trigger = target && target.closest && target.closest("[data-emoji-for]");
+    if (!trigger) return;
+    var selector = trigger.getAttribute("data-emoji-for");
+    var input = selector
+      ? document.querySelector(selector)
+      : (trigger.closest("form,[data-emoji-scope]") || document)
+          .querySelector("input[type=text],input:not([type]),textarea");
+    if (!input) return;
+    event.preventDefault();
+    openPicker({
+      anchor: trigger,
+      returnFocusTo: input,
+      stayOpenOnSelect: true,
+      label: trigger.getAttribute("data-emoji-label")
+        || trigger.getAttribute("aria-label")
+        || "Add emoji",
+      onSelect: function (emoji) { insertAtCaret(input, emoji); }
+    });
+  });
 
   /** Insert at the caret and leave the caret after the insertion. */
   function insertAtCaret(input, text) {
