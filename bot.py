@@ -330,6 +330,14 @@ from services import (
     marketplace_seller_identity as marketplace_seller_identity,
     marketplace_seo as marketplace_seo,
     merchant_center_feed as merchant_center_feed,
+    # The web storefront. Two modules, deliberately: `marketplace_web` derives
+    # facts from rows (price ranges, taxonomy, option groups, description
+    # parsing) and `marketplace_storefront` turns those facts into markup.
+    # Neither imports Flask or `bot`, which is what makes the storefront
+    # testable without booting the app and is why the routes below contain SQL
+    # and HTTP concerns only.
+    marketplace_web as marketplace_web,
+    marketplace_storefront as marketplace_storefront,
     media_service,
     media_storage,
     media_upload_sessions,
@@ -57556,6 +57564,196 @@ def pulse_camera_studio_page():
     return pulse_social_shell("Camera Creator Studio", "Capture photos and videos, apply premium filters, and publish safely across PulseSoc.", main, "", script)
 
 
+
+# ---------------------------------------------------------------------------
+# The member storefront
+# ---------------------------------------------------------------------------
+#
+# Two layers behind these helpers, deliberately kept out of this file:
+#
+#   services/marketplace_web.py         rows  -> facts
+#   services/marketplace_storefront.py  facts -> markup
+#
+# Neither imports Flask or `bot`, which is why the route below holds SQL and HTTP
+# concerns only, and why the renderer is tested without booting the app.
+#
+# Scope is the signed-in reader. The anonymous reader is answered by
+# `marketplace_seo` and the two public templates in this section, and that path is
+# left exactly as it is: it is indexed, and Merchant Center compares the product
+# feed against what it fetches from it.
+# ---------------------------------------------------------------------------
+
+#: How many eligible listings one storefront request will read.
+#:
+#: Filtering, sorting and paging happen in Python rather than SQL, which is the
+#: right trade at the catalogue's real size -- 15 eligible listings out of 47
+#: rows, so a round trip per facet would cost more than the work it saves. This
+#: constant is where that trade-off stops being true. Past a few hundred rows
+#: the facets belong in the query (a `WHERE` on category, an `ORDER BY`, a
+#: `LIMIT/OFFSET`) and the taxonomy belongs in its own `GROUP BY`. The limit is
+#: here rather than implicit so the ceiling is visible and a page can never
+#: become unbounded work.
+MARKETPLACE_STOREFRONT_SCAN_LIMIT = 600
+
+#: The columns the storefront needs on top of `marketplace_listings.*`.
+#:
+#: `seller_username` is what makes "Message seller" work without JavaScript --
+#: it is the query the messenger's people search takes. `seller_avatar_url` is
+#: the store avatar on the seller card. Both come from `users`, whose primary
+#: key is `user_id`, not `id`.
+MARKETPLACE_STOREFRONT_SELLER_COLUMNS = """
+                   COALESCE(u.username,'') AS seller_username,
+                   COALESCE(u.avatar_url,'') AS seller_avatar_url,
+                   COALESCE(ms.status,'missing') AS seller_status"""
+
+
+def marketplace_storefront_viewer(user):
+    """The `Viewer` for this request.
+
+    Viewer state gates *rendering* only. Every affordance it hides -- Promote,
+    Save, Report -- is re-authorized by the API route behind it, because a hidden
+    button is a courtesy and never a permission.
+    """
+
+    if not user:
+        return marketplace_storefront.Viewer()
+    return marketplace_storefront.Viewer(
+        user_id=safe_int(user.get("user_id"), 0),
+        signed_in=True,
+        is_admin=bool(user.get("is_admin") or user.get("is_owner")),
+    )
+
+
+def marketplace_storefront_variants(cur, listing_ids):
+    """`{listing_id: [variant rows]}` for the given listings, in one query.
+
+    Not `pulse_marketplace_supplier_facts_for_listings`: that function is keyed
+    on a row in the supplier *source* table and returns nothing at all for a
+    listing without one, which is correct for a provenance verdict and wrong
+    here. A merchant-authored listing with hand-entered variants still has a
+    price range and a size selector, and the storefront has to show them.
+
+    Variants are the storefront's price authority. A supplier-imported listing
+    carries its money in `marketplace_listing_variants.price_cents` and its
+    availability in that table's `stock_state`; `marketplace_listings.price_label`
+    is only written at publish time. Reading the listing alone told 31 correctly
+    priced production products that they had no price.
+    """
+
+    safe_ids = [int(item_id or 0) for item_id in listing_ids if int(item_id or 0)]
+    if not safe_ids:
+        return {}
+    from services import marketplace_variants as _variants
+
+    by_listing = {}
+    try:
+        placeholders = ",".join(["?"] * len(safe_ids))
+        cur.execute(
+            f"""SELECT * FROM {_variants.VARIANT_TABLE}
+                 WHERE listing_id IN ({placeholders})
+                   AND COALESCE(status,'active') NOT IN ('archived','deleted')
+                 ORDER BY listing_id ASC, position ASC, id ASC""",
+            safe_ids,
+        )
+        for row in cur.fetchall():
+            item = dict(row)
+            by_listing.setdefault(int(item.get("listing_id") or 0), []).append(item)
+    except Exception:
+        # A deployment whose variant table has not been created yet is not a
+        # broken Marketplace. Every consumer of this mapping treats a missing
+        # entry as "this listing has no variants", which is the pre-variant
+        # behaviour: one price from `price_label`, no option controls.
+        app.logger.warning("marketplace storefront variants unavailable", exc_info=True)
+        return {}
+    return by_listing
+
+
+def marketplace_storefront_payloads(cur, rows):
+    """Run listing rows through the same serializer the app reads.
+
+    `pulse_marketplace_listing_payload` is what strips the reviewer-only columns,
+    normalizes every media URL through `pulse_media_url`, orders the gallery
+    cover-first and drops media whose moderation status removed it. The renderer
+    reads `payload["media"]` first when building a gallery, so passing raw rows
+    here would have put a moderation-removed cover back on the page -- and would
+    have let the web and the app disagree about the same product's price label
+    and store name, which is the class of bug this serializer exists to prevent.
+    """
+
+    ordered = [dict(row) for row in rows]
+    media_by_listing = pulse_marketplace_media_rows_for_listings(
+        cur, [int(item.get("id") or 0) for item in ordered]
+    )
+    return [
+        pulse_marketplace_listing_payload(item, media_by_listing.get(int(item.get("id") or 0), []))
+        for item in ordered
+    ]
+
+
+def marketplace_storefront_app_cta(destination, resource_id=None):
+    """The "Open in PulseSoc" affordance, as an addition and never a redirect.
+
+    The website is the canonical, indexable surface for a product now, so this is
+    a link a visitor may take -- not a gate in front of the page. The href is
+    built by `app_links` rather than hand-written, because that module validates
+    the destination against what the released binary actually resolves; a
+    hand-made link is how a button reading "Open this listing" ends up landing on
+    the app's Home tab.
+    """
+
+    href = app_first_href(destination, resource_id)
+    label = app_links.destination_label(destination, "Open in PulseSoc")
+    return (
+        '<aside class="mkt-appcta">'
+        f'<p>Prefer the app? <a href="{html_escape(href)}"'
+        f' data-app-link="{html_escape(destination)}">{html_escape(label)}</a></p>'
+        "</aside>"
+    )
+
+
+
+def _marketplace_member_storefront_reply(page, status=200):
+    """One `RenderedPage`, wrapped in the member shell.
+
+    Member-only by design. The anonymous reader never reaches this function --
+    `_marketplace_public_index_response` and `_marketplace_public_product_response`
+    answer that reader, and they are the documents Google and Merchant Center
+    fetch. An earlier draft of this storefront served both audiences from one
+    `RenderedPage` through a public document of its own; that half was withdrawn
+    on integration rather than landed, because the public half already exists, is
+    indexed, and is the page the product feed is compared against. Two
+    implementations of one indexable page is how a feed and a page begin
+    disagreeing about a price, and that disagreement is a Merchant Center
+    misrepresentation finding rather than a rendering bug.
+    """
+
+    # `pulse_social_shell` returns a `Response` already -- wrapping it in a second
+    # one puts a Response object in the body and werkzeug fails at send time, not
+    # here. Take the one it built and set status on it.
+    response = pulse_social_shell(
+        page.title,
+        page.meta_description,
+        f"{page.assets_html}{page.body_html}",
+        "",
+        "",
+        show_intro=False,
+    )
+    if response.status_code in (301, 302, 303, 307, 308):
+        # The session evaporated between `require_account()` and the shell's own
+        # call. Honour the redirect rather than dressing it up.
+        return response
+    response.status_code = status
+    # Personalised: the member's own avatar, nav and merchant state are on it, so
+    # nothing shared may store it.
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Content-Type"] = "text/html; charset=utf-8"
+    # One URL, two documents, chosen by the session cookie. Without this a shared
+    # cache may hand an anonymous reader the member frame -- which for a crawler
+    # means being served the `noindex` copy of an indexable page.
+    response.headers["Vary"] = "Cookie"
+    return response
+
+
 def _marketplace_public_index_response(listings):
     """The marketplace grid for a reader with no session -- including Googlebot.
 
@@ -57631,21 +57829,27 @@ def pulse_marketplace_page():
     # `/pulse/marketplace/<id>`, which applies both predicates, so a grid that
     # applied fewer would have rendered its own links as 404s.
     from services.discovery_visibility import discovery_visible_sql
-    cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
-        FROM marketplace_listings l
-        LEFT JOIN users u ON u.user_id=l.seller_user_id
-        LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
-        WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
-          AND {discovery_visible_sql('u')}
-        ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
-    listings = [dict(row) for row in cur.fetchall()]
     if not user:
+        # Scoped to the anonymous branch rather than run for everyone. The member
+        # branch below reads the same two predicates but needs a wider row -- the
+        # seller columns the storefront's seller card and "Message seller" are built
+        # from -- and a higher ceiling than 40, so it issues its own query. Leaving
+        # this one above the branch meant every signed-in visitor paid for a
+        # 40-row read whose result was then discarded.
+        cur.execute(f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')}
+            FROM marketplace_listings l
+            LEFT JOIN users u ON u.user_id=l.seller_user_id
+            LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+            WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+              AND {discovery_visible_sql('u')}
+            ORDER BY l.featured DESC, l.id DESC LIMIT 40""")
+        listings = [dict(row) for row in cur.fetchall()]
         # The public grid is built from `pulse_marketplace_listing_payload`, the
         # same shaping function the mobile API and the public product page use,
-        # rather than from the raw rows the member grid below formats itself.
-        # That costs one extra query for the media rows and buys the thing that
-        # matters on a page Google reads: a card cannot disagree with the product
-        # page it links to about the title, the image or the price.
+        # rather than from raw rows formatted here. That costs one extra query for
+        # the media rows and buys the thing that matters on a page Google reads: a
+        # card cannot disagree with the product page it links to about the title,
+        # the image or the price.
         listing_ids = [int(row.get("id") or 0) for row in listings]
         media_by_listing = pulse_marketplace_media_rows_for_listings(cur, listing_ids)
         conn.close()
@@ -57653,77 +57857,110 @@ def pulse_marketplace_page():
             pulse_marketplace_listing_payload(row, media_by_listing.get(int(row.get("id") or 0), []))
             for row in listings
         ])
-    conn.close()
-    def marketplace_card(row):
-        listing_id = int(row.get("id") or 0)
-        seller_id = int(row.get("seller_user_id") or 0)
-        promote = ""
-        if seller_id == int(user.get("user_id") or 0):
-            promote = f"<button data-promote-content='marketplace_listing' data-content-id='{listing_id}' data-content-label='{html_escape(clean_html(row.get('title') or 'Marketplace listing'))}'>Promote Listing</button>"
-        # A listing with no price gets no price pill, rather than a pill filled
-        # with prose. `pulse_marketplace_listing_payload` stopped inventing
-        # "Request access" for the clients; this page builds its own HTML from
-        # the row and so kept saying it, which left an unpriced listing -- a
-        # dropship draft, say -- priced on the web and unpriced in the app, for
-        # the same product. The empty pill is not the alternative either: it
-        # reads as a price the seller set to nothing.
-        price_label = clean_html(row.get("price_label"))
-        price_pill = f"<span class='pill'>{price_label}</span> " if price_label else ""
-        # No "Safety N" pill. `marketplace_listings.safety_score` is written by
-        # the submit-for-review route as the *risk* score `score_text` returns
-        # (`safety_score=int(review["risk_score"])`), where 0 is clean and 100 is
-        # "guaranteed profit, risk free, 100x". Printed as safety it was exactly
-        # inverted: the worst listing the engine can score advertised
-        # "Safety 100" and every honest one read "Safety 0". Measured over the
-        # real engine, not inferred from the name.
-        #
-        # Restored polarity is not the fix. A raw moderation integer is not a
-        # buyer concept in either direction, and a listing is only on this page
-        # because moderation approved it -- that approval is the signal. The
-        # reviewer's working number stays with the reviewer (§27/§95); the admin
-        # queue reads the same column as risk and is already correct.
-        return f"<article class='card'><h2><a href='{app_first_href('product', listing_id)}'>{html_escape(clean_html(row.get('title')))}</a></h2><p>{html_escape(clean_html(row.get('description')))}</p><p><span class='pill'>{html_escape(clean_html(row.get('category') or 'Education'))}</span> {price_pill}</p><p>Seller: {html_escape(clean_html(marketplace_seller_identity.display_store_name(row)))}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class='actions'><button data-contact-seller='{seller_id}'>Contact Seller</button><button data-save-listing='{listing_id}'>Save</button><button data-report-listing='{listing_id}'>Report</button>{promote}</div></article>"
+    # The member grid that used to live here is replaced, not extended. It built
+    # its own cards from raw rows -- a hand-rolled price pill, a seller line, an
+    # empty state reading "Marketplace is warming up." and a caption promising
+    # that "Payments are coming later after compliance readiness", which stopped
+    # being true when Connect went live. None of it could filter, sort, page or
+    # search, so the catalogue had exactly one view.
+    #
+    # What replaces it reads the same two visibility predicates and renders through
+    # the storefront engine, so the member sees the catalogue the app sees, with
+    # the facets in the query string where they can be shared and bookmarked.
+    load_error = False
+    listings = []
+    variants_by_listing = {}
+    try:
+        cur.execute(
+            f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
+                  FROM marketplace_listings l
+                  LEFT JOIN users u ON u.user_id=l.seller_user_id
+                  LEFT JOIN marketplace_sellers ms ON ms.user_id=l.seller_user_id
+                 WHERE {marketplace_listing_lifecycle.public_sql('l', 'ms')}
+                   AND {discovery_visible_sql('u')}
+                 ORDER BY l.featured DESC, l.id DESC
+                 LIMIT {int(MARKETPLACE_STOREFRONT_SCAN_LIMIT)}"""
+        )
+        listings = marketplace_storefront_payloads(cur, cur.fetchall())
+        variants_by_listing = marketplace_storefront_variants(
+            cur, [int(item.get("id") or 0) for item in listings]
+        )
+    except Exception:
+        # A failed read is an error state, never an empty one. "No products are
+        # listed yet" is a claim about the catalogue, and a page that could not
+        # read the catalogue has not earned the right to make it. The renderer
+        # takes `load_error` and says so instead.
+        app.logger.exception("marketplace discovery read failed")
+        load_error = True
+    finally:
+        conn.close()
 
-    listing_html = "".join(marketplace_card(row) for row in listings)
-    seller_form = f"<section class='card'><h2>Merchant Access</h2><p class='muted'>Apply, verify, and wait for approval before listing products.</p><div class='actions'><a class='button primary' href='{app_first_href('seller_apply')}'>Apply as Merchant</a><a class='button' href='{app_first_href('seller_dashboard')}'>Merchant Dashboard</a></div></section>"
-    listing_form = ""
+    # The merchant panel is real functionality or it is absent. Each branch links
+    # to a surface that exists, and the wording states the visitor's actual
+    # position -- no merchant record, an application under review, or approved --
+    # rather than a generic invitation that is wrong for two of the three.
+    # No `if user` guard: the anonymous branch above has already returned, so
+    # every reader reaching this line has an account and all three states below
+    # are reachable.
+    merchant_actions = [
+        f'<a class="mkt-ghost" href="{html_escape(app_first_href("seller_dashboard"))}">'
+        f"Merchant dashboard</a>"
+    ]
     if seller and seller.get("status") == "approved":
-        listing_form = f"<section class='card'><h2>Create Listing</h2><p class='muted'>Approved merchants can create reviewed products.</p><a class='button primary' href='{app_first_href('marketplace_create')}'>Create Product</a></section>"
+        merchant_actions.insert(
+            0,
+            f'<a class="mkt-cta" href="{html_escape(app_first_href("marketplace_create"))}">'
+            f"Create a product</a>",
+        )
+        merchant_note = "You are an approved merchant."
     elif seller:
-        listing_form = f"<section class='card'><h2>Application Status</h2><p class='metric'>{html_escape(clean_html(seller.get('status') or 'pending_review'))}</p><p>Products unlock after approval.</p></section>"
-    script = """
-    const marketplaceResults=document.querySelector('[data-marketplace-results]');
-    const marketplaceSearch=document.querySelector('[data-marketplace-search]');
-    const marketplaceCurrentUserId=%d;
-    const marketplaceProductHrefTemplate=%s;
-    const marketplaceProductHref=id=>marketplaceProductHrefTemplate.replace(%s,encodeURIComponent(String(id)));
-    const marketplaceEsc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    function marketplaceListingHtml(row){const listingId=Number(row.id||0),owned=Number(row.seller_user_id||0)===marketplaceCurrentUserId;const promote=owned?`<button data-promote-content="marketplace_listing" data-content-id="${listingId}" data-content-label="${marketplaceEsc(row.title||'Marketplace listing')}">Promote Listing</button>`:'';const priceText=String(row.price_label||'').trim();return `<article class="card"><h2><a href="${marketplaceProductHref(listingId)}">${marketplaceEsc(row.title||'Marketplace listing')}</a></h2><p>${marketplaceEsc(row.description||row.short_description||'')}</p><p><span class="pill">${marketplaceEsc(row.category||'Education')}</span> ${priceText?`<span class="pill">${marketplaceEsc(priceText)}</span> `:''}</p><p>Seller: ${marketplaceEsc(row.seller_store_name||row.seller_name||'PulseSoc Store')}</p><p>Safety notice: educational products only. Payments and payout release are staged for compliance.</p><div class="actions"><button data-contact-seller="${Number(row.seller_user_id||0)}">Contact Seller</button><button data-save-listing="${listingId}">Save</button><button data-report-listing="${listingId}">Report</button>${promote}</div></article>`}
-    let marketplaceSearchTimer=0;
-    async function runMarketplaceSearch(query=''){if(!marketplaceResults)return;marketplaceResults.innerHTML='<article class="card"><p class="muted">Searching marketplace...</p></article>';try{const d=await pulseApi('/api/pulse/marketplace/search?q='+encodeURIComponent(query||''));marketplaceResults.innerHTML=(d.items||[]).map(marketplaceListingHtml).join('')||'<article class="card"><h2>No marketplace matches.</h2><p class="muted">Try another item, category, or seller.</p></article>'}catch(err){marketplaceResults.innerHTML=`<article class="card"><p class="muted">${marketplaceEsc(err.message||'Marketplace search failed.')}</p></article>`}}
-    marketplaceSearch?.addEventListener('submit',e=>{e.preventDefault();runMarketplaceSearch(e.target.q.value.trim())});
-    marketplaceSearch?.q?.addEventListener('input',e=>{clearTimeout(marketplaceSearchTimer);marketplaceSearchTimer=setTimeout(()=>runMarketplaceSearch(e.target.value.trim()),320)});
-    document.getElementById('sellerApply')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/seller/apply',{method:'POST',body:JSON.stringify({display_name:document.getElementById('sellerName').value,bio:document.getElementById('sellerBio').value})});toast('Seller application saved.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
-    document.getElementById('listingCreate')?.addEventListener('click',async()=>{try{await pulseApi('/api/pulse/marketplace/listings/create',{method:'POST',body:JSON.stringify({title:document.getElementById('listingTitle').value,category:document.getElementById('listingCategory').value,description:document.getElementById('listingDescription').value,price_label:document.getElementById('listingPrice').value})});toast('Listing created.');setTimeout(()=>location.reload(),700)}catch(err){toast(err.message)}});
-    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
-    """ % (
-        int(user.get("user_id") or 0),
-        # The URL shape is built by `app_links`, never by this script. The
-        # browser substitutes an id into it and nothing else.
-        #
-        # `website_href_template` rather than `open_interstitial_url_template`:
-        # the shape now follows the `product` destination's `web_equivalent`
-        # flag, so these browser-rendered cards land on the same public product
-        # page a server-rendered card and a Google result land on. Hardcoding
-        # the interstitial here would mean a member searching the grid could not
-        # reach a page an anonymous visitor can.
-        json.dumps(app_links.website_href_template("product", source="web")),
-        json.dumps(app_links.CLIENT_ID_TOKEN),
+        merchant_note = (
+            "Your merchant application is "
+            f"{html_escape(clean_html(seller.get('status') or 'pending_review'))}. "
+            "Products unlock after approval."
+        )
+    else:
+        merchant_actions.insert(
+            0,
+            f'<a class="mkt-cta" href="{html_escape(app_first_href("seller_apply"))}">'
+            f"Apply as a merchant</a>",
+        )
+        merchant_note = (
+            "Sell on PulseSoc. Applications are reviewed before a store can list products."
+        )
+    merchant_html = (
+        '<section class="mkt-merchant" aria-labelledby="mkt-merchant-h">'
+        '<h2 id="mkt-merchant-h">Sell on PulseSoc</h2>'
+        f"<p>{merchant_note}</p>"
+        f'<div class="mkt-actions">{"".join(merchant_actions)}</div>'
+        "</section>"
     )
-    search_bar = "<section class='card'><form data-marketplace-search role='search'><div class='actions'><input name='q' type='search' placeholder='Search marketplace items, categories, or sellers' autocomplete='off' aria-label='Search marketplace'><button class='primary' type='submit'>Search</button></div></form></section>"
-    listing_empty = '<article class="card"><h2>Marketplace is warming up.</h2><p>Create the first educational listing or teacher service. Payments are coming later after compliance readiness.</p></article>'
-    main = f"{seller_form}{listing_form}{search_bar}<section class='grid' data-marketplace-results>{listing_html or listing_empty}</section>{pulse_promotion_modal_html()}<link rel='stylesheet' href='/static/css/pulsesoc_promotions.css'><script src='/static/js/pulsesoc_promotions.js' defer></script>"
-    return pulse_social_shell("PulseSoc Marketplace", "Creator products, educational services, templates, books, scam-prevention guides, and coaching foundations. No risky financial products.", main, "", script)
+
+    page = marketplace_storefront.render_discovery(
+        listings=listings,
+        variants_by_listing=variants_by_listing,
+        # Every facet is read from the query string and nowhere else, which is
+        # what makes a filtered view shareable, bookmarkable and crawlable.
+        # `Filters.from_args` parses and clamps; it never trusts.
+        filters=marketplace_storefront.Filters.from_args(request.args),
+        viewer=marketplace_storefront_viewer(user),
+        app_cta_html=marketplace_storefront_app_cta("marketplace"),
+        merchant_html=merchant_html,
+        load_error=load_error,
+    )
+    # 503, not 200, when the catalogue could not be read. Nothing indexes this
+    # page, but a member-facing 200 over an apology is still a page claiming to
+    # be the Marketplace, and the browser cache would keep it.
+    response = _marketplace_member_storefront_reply(page, status=503 if load_error else 200)
+    if load_error:
+        # Two headers the success path must not carry and the failure path must.
+        # `Retry-After` is the half of a 503 that says "come back" -- without it a
+        # crawler is free to treat the failure as indefinite. And the short shared
+        # TTL that makes the good page cheap would, here, pin the apology in front
+        # of every visitor who follows the same link for two minutes.
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Retry-After"] = "120"
+    return response
 
 
 def _marketplace_public_product_response(listing_id, listing):
