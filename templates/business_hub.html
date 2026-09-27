@@ -49,6 +49,8 @@
   .bizhub a.card{text-decoration:none}
   .bizhub a.card:hover{border-color:var(--go)}
   .bizhub .card.dead{cursor:default}
+  .bizhub .console{color:var(--dim);font-size:14px;max-width:62ch;margin:22px 0 0}
+  .bizhub .console a{color:var(--ink)}
 </style>
 
 <div class="bizhub">
@@ -89,4 +91,19 @@
       {% endif %}
     {% endfor %}
   </div>
+
+  {#
+    The console is named here rather than left for a member to find, because
+    several of the greyed cards above do have a working web form inside it --
+    Create Product, Fulfill Order, campaign budgets. Those forms drive the
+    /api/business-os endpoints directly and are not the product page a card
+    like Store is waiting on, which is why the card still reads "App" and why
+    this link sits below the grid instead of inside it. Withholding it would
+    make the page understate what the website can do.
+  #}
+  <p class="console">
+    Some of these sections can already be worked directly through the
+    <a href="/business-os">Business OS console</a> &mdash; the raw forms behind
+    the Business OS API. It is unpolished and assumes you know the field names.
+  </p>
 </div>
