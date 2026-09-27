@@ -310,3 +310,47 @@ def test_the_wired_surfaces_use_the_primitive():
     assert "pulse_emoji.js" in template
     bot_py = read(os.path.join(ROOT, "bot.py"))
     assert "/static/js/pulse_emoji.js" in bot_py, "the /pulse shell dropped the picker"
+
+
+def test_neither_platform_fakes_a_feeling_by_editing_the_authors_body():
+    """A post has no feeling column, so no ☺ button may invent one.
+
+    The app states the contract in its own error copy -- HomePulseComposer's
+    Feeling action answers "Structured feelings are not supported by the
+    production post contract yet. PulseSoc will not change what you wrote or
+    add a feeling for you." The web used to do exactly that: its ☺ button
+    spliced the literal string "Feeling: " into #postBody, fabricating a field
+    by rewriting the author's own sentence. The two platforms must agree, and
+    the thing a ☺ button actually owes the user is the picker.
+    """
+    native = read(os.path.join(
+        ROOT, "mobile-native", "src", "components", "HomePulseComposer.tsx"
+    ))
+    assert "not supported by the production post contract" in native, (
+        "the app stopped refusing structured feelings; if the post contract "
+        "grew a feeling field, this test and both composers need revisiting"
+    )
+
+    home = read(os.path.join(ROOT, "static", "js", "pulse_home_core.js"))
+    # Slice to the NEXT handler declaration, not to the enclosing function's
+    # closing brace: the comment composer opens the same picker a few handlers
+    # down, so a wider slice would let this assertion pass on someone else's
+    # call site while the composer's button did nothing.
+    tail = home.split("[data-composer-emoji]")[1]
+    branch = tail[: tail.index("\n    const ")]
+    assert "window.PulseEmoji.open({" in branch, (
+        "the composer's emoji button must open the shared picker"
+    )
+    assert 'getElementById("postBody")' in branch, (
+        "the picker must insert into the composer body the user is writing in"
+    )
+    for source, name in ((home, "pulse_home_core.js"), (read(os.path.join(ROOT, "bot.py")), "bot.py")):
+        assert '"Feeling: "' not in strip_js_comments(source), (
+            f"{name} is typing a structured feeling into the post body again"
+        )
+
+    markup = read(os.path.join(ROOT, "bot.py"))
+    assert "data-composer-emoji" in markup, "the composer lost its emoji trigger"
+    assert 'data-composer-rail="feeling"' not in markup, (
+        "the composer's ☺ button is back on the text-splicing rail"
+    )
