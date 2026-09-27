@@ -1358,6 +1358,7 @@
       "verification": "Verification",
       "trustCopy": "Advanced tax forms, bank onboarding, disputes, refunds, fulfillment, and admin review stay on safe web/provider flows until native QA gates are ready.",
       "storeMediaViewerTitle": "Store media",
+      "statusRemoved": "Removed",
       "status": {
         "live": "Live",
         "pending": "Pending",

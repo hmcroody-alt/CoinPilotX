@@ -1343,6 +1343,7 @@
       "verification": "認証",
       "trustCopy": "高度な税務書類、銀行口座の登録、異議申し立て、返金、発送、管理者の審査は、ネイティブのQA基準が整うまで安全なウェブ / プロバイダーのフローで行います。",
       "storeMediaViewerTitle": "ストアのメディア",
+      "statusRemoved": "削除済み",
       "status": {
         "live": "承認済み / 公開中",
         "pending": "処理待ち",

@@ -1358,6 +1358,7 @@
       "verification": "Verificación",
       "trustCopy": "Los formularios fiscales avanzados, el alta bancaria, las disputas, los reembolsos, la preparación de pedidos y la revisión administrativa se quedan en los flujos seguros de web y proveedor hasta que los controles nativos de calidad estén listos.",
       "storeMediaViewerTitle": "Contenido de la tienda",
+      "statusRemoved": "Retirado",
       "status": {
         "live": "Aprobado o publicado",
         "pending": "Pendiente",
