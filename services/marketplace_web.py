@@ -916,6 +916,168 @@ def stock_line(listing: Mapping[str, Any], variants: Sequence[Mapping[str, Any]]
 
 
 # ---------------------------------------------------------------------------
+# Adding to the cart
+# ---------------------------------------------------------------------------
+
+
+#: Why a grid card carries no add-to-cart control. Each value names the refusal
+#: ``POST /api/pulse/marketplace/cart`` would have answered with, so the reason a
+#: button is missing can be read against the lane that would have refused it
+#: rather than against this module's own vocabulary.
+CART_HIDDEN_ANONYMOUS = "anonymous"      # the route answers 401
+CART_HIDDEN_OWN_LISTING = "own_listing"  # OWN_LISTING
+CART_HIDDEN_UNAVAILABLE = "unavailable"  # SELLER_UNAVAILABLE / OUT_OF_STOCK, 409
+CART_HIDDEN_NO_PRICE = "no_price"        # ITEM_UNAVAILABLE, 400, price_minor <= 0
+
+#: The one reason in this list that does *not* mirror a server refusal, because
+#: there is no server refusal to mirror: `POST /api/pulse/marketplace/cart` takes
+#: a `listing_id` and a `qty` and has no concept of a variant at all — grep
+#: `marketplace_cart_routes.py` for "variant" and it returns nothing. So a
+#: one-tap add on a listing that sells four sizes does not fail; it succeeds, and
+#: books a line that names no size. The cart then prices it from the listing
+#: rather than from the variant the buyer never chose.
+#:
+#: Withholding the quick-add here is therefore not a UI preference. It is the
+#: only place in this lane where the guess can be declined.
+CART_HIDDEN_NEEDS_CHOICE = "needs_choice"
+
+
+@dataclass(frozen=True)
+class CartAffordance:
+    """The add-to-cart control a card may show, as facts rather than markup.
+
+    ``listing_id`` is what the control posts. ``label`` is what it reads. Nothing
+    here is a permission: ``POST /api/pulse/marketplace/cart`` re-derives every
+    one of the four refusals below on the way through, so this only decides
+    whether a buyer is offered a button they can expect to work.
+    """
+
+    listing_id: int
+    label: str = "Add to cart"
+
+
+def requires_variant_choice(
+    variants: Sequence[Mapping[str, Any]], *, price: PriceView
+) -> bool:
+    """Would adding this listing in one tap commit the buyer to a guess?
+
+    Three ways it would, and each is sufficient on its own:
+
+    * An option group offers more than one value. This is the plain case: a
+      jacket in S/M/L/XL. The groups come from ``build_option_groups``, the same
+      function the product page's variant picker is built from, so the card and
+      the picker cannot disagree about whether a choice exists. A group with a
+      *single* value is not a choice — a one-colour product is not asking
+      anything — and does not count.
+    * More than one active variant, whatever their options parse to. A variant
+      whose ``options_json`` is empty or malformed yields no groups, so the check
+      above would pass it; but the line still has to name one of several rows and
+      nothing here knows which.
+    * The displayed price is a range. If the card prints "$20 – $40" then a cart
+      line holding one number is holding a number the buyer did not agree to.
+      Normally implied by the checks above, kept because it is the consequence
+      that actually reaches the buyer's card statement.
+
+    A listing with no variants at all — one price, one thing — requires no
+    choice, which is the majority of this catalogue and the case the quick-add
+    exists for.
+    """
+    active = [
+        v for v in variants
+        if str((v or {}).get("status") or "active").lower() == "active"
+    ]
+    if any(len(group.options) > 1 for group in build_option_groups(active)):
+        return True
+    if len(active) > 1:
+        return True
+    return bool(price.is_range)
+
+
+def cart_affordance(
+    payload: Mapping[str, Any],
+    *,
+    price: PriceView,
+    signed_in: bool,
+    viewer_user_id: Any = 0,
+    variants: Sequence[Mapping[str, Any]] = (),
+) -> tuple[Optional[CartAffordance], str]:
+    """``(affordance, hidden_reason)`` — one of the two is always empty.
+
+    Each test below is a *mirror of a specific server refusal*, and deliberately
+    not a judgement of its own:
+
+    * Not signed in — the cart route's ``_require_user()`` answers 401. A button
+      that always 401s is a button that never works.
+    * The viewer is the seller — ``OWN_LISTING``. Nobody buys their own listing,
+      and the refusal arrives as an error toast rather than as a cart line.
+    * The listing is not buyer-reachable, or is out of stock — 409
+      ``SELLER_UNAVAILABLE`` / ``OUT_OF_STOCK``. Read from ``buyer_visible`` and
+      ``inventory_state``, which ``pulse_marketplace_listing_payload`` has
+      already derived through ``marketplace_listing_lifecycle``. Re-deriving them
+      here from the raw columns would be a second copy of the publication rules,
+      free to disagree with the serializer about the same row — and the rules are
+      three-valued, so the copy that was handed a row missing ``seller_status``
+      would answer differently from the copy that was not.
+    * There is no price — the route refuses ``price_minor <= 0`` with 400
+      ``ITEM_UNAVAILABLE``. This is the *displayed* price, derived from the same
+      variants and label the card prints, so the button is offered only where the
+      page is already willing to name a number.
+
+    Then one check that mirrors nothing, because nothing downstream performs it:
+    a listing that has options to pick is refused the quick-add entirely. See
+    ``CART_HIDDEN_NEEDS_CHOICE`` — the cart API would accept that add and record
+    a line naming no variant. This is the only reason in the list that the caller
+    is expected to *render* rather than simply obey, so it is returned last and
+    kept distinct from ``CART_HIDDEN_UNAVAILABLE`` instead of being folded in.
+
+    Where this module and the route could disagree, the button is withheld:
+    a missing button costs a buyer one tap through the app, and an offered button
+    that 409s costs them their trust in the page. Withholding is also why every
+    check reads a fail-closed source — ``buyer_visible`` is ``False`` for a row
+    whose seller status was never projected, and that is the answer this wants.
+    """
+    try:
+        listing_id = int(payload.get("listing_id") or payload.get("id") or 0)
+    except (TypeError, ValueError):
+        listing_id = 0
+    if listing_id <= 0:
+        # Not a reason a buyer needs told; a card with no id cannot post anything.
+        return None, CART_HIDDEN_UNAVAILABLE
+    if not signed_in:
+        return None, CART_HIDDEN_ANONYMOUS
+    try:
+        seller_user_id = int(payload.get("seller_user_id") or 0)
+    except (TypeError, ValueError):
+        seller_user_id = 0
+    try:
+        viewer = int(viewer_user_id or 0)
+    except (TypeError, ValueError):
+        viewer = 0
+    if viewer and seller_user_id and viewer == seller_user_id:
+        return None, CART_HIDDEN_OWN_LISTING
+    # Absent is treated exactly like False, and the two are one branch on
+    # purpose. `buyer_visible` is emitted by every payload that went through the
+    # serializer, so an absent key means this card was built from a raw row --
+    # which is the case where nothing has consulted the publication rules at all.
+    # Offering a button there would be guessing, so it is refused the same way a
+    # suspended seller's listing is.
+    if not payload.get("buyer_visible"):
+        return None, CART_HIDDEN_UNAVAILABLE
+    if str(payload.get("inventory_state") or "").lower() == "out_of_stock":
+        return None, CART_HIDDEN_UNAVAILABLE
+    if not price.known:
+        return None, CART_HIDDEN_NO_PRICE
+    # Last, because it is the only check that is not about whether this listing
+    # can be bought at all. Everything above withholds the button from a listing
+    # nobody can add; this withholds it from one that must be *configured* first,
+    # and the caller distinguishes the two — the reasons above render nothing,
+    # this one renders a way through to the picker.
+    if requires_variant_choice(variants, price=price):
+        return None, CART_HIDDEN_NEEDS_CHOICE
+    return CartAffordance(listing_id=listing_id), ""
+
+
+# ---------------------------------------------------------------------------
 # Media
 # ---------------------------------------------------------------------------
 

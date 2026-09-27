@@ -553,6 +553,7 @@
     "tests/test_staging_boot_secret_hygiene.py",
     "tests/test_store_identity_propagation.py",
     "tests/test_stored_video_policy.py",
+    "tests/test_storefront_add_to_cart.py",
     "tests/test_storekit_configuration_matches_catalog.py",
     "tests/test_stripe_onboarding_return.py",
     "tests/test_stripe_webhook_verification.py",
