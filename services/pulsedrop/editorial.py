@@ -201,6 +201,24 @@ _HASHTAG_STOPWORDS = frozenset(
 #: as description, and the app's tag row wraps.
 HASHTAG_MAX = 4
 
+#: Longest a single tag may run. A tag is one unbroken run of characters with no
+#: spaces to rest on, so it stops being readable long before a sentence would.
+HASHTAG_TOKEN_MAX = 24
+
+#: Tags the curator signs every post with. Reserved: however much a category has
+#: to say, these two keep their slots, because they are how a member finds the
+#: rest of the curator's output and how the marketplace is credited.
+_HASHTAG_CONSTANTS = ("pulsesocmarketplace", "pulsedrop")
+
+#: How catalogs write a category *path*. ``marketplace_listings.category`` is
+#: not a word, it is a breadcrumb — every row in production holds one, and the
+#: feeds disagree about the separator within the same table ("Women's Clothing >
+#: Tops & Sets > Sweaters" alongside "Jewelry & Watches / Fashion Jewelry /
+#: Rings"). Flattening the whole path into one tag produces a 40-character
+#: unreadable run; clipping that run to a length produces a word cut in half.
+#: So the path is read as a path, and the tags come from its named parts.
+_HASHTAG_PATH_SEPARATORS = ">»›/\\|→"
+
 
 def clean_title(listing: Mapping[str, Any]) -> str:
     """The seller's title, trimmed — never rewritten.
@@ -251,27 +269,87 @@ def hashtags(listing: Mapping[str, Any]) -> list[str]:
     republishing it under PulseDrop's name would let a seller put words in the
     platform's mouth — which is a different risk from a seller's own post
     carrying their own tags.
+
+    Each category field is a path, so each yields two useful tags rather than
+    one: what the product *is* (the leaf) and the department it sits in (the
+    root). Both passes run leaf-first across every field, so a listing that
+    fills in ``subcategory`` spends its two slots on two specific tags, and the
+    far commoner listing that only has ``category`` spends them on specific plus
+    broad. The signing tags are appended last and are never squeezed out.
     """
+    paths = [
+        _hashtag_path(listing.get("category")),
+        _hashtag_path(listing.get("subcategory")),
+    ]
+    derived_max = max(0, HASHTAG_MAX - len(_HASHTAG_CONSTANTS))
+
     out: list[str] = []
     seen: set[str] = set()
-    for source in (listing.get("category"), listing.get("subcategory")):
-        token = _hashtag_token(source)
-        if token and token not in seen:
+
+    def offer(token: str) -> None:
+        if token and token not in seen and len(out) < derived_max:
             seen.add(token)
             out.append(token)
-    for token in ("pulsesocmarketplace", "pulsedrop"):
+
+    for path in paths:
+        if path:
+            offer(path[-1])
+    for path in paths:
+        if path:
+            offer(path[0])
+    for token in _HASHTAG_CONSTANTS:
         if token not in seen and len(out) < HASHTAG_MAX:
             seen.add(token)
             out.append(token)
     return out[:HASHTAG_MAX]
 
 
+def _hashtag_path(value: Any) -> list[str]:
+    """A category field as its usable segments, broad first, specific last.
+
+    Segments that survive nothing — a stopword, punctuation, an initial too
+    short to read — are dropped rather than kept as blanks, so ``"Clothing >
+    Other"`` still describes itself as ``clothing`` instead of reaching for a
+    leaf that says nothing.
+    """
+    text = str(value or "")
+    for separator in _HASHTAG_PATH_SEPARATORS:
+        text = text.replace(separator, "\n")
+    return [token for token in (_hashtag_token(part) for part in text.split("\n")) if token]
+
+
 def _hashtag_token(value: Any) -> str:
-    text = "".join(ch for ch in str(value or "").lower() if ch.isalnum() or ch.isspace())
-    text = "".join(text.split())
-    if not text or len(text) < 3 or text in _HASHTAG_STOPWORDS:
+    """One path segment as one tag, or ``""`` if it has nothing to say.
+
+    Over-long segments are clipped on a word boundary, never mid-word: the whole
+    complaint about the old behaviour is that ``#womensclothingtopssw`` reads as
+    a bug. A segment with no word boundary to find — one very long word, or a
+    language that does not write spaces — falls back to a hard cut, which is the
+    same trade ``clean_title`` makes and for the same reason.
+    """
+    words = _hashtag_words(value)
+    token = "".join(words)
+    if len(token) < 3 or token in _HASHTAG_STOPWORDS:
         return ""
-    return text[:24]
+    if len(token) <= HASHTAG_TOKEN_MAX:
+        return token
+    clipped = ""
+    for word in words:
+        if len(clipped) + len(word) > HASHTAG_TOKEN_MAX:
+            break
+        clipped += word
+    return clipped if len(clipped) >= 3 else token[:HASHTAG_TOKEN_MAX]
+
+
+def _hashtag_words(value: Any) -> list[str]:
+    """The words of a segment, lowercased, punctuation gone.
+
+    Apostrophes are deleted rather than replaced by a space so that ``Women's``
+    stays one word; everything else becomes a boundary, which is what lets the
+    clip above land between words.
+    """
+    lowered = str(value or "").lower().replace("'", "").replace("’", "")
+    return "".join(ch if ch.isalnum() else " " for ch in lowered).split()
 
 
 def caption(listing: Mapping[str, Any], label: Label, *, include_hashtags: bool = True) -> str:
