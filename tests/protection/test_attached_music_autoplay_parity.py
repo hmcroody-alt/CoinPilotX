@@ -137,6 +137,31 @@ def test_harness_can_still_detect_the_old_behaviour() -> None:
             )
 
 
+def test_the_feed_music_button_listens_for_the_state_event() -> None:
+    """The renderer's state event must have a listener on the other end.
+
+    Deliberately a source-presence check, and honest about it: the harness can
+    prove the event is dispatched with the right detail, but the feed's ▶ control
+    is built by a minified template literal inside bot.py that cannot be stood up
+    headlessly. What this catches is the failure that actually threatens the fix
+    -- the renderer dispatching into the void because the listener was dropped,
+    leaving a button that reads "play" while the song is audible.
+    """
+    bot = (ROOT / "bot.py").read_text(encoding="utf-8")
+    renderer = RENDERER.read_text(encoding="utf-8")
+    event = "pulse:attached-audio-state"
+    assert event in renderer, f"the renderer no longer dispatches {event!r}"
+    assert f"addEventListener('{event}'" in bot, (
+        f"bot.py does not listen for {event!r}, so the feed's attached-music "
+        "button cannot learn that playback started on its own. Either restore "
+        "the listener or stop dispatching the event."
+    )
+    assert "data-toggle-post-music" in bot, (
+        "the feed's attached-music toggle is gone; the listener above is now "
+        "pointing at nothing and should be removed with it."
+    )
+
+
 if __name__ == "__main__":
     import sys
 

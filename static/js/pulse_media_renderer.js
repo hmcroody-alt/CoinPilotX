@@ -759,12 +759,35 @@
 
   function markAttachedAudioState(wrap, audio, state) {
     if (!wrap) return;
+    const previousState = wrap.dataset.attachedAudioState;
     wrap.dataset.attachedAudioState = state || "idle";
     if (audio) {
       wrap.dataset.attachedAudioCurrentTime = String(Number(audio.currentTime || 0).toFixed(3));
       wrap.dataset.attachedAudioMuted = audio.muted ? "true" : "false";
       wrap.dataset.attachedAudioPaused = audio.paused ? "true" : "false";
     }
+    // Surfaces that draw their own music control -- the feed's track credit, the
+    // Home audio bar -- used to be the only way attached audio could start, so a
+    // button could own its own state. Now that the track can begin on its own,
+    // such a button would sit on the play glyph while the song is audible. This
+    // is the one funnel every state change passes through, so it is where they
+    // can hear about it.
+    //
+    // Only on an actual change: `syncAttachedAudioTime` calls this from
+    // `timeupdate`, several times a second per video.
+    const nextMuted = audio ? !!audio.muted : true;
+    if (previousState === wrap.dataset.attachedAudioState && wrap._pulseAttachedAudioMuted === nextMuted) return;
+    wrap._pulseAttachedAudioMuted = nextMuted;
+    try {
+      wrap.dispatchEvent(new CustomEvent("pulse:attached-audio-state", {
+        bubbles: true,
+        detail: {
+          state: wrap.dataset.attachedAudioState,
+          muted: nextMuted,
+          paused: audio ? !!audio.paused : true,
+        },
+      }));
+    } catch (_) {}
   }
 
   function forceOriginalAudioMuted(video, reason = "attached-audio-priority") {

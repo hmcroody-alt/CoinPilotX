@@ -248,6 +248,13 @@ function check(label, condition) {
 
 const { wrap, video } = buildPost();
 
+// The feed draws its own ▶ control next to the track credit. It used to be the
+// only way attached audio could start, so it could own its state; now that the
+// track begins on its own it has to be told, or it sits on the play glyph while
+// the song is audible.
+const stateEvents = [];
+wrap.addEventListener("pulse:attached-audio-state", event => stateEvents.push(event.detail));
+
 // A reader with no stored preference. `soundEnabled()` defaults to true, which
 // is the same default a plain video autoplays under.
 check("default sound preference is on", renderer.soundEnabled() === true);
@@ -289,6 +296,19 @@ if (scenario === "permissive") {
   check("a gesture anywhere unmutes the music in place", audio && audio.muted === false);
   check("the music did not restart from the top", audio && audio.paused === false);
   check("the original video track is still silent", video.muted === true);
+
+  const last = stateEvents[stateEvents.length - 1];
+  check("the surface is told the track is now audible",
+    !!last && last.state === "playing" && last.muted === false && last.paused === false);
+
+  // `syncAttachedAudioTime` funnels through the same reporter on every
+  // `timeupdate`, several times a second per video. Re-reporting an unchanged
+  // state would make this event useless to anything that does real work in a
+  // handler.
+  const settled = stateEvents.length;
+  await renderer.playAttachedAudio(video, true);
+  await renderer.playAttachedAudio(video, true);
+  check("an unchanged state is not re-announced", stateEvents.length === settled);
 }
 
 // Assertion 3: the page now knows audio is permitted, so the NEXT post starts
