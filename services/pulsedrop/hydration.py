@@ -182,14 +182,29 @@ CTA_NONE = "NONE"
 #: "View Product" in all eleven languages and ``npm run i18n:validate`` would
 #: still report 100%. There is no test that catches this; only the prefix does.
 #:
-#: And this particular string is not a new one. ``commerce:productSignal``
-#: already says "View product" in all eleven locales for the feed's other
-#: shoppable card, so PulseDrop uses that key rather than minting a second one
-#: that eleven translators would have to be asked for and that could drift from
-#: the first. The rule for everything below: reuse where the words already
-#: exist, add ``pulsedrop.*`` only for what is genuinely new.
+#: The rule below: reuse where the words already exist, add ``pulsedrop.*`` only
+#: for what is genuinely new. ``commerce:marketplace.outOfStock`` and
+#: ``commerce:marketplace.statusRemoved`` are reuse; they are in the app's
+#: catalogs today.
+#:
+#: The CTA was reuse too, and is not any more. It pointed at
+#: ``commerce:productSignal.viewProduct`` — the feed's other shoppable card
+#: already says "View product" in all eleven locales, so borrowing it beat
+#: asking eleven translators for a second string that could drift from the
+#: first. That reasoning was sound and the fact behind it was wrong: the
+#: ``productSignal`` namespace belongs to an unmerged branch and does not exist
+#: on ``main``. A key the catalogs do not have resolves to the client's
+#: ``defaultValue``, which is ``CTA_FALLBACK`` below — English, silently, in ten
+#: of the eleven locales, with ``npm run i18n:validate`` still reporting 100%
+#: because a key nothing declares is a key nothing misses.
+#:
+#: So PulseDrop owns this one. The eleven values were lifted word-for-word from
+#: ``productSignal.viewProduct``, so no translator was asked and the two strings
+#: start identical; if that branch lands they are duplicates saying the same
+#: thing, which is the cheap failure. Depending on a namespace that may never
+#: land is the expensive one.
 CTA_I18N = {
-    CTA_VIEW_PRODUCT: "commerce:productSignal.viewProduct",
+    CTA_VIEW_PRODUCT: "commerce:pulsedrop.cta.viewProduct",
     CTA_NONE: "",
 }
 CTA_FALLBACK = {

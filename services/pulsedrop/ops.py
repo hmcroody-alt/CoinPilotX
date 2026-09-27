@@ -336,7 +336,14 @@ def dashboard(*, limit: int = 20, now: datetime | None = None) -> dict:
 ACTIONS = frozenset({"set", "clear", "run_now"})
 
 
-def apply_action(action: str, key: str, value, *, admin_user_id: int = 0) -> tuple[bool, str]:
+def apply_action(
+    action: str,
+    key: str,
+    value,
+    *,
+    admin_user_id: int = 0,
+    now: datetime | None = None,
+) -> tuple[bool, str]:
     """Perform one operator action. Returns ``(changed, message)``.
 
     The message is written for the person who pressed the button, so a refusal
@@ -348,6 +355,13 @@ def apply_action(action: str, key: str, value, *, admin_user_id: int = 0) -> tup
     Deliberately not a lock. Two admins saving the same key race, and the second
     write wins, which is the same outcome as saving twice in sequence and the
     same thing every other admin form in this codebase does.
+
+    ``now`` exists for the same reason :func:`schedule_view` has one, and the
+    two must be given the *same* instant or neither answer means anything.
+    ``run_now`` writes a timestamp and ``schedule_view`` reads it; a caller that
+    pins one clock and lets the other run free is not asking a question about
+    the schedule, it is asking what time it is. Production passes neither and
+    both read the wall clock, which is the same thing.
     """
     if action not in ACTIONS:
         return False, "Unknown action."
@@ -359,7 +373,7 @@ def apply_action(action: str, key: str, value, *, admin_user_id: int = 0) -> tup
         # worst-case duration is a video encode. What this does is say "you are
         # due", and the next worker cycle does the rest. If nothing happens
         # afterwards, the worker is not running, which is a fact worth learning.
-        lease.schedule_next(0)
+        lease.schedule_next(0, now=now)
         log.info("pulsedrop_run_now admin=%s", admin_user_id)
         return True, "PulseDrop is due now. The next worker cycle will evaluate."
     if key not in config.SETTINGS:

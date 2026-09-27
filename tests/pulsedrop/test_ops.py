@@ -299,17 +299,39 @@ class TestTheSchedule:
         # lease, drains renders and has been exercised. A web request that
         # published would be a second, less-tested publisher whose worst case is
         # a video encode inside an HTTP timeout.
+        #
+        # Both calls below are given the same `now`. They have to be: `run_now`
+        # writes `next_run_at` and `schedule_view` compares against it, so
+        # pinning only the reader asks whether a fixed date is past the real
+        # wall clock. That is how this test was first written, and it passed
+        # until the afternoon of the date it happened to name, then failed
+        # forever — the clock, not the code, was the thing that changed.
         now = datetime(2026, 9, 27, 12, 0, 0)
         _lease_row(next_run_at=_iso(now + timedelta(hours=2)))
         assert ops.schedule_view(now=now)["due"] is False
 
-        changed, message = ops.apply_action("run_now", "", None, admin_user_id=7)
+        changed, message = ops.apply_action("run_now", "", None, admin_user_id=7, now=now)
         assert changed is True
         assert "next worker cycle" in message
         assert ops.schedule_view(now=now)["due"] is True
         # And it did not take the lease on its way past: a tick that ran here
         # would leave an owner behind.
         assert ops.schedule_view(now=now)["held"] is False
+
+    def test_run_now_is_due_whatever_the_date_is(self):
+        # The regression guard for the above. Asserted at three instants
+        # decades apart so that no single one of them can be the reason it
+        # passes; a `run_now` that reached for the wall clock would agree with
+        # at most one of these.
+        for moment in (
+            datetime(1999, 12, 31, 23, 59, 59),
+            datetime(2026, 9, 27, 12, 0, 0),
+            datetime(2099, 1, 1, 0, 0, 0),
+        ):
+            _lease_row(next_run_at=_iso(moment + timedelta(hours=2)))
+            assert ops.schedule_view(now=moment)["due"] is False
+            ops.apply_action("run_now", "", None, admin_user_id=7, now=moment)
+            assert ops.schedule_view(now=moment)["due"] is True
 
 
 class TestWhatAnOperatorCanDo:
