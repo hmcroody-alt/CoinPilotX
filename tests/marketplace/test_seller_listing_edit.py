@@ -654,12 +654,14 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
     seller deliberately set to nothing. The category and safety pills still
     render, so the card never collapses.
 
-    These render the real routes rather than inspecting source text. That is
-    deliberate: the JS card builds its own HTML inside a ``%``-formatted script
-    block, so anything threaded into it travels by string interpolation, and a
-    mistake there is a 500 on the whole marketplace page rather than a wrong
-    word. Only rendering catches that -- and removing the fallback changed that
-    block's argument count, which is exactly such a mistake.
+    These render the real routes rather than inspecting source text, and that has
+    outlived its original reason. It was there because the card's JavaScript twin
+    built its HTML inside a ``%``-formatted script block, so a mistake threaded
+    into it was a 500 on the whole page rather than a wrong word, and removing the
+    fallback changed that block's argument count -- exactly such a mistake. The
+    twin and the script block are both gone. Rendering is still how these assert,
+    because a phrase invented downstream of a correct helper is the bug family
+    this whole file is about, and only the served bytes can show it.
     """
 
     # Asserted as literals rather than through a constant. The constant these
@@ -777,32 +779,56 @@ class MarketplaceWebPriceFallbackTest(unittest.TestCase):
         listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):
             response = self.client.get("/pulse/marketplace")
-        # A 500 here means the %-format broke when the fallback was threaded
-        # into the inline script -- the failure mode this test exists for.
+        # Checked before the body, because the grid swallows a catalogue-load
+        # failure into an error state and serves 503 rather than raising. A status
+        # assertion is how "the page could not read the catalogue" stays separable
+        # from "the page read it and printed the wrong thing".
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True)[:400])
         html = response.get_data(as_text=True)
         self.assertIn("Unpriced web lamp", html, "the unpriced listing never rendered")
         self.assertInventsNoPrice(html, "the marketplace grid")
-        # The card must still be a card. Dropping the price pill must not take
-        # the row's other pills with it, or "no invented price" would be
-        # satisfied by rendering nothing at all.
-        self.assertIn("Safety", html)
+        # The card must still be a card. Dropping the price must not take the
+        # row's other fields with it, or "no invented price" would be satisfied
+        # by rendering nothing at all.
+        #
+        # Anchored on the seller's store name. It used to be the word "Safety",
+        # from a pill printing `marketplace_listings.safety_score` -- and that
+        # pill is deliberately gone now, because the column holds the reviewer's
+        # *risk* number, so the worst listing the engine can score read
+        # "Safety 100" to a buyer. Keeping the old anchor would have left this
+        # file demanding a signal that
+        # tests/web_parity/test_marketplace_reviewer_signal_not_buyer_facing.py
+        # exists to forbid. The store name does the same job and is a field the
+        # seller actually set.
+        self.assertIn("Web store", html, "the card rendered no seller either")
         del listing_id
 
-    def test_the_inline_card_script_invents_no_price_either(self):
-        """Same page, second renderer. Search results are drawn in JS.
+    def test_the_search_results_invent_no_price_either(self):
+        """Same page, second path to a card: the one a buyer reaches by typing.
 
-        The grid is server-rendered on load and re-rendered client-side after a
-        search, so the identical card exists twice in two languages. Fixing only
-        the Python half would leave a buyer who typed in the search box looking
-        at the old phrase.
+        This was two renderers in two languages -- the grid server-rendered on
+        load, then re-rendered client-side from `/api/pulse/marketplace/search`
+        by an inline `marketplaceListingHtml` twin -- and the point was that
+        fixing only the Python half would leave a buyer who used the search box
+        looking at the old phrase.
+
+        Search is now server-rendered from `?q=` by the same function as the grid,
+        so there is no second copy for the phrase to survive in. The path is still
+        worth asserting, because the query can narrow to nothing and a page with
+        no cards invents no prices. Hence the vacuity guard below, which is the
+        load-bearing line of this test now.
         """
+        listing_id = self.unpriced_listing()
         with self.acting_as(self.owner):
-            html = self.client.get("/pulse/marketplace").get_data(as_text=True)
-        self.assertIn("function marketplaceListingHtml", html)
-        script = html[html.index("function marketplaceListingHtml"):]
-        script = script[:script.index("</script>")] if "</script>" in script else script
-        self.assertInventsNoPrice(script, "the inline JS card")
+            response = self.client.get("/pulse/marketplace?q=Unpriced+web+lamp")
+        self.assertEqual(response.status_code, 200,
+                         response.get_data(as_text=True)[:400])
+        html = response.get_data(as_text=True)
+        self.assertIn("Unpriced web lamp", html,
+                      "searching for the listing did not return it, so this is "
+                      "asserting about an empty result set")
+        self.assertInventsNoPrice(html, "the marketplace search results")
+        del listing_id
 
     def test_the_product_page_renders_and_never_says_request_access(self):
         listing_id = self.unpriced_listing()

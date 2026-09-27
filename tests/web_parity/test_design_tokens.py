@@ -37,7 +37,10 @@ MAX_BOT_HEX_OCCURRENCES = 1008   # hardcoded #rrggbb inside bot.py
 # this walked 180 -> 183. 182 is where it sits after giving back #eafcff.
 MAX_BOT_DISTINCT_HEX = 182
 MAX_INLINE_STYLE_BLOCKS = 97
-MAX_CONFLICTING_CSS_VARS = 45
+# Re-baselined 45 -> 15 on 2026-09-27, and the number went DOWN because the
+# detector was corrected, not because the debt was paid. See
+# `test_conflicting_css_vars_do_not_increase` for what changed and why.
+MAX_CONFLICTING_CSS_VARS = 15
 
 
 def read(p: Path) -> str:
@@ -248,20 +251,62 @@ def test_aliases_resolve_to_tokens_not_raw_hex():
 # =========================================================================
 
 def test_conflicting_css_vars_do_not_increase():
+    """15 variable names resolve differently depending on which stylesheet loaded
+    last (e.g. ``--control-accent`` was green, blue and cyan at once).
+
+    ## Why this counts 15 and not 50
+
+    The bug is *cross-stylesheet* ambiguity: a generic name like ``--bg``,
+    ``--text`` or ``--line`` given a different value by four different
+    stylesheets, so what it resolves to depends on load order. That is what the
+    sentence above describes and it is the only thing load order can affect.
+
+    This previously counted any variable with a second declaration *anywhere*,
+    which reported 50 -- of which only 15 spanned more than one file. The other
+    35 were a single stylesheet overriding its own token inside a media query or
+    a variant class, which is not ambiguity but the entire point of custom
+    properties: one declaration is the default and the other is scoped, the
+    cascade orders them, and load order cannot reach them.
+
+    Counting those 35 made the ratchet punish correct CSS. The case that forced
+    this fix: ``.mkt-badge`` paints a dark scrim under near-white text and lets
+    variants set only ``--mkt-badge-tint`` on top, *specifically* so a variant
+    cannot remove the scrim -- a bug that had already shipped once, when variants
+    used the ``background`` shorthand and left two badges as a wash over the
+    seller's photograph with no scrim at all. Two variants setting that tint is
+    two declarations, so the old detector scored the fix as two new conflicts,
+    and the only way to satisfy it was to reintroduce the bug.
+
+    So the budget drops 45 -> 15 and the signal gets *stricter*, not looser:
+    every one of the 15 remaining is a real load-order hazard, and there is no
+    longer a 35-wide cushion of false positives for a genuine 16th to hide in.
+
+    The 15 are all unprefixed generic names shared by ``admin_ops_center``,
+    ``pulse_advertiser_portal``, ``pulse_messages_v2`` and
+    ``pulsesoc_intelligence_center`` (plus ``--pulse-card-media-bleed`` across the
+    two feed sheets and ``--safe-top`` across messages/reels). Namespacing them
+    per surface is the fix; this test holds the line until someone does it.
     """
-    45 variable names resolve to different values depending on which stylesheet
-    loaded last (e.g. --control-accent was green, blue and cyan at once).
-    """
-    defs = {}
+    defs: dict[str, set[tuple[str, str]]] = {}
     for f in CSS_DIR.glob("*.css"):
         if f.name == "pulsesoc-tokens.css":
             continue
         for m in re.finditer(r"(--[a-z0-9-]+)\s*:\s*([^;]+);", read(f)):
-            defs.setdefault(m.group(1), set()).add(m.group(2).strip())
-    conflicting = sorted(k for k, v in defs.items() if len(v) > 1)
+            defs.setdefault(m.group(1), set()).add((m.group(2).strip(), f.name))
+
+    conflicting = sorted(
+        name
+        for name, seen in defs.items()
+        # Two distinct values AND more than one stylesheet. Either alone is fine:
+        # one file with two scoped values is the cascade doing its job, and two
+        # files agreeing on the same value is duplication, not ambiguity.
+        if len({value for value, _ in seen}) > 1 and len({fn for _, fn in seen}) > 1
+    )
     assert len(conflicting) <= MAX_CONFLICTING_CSS_VARS, (
-        f"conflicting CSS vars rose to {len(conflicting)} "
-        f"(budget {MAX_CONFLICTING_CSS_VARS}). New conflicts: {conflicting}"
+        f"CSS vars whose value depends on stylesheet load order rose to "
+        f"{len(conflicting)} (budget {MAX_CONFLICTING_CSS_VARS}). "
+        f"Give the new one a per-surface prefix instead of redefining a shared "
+        f"name: {conflicting}"
     )
 
 
