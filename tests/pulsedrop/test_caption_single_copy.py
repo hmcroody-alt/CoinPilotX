@@ -46,6 +46,11 @@ What the tests below pin
 :class:`TestPublishingStoresOneCopy` covers the write side — neither the INSERT
 nor the job queue may leave a second copy behind.
 
+:class:`TestTheModerationEngineOffersNoCopy` goes one step upstream, to where the
+copy was made rather than stored. ``moderate_text`` no longer offers an
+``ai_summary`` at all, because a key of that name holding exactly the value this
+suite removed is an invitation to wire it back into the INSERT.
+
 :class:`TestACorrectionReachesTheMetaTags` covers the read side, and it is the
 one that matters for content already in production. PulseDrop is live and every
 post it published before this change still carries the duplicate; those rows are
@@ -85,6 +90,11 @@ LISTING = {
 #: The defect that was corrected on post 2500: a category path flattened into one
 #: run of characters and clipped mid-word. Used as the "withdrawn" text below.
 BROKEN_TAG = "#womensclothingtopssw"
+
+#: Longer than the 180-character slice ``moderate_text`` used to take, so the
+#: approved path exercises the truncation that produced the copy rather than
+#: returning the whole caption and passing for the wrong reason.
+LONG_CAPTION = " ".join([f"{LISTING['title']} restocked today."] * 8)
 
 
 @pytest.fixture(scope="session")
@@ -228,6 +238,50 @@ class TestPublishingStoresOneCopy:
         assert "generate_ai_summary" not in queued
         # The sibling job is real work and must survive the removal.
         assert "generate_ai_tags" in queued
+
+
+class TestTheModerationEngineOffersNoCopy:
+    """Where the copy was made, rather than where it was stored.
+
+    ``moderate_text`` computed ``body[:180]`` and returned it as ``ai_summary``;
+    the INSERT above is what stored it. Nothing reads that key now, so the
+    computation is gone rather than left returning a value no caller consumes.
+    Absence is the assertion, not an empty string: a key that survives as ``""``
+    is still a slot someone refills, and the truncation next to it is still the
+    line they would reach for.
+    """
+
+    @pytest.mark.parametrize(
+        "text, post_type",
+        [
+            (LONG_CAPTION, "text"),  # approved: the branch that made the copy
+            ("kys", "text"),  # blocked: returned "Blocked by safety moderation."
+            ("", "text"),  # required-text: returned ""
+            ("", "image"),  # bodyless media: returned "Image shared on PulseSoc."
+        ],
+    )
+    def test_no_return_shape_carries_an_ai_summary(self, text, post_type):
+        from services import pulse_moderation_engine
+
+        result = pulse_moderation_engine.moderate_text(text, post_type)
+        assert "ai_summary" not in result, (
+            f"moderate_text({post_type!r}) still offers ai_summary: "
+            f"{result.get('ai_summary')!r}"
+        )
+        # The keys the callers actually read must survive the removal.
+        assert result.get("status")
+
+    def test_the_comment_path_does_not_reintroduce_it(self):
+        """``moderate_comment`` hands ``moderate_text``'s dict to its caller.
+
+        It mutates ``status`` and returns the same object, so it would carry a
+        reintroduced key straight through to ``add_comment``.
+        """
+        from services import pulse_moderation_engine
+
+        result = pulse_moderation_engine.moderate_comment(LONG_CAPTION)
+        assert "ai_summary" not in result
+        assert result.get("status")
 
 
 class TestACorrectionReachesTheMetaTags:
