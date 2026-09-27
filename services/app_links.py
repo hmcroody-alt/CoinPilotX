@@ -511,6 +511,25 @@ _DESTINATION_LIST: tuple[Destination, ...] = (
         display_name="This listing",
     ),
     _d(
+        "cart",
+        "/pulse/cart",
+        native_screen="MarketplaceCart",
+        # Web-first, and the cart is the reason this is not merely a third
+        # reading surface. The cart lives in `marketplace_cart_items`, server
+        # side, keyed on the buyer -- not in either client. So a line added in a
+        # browser is already in the app's cart and the other way round, with no
+        # syncing to build: the two surfaces are two views of one row set. That
+        # is what makes a web cart worth having even before the web can take a
+        # card, because "add it here, pay in the app" is a real path rather than
+        # a consolation.
+        web_equivalent=True,
+        auth_required=True,
+        label="Open your cart in PulseSoc",
+        notes=("Web-first: /pulse/cart renders the buyer's own cart. Both "
+               "surfaces read marketplace_cart_items, so neither owns it."),
+        display_name="Your cart",
+    ),
+    _d(
         "marketplace_create",
         "/pulse/marketplace/create",
         native_screen="MarketplaceCreateGateway",
