@@ -404,6 +404,62 @@ def _kind_of(names: Iterable[str], table: dict[str, str], *extra: dict[str, str]
 #: gate) and small enough that the walk stays cheap and obviously terminating.
 MAX_DELEGATION_DEPTH = 2
 
+#: Functions the delegation walk refuses to enter.
+#:
+#: **The rule: only code that can evaluate a caller may confer standing on one.**
+#: Everything here *provisions* — the schema, the owner-admin row, a temporary
+#: password. It brings the system into a usable state. Not one of these functions
+#: looks at who is asking, so a gate helper found inside one is not a gate the
+#: request ever passed, and following the walk into one lets setup code vouch for
+#: authentication.
+#:
+#: Why this is not hypothetical. Roughly 160 views open with a bare `init_db()`,
+#: and `init_db` is module-local to `bot.py` exactly like the private helpers the
+#: walk exists to follow, so it is an ordinary delegate. It leads to
+#: `_init_db_impl` (8,800 lines of DDL) and from there to
+#: `ensure_owner_admin_with_cursor`, which creates the owner administrator at boot
+#: — `OWNER ADMIN TEMPORARY CREDENTIALS GENERATED ONCE` in the boot log. One
+#: admin-vocabulary call landing anywhere in that subtree gives every ungated
+#: route the evidence `via:init_db>via:_init_db_impl>identity+refusal:...`.
+#:
+#: Measured on this tree by adding exactly one such call: 7 endpoints flip to
+#: `admin`, and they are `/api/mobile/auth/login`, `register`, `reset-password`,
+#: `confirm-email`, `confirmation-status`, the Brevo webhook and `/reset-password`
+#: — the unauthenticated surface, entire. That is the one outcome this module is
+#: built never to produce. It also raises their evidence rank permanently, so the
+#: next honest regeneration fails `test_no_route_loses_its_gate` and the repair
+#: that looks obvious is to freeze the lie.
+#:
+#: Worth knowing which ingredient does the damage, because it is not the obvious
+#: one: `_init_db_impl` cannot refuse anybody, so alone it is only
+#: `identity-without-refusal`. What upgrades it is `_caller_refuses` flowing
+#: *down* from the view — the `401` the login route returns for a wrong password.
+#: The route's own rejection of bad credentials is what ends up vouching for the
+#: bootstrap. `/api/mobile/auth/recover` is the control: it answers "if an account
+#: exists" to everybody, never refuses, and so never flips.
+#:
+#: A name list rather than reachability analysis, for the reason at the top of
+#: this file — a resolver that decided for itself which functions run per-request
+#: would be a second thing to trust. Membership is a property of what the function
+#: *is*, not of who currently calls it: `ensure_owner_admin` is invoked from two
+#: view bodies as well as from boot, and it is no more a gate in the first case
+#: than the second.
+#:
+#: This only stops the walk from *entering* these functions. A view that calls a
+#: gate helper in its own body is untouched, which is the intended asymmetry: that
+#: call really is per-request evidence.
+#:
+#: The cost of a name list is that it goes stale silently, and a rename here
+#: reinstates precisely the bug above, so `undefined_setup_helpers()` checks it
+#: against the tree the same way `undefined_gate_helpers()` checks the vocabulary.
+SETUP_HELPERS: frozenset[str] = frozenset({
+    "init_db",
+    "_init_db_impl",
+    "ensure_owner_admin",
+    "ensure_owner_admin_with_cursor",
+    "remember_owner_temp_password",
+})
+
 
 def _delegates_of(view: Callable, source: str) -> list[tuple[str, Callable]]:
     """Functions called by this view that live in the view's own module.
@@ -419,6 +475,8 @@ def _delegates_of(view: Callable, source: str) -> list[tuple[str, Callable]]:
     out = []
     for name in sorted(set(_CALL.findall(source or ""))):
         if name.startswith("__"):
+            continue
+        if name in SETUP_HELPERS:
             continue
         candidate = getattr(module, name, None)
         if candidate is None or candidate is view:
@@ -537,6 +595,32 @@ def undefined_gate_helpers(root: str | None = None) -> list[str]:
     less accurate while every downstream check stays green. Checking that each
     name still defines something turns that into a failure.
 
+    See `_undefined_in_tree` for how the question is asked, and how weak it is on
+    purpose.
+    """
+    return _undefined_in_tree(
+        set(REFUSAL_GATES) | set(IDENTITY_HELPERS) | set(WEAK_GATE_HELPERS), root
+    )
+
+
+def undefined_setup_helpers(root: str | None = None) -> list[str]:
+    """SETUP_HELPERS entries that no longer define a function anywhere in the tree.
+
+    Same question as `undefined_gate_helpers()`, asked about the exclusion set,
+    and it fails in the opposite direction — which is why it is worth asking
+    separately. A vocabulary name that stops naming anything makes the detector
+    blind, and blind reads as `unknown`, which is loud. A *setup* name that stops
+    naming anything makes the walk start crossing into setup code again, and that
+    reads as `admin`: quiet, plausible, and wrong in the one direction this module
+    promises never to be wrong in. Rename `init_db` and nothing else in the tree
+    would notice.
+    """
+    return _undefined_in_tree(set(SETUP_HELPERS), root)
+
+
+def _undefined_in_tree(names: Iterable[str], root: str | None) -> list[str]:
+    """Which of `names` no longer follow a `def` anywhere in the first-party tree.
+
     **Why a source scan and not `hasattr(bot, name)`.** That was the first
     version, and on a healthy checkout it reported false positives: `_entry`,
     `_require_user` and `_security_entry` are module-private to the blueprints
@@ -544,24 +628,24 @@ def undefined_gate_helpers(root: str | None = None) -> list[str]:
     a clean tree gets an allowlist bolted onto it, and the allowlist is exactly
     the entries most worth watching — the private ones, whose renames nothing
     else would notice.
-    So the question had to change to one that is answerable for every entry in
-    the vocabulary rather than only the public half.
+    So the question had to change to one that is answerable for every entry
+    rather than only the public half.
 
     This asks a deliberately weak question: *does this name still define
     something?* It does not ask whether the definition is still a gate, or
     whether the routes that used to call it still do. The second of those is the
     baseline's job — a route whose evidence goes from `gates:...` to
     `no-known-gate` fails there, which is where a partial rename surfaces. This
-    catches the case the baseline cannot: a vocabulary that has quietly stopped
-    naming anything, where every route looks unchanged because the detector has
-    gone blind uniformly.
+    catches the case the baseline cannot: a list that has quietly stopped naming
+    anything, where every route looks unchanged because the detector has gone
+    blind uniformly.
     """
-    names = sorted(set(REFUSAL_GATES) | set(IDENTITY_HELPERS) | set(WEAK_GATE_HELPERS))
-    if not names:
+    wanted = sorted(set(names))
+    if not wanted:
         return []
     base = root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     pattern = re.compile(
-        r"^[ \t]*(?:async[ \t]+)?def[ \t]+(" + "|".join(re.escape(n) for n in names) + r")[ \t]*\(",
+        r"^[ \t]*(?:async[ \t]+)?def[ \t]+(" + "|".join(re.escape(n) for n in wanted) + r")[ \t]*\(",
         re.MULTILINE,
     )
 
@@ -576,10 +660,10 @@ def undefined_gate_helpers(root: str | None = None) -> list[str]:
                     defined.update(pattern.findall(fh.read()))
             except OSError:
                 continue
-        if len(defined) == len(names):
+        if len(defined) == len(wanted):
             break
 
-    return [n for n in names if n not in defined]
+    return [n for n in wanted if n not in defined]
 
 
 def audit_app(app) -> list[dict]:
