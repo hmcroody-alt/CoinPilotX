@@ -1,0 +1,353 @@
+/* PulseSoc shared emoji picker — the web half of ONE system.
+ *
+ * The geometry here is not "a design that resembles the app". Every number is
+ * the number in mobile-native/src/emoji/EmojiPicker.tsx: COLUMNS 8, CELL 44,
+ * glyph 28, sheet radius 18, grab handle 40x4, search radius 12 with 12/9
+ * padding, category headers 12px/700 with 1px tracking uppercase, a
+ * space-around tab bar with 20px glyphs at 0.55 opacity until active, and a
+ * 24px-radius skin-tone popover with 30px glyphs.
+ *
+ * Two presentations, one component. Under 640px it is the app's bottom sheet,
+ * because at that width a floating popover anchored to a 32px button is the
+ * wrong object. At pointer widths it is an anchored popover -- feature parity,
+ * not pixel parity.
+ *
+ * Colours read the desktop shell's --ds-* tokens where they exist (on /pulse)
+ * and fall back to the same literal values everywhere else, so the picker
+ * looks like one component across the whole site rather than inheriting
+ * whatever the host page happens to define.
+ */
+
+.pulse-emoji-root {
+  --pe-surface: var(--ds-surface, #131c2b);
+  --pe-raised: var(--ds-surface-hover, #1e2a3d);
+  --pe-border: var(--ds-border, rgba(146, 170, 200, .16));
+  --pe-text: var(--ds-text, #eef4fa);
+  --pe-muted: var(--ds-text-2, #a8b7c8);
+  --pe-accent: var(--ds-accent, #36e58f);
+
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+
+.pulse-emoji-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  background: transparent;
+}
+
+/* The app dims behind its sheet (rgba(0,0,0,0.45)). A popover must not dim
+ * the page it is anchored to, so the scrim is sheet-only. */
+.pulse-emoji-root.is-sheet .pulse-emoji-backdrop {
+  background: rgba(0, 0, 0, .45);
+}
+
+.pulse-emoji-panel {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 368px;                 /* 8 cells x 44 + 8px gutter each side */
+  height: 420px;
+  background: var(--pe-surface);
+  color: var(--pe-text);
+  border: 1px solid var(--pe-border);
+  border-radius: 18px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .46);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  overflow: hidden;
+  font-family: inherit;
+  animation: pulse-emoji-in .14s ease-out;
+}
+
+.pulse-emoji-root.is-static .pulse-emoji-panel {
+  animation: none;
+}
+
+@keyframes pulse-emoji-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* No measurable anchor: centre the panel rather than leave it in the corner,
+   where the default top/left of an unpositioned popover would put it. */
+.pulse-emoji-root.is-centered .pulse-emoji-panel {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.pulse-emoji-root.is-centered .pulse-emoji-backdrop {
+  background: rgba(0, 0, 0, .38);
+}
+
+/* The shared entrance animation ends on `transform: none`, which would undo
+   the centring for its whole duration. Centred gets its own keyframe. */
+.pulse-emoji-root.is-centered .pulse-emoji-panel {
+  animation: pulse-emoji-in-centered .14s ease-out;
+}
+
+.pulse-emoji-root.is-static.is-centered .pulse-emoji-panel {
+  animation: none;
+}
+
+@keyframes pulse-emoji-in-centered {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 4px)); }
+  to { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.pulse-emoji-root.is-sheet .pulse-emoji-panel {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: auto;
+  height: min(62vh, 560px);
+  border-radius: 18px 18px 0 0;
+  border-width: 1px 0 0 0;
+  animation: pulse-emoji-up .18s ease-out;
+}
+
+.pulse-emoji-root.is-static.is-sheet .pulse-emoji-panel {
+  animation: none;
+}
+
+@keyframes pulse-emoji-up {
+  from { transform: translateY(12%); }
+  to { transform: none; }
+}
+
+/* Grab handle: the sheet affordance. Present in the DOM at every width so one
+ * markup shape serves both presentations; hidden where it would be a lie. */
+.pulse-emoji-handle-wrap {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding-top: 8px;
+}
+
+.pulse-emoji-root.is-sheet .pulse-emoji-handle-wrap {
+  display: flex;
+}
+
+.pulse-emoji-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--pe-border);
+}
+
+.pulse-emoji-search-wrap {
+  flex: none;
+  padding: 10px 12px;
+}
+
+.pulse-emoji-search {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--pe-raised);
+  border: 1px solid transparent;
+  border-radius: 12px;
+  color: var(--pe-text);
+  font: inherit;
+  font-size: 15px;
+  padding: 9px 12px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.pulse-emoji-search::placeholder { color: var(--pe-muted); }
+.pulse-emoji-search:focus-visible { border-color: var(--pe-accent); }
+
+.pulse-emoji-scroll {
+  flex: 1 1 auto;
+  position: relative;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Every row is absolutely positioned at its exact offset inside this spacer,
+ * whose height is the full list height. That is what lets the renderer keep
+ * only the visible rows in the DOM while the scrollbar still describes all
+ * 1,914 emoji. */
+.pulse-emoji-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.pulse-emoji-heading,
+.pulse-emoji-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+}
+
+.pulse-emoji-heading {
+  height: 40px;
+  padding: 14px 14px 6px;
+  color: var(--pe-muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pulse-emoji-row {
+  display: flex;
+  height: 44px;
+  padding: 0 8px;
+}
+
+.pulse-emoji-cell {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pulse-emoji-cell:hover { background: var(--pe-raised); }
+
+/* Focus must be visible for keyboard users, and the ring has to survive the
+ * windowed renderer re-creating the cell, which is why focus is tracked by
+ * index in JS and re-applied after every render. */
+.pulse-emoji-cell:focus {
+  outline: none;
+  background: var(--pe-raised);
+  box-shadow: inset 0 0 0 2px var(--pe-accent);
+}
+
+.pulse-emoji-glyph {
+  font-size: 28px;
+  line-height: 1;
+  /* Colour fonts only. A monochrome fallback would render these as outlines,
+   * which reads as a broken image rather than an emoji. */
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji",
+    "Twemoji Mozilla", "Android Emoji", sans-serif;
+}
+
+/* Tone-capable cells carry a small corner mark. The app teaches long-press
+ * with a haptic; on the web there is nothing to feel, so the affordance has
+ * to be seen. */
+.pulse-emoji-cell[data-tone-capable="1"]::after {
+  content: "";
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--pe-muted);
+  transform: translate(15px, 15px);
+  opacity: 0;
+}
+
+.pulse-emoji-cell[data-tone-capable="1"] { position: relative; }
+.pulse-emoji-cell[data-tone-capable="1"]:hover::after,
+.pulse-emoji-cell[data-tone-capable="1"]:focus::after { opacity: .7; }
+
+.pulse-emoji-empty,
+.pulse-emoji-status {
+  flex: none;
+  margin: 0;
+  padding: 24px 14px;
+  text-align: center;
+  color: var(--pe-muted);
+  font-size: 14px;
+}
+
+.pulse-emoji-status.is-error { color: var(--ds-live, #ff6b7a); }
+
+.pulse-emoji-tabs {
+  flex: none;
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  border-top: 1px solid var(--pe-border);
+  padding: 6px 4px;
+  background: var(--pe-surface);
+}
+
+.pulse-emoji-tabs[hidden] { display: none; }
+
+.pulse-emoji-tab {
+  padding: 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  opacity: .55;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pulse-emoji-tab.is-active {
+  background: var(--pe-raised);
+  opacity: 1;
+}
+
+.pulse-emoji-tab:focus-visible {
+  outline: 2px solid var(--pe-accent);
+  outline-offset: 1px;
+}
+
+/* Skin-tone popover: base glyph + five Fitzpatrick variants, the app's
+ * 24px-radius raised bar at 30px glyphs. Centred over the tab strip so it
+ * never covers the cell that opened it. */
+.pulse-emoji-tones {
+  position: absolute;
+  left: 50%;
+  bottom: 64px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px;
+  background: var(--pe-raised);
+  border: 1px solid var(--pe-border);
+  border-radius: 24px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .3);
+}
+
+.pulse-emoji-tone {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pulse-emoji-tone:hover,
+.pulse-emoji-tone:focus-visible {
+  outline: none;
+  background: var(--pe-surface);
+}
+
+.pulse-emoji-tone-glyph {
+  font-size: 30px;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-emoji-panel { animation: none !important; }
+}

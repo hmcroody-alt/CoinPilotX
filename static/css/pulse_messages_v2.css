@@ -1758,8 +1758,7 @@ select:focus-visible {
   font-weight: 900;
 }
 
-.attachment-sheet,
-.emoji-panel {
+.attachment-sheet {
   display: flex;
   min-width: 0;
   gap: 8px;
@@ -1770,8 +1769,7 @@ select:focus-visible {
   scrollbar-width: none;
 }
 
-.attachment-sheet[hidden],
-.emoji-panel[hidden] {
+.attachment-sheet[hidden] {
   display: none;
 }
 
@@ -1793,16 +1791,6 @@ select:focus-visible {
 .attachment-sheet button small {
   color: var(--muted);
   font-size: 9px;
-}
-
-.emoji-panel button {
-  flex: 0 0 42px;
-  width: 42px;
-  min-width: 42px;
-  min-height: 42px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 20px;
 }
 
 .composer {
@@ -3597,7 +3585,6 @@ select:focus-visible {
   .attachment-preview-rail,
   .voice-recorder,
   .attachment-sheet,
-  .emoji-panel,
   .composer,
   .composer-status {
     padding-inline: 10px;

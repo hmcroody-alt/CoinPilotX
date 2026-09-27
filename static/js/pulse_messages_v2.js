@@ -2789,21 +2789,53 @@
     syncComposerState();
   }
 
+  /**
+   * The composer's emoji affordance. This used to show a strip of eight
+   * hardcoded glyphs baked into templates/pulse_messages_v2.html; it now opens
+   * `window.PulseEmoji`, the one picker the whole website shares with the app
+   * (same 1,914-emoji dataset, same search ranking, same recents key).
+   *
+   * `state.emojiOpen` survives the swap deliberately. Eight call sites close
+   * this panel when something else takes the composer (attachment sheet,
+   * thread switch, send, reply cancel, ...) and `composerMode()` reports
+   * "emoji_open" to analytics. Replacing the panel's markup must not quietly
+   * retire that state, so the flag still tracks the picker -- including when
+   * the picker closes itself via Escape or an outside click, which is what
+   * the onClose callback is for.
+   */
   function toggleEmojiPanel(force) {
-    const panel = el("[data-emoji-panel]");
-    state.emojiOpen = typeof force === "boolean" ? force : !state.emojiOpen;
-    if (state.emojiOpen) {
-      state.attachmentSheetOpen = false;
-      const attachmentSheet = el("[data-attachment-sheet]");
-      if (attachmentSheet) {
-        attachmentSheet.hidden = true;
-        attachmentSheet.classList.remove("is-open");
+    const picker = window.PulseEmoji;
+    const next = typeof force === "boolean" ? force : !state.emojiOpen;
+    if (!picker) {
+      state.emojiOpen = false;
+      syncComposerState();
+      return;
+    }
+    if (!next) {
+      state.emojiOpen = false;
+      picker.close();
+      syncComposerState();
+      return;
+    }
+    state.emojiOpen = true;
+    state.attachmentSheetOpen = false;
+    const attachmentSheet = el("[data-attachment-sheet]");
+    if (attachmentSheet) {
+      attachmentSheet.hidden = true;
+      attachmentSheet.classList.remove("is-open");
+    }
+    const input = el("[data-message-input]");
+    picker.open({
+      anchor: el("[data-toggle-emoji]"),
+      returnFocusTo: input,
+      stayOpenOnSelect: true,
+      label: "Add emoji to your message",
+      onSelect: insertEmoji,
+      onClose: () => {
+        state.emojiOpen = false;
+        syncComposerState();
       }
-    }
-    if (panel) {
-      panel.hidden = !state.emojiOpen;
-      panel.classList.toggle("is-open", state.emojiOpen);
-    }
+    });
     syncComposerState();
   }
 
@@ -2814,7 +2846,6 @@
     const end = Number.isFinite(input.selectionEnd) ? input.selectionEnd : input.value.length;
     input.setRangeText(value, start, end, "end");
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    toggleEmojiPanel(false);
     input.focus();
   }
 
@@ -3482,8 +3513,6 @@
         if (createRoomButton) return await runAction(createRoomButton, "Creating room...", createRoom);
         if (target.closest("[data-toggle-attachments]")) return toggleAttachmentSheet();
         if (target.closest("[data-toggle-emoji]")) return toggleEmojiPanel();
-        const emoji = target.closest("[data-emoji-value]");
-        if (emoji) return insertEmoji(emoji.dataset.emojiValue || "");
         const attachmentOption = target.closest("[data-attachment-option]");
         if (attachmentOption) return openAttachmentOption(attachmentOption.dataset.attachmentOption || "file");
         const removeAttachmentButton = target.closest("[data-attachment-remove]");
