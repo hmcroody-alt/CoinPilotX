@@ -561,8 +561,10 @@ link had to be added by hand — this branch's `package.json` declares
 `pulse-apple-translation` and the main checkout's does not, so its tree was missing that
 entry. Nothing was written into the main checkout, and `node_modules/` is gitignored.
 
-Not run, and I will not claim otherwise: device QA, load benchmarks at 10K/100K/1M products,
-and any verification against production data. See §15.
+Not run, and I will not claim otherwise: device QA and load benchmarks at 10K/100K/1M
+products. See §15. "No verification against production data" was also true when this
+section was written and is no longer — §17 measures the suitability gate against live
+Railway Postgres, read-only. Nothing in §§4–7 was ever measured against prod.
 
 ## 15. What the brief asked for that I did not build
 
@@ -614,4 +616,126 @@ how much product a feed carries, they share the `feed` and `reels` surfaces, and
 neither counts the other's exposures — so if impression distribution moves you would not
 be able to attribute it. Either is safe alone.
 
-The decision is the user's. Nothing is committed.
+The decision is the user's. **Nothing is pushed or deployed**; §17 adds two further
+increments to the same branch and the same statement covers them.
+
+## 17. The suitability gate was wired to the wrong text
+
+Written after §§1–16, and it reports a defect in work this report already described as
+done. §16's four fixes are about *which* product is shown. This section is about *whether*
+one is shown at all — the brief's own rule, "every post may be commerce-capable; not every
+post should display commerce" — and the gate enforcing it was reading the wrong thing.
+
+### What was wrong
+
+`services/commerce_discovery/suitability.py` was correct and tested. The route called it
+on the wrong input.
+
+The serve endpoint received a `context` — a topic, a category, up to twelve tags — built
+by `mobile-native/src/commerce/postContext.ts`, which caps every field at
+`MAX_FIELD_CHARS = 80`. That cap is right: an unbounded free-text field from a client has
+no business being unbounded. But it means the server was judging the client's
+eighty-character *summary* of a post rather than the post, and a bereavement post very
+commonly opens with a preamble. Measured:
+
+```
+len(body) = 158
+topic on the wire = 'Thank you all so much for the kind words these past few days, it has meant'
+server sees the FULL body : SENSITIVE_CONTEXT   permitted = False
+server sees the WIRE topic: PERMITTED           permitted = True
+```
+
+And every structural gate was invisible to the wire, because `post_type`,
+`moderation_status` and `risk_score` are not fields a client sends. A `scam_report`, an
+unmoderated post and a high-risk post all passed.
+
+### The fix
+
+`post_id` on the serve wire; the server reads the `pulse_posts` row and runs
+`assess_adjacency` on it, before retrieval. The precedent is `_anchor_context`, which
+already replaces a client-described product taxonomy with the listing's own. Then the same
+thing for reels, where the words live on `pulse_reels.caption` rather than on the post
+body — `pulse_reel_payload` sets `caption = reel.caption or post.body` — so both rows are
+read and either may refuse.
+
+Three distinctions are encoded rather than defended, and each is a place where the obvious
+code is wrong:
+
+| Distinction | Why |
+| --- | --- |
+| A post that is **gone** refuses; a post we could not **read** does not | Conflating them turns one bad minute on the database into commerce disappearing from every post page, while the posts that genuinely need suppressing carry on being served for as long as the query works. |
+| The wire check still runs **first** | It is the only check that sees what a client actually sent, so it is the one a forged id cannot get past. Defence in depth, not alternatives. |
+| An absent **reel** row does *not* refuse, unlike an absent post | A video post with no `pulse_reels` row is legitimate; `pulse_reel_payload` synthesises one and serves it. The post row has already been judged by then, so an absent reel adds no text rather than an unknown one. |
+
+`assess_adjacency` and not `assess`: `assess` adds the `NO_SUBJECT` rule and would refuse
+every caption-less post. That is the same choice `suitability.annotate` makes for the feed,
+and it is not hypothetical — see the 17 below.
+
+### Measured against production
+
+Live Railway Postgres, read-only, 2026-09-27. 2,069 non-deleted `pulse_posts` rows,
+`assess_adjacency` run over each.
+
+| | Posts |
+| --- | --- |
+| Refused by the **wire** check as shipped | **0** |
+| Refused once the **row** is read | **207** |
+| — `MODERATION_NOT_CLEARED` (`needs_review`) | 195 |
+| — `CONTENT_RISK` (`risk_score >= 30`) | 12 |
+| Overlap between the two | **0** |
+| Caption-less posts, which `assess` would have blanket-refused | 17 |
+
+Every one of the 207 is a post the shipped check let through, and the shipped check
+refuses nothing at all. That is the honest description of the gate before this change: on
+the content surfaces it was not doing anything.
+
+So **10.0% of live posts (207 of 2,069) stop showing a commerce card on `post_detail`** —
+9.4% of them for moderation, 0.6% for risk score. That is not a new policy.
+`CLEARED_MODERATION_STATES` is already default-deny and the feed already enforces it
+through `suitability.annotate` stamping `commerce_suitable` on every post in the payload.
+`post_detail` was the inconsistent surface; this makes it consistent. Whoever watches the
+graphs should still be told, because a 10% drop in one surface's commerce impressions looks
+like a bug.
+
+All 17 caption-less posts are row-permitted, so `assess` would have cost every one of them
+its card for having no derivable subject — a refusal on top of the 207, for a population
+with nothing wrong with it.
+
+Supporting distributions, same probe: `moderation_status` is approved 2,294 /
+needs_review 196 / blocked 5, no NULLs. `post_type` is text 2,060, live 279, video 109,
+image 37, repost 5, `scam_report` 4 — and all four `scam_report` posts are already deleted,
+so the post type the rule most obviously exists for has no live instance.
+
+**The reels half changes nothing measurable today, and that is worth stating rather than
+implying otherwise.** 71 `pulse_reels` rows, 61 not deleted, all 71 `moderation_status =
+approved` with no NULLs, `safety_score` between 90 and 100. Of the 61, **13** join to a
+live post; the other 48 hang off a tombstoned one, and `pulse_feed_engine.get_post`
+filters `deleted_at IS NULL` and returns `None`, so `pulse_reel_payload` already returns
+nothing for them and they do not render. Across those 13: 0 refused by the post row, 0 by
+the reel row. And `pulse_reels.caption` is currently *always* identical to the post body —
+0 of 39 captioned reels differ — because the composer writes both.
+
+The caption read is therefore a structural fix against a shape the code explicitly
+supports rather than one the data has produced yet. It becomes load-bearing the moment any
+edit path writes a caption without rewriting the post body, which is the natural way to
+implement caption editing, and at that point the reel a viewer is reading and the row the
+gate judges are two different texts.
+
+### Verification
+
+`tests/commerce_discovery/`: 608 passed (85 in
+`test_suitability_gate_is_wired.py`, up from 62 before these two increments).
+`mobile-native` `jest src/commerce` plus the api test: 455 passed, 21 suites. `tsc
+--noEmit`: exit 0. `i18n:validate`: OK, 11 locales. Environment, route-auth and
+route-contract gates: 43 passed. Audio gate: no protected path touched.
+
+Mutation-checked, each harness run from `scripts/protection/` and the source restored and
+verified byte-identical afterwards. 8/8 killed on the post half after one survivor was
+fixed — `assess` substituted for `assess_adjacency` survived, which was a real coverage
+gap: no test covered "a post id, a cleared benign row, and no context", exactly the 17
+caption-less posts above. 16/16 on the reel half, including the reel keyed on its own id
+instead of `post_id`, `safety_score` projected as `risk_score`, and the screen passing no
+resolver at all.
+
+No new table, column, index, flag or env var. Two wire fields — `post_id` on the serve
+request, and nothing on the response.
