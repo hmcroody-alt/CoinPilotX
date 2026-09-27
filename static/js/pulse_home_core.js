@@ -932,50 +932,40 @@
     return Object.values(post.reaction_counts || {}).reduce((sum, value) => sum + count(value), 0);
   }
 
-  const feedReactionChoices = [
-    ["like", "👍", "Like"],
-    ["love", "❤️", "Love"],
-    ["funny", "😂", "Funny"],
-    ["wow", "😮", "Wow"],
-    ["brutal", "😢", "Sad"],
-    ["scam_alert", "😡", "Angry"],
-    ["fire", "🔥", "Fire"],
-    ["fast_signal", "⚡", "Genius"],
-    ["elite", "💎", "Valuable"],
-    ["bullish", "🚀", "Bullish"],
-    ["bearish", "🐻", "Bearish"],
-  ];
+  // The catalogue is rendered into the page by the server from
+  // services/pulse_reactions.py -- the same table that decides which reactions
+  // the wire accepts. This file used to carry two hardcoded copies of it that
+  // disagreed with each other and with the server, so the glyph a reader saw
+  // depended on which renderer drew it.
+  const reactionCatalog = Array.isArray(window.PULSE_REACTION_CATALOG) ? window.PULSE_REACTION_CATALOG : [];
+  const reactionEmojiByKey = Object.fromEntries(reactionCatalog.map(entry => [entry.key, entry.emoji]));
+  const reactionLabelByKey = Object.fromEntries(reactionCatalog.map(entry => [entry.key, entry.label]));
+  const traySize = Number(window.PULSE_REACTION_TRAY_SIZE) || 7;
+  const feedReactionChoices = reactionCatalog.slice(0, traySize).map(entry => [entry.key, entry.emoji, entry.label]);
 
   function reactionEmojiFor(type) {
-    return Object.fromEntries(feedReactionChoices.map(([key, emoji]) => [key, emoji]))[type] || "👍";
+    // An unknown key renders as nothing rather than as a plausible substitute.
+    // Substituting used to turn a `whale` reaction into a thumbs-up, which
+    // misreports what a real person sent; an empty glyph is a visible gap.
+    return reactionEmojiByKey[type] || "";
   }
 
   function reactionLabelFor(type) {
-    const found = feedReactionChoices.find(([key]) => key === type);
-    return found?.[2] || "Like";
+    return reactionLabelByKey[type] || "";
   }
 
   function reactionEmojis(post) {
-    const map = {
-      like: "👍",
-      love: "❤️",
-      fire: "🔥",
-      funny: "😂",
-      laugh: "😂",
-      wow: "😮",
-      brutal: "😢",
-      sad: "😢",
-      scam_alert: "😡",
-      fast_signal: "⚡",
-      smart: "⚡",
-      elite: "💎",
-      bullish: "🚀",
-      bearish: "🐻",
-    };
     const counts = post.reaction_counts || {};
-    const active = Object.keys(counts).filter(type => count(counts[type]) > 0).sort((a, b) => count(counts[b]) - count(counts[a]));
-    const emojis = (active.length ? active : ["like", "love", "funny", "wow", "brutal", "scam_alert"]).slice(0, 6).map(type => map[type] || "👍");
-    return emojis.join(" ");
+    // Only reactions that were actually sent. There is no placeholder set for
+    // the empty case: inventing one would put six feelings on a post nobody
+    // has reacted to.
+    return Object.keys(counts)
+      .filter(type => count(counts[type]) > 0)
+      .sort((a, b) => count(counts[b]) - count(counts[a]))
+      .slice(0, 6)
+      .map(reactionEmojiFor)
+      .filter(Boolean)
+      .join(" ");
   }
 
   function updateSummary(postId, key, value) {
