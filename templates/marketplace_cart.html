@@ -1,0 +1,132 @@
+{#
+  The web Marketplace cart.
+
+  A FRAGMENT, not a document. `pulse_social_shell()` in bot.py supplies the
+  navigation, the signed-in header and the app CTA, and already redirects an
+  anonymous visitor to /login, so this file renders only the cart's own markup.
+
+  ## No new backend
+
+  Everything here is driven by `services/marketplace_cart_routes.py`, which has
+  answered the native app since before there was a web cart:
+
+      GET    /api/pulse/marketplace/cart                 the lines
+      POST   /api/pulse/marketplace/cart                 add
+      PATCH  /api/pulse/marketplace/cart/<line>          quantity
+      DELETE /api/pulse/marketplace/cart/<line>          remove
+      POST   /api/pulse/marketplace/cart/<line>/confirm-price
+      GET    /api/pulse/marketplace/cart/checkout-options
+
+  Its `_require_user()` resolves through `bot.api_account_user()`, which accepts
+  the web session cookie, so the browser is already an authenticated caller. The
+  module's own `_error()` docstring says its messages stay human "because web and
+  admin surfaces render it directly" -- this page is the surface that docstring
+  was anticipating. Adding a parallel `/api/web/cart` would have been two carts.
+
+  ## Empty rather than clever
+
+  The line list is rendered by JavaScript from the API rather than server-side,
+  which is a deliberate choice and a narrow one: the quantity and remove controls
+  have to re-read the cart anyway, and a server-rendered first paint that then
+  disagreed with the first mutation would be two sources for one list. The cost
+  is that this page needs JS, and the mitigation is that it says so rather than
+  showing a blank panel -- see `.needsjs` below, which is visible by default and
+  hidden by the script once it runs.
+
+  ## Line states are the server's words
+
+  `_line_state()` classifies every line as available, price_changed, low_stock,
+  sold, restricted or removed, and the API returns both the snapshot
+  price and the price now. This page prints the state rather than flattening it
+  to "in stock", because a price that moved after the buyer added the line is the
+  one thing they must be told before paying, and `confirm-price` exists precisely
+  so that telling them is a step rather than a surprise.
+#}
+<style>
+  .cart{--ink:#f4f7f5;--dim:#8d9a92;--line:rgba(255,255,255,.12);--go:#2ecc71;--warn:#e8c468}
+  .cart{color:var(--ink)}
+  .cart .lede{color:var(--dim);max-width:62ch;margin:0 0 20px}
+  .cart .needsjs{border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+    color:var(--dim);background:#0a0a0a;margin:0 0 18px}
+  .cart .lines{display:flex;flex-direction:column;gap:12px;margin:0 0 22px}
+  .cart .line{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:#0a0a0a;
+    display:grid;grid-template-columns:72px 1fr auto;gap:14px;align-items:start}
+  .cart .line img{width:72px;height:72px;object-fit:cover;border-radius:10px;background:#141414}
+  .cart .line h3{margin:0 0 3px;font-size:16px}
+  .cart .line h3 a{color:var(--ink);text-decoration:none}
+  .cart .line h3 a:hover{color:var(--go)}
+  .cart .line .store{margin:0;color:var(--dim);font-size:13px}
+  .cart .line .state{display:inline-block;margin-top:6px;font-size:11px;letter-spacing:.07em;
+    text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:3px 9px;color:var(--dim)}
+  .cart .line.ok .state{color:var(--go);border-color:rgba(46,204,113,.45)}
+  .cart .line.attn{border-color:rgba(232,196,104,.5)}
+  .cart .line.attn .state{color:var(--warn);border-color:rgba(232,196,104,.5)}
+  .cart .line.gone{opacity:.6}
+  .cart .line .money{text-align:right;white-space:nowrap}
+  .cart .line .money b{display:block;font-size:17px}
+  .cart .line .controls{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px}
+  .cart .line .controls input{width:56px;background:#141414;color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:5px 7px;font:inherit;text-align:center}
+  .cart .line .controls button{background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:8px;padding:5px 9px;font:inherit;cursor:pointer}
+  .cart .line .controls button:hover{color:var(--ink);border-color:var(--go)}
+  .cart .line .controls button.confirm{color:var(--warn);border-color:rgba(232,196,104,.5)}
+  .cart .totals{border:1px solid var(--line);border-radius:14px;padding:16px 18px;background:#0a0a0a}
+  .cart .totals .row{display:flex;justify-content:space-between;gap:18px;margin:0 0 8px;color:var(--dim)}
+  .cart .totals .row.grand{color:var(--ink);font-size:19px;margin:12px 0 0;
+    border-top:1px solid var(--line);padding-top:12px}
+  .cart .totals .row.grand b{color:var(--go)}
+  .cart .pay{margin:16px 0 0}
+  .cart .pay .note{color:var(--dim);font-size:13px;margin:10px 0 0;max-width:58ch}
+  .cart .empty{border:1px solid var(--line);border-radius:14px;padding:26px 18px;background:#0a0a0a;
+    color:var(--dim);text-align:center}
+  .cart .empty a{color:var(--go)}
+  .cart .fail{border:1px solid rgba(232,104,104,.5);border-radius:14px;padding:16px 18px;
+    background:#160a0a;color:#f0c5c5}
+</style>
+
+{#
+  The app handoff href is injected rather than written into the JavaScript,
+  because `services/app_links.py` owns what a PulseSoc destination's link looks
+  like and a second copy in a script would be a second registry. It is
+  deliberately the `/open/...` interstitial and not the canonical marker link:
+  this button is tapped from pulsesoc.com, and iOS does not consult associated
+  domains for a same-domain tap, so a marker link would 302 an installed member
+  to the App Store. `open_interstitial_url` documents that in full.
+#}
+<div class="cart" data-cart-root data-cart-app-href="{{ app_href }}">
+  <h1>Your cart</h1>
+  <p class="lede">
+    The same cart the PulseSoc app shows. Add an item here and it is waiting for
+    you there; there is one cart, not a web copy of one.
+  </p>
+
+  {#
+    Visible until the script hides it. An empty cart and a cart that failed to
+    load must never look the same -- the standing rule is that error and empty
+    never co-render, and the first thing that breaks that rule is a page whose
+    "no items" panel is also its loading state.
+  #}
+  <div class="needsjs" data-cart-needsjs>
+    Loading your cart&hellip; this page needs JavaScript to show it.
+  </div>
+
+  <div data-cart-fail hidden></div>
+  <div class="lines" data-cart-lines hidden></div>
+  <div data-cart-empty hidden>
+    <div class="empty">
+      <p>Nothing in your cart yet.</p>
+      <p><a href="/pulse/marketplace">Browse the marketplace</a></p>
+    </div>
+  </div>
+  <div data-cart-summary hidden></div>
+</div>
+
+{#
+  The tag lives here rather than in `script_html`, which `pulse_social_shell`
+  interpolates *inside* a `<script>` element -- a `<script src>` passed there
+  would be nested and never fetched. `pulse_marketplace_listing_page` loads its
+  promotions bundle the same way. `defer` runs it after parsing, so the shell's
+  own inline script has already defined `pulseApi` and `toast`.
+#}
+<script src="/static/js/pulsesoc_cart.js?v=web-cart-20260927a" defer></script>

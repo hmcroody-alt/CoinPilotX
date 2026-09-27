@@ -248,8 +248,36 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         before the click instead.
         """
         body = self.get(self.make_listing()).get_data(as_text=True)
-        self.assertIn("Sign in to buy", body)
+        self.assertIn("Sign in to add to cart", body)
         self.assertNotIn("Contact Seller", body)
+
+    def test_the_sign_in_promise_is_one_the_next_page_keeps(self):
+        """The CTA used to read "Sign in to buy" and lead nowhere near buying.
+
+        Signing in landed on the member product page, whose only verbs were
+        Contact Seller, Save and Report -- a promise broken *after* the reader
+        had created an account, which is the most expensive place to break one.
+
+        So the wording is pinned against the thing that makes it true rather
+        than on its own: the member rendering of the same URL must carry the
+        add-to-cart control. Asserting the string alone would go green again the
+        moment someone removed the button, which is exactly the state this test
+        exists to make impossible.
+        """
+        listing_id = self.make_listing()
+        anonymous = self.get(listing_id).get_data(as_text=True)
+        self.assertIn("Sign in to add to cart", anonymous)
+        self.assertNotIn("data-add-to-cart", anonymous)
+
+        self.login()
+        member = self.get(listing_id).get_data(as_text=True)
+        # The attribute *with its value* -- the member page's own click handler
+        # contains the bare selector `closest('[data-add-to-cart]')`, so
+        # searching for the name alone matches a page carrying no button.
+        self.assertIn(f"data-add-to-cart='{listing_id}'", member,
+                      "the public page promises a cart the member page does not offer")
+        self.assertIn("/api/pulse/marketplace/cart", member,
+                      "the add-to-cart control is not wired to the cart endpoint")
 
     def test_the_cover_image_is_on_the_page(self):
         body = self.get(self.make_listing()).get_data(as_text=True)
@@ -386,7 +414,7 @@ class MarketplacePublicProductPageTestCase(PublicMarketplaceFixture):
         listing_id = self.make_listing()
         self.login()
         body = self.get(listing_id).get_data(as_text=True)
-        self.assertNotIn("Sign in to buy", body)
+        self.assertNotIn("Sign in to add to cart", body)
         self.assertNotIn('<script type="application/ld+json">', body)
 
     # -- being logged out widened nothing ------------------------------------
