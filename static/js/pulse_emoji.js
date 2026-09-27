@@ -388,7 +388,7 @@
   // this stylesheet will never ask for it again. Without a token in the URL an
   // edit to the picker's CSS would reach no one who had already opened it.
   // Bump this whenever pulse_emoji.css changes.
-  var STYLE_HREF = "/static/css/pulse_emoji.css?v=emoji-primitive-20260927a";
+  var STYLE_HREF = "/static/css/pulse_emoji.css?v=emoji-primitive-20260927b";
   function ensureStyles() {
     if (document.querySelector('link[data-pulse-emoji-style]')) return;
     var link = document.createElement("link");
@@ -1031,6 +1031,7 @@
     global.removeEventListener("scroll", this.onReposition, true);
     this.root.remove();
     if (open === this) open = null;
+    markAnchorExpanded();
     // Focus restoration: keyboard users must land back on the trigger, not at
     // the top of the document.
     var target = this.returnFocusTo;
@@ -1051,7 +1052,20 @@
       if (sameAnchor) return null;
     }
     open = new PickerInstance(options);
+    markAnchorExpanded();
     return open;
+  }
+
+  /**
+   * A trigger that opens a panel has to say so, and has to say when it closed.
+   * Only anchors that already declare `aria-haspopup` are touched: an anchor
+   * that is not advertising a popup is not one, and stamping state onto it
+   * would describe a widget it is not.
+   */
+  function markAnchorExpanded() {
+    document.querySelectorAll('[data-emoji-for][aria-expanded]').forEach(function (node) {
+      node.setAttribute("aria-expanded", open && open.anchor === node ? "true" : "false");
+    });
   }
 
   function closePicker() { if (open) open.close(); }
@@ -1179,4 +1193,16 @@
     COLUMNS: COLUMNS,
     CELL: CELL
   };
+
+  /* The 514KB dataset stays lazy. The 9KB stylesheet cannot: it now carries
+   * `.pulse-emoji-field` / `.pulse-emoji-trigger`, which style the button
+   * BEFORE anyone clicks it. Injected on open only, every trigger on the site
+   * would render as whatever the host page's bare `button` rule says -- a
+   * 44px-tall bordered block sitting on top of the input -- until first use,
+   * and then silently reflow. */
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", ensureStyles, { once: true });
+  } else {
+    ensureStyles();
+  }
 })(typeof window !== "undefined" ? window : this);
