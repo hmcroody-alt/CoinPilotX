@@ -37,7 +37,7 @@ import json
 import logging
 from datetime import datetime
 
-from . import account, config, curator, lease, schema
+from . import account, audio, config, curator, lease, schema
 
 log = logging.getLogger(__name__)
 
@@ -327,13 +327,19 @@ def dashboard(*, limit: int = 20, now: datetime | None = None) -> dict:
         "publications": publications(limit),
         "health": health(run_log, render_log, now=now),
         "schedule": schedule_view(now=now),
+        "beds": audio.bed_view(),
+        "bed_candidates": audio.candidates(),
     }
 
 
 #: What an operator may ask the page to do, and what each one is called in the
 #: audit log. Declared as a set so the route can reject anything else without
 #: knowing what any of them mean.
-ACTIONS = frozenset({"set", "clear", "run_now"})
+#:
+#: ``clear`` and ``clear_bed`` are unrelated despite the word: the first clears
+#: a setting *override*, the second grants a music clearance. The second is
+#: spelled out rather than shortened for exactly that reason.
+ACTIONS = frozenset({"set", "clear", "run_now", "clear_bed", "revoke_bed"})
 
 
 def apply_action(
@@ -376,6 +382,20 @@ def apply_action(
         lease.schedule_next(0, now=now)
         log.info("pulsedrop_run_now admin=%s", admin_user_id)
         return True, "PulseDrop is due now. The next worker cycle will evaluate."
+    if action in ("clear_bed", "revoke_bed"):
+        # ``key`` is a track id here rather than a setting name, which is why
+        # this returns before the settings lookup below. The value carries the
+        # operator's note on where the rights come from — the whole point of the
+        # clearance is that a person wrote down why, so it is stored verbatim.
+        try:
+            track_id = int(str(key or "").strip() or 0)
+        except (TypeError, ValueError):
+            return False, "That is not a track id."
+        if action == "revoke_bed":
+            return audio.revoke(track_id, admin_user_id=admin_user_id, now=now)
+        return audio.clear(
+            track_id, admin_user_id=admin_user_id, note=str(value or ""), now=now,
+        )
     if key not in config.SETTINGS:
         return False, "Unknown setting."
     label = config.SETTINGS[key].label or key

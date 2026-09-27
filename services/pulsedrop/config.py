@@ -254,6 +254,17 @@ SETTINGS: dict[str, Setting] = {
         "Past this the cuts come faster than the eye reads them and the result "
         "looks like a slideshow, which is the thing the composer avoids.",
     ),
+    "PULSEDROP_REEL_AUDIO_ENABLED": Setting(
+        FLAG, "false", label="Music under Reels", group="Reel composition",
+        help="Off unless a track has been cleared below. Music is attached at "
+             "playback, never encoded in, so this switch also silences Reels "
+             "already published.",
+    ),
+    "PULSEDROP_REEL_AUDIO_VOLUME_PERCENT": Setting(
+        INT, "60", 0, 100, "Music volume (%)", "Reel composition",
+        "A bed, not a soundtrack. The video carries no audio of its own, so "
+        "this is the whole level a member hears.",
+    ),
 }
 
 
@@ -438,6 +449,23 @@ def reel_max_images() -> int:
     return resolve("PULSEDROP_REEL_MAX_IMAGES")
 
 
+def reel_audio_enabled() -> bool:
+    """Whether a cleared bed may be attached to a Reel.
+
+    Independent of ``reels_enabled`` rather than folded into it, because the two
+    answer different questions and fail differently: turning Reels off stops
+    publication, while turning this off silences music on Reels already
+    published — the track is resolved per request, so withdrawing consent here
+    reaches the whole back catalogue on the next scroll.
+    """
+    return resolve("PULSEDROP_REEL_AUDIO_ENABLED")
+
+
+def reel_audio_volume() -> float:
+    """Bed level, 0.0–1.0. Stored as a percentage so the form stays integers."""
+    return max(0.0, min(resolve("PULSEDROP_REEL_AUDIO_VOLUME_PERCENT") / 100.0, 1.0))
+
+
 def snapshot() -> dict[str, Any]:
     """Every resolved setting, for the ops surface and worker heartbeats."""
     return {
@@ -465,6 +493,8 @@ def snapshot() -> dict[str, Any]:
         "reel_render_timeout_seconds": reel_render_timeout_seconds(),
         "reel_min_images": reel_min_images(),
         "reel_max_images": reel_max_images(),
+        "reel_audio_enabled": reel_audio_enabled(),
+        "reel_audio_volume": reel_audio_volume(),
     }
 
 

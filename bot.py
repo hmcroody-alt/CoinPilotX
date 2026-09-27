@@ -110615,7 +110615,9 @@ def admin_pulsedrop_page():
             return Response("Forbidden", status=403)
         action = clean_html(request.form.get("form_action") or "")[:40]
         key = clean_html(request.form.get("key") or "")[:80]
-        raw = clean_html(request.form.get("value") or "")[:80]
+        # Wide enough for a music clearance note, which is prose about where the
+        # rights came from. Settings are flags and integers and never approach it.
+        raw = clean_html(request.form.get("value") or "")[:240]
         changed, message = pulsedrop_ops.apply_action(action, key, raw, admin_user_id=int(admin.get("id") or 0))
         if changed:
             log_admin_audit(admin.get("id"), f"pulsedrop_{action}", "pulsedrop_setting", key, {"value": raw})
@@ -110709,6 +110711,41 @@ def admin_pulsedrop_page():
         for r in data["renders"]
     )
 
+    # Music. The clearance table is the only place a human says PulseDrop may
+    # put a given track under a Reel, so the page shows the grounds they gave
+    # alongside the track and keeps withdrawn rows visible — "we cleared four
+    # and all four were taken down" and "we never cleared any" are different
+    # incidents that an empty list would render identically.
+    bed_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(b.get('track_id'))}</td>"
+        f"<td>{_pulsedrop_cell(b.get('title'))}</td><td>{_pulsedrop_cell(b.get('artist'))}</td>"
+        f"<td><span class='pill{' on' if b.get('selectable') else ''}'>{_pulsedrop_cell(b.get('state'))}</span></td>"
+        f"<td>{_pulsedrop_cell(b.get('clearance_note'))}</td>"
+        f"<td>{_pulsedrop_cell(b.get('cleared_at'))}</td>"
+        + (
+            "<td><form method='post'>"
+            f"<input type='hidden' name='key' value='{_pulsedrop_cell(b.get('track_id'))}'>"
+            "<button name='form_action' value='revoke_bed'>Withdraw</button></form></td>"
+            if may_edit and b.get("active") else "<td></td>"
+        )
+        + "</tr>"
+        for b in data["beds"]
+    )
+    candidate_rows = "".join(
+        f"<tr><td>{_pulsedrop_cell(c.get('track_id'))}</td>"
+        f"<td>{_pulsedrop_cell(c.get('title'))}</td><td>{_pulsedrop_cell(c.get('artist'))}</td>"
+        f"<td class='muted'>{_pulsedrop_cell(c.get('proof_url'))}</td>"
+        + (
+            "<td><form method='post'>"
+            f"<input type='hidden' name='key' value='{_pulsedrop_cell(c.get('track_id'))}'>"
+            "<input name='value' placeholder='Where the rights come from' maxlength='240'>"
+            "<button class='primary' name='form_action' value='clear_bed'>Clear</button></form></td>"
+            if may_edit else "<td></td>"
+        )
+        + "</tr>"
+        for c in data["bed_candidates"][:12]
+    )
+
     body = f"""
     <h1>PulseDrop</h1>
     <p class='muted'>The autonomous commerce curator. It publishes as @pulsedrop and never as the seller:
@@ -110727,6 +110764,20 @@ def admin_pulsedrop_page():
     <h2>Reel renders</h2>
     <section class='card'><table class='table'><tr><th>Updated</th><th>Listing</th><th>Source</th><th>State</th><th>Attempts</th><th>Failure</th><th>Duration</th></tr>
     {render_rows or '<tr><td colspan=7>No renders yet.</td></tr>'}</table></section>
+    <h2>Reel music</h2>
+    <section class='card'><p class='muted'>Composed Reels are encoded silent. A cleared track is attached to the
+    published Reel and played by the client over the video, so withdrawing one here silences every Reel it was ever
+    under — including ones already published — without re-rendering anything.</p>
+    <p class='muted'>Clearing is a separate act from the uploader's own rights checkbox on purpose. Every track in
+    the library is backed by <code>artist-upload:&lt;uid&gt;:&lt;time&gt;</code> and the sentence &ldquo;I confirm that I
+    own this music or have the legal right to upload it&rdquo;, with no document behind it. That is the uploader's
+    claim and it carries their risk; PulseDrop posts under a verified badge on listings the platform earns on, which
+    is a synchronisation licence, so somebody has to say in writing that this particular track is ours to use.</p>
+    <table class='table'><tr><th>Track</th><th>Title</th><th>Artist</th><th>State</th><th>Grounds</th><th>Cleared</th><th></th></tr>
+    {bed_rows or '<tr><td colspan=7>No track cleared. Reels publish silent.</td></tr>'}</table></section>
+    <section class='card'><h3>Available to clear</h3>
+    <table class='table'><tr><th>Track</th><th>Title</th><th>Artist</th><th>Uploader's proof</th><th></th></tr>
+    {candidate_rows or '<tr><td colspan=5>No track in the library passes the platform music rules.</td></tr>'}</table></section>
     """
     return admin_page_html("PulseDrop", body, admin)
 

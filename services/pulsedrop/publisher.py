@@ -57,7 +57,9 @@ import uuid
 from datetime import datetime
 from typing import NamedTuple
 
-from services.pulsedrop import account, config, diversity, editorial, eligibility, schema
+from services.pulsedrop import (
+    account, audio, config, diversity, editorial, eligibility, schema,
+)
 
 log = logging.getLogger(__name__)
 
@@ -435,6 +437,13 @@ def publish_reel(ranked_item, render: dict, *, feed_visible: bool = True,
         _settle(publication_id, FAILED, reason="reel_attach_failed", now=now)
         return Result(False, "reel_attach_failed", publication_id, post_id)
 
+    # Music last, and unguarded by its own failure. The Reel is finished at this
+    # point — rendered, posted, claimed — and a bed is a garnish on it. See
+    # ``audio``: nothing is encoded into the file, so this writes three rows and
+    # the clients overlay the track at playback, which also means a silent Reel
+    # can be given music later without re-rendering anything.
+    bed = audio.attach(reel_id, listing_id, now=now)
+
     _settle(
         publication_id,
         PUBLISHED,
@@ -444,8 +453,8 @@ def publish_reel(ranked_item, render: dict, *, feed_visible: bool = True,
         now=now,
     )
     log.info(
-        "pulsedrop_published surface=reel listing_id=%s post_id=%s reel_id=%s label=%s",
-        listing_id, post_id, reel_id, label.key,
+        "pulsedrop_published surface=reel listing_id=%s post_id=%s reel_id=%s label=%s bed=%s",
+        listing_id, post_id, reel_id, label.key, bed.get("track_id") or "none",
     )
     return Result(True, "published", publication_id, post_id, reel_id)
 
