@@ -102,9 +102,39 @@ export type CommercePlacementOptions = {
   dismissedPlacementIds?: ReadonlySet<string>;
   /** Seller ids the user has told us to stop recommending, same window. */
   dismissedSellerIds?: ReadonlySet<number>;
+  /**
+   * Override the "may commerce sit next to this post?" test.
+   *
+   * Only for tests and for a caller whose posts are not the feed's shape. The
+   * default reads the server's `commerce_suitable` flag, which is the answer
+   * that matters — the client cannot derive it, because the decision needs the
+   * post's moderation status and risk score and neither is on the wire.
+   */
+  isNeighbourSuitable?: (post: unknown) => boolean;
   /** Injected so placement stays a pure function of its arguments. */
   now?: number;
 };
+
+/**
+ * Whether a commerce row may sit next to this post.
+ *
+ * `!== false`, so only an explicit `false` suppresses. That is default-allow on
+ * a missing field, and it is a deliberate choice rather than an oversight: an
+ * app build reaching a deployment whose `/api/pulse/feed` does not annotate yet
+ * would otherwise show no feed commerce at all. Native releases ship on App
+ * Store review time and the server ships in minutes, so "client newer than
+ * server" is the normal state for days at a stretch.
+ *
+ * The cost of that choice is that a server path which forgets to annotate loses
+ * the protection silently, which is why the guarantee is pinned on the server
+ * side — `tests/commerce_discovery/test_feed_posts_are_annotated.py` asserts
+ * every post in a feed page carries the key — rather than being left to this
+ * function to notice.
+ */
+export function neighbourAllowsCommerce(post: unknown): boolean {
+  if (!post || typeof post !== "object") return true;
+  return (post as { commerce_suitable?: unknown }).commerce_suitable !== false;
+}
 
 /**
  * Defaults mirror `services/commerce_discovery/config.py`.
@@ -260,6 +290,22 @@ export function injectCommerceRows<TPost>(
     // at the next eligible position instead of being silently dropped.
     const previous = out[out.length - 1];
     if (!previous || previous.type !== "post") continue;
+
+    // Both neighbours, not just the one above. A strip reads as belonging to the
+    // post above it, which is why invariant 3 requires that row to be a post —
+    // but a product shelf directly on top of a bereavement is the same harm
+    // seen a moment earlier, and the feed scrolls in one direction only by
+    // convention. `rows[index + 1]` is always a post here: the while loop above
+    // consumed every non-post row, and the bounds check has already run.
+    //
+    // Like adjacency and unlike a dismissal, an unsuitable neighbour does not
+    // spend a slot. The post is what commerce is being kept away from, not the
+    // viewer, so the strip is offered again at the next eligible position
+    // instead of the page losing it.
+    const suitable = options.isNeighbourSuitable ?? neighbourAllowsCommerce;
+    const next = rows[index + 1];
+    if (!suitable(previous.post)) continue;
+    if (next.type === "post" && !suitable(next.post)) continue;
 
     // This slot's window, cut before dismissals are considered so that a hidden
     // product can only ever shorten its own strip. Nothing from slot 1's window

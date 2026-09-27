@@ -188,6 +188,7 @@
     "tests/commerce_discovery/test_explain_endpoint.py",
     "tests/commerce_discovery/test_exposure_is_capped.py",
     "tests/commerce_discovery/test_fatigue_escalates.py",
+    "tests/commerce_discovery/test_feed_posts_are_annotated.py",
     "tests/commerce_discovery/test_product_detail_route.py",
     "tests/commerce_discovery/test_product_detail_surface.py",
     "tests/commerce_discovery/test_promotion_wall.py",

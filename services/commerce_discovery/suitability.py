@@ -111,6 +111,7 @@ exists to prevent.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from typing import Any, Mapping, Optional
@@ -118,6 +119,8 @@ from typing import Any, Mapping, Optional
 from services.business_os.ads_intelligence.context import (
     SENSITIVE_CONTEXT_CATEGORIES as SENSITIVE_CATEGORIES,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Outcome vocabulary
@@ -394,28 +397,25 @@ def text_sensitive(post: Mapping[str, Any]) -> Optional[tuple[str, str]]:
     return None
 
 
-def assess(post: Optional[Mapping[str, Any]], *,
-           context: Optional[Mapping[str, Any]] = None) -> dict:
-    """Whether commerce may be displayed beside this content.
+def assess_adjacency(post: Optional[Mapping[str, Any]]) -> dict:
+    """May commerce appear *beside* this content at all.
 
-    Called before retrieval, not after ranking. A refused post must cost nothing
-    — no candidate pool, no exposure ledger write, no impression token — and a
-    gate that runs after scoring would have already paid for all three and would
-    be one ``except`` away from being skipped.
+    This is the harm question, and it is separate from the claim question — a
+    distinction worth naming because conflating them suppresses the wrong posts.
 
-    ``context`` is :func:`content.derive`'s output for the same post. It is read
-    only to answer "is there anything here for a shelf to be about", which is
-    the :data:`NO_SUBJECT` rule: with no derivable subject, ``relevance`` scores
-    ``NEUTRAL`` rather than zero, so an unreadable post does not suppress itself
-    — it gets whatever the other signals happen to like, which is the
-    post-to-random-carousel shape this whole layer exists to avoid. Measured: a
-    ``post_detail`` request with no context at all returns a placement today.
+    * **Adjacency** (here): a product shelf next to a bereavement is offensive
+      whether or not it claims any connection to it. Proximity is the harm, so
+      the answer depends only on the content.
+    * **Subject** (:func:`assess`): whether this content can justify a shelf
+      that says it is *about* it. That is a question about evidence, and its
+      answer is :data:`NO_SUBJECT`.
 
-    Surfaces with no surrounding content — Marketplace's own shelves, the
-    messenger strip — do not call this. Neither reads content and neither makes
-    a claim about any, so there is nothing for this function to assess; the
-    messenger strip in particular must never have a conversation derived into a
-    context, which is enforced by never passing one rather than by a check here.
+    The feed needs only the first. Its commerce row is a sibling row inserted
+    between posts rather than an attachment to one, so it never claims to be
+    about its neighbour — and marking a caption-less photo unsuitable because the
+    server could derive no subject from it would remove commerce from a large
+    population to protect nobody. The structural gates still apply, because a
+    ``scam_report`` or an unmoderated post is an adjacency problem too.
     """
     if not post:
         # No row is not a benign default. A caller that reached commerce without
@@ -454,6 +454,40 @@ def assess(post: Optional[Mapping[str, Any]], *,
                          "content reads as a context where a placement is "
                          "itself the harm",
                          category=category, evidence=evidence)
+
+    return _decision(PERMITTED, "content may have commerce beside it")
+
+
+def assess(post: Optional[Mapping[str, Any]], *,
+           context: Optional[Mapping[str, Any]] = None) -> dict:
+    """Whether commerce may be displayed beside this content **and be about it**.
+
+    Both questions, adjacency first: see :func:`assess_adjacency` for why they
+    are two. This is the entry point for a surface whose row makes a claim about
+    the content it sits next to, which is every content surface except the feed.
+
+    Called before retrieval, not after ranking. A refused post must cost nothing
+    — no candidate pool, no exposure ledger write, no impression token — and a
+    gate that runs after scoring would have already paid for all three and would
+    be one ``except`` away from being skipped.
+
+    ``context`` is :func:`content.derive`'s output for the same post. It is read
+    only to answer "is there anything here for a shelf to be about", which is
+    the :data:`NO_SUBJECT` rule: with no derivable subject, ``relevance`` scores
+    ``NEUTRAL`` rather than zero, so an unreadable post does not suppress itself
+    — it gets whatever the other signals happen to like, which is the
+    post-to-random-carousel shape this whole layer exists to avoid. Measured: a
+    ``post_detail`` request with no context at all returns a placement today.
+
+    Surfaces with no surrounding content — Marketplace's own shelves, the
+    messenger strip — do not call this. Neither reads content and neither makes
+    a claim about any, so there is nothing for this function to assess; the
+    messenger strip in particular must never have a conversation derived into a
+    context, which is enforced by never passing one rather than by a check here.
+    """
+    verdict = assess_adjacency(post)
+    if not verdict["permitted"]:
+        return verdict
 
     if not context or not (context.get("topic") or context.get("tags")):
         return _decision(NO_SUBJECT,
@@ -515,3 +549,57 @@ def permitted(post: Optional[Mapping[str, Any]], *,
               context: Optional[Mapping[str, Any]] = None) -> bool:
     """:func:`assess` reduced to a boolean, for a caller that logs elsewhere."""
     return assess(post, context=context)["permitted"]
+
+
+#: The key :func:`annotate` writes. Named on the payload rather than inside the
+#: commerce namespace because the clients read flat keys off a post, and it is
+#: the only commerce field a post carries — deliberately, per the rule that
+#: Marketplace stays the one source of price, stock and seller truth.
+PAYLOAD_KEY = "commerce_suitable"
+
+
+def annotate(posts: Any) -> Any:
+    """Stamp :data:`PAYLOAD_KEY` onto every post in a serialized feed page.
+
+    This is what closes the feed's exposure, and it has to happen here rather
+    than at the serve endpoint because of how the feed's commerce row works: it
+    is a sibling row inserted *between* posts by ``injectCommerceRows``, so the
+    request that fetched the products never knew which posts it would land
+    between. Only the feed response knows that, and only the client knows where
+    it finally put the row. So the server answers the question it can answer —
+    "may commerce sit next to this one?" — for every post, and the client uses
+    the answers to choose a position.
+
+    Free, which is why it can run on every feed page. ``pulse_feed_engine``'s
+    payload already carries ``post_type``, ``moderation_status``, ``risk_score``,
+    ``title``, ``body``, ``ai_summary``, ``tags`` and ``ai_tags``, which is every
+    field :func:`assess_adjacency` reads — so this is pure string work over a
+    dict that is already in memory. No query, no extra round trip, nothing to
+    batch. That matters more than it sounds: a per-post check that cost a query
+    would be the first thing dropped the next time the feed got slow.
+
+    :func:`assess_adjacency` and not :func:`assess`, because a feed row makes no
+    claim about its neighbour — see that function for the distinction.
+
+    Only the boolean is emitted, never the category or the evidence tier. A feed
+    response is read by every viewer of the post, and "this post was classified
+    as grief" is a derived sensitive attribute about its author; shipping it to
+    other people's devices to save a debugging round trip is not a trade worth
+    making. The refusal reason stays server-side in the log line.
+
+    Never raises. A post this cannot classify is left alone rather than marked
+    either way, so a malformed row degrades to today's behaviour instead of
+    taking down the feed — §82's rule that the post must render even if every
+    commerce layer fails, applied to the layer that decorates it.
+    """
+    if not isinstance(posts, list):
+        return posts
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        try:
+            post[PAYLOAD_KEY] = assess_adjacency(post)["permitted"]
+        except Exception:  # pragma: no cover - defensive; see the docstring
+            LOGGER.exception("COMMERCE_SUITABILITY_ANNOTATE_FAILED post_id=%s",
+                             post.get("id"))
+    return posts

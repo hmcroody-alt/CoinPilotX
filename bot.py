@@ -90275,6 +90275,22 @@ def api_pulse_feed():
     try:
         result = pulse_feed_engine.list_feed(user["user_id"], feed, request.args.get("topic") or "", request.args.get("profile") or "", request.args.get("limit") or 20, request.args.get("offset") or 0)
         pulse_attach_video_detail_links(result.get("posts") or [])
+        # Per-post "may commerce sit beside this?", so `injectCommerceRows` can
+        # decline a position next to a bereavement. The feed's commerce row is a
+        # sibling row *between* posts, so the request that fetched the products
+        # never knew which posts it would land between — only this response does.
+        # Free: the payload already carries every field the check reads, so it is
+        # string work over a dict in memory, no query.
+        #
+        # Guarded separately from the handler's own `except`, which answers 503.
+        # A commerce annotation failing must leave the feed exactly as it was,
+        # not take it down: the post has to render even when every commerce layer
+        # is broken.
+        try:
+            from services.commerce_discovery import suitability as _cd_suitability
+            _cd_suitability.annotate(result.get("posts"))
+        except Exception:
+            logging.exception("PULSE_FEED_COMMERCE_SUITABILITY_FAILED user_id=%s", user["user_id"])
         result.setdefault("intelligence", {})
         if isinstance(result.get("intelligence"), dict):
             result["intelligence"]["status_activity"] = pulse_status_discovery_signal(user["user_id"])
