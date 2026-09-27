@@ -22,10 +22,11 @@ import {
   COMMERCE_INTERVAL,
   COMMERCE_LEAD_IN,
   injectCommerceRows,
-  neighbourAllowsCommerce
+  neighbourAllowsCommerce,
+  neighbourSellsItsOwnProduct
 } from "../commerceRows";
 
-type Post = { id: number; commerce_suitable?: boolean };
+type Post = { id: number; commerce_suitable?: boolean; commerce?: unknown };
 
 /** `n` post rows, with `unsuitable` naming the 1-based posts marked false. */
 function postRows(n: number, unsuitable: readonly number[] = []): FeedRow<Post>[] {
@@ -264,5 +265,137 @@ describe("injectCommerceRows — still pure", () => {
     injectCommerceRows(input, placements(8));
 
     expect(input).toEqual(snapshot);
+  });
+});
+
+/**
+ * A neighbour that is already selling something.
+ *
+ * `reelChipEligibility.ts` landed this rule for Reels while this work was in
+ * progress, and states the argument in full: a reel carrying PulseDrop's commerce
+ * overlay already sells a product, so a chip on top of it is two shopping
+ * surfaces in one frame — advertising a *different* product over the one being
+ * demonstrated, because the chip's ranker never saw the reel's product.
+ *
+ * The feed has the same problem in a different geometry and it was unhandled.
+ * Measured before the check existed: with Signals at the lead-in position and the
+ * one after it, the first strip landed *between the two of them* — three
+ * products, three shopping surfaces, one scroll frame.
+ *
+ * This is adjacency only. The two curators' *frequency* ledgers are still
+ * separate (publications per platform vs impressions per viewer), which is
+ * recorded in the intelligence report and is not this module's to fix.
+ */
+const OVERLAY = { pulsedrop: true, publication_id: 7, product: { listing_id: 55 } };
+
+/** `n` posts, with `selling` naming the 1-based posts that are PulseDrop Signals. */
+function signalRows(n: number, selling: readonly number[]): FeedRow<Post>[] {
+  return Array.from({ length: n }, (_, i) => ({
+    type: "post" as const,
+    key: `post:${i + 1}`,
+    post: selling.includes(i + 1)
+      ? ({ id: i + 1, commerce: OVERLAY } as Post)
+      : { id: i + 1 }
+  }));
+}
+
+describe("injectCommerceRows — a neighbour that already sells", () => {
+  it("does not put a strip under a post that sells its own product", () => {
+    const rows = injectCommerceRows(signalRows(40, [FIRST]), placements(8));
+
+    for (const { before } of neighboursOf(rows)) {
+      expect(before).not.toBe(FIRST);
+    }
+  });
+
+  it("does not put a strip on top of one either", () => {
+    const rows = injectCommerceRows(signalRows(40, [FIRST + 1]), placements(8));
+
+    for (const { after } of neighboursOf(rows)) {
+      expect(after).not.toBe(FIRST + 1);
+    }
+  });
+
+  it("does not sandwich a strip between two of them", () => {
+    // The measured case, kept as its own test because it is the one that reads
+    // worst on screen and the one a single-sided check would still allow.
+    const rows = injectCommerceRows(signalRows(40, [FIRST, FIRST + 1]), placements(8));
+
+    for (const { before, after } of neighboursOf(rows)) {
+      expect(before).not.toBe(FIRST);
+      expect(after).not.toBe(FIRST + 1);
+    }
+  });
+
+  it("keeps the products, offering them at the next eligible position", () => {
+    // Same as an unsuitable neighbour: the slot is not spent. The neighbour is
+    // what the strip is being kept away from, not the viewer.
+    const rows = injectCommerceRows(signalRows(40, [FIRST]), placements(8));
+    const first = rows.find((row) => row.type === "commerce");
+
+    expect(first).toBeDefined();
+    expect(neighboursOf(rows)[0].before).toBe(SECOND);
+  });
+
+  it("still places strips elsewhere in the same feed", () => {
+    // One Signal must not switch feed commerce off for the whole page.
+    const rows = injectCommerceRows(signalRows(60, [FIRST]), placements(8));
+
+    expect(commerceCount(rows)).toBeGreaterThan(0);
+  });
+
+  it("leaves the Signals themselves untouched", () => {
+    const input = signalRows(40, [FIRST, FIRST + 1]);
+    const rows = injectCommerceRows(input, placements(8));
+
+    expect(rows.filter((row) => row.type === "post")).toEqual(input);
+  });
+
+  it("cannot be switched off by a caller's suitability override", () => {
+    // The two exclusions compose rather than sharing one hook. A caller whose
+    // posts are a different shape supplies its own *suitability* test; that is
+    // not a licence to put a shelf next to a live price.
+    const rows = injectCommerceRows(signalRows(40, [FIRST]), placements(8), {
+      isNeighbourSuitable: () => true
+    });
+
+    for (const { before } of neighboursOf(rows)) {
+      expect(before).not.toBe(FIRST);
+    }
+  });
+});
+
+describe("neighbourSellsItsOwnProduct", () => {
+  it("recognises a PulseDrop overlay", () => {
+    expect(neighbourSellsItsOwnProduct({ id: 1, commerce: OVERLAY })).toBe(true);
+  });
+
+  it("says no for an ordinary post", () => {
+    // The overwhelming majority. A false positive here removes feed commerce
+    // from the whole platform, so this is the case that matters most.
+    expect(neighbourSellsItsOwnProduct({ id: 1 })).toBe(false);
+    expect(neighbourSellsItsOwnProduct({ id: 1, commerce: undefined })).toBe(false);
+    expect(neighbourSellsItsOwnProduct({ id: 1, commerce: null })).toBe(false);
+  });
+
+  it("is not fooled by something that merely has a commerce key", () => {
+    // Uses the canonical guard, which requires the discriminator, a numeric
+    // publication id and a product. A truthiness check here would suppress
+    // commerce beside any post that ever grows an unrelated `commerce` field.
+    expect(neighbourSellsItsOwnProduct({ id: 1, commerce: {} })).toBe(false);
+    expect(neighbourSellsItsOwnProduct({ id: 1, commerce: "yes" })).toBe(false);
+    expect(neighbourSellsItsOwnProduct({ id: 1, commerce: { pulsedrop: true } })).toBe(false);
+    expect(
+      neighbourSellsItsOwnProduct({ id: 1, commerce: { pulsedrop: true, publication_id: "7", product: {} } })
+    ).toBe(false);
+  });
+
+  it("survives a post that is not an object", () => {
+    // Same fail-open shape as the suitability test: the post must render even
+    // when every commerce layer is broken.
+    expect(neighbourSellsItsOwnProduct(null)).toBe(false);
+    expect(neighbourSellsItsOwnProduct(undefined)).toBe(false);
+    expect(neighbourSellsItsOwnProduct("a post")).toBe(false);
+    expect(neighbourSellsItsOwnProduct(42)).toBe(false);
   });
 });
