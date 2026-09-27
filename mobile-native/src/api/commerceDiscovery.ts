@@ -288,6 +288,21 @@ export async function fetchCommercePlacements(
      * operations, which is why sending an id is safe.
      */
     listingId?: number;
+    /**
+     * The post being read, on the surfaces that display exactly one.
+     *
+     * Sent *as well as* `context`, not instead of it. The context is what the
+     * ranker scores against and it is deliberately small — `postContext.ts` caps
+     * every field at 80 characters — whereas this id is what lets the server read
+     * the post's full text, `post_type`, `moderation_status` and `risk_score` and
+     * refuse commerce beside content it must stay away from. A bereavement that
+     * opens with a paragraph of thanks does not reach the wire as a bereavement;
+     * the row says so, and only the server can read the row.
+     *
+     * Narrowing in the only direction that matters: the sole effect of sending it
+     * is that the response may become empty.
+     */
+    postId?: number;
   } = {}
 ): Promise<CommerceServeResult> {
   const fallbackCadence = options.cadence || EMPTY_RESULT.cadence;
@@ -305,7 +320,8 @@ export async function fetchCommercePlacements(
         context: options.context || {},
         session_id: options.sessionId || "",
         ...(options.limit === undefined ? {} : { limit: options.limit }),
-        ...(options.listingId ? { listing_id: options.listingId } : {})
+        ...(options.listingId ? { listing_id: options.listingId } : {}),
+        ...(options.postId ? { post_id: options.postId } : {})
       })
     });
     if (!response?.ok || !Array.isArray(response.placements)) return empty;

@@ -40,6 +40,7 @@ import logging
 import time
 from collections import deque
 from threading import Lock
+from typing import Optional
 
 from flask import Blueprint, jsonify, request
 
@@ -263,6 +264,177 @@ def _anchor_context(cur, listing_id: int) -> dict:
     }
 
 
+#: The columns :func:`suitability.assess_adjacency` reads off a post row.
+#:
+#: Listed rather than ``SELECT *`` for two reasons. The assessment keys off dict
+#: keys, so a star select would make the gate's inputs whatever
+#: ``add_columns_if_missing`` last appended to ``pulse_posts`` — a column named
+#: ``topic`` or ``tags`` added for some unrelated feature would silently start
+#: feeding the sensitivity scan. And a post row is a wide row on the hottest
+#: table in the product; this reads eight columns of the one row the viewer is
+#: already looking at.
+#:
+#: Every name here is in ``bot.init_db()``'s ``pulse_posts`` block. ``body`` is
+#: the one that matters: it is the full text, which is the entire point of this
+#: read.
+_POST_COLUMNS = ("post_type", "moderation_status", "risk_score",
+                 "title", "body", "ai_summary", "tags_json", "ai_tags_json")
+
+#: Three outcomes, kept distinct because two of them must not be treated alike.
+#: A post that is *gone* is evidence; a post we could not *read* is not.
+_POST_FOUND = "found"
+_POST_ABSENT = "absent"
+_POST_UNREADABLE = "unreadable"
+
+
+def _content_post_id(payload: dict) -> int:
+    """The post the viewer is reading, on the surfaces that have exactly one.
+
+    Same shape and same safety argument as :func:`_anchor_listing_id`, with one
+    difference worth stating plainly rather than leaving to be inferred: this id
+    is *not* purely narrowing. It is used to decide whether commerce is refused,
+    so a client that sent a cheerful post's id while displaying a bereavement
+    would pass a check it should have failed.
+
+    That is accepted, because the threat this closes is not a hostile client. A
+    hostile client renders whatever carousel it likes without asking us. The
+    thing being fixed is our *own* client being honest and lossy — see
+    :func:`_content_refusal`. :func:`suitability.assess_context` still runs on
+    the wire regardless, which is the check a forged id cannot get past.
+    """
+    try:
+        return max(0, int(payload.get("post_id") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _content_post(cur, post_id: int) -> tuple[str, dict]:
+    """``(outcome, row)`` for one ``pulse_posts`` row, by id.
+
+    Deleted posts are not returned: ``deleted_at IS NULL`` is in the query rather
+    than checked afterwards, so a tombstoned post is :data:`_POST_ABSENT` and
+    takes the refusal path with everything else the server cannot see.
+
+    Visibility is deliberately *not* filtered. This is not an authorization read
+    — nothing from the row is returned to the caller and nothing derived from it
+    widens the response; the only two things that can come out of it are "serve
+    as before" and "serve nothing". Adding a viewer join would make a followers-
+    only post unreadable and therefore refused, which is a commerce blackout on
+    private posts achieved by accident.
+    """
+    if not post_id:
+        return _POST_ABSENT, {}
+    try:
+        cur.execute(
+            "SELECT " + ", ".join(_POST_COLUMNS) +
+            " FROM pulse_posts WHERE id=? AND deleted_at IS NULL LIMIT 1",
+            (int(post_id),),
+        )
+        row = cur.fetchone()
+    except Exception:
+        # Not `_POST_ABSENT`. A failed read is not evidence that the post is
+        # unsuitable, and conflating the two would turn one bad minute on the
+        # database into commerce disappearing from every post page — while the
+        # posts that genuinely need suppressing carried on being served for as
+        # long as the query worked.
+        LOGGER.warning("COMMERCE_DISCOVERY_POST_READ_FAILED post_id=%s",
+                       post_id, exc_info=True)
+        return _POST_UNREADABLE, {}
+    if not row:
+        return _POST_ABSENT, {}
+    # row_values, not tuple(row): iterating a Postgres row yields column *names*,
+    # so zipping the raw row would build `{"post_type": "post_type", ...}` and the
+    # scan would run over this module's own column list in production only.
+    values = db_module.row_values(row)
+    if len(values) != len(_POST_COLUMNS):
+        return _POST_UNREADABLE, {}
+    return _POST_FOUND, dict(zip(_POST_COLUMNS, values))
+
+
+def _content_refusal(cur, payload: dict, context: dict) -> Optional[dict]:
+    """The verdict that refuses this content request, or ``None`` to serve it.
+
+    Called before retrieval, deliberately. A refused request must cost no
+    candidate pool, no exposure-ledger write and no impression token, and a check
+    placed after scoring would already have paid for all three. See
+    :func:`suitability.assess_context` for why this is a refusal rather than a
+    score penalty: on the measured grief post, the more the sensitive content
+    matched, the *better* it scored, so every floor in the system cleared.
+
+    Two checks, in the order of how much they can be trusted.
+
+    **The wire** (:func:`suitability.assess_context`). Only
+    :data:`suitability.SENSITIVE_CONTEXT` refuses, and the narrowness is the
+    decision rather than an oversight. ``assess_context`` also answers
+    ``NO_SUBJECT``, and acting on *that* would be a different and much larger
+    change: :func:`_context_from_request` returns all four keys whenever the body
+    carries a ``context`` object at all, so a reel whose context is a bare
+    ``{"category": "watches"}`` — which ``reelContext.ts`` returns by design for a
+    reel with no caption and no tags — reads as ``NO_SUBJECT`` while being a
+    perfectly good ranking signal. Refusing it would switch commerce off for that
+    whole population to protect nobody. A client's omission is not evidence about
+    the content.
+
+    **The post itself** (:func:`suitability.assess_adjacency`), when the body
+    named one. This is the half that was missing, and the gap was not theoretical:
+
+    * ``postContext.ts`` caps every field it sends at ``MAX_FIELD_CHARS = 80``
+      and derives ``topic`` from ``post.title`` or, failing that, ``post.body``.
+      A bereavement post very commonly opens with a preamble, so the words the
+      rule exists to catch are past the cut. Measured on
+      ``"Thank you all so much for the kind words these past few days, it has
+      meant more to us than I can say. We lost my father on Tuesday morning…"``:
+      the full body answers ``SENSITIVE_CONTEXT``, the 80 characters that reach
+      the wire answer ``PERMITTED``. The truncation is correct — an unbounded
+      free-text field from a client has no business being unbounded — so the fix
+      is not a bigger cap, it is reading the row.
+    * Every structural gate is invisible to the wire. ``post_type``,
+      ``moderation_status`` and ``risk_score`` are not fields a client sends, so
+      a ``memorial``, an unmoderated post and a high-risk post all passed.
+
+    :func:`suitability.assess_adjacency` and not :func:`suitability.assess`,
+    because ``assess`` adds the ``NO_SUBJECT`` rule and would refuse a
+    caption-less post — the same population the wire check deliberately spares.
+    This is the same choice ``suitability.annotate`` makes for the feed.
+
+    The precedent for reading server-side what the body already offered is
+    :func:`_anchor_context`, which replaces a client-described product taxonomy
+    with the listing's own for the same reason in a different shape.
+
+    What this still does not close: the feed. ``useFeedCommerce.ts`` sends no
+    context and no post id because the feed's commerce row is a sibling row
+    *between* posts rather than an attachment to one, so there is no single post
+    to name. That surface is covered instead by ``suitability.annotate``
+    stamping every post in the feed payload, and by the client declining to
+    insert beside one that says no.
+    """
+    verdict = suitability.assess_context(context)
+    if verdict["code"] == suitability.SENSITIVE_CONTEXT:
+        return verdict
+
+    post_id = _content_post_id(payload)
+    if not post_id:
+        # No id: an older build, or a surface that has no single post. The wire
+        # check above is all there is, which is what shipped before this.
+        return None
+
+    outcome, row = _content_post(cur, post_id)
+    if outcome == _POST_UNREADABLE:
+        return None
+
+    # `_POST_ABSENT` arrives here as an empty row on purpose rather than as its
+    # own branch: `assess_adjacency({})` already answers NO_SUBJECT with "no
+    # content was supplied to assess", which is exactly the situation — the
+    # client named a post that is deleted, tombstoned, or an id from a table this
+    # is not, so the server has no evidence about what is on the screen. The
+    # entire reason for accepting the id was to stop relying on the client's
+    # description, and falling back to it here would undo that for precisely the
+    # requests where it is least trustworthy. The cost of refusing is a missing
+    # product row on a screen showing a post our own database says is gone.
+    row_verdict = suitability.assess_adjacency(row)
+    return None if row_verdict["permitted"] else row_verdict
+
+
 def _request_meta() -> dict:
     """Non-identifying request signals for the event row.
 
@@ -324,40 +496,10 @@ def commerce_discovery_serve(surface):
             # server can no longer see.
             context = _anchor_context(cur, anchor_id)
         elif surface in suitability.CONTENT_SURFACES:
-            # Before retrieval, deliberately. A refused request must cost no
-            # candidate pool, no exposure-ledger write and no impression token,
-            # and a check placed after scoring would already have paid for all
-            # three. See `suitability.assess_context` for why this is a refusal
-            # rather than a score penalty: on the measured grief post, the more
-            # the sensitive content matched, the *better* it scored, so every
-            # floor in the system cleared.
-            verdict = suitability.assess_context(context)
-
-            # Only SENSITIVE_CONTEXT refuses here, and the narrowness is the
-            # decision rather than an oversight. `assess_context` also answers
-            # NO_SUBJECT, and acting on *that* would be a different and much
-            # larger change: `_context_from_request` returns all four keys
-            # whenever the body carries a `context` object at all, so a reel
-            # whose context is a bare `{"category": "watches"}` — which
-            # `reelContext.ts` returns by design for a reel with no caption and
-            # no tags — reads as NO_SUBJECT while being a perfectly good ranking
-            # signal. Refusing it would switch commerce off for that whole
-            # population to protect nobody.
-            #
-            # A client's omission is not evidence about the content. NO_SUBJECT
-            # is real evidence only when the server derived the context itself
-            # and came back with nothing, which is `assess`'s path, not this one.
-            #
-            # The consequence to be honest about: the feed's real exposure — a
-            # shelf inserted directly under a bereavement — is NOT closed here
-            # and cannot be. `useFeedCommerce.ts` sends no context because the
-            # feed's commerce row is a sibling row *between* posts rather than an
-            # attachment to one, so the server is never told which post it lands
-            # beside. Closing that needs per-post suitability on the feed payload
-            # so the client can decline to insert next to an unsuitable
-            # neighbour. This gate covers the surfaces that describe their
-            # content, and the feed only once it starts describing its own.
-            if verdict["code"] == suitability.SENSITIVE_CONTEXT:
+            # The whole rule, and why it is two checks rather than one, is in
+            # `_content_refusal`'s docstring. It runs before retrieval.
+            verdict = _content_refusal(cur, payload, context)
+            if verdict is not None:
                 # `_empty()`, the same answer opted-out and rate-limited get.
                 # The client has one rendering path and no error branch, so a
                 # refusal is invisible by construction — which is the point: the

@@ -158,6 +158,26 @@ describe("fetchCommercePlacements — reading the server's casing", () => {
     await fetchCommercePlacements("feed");
     expect(sentBody()).not.toHaveProperty("limit");
   });
+
+  it("names the anchor product and the anchor post in the server's spelling", async () => {
+    // Both ids are snake_case on the wire and camelCase in the option, and a
+    // mismatch is silent in both directions: the server reads a key that is not
+    // there, finds nothing, and serves exactly what it served before. There is no
+    // type error and no failed request — the suitability gate simply never runs.
+    api.mockResolvedValue(serveResponse() as never);
+    await fetchCommercePlacements("post_detail", { postId: 31, listingId: 77 });
+
+    expect(sentBody()).toMatchObject({ post_id: 31, listing_id: 77 });
+  });
+
+  it.each([
+    ["post_id", "postId"],
+    ["listing_id", "listingId"]
+  ])("omits %s rather than sending a zero", async (wire, _option) => {
+    api.mockResolvedValue(serveResponse() as never);
+    await fetchCommercePlacements("post_detail", { postId: 0, listingId: 0 });
+    expect(sentBody()).not.toHaveProperty(wire);
+  });
 });
 
 describe("fetchCommercePlacements — dropping what cannot be rendered or reported", () => {
