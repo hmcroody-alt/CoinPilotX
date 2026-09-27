@@ -2868,6 +2868,36 @@
       toast("Create menu opened.");
       return;
     }
+    const composerEmoji = event.target.closest("[data-composer-emoji]");
+    if (composerEmoji) {
+      event.preventDefault();
+      // This button used to be labelled "Feeling" and typed the literal string
+      // "Feeling: " into the post body. The app refuses that same action on
+      // purpose -- HomePulseComposer's Feeling handler answers "Structured
+      // feelings are not supported by the production post contract yet.
+      // PulseSoc will not change what you wrote or add a feeling for you."
+      // There is no feeling column on a post, so the web was inventing a field
+      // by editing the author's own sentence, which is the one thing the app
+      // promises not to do. The affordance a ☺ button owes you is the picker,
+      // and the app has one: the same 1,914-emoji dataset, opened here.
+      const bodyInput = document.getElementById("postBody");
+      if (!bodyInput) return;
+      composer?.classList.add("is-expanded");
+      if (window.PulseEmoji) {
+        window.PulseEmoji.open({
+          anchor: composerEmoji,
+          returnFocusTo: bodyInput,
+          stayOpenOnSelect: true,
+          label: "Add emoji to your post",
+          onSelect: glyph => window.PulseEmoji.insertAtCaret(bodyInput, glyph)
+        });
+      } else {
+        // The picker is deferred; a click that beats it to the parser should
+        // still put the caret where the user expects to type.
+        bodyInput.focus();
+      }
+      return;
+    }
     const chip = event.target.closest("[data-composer-chip],[data-composer-rail]");
     if (chip) {
       event.preventDefault();
@@ -2876,7 +2906,6 @@
         topic: "#Topic",
         mention: "@",
         location: "Location: ",
-        feeling: "Feeling: ",
       };
       insertComposerText(snippets[chipType] || "");
       return;
