@@ -73,10 +73,22 @@ const KEYCHAIN_DENIED = new Error("Keychain access failed: -34018");
 
 beforeEach(async () => {
   jest.clearAllMocks();
-  await AsyncStorage.clear();
+  mockApiBaseUrl = "https://pulsesoc.com";
   secureStore.getItemAsync.mockRejectedValue(KEYCHAIN_DENIED);
   secureStore.setItemAsync.mockRejectedValue(KEYCHAIN_DENIED);
   secureStore.deleteItemAsync.mockRejectedValue(KEYCHAIN_DENIED);
+  // `sessionStore` keeps the credentials this *process* wrote, so that a
+  // keychain that refuses to store a bearer does not also cost the app write
+  // authority for the rest of the run. That tier is process-scoped and jest
+  // does not reload the module between cases, so the two assertions below that
+  // model a *fresh* start — "degrades to signed-out", "ignores a plaintext
+  // value left behind" — would otherwise read what an earlier case wrote.
+  // Cleared through the public API rather than a test-only reset: signing out
+  // is how a real process drops them.
+  await setSessionCookie("");
+  await setSessionEnvelope(null);
+  await AsyncStorage.clear();
+  jest.clearAllMocks();
 });
 
 describe("with the keychain refusing and the app pointed at a local QA server", () => {

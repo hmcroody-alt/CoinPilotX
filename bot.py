@@ -4053,19 +4053,39 @@ def restore_account_from_persistent_cookie():
     return user["user_id"]
 
 
+def _bearer_refused(reason):
+    """Leave a redacted note saying which check the bearer failed, then deny.
+
+    Every branch below returns a bare ``None``, which is right for an
+    authorisation answer and useless as a diagnosis. Six causes -- no header, a
+    forged signature, an expired claim, a revoked session, a device that does
+    not match -- collapsed into one ``403 {"code":"csrf"}`` on the wire, and a
+    seller's 58-product import sat behind it with nothing in the logs to say
+    which. ``services.csrf.bearer_refusal_reason()`` reads this breadcrumb.
+
+    Redacted by construction: the reason is one of a fixed set of enum strings
+    chosen here, never a token, a user id or a header value.
+    """
+    if has_request_context():
+        g.bearer_refusal = reason
+    return None
+
+
 def account_user_id_from_mobile_access_token():
     if not has_request_context():
         return None
     auth_header = (request.headers.get("Authorization") or "").strip()
+    if not auth_header:
+        return _bearer_refused("absent")
     if not auth_header.lower().startswith("bearer "):
-        return None
+        return _bearer_refused("not-bearer")
     access_token = auth_header.split(" ", 1)[1].strip()
     if not access_token:
-        return None
+        return _bearer_refused("empty")
     try:
         body, signature = access_token.rsplit(".", 1)
     except ValueError:
-        return None
+        return _bearer_refused("malformed")
     # No fallback to the old root, deliberately. An access token lives 900s and
     # the client recovers by itself: pulseApi refreshes on a bare 401 and
     # replays, and the refresh token is a random string hashed with a plain
@@ -4073,17 +4093,24 @@ def account_user_id_from_mobile_access_token():
     # would buy at most fifteen minutes of nothing and keep a retired key live.
     expected_signature = hmac.new(COINPILOTX_MOBILE_ACCESS_KEY.encode("utf-8"), body.encode("utf-8"), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(signature, expected_signature):
-        return None
+        return _bearer_refused("bad-signature")
     try:
         padded = body + ("=" * (-len(body) % 4))
         payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
     except Exception:
-        return None
+        return _bearer_refused("undecodable")
     user_id = safe_int(payload.get("uid"), 0)
     device_hash = clean_html(payload.get("dh") or "")[:64]
     expires_at = safe_int(payload.get("exp"), 0)
-    if user_id <= 0 or not device_hash or expires_at <= int(time.time()):
-        return None
+    if user_id <= 0 or not device_hash:
+        return _bearer_refused("incomplete-claims")
+    # Split from the claim check above on purpose. Expiry is the *ordinary* end
+    # of an access token's 900-second life and is repaired by a refresh the
+    # client already knows how to do; a missing uid or device hash is a minted
+    # token that was never usable. Reported as one reason, they are
+    # indistinguishable, and only one of them is a bug.
+    if expires_at <= int(time.time()):
+        return _bearer_refused("expired")
     conn = db(); conn.row_factory = sqlite3.Row; cur = conn.cursor()
     try:
         # Defined once and called twice rather than written out twice. This is
@@ -4131,9 +4158,11 @@ def account_user_id_from_mobile_access_token():
             conn.close()
         except Exception:
             pass
-        return None
-    if not row or clean_html(row.get("device_hash") or "")[:64] != device_hash:
-        return None
+        return _bearer_refused("lookup-failed")
+    if not row:
+        return _bearer_refused("no-live-session")
+    if clean_html(row.get("device_hash") or "")[:64] != device_hash:
+        return _bearer_refused("device-mismatch")
     g.mobile_access_user_id = user_id
     return user_id
 
