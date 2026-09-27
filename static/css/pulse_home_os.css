@@ -3301,3 +3301,50 @@ body.pulse-home-os .pulse-live-gateway .button {
     grid-template-columns: 1fr;
   }
 }
+
+/* ------------------------------------------------------------- mobile dock
+ * The floating Home/Reels/Create/Messages/Profile dock is a phone control. On
+ * a desktop it duplicates the top bar and the left rail, and it sits on top of
+ * page content -- on /pulse/profile/edit it covered the Save Profile button.
+ *
+ * The desktop redesign already reversed this, but only for one route. The fix
+ * lived in `pulse_desktop_shell.css`, and that sheet is linked from the /pulse
+ * home route alone; `pulse_social_shell()` -- 102 routes, everything from
+ * reels to messages to profile edit -- never loads it. So the dock stayed
+ * pinned on at every width across almost the whole social surface.
+ *
+ * Fixing it here rather than linking the desktop sheet onto those 102 routes:
+ * `pulse_desktop_shell.css` is a full visual redesign (background, layout,
+ * rails), and loading it site-wide to collect one `display:none` would restyle
+ * every one of those pages as a side effect. The dock's own sheet is the right
+ * place for the dock's own breakpoint.
+ *
+ * This is the rule that needed the media query in the first place. The shell's
+ * inline stylesheet is already correct -- `.mobile-bottom-nav{display:none}`
+ * as the base, `display:grid` only inside `@media (max-width:900px)` -- but
+ * line 2492 above declares `display:grid !important` with no media query at
+ * all, and an unconditional `!important` does not lose to a conditional plain
+ * declaration at any width. Hence the override, and hence `!important` on it,
+ * since nothing else beats `!important`.
+ *
+ * Specificity is raised one step past the rule it overrides (`html` prepended,
+ * (0,3,2) vs (0,3,1)) instead of matched and left to source order, so it keeps
+ * winning if these blocks are ever reordered.
+ *
+ * 1024px matches the breakpoint the rest of the desktop shell uses, so every
+ * phone and portrait tablet keeps the dock exactly as it is today. `display`
+ * only -- not `visibility` or an off-screen transform -- because the dock must
+ * be absent from the layout here, not invisible while still taking taps.
+ */
+@media (min-width: 1024px) {
+  html body.pulse-home-os .mobile-bottom-nav.pulse-universal-dock {
+    display: none !important;
+  }
+
+  /* That 138px of bottom padding exists only to keep content clear of the
+     dock. With the dock gone it is just a dead band under every page. */
+  html body.pulse-home-os .pulse-shell,
+  html body.pulse-home-os .wrap {
+    padding-bottom: calc(32px + env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
