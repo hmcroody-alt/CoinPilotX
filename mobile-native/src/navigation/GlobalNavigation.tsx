@@ -3,8 +3,8 @@ import { NavigationProp, ParamListBase } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AccessibilityInfo, Animated, Image, LayoutChangeEvent, Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LogiNexusBadge, LogiNexusSignalIndicator } from "../components/LogiNexus";
 import { LivingPulseSocWordmark } from "../components/home/LivingPulseSocWordmark";
@@ -27,6 +27,7 @@ import {
   BOTTOM_NAV_MINI_PLAYER_HEIGHT
 } from "./bottomNavMetrics";
 import { resolveBottomNavPolicy } from "./bottomNavPolicy";
+import { homeHeaderActionMetrics } from "./headerActionMetrics";
 import {
   cancelRefreshTapWindow,
   RefreshDestination,
@@ -62,6 +63,12 @@ type HeaderProps = {
   showDrawer?: boolean;
   onBack?: () => void;
   onOpenDrawer?: () => void;
+  /**
+   * Opens consumer Marketplace discovery. Rendered before Search, and only on
+   * the surfaces that pass it — Home today. Profile OS keeps its own Marketplace
+   * tile, which is the *management* entry and is a different destination.
+   */
+  onOpenMarketplace?: () => void;
   onOpenSearch?: () => void;
   onOpenActivity?: () => void;
   onOpenMessages?: () => void;
@@ -94,6 +101,7 @@ export function LogiNexusGlobalHeader({
   showDrawer = true,
   onBack,
   onOpenDrawer,
+  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenMessages,
@@ -103,24 +111,53 @@ export function LogiNexusGlobalHeader({
   testID = "global-command-strip"
 }: HeaderProps) {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const activityCount = normalizeBadgeCount(badges?.activity);
   const messageCount = normalizeBadgeCount(badges?.messages);
   const initials = initialsFor(identity?.displayName || identity?.username || "PulseSoc");
   const intelligenceMode = mode === "intelligence";
   const homeMode = mode === "home";
+  /**
+   * Home's buttons are sized against the width rather than fixed, because a
+   * fourth action does not fit beside the wordmark at 46pt on anything narrower
+   * than a Pro Max. See `headerActionMetrics.ts` for the arithmetic; standard
+   * mode is untouched and keeps its stylesheet size.
+   */
+  const homeActionCount =
+    [onOpenMarketplace, onOpenSearch, onOpenMessages, onOpenActivity, onOpenProfile].filter(Boolean)
+      .length;
+  const homeMetrics = useMemo(
+    () => (homeMode ? homeHeaderActionMetrics(windowWidth, homeActionCount) : null),
+    [homeMode, windowWidth, homeActionCount]
+  );
+  const homeButtonStyle = homeMetrics
+    ? { width: homeMetrics.size, height: homeMetrics.size, borderRadius: homeMetrics.radius }
+    : null;
 
   return (
     <View style={[styles.headerShell, homeMode && styles.headerShellHome, { paddingTop: Math.max(insets.top, 10) }]} testID={testID}>
       <View style={styles.headerRow}>
         {canGoBack ? (
-          <IconButton label="Back" icon="chevron-back" home={homeMode} testID="global-header-back" onPress={onBack} />
+          <IconButton label="Back" icon="chevron-back" home={homeMode} metrics={homeMetrics} testID="global-header-back" onPress={onBack} />
         ) : showDrawer ? (
-          <IconButton label="Open PulseSoc navigation drawer" icon="menu" home={homeMode} testID="global-header-drawer" onPress={onOpenDrawer} />
+          <IconButton label="Open PulseSoc navigation drawer" icon="menu" home={homeMode} metrics={homeMetrics} testID="global-header-drawer" onPress={onOpenDrawer} />
         ) : (
-          <View style={[styles.iconButtonSpacer, homeMode && styles.iconButtonSpacerHome]} />
+          <View style={[styles.iconButtonSpacer, homeMode && styles.iconButtonSpacerHome, homeButtonStyle]} />
         )}
 
-        <View style={[styles.titleBlock, homeMode && styles.titleBlockHome]}>
+        {/* The clip is applied only when the metrics say the wordmark did not
+            fit, which is 320pt-class hardware and nothing else. RN's default
+            overflow is visible, so without it the letters draw over the
+            Marketplace button — and that button still takes the tap. Applying it
+            unconditionally would risk clipping the wordmark's own glow on widths
+            that have room to spare. */}
+        <View
+          style={[
+            styles.titleBlock,
+            homeMode && styles.titleBlockHome,
+            homeMetrics && !homeMetrics.brandFits && styles.titleBlockClipped
+          ]}
+        >
           <View style={styles.brandRow}>
             {homeMode ? null : <LogiNexusSignalIndicator active tone={intelligenceMode ? "intelligence" : "default"} />}
             {homeMode && title === "PulseSoc" ? (
@@ -156,7 +193,17 @@ export function LogiNexusGlobalHeader({
         </View>
 
         <View style={styles.headerActions}>
-          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" home={homeMode} testID="global-header-search" onPress={onOpenSearch} /> : null}
+          {onOpenMarketplace ? (
+            <IconButton
+              label="Marketplace"
+              icon="storefront-outline"
+              home={homeMode}
+              metrics={homeMetrics}
+              testID="global-header-marketplace"
+              onPress={onOpenMarketplace}
+            />
+          ) : null}
+          {onOpenSearch ? <IconButton label="Search PulseSoc" icon="search" home={homeMode} metrics={homeMetrics} testID="global-header-search" onPress={onOpenSearch} /> : null}
           {/* Each badge names its own scope. A bare number beside an icon is
               ambiguous sighted and meaningless spoken, and it was the reason
               nobody noticed the bell was counting messages too. The scope text
@@ -168,6 +215,7 @@ export function LogiNexusGlobalHeader({
               scopeLabel={badgeSpokenLabel("messages", messageCount)}
               icon="chatbubble-ellipses-outline"
               home={homeMode}
+              metrics={homeMetrics}
               badge={messageCount}
               testID="global-header-messages"
               onPress={onOpenMessages}
@@ -182,6 +230,7 @@ export function LogiNexusGlobalHeader({
               )}
               icon="notifications-outline"
               home={homeMode}
+              metrics={homeMetrics}
               badge={activityCount}
               testID="global-header-activity"
               onPress={onOpenActivity}
@@ -192,7 +241,12 @@ export function LogiNexusGlobalHeader({
               accessibilityRole="button"
               accessibilityLabel="Open Profile"
               testID="global-header-profile"
-              style={({ pressed }) => [styles.avatarButton, homeMode && styles.avatarButtonHome, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.avatarButton,
+                homeMode && styles.avatarButtonHome,
+                homeButtonStyle,
+                pressed && styles.pressed
+              ]}
               onPress={onOpenProfile}
             >
               {identity?.avatarUrl ? <Image source={{ uri: identity.avatarUrl }} style={styles.avatarImage} /> : <Text style={styles.avatarText}>{initials}</Text>}
@@ -557,6 +611,7 @@ function IconButton({
   badge,
   testID,
   home,
+  metrics,
   onPress
 }: {
   label: string;
@@ -566,6 +621,11 @@ function IconButton({
   badge?: number;
   testID?: string;
   home?: boolean;
+  /**
+   * Width-derived size for Home's cluster, from `headerActionMetrics`. Absent in
+   * standard mode, where the stylesheet's fixed size is the whole story.
+   */
+  metrics?: { size: number; radius: number; glyphSize: number } | null;
   onPress?: () => void;
 }) {
   return (
@@ -574,13 +634,23 @@ function IconButton({
       accessibilityLabel={scopeLabel ? `${label}, ${scopeLabel}` : label}
       disabled={!onPress}
       testID={testID}
-      style={({ pressed }) => [styles.iconButton, home && styles.iconButtonHome, pressed && styles.pressed, !onPress && styles.disabled]}
+      style={({ pressed }) => [
+        styles.iconButton,
+        home && styles.iconButtonHome,
+        metrics ? { width: metrics.size, height: metrics.size, borderRadius: metrics.radius } : null,
+        pressed && styles.pressed,
+        !onPress && styles.disabled
+      ]}
       onPress={() => {
         Haptics.selectionAsync().catch(() => undefined);
         onPress?.();
       }}
     >
-      <Ionicons name={icon} size={home ? 29 : 25} style={[styles.iconText, home && styles.iconTextHome]} />
+      <Ionicons
+        name={icon}
+        size={metrics ? metrics.glyphSize : home ? 29 : 25}
+        style={[styles.iconText, home && styles.iconTextHome]}
+      />
       {badge ? (
         <View style={styles.iconBadge}>
           <Text style={styles.iconBadgeText}>{formatBadge(badge)}</Text>
@@ -1014,6 +1084,9 @@ const styles = createThemedStyles(() => ({
   },
   titleBlockHome: {
     alignItems: "center"
+  },
+  titleBlockClipped: {
+    overflow: "hidden"
   },
   brandRow: {
     alignItems: "center",
