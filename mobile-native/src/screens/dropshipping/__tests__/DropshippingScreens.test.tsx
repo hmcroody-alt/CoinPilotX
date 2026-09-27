@@ -2562,6 +2562,89 @@ describe("ImportCartScreen", () => {
   });
 
   /* ---------------------------------------------------------------- *
+   * When the client stops waiting
+   *
+   * Measured in production, after the bearer fix let the request
+   * through at all: a 25-product CJ import answered `200` in 153,968ms
+   * having imported all 25. The app was on the shared 15-second budget,
+   * so it had aborted 139 seconds earlier and shown "Your supplier
+   * didn't respond. Nothing was imported — your cart is unchanged."
+   *
+   * Every clause of that was false. The supplier did respond. The
+   * products were imported. The cart went from 58 rows to 33 while the
+   * sentence claiming otherwise was on screen.
+   *
+   * The budget is fixed at the api layer (`IMPORT_TIMEOUT_MS`, above the
+   * server's own 120s ceiling), but a budget can always be exceeded, so
+   * these two pin the behaviour when it is: say the true thing, and go
+   * and look. A merchant who is told nothing happened stops; a merchant
+   * who is told it is still running checks — and the cart is where they
+   * check.
+   * ---------------------------------------------------------------- */
+
+  it("does not claim a rollback it cannot know about when it stops waiting", async () => {
+    const { view } = await renderCart([cartItem()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    // Exactly what `pulseApi` throws when its own budget expires: the request
+    // is still in flight on the server, and this device will never learn how it
+    // ended.
+    mockImportSelected.mockRejectedValue(
+      new PulseApiError("PulseSoc took too long to respond.", 504, "request_timeout")
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText(/still running on PulseSoc/)).toBeTruthy());
+    // Asserted as the absence of the claim rather than the presence of the new
+    // sentence alone. A future edit that appends "nothing was imported" to the
+    // honest copy would pass a positive-only check and reintroduce the lie.
+    expect(view.queryByText(/[Nn]othing was imported/)).toBeNull();
+    expect(view.queryByText(/cart is unchanged/)).toBeNull();
+    expect(view.queryByText(/supplier didn't respond/)).toBeNull();
+  });
+
+  it("re-reads the cart after it stops waiting, because rows may have left it", async () => {
+    const { view } = await renderCart([cartItem()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+    const readsBefore = mockGetCart.mock.calls.length;
+
+    mockImportSelected.mockRejectedValue(
+      new PulseApiError("PulseSoc took too long to respond.", 504, "request_timeout")
+    );
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
+    });
+    await settle();
+
+    // The server empties the cart as it commits, so this read is the merchant's
+    // only readout on a run the app is no longer watching.
+    await waitFor(() => expect(mockGetCart.mock.calls.length).toBeGreaterThan(readsBefore));
+  });
+
+  it("still blames the supplier when the supplier is the one who failed", async () => {
+    // The guard above must not swallow a real provider failure: `503
+    // provider_unavailable` is the server telling us CJ refused, and there the
+    // "nothing was imported" claim is the server's, not ours.
+    const { view } = await renderCart([cartItem()]);
+    await waitFor(() => expect(view.getByText("Ceramic Mug")).toBeTruthy());
+
+    mockImportSelected.mockRejectedValue(new PulseApiError("down", 503, "provider_unavailable"));
+
+    await act(async () => {
+      fireEvent.press(view.getByLabelText("Import and publish 1 products to your store"));
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText(/supplier didn't respond/)).toBeTruthy());
+    expect(view.queryByText(/still running on PulseSoc/)).toBeNull();
+  });
+
+  /* ---------------------------------------------------------------- *
    * A cart bigger than one import
    *
    * The reported production failure. A seller with 58 products in the

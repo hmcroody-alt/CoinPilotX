@@ -1541,6 +1541,26 @@ export type ImportRunResult = {
 };
 
 /**
+ * How long an import may take before the client stops waiting.
+ *
+ * Not a round number picked for comfort. The server's own ceiling is gunicorn's
+ * `--timeout 120`, and a measured 25-product CJ run against production took
+ * **154 seconds** and answered `200` — every one of those products imported. The
+ * app was on the shared 15-second budget at the time, so it had given up 139
+ * seconds earlier and told the merchant "Nothing was imported — your cart is
+ * unchanged." The cart went 58 → 33 behind that sentence.
+ *
+ * So the number has to clear the slowest thing the server is permitted to do,
+ * not the fastest thing it usually does. Under it, a *successful* import is
+ * reported as a failure, which is worse than a slow one: the merchant either
+ * gives up on a feature that works, or re-runs it believing nothing happened.
+ *
+ * Retrying is safe regardless — the route is idempotent per product — but that
+ * is a property of the server, not a licence to misreport what it did.
+ */
+const IMPORT_TIMEOUT_MS = 240_000;
+
+/**
  * Import the selected cart rows.
  *
  * Takes ids and an optional pricing rule — nothing else. The rule is arithmetic
@@ -1565,6 +1585,7 @@ export async function importSelected(
     `${BASE}/connections/${encodeURIComponent(connectionId)}/import`,
     {
       method: "POST",
+      timeoutMs: IMPORT_TIMEOUT_MS,
       // `undefined` is dropped by JSON serialisation, which is what "let the
       // store decide" has to look like on the wire. `null` would be a value.
       body: scopeBody(scope, {
@@ -2572,6 +2593,36 @@ const PROVIDER_CODES = [
  */
 export function isBatchTooLarge(error: unknown): boolean {
   return error instanceof PulseApiError && String(error.code || "").toLowerCase() === "batch_too_large";
+}
+
+/**
+ * True when *this app* stopped waiting — not when the server refused.
+ *
+ * The distinction is the whole point. Every other failure in this module is a
+ * thing the server said, so the screen can report what happened to the request.
+ * These two are the opposite: the client gave up and the request is still out
+ * there. Nobody on this device knows whether the write landed.
+ *
+ * That matters for a write and only for a write. A read that times out changed
+ * nothing, so "your supplier didn't respond, try again" is true enough and
+ * `PROVIDER_CODES` keeps carrying these for that case. A *write* that times out
+ * may have committed in full — production proved it does: a 25-product import
+ * answered `200` after 154 seconds while the app, on a 15-second budget, had
+ * already told the merchant their cart was unchanged. It was not; it had gone
+ * from 58 rows to 33.
+ *
+ * So callers that write must ask this *before* `stateForError`, for the same
+ * reason `isBatchTooLarge` is asked first: the sentence that state produces is
+ * a claim about the server's behaviour that the client has no standing to make.
+ *
+ * `request_unreachable` is included because it is the same epistemic position
+ * arrived at differently — a socket that died mid-flight also leaves the write's
+ * outcome unknown. It is not a claim that the request failed.
+ */
+export function isClientTimeout(error: unknown): boolean {
+  if (!(error instanceof PulseApiError)) return false;
+  const code = String(error.code || "").toLowerCase();
+  return code === "request_timeout" || code === "request_unreachable";
 }
 
 export function stateForError(error: unknown): DropshippingState {

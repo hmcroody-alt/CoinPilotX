@@ -103,7 +103,28 @@ export function registerSessionInvalidationHandler(handler: ((event: SessionInva
   };
 }
 
-export async function pulseApi<T>(path: string, options: RequestInit = {}): Promise<T> {
+/**
+ * A request, plus the one thing `RequestInit` cannot say: how long this
+ * particular call is worth waiting for.
+ *
+ * The shared budget below is sized for a request that reads something. A few
+ * writes are not that — a supplier import walks 25 products through CJ and the
+ * server is allowed 120 seconds to do it — and for those the default is not
+ * merely tight, it is *wrong in a way that reports itself as a failure*: the
+ * client gives up, the server carries on, finishes, and commits. The merchant
+ * is then told an import did not happen that did.
+ */
+export type PulseRequestInit = RequestInit & {
+  /**
+   * Milliseconds this call may take before the client stops waiting. Only
+   * raise it above the default when the server is genuinely allowed to take
+   * longer than that, and make it exceed the server's own ceiling — a budget
+   * that expires first turns a completed write into a reported failure.
+   */
+  timeoutMs?: number;
+};
+
+export async function pulseApi<T>(path: string, options: PulseRequestInit = {}): Promise<T> {
   const method = String(options.method || "GET").toUpperCase();
   const span = startSpan("api.request", { route: perfRouteLabel(path), method });
   // Measured here rather than around `fetch` so it reflects what the caller
@@ -147,13 +168,13 @@ export async function pulseApi<T>(path: string, options: RequestInit = {}): Prom
  * the same frame. Share only the in-flight work; never cache the response here,
  * so server authority, refresh semantics, and explicit reloads stay intact.
  */
-function readCoalescingKey(path: string, options: RequestInit, method: string) {
+function readCoalescingKey(path: string, options: PulseRequestInit, method: string) {
   if (method !== "GET" || options.body || options.signal || options.headers) return "";
   if (options.cache === "no-store" || options.cache === "reload") return "";
   return path;
 }
 
-async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefresh: boolean): Promise<T> {
+async function pulseApiRequest<T>(path: string, options: PulseRequestInit, allowRefresh: boolean): Promise<T> {
   const headers = new Headers(options.headers || {});
   const body = options.body;
   if (!(body instanceof FormData) && !headers.has("Content-Type")) {
@@ -176,8 +197,12 @@ async function pulseApiRequest<T>(path: string, options: RequestInit, allowRefre
   let response: Response;
   const timeout = requestTimeout(options);
   try {
+    // `timeoutMs` is ours, not the platform's, so it is removed rather than
+    // spread into `fetch` — an unknown key on a `RequestInit` is ignored today
+    // but is not something to hand to a transport we do not own.
+    const { timeoutMs: _budget, ...transportOptions } = options;
     const requestOptions = {
-      ...options,
+      ...transportOptions,
       headers,
       credentials: "include",
       signal: timeout.signal
@@ -329,9 +354,17 @@ const UPLOAD_TIMEOUT_MS = 180000;
  * signal by rejecting, and a transport that quietly ignores it would otherwise
  * leave us hanging on exactly the stalled request the budget exists to bound.
  */
-function requestTimeout(options: RequestInit) {
+function requestTimeout(options: PulseRequestInit) {
   const controller = new AbortController();
-  const budget = options.body instanceof FormData ? UPLOAD_TIMEOUT_MS : PULSE_API_READ_TIMEOUT_MS;
+  // A caller-supplied budget wins over both defaults, including the upload one:
+  // a caller that names a number knows what it is waiting for, and the two
+  // defaults are guesses made from the shape of the body.
+  const budget =
+    options.timeoutMs && options.timeoutMs > 0
+      ? options.timeoutMs
+      : options.body instanceof FormData
+        ? UPLOAD_TIMEOUT_MS
+        : PULSE_API_READ_TIMEOUT_MS;
   let expired = false;
 
   let trip!: (error: PulseApiError) => void;
