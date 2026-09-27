@@ -93,6 +93,12 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
     description TEXT,
     category TEXT,
     price_label TEXT DEFAULT 'Request access',
+    -- The storefront's sort key. Mirrors `bot.init_db()`, where it is added
+    -- with no DEFAULT so that NULL keeps meaning "not yet derived" rather
+    -- than "free". This fixture is hand-rolled and therefore free to drift
+    -- from the real schema; when it does, the symptom is a supplier test
+    -- failing with `no column named ...` for code that is actually correct.
+    price_minor INTEGER,
     status TEXT DEFAULT 'active',
     created_at TEXT,
     updated_at TEXT,

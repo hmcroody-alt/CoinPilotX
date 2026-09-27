@@ -392,9 +392,18 @@ def update_draft(business_id, store_id, actor_user_id, connection_id, listing_id
             # listing would see the new number everywhere they look while the
             # cart went on charging the old one until they happened to republish.
             if lifecycle.normalized(listing.get("status")) in lifecycle.PUBLIC_STATUSES:
-                updates["price_label"] = _live_price_label(cur, listing_id, listing)
+                updates["price_label"], updates["price_minor"] = _live_price_label(
+                    cur, listing_id, listing)
 
         if updates:
+            # `price_minor` is the storefront's sort key and must never describe
+            # a price the listing no longer carries. This UPDATE is assembled
+            # from a dict, so a future branch could add `price_label` to it
+            # without thinking about the companion column; refusing here turns
+            # that into a loud failure at the one moment it is still cheap to
+            # fix, rather than a grid that sorts by a stale number.
+            if ("price_label" in updates) != ("price_minor" in updates):
+                raise SupplierError("price_columns_desynced", http_status=500)
             updates["updated_at"] = _iso()
             assignments = ", ".join(f"{column}=?" for column in updates)
             cur.execute(
@@ -412,7 +421,14 @@ def update_draft(business_id, store_id, actor_user_id, connection_id, listing_id
 
 
 def _live_price_label(cur, listing_id, listing):
-    """The label a *published* listing should now carry, or a refusal.
+    """The ``(label, cents)`` a *published* listing should now carry, or a refusal.
+
+    Returns both halves because ``marketplace_listings`` stores both: the label
+    the buyer reads and ``price_minor``, the integer the storefront sorts on.
+    Handing back only the label would leave the caller to re-derive the number
+    by parsing the string it was just rendered from, which is how the two
+    columns drift apart. ``cents`` here is the same integer that went into the
+    label, not a reading of it.
 
     Re-reads the variants after the write rather than working from the request
     body, because the merchant may have repriced only some of them and it is the
@@ -433,7 +449,8 @@ def _live_price_label(cur, listing_id, listing):
     distinct = {v["retail_cents"] for v in offered}
     if len(distinct) > 1 or max(distinct) > MAX_CHECKOUT_PRICE_CENTS:
         raise SupplierError("publication_blocked", http_status=422)
-    return _checkout_price_label(offered[0]["retail_cents"], listing.get("currency"))
+    cents = offered[0]["retail_cents"]
+    return _checkout_price_label(cents, listing.get("currency")), int(cents)
 
 
 def _set_prices(cur, listing_id, seller_user_id, payload):
@@ -708,7 +725,8 @@ def _publish_core(cur, listing_id, seller_user_id, listing, shipping_cents=None)
     # `_validate` has just established that every offered variant carries the
     # same price, so there is exactly one number here and it is the merchant's
     # own -- nothing is being chosen on their behalf.
-    label = _checkout_price_label(offered[0]["retail_cents"], listing.get("currency"))
+    retail_cents = int(offered[0]["retail_cents"])
+    label = _checkout_price_label(retail_cents, listing.get("currency"))
     # `_validate` has just established `media` is non-empty. `media[0]` is the
     # cover by this package's own definition, and it is what `_cover_of`
     # answers for a listing with media -- so nothing is being chosen on the
@@ -719,9 +737,9 @@ def _publish_core(cur, listing_id, seller_user_id, listing, shipping_cents=None)
     cover = media[0]
     cur.execute(
         "UPDATE marketplace_listings SET status='published', quantity=?, "
-        "price_label=?, cover_image_url=?, published_at=?, updated_at=? "
+        "price_label=?, price_minor=?, cover_image_url=?, published_at=?, updated_at=? "
         "WHERE id=? AND seller_user_id=?",
-        (units, label, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
+        (units, label, retail_cents, cover, _iso(), _iso(), listing_id, int(seller_user_id)))
     return verdict, {
         "listing_id": listing_id,
         "status": "published",

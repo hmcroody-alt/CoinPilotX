@@ -5028,6 +5028,45 @@ def parse_price_label_to_cents(value, default_currency="USD"):
     return min(cents, MAX_PRICE_LABEL_CENTS), currency
 
 
+# How many listings one boot will derive `price_minor` for. Production carries
+# 47 listings, so this never binds there; it exists so that a database which
+# somehow arrives with a million unpriced rows degrades into several boots
+# rather than into a boot that never finishes. Each pass shrinks the candidate
+# set, because a row that has been written is no longer NULL.
+PRICE_MINOR_BACKFILL_LIMIT = 5000
+
+
+def _backfill_marketplace_price_minor(cur):
+    """Derive `marketplace_listings.price_minor` from `price_label`.
+
+    Runs from `init_db`, and must stay idempotent: it selects only rows whose
+    `price_minor` is still NULL, so a second boot finds nothing to do.
+
+    The parse deliberately goes through `parse_price_label_to_cents` -- the
+    *checkout* parser -- and not through `marketplace_seo.parse_price`, which
+    is stricter and anchored. A storefront that sorts by one number while
+    charging another is worse than one that cannot sort at all, so the sort key
+    is defined as "what this buyer will be charged" rather than as a second,
+    independent reading of the same string.
+
+    A row whose label carries no price at all resolves to 0, which the sort
+    treats identically to NULL (see marketplace_catalog.SORTS): unpriced rows
+    go last whichever direction the buyer sorts.
+    """
+    cur.execute(
+        "SELECT id, COALESCE(price_label,'') FROM marketplace_listings "
+        "WHERE price_minor IS NULL LIMIT ?",
+        (PRICE_MINOR_BACKFILL_LIMIT,),
+    )
+    pending = [db_service.row_values(row) for row in cur.fetchall()]
+    for listing_id, label in pending:
+        cents, _currency = parse_price_label_to_cents(label)
+        cur.execute(
+            "UPDATE marketplace_listings SET price_minor=? WHERE id=? AND price_minor IS NULL",
+            (int(cents), listing_id),
+        )
+
+
 def marketplace_normalize_price_label(value, default_currency="USD"):
     """Round-trip a seller-entered price label through the checkout parser.
 
@@ -59487,7 +59526,7 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
         """
         UPDATE marketplace_listings
         SET title=?, short_description=?, description=?, category=?, subcategory=?, tags_json=?,
-            price_label=?, currency=?, quantity=?,
+            price_label=?, price_minor=?, currency=?, quantity=?,
             refund_policy=?, estimated_delivery=?, seller_notes=?,
             status=?, approval_status=?, safety_score=?, safety_flags_json=?,
             review_version=CASE WHEN ?=1 THEN COALESCE(review_version,0)+1 ELSE review_version END,
@@ -59505,6 +59544,7 @@ def api_pulse_marketplace_seller_listing_update(listing_id):
             subcategory,
             tags_json,
             price,
+            parse_price_label_to_cents(price, currency)[0],
             currency,
             quantity,
             refund_policy,
@@ -59754,9 +59794,9 @@ def _marketplace_batch_apply_price(cur, listing, user_id, now, plan):
     next_approval = outcome["next_approval"]
 
     cur.execute(
-        "UPDATE marketplace_listings SET price_label=?, currency=?, status=?, approval_status=?, "
+        "UPDATE marketplace_listings SET price_label=?, price_minor=?, currency=?, status=?, approval_status=?, "
         "updated_at=? WHERE id=? AND seller_user_id=?",
-        (label, currency, next_status, next_approval, now, listing_id, int(user_id)),
+        (label, int(cents), currency, next_status, next_approval, now, listing_id, int(user_id)),
     )
 
     try:
@@ -100547,9 +100587,9 @@ def api_pulse_marketplace_listing_create():
         """
         INSERT INTO marketplace_listings
         (seller_user_id, title, short_description, description, category, subcategory, tags_json, cover_image_url,
-         gallery_json, video_url, price_label, currency, quantity, delivery_type, product_type, listing_type, listing_metadata_json, refund_policy,
+         gallery_json, video_url, price_label, price_minor, currency, quantity, delivery_type, product_type, listing_type, listing_metadata_json, refund_policy,
          estimated_delivery, seller_notes, status, approval_status, safety_score, safety_flags_json, submitted_at, review_version, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user["user_id"], title, short_description, description, category, subcategory,
@@ -100557,7 +100597,7 @@ def api_pulse_marketplace_listing_create():
             clean_html(cover.get("media_url") or "")[:800],
             json.dumps(gallery, default=str)[:1600],
             clean_html(video or "")[:800],
-            price, currency, quantity, product_type, product_type,
+            price, parse_price_label_to_cents(price, currency)[0], currency, quantity, product_type, product_type,
             listing_type, marketplace_listing_types_service.dump_metadata(listing_metadata),
             clean_html(payload.get("refund_policy") or "Reviewed products should state refunds clearly.")[:800],
             clean_html(payload.get("estimated_delivery") or "")[:200],
@@ -120294,7 +120334,21 @@ def _init_db_impl():
         ("moderation_reason", "TEXT DEFAULT ''"),
         ("moderation_category", "TEXT DEFAULT ''"),
         ("review_version", "INTEGER DEFAULT 0"),
+        # The buyer-facing price lives in `price_label`, a free-text string
+        # ("$35.00", "Free", "Request access"). Sorting a storefront by price
+        # therefore has no numeric column to sort on, and casting the label in
+        # SQL is not an option: SQLite quietly yields 0.0 for a non-numeric
+        # string while Postgres raises `invalid input syntax`, so a cast-based
+        # ORDER BY passes every local test and takes down the production grid.
+        # `price_minor` is that number, in the listing's currency's minor unit.
+        #
+        # NULL means "not yet derived", not "free". Both are sorted last by
+        # marketplace_catalog.SORTS, so the two cases need not be told apart
+        # there -- but they must not be conflated at the write sites, which is
+        # why this carries no DEFAULT.
+        ("price_minor", "INTEGER"),
     ], conn=conn)
+    _backfill_marketplace_price_minor(cur)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS marketplace_product_media (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
