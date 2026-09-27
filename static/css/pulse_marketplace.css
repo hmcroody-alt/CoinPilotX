@@ -233,6 +233,65 @@ body:has(.mkt) .layout > aside {
   color: var(--text-primary, #f2fbff);
 }
 
+/* The heading and the cart link share one row. `align-items: flex-start`
+ * rather than `center` because a supplier title can wrap to three lines and
+ * a cart link floating in the vertical middle of it reads as unrelated to
+ * the page; pinned to the first line it reads as part of the header. */
+.mkt-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm, 12px);
+  min-width: 0;
+}
+
+/* `flex: 0 0 auto` so the long-title case squeezes the heading, which wraps,
+ * and never the link, which cannot. */
+.mkt-cart-link {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  padding: var(--spacing-2xs, 4px) var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line-strong);
+  border-radius: 999px;
+  color: var(--text-primary, #f2fbff);
+  text-decoration: none;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.mkt-cart-link:hover {
+  border-color: var(--mkt-accent);
+  color: var(--mkt-accent);
+}
+
+.mkt-cart-link:focus-visible {
+  outline: 2px solid var(--border-focus, var(--mkt-accent-2));
+  outline-offset: 2px;
+}
+
+/* `min-width` with centred text keeps a one-digit and a two-digit count the
+ * same width, so the link does not change size as items are added. */
+.mkt-cart-count {
+  min-width: 1.6em;
+  padding: 0 var(--spacing-2xs, 4px);
+  border-radius: 999px;
+  background: var(--mkt-accent);
+  color: #04120c;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+/* `[hidden]` on an element this file gives `display: inline-flex`-adjacent
+ * layout to would otherwise lose to the class selector, so it is restated.
+ * The count ships hidden for an empty cart and the script unhides it. */
+.mkt-cart-count[hidden] {
+  display: none;
+}
+
 .mkt-title {
   margin: 0;
   font-size: var(--font-size-2xl, 28px);
@@ -838,6 +897,82 @@ body:has(.mkt) .layout > aside {
 
 .mkt-card-stock.is-out {
   color: var(--mkt-muted);
+}
+
+/* The add-to-cart row. `margin-top: auto` inside `.mkt-card-body`'s flex
+ * column pins it to the bottom of every card regardless of how many lines
+ * the title above it wrapped to, so the buttons sit on one horizontal line
+ * across the grid -- the same "uniform by construction" rule the rest of
+ * this section follows, and not a fixed height a two-line title overflows. */
+.mkt-card-actions {
+  margin-top: auto;
+  padding-top: var(--spacing-xs, 8px);
+  display: flex;
+  min-width: 0;
+}
+
+/* Raised above the card-wide link's stretched ::after, exactly as
+ * `.mkt-card-seller` is and for the same reason: this button sits inside the
+ * area that anchor covers, so without the raise every click on it would
+ * navigate to the product page and the cart would never be posted to. */
+.mkt-add {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line-strong);
+  border-radius: var(--radius-sm, 10px);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary, #f2fbff);
+  font: inherit;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+}
+
+.mkt-add:hover {
+  border-color: var(--mkt-accent);
+  color: var(--mkt-accent);
+}
+
+.mkt-add:focus-visible {
+  outline: 2px solid var(--border-focus, var(--mkt-accent-2));
+  outline-offset: 2px;
+}
+
+/* In-flight. The script owns the label and the disabled attribute, so a
+ * double-tap cannot post the same listing twice while the first is open. */
+.mkt-add[disabled] {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.mkt-add[data-mkt-added] {
+  border-color: var(--mkt-accent);
+  color: var(--mkt-accent);
+}
+
+/* The variant-choice link, which is an `<a>` wearing `.mkt-add` so the action
+ * row keeps one height whether the card's action is a quick-add or a trip to
+ * the picker. Everything here is either something an anchor does not inherit
+ * from the button rules above (centring, text-decoration) or a deliberate
+ * difference: the fill is dropped so it reads as the quieter of the two
+ * actions. It must not look like a quick-add, because it is not one -- it
+ * navigates, and a buyer who expected a cart line would be surprised twice. */
+.mkt-add.is-choose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  text-align: center;
+  text-decoration: none;
+}
+
+.mkt-add.is-choose:hover {
+  text-decoration: none;
 }
 
 /* ---------------------------------------------------------------- *

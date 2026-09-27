@@ -58322,6 +58322,40 @@ def marketplace_storefront_variants(cur, listing_ids):
     return by_listing
 
 
+def marketplace_storefront_cart_count(cur, user_id):
+    """How many items this buyer's cart holds, as the cart API counts them.
+
+    Computed by `marketplace_cart_routes` and not by a `SELECT SUM(qty)` here.
+    The badge counts only the lines a buyer could actually pay for, and which
+    lines those are is `_line_state`'s answer -- it needs the listing join and
+    today's price to tell `available` from `sold`, `restricted` or `removed`. A
+    sum over `marketplace_cart_items` would count a withdrawn line, so the
+    header would promise more than the cart page lists, and the two numbers are
+    visible one click apart.
+
+    Deliberately does *not* call the module's `_ensure_schema`: this is a GET
+    page render, and running DDL from one is how a read path acquires a lock it
+    has no business holding. A deployment whose cart table does not exist yet
+    takes the `except` below and renders the header it rendered before there was
+    a cart -- the same degradation `marketplace_storefront_variants` makes for
+    the same reason.
+    """
+
+    buyer_id = safe_int(user_id, 0)
+    if not buyer_id:
+        return None
+    try:
+        from services import marketplace_cart_routes as _cart
+
+        return _cart.badge_count(_cart._serialize_lines(sys.modules[__name__], cur, buyer_id))
+    except Exception:
+        # `None` and not `0`: zero is the claim "your cart is empty", and a read
+        # that failed has not earned it. The renderer omits the cart link
+        # entirely for `None`, which is the one honest answer available here.
+        app.logger.warning("marketplace storefront cart count unavailable", exc_info=True)
+        return None
+
+
 def marketplace_storefront_payloads(cur, rows):
     """Run listing rows through the same serializer the app reads.
 
@@ -58524,6 +58558,7 @@ def pulse_marketplace_page():
     load_error = False
     listings = []
     variants_by_listing = {}
+    cart_count = None
     try:
         cur.execute(
             f"""SELECT l.*, {marketplace_seller_identity.store_name_select('ms')},{MARKETPLACE_STOREFRONT_SELLER_COLUMNS}
@@ -58539,6 +58574,11 @@ def pulse_marketplace_page():
         variants_by_listing = marketplace_storefront_variants(
             cur, [int(item.get("id") or 0) for item in listings]
         )
+        # Inside the `try` because it needs this connection, which the `finally`
+        # closes; safe here because the helper swallows its own failures and
+        # answers `None`, so a cart it could not read cannot turn the whole
+        # catalogue into an error page.
+        cart_count = marketplace_storefront_cart_count(cur, user.get("user_id"))
     except Exception:
         # A failed read is an error state, never an empty one. "No products are
         # listed yet" is a claim about the catalogue, and a page that could not
@@ -58601,6 +58641,10 @@ def pulse_marketplace_page():
         app_cta_html=marketplace_storefront_app_cta("marketplace"),
         merchant_html=merchant_html,
         load_error=load_error,
+        # Turns on the cart link and the per-card Add to cart buttons. `None`
+        # keeps both off, which is what the error path above leaves it as: a page
+        # that could not read the catalogue must not invite a purchase.
+        cart_count=cart_count,
     )
     # 503, not 200, when the catalogue could not be read. Nothing indexes this
     # page, but a member-facing 200 over an apology is still a page claiming to

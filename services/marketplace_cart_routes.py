@@ -255,6 +255,36 @@ def _line_state(line: dict, listing: dict, price_now_minor: int) -> str:
     return "available"
 
 
+#: Line states that a cart *count* counts. Deliberately not "every line": a
+#: sold-out or withdrawn line is still in the cart and still listed by
+#: ``GET /cart``, but a badge is a promise about how much is waiting to be paid
+#: for, and counting a line the buyer cannot buy makes the number an
+#: overstatement they only discover at checkout. ``price_changed`` and
+#: ``low_stock`` *are* counted, because both are still purchasable after one
+#: confirmation.
+COUNTED_STATES = frozenset({"available", "price_changed", "low_stock"})
+
+
+def badge_count(lines: list) -> int:
+    """How many items the cart badge reports.
+
+    One definition, because this number is rendered in three places now -- the
+    app's tab badge, the web cart page and the storefront header -- and two of
+    them are on screen at the same time. It was written out twice inline in
+    ``cart_list`` and ``cart_add``, which agreed only because nobody had edited
+    one of them yet.
+    """
+    total = 0
+    for line in lines or []:
+        if str((line or {}).get("state") or "") not in COUNTED_STATES:
+            continue
+        try:
+            total += max(0, int((line or {}).get("qty") or 0))
+        except (TypeError, ValueError):
+            continue
+    return total
+
+
 def _fulfillment(listing: dict) -> str:
     """The cart payload's legacy four-value lane, folded down from the one rule.
 
@@ -515,7 +545,7 @@ def cart_list():
             # module makes, and a client deriving them would be deriving them
             # from a copy of these rules. See `marketplace_cart_web`.
             "groups": marketplace_cart_web.group_lines(lines),
-            "badge_count": sum(l["qty"] for l in lines if l["state"] in {"available", "price_changed", "low_stock"}),
+            "badge_count": badge_count(lines),
             "checkoutable_count": len(checkoutable),
         })
 
@@ -599,8 +629,7 @@ def cart_add():
             ),
         )
         lines = _serialize_lines(bot, cur, int(user["user_id"]))
-        return _json({"ok": True, "lines": lines,
-                      "badge_count": sum(l["qty"] for l in lines if l["state"] in {"available", "price_changed", "low_stock"})})
+        return _json({"ok": True, "lines": lines, "badge_count": badge_count(lines)})
 
     return _with_db(handler)
 

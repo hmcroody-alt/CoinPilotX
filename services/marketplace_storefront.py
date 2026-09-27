@@ -67,8 +67,8 @@ BASE_PATH = "/pulse/marketplace"
 
 #: Asset versions are bumped by hand, matching the convention every other
 #: stylesheet link in `bot.py` uses.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260926a"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260926a"
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260927a"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260927a"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.
@@ -255,6 +255,19 @@ def product_url(listing_id: Any, origin: str = mw.PUBLIC_ORIGIN) -> str:
     return f"{origin}{product_path(listing_id)}"
 
 
+def cart_path() -> str:
+    """Where the header's cart link points, taken from the same registry.
+
+    A literal `/pulse/cart` is the right answer today and the wrong thing to
+    write, for the reason `product_path` sets out at length: `app_links` owns
+    whether `cart` is a web page or an `/open/cart` handoff, and this link is one
+    of the places that would still be pointing at the retired answer after that
+    decision changes. There is nothing special about the cart here — it is the
+    same rule, applied to a second destination.
+    """
+    return app_links.website_href("cart", source="web")
+
+
 # ---------------------------------------------------------------------------
 # Media
 # ---------------------------------------------------------------------------
@@ -368,6 +381,8 @@ def product_card(
     stock: str = "",
     eager: bool = False,
     seller_href: str = "",
+    cart: Optional[mw.CartAffordance] = None,
+    choose_options: bool = False,
 ) -> str:
     """One grid card.
 
@@ -382,6 +397,20 @@ def product_card(
     middle-clickable and copyable. The seller link is raised above that overlay
     so it stays separately clickable — the one place two links overlap, handled
     with z-index rather than by nesting anchors, which is invalid HTML.
+
+    ``cart`` is opt-in per call site and absent by default, which is what keeps
+    the related-products rail and any other card consumer unchanged: a rail whose
+    caller never derived a `CartAffordance` renders exactly the markup it did
+    before. When it is supplied the button is raised above the card-wide link the
+    same way the seller link is, because a click meant for "add to cart" must not
+    navigate to the product page instead.
+
+    ``choose_options`` is the other half of that opt-in and is mutually exclusive
+    with it: a listing whose buyer has to pick a size gets a link to the picker
+    where a single-variant listing gets the button. Both occupy the same
+    ``.mkt-card-actions`` row so the grid keeps one action line at one height,
+    which is what stops a mixed page of configurable and non-configurable
+    products from looking ragged.
     """
     listing_id = int(row.get("id") or 0)
     title = mw._clean(row.get("title")) or "Marketplace listing"
@@ -439,6 +468,46 @@ def product_card(
     # claiming to hold a price nobody set.
     body_class = "mkt-card-body" if price.known else "mkt-card-body is-unpriced"
 
+    # `hidden` until `pulse_marketplace.js` binds it, following Save and Report on
+    # the product page: adding to the cart is a `fetch` and there is no GET or
+    # POST form behind this button, so to a scriptless visitor an unhidden one
+    # would be a control that visibly does nothing. The whole card is still a
+    # link to the product page, where the same purchase is reachable, so nothing
+    # is lost by the button being absent.
+    #
+    # `aria-label` carries the product name because the visible text is "Add to
+    # cart" on every card, and a screen-reader user listing the page's buttons
+    # would otherwise hear the same three words fifteen times with nothing to
+    # tell them apart.
+    cart_block = ""
+    if cart is not None:
+        cart_block = (
+            '<div class="mkt-card-actions">'
+            f'<button class="mkt-add" type="button" data-mkt-add="{int(cart.listing_id)}"'
+            f' aria-label="{esc(f"{cart.label}: {title}")}" hidden>{esc(cart.label)}</button>'
+            "</div>"
+        )
+    elif choose_options:
+        # A listing with sizes or colours gets a way through to the picker rather
+        # than a quick-add, because the cart API has no variant column and the
+        # one-tap add would book an unnamed one. See
+        # `mw.CART_HIDDEN_NEEDS_CHOICE`.
+        #
+        # An `<a>`, and deliberately not `hidden`: unlike the button this needs no
+        # script, so hiding it until bind time would hide a working link. It is a
+        # second anchor pointing where the card-wide link already points, which is
+        # redundant for a mouse and not redundant otherwise — it is the only thing
+        # on the card that says the product has options, and it gives the keyboard
+        # an action stop in the row where every neighbouring card has one.
+        choose_label = "Choose options"
+        cart_block = (
+            '<div class="mkt-card-actions">'
+            f'<a class="mkt-add is-choose" href="{esc(product_path(listing_id))}"'
+            f' data-mkt-choose="{listing_id}"'
+            f' aria-label="{esc(f"{choose_label}: {title}")}">{esc(choose_label)}</a>'
+            "</div>"
+        )
+
     return (
         f'<li><article class="mkt-card">{box}'
         f'<div class="{body_class}">'
@@ -448,6 +517,7 @@ def product_card(
         f"{price_block}"
         f"{meta_block}"
         f"{stock_block}"
+        f"{cart_block}"
         f"</div></article></li>"
     )
 
@@ -688,6 +758,7 @@ def render_discovery(
     merchant_html: str = "",
     origin: str = mw.PUBLIC_ORIGIN,
     load_error: bool = False,
+    cart_count: Optional[int] = None,
 ) -> RenderedPage:
     """The category / discovery experience.
 
@@ -698,6 +769,13 @@ def render_discovery(
     would cost more than the work. `render_discovery` is where that trade-off
     is stated, and it is the thing to change first at catalogue scale — see the
     scalability note in the final report.
+
+    `cart_count` is the buyer's own cart size as the *cart API* counts it, passed
+    in rather than derived, because the number on this page and the number the
+    cart page prints have to be the same number. `None` means the caller did not
+    ask for the cart affordances at all and the header carries no cart link;
+    ``0`` is a real answer and renders the link with no count beside it, because
+    a badge reading "0" is noise where an absent badge is the same information.
     """
     rows: list[dict[str, Any]] = []
     for row in listings:
@@ -706,6 +784,10 @@ def render_discovery(
         variants = list(variants_by_listing.get(listing_id) or ())
         item["price"] = mw.derive_price(item, variants)
         item["_stock"] = mw.stock_line(item, variants)
+        # Kept on the row because the cart affordance below needs them too, and
+        # re-reading `variants_by_listing` down there would be a second lookup
+        # free to be keyed differently from this one.
+        item["_variants"] = variants
         rows.append(item)
 
     taxonomy = mw.build_taxonomy([r.get("category") for r in rows])
@@ -738,8 +820,23 @@ def render_discovery(
     badge_map = {int(r.get("id") or 0): mw.classify_badges(r) for r in page.items}
     badge_map = mw.suppress_uninformative_badges(badge_map)
 
-    cards = [
-        product_card(
+    # Derived per row rather than once for the page, because three of the four
+    # reasons to withhold the button are properties of the individual listing.
+    # `cart_count is None` is the caller's opt-out and suppresses every button,
+    # which is what keeps a call site that never wired up the cart API from
+    # sprouting controls that post to it.
+    cards = []
+    for index, row in enumerate(page.items):
+        affordance, hidden_reason = (None, "")
+        if cart_count is not None:
+            affordance, hidden_reason = mw.cart_affordance(
+                row,
+                price=row["price"],
+                signed_in=viewer.signed_in,
+                viewer_user_id=viewer.user_id,
+                variants=row.get("_variants") or (),
+            )
+        cards.append(product_card(
             row,
             price=row["price"],
             badges=badge_map.get(int(row.get("id") or 0), ()),
@@ -747,9 +844,12 @@ def render_discovery(
             # Only the first card is eager: it is the largest contentful paint
             # on this page and the only image reliably above the fold.
             eager=(index == 0),
-        )
-        for index, row in enumerate(page.items)
-    ]
+            cart=affordance,
+            # The one withheld reason that still renders something. The other
+            # four mean "this cannot be bought"; this one means "not in one tap",
+            # and sending the buyer to the picker is the correct answer to it.
+            choose_options=(hidden_reason == mw.CART_HIDDEN_NEEDS_CHOICE),
+        ))
 
     if load_error:
         body_main = state_block(
@@ -795,9 +895,39 @@ def render_discovery(
             crumbs.append((label, filters.category))
         crumbs_html = _crumbs_html(crumbs, filters)
 
+    # An ordinary link, server-rendered and not hidden: it works with JavaScript
+    # off, because `/pulse/cart` is a real page a GET reaches. Only the *count*
+    # inside it is script-updatable, and it ships with the server's own number so
+    # the first paint is already correct rather than blank until a fetch lands.
+    #
+    # The count is inside the link's accessible name rather than beside it as a
+    # bare number, so a screen reader announces "Cart, 3 items" instead of
+    # "Cart" followed by a stray "3". `aria-hidden` on the visible pill stops it
+    # being read twice.
+    cart_html = ""
+    if cart_count is not None:
+        count = max(0, int(cart_count))
+        pill = (
+            f'<span class="mkt-cart-count" aria-hidden="true" data-mkt-cart-count>{count}</span>'
+            if count
+            else '<span class="mkt-cart-count" aria-hidden="true" data-mkt-cart-count hidden></span>'
+        )
+        if count == 1:
+            label = "Your cart, 1 item"
+        elif count:
+            label = f"Your cart, {count} items"
+        else:
+            label = "Your cart, empty"
+        cart_html = (
+            f'<a class="mkt-cart-link" href="{esc(cart_path())}"'
+            f' data-mkt-cart-link aria-label="{esc(label)}">'
+            f'<span aria-hidden="true">Cart</span>{pill}</a>'
+        )
+
     head = (
         f'<header class="mkt-head">{crumbs_html}'
-        f'<h1 class="mkt-title">{esc(heading)}</h1>'
+        f'<div class="mkt-head-row"><h1 class="mkt-title">{esc(heading)}</h1>'
+        f"{cart_html}</div>"
         + (
             f'<p class="mkt-subtitle"><span class="mkt-count">{esc(count_line)}</span></p>'
             if count_line

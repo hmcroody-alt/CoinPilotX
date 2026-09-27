@@ -467,6 +467,92 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * Add to cart
+   *
+   * `POST /api/pulse/marketplace/cart` is the same endpoint the native app
+   * has always added through. Nothing new is added server-side and no total
+   * is computed here: the *server's* `badge_count` is what the header shows,
+   * so the number on this page is the number the cart page will print.
+   *
+   * Deliberately not a local increment. A `+1` on click is right until it
+   * is not -- the route refuses `OWN_LISTING`, `OUT_OF_STOCK`,
+   * `SELLER_UNAVAILABLE`, `ITEM_UNAVAILABLE` and `CART_FULL`, and it caps
+   * quantity against real inventory, so a client that counted its own
+   * clicks would drift from the cart on the first refusal and stay wrong
+   * until a reload. The response already carries the true count; reading it
+   * costs nothing and cannot disagree.
+   * ------------------------------------------------------------------ */
+
+  /* One source, called only with a number the server sent. `undefined` is a
+   * response that did not carry a count, and leaves the badge untouched
+   * rather than blanking it to zero. */
+  function setCartCount(value) {
+    if (value === null || value === undefined) return;
+    var count = parseInt(value, 10);
+    if (isNaN(count) || count < 0) return;
+    var pills = document.querySelectorAll("[data-mkt-cart-count]");
+    Array.prototype.forEach.call(pills, function (pill) {
+      pill.textContent = String(count);
+      pill.hidden = count === 0;
+    });
+    /* The accessible name is rewritten with it. Leaving the old one behind
+     * is the failure mode where a screen reader announces "Your cart, empty"
+     * over a cart holding three things. */
+    var links = document.querySelectorAll("[data-mkt-cart-link]");
+    Array.prototype.forEach.call(links, function (link) {
+      link.setAttribute(
+        "aria-label",
+        count === 0
+          ? "Your cart, empty"
+          : count === 1
+          ? "Your cart, 1 item"
+          : "Your cart, " + count + " items"
+      );
+    });
+  }
+
+  function bindAddToCart(root) {
+    var buttons = root.querySelectorAll("[data-mkt-add]:not([data-mkt-bound])");
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.setAttribute("data-mkt-bound", "1");
+      /* Hidden by the server until now, same as Save and Report above: this
+       * is fetch-only, and the whole card is already a link to the product
+       * page where the purchase is reachable without JavaScript. */
+      button.hidden = false;
+      var label = button.textContent;
+      button.addEventListener("click", function (event) {
+        /* The card is one big link and this button sits inside it. The CSS
+         * raise makes the button the click *target*; this stops the event
+         * reaching the card, which would otherwise navigate away from the
+         * page mid-request. Both halves are needed. */
+        event.preventDefault();
+        event.stopPropagation();
+        button.disabled = true;
+        button.textContent = "Adding…";
+        post("/api/pulse/marketplace/cart", {
+          listing_id: button.getAttribute("data-mkt-add"),
+          qty: 1,
+        })
+          .then(function (data) {
+            setCartCount(data && data.badge_count);
+            button.setAttribute("data-mkt-added", "1");
+            button.textContent = "In cart";
+            notify("Added to your cart.");
+          })
+          .catch(function (err) {
+            /* The button comes back rather than staying spent: every one of
+             * the route's refusals is a thing the buyer might fix (sign in
+             * elsewhere, free up a full cart), and a dead control gives them
+             * nothing to retry. */
+            button.textContent = label;
+            button.disabled = false;
+            notify(err.message);
+          });
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------------ *
    * Long-description disclosure
    * ------------------------------------------------------------------ */
 
@@ -496,6 +582,7 @@
     bindMedia(scope);
     bindSort(scope);
     bindActions(scope);
+    bindAddToCart(scope);
     bindClamp(scope);
     Array.prototype.forEach.call(scope.querySelectorAll("[data-mkt-gallery]"), bindGallery);
     Array.prototype.forEach.call(scope.querySelectorAll("[data-mkt-variants]"), bindVariants);
