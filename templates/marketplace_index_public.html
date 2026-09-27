@@ -42,7 +42,14 @@
     <p class="lede">{{ page.description }}</p>
     <div class="actions">
       {{ app_cta("marketplace", label="Open the marketplace in the app") }}
-      <a class="button" href="/login?next={{ index_path }}">Sign in to buy</a>
+      {#
+        "Sign in to shop", not "Sign in to buy". Signing in from the grid gets
+        you the member grid and a cart you can fill; it does not get you a
+        completed purchase, because paying is still the app's job. The product
+        page's own button makes the narrower, exact promise ("add to cart"),
+        since that is the one page where it can be kept.
+      #}
+      <a class="button" href="/login?next={{ index_path }}">Sign in to shop</a>
     </div>
   </section>
 

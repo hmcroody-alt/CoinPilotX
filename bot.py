@@ -41728,6 +41728,7 @@ def pulse_shell_rail_items(user=None, is_admin=False):
         ("Live", "/pulse/live", "●"),
         ("Communities", "/pulse/communities", "◇"),
         ("Marketplace", app_first_href("marketplace"), "▣"),
+        ("Cart", app_first_href("cart"), "▤"),
         ("Music", "/pulse/music", "♪"),
         ("Events", "/pulse/events", "E"),
         ("Messenger", "/pulse/messages", "M"),
@@ -57787,6 +57788,44 @@ def _marketplace_public_product_response(listing_id, listing):
 # search hides. A deep link is reached from search on native, so it inherits the
 # stricter pair; matching the looser grid would have made a shared link show
 # something the app would not.
+@webhook_app.route("/pulse/cart", methods=["GET"])
+@auth_required
+def pulse_marketplace_cart_page():
+    """The web Marketplace cart.
+
+    Not a second cart. `marketplace_cart_items` is keyed on the buyer and lives
+    on the server, so this page and `MarketplaceCartScreen` in the app are two
+    views of one row set -- a line added in a browser is already in the app's
+    cart with nothing to sync. That is why a web cart is worth having before the
+    web can take a card: "add it here, pay in the app" is a real path.
+
+    No new API. `templates/marketplace_cart.html` and
+    `static/js/pulsesoc_cart.js` drive the six endpoints in
+    `services/marketplace_cart_routes.py` that have answered the native app all
+    along. Its `_require_user()` resolves through `api_account_user()`, which
+    accepts the web session cookie, so the browser is already an authenticated
+    caller; that module's own `_error()` docstring says its messages stay human
+    "because web and admin surfaces render it directly", and this is the surface
+    it was anticipating.
+    """
+    init_db()
+    main = render_template(
+        "marketplace_cart.html",
+        app_href=app_links.open_interstitial_url("cart", source="web"),
+    )
+    # The page's script tag rides in `main_html`, which is the precedent set by
+    # `pulse_marketplace_listing_page` and its promotions bundle. `script_html`
+    # cannot carry it: the shell interpolates that parameter *inside* a
+    # `<script>` element, so a `<script src>` passed there would be nested and
+    # never fetched.
+    return pulse_social_shell(
+        "Your cart",
+        "The items you have saved to buy on PulseSoc.",
+        main,
+        show_intro=False,
+    )
+
+
 @webhook_app.route("/pulse/marketplace/<int:listing_id>", methods=["GET"])
 @public_route(reason="Public product page. Anonymous visitors and Googlebot get the public product shell; signed-in members fall through to the member page, which reads its own account state.")
 def pulse_marketplace_listing_page(listing_id):
@@ -57845,6 +57884,18 @@ def pulse_marketplace_listing_page(listing_id):
              f" poster='{html_escape(clean_html(entry.get('poster_url') or ''))}'></video>"
         for entry in (listing.get("media") or []))
     gallery_block = f"<div class='grid'>{gallery}</div>" if gallery else ""
+    # Add to cart is the verb this page was missing, and its absence was a
+    # contradiction rather than a gap: the *public* rendering of this same URL
+    # says "Sign in to buy" (marketplace_product_public.html:66), so signing in
+    # used to move a buyer from a promise to Contact Seller / Save / Report.
+    #
+    # `POST /api/pulse/marketplace/cart` is the endpoint the app already calls.
+    # No new route: its `_require_user()` resolves through `api_account_user()`,
+    # which accepts this page's session cookie. The server refuses a seller's
+    # own listing with OWN_LISTING, so `owned` here only decides whether to
+    # render a control the server would reject -- it is not the enforcement.
+    cart_button = "" if owned else (
+        f"<button class='primary' data-add-to-cart='{listing_id}'>Add to cart</button>")
     promote = ""
     if owned:
         promote = (f"<button data-promote-content='marketplace_listing' "
@@ -57871,7 +57922,7 @@ def pulse_marketplace_listing_page(listing_id):
         f"<p>{html_escape(clean_html(row.get('description') or row.get('short_description') or ''))}</p>"
         f"<p>Safety notice: educational products only. Payments and payout release "
         f"are staged for compliance.</p>"
-        f"<div class='actions'>"
+        f"<div class='actions'>{cart_button}"
         f"<button data-contact-seller='{seller_id}'>Contact Seller</button>"
         f"<button data-save-listing='{listing_id}'>Save</button>"
         f"<button data-report-listing='{listing_id}'>Report</button>{promote}"
@@ -57883,7 +57934,7 @@ def pulse_marketplace_listing_page(listing_id):
     # member who arrives by link is not on a page with fewer verbs than the one
     # they would have reached by browsing.
     script = """
-    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');try{if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
+    document.addEventListener('click',async e=>{const c=e.target.closest('[data-contact-seller]');const r=e.target.closest('[data-report-listing]');const s=e.target.closest('[data-save-listing]');const a=e.target.closest('[data-add-to-cart]');try{if(a){a.disabled=true;try{await pulseApi('/api/pulse/marketplace/cart',{method:'POST',body:JSON.stringify({listing_id:a.dataset.addToCart,qty:1})});a.textContent='In your cart';toast('Added to your cart.')}catch(err){a.disabled=false;throw err}} if(c){const d=await pulseApi('/api/pulse/messages/start',{method:'POST',body:JSON.stringify({user_id:c.dataset.contactSeller})});location.href=d.next_url} if(r){await pulseApi('/api/pulse/marketplace/listings/report',{method:'POST',body:JSON.stringify({listing_id:r.dataset.reportListing,reason:'Needs review'})});toast('Listing reported.')} if(s){await pulseApi('/api/pulse/marketplace/listings/save',{method:'POST',body:JSON.stringify({listing_id:s.dataset.saveListing})});toast('Saved.')}}catch(err){toast(err.message)}})
     """
     return pulse_social_shell(
         clean_html(row.get("title") or "Marketplace listing"),
