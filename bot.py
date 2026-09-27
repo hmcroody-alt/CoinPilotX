@@ -50153,7 +50153,7 @@ def pulse_reels_page():
       const mediaList=Array.isArray(reel.media)?reel.media:[],videoMedia=mediaList.find(m=>String(m?.media_type||m?.type||'').toLowerCase()==='video'&&(m?.playback_url||m?.valid_url||m?.cdn_url||m?.media_url||m?.mux_playback_id))||mediaList[0]||{};
       const author=reel.author||{},media=videoMedia,processing=String(media.processing_status||reel.processing_status||'').toLowerCase()==='mux_processing'||!!media.mux_processing,muxHls=media.mux_playback_id?`https://stream.mux.com/${media.mux_playback_id}.m3u8`:(media.mux_hls_url||''),src=(media.is_available===false?'':(muxHls||media.playback_url||media.valid_url||media.cdn_url||media.media_url||reel.video_url||'')),posterRaw=media.poster_url||media.mux_thumbnail_url||media.thumbnail_url||reel.poster_url||'',id=reel.reel_id||reel.id;
       const tags=(reel.ai_tags||reel.tags||[]).slice(0,5),audio=reel.audio||{},music=audio.title?`${audio.title}${audio.artist?' · '+audio.artist:''}`:'Original PulseSoc sound';
-      const insight=(reel.ai_summary||reel.why_this_matters||reel.category||tags[0]||'Creator signal').toString().slice(0,88);
+      const insight=(reel.body||reel.ai_summary||reel.why_this_matters||reel.category||tags[0]||'Creator signal').toString().slice(0,88);
       const avatar=author.avatar_url?`<img src="${esc(author.avatar_url)}" alt="">`:esc((author.display_name||'P').slice(0,1));
       const mt=(media.media_type||reel.media_type||(/\\.(jpg|jpeg|png|webp|gif)(\\?|$)/i.test(src)?'image':'video')).toLowerCase();
       const mime=/\\.m3u8(\\?|#|$)/i.test(src)?'application/vnd.apple.mpegurl':media.playback_mime_type||media.mime_type||(/\\.webm(\\?|$)/i.test(src)?'video/webm':/\\.mp4(\\?|$)/i.test(src)?'video/mp4':/\\.mov(\\?|$)/i.test(src)?'video/quicktime':'');
@@ -90388,7 +90388,16 @@ def pulse_post_page(post_id):
     # or a takedown reaches the page and the sitemap at the same moment.
     robots_directive = search_visibility.content_eligibility(post).directive
     title = post.get("title") or (post.get("body") or "PulseSoc Post")[:72]
-    description = post.get("ai_summary") or (post.get("body") or "Community post on PulseSoc.")[:155]
+    # ``body`` is the authoritative caption, so the description is derived from
+    # it rather than read out of ``ai_summary``. That column holds a stored copy
+    # of the caption for every post that has one, and a stored copy outlives a
+    # correction to the original: post 2500 was fixed in ``body`` while the meta
+    # and og:description kept serving the withdrawn text to crawlers and link
+    # unfurls. ``ai_summary`` is still consulted for a post with no body at all,
+    # which is the one case it carries something of its own (a live post's
+    # "Live now: ..."). The slice now applies to whichever branch wins; it used
+    # to bind to the fallback alone, so a present ai_summary shipped uncapped.
+    description = (post.get("body") or post.get("ai_summary") or "Community post on PulseSoc.")[:155]
     media = (post.get("media") or [{}])[0]
     image = media.get("thumbnail_url") or media.get("media_url") or "/static/brand/pulsesoc-og-20260913.png"
     comments = pulse_feed_engine.list_comments(post_id).get("comments", [])

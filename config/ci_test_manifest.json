@@ -359,6 +359,7 @@
     "tests/pulse_experiments/test_protected_domains.py",
     "tests/pulse_experiments/test_registry.py",
     "tests/pulsedrop/test_audio.py",
+    "tests/pulsedrop/test_caption_single_copy.py",
     "tests/pulsedrop/test_curator.py",
     "tests/pulsedrop/test_editorial.py",
     "tests/pulsedrop/test_hydration.py",
