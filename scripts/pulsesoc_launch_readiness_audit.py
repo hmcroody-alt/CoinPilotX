@@ -312,6 +312,8 @@ def static_safety_gates() -> list[Gate]:
     sw_source = read("static/sw.js")
     service_worker_source = read("static/service-worker.js")
     payment_provider = read("services/payment_provider.py")
+    webhook_verifier = read("services/stripe_webhook_verification.py")
+    comms_engine = read("services/pulsesoc_communications_engine.py")
     app_tsx = read("mobile/pulse-react-native/App.tsx")
     app_json = read("mobile/pulse-react-native/app.json")
 
@@ -326,7 +328,10 @@ def static_safety_gates() -> list[Gate]:
     ]
     combined = "\n".join([bot_source, push_source, notification_source, app_tsx, app_json])
     checks.append(gate("security", "no obvious committed secrets", not any(re.search(pattern, combined) for pattern in secret_patterns), "secret-like assignment patterns were not found", "static scan"))
-    checks.append(gate("security", "Stripe webhook signature", "stripe.Webhook.construct_event" in bot_source and "STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook" in bot_source and "verify_webhook_signature" in payment_provider, "unsigned live webhooks are rejected", "bot.py/services/payment_provider.py"))
+    # construct_event lives in services/stripe_webhook_verification.py, not bot.py, so
+    # one verifier can serve several Stripe destinations that each sign with their own
+    # secret. Follow the call path: handler delegates, verifier does Stripe's HMAC check.
+    checks.append(gate("security", "Stripe webhook signature", "stripe.Webhook.construct_event" in webhook_verifier and "stripe_webhook_verification.verify(" in bot_source and "STRIPE_WEBHOOK_SECRET missing. Refusing unsigned live Stripe webhook" in bot_source and "verify_webhook_signature" in payment_provider, "unsigned live webhooks are rejected", "bot.py/services/stripe_webhook_verification.py/services/payment_provider.py"))
     checks.append(gate("security", "PulseShell secrets", all(token not in app_tsx for token in ["STRIPE_SECRET", "BREVO_API_KEY", "LIVEKIT_API_SECRET", "DATABASE_URL", "FCM_PRIVATE_KEY"]), "mobile shell does not expose server secrets", "mobile/pulse-react-native/App.tsx"))
     checks.append(gate("security", "account deletion reachable", "/account/delete" in bot_source and "Permanently Delete Account" in read("templates/account.html"), "delete account UI/API are present", "templates/account.html"))
     checks.append(gate("security", "report/block reachable", "Report Profile" in bot_source and "Block User" in bot_source and "block_user" in read("pulse_communications_v2/routes.py"), "report/block surfaces remain wired", "bot.py/pulse_communications_v2/routes.py"))
@@ -356,11 +361,33 @@ def static_safety_gates() -> list[Gate]:
 
     checks.append(gate("live safety", "Live Studio route", 'route("/pulse/live/studio"' in bot_source and 'route("/api/pulse/live/start"' in bot_source, "Studio and start API exist", "bot.py"))
     checks.append(gate("live safety", "co-host launch flag", "PULSESOC_DISABLE_COHOST" in security_source and "COHOST_DISABLED" in bot_source, "co-host can be disabled without deploy", "services/pulse_security_core.py"))
-    checks.append(gate("live safety", "server-generated LiveKit tokens", "def pulse_livekit_access_token" in bot_source and 'hmac.new(config["api_secret"].encode("utf-8")' in bot_source and "PULSE_COHOST_TOKEN_CLAIMS" in bot_source, "LiveKit JWT generation/claim logging stays server-side", "bot.py"))
+    # The RTC provider moved from LiveKit to Agora, so naming either vendor here
+    # goes stale on the next migration. What actually has to hold is that the
+    # media token is minted on the server from a secret the browser never sees.
+    rtc_route_is_server_side = 'route("/api/pulse/live/<int:live_id>/rtc/token"' in bot_source and "call_engine.generate_agora_live_token(" in bot_source
+    rtc_signs_server_side = "def generate_agora_live_token" in comms_engine and 'os.getenv("AGORA_APP_CERTIFICATE"' in comms_engine
+    rtc_secret_leaks = sorted(
+        str(path.relative_to(ROOT))
+        for path in [*(ROOT / "templates").rglob("*"), *(ROOT / "static").rglob("*")]
+        if path.is_file() and path.suffix in {".html", ".js", ".css", ".json"} and "AGORA_APP_CERTIFICATE" in path.read_text(encoding="utf-8", errors="ignore")
+    )
+    checks.append(gate(
+        "live safety",
+        "server-generated RTC tokens",
+        rtc_route_is_server_side and rtc_signs_server_side and not rtc_secret_leaks,
+        "media tokens are minted server-side and the signing secret never reaches the client"
+        + (f"; signing secret referenced in {', '.join(rtc_secret_leaks)}" if rtc_secret_leaks else ""),
+        "bot.py/services/pulsesoc_communications_engine.py",
+    ))
 
+    # The cache name only has to be versioned and evicted, not carry a marker
+    # from one launch push. Demanding a fixed substring fails every legitimate
+    # bump: d41e3ad76 added "launch-readiness" alongside this gate and a770e01d5
+    # renamed the cache for unrelated reasons, turning this red ever since.
     cache_names = re.findall(r'CACHE_NAME\s*=\s*"([^"]+)"', sw_source + "\n" + service_worker_source)
-    fresh_cache = bool(cache_names) and all("launch-readiness" in name for name in cache_names)
-    checks.append(gate("performance", "service worker cache version", fresh_cache, f"cache names: {', '.join(cache_names)}", "static/sw.js/static/service-worker.js"))
+    versioned_cache = bool(cache_names) and all(re.search(r"v\d+", name) for name in cache_names)
+    evicts_stale_cache = "caches.keys()" in sw_source and "caches.delete(" in sw_source and "key === CACHE_NAME" in sw_source
+    checks.append(gate("performance", "service worker cache version", versioned_cache and evicts_stale_cache, f"cache names are versioned and stale keys are evicted on activate: {', '.join(cache_names) or 'no CACHE_NAME found'}", "static/sw.js/static/service-worker.js"))
     checks.append(gate("performance", "runtime JS no-store", "isRuntimeAsset" in sw_source and 'fetch(request, { cache: "no-store" })' in sw_source and "skipWaiting" in sw_source, "runtime JS/CSS fetches bypass stale cache", "static/sw.js"))
     checks.append(gate("mobile", "PulseShell App Review audit surface", "PULSESHELL_NATIVE_CALL" in app_tsx and "NSCameraUsageDescription" in app_json and "POST_NOTIFICATIONS" in app_json, "native shell has bridge and permission strings", "mobile/pulse-react-native"))
 
