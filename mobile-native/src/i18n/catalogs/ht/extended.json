@@ -2386,6 +2386,26 @@
       "upcomingBody": "N ap bati yo. Ou pral wè yo isit la lè yo louvri.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Pati sa a nan Business OS poko gen yon paj. Tounen nan Business OS pou chwazi yon lòt seksyon."
+    },
+    "productSignal": {
+      "contextPromoted": "Pwomosyon",
+      "contextNew": "Fèk pibliye",
+      "contextNewIn": "Nouvo nan {{category}}",
+      "contextIn": "Nan {{category}}",
+      "sponsored": "Sponsorize",
+      "storeTag": "BOUTIK",
+      "openHint": "Louvri detay pwodwi a",
+      "openSeller": "Louvri boutik {{name}}",
+      "reviewCount": "({{count}})",
+      "localPickup": "Ranmase sou plas",
+      "viewProduct": "Gade pwodwi a",
+      "viewProductOf": "Gade pwodwi {{name}}",
+      "like": "Renmen",
+      "liked": "Ou renmen",
+      "comment": "Kòmantè",
+      "share": "Pataje",
+      "shop": "Boutik",
+      "openMarketplace": "Louvri Marketplace"
     }
   },
   "discovery": {

@@ -34,9 +34,13 @@ import { setSaved } from "../social/useSaveAction";
 import { SponsoredAdCard } from "../components/SponsoredAdCard";
 import { fetchSponsoredAds, SponsoredAd } from "../api/ads";
 import { injectAds } from "../feed/injectAds";
-import { HomeRow, injectDiscoveryRows } from "../discovery/discoveryRows";
+import { injectDiscoveryRows } from "../discovery/discoveryRows";
 import { DiscoveryRowView } from "../discovery/DiscoveryRowView";
 import { useHomeDiscovery } from "../discovery/useHomeDiscovery";
+import type { ProductSignal } from "../commerce/productSignal";
+import { injectProductSignalRows, type CommerceFeedRow } from "../commerce/productSignalRows";
+import { useFeedProductSignals } from "../commerce/useFeedProductSignals";
+import { ProductSignalCard } from "../components/ProductSignalCard";
 import { invalidateNativeSync, registerSyncInvalidation } from "../core/eventSync";
 import { withCachedAge } from "../core/sync/ageLabel";
 import { primaryMediaOf } from "../core/media/mediaDescriptors";
@@ -61,14 +65,16 @@ import { SpatialPager } from "../spatial/SpatialPager";
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList>;
 
 /**
- * Posts, ads and — once the discovery flags are on — suggestion rows.
+ * Posts, ads, suggestion rows and shoppable product Signals.
  *
- * `HomeRow` is `FeedRow` plus one `discovery` member, so with every flag off
- * this alias describes exactly the same set of rows it described before: the
- * union widens, but `injectDiscoveryRows` returns its input unchanged and no
- * value of the new shape is ever constructed.
+ * Each alias in that chain widens the union by exactly one member —
+ * `FeedRow` → `HomeRow` → `CommerceFeedRow` — and each injector returns its
+ * input array untouched when its feature is off. So with the discovery flags and
+ * the commerce flag off this describes precisely the set of rows it described
+ * before either existed: the type grows, but no value of the new shape is ever
+ * constructed. That is the rollback path for both features.
  */
-type HomeFeedRow = HomeRow<PulsePost>;
+type HomeFeedRow = CommerceFeedRow<PulsePost>;
 
 type HomeScreenProps = {
   badges?: GlobalNavigationBadges;
@@ -279,24 +285,40 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     refreshToken: discoveryRefreshToken
   });
 
+  /** Shares pull-to-refresh with discovery rather than adding a second nonce. */
+  const productSignals = useFeedProductSignals({ refreshNonce: discoveryRefreshToken });
+
   /**
-   * Ads first, then suggestions threaded through the result.
+   * Ads first, then suggestions threaded through the result, then products.
    *
    * The order matters and is not interchangeable. `injectAds` owns the sponsored
    * cadence Advertising specified; running it first and composing over its output
    * means discovery can see where the ads landed and keep each ad with the post
-   * that earned it, while an ad slot is never displaced by a carousel. With the
-   * discovery flags off, `discovery.modules` is empty and `injectDiscoveryRows`
-   * returns the ad-injected array itself — so this line produces byte-identical
-   * rows to the previous `injectAds(...)` call, which is the §15 rollback path.
+   * that earned it, while an ad slot is never displaced by a carousel. Commerce
+   * runs last for the same reason, over both. With the discovery flags off,
+   * `discovery.modules` is empty and `injectDiscoveryRows` returns the ad-injected
+   * array itself; with commerce off `productSignals.signals` is empty and
+   * `injectProductSignalRows` does the same — so this line produces
+   * byte-identical rows to the previous `injectAds(...)` call, which is the §15
+   * rollback path.
    */
   const feedRows = useMemo<HomeFeedRow[]>(
     () =>
-      injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
-        dismissed: discovery.dismissed,
-        rotationOffset: discovery.rotationOffset
-      }),
-    [posts, availableAds, discovery.modules, discovery.dismissed, discovery.rotationOffset]
+      injectProductSignalRows(
+        injectDiscoveryRows(injectAds(posts, availableAds, { interval: 5, leadIn: 3 }), discovery.modules, {
+          dismissed: discovery.dismissed,
+          rotationOffset: discovery.rotationOffset
+        }),
+        productSignals.signals
+      ),
+    [
+      posts,
+      availableAds,
+      discovery.modules,
+      discovery.dismissed,
+      discovery.rotationOffset,
+      productSignals.signals
+    ]
   );
 
   /**
@@ -863,6 +885,13 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
    * loaded a page or a badge poll landed. That only holds if the ~20 callbacks
    * below keep their identities across a parent render.
    */
+  /**
+   * The same destination Profile OS's Marketplace tile uses, deliberately. The
+   * header is the *discovery* entry and the tile is the *management* entry, but
+   * a second route object for one screen is how the two drift apart, so both
+   * name the registered tab.
+   */
+  const openMarketplaceTab = useCallback(() => navigation.navigate("Tabs", { screen: "Marketplace" }), [navigation]);
   const openSearchTab = useCallback(() => navigation.navigate("Tabs", { screen: "Search" }), [navigation]);
   const openActivityInbox = useCallback(() => navigation.navigate("ActivityInbox", { title: "Activity Inbox" }), [navigation]);
   const openProfileTab = useCallback(() => navigation.navigate("Tabs", { screen: "Profile" }), [navigation]);
@@ -958,10 +987,33 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     if (params) navigation.navigate("ProfileDetail", params);
   }, [navigation]);
 
+  /*
+   * Product Signal handlers, hoisted for the same reason as the post ones above.
+   *
+   * All three name routes that already exist and are already reached from the
+   * Marketplace surfaces themselves — `MarketplaceProduct` is what a listing tap
+   * opens there, and `MarketplaceDetail` with a `sellerUserId` is what that
+   * screen's own store link uses (`MarketplaceProductScreen.tsx:418`). Passing
+   * `listing` along is not an optimisation: there is no fetch-one endpoint, which
+   * is why that param exists.
+   */
+  const handleOpenProductSignal = useCallback((signal: ProductSignal) => {
+    navigation.navigate("MarketplaceProduct", {
+      listingId: signal.productId,
+      listing: signal.listing,
+      title: signal.productName
+    });
+  }, [navigation]);
+
+  const handleOpenProductSeller = useCallback((signal: ProductSignal) => {
+    if (signal.sellerId == null) return;
+    navigation.navigate("MarketplaceDetail", { sellerUserId: signal.sellerId, title: signal.sellerName });
+  }, [navigation]);
+
   /**
-   * Renders one feed row (post, ad, or suggestion). Shared verbatim between the
-   * legacy vertical list and the spatial pager so every post type, action and ad
-   * behavior is identical in both modes.
+   * Renders one feed row (post, ad, suggestion or product). Shared verbatim
+   * between the legacy vertical list and the spatial pager so every post type,
+   * action and ad behavior is identical in both modes.
    *
    * Memoized so `renderItem` below has a stable identity. Its dependency list
    * is deliberately long — it names every value a row reads — because the point
@@ -983,6 +1035,16 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
           // when the user navigates away, and row viewability is what stops the
           // eleven carousels that are mounted but off screen.
           isRowVisible={isFocused && viewableRowKeys.has(row.key)}
+        />
+      );
+    }
+    if (row.type === "product") {
+      return (
+        <ProductSignalCard
+          signal={row.signal}
+          onOpenProduct={handleOpenProductSignal}
+          onOpenSeller={handleOpenProductSeller}
+          onOpenMarketplace={openMarketplaceTab}
         />
       );
     }
@@ -1046,6 +1108,9 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     handleOpenPost,
     handleOpenPostComments,
     handleOpenPostLive,
+    handleOpenProductSeller,
+    handleOpenProductSignal,
+    openMarketplaceTab,
     handlePromote,
     handleReact,
     handleReport,
@@ -1113,6 +1178,7 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
             offline={offline}
             ageMs={feedAgeMs}
             onOpenDrawer={openDrawer}
+            onOpenMarketplace={openMarketplaceTab}
             onOpenSearch={openSearchTab}
             onOpenActivity={openActivityInbox}
             onOpenProfile={openProfileTab}
@@ -1231,6 +1297,7 @@ const HomeHeader = memo(function HomeHeader({
   offline,
   ageMs,
   onOpenDrawer,
+  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1267,6 +1334,7 @@ const HomeHeader = memo(function HomeHeader({
   offline: boolean;
   ageMs: number | null;
   onOpenDrawer: () => void;
+  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1297,7 +1365,7 @@ const HomeHeader = memo(function HomeHeader({
   const wideCanvas = width >= 900;
   return (
     <View style={styles.header}>
-      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
+      <HomeTopBar onOpenDrawer={onOpenDrawer} onOpenMarketplace={onOpenMarketplace} onOpenSearch={onOpenSearch} onOpenActivity={onOpenActivity} onOpenProfile={onOpenProfile} badges={badges} identity={identity} />
       <View style={[styles.homeCanvas, wideCanvas && styles.homeCanvasWide]}>
         {wideCanvas ? <HomeCommandRail onOpenRoute={onOpenRoute} onOpenPulseRadio={onOpenRadioLibrary} /> : null}
         <View style={styles.homePrimaryColumn}>
@@ -1426,6 +1494,7 @@ function HomeCommandRail({
 
 function HomeTopBar({
   onOpenDrawer,
+  onOpenMarketplace,
   onOpenSearch,
   onOpenActivity,
   onOpenProfile,
@@ -1433,6 +1502,7 @@ function HomeTopBar({
   identity
 }: {
   onOpenDrawer: () => void;
+  onOpenMarketplace: () => void;
   onOpenSearch: () => void;
   onOpenActivity: () => void;
   onOpenProfile: () => void;
@@ -1445,6 +1515,7 @@ function HomeTopBar({
       mode="home"
       showDrawer
       onOpenDrawer={onOpenDrawer}
+      onOpenMarketplace={onOpenMarketplace}
       onOpenSearch={onOpenSearch}
       onOpenActivity={onOpenActivity}
       onOpenProfile={onOpenProfile}

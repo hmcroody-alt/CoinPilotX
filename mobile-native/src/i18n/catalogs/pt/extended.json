@@ -2401,6 +2401,26 @@
       "upcomingBody": "Em construção. Eles aparecerão aqui quando forem liberados.",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Esta parte do Business OS ainda não tem página. Volte ao Business OS para escolher outra seção."
+    },
+    "productSignal": {
+      "contextPromoted": "Promovido",
+      "contextNew": "Publicado agora",
+      "contextNewIn": "Novo em {{category}}",
+      "contextIn": "Em {{category}}",
+      "sponsored": "Patrocinado",
+      "storeTag": "LOJA",
+      "openHint": "Abre os detalhes do produto",
+      "openSeller": "Abrir a loja de {{name}}",
+      "reviewCount": "({{count}})",
+      "localPickup": "Retirada local",
+      "viewProduct": "Ver produto",
+      "viewProductOf": "Ver produto {{name}}",
+      "like": "Gostei",
+      "liked": "Curtido",
+      "comment": "Comentar",
+      "share": "Compartilhar",
+      "shop": "Loja",
+      "openMarketplace": "Abrir Marketplace"
     }
   },
   "discovery": {

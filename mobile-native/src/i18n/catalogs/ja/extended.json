@@ -2378,6 +2378,26 @@
       "upcomingBody": "準備中です。公開されるとここに表示されます。",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS のこの部分にはまだページがありません。Business OS に戻って別のセクションを選んでください。"
+    },
+    "productSignal": {
+      "contextPromoted": "プロモーション",
+      "contextNew": "出品されました",
+      "contextNewIn": "{{category}}の新着",
+      "contextIn": "{{category}}",
+      "sponsored": "広告",
+      "storeTag": "ストア",
+      "openHint": "商品の詳細を開きます",
+      "openSeller": "{{name}}のストアを開く",
+      "reviewCount": "({{count}})",
+      "localPickup": "直接受け取り",
+      "viewProduct": "商品を見る",
+      "viewProductOf": "商品「{{name}}」を見る",
+      "like": "いいね",
+      "liked": "いいね済み",
+      "comment": "コメント",
+      "share": "シェア",
+      "shop": "ショップ",
+      "openMarketplace": "マーケットプレイスを開く"
     }
   },
   "discovery": {
