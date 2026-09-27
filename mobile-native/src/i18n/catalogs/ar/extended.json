@@ -628,7 +628,8 @@
       "voiceSent": "تم إرسال الرسالة الصوتية.",
       "voiceUnavailable": "الرسالة الصوتية غير متاحة",
       "voiceUnavailableTitle": "الرسالة الصوتية غير متاحة",
-      "yourMessage": "رسالتك"
+      "yourMessage": "رسالتك",
+      "moreReactions": "تفاعلات إضافية"
     },
     "group": {
       "createGroup": "إنشاء مجموعة",
@@ -1444,7 +1445,15 @@
       "storeMediaViewerTitle": "وسائط المتجر",
       "statusApprovedLive": "معتمد/مباشر",
       "statusPendingReview": "قيد المراجعة",
-      "statusRemoved": "تمت الإزالة"
+      "statusRemoved": "تمت الإزالة",
+      "status": {
+        "live": "نشط",
+        "store_offline": "المتجر غير مفعّل",
+        "store_name_needed": "مطلوب اسم المتجر",
+        "paused": "متوقفة مؤقتًا",
+        "draft": "مسودة",
+        "rejected": "مرفوض"
+      }
     },
     "orders": {
       "title": "الطلبات",

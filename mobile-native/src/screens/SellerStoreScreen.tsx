@@ -783,12 +783,38 @@ function statusKey(listing: MarketplaceListing) {
   return raw || "draft";
 }
 
+/**
+ * One literal key per pill, rather than `commerce:marketplace.status.${key}`.
+ *
+ * The interpolated form is what let all ten of these ship with no catalog copy
+ * at all: a template is invisible to every i18n gate, so the prefix resolved,
+ * the path missed, and `humanizeKey()` drew "Out Of Stock" in all eleven
+ * languages while `i18n:validate` reported 100%.
+ *
+ * Four point outside the `status` block on purpose. `outOfStock` and
+ * `statusRemoved` are a live contract with `services/pulsedrop/hydration.py`,
+ * which builds its availability chip from those same two keys — one listing
+ * state must not read two ways in one session — and `sold` /
+ * `statusPendingReview` are the marketplace's own existing words for exactly
+ * these states.
+ */
+const STATUS_LABEL_KEYS: Record<string, string> = {
+  live: "commerce:marketplace.status.live",
+  pending: "commerce:marketplace.statusPendingReview",
+  out_of_stock: "commerce:marketplace.outOfStock",
+  store_offline: "commerce:marketplace.status.store_offline",
+  store_name_needed: "commerce:marketplace.status.store_name_needed",
+  paused: "commerce:marketplace.status.paused",
+  sold: "commerce:marketplace.sold",
+  draft: "commerce:marketplace.status.draft",
+  rejected: "commerce:marketplace.status.rejected",
+  removed: "commerce:marketplace.statusRemoved",
+};
+
 function statusLabelKey(key: string): string | null {
-  const supported = [
-    "live", "pending", "out_of_stock", "removed", "rejected", "paused", "sold", "draft",
-    "store_offline", "store_name_needed",
-  ];
-  return supported.includes(key) ? `commerce:marketplace.status.${key}` : null;
+  // `statusKey` can still return a server value nobody has named, which keeps
+  // its own `key.replace(/_/g, " ")` rendering rather than getting a pill.
+  return STATUS_LABEL_KEYS[key] ?? null;
 }
 
 function StatusPill({ listing }: { listing: MarketplaceListing }) {
