@@ -66,6 +66,7 @@ from . import (
     preferences,
     promotion,
     ranking,
+    relationship,
     router,
     schema,
     subject,
@@ -289,7 +290,37 @@ def _serve(
     # inside the ranker, which is deliberately surface-agnostic.
     context_reason = CONTEXT_CLAIM.get(surface)
 
+    # Whether a contextual match is even *sayable* on this request, which is the
+    # precondition `relationship.classify` needs and is narrower than "a context
+    # arrived". Three things have to hold, and each drops out of a decision made
+    # somewhere else:
+    #
+    # * `policy.personalized` — the `context=... if policy.personalized else None`
+    #   below means a request can carry a context that policy forbids using.
+    # * a non-empty context, matching `score_listing`'s own `has_context`.
+    # * `context_reason in REASON_PRIORITY` — `choose_reason` requires this before
+    #   it will claim relatedness out loud. `messenger` and `marketplace` have no
+    #   entry in `CONTEXT_CLAIM` yet the route hands them a client-supplied
+    #   context, so without this term a Messenger card would record a
+    #   `contextual` provenance while its own label truthfully claimed nothing of
+    #   the kind. That is the conflation `relationship.py` exists to remove,
+    #   reappearing one layer down, and it is reachable from the wire today.
+    context_claimable = bool(
+        policy.personalized
+        and context
+        and context_reason in ranking.REASON_PRIORITY
+    )
+    # A product page's subject is a listing, so the same matched signal is
+    # `similar` rather than `contextual`. Read off the map that already draws that
+    # distinction instead of re-testing `surface == "product_detail"`, so a new
+    # product-shaped surface cannot be added to `CONTEXT_CLAIM` and get the wrong
+    # relationship here.
+    subject_is_product = context_reason == ranking.REASON_SIMILAR_PRODUCT
+
     scored = []
+    #: listing id -> §6 relationship. See the derivation below for why it is not
+    #: a column on the row.
+    relationships: dict[int, str] = {}
     now = subject.now_utc()
     weights = config.weights()
     for row in candidates:
@@ -327,6 +358,27 @@ def _serve(
             weights=weights,
             context_reason=context_reason,
         )
+        # Derived here because this is the one place both inputs are in hand:
+        # `candidate_source` is a property of *retrieval* that only `pool` knows
+        # and only the row carries, and `signals` is a property of *ranking*.
+        # `_select` may drop this row afterwards, so recomputing in `_persist`
+        # would mean either threading the source through `_select` or re-reading it
+        # from a row that has since been rescored.
+        #
+        # Kept in a side table rather than stamped onto the row, which was the
+        # first attempt and the obvious one — `pool.build` sets
+        # `row["candidate_source"]` exactly that way. It is wrong, and the reason
+        # is in `_payload`: the product serializer is a *denylist*, so every key
+        # this pipeline adds to a row ships to the buyer's device unless something
+        # removes it. `candidate_source` is leaking today for precisely that
+        # reason. Keyed by listing id, which `pool` guarantees is unique within a
+        # pool because the exposure and dedup passes already depend on it.
+        relationships[listing_id] = relationship.classify(
+            candidate_source=row.get("candidate_source"),
+            signals=verdict["signals"],
+            subject_is_product=subject_is_product,
+            context_offered=context_claimable,
+        )
         scored.append((row, verdict))
 
     floor = branch.relevance_floor()
@@ -341,6 +393,7 @@ def _serve(
         cur, selected, policy,
         surface=surface, session_id=session_id, klass=klass,
         parse_price=parse_price, serialize=serialize,
+        relationships=relationships,
     )
 
 
@@ -809,6 +862,7 @@ def _persist(
     klass: str,
     parse_price,
     serialize,
+    relationships: Optional[Mapping[int, str]] = None,
 ) -> list[dict]:
     """Write the placement rows and build the client payloads.
 
@@ -835,13 +889,30 @@ def _persist(
             cur.execute(
                 "INSERT INTO commerce_discovery_placements "
                 "(placement_id, subject_ref, surface, slot, listing_id, seller_user_id, "
-                " promotion_class, reason_code, score, score_breakdown_json, ranking_version, "
-                " session_id, impression_token, expires_at, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " promotion_class, reason_code, relationship, score, score_breakdown_json, "
+                " ranking_version, session_id, impression_token, expires_at, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     placement_id, policy.subject_ref, surface, slot,
                     int(row["id"]), int(row.get("seller_user_id") or 0),
-                    klass, verdict["reason"], float(verdict["score"]),
+                    klass, verdict["reason"],
+                    # Next to `promotion_class` and `reason_code` deliberately:
+                    # the three are one row's answers to three different questions
+                    # (who funded it / what the buyer is told / how it got here),
+                    # and reading them side by side is the audit §6 asks for.
+                    #
+                    # `assert_servable` rather than a bare read. Every value comes
+                    # from `classify`, so this cannot fire today — which is the
+                    # point of putting it on the write path rather than trusting
+                    # the caller: the next writer of this column is a feature that
+                    # does not exist yet (`creator_tagged`, `pulsedrop_curated`),
+                    # and a fabricated provenance is worse than a missing one
+                    # because it would be believed. It raises inside the `try`
+                    # below, so the blast radius is one dropped placement.
+                    relationship.assert_servable(
+                        (relationships or {}).get(int(row["id"]))
+                    ),
+                    float(verdict["score"]),
                     json.dumps({
                         "signals": verdict["signals"],
                         "contributions": verdict["contributions"],
@@ -862,6 +933,39 @@ def _persist(
         ))
 
     return out
+
+
+#: Columns this pipeline puts on a pool row that must never reach a buyer's
+#: device. See :func:`_payload` for why the downstream serializer cannot be
+#: relied on to remove them.
+#:
+#: Ordered by how it got here rather than alphabetically, because that is the
+#: question to ask of a new entry: did *we* add this column, or is it part of the
+#: marketplace's own listing payload? Only the first kind belongs here.
+PIPELINE_ONLY_FIELDS = frozenset({
+    # `eligibility.py`'s SELECT list, for the ranker's seller-reliability signal.
+    "seller_risk_score",
+    # `pool.build` stamps this per row so the engine knows which retrieval
+    # question produced it.
+    "candidate_source",
+    # Belt and braces. `_serve` deliberately keeps the relationship *off* the row
+    # for exactly this reason, so this entry should be unreachable — it is here so
+    # that a future writer who does reach for the row dict (the obvious thing to
+    # do, and what `candidate_source` itself did) fails safe instead of publishing
+    # the provenance of every card.
+    "relationship",
+})
+
+
+def _buyer_safe(row: Mapping[str, Any]) -> dict:
+    """``row`` without the columns in :data:`PIPELINE_ONLY_FIELDS`.
+
+    A copy, not a mutation: the row is still being read after this — `_payload`
+    itself reads ``cover_image_url`` and ``gallery_json`` from it through the
+    price path, and `_select` may have more to do with it.
+    """
+    return {key: value for key, value in dict(row or {}).items()
+            if key not in PIPELINE_ONLY_FIELDS}
 
 
 def _payload(
@@ -885,6 +989,32 @@ def _payload(
     pipeline reads every one of them for ranking — hand-building the payload
     here is the one change that would leak them to a buyer's phone.
 
+    That paragraph used to end there, and it was half true in the dangerous
+    direction. ``pulse_marketplace_listing_payload`` is a **denylist**:
+    ``{k: v for k, v in listing.items() if k not in
+    MARKETPLACE_REVIEWER_ONLY_FIELDS}``. It removes the columns *it* knows about,
+    and this package's pool row carries columns it has never heard of — so
+    anything this pipeline invents ships to the device by default. Two were
+    already shipping before this list existed, both confirmed against the real
+    serializer rather than the fixture's ``serialize=None`` fallback (which is an
+    allowlist, and therefore hid the whole problem):
+
+    ``seller_risk_score``
+        ``eligibility.py`` aliases ``ms.risk_score`` onto every row so the ranker
+        can penalise unreliable sellers. It is an internal assessment of a named
+        store, and ``ranking.EXPLAINABLE_FACTORS`` already refuses to publish the
+        *reason* derived from it — publishing the raw number is strictly worse.
+
+    ``candidate_source``
+        Which retrieval question produced the row. Publishing it hands anyone a
+        free readout of the retrieval strategy per card.
+
+    :data:`PIPELINE_ONLY_FIELDS` is therefore a denylist of *our* additions,
+    applied before the serializer's. It is deliberately not "fix the serializer's
+    list instead": that list is shared by every marketplace endpoint, and
+    widening it from inside this package would change payloads this mission never
+    looked at. The columns below are ours, so the strip belongs here.
+
     ``score`` and the signal breakdown are **not** in the payload. The client
     needs the reason code (to render "Why am I seeing this?") and nothing else;
     shipping the score would publish a ranking oracle that anyone could probe
@@ -893,7 +1023,7 @@ def _payload(
     product: dict
     if serialize is not None:
         try:
-            product = dict(serialize(row) or {})
+            product = dict(serialize(_buyer_safe(row)) or {})
         except Exception:
             LOGGER.warning("COMMERCE_DISCOVERY_SERIALIZE_FAILED listing=%s", row.get("id"), exc_info=True)
             product = {}

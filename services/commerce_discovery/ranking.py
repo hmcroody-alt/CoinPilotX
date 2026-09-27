@@ -94,6 +94,16 @@ REASON_PRIORITY = (
     REASON_POPULAR,
 )
 
+#: How well a card must match the content before a relatedness claim is allowed.
+#:
+#: Extracted from a literal inside :func:`choose_reason` because a second reader
+#: arrived: ``relationship.classify`` decides whether a placement's recorded
+#: provenance is ``contextual`` using the same test. Two copies of ``0.6`` would
+#: be one edit away from a card that says "Related to this post" while its own
+#: audit row says the context never matched — which is the conflation the
+#: relationship axis was added to remove, reintroduced one layer down.
+CONTEXT_CLAIM_MIN_RELEVANCE = 0.6
+
 
 #: The only score terms that may be named to a user.
 #:
@@ -811,7 +821,8 @@ def choose_reason(
     # in the vocabulary, so a typo or a newly added surface got "related to this
     # post" by default — the one failure this module's docstring names. Silence is
     # the safe answer to "I don't know what to call this".
-    if has_context and context_reason in REASON_PRIORITY and signals.get("relevance", 0.0) >= 0.6:
+    if (has_context and context_reason in REASON_PRIORITY
+            and signals.get("relevance", 0.0) >= CONTEXT_CLAIM_MIN_RELEVANCE):
         claims.add(context_reason)
     try:
         if int(listing.get("seller_user_id") or 0) in followed_sellers:
