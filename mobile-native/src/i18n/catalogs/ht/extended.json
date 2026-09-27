@@ -1343,6 +1343,7 @@
       "verification": "Verifikasyon",
       "trustCopy": "Fòm taks avanse, konfigirasyon bank, konfli, ranbousman, livrezon ak revizyon administratif rete sou wout wèb/founisè ki an sekirite yo toutan pòt kontwòl QA natif yo poko pare.",
       "storeMediaViewerTitle": "Medya boutik",
+      "statusRemoved": "Retire",
       "status": {
         "live": "Apwouve/ann dirèk",
         "pending": "K ap tann",

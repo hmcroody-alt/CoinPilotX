@@ -1358,6 +1358,7 @@
       "verification": "Verifizierung",
       "trustCopy": "Erweiterte Steuerformulare, Bankanbindung, Streitfälle, Erstattungen, Versand und die Freigabe durch Admins bleiben in den sicheren Web- und Anbieter-Abläufen, bis die nativen QA-Freigaben stehen.",
       "storeMediaViewerTitle": "Shop-Medien",
+      "statusRemoved": "Entfernt",
       "status": {
         "live": "Freigegeben / live",
         "pending": "Ausstehend",
