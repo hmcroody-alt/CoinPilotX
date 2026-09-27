@@ -1358,9 +1358,18 @@
       "verification": "Verificação",
       "trustCopy": "Formulários fiscais avançados, cadastro bancário, disputas, reembolsos, entrega e análise da equipe continuam em fluxos seguros da web/provedor até as validações nativas de QA ficarem prontas.",
       "storeMediaViewerTitle": "Mídia da loja",
-      "statusApprovedLive": "Aprovado/no ar",
-      "statusPendingReview": "Aguardando revisão",
-      "statusRemoved": "Removido"
+      "status": {
+        "live": "Aprovado/no ar",
+        "pending": "Pendente",
+        "out_of_stock": "Esgotado",
+        "removed": "Removido",
+        "rejected": "Rejeitado",
+        "paused": "Pausada",
+        "sold": "Vendido",
+        "draft": "Rascunho",
+        "store_offline": "Loja não ativa",
+        "store_name_needed": "Nome da loja necessário"
+      }
     },
     "orders": {
       "title": "Pedidos",

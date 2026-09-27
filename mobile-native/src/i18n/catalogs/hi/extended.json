@@ -1358,9 +1358,18 @@
       "verification": "वेरिफ़िकेशन",
       "trustCopy": "एडवांस्ड टैक्स फ़ॉर्म, बैंक ऑनबोर्डिंग, विवाद, रिफ़ंड, फ़ुलफ़िलमेंट और एडमिन रिव्यू नेटिव QA गेट तैयार होने तक सुरक्षित वेब/प्रोवाइडर फ़्लो पर ही रहते हैं।",
       "storeMediaViewerTitle": "स्टोर मीडिया",
-      "statusApprovedLive": "मंज़ूर/लाइव",
-      "statusPendingReview": "रिव्यू बाकी",
-      "statusRemoved": "हटा दिया गया"
+      "status": {
+        "live": "मंज़ूर/लाइव",
+        "pending": "पेंडिंग",
+        "out_of_stock": "स्टॉक में नहीं",
+        "removed": "हटा दिया गया",
+        "rejected": "अस्वीकृत",
+        "paused": "रुका हुआ",
+        "sold": "बिक गया",
+        "draft": "ड्राफ़्ट",
+        "store_offline": "स्टोर लाइव नहीं",
+        "store_name_needed": "स्टोर नाम ज़रूरी"
+      }
     },
     "orders": {
       "title": "ऑर्डर",
