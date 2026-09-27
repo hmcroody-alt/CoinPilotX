@@ -18,6 +18,7 @@ second table is invisible to any test that only checks what one page renders.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -29,6 +30,30 @@ from services import pulse_reactions
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 HOME_CORE = os.path.join(REPO, "static", "js", "pulse_home_core.js")
 BOT = os.path.join(REPO, "bot.py")
+
+#: Asset fingerprints: relative path -> (the `?v=` token bot.py serves it under,
+#: sha256 of the file's bytes under that token).
+#:
+#: Static assets ship `Cache-Control: public, max-age=31536000, immutable`, so the
+#: token *is* the identity of the file a returning browser holds. Editing one of
+#: these files without bumping its token means a returning visitor keeps the old
+#: copy for a year and never receives the change -- a fix that is live on the
+#: server and absent from every existing browser. That has already happened twice
+#: to `pulse_home_core.js`, which is why the pin exists.
+#:
+#: To change a pinned file: edit it, bump the token in bot.py, then update the
+#: digest here. Updating the digest *without* bumping the token puts the bug back
+#: -- the point of recording them together is that the diff shows you doing it.
+CACHE_PINNED_ASSETS = {
+    "static/js/pulse_home_core.js": (
+        "reaction-catalogue-20260927h",
+        "1aeeccee65767efcd3210bfab59b4ef827a01b42fb05abe6f50132e23fa38c24",
+    ),
+    "static/css/pulse_desktop_shell.css": (
+        "reaction-catalogue-20260927h",
+        "401375580f970d043ded8b961b8bb9c583a300a5e63498f2300f46dd2a7c5c00",
+    ),
+}
 
 
 def read(path: str) -> str:
@@ -250,6 +275,43 @@ def test_the_app_summary_is_driven_by_counts_not_by_its_tray():
     )
     assert "Object.keys(counts" in body.group(1), (
         "reactionSummary must be driven by the counts the server sent"
+    )
+
+
+@pytest.mark.parametrize("relpath", sorted(CACHE_PINNED_ASSETS))
+def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
+    """A renderer fix nobody receives is not a fix.
+
+    The immutable year-long cache header means the `?v=` token decides which copy
+    of this file a returning browser uses. The two are pinned together here so
+    that changing one without the other is a red test rather than a silent
+    non-delivery.
+    """
+    expected_token, expected_digest = CACHE_PINNED_ASSETS[relpath]
+
+    filename = relpath.rsplit("/", 1)[-1]
+    tokens = set(re.findall(re.escape(filename) + r"\?v=([\w.-]+)", read(BOT)))
+    assert tokens, f"{relpath} is no longer served with a ?v= token by bot.py"
+    assert len(tokens) == 1, (
+        f"{relpath} is served under more than one token {sorted(tokens)}; the copies "
+        "would be cached separately and one of them would be stale"
+    )
+
+    with open(os.path.join(REPO, relpath), "rb") as handle:
+        digest = hashlib.sha256(handle.read()).hexdigest()
+    token = tokens.pop()
+
+    if digest != expected_digest and token == expected_token:
+        pytest.fail(
+            f"{relpath} changed but still ships as ?v={token}. Every browser that "
+            "has already loaded that token keeps its old copy for a year, so this "
+            "change would never reach a returning visitor. Bump the token in bot.py "
+            f"and record the new digest in CACHE_PINNED_ASSETS: {digest}"
+        )
+    assert (token, digest) == (expected_token, expected_digest), (
+        f"{relpath} is pinned to ?v={expected_token} in CACHE_PINNED_ASSETS but "
+        f"bot.py now serves ?v={token}. Update the pin to "
+        f"({token!r}, {digest!r})."
     )
 
 
