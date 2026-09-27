@@ -188,7 +188,7 @@ tracks — it would silently disable the one that can be withdrawn.
 `COMPOSED_HAS_AUDIO = False` in `reel_composer.py` now carries that explanation,
 because it is the exact spot where the next engineer will reach for ffmpeg.
 
-## 12. Music: why no track is cleared
+## 12. Music: why the catalogue does not clear itself
 
 `pulse_audio_tracks` holds 148 rows, of which 142 are `lifecycle_state='ACTIVE'`,
 `approved_by_admin=1` and `commercial_use_allowed=1`. It would be easy to read
@@ -208,6 +208,20 @@ the uploader carries the liability — and a completely unreasonable basis for t
 platform's own brand account to publish against, where the liability is PulseSoc's.
 
 So PulseDrop does not infer clearance. It requires it.
+
+**That requirement has since been met, and it is worth being precise about how.**
+On 2026-09-27 the platform owner stated that the catalogue on account 15 is
+PulseSoc's own and authorised PulseDrop to publish against it, and 142 tracks
+were cleared on that basis. Nothing in the data changed: the `proof_url` values
+are still breadcrumbs and there is still no licence document behind any row. What
+changed is that a named human with the standing to make the call made it, and the
+`clearance_note` on all 142 rows says exactly that — that the basis is the
+owner's own assertion of ownership, not a third-party licence. The six
+`TAKEN_DOWN` rows were refused by the platform filter and left alone.
+
+The distinction matters because the clearance table is the artefact somebody will
+read during a takedown request. A note that overclaims — "licensed", "cleared by
+legal" — would be worse than no note at all.
 
 ## 13. The clearance table
 
@@ -269,8 +283,22 @@ stopped attaching music" when nothing had changed.
 
 `/admin/pulsedrop` gains a "Reel music" section listing every clearance ever made
 with its live state — `in rotation`, `withdrawn`, `taken down`, `legal hold` — plus
-candidates. Two actions, `clear_bed` and `revoke_bed`, both through the existing
-`apply_action()` path so they land in `log_admin_audit`.
+candidates. Three actions — `clear_bed`, `clear_all_beds` and `revoke_bed` — all
+through the existing `apply_action()` path so they land in `log_admin_audit`.
+
+`clear_all_beds` was added after the fact, and the reason is instructive. The
+first bulk clearance was done with a throwaway script, because the page offered
+only one button per track and the catalogue is 142 of them. That is the failure
+mode the page exists to prevent: a rights decision executed from a laptop,
+against whichever database the shell pointed at, with the audit rows hand-written
+alongside. So the action moved into the product. It is `clear()` in a loop — it
+cannot clear anything the single-track path would refuse, and `candidates()` and
+`music_service`'s filter both still apply to every row — and it requires a note
+of at least `BULK_NOTE_MIN` characters, because a bulk clearance with no recorded
+grounds is precisely the artefact that makes a later takedown request
+unanswerable. The button is labelled with the real total, not the twelve rows the
+table shows; `candidate_count()` and `candidates()` share one SQL predicate so
+those two numbers cannot drift.
 
 `clear` (reset a setting) and `clear_bed` (approve a track) are unrelated
 operations that share a verb; the code says so where they meet.
@@ -332,23 +360,40 @@ Reels enabled `2026-09-27T14:56` UTC via `config.set_override`, no redeploy.
 Live envelope: `reel_min_images=1`, `reel_max_images=4`, `reel_target_seconds=8`,
 `reel_min_interval_s=21600`, `daily_reel_cap=3`, `cross_format_cooldown_h=48`.
 
-At the time of writing `pulsedrop_renders` is empty and no Reel has published.
-That is the expected state: the only run so far (13:58) predates the switch, and
-the next tick is on the two-hour cadence.
+Music was turned on the same day: 142 tracks cleared (§12), then
+`PULSEDROP_REEL_AUDIO_ENABLED` flipped true at `15:44:53` UTC, again with no
+redeploy.
 
-Music infrastructure is merged and inert — **zero tracks cleared, and the switch
-defaults off.** Both are true independently, so either alone is sufficient.
+**The first composed Reel published at `16:02:00` UTC, and the whole chain is
+confirmed against production rows rather than inferred:**
+
+| Evidence | Value |
+| --- | --- |
+| Run 2, `15:58:57` | `decision=REEL_ONLY`, `outcome=render_pending`, 15 evaluated, 15 eligible, `renders_started=1` |
+| `pulsedrop_renders` 1 | `composed_images`, `state=ready`, 8.0s, one attempt, real MP4 on the CDN |
+| Run 3, `16:02:00` | `outcome=published`, `reason=signal_unavailable`, `reel_post_id=2502` |
+| `pulsedrop_publications` 2 | `surface=reel`, listing 24, `reel_id=77`, `editorial_label=DISCOVERY` |
+| `pulse_reel_audio` for reel 77 | track 18605, **`volume=0.6`** |
+
+Three of those are worth reading closely. The two-tick shape — `render_pending`
+then `published` — is §8 working: the render did not block the tick that started
+it. `reason=signal_unavailable` is §3 working: a composed Reel reached the surface
+by the only route defaults allow, not by outranking a photo post. And `volume=0.6`
+is PulseDrop's own setting; every member Reel in that table sits at `1.0`, so the
+bed was attached by this code path and not by the generic one.
 
 ## 21. What remains
 
 **For a human, not for me:**
 
-- **Clear at least one track, or Reel music does nothing.** This is a rights
-  judgement and needs someone who knows the provenance of the catalogue. If
-  PulseSoc commissioned or owns the tracks on account 15, clearing is a one-click
-  operation on `/admin/pulsedrop` and the note field is where the reason goes. If
-  they are member uploads, none of them are clearable and the right answer is to
-  license a small set specifically for this.
+- **No Reel has been watched on a handset.** Everything above is database
+  evidence. The overlay is React Native and reaches nobody until an EAS build
+  ships, so "the video plays and the bed plays with it, in sync, at a sane
+  volume" is still unverified by eye. That is the one claim in this document
+  that rows cannot settle.
+- **The clearance rests on the owner's assertion, not a document** (§12). If a
+  written licence ever exists for these tracks, the notes should be updated to
+  point at it.
 
 **Known limits, not defects:**
 
