@@ -912,6 +912,36 @@ export type MarketplaceBatchResponse = {
 };
 
 /**
+ * How long a bulk write may take before the client stops waiting.
+ *
+ * This request carries up to 200 listings and the server walks them one at a
+ * time — for `publish` that is a safety review, two UPDATEs and an inventory
+ * event per row, which on production Postgres is several hundred round trips for
+ * a full batch. It was on `pulseApi`'s shared 15-second budget, a number named
+ * and chosen for *reads*, while the server it talks to is allowed gunicorn's
+ * `--timeout 120`. A client budget below the server's ceiling cannot report
+ * anything but failure: the client decides before the server has had its
+ * allotted time, so a batch of 200 that legitimately took 20 seconds and
+ * published all 200 could only ever be shown to the seller as "Couldn't
+ * finish". That is exactly how the dropshipping import came to report a
+ * 154-second success as a rollback (see `IMPORT_TIMEOUT_MS`).
+ *
+ * Above 120s rather than near it, so the *server* is always the one that gives
+ * up first and the answer the seller reads is the server's own.
+ *
+ * The cost of the larger number is that a black-holed connection now leaves the
+ * sheet in its running state for longer instead of failing at 15 seconds. That
+ * is the right way round: the running state is true, and a refused connection
+ * still fails immediately because the transport rejects rather than hangs.
+ *
+ * No `isClientTimeout` branch is needed here, unlike the import — `StoreBulkSheet`'s
+ * error face already refuses to claim a rollback ("Trying again won't repeat
+ * anything that already went through"), which is honest whether the batch landed
+ * or not. The budget was the only half of that bug this path still had.
+ */
+const MARKETPLACE_BATCH_TIMEOUT_MS = 180_000;
+
+/**
  * Apply one action to many listings in ONE request.
  *
  * The alternative — looping the single-listing routes on the phone — is what
@@ -939,6 +969,7 @@ export async function batchMarketplaceSellerListings(input: {
 }) {
   return pulseApi<MarketplaceBatchResponse>("/api/pulse/marketplace/seller/listings/batch", {
     method: "POST",
+    timeoutMs: MARKETPLACE_BATCH_TIMEOUT_MS,
     body: batchBody(input)
   });
 }
