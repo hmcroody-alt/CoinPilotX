@@ -16,7 +16,7 @@ it, and the fixes for those defects. Section 3 is an honest ledger of what pre-e
 versus what I added, because the difference is most of the value of this document.
 
 **On the shape of this report.** The brief specified a final report of 41 numbered
-sections. This one has 19. That is a deliberate departure, and the reason is the same
+sections. This one has 20. That is a deliberate departure, and the reason is the same
 reason the engine was not rebuilt: the section list was written on the assumption that
 all of it would be new construction. Roughly two thirds of the headings — embeddings,
 the vector index, the new worker framework, the experimentation platform, the load
@@ -426,6 +426,13 @@ surface.** A `TypeError` from a bad call becomes an empty feed, not a 500 — in
 from a viewer with no eligible inventory. This is the same silent-vanishing pattern
 `CLAUDE.md` warns about for route packs. Not fixed because narrowing it is a
 availability change that deserves its own decision.
+
+> **Half of this is now closed — see §19, and §20 for the rest of the package.** The
+> paragraph above under-rates it: the handler was not only hiding failures from production,
+> it was hiding them from **48 of this report's own tests**, which were green against an
+> engine that could not run. That half is fixed, without touching the handler. The
+> availability half — a caller still cannot distinguish a crash from a decision — stands as
+> written, and §82 is the reason it stays that way.
 
 **`diversity_bonus` is 0.07 and I think it is too low.** I pinned it in a test rather
 than changing it: it is a product judgement about how much variety to buy with relevance,
@@ -1099,3 +1106,123 @@ answer was no for the entire life of this report.
 
 Verified: 680 package tests and 663 protection tests green; the 158/522 mutation above,
 reverted.
+
+---
+
+## 20. The previous section found one unwatched fail-soft path. There were 25.
+
+§19 ends by naming four more fail-soft paths no test walks, and saying the distinction that
+matters is "whether a test can tell that it took one". That was a list assembled by reading.
+Assembling a list by reading is how you find the handlers you already suspected.
+
+So the handlers were counted instead.
+`scripts/protection/audit_commerce_discovery_failsoft.py` inventories every `except` clause
+in `services/commerce_discovery/` by AST, then runs the package's own suite under
+`sys.settrace` and records which handler *bodies* execute. Three states, one of which is
+fine:
+
+| state | meaning |
+| --- | --- |
+| `exercised` | a test reaches it, and it logs or re-raises. Its failure behaviour is tested behaviour. |
+| `never` | no test in the package reaches it. It is a claim about what happens when something breaks, and nothing has checked the claim. |
+| `silent` | reached, but neither logs nor re-raises. Production cannot tell it fired; nor can a test, except by noticing a missing value. |
+
+Measured before any of this section's tests existed:
+
+```
+56 fail-soft handlers in services/commerce_discovery/
+25 NEVER REACHED by any test in the package
+ 9 reached, but neither logged nor re-raised
+22 reached, and says so
+```
+
+`exposure.py` was 5 of 6 never reached. `engine.py` 6 of 11. `ranking.py` 4 of 5.
+
+It needs no new dependency. That is deliberate and it is the §14 constraint, not laziness:
+`coverage` is not a dependency of this repo, and a measurement that requires one more
+install than the suite already needs is a measurement nobody re-runs. The global trace
+function returns `None` for every frame outside the package, so line tracing is only paid
+for where it is read.
+
+**It exits 0 whatever it finds.** A `never` handler is a question — "can this actually
+happen?" — and §11a is the reason some of the answers are legitimately "no". A gate here
+would force tests for unreachable branches, which buys a green tick and no safety.
+
+### The one that was my own sentence
+
+`engine.py:924`, inside `_persist`, is the handler that bounds
+`relationship.assert_servable`. The previous increment put a comment beside it saying the
+blast radius is one dropped placement. The audit says that handler had never executed.
+
+An untested claim about a blast radius is a confident sentence. Nothing produces an
+unservable relationship today — `classify` only ever returns one of four — which is exactly
+why the guard sits on the write path and why its radius has to be *demonstrated* rather than
+reasoned about. The next writer of that column is a feature that does not exist yet.
+
+### What was closed, and what was left
+
+`tests/commerce_discovery/test_the_fail_soft_paths_are_walked.py` does not chase all 25.
+It takes the handlers where the **direction** of the failure is a promise somebody relies on:
+
+* **`_persist`** — one unwritable row now provably costs one card and not the response, and
+  says so in the log. A separate test asserts every card that *did* come back carries an
+  impression token, which is the reason dropping is correct: a tokenless card can never
+  record an impression, so the frequency cap never learns it was shown and it is eligible
+  again on the next request, forever. The `assert_servable` radius is demonstrated
+  end-to-end by making it refuse exactly one row.
+* **`_session_cap_reached`** — annotated `return True  # fails closed`. The comment is now
+  the test. A frequency limit that fails *open* shows more commerce to precisely the viewer
+  who has had their allowance, and nothing anywhere would say so. End-to-end, the surface
+  goes quiet rather than uncapped — and note what §19's guard deliberately does *not* do
+  here: no `COMMERCE_DISCOVERY_SERVE_FAILED` fires, because this `[]` is a decision the
+  engine made on purpose after a failed read. The guard is narrow enough to tell those
+  apart, which is the property that makes it usable.
+* **`_payload`** — if the real serializer throws, the fallback must still be the allowlist.
+  §18.6 is about what reaches a buyer's device, and that guarantee has to survive the
+  serializer failing, not only the serializer working. Parametrized over every member of
+  `PIPELINE_ONLY_FIELDS`.
+* **`exposure`'s purchase / cart / save reads** — each one removes a reason a product would
+  be filtered or boosted. Each is now exercised by dropping the table out from under it and
+  asserting the shop stays open.
+
+After:
+
+```
+56 fail-soft handlers
+18 NEVER REACHED   (was 25)
+ 9 reached, but neither logged nor re-raised   (unchanged)
+29 reached, and says so   (was 22)
+```
+
+The nine `silent` handlers are unchanged **on purpose**. Every one is an
+`_int`/`_json_list`-shaped coercion whose failure is meant to be indistinguishable from an
+absent value; making them log would put a line in production for every malformed row, which
+is how you train people to ignore logs.
+
+The audit script is itself under test — §14 says evidence nobody can regenerate is a defect,
+and a silently-zero inventory would report a clean bill of health. Three tests assert the
+inventory still finds the package, still finds the two handlers this section is about by
+name, and can still distinguish a logging handler from a silent one, because if that
+distinction collapsed the `silent` category would become unreachable and the audit could not
+report it. Only the inventory half is called from a test; the other half runs the whole
+suite, which a test must not do.
+
+### Still open, and the one worth acting on
+
+`ranking.py` remains 4 of 5 unreached and those four are coercion guards of the same shape
+as the `silent` nine. `engine.py:533` — the first of `_listing_stats`' two handlers — is
+still unreached, and that one is not a coercion:
+
+> **Finding (not changed).** Both of `_listing_stats`' handlers log at `LOGGER.debug`. A
+> stats outage is therefore invisible in production, and its effect is not small: with no
+> stats, *every* listing looks unproven, which changes the ranking of every card on every
+> surface simultaneously. This is a one-word change to `LOGGER.warning`, but it is a change
+> to production logging volume on a path that reads per-listing, so it belongs in the same
+> conversation as §16's rollout rather than smuggled in beside a test file.
+
+§12's entry on `engine.serve`'s broad `except` should now be read against §19 and this
+section: the *test-visibility* half is closed, for `serve` specifically and for four more
+handlers here. The availability half — that a caller still cannot distinguish a crash from a
+decision — is unchanged, and §82 is the reason it stays that way.
+
+Verified: 697 package tests and 663 protection tests green, plus the audit re-run above.
