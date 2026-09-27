@@ -18,6 +18,15 @@ from services import marketplace_seller_identity as seller_identity
 
 DRAFT = "draft"
 PENDING_REVIEW = "pending_review"
+#: The merchant has released this listing and no decision has been recorded yet.
+#:
+#: Spelled out as a constant because it reaches ``status`` and ``approval_status``
+#: alike and was a bare literal at every site that wrote it. The distinction it
+#: carries is the one :func:`awaiting_moderation` rests on: ``status`` is the
+#: merchant's axis, and this is the only value on that axis that means *they have
+#: asked*. ``approval_status='pending_review'`` cannot mean it -- the column is
+#: ``DEFAULT 'pending_review'``, so every untouched draft is born carrying it.
+REVIEW_READY = "review_ready"
 CHANGES_REQUESTED = "changes_requested"
 APPROVED = "approved"
 PUBLISHED = "published"
@@ -34,7 +43,7 @@ APPROVED_STATES = frozenset({APPROVED})
 # The vocabulary both axes use for "no decision recorded yet". ``review_ready``
 # reaches both columns: ``revenue_safety_engine`` returns it as an approval
 # state, and the seller resume route copies it onto ``status`` as well.
-AWAITING_DECISION_STATES = frozenset({PENDING_REVIEW, "review_ready"})
+AWAITING_DECISION_STATES = frozenset({PENDING_REVIEW, REVIEW_READY})
 
 # The statuses that mean the merchant has released the listing for review --
 # either by submitting it or by publishing it. A ``draft`` is not among them,

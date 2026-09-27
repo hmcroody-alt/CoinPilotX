@@ -3761,6 +3761,78 @@ describe("DropshippingProductsScreen", () => {
       expect(view.getByText("Last sync from your supplier failed")).toBeTruthy()
     );
   });
+
+  /**
+   * The landing state of an import the publish gate declined.
+   *
+   * `review_ready` is what the server writes now, and the only reason this
+   * screen has to say anything new is that `draft` was doing two jobs: "no
+   * buyer can reach this", which is still true, and "this is waiting on you",
+   * which was never true of a gate refusal. A merchant who released 58 products
+   * and read "Draft" back on all of them has been told their import did not
+   * work. These four tests are the client half of that fix; the server half is
+   * `_release_for_review` in `services/business_os/suppliers/drafts.py`.
+   */
+  describe("a product the publish gate declined", () => {
+    const inReview = () => row({ listingId: 78, title: "Linen Shirt", status: "review_ready" });
+
+    it("reads as in review, and still says it is not in the store", async () => {
+      // Both halves matter and they are one sentence in the UI: the merchant's
+      // move is over (not "Draft"), and the product is not yet selling (still
+      // not "In your store"). Dropping either half is a different wrong answer.
+      const { view } = await renderProducts([inReview()]);
+      await waitFor(() =>
+        expect(view.getByText("In review — not in your store yet")).toBeTruthy()
+      );
+      expect(view.queryByText("Not in your store yet")).toBeNull();
+      expect(view.queryByText("In your store")).toBeNull();
+    });
+
+    it("has a filter of its own, which asks the server for the released rows", async () => {
+      // The chip is only worth having if it narrows the query. `review_ready`
+      // is the literal the server stores, so a chip that sent "IN_REVIEW" or
+      // "pending_review" would quietly come back empty.
+      const { view } = await renderProducts([inReview()]);
+      mockListImportedProducts.mockClear();
+      fireEvent.press(view.getByLabelText("In review"));
+      await waitFor(() => expect(mockListImportedProducts).toHaveBeenCalled());
+      expect(mockListImportedProducts.mock.calls[0][2]).toMatchObject({
+        status: "review_ready"
+      });
+    });
+
+    it("counts the released rows apart from the drafts, and asks for different things", async () => {
+      // A store can hold both populations at once -- gate refusals from an
+      // auto-publishing store, and true drafts from a store that turned
+      // auto-publish off. One combined count would tell the merchant to go and
+      // publish products that are already released.
+      const { view } = await renderProducts([row(), inReview(), row({ listingId: 79 })]);
+      await waitFor(() =>
+        expect(view.getByText(/2 of these are drafts/)).toBeTruthy()
+      );
+      expect(view.getByText(/1 of these are in review/)).toBeTruthy();
+      // Look, don't publish again. The draft note says "set its price and
+      // publish it"; saying that about a released product is the same bad
+      // instruction the word "Draft" was giving.
+      expect(view.getByText(/Open one to see what it's waiting on/)).toBeTruthy();
+    });
+
+    it("does not claim everything imported is published when there are no drafts", async () => {
+      // The old empty copy read "No drafts -- everything you've imported is
+      // published." Now that a refusal lands in review rather than in drafts,
+      // an empty Drafts tab is the *normal* case for a store holding products
+      // that are not published at all, so that sentence became a false one.
+      mockListImportedProducts.mockResolvedValue({ items: [], count: 0 });
+      const nav = navigation();
+      const view = render(<DropshippingProductsScreen navigation={nav} route={route} />);
+      await settle();
+      fireEvent.press(view.getByLabelText("Drafts"));
+      await waitFor(() =>
+        expect(view.getByText("No drafts — nothing here is waiting on you.")).toBeTruthy()
+      );
+      expect(view.queryByText(/everything you've imported is published/)).toBeNull();
+    });
+  });
 });
 
 /* ------------------------------------------------------------------ *
