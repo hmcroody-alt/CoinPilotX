@@ -557,3 +557,123 @@ def _pick(view: list[dict], key: str) -> dict:
         if item["key"] == key:
             return item
     raise AssertionError(f"{key} is not in the settings view")
+
+
+class TestClearingTheCatalogueFromThePage:
+    """The bulk clear is only useful if it is on the page and says what it does.
+
+    ``clear_all`` is covered in ``test_audio``; what is here is the half that
+    lives in the route — that the button exists, that the number beside it is
+    the real total rather than the dozen rows above it, and that pressing it is
+    audited. A correct service function reachable from nowhere is why the
+    catalogue got cleared by a script in the first place.
+    """
+
+    PAGE = "/admin/pulsedrop"
+
+    _TRACK = {
+        "artist": "PulseSoc Music",
+        "audio_url": "https://cdn.example/track.mp3",
+        "source_type": "artist_upload",
+        "source_provider": "original_pulse_sound",
+        "license_type": "artist rights confirmed upload",
+        "commercial_use_allowed": 1,
+        "remix_edit_allowed": 1,
+        "attribution_required": 0,
+        "proof_url": "artist-upload:15:2026-06-21T00:26:12",
+        "approved_by_admin": 1,
+        "active": 1,
+        "safety_status": "approved",
+        "rights_confirmed": 1,
+        "lifecycle_state": "ACTIVE",
+        "legal_hold": 0,
+        "removed_at": "",
+        "uploader_user_id": 15,
+    }
+
+    @pytest.fixture()
+    def client(self, monolith, monkeypatch):
+        admin = {"id": 991, "username": "opsadmin", "email": "ops@example.com", "role": "owner"}
+        monkeypatch.setattr(monolith, "require_admin_page", lambda permission: (dict(admin), None))
+        monkeypatch.setattr(monolith, "admin_login_required", lambda: dict(admin))
+        monolith.webhook_app.config["TESTING"] = True
+        return monolith.webhook_app.test_client()
+
+    @pytest.fixture()
+    def audited(self, monolith, monkeypatch):
+        entries = []
+        monkeypatch.setattr(monolith, "log_admin_audit",
+                            lambda *args, **kwargs: entries.append((args, kwargs)))
+        return entries
+
+    @staticmethod
+    def _write(statements) -> None:
+        """Write and commit on a connection of our own.
+
+        The ``cursor`` fixture commits at teardown, which is fine for a test
+        that reads back through the same connection and useless here: the route
+        under test opens its own, and would see an empty catalogue.
+        """
+        from services import db as platform_db
+
+        conn = platform_db.connect()
+        try:
+            cur = conn.cursor()
+            for sql, params in statements:
+                cur.execute(sql, params)
+            conn.commit()
+        finally:
+            conn.close()
+
+    @classmethod
+    def _empty(cls) -> None:
+        from services.pulsedrop import schema
+
+        schema.reset_ready_flag()
+        schema.ensure_schema()
+        cls._write([("DELETE FROM pulsedrop_audio_beds", ()),
+                    ("DELETE FROM pulse_audio_tracks", ())])
+
+    @pytest.fixture()
+    def catalogue(self):
+        """Twenty clearable tracks: more than the page displays, on purpose."""
+        self._empty()
+        columns = ", ".join(["id", "title", *self._TRACK])
+        marks = ", ".join("?" for _ in range(len(self._TRACK) + 2))
+        self._write([
+            (f"INSERT INTO pulse_audio_tracks ({columns}) VALUES ({marks})",
+             (19000 + index, f"Bed {index}", *self._TRACK.values()))
+            for index in range(20)
+        ])
+        yield
+        self._empty()
+
+    def test_the_button_counts_the_catalogue_not_the_rows_on_screen(self, client, catalogue):
+        """The table is capped at twelve. Clearing acts on all twenty."""
+        page = client.get(self.PAGE).get_data(as_text=True)
+        assert "Clear all 20" in page
+        assert "20 clearable, showing the 12 most used." in page
+
+    def test_it_is_not_offered_when_there_is_nothing_to_clear(self, client):
+        self._empty()
+        page = client.get(self.PAGE).get_data(as_text=True)
+        assert "clear_all_beds" not in page
+
+    def test_pressing_it_clears_and_is_audited(self, client, catalogue, audited):
+        from services.pulsedrop import audio
+
+        response = client.post(self.PAGE, data={
+            "form_action": "clear_all_beds", "key": "",
+            "value": "Owner confirmed ownership of the catalogue"})
+        assert response.status_code == 200
+        assert len(audio.cleared_beds()) == 20
+        assert [e for e in audited if e[0][1] == "pulsedrop_clear_all_beds"]
+
+    def test_a_refused_bulk_clear_is_not_audited(self, client, catalogue, audited):
+        """An audit row for something that did not happen is worse than none."""
+        from services.pulsedrop import audio
+
+        client.post(self.PAGE, data={
+            "form_action": "clear_all_beds", "key": "", "value": "ours"})
+        assert audio.cleared_beds() == []
+        assert [e for e in audited if e[0][1].startswith("pulsedrop_")] == []
