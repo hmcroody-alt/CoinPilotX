@@ -343,8 +343,14 @@ def get_cart(connection_id):
     try:
         actor, context = _request_context()
         business_id, store_id = _scope(request.args)
-        return _respond({"ok": True, **import_cart.get_cart(business_id, store_id, actor,
-                                                            connection_id, context=context)})
+        cart = import_cart.get_cart(business_id, store_id, actor, connection_id,
+                                    context=context)
+        # The cart holds more rows than one import can consume, so the screen
+        # that draws the Import button has to know both numbers or it will offer
+        # something the server will only half-serve. Composed here rather than in
+        # `import_cart` because the limit belongs to the importer, and having the
+        # cart module import it back would close a cycle.
+        return _respond({"ok": True, "max_per_import": importer.MAX_BATCH, **cart})
     except Exception as exc:
         return _error(exc)
 
