@@ -606,7 +606,13 @@ export function MarketplaceProductScreen({ route, navigation }: Props) {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Buyer protection</Text>
-          <Protection icon="lock-closed-outline" text="Payment is handled by PulseSoc secure checkout — your card details are never shared with the seller." />
+          {/* Names Stripe because Stripe is who takes the card: the sheet in
+              `api/stripePaymentSheet` collects it, so neither PulseSoc nor the
+              seller is ever handed the number. Hedged to "card payments"
+              because this block renders on every listing while the lane is
+              chosen at checkout, and a cash buyer is told the opposite by
+              `checkoutPaymentCopy` — that no Stripe charge will start. */}
+          <Protection icon="lock-closed-outline" text="Card payments are processed by Stripe — neither PulseSoc nor the seller ever sees your card details." />
           <Protection icon="receipt-outline" text="Your order and receipt appear in Purchase History as soon as payment is confirmed." />
           <Protection icon="refresh-outline" text="Returns and disputes for eligible orders are opened from the order itself." />
         </View>
