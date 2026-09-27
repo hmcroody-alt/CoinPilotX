@@ -1147,6 +1147,7 @@
         "matches_your_interests": "Dapre sa ou renmen",
         "because_you_viewed": "Paske ou te gade atik sanblab",
         "related_to_this_post": "An rapò ak sa w ap gade a",
+        "similar_to_this_product": "Sanble ak pwodwi sa a",
         "from_sellers_you_follow": "Nan men vandè ou swiv",
         "trending": "Tandans sou PulseSoc kounye a",
         "new_arrival": "Fèk ajoute nan Marketplace",
@@ -1188,6 +1189,8 @@
       "module": {
         "recommended_for_you": "Rekòmande pou ou",
         "because_you_viewed": "Paske ou te gade",
+        "similar_to_this_product": "Pwodwi ki sanble",
+        "you_might_also_like": "Ou ka renmen sa yo tou",
         "trending": "Tandans",
         "new_arrivals": "Nouvo rive",
         "from_sellers_you_follow": "Nan men vandè ou swiv",

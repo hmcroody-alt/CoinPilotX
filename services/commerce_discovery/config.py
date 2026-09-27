@@ -211,6 +211,10 @@ def cadence(surface: str) -> dict:
         # both of which are enforced server-side, so there is no client-side
         # cadence left to describe.
         return {"lead_in": 0, "interval": 1, "max_per_page": surface_caps()["post_detail"][0]}
+    if surface == "product_detail":
+        # One shelf, below the canonical product. Same reasoning as post_detail:
+        # there is nothing on the screen for the row to be spaced against.
+        return {"lead_in": 0, "interval": 1, "max_per_page": surface_caps()["product_detail"][0]}
     if surface == "marketplace":
         return {"lead_in": 0, "interval": 1, "max_per_page": marketplace_module_limit()}
     return {
@@ -243,6 +247,29 @@ def post_detail_max_per_session() -> int:
     return _env_int("COMMERCE_DISCOVERY_POST_DETAIL_MAX_PER_SESSION", 6, minimum=0)
 
 
+def product_detail_row_size() -> int:
+    """Items in the related-products row on a product page.
+
+    Six, which is a shelf rather than a card, because this is the one surface
+    where the user has already declared the category: they are looking at a
+    product. A single alternative reads as an answer ("buy this instead"); six
+    read as a range to choose within, which is what the screen is for.
+    """
+    return _env_int("COMMERCE_DISCOVERY_PRODUCT_DETAIL_ROW", 6, minimum=0)
+
+
+def product_detail_max_per_session() -> int:
+    """Product pages per session that may carry a related-products row.
+
+    High, unlike every social surface, because a related-products row on a
+    product page is not an interruption — it is the navigation the screen owes
+    the user. Capping it would leave a shopper who opened their eleventh product
+    on a dead end. The cap exists at all only so a runaway client cannot write
+    unbounded placement rows.
+    """
+    return _env_int("COMMERCE_DISCOVERY_PRODUCT_DETAIL_MAX_PER_SESSION", 200, minimum=0)
+
+
 def marketplace_module_limit() -> int:
     """Marketplace is the surface the user came to for commerce: densest."""
     return _env_int("COMMERCE_DISCOVERY_MARKETPLACE_MODULES", 8, minimum=0)
@@ -257,6 +284,7 @@ def surface_caps() -> dict[str, tuple[int, int]]:
         "messenger": (1, messenger_max_per_session()),
         "marketplace": (marketplace_module_limit(), 1000),
         "post_detail": (1, post_detail_max_per_session()),
+        "product_detail": (product_detail_row_size(), product_detail_max_per_session()),
     }
 
 
@@ -282,6 +310,14 @@ def min_score(surface: str) -> float:
         # the match: the extra tenth is what turns "we know this is unrelated"
         # into "so we showed nothing".
         "post_detail": 0.10,
+        # Below the feed but nowhere near the shop's. The user is mid-purchase,
+        # so the cost of a mediocre suggestion is low — but this row is the only
+        # one that makes a *relatedness claim* about the product on screen, and a
+        # claim is a thing that can be wrong. Marketplace's -0.15 buys shelf
+        # coverage on a screen that promises nothing in particular; paying the
+        # same here would buy a row of unrelated products under the word
+        # "similar".
+        "product_detail": -0.05,
     }
     return max(0.0, min(1.0, base + lift.get(surface, 0.0)))
 

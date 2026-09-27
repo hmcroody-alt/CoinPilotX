@@ -95,6 +95,7 @@ def serve(
     promotion_class: str = promotion.ORGANIC,
     parse_price=None,
     serialize=None,
+    exclude_listing_ids: Sequence[int] = (),
 ) -> list[dict]:
     """Placements for one surface, or ``[]``.
 
@@ -106,6 +107,10 @@ def serve(
     :func:`schema.ensure_schema`. Without it the tables are still created, but
     inside the caller's transaction, where a later failure rolls them back after
     the once-per-process guard has already recorded success.
+
+    ``exclude_listing_ids`` names products that must not come back — in practice
+    the one the viewer is already looking at. It can only ever narrow the result,
+    which is what makes it safe for a route to populate from a request body.
     """
     try:
         return _serve(
@@ -113,6 +118,7 @@ def serve(
             context=context, session_id=session_id, limit=limit,
             promotion_class=promotion_class,
             parse_price=parse_price, serialize=serialize,
+            exclude_listing_ids=exclude_listing_ids,
         )
     except Exception:
         # The fail-safe. A bug anywhere above becomes a quiet feed, never a
@@ -134,6 +140,7 @@ def _serve(
     promotion_class: str,
     parse_price,
     serialize,
+    exclude_listing_ids: Sequence[int] = (),
 ) -> list[dict]:
     surface = str(surface or "").strip().lower()
     if surface not in schema.SURFACES:
@@ -177,6 +184,7 @@ def _serve(
         seller_cooldown=branch.seller_cooldown_seconds,
         target=branch.pool_target,
         rotation_offset=exposure.rotation_offset(policy.subject_ref),
+        exclude_listing_ids=exclude_listing_ids,
     )
     candidates = list(built.rows)
     if not candidates:
@@ -188,6 +196,13 @@ def _serve(
 
     profile = _interest_profile(cur, user_id) if policy.personalized else {}
     stats = _listing_stats(cur, [row["id"] for row in candidates])
+
+    # The context signal is the same computation on every surface; the *claim* it
+    # justifies is not. Resolved here, where the surface is known, rather than
+    # inside the ranker, which is deliberately surface-agnostic.
+    context_reason = (
+        ranking.REASON_SIMILAR_PRODUCT if surface == "product_detail" else ranking.REASON_CONTEXT
+    )
 
     scored = []
     now = subject.now_utc()
@@ -220,6 +235,7 @@ def _serve(
             parse_iso=subject.parse_iso,
             now=now,
             weights=weights,
+            context_reason=context_reason,
         )
         scored.append((row, verdict))
 

@@ -1161,6 +1161,7 @@
         "matches_your_interests": "Según lo que te gusta",
         "because_you_viewed": "Porque viste artículos similares",
         "related_to_this_post": "Relacionado con lo que estás viendo",
+        "similar_to_this_product": "Similar a este producto",
         "from_sellers_you_follow": "De vendedores que sigues",
         "trending": "Tendencia en PulseSoc ahora mismo",
         "new_arrival": "Recién añadido a Marketplace",
@@ -1202,6 +1203,8 @@
       "module": {
         "recommended_for_you": "Recomendado para ti",
         "because_you_viewed": "Porque viste",
+        "similar_to_this_product": "Productos similares",
+        "you_might_also_like": "También te puede gustar",
         "trending": "Tendencias",
         "new_arrivals": "Novedades",
         "from_sellers_you_follow": "De vendedores que sigues",

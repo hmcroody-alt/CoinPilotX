@@ -55,7 +55,18 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
 const mockRecordCommerceEngagement = jest.fn(async (..._args: unknown[]) => true);
 jest.mock("../../api/commerceDiscovery", () => ({
   __esModule: true,
-  recordCommerceEngagement: (...args: unknown[]) => mockRecordCommerceEngagement(...args)
+  recordCommerceEngagement: (...args: unknown[]) => mockRecordCommerceEngagement(...args),
+  // The screen also carries a related-products row, which has nothing to do with
+  // this funnel but reaches the network through the same module. Answering with
+  // an empty row is the inert version: an empty row renders nothing and emits
+  // nothing, so every engagement counted below is still the funnel's own.
+  fetchCommercePlacements: jest.fn(async () => ({
+    placements: [],
+    visiblePercentThreshold: 60,
+    visibleDwellMs: 1000,
+    cadence: { leadIn: 0, interval: 1, maxPerPage: 6 }
+  })),
+  recordCommerceFeedback: jest.fn(async () => true)
 }));
 const recordCommerceEngagement = mockRecordCommerceEngagement;
 

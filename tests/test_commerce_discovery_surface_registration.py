@@ -31,9 +31,15 @@ import unittest
 from services.commerce_discovery import config, preferences, router, schema
 
 
-#: The shop, and only the shop. Named once here so each case can say which side
-#: of the line it is testing without repeating the reasoning.
-NOT_SOCIAL = frozenset({"marketplace"})
+#: The shop. Named once here so each case can say which side of the line it is
+#: testing without repeating the reasoning.
+#:
+#: ``product_detail`` is here because a product page is *inside* Marketplace, and
+#: the exemption the settings screen promises is about the place, not the route:
+#: "Marketplace keeps recommending products inside Marketplace either way". A
+#: viewer who switched off being recommended to while scrolling a feed has not
+#: asked for a dead end at the bottom of a product they opened on purpose.
+NOT_SOCIAL = frozenset({"marketplace", "product_detail"})
 
 
 class EverySurfaceIsFullyRegistered(unittest.TestCase):
@@ -102,10 +108,12 @@ class TheMasterSwitchCoversEverySocialSurface(unittest.TestCase):
         )
 
     def test_the_shop_is_still_exempt(self):
-        # Asserted positively so that adding `marketplace` to the social set
+        # Asserted positively so that adding a shop surface to the social set
         # fails here rather than passing as a stricter default. The settings
         # screen tells the user the shop keeps working either way.
-        self.assertNotIn("marketplace", preferences.SOCIAL_SURFACES)
+        for surface in NOT_SOCIAL:
+            with self.subTest(surface=surface):
+                self.assertNotIn(surface, preferences.SOCIAL_SURFACES)
 
     def test_the_social_set_names_nothing_that_is_not_a_surface(self):
         self.assertEqual(preferences.SOCIAL_SURFACES - set(schema.SURFACES), set())
