@@ -307,6 +307,10 @@ nothing. Unique constraints, defaults and column types are the real ones.
 Live. First publication `2026-09-27T13:58:56` — listing 26, `SIGNAL_ONLY`,
 reason `signal_is_the_right_format`, 15 candidates evaluated, 15 eligible.
 
+Both surfaces have since published. The first composed Reel went out at
+`16:02:00` the same day, with a cleared music bed under it; the evidence table is
+in `docs/pulsedrop_reels.md` §20.
+
 Known and expected limits of the current environment:
 
 - **One eligible seller.** All 11 eligible listings belong to `user_id=1`. The

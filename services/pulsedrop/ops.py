@@ -329,6 +329,10 @@ def dashboard(*, limit: int = 20, now: datetime | None = None) -> dict:
         "schedule": schedule_view(now=now),
         "beds": audio.bed_view(),
         "bed_candidates": audio.candidates(),
+        # The page shows a dozen candidates and offers to clear all of them.
+        # Those are different numbers, and the operator is entitled to the
+        # second one before pressing the button.
+        "bed_candidate_count": audio.candidate_count(),
     }
 
 
@@ -339,7 +343,8 @@ def dashboard(*, limit: int = 20, now: datetime | None = None) -> dict:
 #: ``clear`` and ``clear_bed`` are unrelated despite the word: the first clears
 #: a setting *override*, the second grants a music clearance. The second is
 #: spelled out rather than shortened for exactly that reason.
-ACTIONS = frozenset({"set", "clear", "run_now", "clear_bed", "revoke_bed"})
+ACTIONS = frozenset({"set", "clear", "run_now", "clear_bed", "clear_all_beds",
+                     "revoke_bed"})
 
 
 def apply_action(
@@ -382,6 +387,13 @@ def apply_action(
         lease.schedule_next(0, now=now)
         log.info("pulsedrop_run_now admin=%s", admin_user_id)
         return True, "PulseDrop is due now. The next worker cycle will evaluate."
+    if action == "clear_all_beds":
+        # No track id: this one acts on whatever is currently clearable. ``key``
+        # is ignored rather than validated, because there is nothing for the
+        # operator to have got wrong.
+        return audio.clear_all(
+            admin_user_id=admin_user_id, note=str(value or ""), now=now,
+        )
     if action in ("clear_bed", "revoke_bed"):
         # ``key`` is a track id here rather than a setting name, which is why
         # this returns before the settings lookup below. The value carries the

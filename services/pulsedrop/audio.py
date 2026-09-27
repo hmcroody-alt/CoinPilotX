@@ -360,6 +360,66 @@ def clear(track_id: int, *, admin_user_id: int = 0, note: str = "",
     return True, f"Track {track_id} cleared for PulseDrop Reels."
 
 
+#: A bulk clearance must say what it is founded on. One track cleared with an
+#: empty note is a thin record; 142 cleared with an empty note is no record at
+#: all, and it is the case where somebody will later need to reconstruct what
+#: was decided and on whose say-so.
+BULK_NOTE_MIN = 12
+
+
+def candidate_count() -> int:
+    """How many tracks are clearable right now.
+
+    The page lists twelve of them, which is the right number to look at and the
+    wrong number to make a decision on: "Clear all" over a list showing 12 rows
+    needs to say 142 next to it or the operator does not know what they pressed.
+    """
+    rows = _rows("SELECT COUNT(*) AS n" + _CANDIDATE_FROM)
+    return int(rows[0].get("n") or 0) if rows else 0
+
+
+def clear_all(*, admin_user_id: int = 0, note: str = "",
+              now: datetime | None = None) -> tuple[bool, str]:
+    """Clear every track the platform already considers usable.
+
+    Exists because the catalogue is 142 tracks and the alternative to this is a
+    one-off script, which is worse in every way that matters: it runs from
+    somebody's laptop, against whatever database their environment points at,
+    with no audit row and no note. This is the same
+    :func:`clear` in a loop, so nothing here can clear a track the single-track
+    path would refuse — it does not widen the gate, it just stops the operator
+    pressing the same button 142 times.
+
+    Requires a note. Clearing is a rights decision and the note is the only
+    place the grounds are recorded; a bulk one with no grounds is the exact
+    artefact that makes a future takedown request unanswerable.
+    """
+    note = str(note or "").strip()
+    if len(note) < BULK_NOTE_MIN:
+        return False, (
+            "Write down where the rights come from before clearing in bulk — "
+            "it is the only record of why these tracks are usable."
+        )
+    pending = candidates(limit=10_000)
+    if not pending:
+        # Not necessarily "all cleared": a withdrawn track is also absent from
+        # the candidate list, and saying "already cleared" next to a row the
+        # page is showing as withdrawn would read as a bug.
+        return False, "Nothing left to clear — every usable track is already cleared or withdrawn."
+    cleared = 0
+    for row in pending:
+        ok, _ = clear(int(row.get("track_id") or 0), admin_user_id=admin_user_id,
+                      note=note, now=now)
+        cleared += 1 if ok else 0
+    refused = len(pending) - cleared
+    log.info("pulsedrop_beds_cleared_bulk cleared=%s refused=%s admin=%s",
+             cleared, refused, admin_user_id)
+    if not cleared:
+        return False, "No track could be cleared; all were refused by the platform filter."
+    tail = f" {refused} were refused by the platform filter." if refused else ""
+    return True, f"Cleared {cleared} tracks for PulseDrop Reels.{tail}"
+
+
 def revoke(track_id: int, *, admin_user_id: int = 0,
            now: datetime | None = None) -> tuple[bool, str]:
     """Withdraw a clearance.
@@ -407,6 +467,24 @@ def bed_view() -> list[dict]:
     return rows
 
 
+#: Which tracks are clearable at all. Held in one string because two callers
+#: need it and they must not disagree: the picker shows a page of them and
+#: :func:`candidate_count` puts a number beside "Clear all". A second copy of
+#: this clause is precisely the bug where the button offers 142 and clears 138.
+_CANDIDATE_FROM = """
+        FROM pulse_audio_tracks t
+        LEFT JOIN pulsedrop_audio_beds b ON b.audio_track_id = t.id
+        WHERE b.id IS NULL
+          AND COALESCE(t.lifecycle_state, 'ACTIVE') = 'ACTIVE'
+          AND COALESCE(t.removed_at, '') = ''
+          AND COALESCE(t.legal_hold, 0) = 0
+          AND COALESCE(t.active, 1) = 1
+          AND COALESCE(t.approved_by_admin, 0) = 1
+          AND COALESCE(t.commercial_use_allowed, 0) = 1
+          AND COALESCE(t.audio_url, '') <> ''
+"""
+
+
 def candidates(limit: int = 40) -> list[dict]:
     """Tracks an operator could clear, most-used first.
 
@@ -421,16 +499,9 @@ def candidates(limit: int = 40) -> list[dict]:
         SELECT t.id AS track_id, t.title, t.artist, t.duration_seconds,
                t.license_type, t.proof_url, t.rights_statement,
                t.uploader_user_id, t.reel_use_count, t.usage_count
-        FROM pulse_audio_tracks t
-        LEFT JOIN pulsedrop_audio_beds b ON b.audio_track_id = t.id
-        WHERE b.id IS NULL
-          AND COALESCE(t.lifecycle_state, 'ACTIVE') = 'ACTIVE'
-          AND COALESCE(t.removed_at, '') = ''
-          AND COALESCE(t.legal_hold, 0) = 0
-          AND COALESCE(t.active, 1) = 1
-          AND COALESCE(t.approved_by_admin, 0) = 1
-          AND COALESCE(t.commercial_use_allowed, 0) = 1
-          AND COALESCE(t.audio_url, '') <> ''
+        """
+        + _CANDIDATE_FROM
+        + """
         ORDER BY COALESCE(t.reel_use_count, 0) DESC, COALESCE(t.usage_count, 0) DESC, t.id
         LIMIT ?
         """,
