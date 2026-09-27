@@ -432,3 +432,140 @@ class TestTheOpsPageCanExplainSilence:
         """An operator clearing a track should see the checkbox they are overriding."""
         _track(db, 18493)
         assert audio.candidates()[0]["proof_url"].startswith("artist-upload:")
+
+
+class TestClearingTheWholeCatalogueAtOnce:
+    """142 tracks is not a thing anyone clicks through one row at a time.
+
+    The failure this class defends against is not "bulk clear is broken" — it is
+    the workflow that replaces it when it is missing. A catalogue this size with
+    no bulk action gets cleared by a script run off somebody's laptop against
+    whatever database their shell points at, with no note, no audit row and no
+    reviewable record of the rights decision. So the bulk path must reach the
+    same clearance table through the same per-track gate, and must refuse to run
+    without the grounds written down.
+    """
+
+    def test_it_clears_everything_the_single_track_path_would_accept(self, db, music_on):
+        for index in range(5):
+            _track(db, 18500 + index, title=f"Bed {index}")
+        ok, message = audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        assert ok is True
+        assert "5" in message
+        assert len(audio.cleared_beds()) == 5
+
+    def test_a_track_the_picker_filters_out_is_left_alone(self, db, music_on):
+        """The bulk path must not be a wider gate than the single-track one."""
+        _track(db, 18493)
+        _track(db, 18494, title="Not for commerce", commercial_use_allowed=0)
+        _track(db, 18495, title="Taken down", lifecycle_state="TAKEN_DOWN")
+        _track(db, 18496, title="Held", legal_hold=1)
+        ok, _ = audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        assert ok is True
+        assert [b["track_id"] for b in audio.cleared_beds()] == [18493]
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            pytest.param({"safety_status": "flagged"}, id="safety_status"),
+            pytest.param({"remix_edit_allowed": 0}, id="remix_edit_allowed"),
+        ],
+    )
+    def test_the_platform_filter_still_refuses_inside_the_loop(self, db, music_on, overrides):
+        """The two gates are deliberately not identical, and the bulk path needs both.
+
+        ``candidates()`` does not look at ``safety_status`` or
+        ``remix_edit_allowed``; ``music_service`` does. So these tracks reach the
+        loop and have to be turned away inside it. This is the assertion that
+        breaks if ``clear_all`` ever grows its own INSERT instead of calling
+        :func:`clear`.
+        """
+        _track(db, 18493)
+        _track(db, 18494, title="Rejected downstream", **overrides)
+        assert 18494 in {c["track_id"] for c in audio.candidates()}
+        ok, message = audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        assert ok is True
+        assert "1 were refused by the platform filter" in message
+        assert [b["track_id"] for b in audio.cleared_beds()] == [18493]
+        assert db("SELECT COUNT(*) AS n FROM pulsedrop_audio_beds")[0]["n"] == 1
+
+    def test_it_refuses_without_grounds(self, db, music_on):
+        """An unexplained bulk clearance is the one nobody can reconstruct later."""
+        _track(db, 18493)
+        ok, message = audio.clear_all(admin_user_id=1, note="ours")
+        assert ok is False
+        assert "rights" in message
+        assert audio.cleared_beds() == []
+        assert db("SELECT COUNT(*) AS n FROM pulsedrop_audio_beds")[0]["n"] == 0
+
+    def test_an_empty_note_is_refused_like_a_short_one(self, db, music_on):
+        _track(db, 18493)
+        assert audio.clear_all(admin_user_id=1)[0] is False
+        assert audio.cleared_beds() == []
+
+    def test_the_grounds_are_recorded_against_every_track(self, db, music_on):
+        note = "Platform owner confirmed ownership of the catalogue on 2026-09-27"
+        for index in range(3):
+            _track(db, 18500 + index, title=f"Bed {index}")
+        audio.clear_all(admin_user_id=7, note=note)
+        rows = db("SELECT cleared_by, clearance_note FROM pulsedrop_audio_beds")
+        assert len(rows) == 3
+        assert {r["clearance_note"] for r in rows} == {note}
+        assert {r["cleared_by"] for r in rows} == {7}
+
+    def test_running_it_twice_changes_nothing_the_second_time(self, db, music_on):
+        for index in range(3):
+            _track(db, 18500 + index, title=f"Bed {index}")
+        audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        before = db("SELECT audio_track_id, cleared_at FROM pulsedrop_audio_beds ORDER BY audio_track_id")
+        ok, message = audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        assert ok is False
+        assert "already cleared" in message
+        after = db("SELECT audio_track_id, cleared_at FROM pulsedrop_audio_beds ORDER BY audio_track_id")
+        assert before == after
+
+    def test_it_does_not_revive_a_withdrawn_clearance(self, db, music_on):
+        """Withdrawing is a decision. A later bulk clear must not quietly undo it."""
+        _track(db, 18493)
+        audio.clear(18493, admin_user_id=1, note="first pass")
+        audio.revoke(18493, admin_user_id=1)
+        ok, _ = audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        assert ok is False
+        assert audio.cleared_beds() == []
+
+    def test_the_count_beside_the_button_is_the_number_it_clears(self, db, music_on):
+        """The page shows twelve rows; the button acts on all of them."""
+        for index in range(20):
+            _track(db, 18500 + index, title=f"Bed {index}")
+        assert len(audio.candidates()) <= 40
+        assert audio.candidate_count() == 20
+        ok, message = audio.clear_all(admin_user_id=1, note="Owner confirmed catalogue ownership")
+        assert ok is True
+        assert "20" in message
+        assert audio.candidate_count() == 0
+
+    def test_the_count_and_the_picker_agree_on_what_is_clearable(self, db, music_on):
+        """One WHERE clause, two callers. A second copy is how they drift."""
+        _track(db, 18493)
+        _track(db, 18494, title="Rejected", approved_by_admin=0)
+        _track(db, 18495, title="Cleared already")
+        audio.clear(18495, admin_user_id=1)
+        assert audio.candidate_count() == len(audio.candidates(limit=1000)) == 1
+
+    def test_the_ops_page_routes_the_action(self, db, music_on):
+        from services.pulsedrop import ops
+
+        _track(db, 18493)
+        assert "clear_all_beds" in ops.ACTIONS
+        changed, message = ops.apply_action(
+            "clear_all_beds", "", "Owner confirmed catalogue ownership", admin_user_id=1
+        )
+        assert changed is True
+        assert len(audio.cleared_beds()) == 1
+
+    def test_the_ops_page_surfaces_the_real_total(self, db, music_on):
+        from services.pulsedrop import ops
+
+        for index in range(15):
+            _track(db, 18500 + index, title=f"Bed {index}")
+        assert ops.dashboard()["bed_candidate_count"] == 15

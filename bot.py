@@ -111365,6 +111365,7 @@ def admin_pulsedrop_page():
     admin, denied = require_admin_page("system.view")
     if denied:
         return denied
+    from services.pulsedrop import audio as pulsedrop_audio
     from services.pulsedrop import ops as pulsedrop_ops
 
     message = ""
@@ -111508,6 +111509,32 @@ def admin_pulsedrop_page():
         + "</tr>"
         for c in data["bed_candidates"][:12]
     )
+    # The table above is capped at twelve rows; the catalogue behind it is in
+    # the hundreds. Clearing them one button at a time is not a workflow, and
+    # the alternative operators actually reach for is a script run from a laptop
+    # against whichever database their shell points at, with no note and no
+    # audit row. This is the same per-track clearance in a loop, so it cannot
+    # clear anything the single-track path would refuse.
+    candidate_total = int(data.get("bed_candidate_count") or 0)
+    bulk_clear = ""
+    if may_edit and candidate_total:
+        bulk_clear = (
+            "<form method='post' class='row'>"
+            "<input type='hidden' name='key' value=''>"
+            "<input name='value' required minlength='"
+            f"{pulsedrop_audio.BULK_NOTE_MIN}' maxlength='240' style='min-width:22rem' "
+            "placeholder='Where the rights to this catalogue come from'>"
+            f"<button name='form_action' value='clear_all_beds'>Clear all {candidate_total}</button>"
+            "</form>"
+            "<p class='muted'>Every one of these is cleared with the same note, so write the"
+            " grounds that cover the whole catalogue rather than any one track. It is the only"
+            " record of why these are ours to use.</p>"
+        )
+    showing = (
+        f"<p class='muted'>{candidate_total} clearable"
+        + (f", showing the {min(candidate_total, 12)} most used." if candidate_total > 12 else ".")
+        + "</p>"
+    )
 
     body = f"""
     <h1>PulseDrop</h1>
@@ -111539,6 +111566,8 @@ def admin_pulsedrop_page():
     <table class='table'><tr><th>Track</th><th>Title</th><th>Artist</th><th>State</th><th>Grounds</th><th>Cleared</th><th></th></tr>
     {bed_rows or '<tr><td colspan=7>No track cleared. Reels publish silent.</td></tr>'}</table></section>
     <section class='card'><h3>Available to clear</h3>
+    {showing}
+    {bulk_clear}
     <table class='table'><tr><th>Track</th><th>Title</th><th>Artist</th><th>Uploader's proof</th><th></th></tr>
     {candidate_rows or '<tr><td colspan=5>No track in the library passes the platform music rules.</td></tr>'}</table></section>
     """
