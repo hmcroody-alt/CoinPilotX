@@ -317,7 +317,16 @@ export const IMPORT_OUTCOMES = [
   // must not be asked to. Attention is the merchant's own: a missing price, an
   // unbound variant, something they can go and fix.
   "PUBLISHED",
-  "NEEDS_ATTENTION"
+  "NEEDS_ATTENTION",
+  // Named in the request, not reached: the run filled up first. The cart holds
+  // more rows than one import consumes, so this is an ordinary outcome of an
+  // ordinary full cart, not an error.
+  //
+  // It is not a refusal and must never be counted as one. Nothing was read and
+  // nothing was created, the row is still in the cart, and the next Import picks
+  // it up. Treating it as a failure would tell a merchant 33 products could not
+  // be imported when the truth is that 33 have not been tried yet.
+  "DEFERRED"
 ] as const;
 export type ImportOutcome = (typeof IMPORT_OUTCOMES)[number];
 
@@ -1172,6 +1181,16 @@ export type ImportCart = {
   count: number;
   staleCount: number;
   maxItems: number;
+  /**
+   * The most rows one import will process. Distinct from `maxItems`, which is
+   * how many the cart may *hold* — the cart is deliberately the larger of the
+   * two, so a full cart takes several imports.
+   *
+   * `null` from a server that does not send it. The screen then says nothing
+   * about batching rather than guessing a number, because a wrong cap on the
+   * button is worse than no cap: it would under-offer a server that grew.
+   */
+  maxPerImport: number | null;
 };
 
 export async function getImportCart(scope: DropshippingScope, connectionId: string): Promise<ImportCart> {
@@ -1183,7 +1202,8 @@ export async function getImportCart(scope: DropshippingScope, connectionId: stri
     items,
     count: centsOrNull(response.count) ?? items.length,
     staleCount: centsOrNull(response.stale_count) ?? 0,
-    maxItems: centsOrNull(response.max_items) ?? 0
+    maxItems: centsOrNull(response.max_items) ?? 0,
+    maxPerImport: centsOrNull(response.max_per_import)
   };
 }
 
@@ -1490,6 +1510,22 @@ export type ImportRunResult = {
   publishedCount: number;
   /** How many landed as drafts with something for the merchant to fix. */
   needsAttention: number;
+  /**
+   * How many of the requested rows this run did not reach, and left in the cart.
+   *
+   * Non-zero means the request was larger than one import can serve. Nothing
+   * failed; the cart still holds them and importing again continues. This is the
+   * number the cart screen needs to say what to do next.
+   */
+  deferred: number;
+  /**
+   * The most rows one import will process, as the server reports it.
+   *
+   * Read rather than hardcoded so the client cannot drift from the server's
+   * actual capacity — a 25 baked in here would keep offering 25 after the server
+   * changed, and the mismatch would land back on the merchant as a surprise.
+   */
+  maxPerImport: number | null;
   /** The rule the run actually priced with. */
   pricingRule: PricingRule;
   /**
@@ -1549,6 +1585,13 @@ export async function importSelected(
     published: response.published === true,
     publishedCount: centsOrNull(response.published_count) ?? 0,
     needsAttention: centsOrNull(response.needs_attention) ?? 0,
+    // Counted from the rows when the server does not send the number, so a build
+    // talking to an older server still renders deferred rows correctly rather
+    // than folding them into the failure count.
+    deferred:
+      centsOrNull(response.deferred) ??
+      results.filter((item) => item.outcome === "DEFERRED").length,
+    maxPerImport: centsOrNull(response.max_per_import),
     pricingRule: normalizePricingRule(response.pricing_rule),
     pricingSource: normalizePricingSource(response.pricing_source),
     // Defaulted to the server's own default rather than to `false`. A response
@@ -1560,8 +1603,17 @@ export async function importSelected(
   };
 }
 
-/** Outcomes the merchant does not need to act on. */
-const BENIGN_OUTCOMES = ["IMPORTED", "PUBLISHED", "ALREADY_EXISTS"];
+/**
+ * Outcomes the merchant does not need to act on.
+ *
+ * `DEFERRED` belongs here even though the row is not in the store yet. Nothing
+ * went wrong with it and there is nothing to inspect — one run was full, so it
+ * stayed in the cart. Counting it as reviewable would put a problem badge on
+ * every cart bigger than one import, which is the opposite of what a seller
+ * with a large cart needs to be told. The one thing that still has to be said
+ * about these rows — tap Import again — is said by the count, not by this.
+ */
+const BENIGN_OUTCOMES = ["IMPORTED", "PUBLISHED", "ALREADY_EXISTS", "DEFERRED"];
 
 /**
  * Whether a bulk import needs the merchant's attention.
@@ -2502,6 +2554,26 @@ const PROVIDER_CODES = [
  * buttons, and a single "Something went wrong" sends the merchant to re-enter
  * credentials that were never wrong.
  */
+/**
+ * True when the server refused the request for naming more rows than it accepts.
+ *
+ * Deliberately not a `DropshippingState`. Every state in that union owns a whole
+ * screen, and this condition owns one sentence under the Import button — the
+ * cart behind it is fine and still readable.
+ *
+ * It is also no longer reachable from this app: the server used to refuse any
+ * selection over its per-import cap, which is exactly what a merchant selecting
+ * all 58 rows of their cart did, and it arrived here as a bare 400 that matched
+ * no status class and so read as "That import didn't run." The server now defers
+ * the surplus instead. This remains because the refusal still exists above the
+ * cart's own capacity, and because an app in the store outlives the server it
+ * was written against — a build that meets the old behaviour should say
+ * something true about it rather than fall back to the generic failure.
+ */
+export function isBatchTooLarge(error: unknown): boolean {
+  return error instanceof PulseApiError && String(error.code || "").toLowerCase() === "batch_too_large";
+}
+
 export function stateForError(error: unknown): DropshippingState {
   if (!(error instanceof PulseApiError)) return "ERROR";
   const code = String(error.code || "").toLowerCase();
