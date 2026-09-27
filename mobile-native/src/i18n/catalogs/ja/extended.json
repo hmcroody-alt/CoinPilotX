@@ -593,7 +593,8 @@
       "voiceSent": "音声メッセージを送信しました。",
       "voiceUnavailable": "音声メッセージをご利用いただけません",
       "voiceUnavailableTitle": "音声メッセージをご利用いただけません",
-      "yourMessage": "あなたのメッセージ"
+      "yourMessage": "あなたのメッセージ",
+      "moreReactions": "その他のリアクション"
     },
     "group": {
       "createGroup": "グループを作成",
@@ -1345,7 +1346,15 @@
       "storeMediaViewerTitle": "ストアのメディア",
       "statusApprovedLive": "承認済み / 公開中",
       "statusPendingReview": "審査中",
-      "statusRemoved": "削除済み"
+      "statusRemoved": "削除済み",
+      "status": {
+        "live": "アクティブ",
+        "store_offline": "ストア非公開",
+        "store_name_needed": "ストア名が必要",
+        "paused": "一時停止中",
+        "draft": "下書き",
+        "rejected": "却下"
+      }
     },
     "orders": {
       "title": "注文",

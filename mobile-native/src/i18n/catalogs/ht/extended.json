@@ -593,7 +593,8 @@
       "voiceSent": "Mesaj vokal la voye.",
       "voiceUnavailable": "Mesaj vokal pa disponib",
       "voiceUnavailableTitle": "Mesaj vokal pa disponib",
-      "yourMessage": "mesaj ou a"
+      "yourMessage": "mesaj ou a",
+      "moreReactions": "Plis reyaksyon"
     },
     "group": {
       "createGroup": "Kreye yon gwoup",
@@ -1345,7 +1346,15 @@
       "storeMediaViewerTitle": "Medya boutik",
       "statusApprovedLive": "Apwouve/ann dirèk",
       "statusPendingReview": "K ap tann revizyon",
-      "statusRemoved": "Retire"
+      "statusRemoved": "Retire",
+      "status": {
+        "live": "Aktif",
+        "store_offline": "Boutik pa aktif",
+        "store_name_needed": "Boutik bezwen yon non",
+        "paused": "An poz",
+        "draft": "Bouyon",
+        "rejected": "Rejte"
+      }
     },
     "orders": {
       "title": "Kòmann",

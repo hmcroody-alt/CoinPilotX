@@ -596,7 +596,8 @@
       "voiceSent": "Sprachnachricht gesendet.",
       "voiceUnavailable": "Sprachnachricht nicht verfügbar",
       "voiceUnavailableTitle": "Sprachnachricht nicht verfügbar",
-      "yourMessage": "deine Nachricht"
+      "yourMessage": "deine Nachricht",
+      "moreReactions": "Weitere Reaktionen"
     },
     "group": {
       "createGroup": "Gruppe erstellen",
@@ -1360,7 +1361,15 @@
       "storeMediaViewerTitle": "Shop-Medien",
       "statusApprovedLive": "Freigegeben / live",
       "statusPendingReview": "Prüfung ausstehend",
-      "statusRemoved": "Entfernt"
+      "statusRemoved": "Entfernt",
+      "status": {
+        "live": "Aktiv",
+        "store_offline": "Shop inaktiv",
+        "store_name_needed": "Shop-Name fehlt",
+        "paused": "Pausiert",
+        "draft": "Entwurf",
+        "rejected": "Abgelehnt"
+      }
     },
     "orders": {
       "title": "Bestellungen",

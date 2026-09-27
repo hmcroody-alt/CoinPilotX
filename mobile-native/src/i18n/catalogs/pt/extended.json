@@ -596,7 +596,8 @@
       "voiceSent": "Mensagem de voz enviada.",
       "voiceUnavailable": "Mensagem de voz indisponível",
       "voiceUnavailableTitle": "Mensagem de voz indisponível",
-      "yourMessage": "sua mensagem"
+      "yourMessage": "sua mensagem",
+      "moreReactions": "Mais reações"
     },
     "group": {
       "createGroup": "Criar grupo",
@@ -1360,7 +1361,15 @@
       "storeMediaViewerTitle": "Mídia da loja",
       "statusApprovedLive": "Aprovado/no ar",
       "statusPendingReview": "Aguardando revisão",
-      "statusRemoved": "Removido"
+      "statusRemoved": "Removido",
+      "status": {
+        "live": "Ativo",
+        "store_offline": "Loja inativa",
+        "store_name_needed": "Falta o nome da loja",
+        "paused": "Pausada",
+        "draft": "Rascunho",
+        "rejected": "Rejeitado"
+      }
     },
     "orders": {
       "title": "Pedidos",

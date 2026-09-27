@@ -596,7 +596,8 @@
       "voiceSent": "Voice message sent.",
       "voiceUnavailable": "Voice message unavailable",
       "voiceUnavailableTitle": "Voice message unavailable",
-      "yourMessage": "your message"
+      "yourMessage": "your message",
+      "moreReactions": "More reactions"
     },
     "group": {
       "createGroup": "Create group",
@@ -1360,7 +1361,15 @@
       "storeMediaViewerTitle": "Store media",
       "statusApprovedLive": "Approved/live",
       "statusPendingReview": "Pending review",
-      "statusRemoved": "Removed"
+      "statusRemoved": "Removed",
+      "status": {
+        "live": "Live",
+        "store_offline": "Store offline",
+        "store_name_needed": "Store name needed",
+        "paused": "Paused",
+        "draft": "Draft",
+        "rejected": "Rejected"
+      }
     },
     "orders": {
       "title": "Orders",
