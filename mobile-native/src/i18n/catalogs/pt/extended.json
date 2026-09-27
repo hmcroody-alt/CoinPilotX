@@ -1358,6 +1358,7 @@
       "verification": "Verificação",
       "trustCopy": "Formulários fiscais avançados, cadastro bancário, disputas, reembolsos, entrega e análise da equipe continuam em fluxos seguros da web/provedor até as validações nativas de QA ficarem prontas.",
       "storeMediaViewerTitle": "Mídia da loja",
+      "statusRemoved": "Removido",
       "status": {
         "live": "Aprovado/no ar",
         "pending": "Pendente",
