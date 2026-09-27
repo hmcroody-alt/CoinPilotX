@@ -593,7 +593,8 @@
       "voiceSent": "음성 메시지를 보냈어요.",
       "voiceUnavailable": "음성 메시지를 사용할 수 없어요",
       "voiceUnavailableTitle": "음성 메시지를 사용할 수 없어요",
-      "yourMessage": "내 메시지"
+      "yourMessage": "내 메시지",
+      "moreReactions": "반응 더 보기"
     },
     "group": {
       "createGroup": "그룹 만들기",
@@ -1345,7 +1346,15 @@
       "storeMediaViewerTitle": "스토어 미디어",
       "statusApprovedLive": "승인/판매 중",
       "statusPendingReview": "검토 대기",
-      "statusRemoved": "삭제됨"
+      "statusRemoved": "삭제됨",
+      "status": {
+        "live": "활성",
+        "store_offline": "스토어 비활성",
+        "store_name_needed": "스토어 이름 필요",
+        "paused": "일시중지됨",
+        "draft": "임시저장",
+        "rejected": "거부됨"
+      }
     },
     "orders": {
       "title": "주문",

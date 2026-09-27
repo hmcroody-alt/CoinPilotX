@@ -593,7 +593,8 @@
       "voiceSent": "语音消息已发送。",
       "voiceUnavailable": "语音消息不可用",
       "voiceUnavailableTitle": "语音消息不可用",
-      "yourMessage": "你的消息"
+      "yourMessage": "你的消息",
+      "moreReactions": "更多表情回应"
     },
     "group": {
       "createGroup": "创建群聊",
@@ -1345,7 +1346,15 @@
       "storeMediaViewerTitle": "店铺媒体",
       "statusApprovedLive": "已通过 / 在售",
       "statusPendingReview": "审核中",
-      "statusRemoved": "已下架"
+      "statusRemoved": "已下架",
+      "status": {
+        "live": "启用中",
+        "store_offline": "店铺未上线",
+        "store_name_needed": "需填写店铺名称",
+        "paused": "已暂停",
+        "draft": "草稿",
+        "rejected": "已拒绝"
+      }
     },
     "orders": {
       "title": "订单",

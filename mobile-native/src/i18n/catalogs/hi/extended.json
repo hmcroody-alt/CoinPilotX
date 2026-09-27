@@ -596,7 +596,8 @@
       "voiceSent": "वॉइस मैसेज भेज दिया।",
       "voiceUnavailable": "वॉइस मैसेज उपलब्ध नहीं",
       "voiceUnavailableTitle": "वॉइस मैसेज उपलब्ध नहीं",
-      "yourMessage": "आपका मैसेज"
+      "yourMessage": "आपका मैसेज",
+      "moreReactions": "और प्रतिक्रियाएँ"
     },
     "group": {
       "createGroup": "ग्रुप बनाएँ",
@@ -1360,7 +1361,15 @@
       "storeMediaViewerTitle": "स्टोर मीडिया",
       "statusApprovedLive": "मंज़ूर/लाइव",
       "statusPendingReview": "रिव्यू बाकी",
-      "statusRemoved": "हटा दिया गया"
+      "statusRemoved": "हटा दिया गया",
+      "status": {
+        "live": "सक्रिय",
+        "store_offline": "स्टोर निष्क्रिय",
+        "store_name_needed": "स्टोर का नाम जरूरी",
+        "paused": "रोका गया",
+        "draft": "ड्राफ़्ट",
+        "rejected": "अस्वीकृत"
+      }
     },
     "orders": {
       "title": "ऑर्डर",
