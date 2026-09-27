@@ -1,8 +1,15 @@
 # Pulse Commerce Intelligence — delivery report
 
 **Status: not deployed.** Nothing in this report is live. The work is committed on the
-local branch `commerce-discovery-audit` (head `ad6858882`) in a worktree, and has **not**
-been pushed, merged, or rolled out. Committed is not deployed, and the distinction matters
+local branch `commerce-discovery-audit` in a worktree, and has **not** been pushed, merged,
+or rolled out. The last increment described below is §22, committed as `68e7867f9`; if
+`git log --oneline 68e7867f9..commerce-discovery-audit` prints anything other than this
+report's own tidy-up commit, the branch has moved past what is written here. Read the
+figures below as measurements of that commit, not of whatever is currently checked out.
+(The head is named this way rather than pinned because a pinned head SHA is wrong the
+moment it is written — it cannot name the commit that contains it. The first three
+revisions of this line were all stale by exactly one commit.)
+Committed is not deployed, and the distinction matters
 here: §16 lists changes that alter what feed, reels, post-detail, Messenger, Marketplace
 and product-page users see, with no per-surface kill switch to stage them behind. §16 also
 explains why the rollout decision is not mine to take.
@@ -665,6 +672,41 @@ above, or between them.
 What the column does *not* do is change ranking, eligibility, capping, or what any buyer
 sees. A placement that would have been served before is served now, in the same slot, with
 the same `reason_code`. The column records how it got there; it does not decide.
+
+### What §§19–22 add to this order: nothing, and one thing
+
+§§19–22 need no rollout stage. They are tests, a conftest guard and an audit script; the
+three commits touched no file under `services/`, and that is checked rather than asserted —
+`git hash-object` on `services/commerce_discovery_routes.py` matches
+`git rev-parse HEAD:services/commerce_discovery_routes.py` at
+`d5c01ccfda4c33d9de0527206c15c4f357c8272d` on both sides of both mutations in §22. Ship
+them with any stage or none.
+
+They do surface exactly one production change, and it is the `_listing_stats` log level
+quoted in §20. Putting it here rather than doing it is the whole point of deferring it, so
+here is the decision in the form it needs to be taken:
+
+**Proposed: `engine.py:533` and its sibling move from `LOGGER.debug` to `LOGGER.warning`.**
+
+- *Why it matters more than a log level usually does.* `_listing_stats` is not a
+  per-card decoration; with no stats every listing looks unproven at once, so a silent
+  failure here re-ranks every card on every one of the six surfaces simultaneously. At
+  `debug` there is no signal that it happened — not in production, and (until §20) not in
+  a test either.
+- *Why it is not free.* The read is per-listing, so the worst case is a warning per
+  listing per request on a path that runs on feed and reels. If the failure is systemic —
+  a dropped column, a dead table — that is not one warning, it is a log flood on the
+  hottest read in the feature, and log volume on Railway is a cost line.
+- *The middle option, which I am not choosing unilaterally because it is a judgement about
+  what an on-call engineer wants to see:* warn once per process (a module-level
+  `_warned` flag) and keep `debug` for the rest. That gets the signal without the flood,
+  at the cost of hiding a failure that starts mid-shift after an earlier one was already
+  reported.
+
+This is a §1 escalation only in the sense that it is the first item in this report whose
+right answer depends on how the operator watches production rather than on what the code
+does. Any of the three is defensible; picking one without knowing which dashboards exist
+would be guessing, and a guess about observability is how `debug` got there.
 
 ## 17. The suitability gate was wired to the wrong text
 
@@ -1353,7 +1395,7 @@ hand-listed paths did not include either of the two that mattered here. That is 
 plainly in a report that recommends mutation harnesses: I wrote the list by reading, and the
 list was wrong.
 
-Verified: 697 package tests and 663 protection tests green; the 77/620 mutation above,
+Verified: 705 package tests and 663 protection tests green; the 77/620 mutation above,
 reverted and confirmed byte-identical to `HEAD`.
 
 ---
@@ -1469,7 +1511,9 @@ one the guard would flip every test that asks about a suppressed surface — the
 include three in the route module (`_anchor_listing_id`, `_anchor_context`,
 `_content_post_id`), all `int()`-shaped, all left alone on the same reasoning. And §20's
 `_listing_stats` debug-logging finding is unchanged and still the one item here worth acting
-on in production.
+on in production — it is now written up as a decision with three options in §16, under
+*What §§19–22 add to this order*, because leaving it as a finding in a section about test
+coverage was a way of never having to make the call.
 
 Verified: 724 package tests and 663 protection tests green; both mutations above reverted,
 `services/commerce_discovery_routes.py` confirmed byte-identical to `HEAD`.
