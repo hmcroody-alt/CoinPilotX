@@ -1326,7 +1326,6 @@ def enqueue_post_jobs(post_id, post_type="text", has_media=False):
     jobs = [
         "moderate_post",
         "scan_links",
-        "generate_ai_summary",
         "generate_ai_tags",
         "rank_feed",
         "notify_followers",
@@ -1391,7 +1390,11 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
                 json.dumps(all_tags),
                 visibility,
                 moderation.get("status") or "approved",
-                moderation.get("ai_summary") or (body or title)[:220],
+                # Deliberately empty. Nothing in this codebase summarises a post,
+                # so every value that was ever stored here was a truncated copy of
+                # ``body`` — and a stored copy goes stale the moment an author or
+                # an operator corrects the original. Readers derive from ``body``.
+                "",
                 json.dumps(all_tags),
                 moderation.get("sentiment") or "neutral",
                 int(moderation.get("risk_score") or 0),
@@ -1439,7 +1442,7 @@ def create_post(user_id, body="", post_type="text", title="", tags=None, visibil
             "body": body,
             "visibility": visibility,
             "moderation_status": moderation.get("status") or "approved",
-            "ai_summary": moderation.get("ai_summary") or (body or title)[:220],
+            "ai_summary": "",
             "ai_tags": all_tags,
             "tags": all_tags,
             "sentiment": moderation.get("sentiment") or "neutral",
@@ -3171,17 +3174,18 @@ def _process_job(cur, job):
         suspicious = 1 if re.search(r"https?://|www\\.|airdrop|seed phrase|private key|claim", post.get("body") or "", re.I) else 0
         if suspicious:
             cur.execute("UPDATE pulse_posts SET risk_score=MAX(COALESCE(risk_score,0), 45), updated_at=? WHERE id=?", (_now(), target_id))
-    elif job_type in {"generate_ai_summary", "generate_ai_tags"}:
+    # ``generate_ai_summary`` is intentionally absent: it only ever wrote a
+    # 220-character copy of ``body`` back onto the row. Jobs are one-shot, so
+    # that copy never recomputed and silently outlived any later correction to
+    # ``body``. Rows still pending this job in production fall through to the
+    # unconditional _complete_job below and retire without writing.
+    elif job_type == "generate_ai_tags":
         cur.execute("SELECT body, title, tags_json FROM pulse_posts WHERE id=? LIMIT 1", (target_id,))
         post = _row(cur.fetchone()) or {}
-        if job_type == "generate_ai_summary":
-            summary = _clean_text(post.get("body") or post.get("title") or "PulseSoc community update", 220)
-            cur.execute("UPDATE pulse_posts SET ai_summary=?, updated_at=? WHERE id=?", (summary, _now(), target_id))
-        else:
-            tags = _json(post.get("tags_json"), [])
-            if not tags and post.get("body"):
-                tags = [token.strip("#").lower() for token in re.findall(r"#([A-Za-z0-9_]{2,32})", post.get("body"))][:8]
-            cur.execute("UPDATE pulse_posts SET ai_tags_json=?, updated_at=? WHERE id=?", (json.dumps(tags), _now(), target_id))
+        tags = _json(post.get("tags_json"), [])
+        if not tags and post.get("body"):
+            tags = [token.strip("#").lower() for token in re.findall(r"#([A-Za-z0-9_]{2,32})", post.get("body"))][:8]
+        cur.execute("UPDATE pulse_posts SET ai_tags_json=?, updated_at=? WHERE id=?", (json.dumps(tags), _now(), target_id))
     elif job_type == "rank_feed":
         cur.execute(
             """
