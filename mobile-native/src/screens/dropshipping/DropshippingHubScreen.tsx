@@ -50,7 +50,15 @@ const SECTION_COUNT = Object.keys(SLOT).length;
 
 type Props = {
   route?: { params?: RootStackParamList["Dropshipping"] };
-  navigation: { navigate: (...args: any[]) => void; goBack?: () => void };
+  navigation: {
+    navigate: (...args: any[]) => void;
+    goBack?: () => void;
+    /**
+     * Optional because a screen rendered outside a navigator has no event bus —
+     * the tiles still work there, they just do not re-read on return.
+     */
+    addListener?: (event: "focus", listener: () => void) => () => void;
+  };
 };
 
 /**
@@ -148,6 +156,43 @@ export function DropshippingHubScreen({ route, navigation }: Props) {
     if (scopeStatus.status.phase === "ready") load("refresh").catch(() => undefined);
     else scopeStatus.reload();
   }, [load, scopeStatus]);
+
+  /**
+   * Re-read when the merchant comes back to this screen.
+   *
+   * Every number on these tiles describes work done on the *other* screens —
+   * "33 ready to import" is the cart the Import cart screen just drained, and
+   * "66 imported" is what the run it reports added. Without this the hub answers
+   * out of whatever it read when it first mounted, so finishing a 32-product
+   * import and tapping back leaves the seller looking at the counts from before
+   * they started. Seen 2026-09-27: cart was truly 1, the tile still said 33.
+   *
+   * That is the same failure this screen family was just fixed for — the app
+   * asserting something about the store that is not true — and it is worse here
+   * than a plain stale read, because the hub is where a merchant goes to decide
+   * whether the import worked at all.
+   *
+   * `"refresh"` and not `"initial"`: a return to a screen that already has data
+   * must not blank six populated tiles back to the loading state. And no phase
+   * check — `load` already returns early without a scope, so a focus that
+   * arrives before the scope resolves, or after it failed, is a no-op and cannot
+   * overwrite the state that failure produced.
+   *
+   * The navigator's own `focus` event, and not `useFocusEffect`: the hook re-runs
+   * whenever its callback's identity changes, and this screen's `load` is rebuilt
+   * the moment the scope resolves — so the hook fires a second time *during
+   * mount*, racing the mount load. A ref that swallows the first call does not
+   * help, because the swallowed one is the mount call and the racing one is the
+   * second. The event fires only on a real focus transition, and the listener is
+   * attached after this screen's first focus has already been delivered.
+   * `PresenceHubScreen` reloads the same way.
+   */
+  useEffect(() => {
+    if (typeof navigation.addListener !== "function") return undefined;
+    return navigation.addListener("focus", () => {
+      load("refresh").catch(() => undefined);
+    });
+  }, [load, navigation]);
 
   /* -------------------------------------------------------------- *
    * Navigation

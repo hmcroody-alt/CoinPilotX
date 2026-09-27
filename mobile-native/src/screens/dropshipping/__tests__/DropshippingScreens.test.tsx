@@ -315,8 +315,38 @@ function draft(over: Partial<ImportedDraft> = {}): ImportedDraft {
   };
 }
 
+/**
+ * A screen's navigation prop, including the event bus.
+ *
+ * `addListener` is real rather than a `jest.fn()` returning undefined: the hub
+ * re-reads its tiles on `focus`, and a stub that accepted the subscription and
+ * dropped it would let that reload be deleted with every test here still green.
+ * `focus(nav)` below delivers the event, which is the only way this suite — which
+ * renders screens bare, with no navigator above them — can produce a return to a
+ * screen at all.
+ */
 function navigation() {
-  return { navigate: jest.fn(), goBack: jest.fn() };
+  const listeners: Record<string, Array<() => void>> = {};
+  return {
+    navigate: jest.fn(),
+    goBack: jest.fn(),
+    addListener: jest.fn((event: string, listener: () => void) => {
+      (listeners[event] = listeners[event] || []).push(listener);
+      return () => {
+        listeners[event] = (listeners[event] || []).filter((one) => one !== listener);
+      };
+    }),
+    __emit: (event: string) => (listeners[event] || []).slice().forEach((one) => one())
+  };
+}
+
+/** Come back to a screen: deliver `focus`, then let the reload it starts land. */
+async function focus(nav: ReturnType<typeof navigation>) {
+  await act(async () => {
+    nav.__emit("focus");
+    await Promise.resolve();
+  });
+  await settle();
 }
 
 beforeEach(() => {
@@ -857,6 +887,103 @@ describe("DropshippingHubScreen — tiles", () => {
     ]);
 
     await waitFor(() => expect(view.getByText("12 imported · 3 live")).toBeTruthy());
+  });
+
+  /**
+   * Every number on these tiles is produced somewhere else.
+   *
+   * Seen in production on 2026-09-27: a seller imported 32 of the 33 products in
+   * their cart on the Import cart screen, came back here, and read "33 ready to
+   * import" above "66 imported · 15 live". All three numbers were from before the
+   * run. The hub is where a merchant comes to decide whether an import worked at
+   * all, so a count that predates the work is not a cosmetic lag — it is the app
+   * denying something it has already done, which is the failure this whole screen
+   * family was just corrected for.
+   *
+   * The reload is asserted through the *rendered counts* rather than through a
+   * call count, because a re-read whose answer never reaches the tiles fixes
+   * nothing a merchant can see.
+   */
+  it("re-reads the tiles when the merchant comes back, rather than answering from before", async () => {
+    const { view, nav } = await hubWith(
+      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15 } })],
+      { count: 33 }
+    );
+
+    await waitFor(() => expect(view.getByText("66 imported · 15 live")).toBeTruthy());
+    expect(view.getByText("33 ready to import")).toBeTruthy();
+
+    // The import the merchant just ran on the other screen.
+    mockGetSupplierStatus.mockResolvedValue(
+      storeStatus([
+        supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47 } })
+      ])
+    );
+    mockGetCart.mockResolvedValue({ count: 1 });
+    await focus(nav);
+
+    await waitFor(() => expect(view.getByText("98 imported · 47 live")).toBeTruthy());
+    expect(view.getByText("1 ready to import")).toBeTruthy();
+    expect(view.queryByText("33 ready to import")).toBeNull();
+    expect(view.queryByText("66 imported · 15 live")).toBeNull();
+  });
+
+  /**
+   * The reload must not cost the merchant the screen. `load("refresh")` keeps the
+   * populated tiles up while it runs; `load("initial")` would blank all six back
+   * to the loading state on every single return to this screen, which reads as
+   * the hub crashing and reopening.
+   */
+  it("keeps the tiles up while it re-reads, instead of blanking them", async () => {
+    const { view, nav } = await hubWith(
+      [supplierStatus({ products: { ...supplierStatus().products, imported: 66, published: 15 } })],
+      { count: 33 }
+    );
+    await waitFor(() => expect(view.getByText("66 imported · 15 live")).toBeTruthy());
+
+    let release: (value: StoreSupplierStatus) => void = () => undefined;
+    mockGetSupplierStatus.mockReturnValue(
+      new Promise<StoreSupplierStatus>((resolve) => {
+        release = resolve;
+      })
+    );
+    await act(async () => {
+      nav.__emit("focus");
+      await Promise.resolve();
+    });
+
+    // Mid-flight: the old answer is still the one on screen.
+    expect(view.getByText("66 imported · 15 live")).toBeTruthy();
+    await act(async () => {
+      release(
+        storeStatus([
+          supplierStatus({ products: { ...supplierStatus().products, imported: 98, published: 47 } })
+        ])
+      );
+      await Promise.resolve();
+    });
+    await settle();
+
+    await waitFor(() => expect(view.getByText("98 imported · 47 live")).toBeTruthy());
+  });
+
+  /**
+   * A focus that arrives before the scope resolves, or after it failed, has no
+   * store to read. `load` returns early without a scope, so the event cannot
+   * start a request against nothing — and cannot overwrite the state the scope
+   * failure produced with a generic one.
+   */
+  it("does not read anything on focus when there is no store to read", async () => {
+    mockResolveScope.mockRejectedValue(new PulseApiError("down", 500, "server_error"));
+    const nav = navigation();
+    const view = render(<DropshippingHubScreen navigation={nav} route={{ params: {} }} />);
+    await settle();
+
+    mockGetSupplierStatus.mockClear();
+    await focus(nav);
+
+    expect(mockGetSupplierStatus).not.toHaveBeenCalled();
+    expect(view.queryByText(/ready to import/)).toBeNull();
   });
 
   /**
