@@ -229,6 +229,7 @@
     "tests/marketplace/test_admin_review_detail_page.py",
     "tests/marketplace/test_admin_review_queue_page.py",
     "tests/marketplace/test_card_capability.py",
+    "tests/marketplace/test_cart_owner_key.py",
     "tests/marketplace/test_cash_settlement.py",
     "tests/marketplace/test_charge_model_authority.py",
     "tests/marketplace/test_checkout_options_route.py",
