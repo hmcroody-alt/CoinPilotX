@@ -70,6 +70,7 @@ from . import (
     router,
     schema,
     subject,
+    tagging,
     taxonomy,
 )
 from .preferences import ViewerPolicy
@@ -140,6 +141,7 @@ def serve(
     parse_price=None,
     serialize=None,
     exclude_listing_ids: Sequence[int] = (),
+    content_post_id: Any = 0,
 ) -> list[dict]:
     """Placements for one surface, or ``[]``.
 
@@ -155,6 +157,14 @@ def serve(
     ``exclude_listing_ids`` names products that must not come back — in practice
     the one the viewer is already looking at. It can only ever narrow the result,
     which is what makes it safe for a route to populate from a request body.
+
+    ``content_post_id`` is the post the viewer is reading, and unlike
+    ``exclude_listing_ids`` it *widens*: it is the key for creator-tagged products
+    (:mod:`tagging`). The route only supplies it on the three surfaces that have a
+    post on screen, and the forgeability argument for it is re-derived for this
+    additive use in :mod:`tagging`'s docstring rather than inherited from the
+    restrictive one — they are different risk classes and the narrowing argument
+    does not carry over.
     """
     try:
         return _serve(
@@ -163,6 +173,7 @@ def serve(
             promotion_class=promotion_class,
             parse_price=parse_price, serialize=serialize,
             exclude_listing_ids=exclude_listing_ids,
+            content_post_id=content_post_id,
         )
     except Exception:
         # The fail-safe. A bug anywhere above becomes a quiet feed, never a
@@ -185,6 +196,7 @@ def _serve(
     parse_price,
     serialize,
     exclude_listing_ids: Sequence[int] = (),
+    content_post_id: Any = 0,
 ) -> list[dict]:
     surface = str(surface or "").strip().lower()
     if surface not in schema.SURFACES:
@@ -256,6 +268,31 @@ def _serve(
         else {}
     )
 
+    # Read once and held, because it is needed twice: retrieval widens by it, and
+    # `_select` takes it ahead of the scorer. Reading it twice would make those two
+    # able to disagree — a product tagged between the two reads would be selected
+    # ahead of a scorer that never retrieved it, which is a KeyError waiting to
+    # happen rather than a subtle ranking bug.
+    #
+    # `content_type="post"` on every surface, including reels, because the id
+    # arriving here is read from the posts table by the route on all of them
+    # (`_content_post`). The table can hold reel, video and status attachments for
+    # the composer's sake; only post attachments are resolvable from here, which is
+    # why the composer attaches a reel's products to its mirror post as well — the
+    # same thing `pulse_attach_music_to_content` does for a track. Passing a reel
+    # id under `content_type="post"` would look up tags on whichever unrelated post
+    # happened to share that number.
+    #
+    # Deliberately outside the `policy.personalized` gate that `profile` is behind.
+    # A creator tag is not personalisation — it says nothing about the viewer and
+    # would be identical for every person reading the post — so a viewer who opted
+    # out of personalised commerce should still see the product the creator
+    # attached. The opt-out that *does* suppress it is the surface-level one, and
+    # that already returned above.
+    tagged_listing_ids = tagging.tagged_listing_ids(
+        cur, content_type="post", content_id=content_post_id,
+    )
+
     built = pool.build(
         cur,
         viewer_user_id=user_id,
@@ -284,6 +321,7 @@ def _serve(
         # ranker, where it belongs.
         interests=profile.get("viewed_categories", ()),
         followed_sellers=tuple(profile.get("followed_sellers", ()) or ()),
+        tagged_listing_ids=tagged_listing_ids,
     )
     # Before the empty-pool return, not after: a pool that came back empty is
     # exactly when an operator most needs to know which questions were asked.
@@ -396,7 +434,7 @@ def _serve(
         scored.append((row, verdict))
 
     floor = branch.relevance_floor()
-    selected = _select(scored, budget, floor, branch)
+    selected = _select(scored, budget, floor, branch, preferred=tagged_listing_ids)
     if not selected:
         # The explicit form of "no placement is better than a bad placement":
         # the pool was non-empty and everything in it was below the bar.
@@ -665,8 +703,48 @@ def _interest_profile(cur, user_id: Any, *, subject_ref: str = "") -> dict:
 
 
 # --- selection --------------------------------------------------------------
-def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: SurfacePolicy) -> list[tuple[dict, dict]]:
+def _select(
+    scored: list[tuple[dict, dict]],
+    budget: int,
+    floor: float,
+    branch: SurfacePolicy,
+    preferred: Sequence[int] = (),
+) -> list[tuple[dict, dict]]:
     """Greedy pick with live diversity re-scoring and a reserved explore slot.
+
+    ``preferred`` is the creator's own ordering of the products they attached to
+    this post (:mod:`tagging`), and it is taken **first, ahead of the floor and
+    ahead of the caps**. That is three exemptions in one sentence, so each is
+    argued separately below rather than left to be inferred — this is the only
+    thing in the pipeline that outranks the scorer, and it should be hard to add
+    a second one by accident.
+
+    *Ahead of the score.* Every other row here was retrieved by an inference and
+    ordered by a guess at what this viewer wants. A creator tag is a statement by
+    the person who made the post about what the post is of. Ordering the statement
+    by the guess's confidence in it gets the relationship between the two exactly
+    backwards.
+
+    *Ahead of the floor.* ``relevance_floor`` asks "is this a good answer for this
+    person", and relevance to the content is precisely what the tag establishes by
+    fiat. A tagged product that scored below the floor is not a bad answer; it is
+    a product the scorer had no signal for — commonly a brand-new listing with no
+    engagement history, which is the normal state of a product a creator is
+    posting about for the first time.
+
+    *Ahead of the caps.* The per-seller cap exists so one store cannot dominate a
+    viewer's session. On a post whose creator tagged three of their own products
+    that reasoning does not apply: every tagged row is from one seller *by
+    construction*, because :func:`tagging.attach` refuses any other kind. Applying
+    the cap here would silently truncate every creator's tags to two and look like
+    a bug in the composer.
+
+    What is *not* exempt, and deliberately: ``eligibility`` (the tag cannot show a
+    delisted or unsafe product — it never reached the pool), ``promotion.assert_unpaid``,
+    the surface budget, ``tagging.MAX_TAGGED_PER_CONTENT``, and the counts. Picks
+    taken here feed ``seller_counts`` and the rest forward, so a two-slot surface
+    filled by tags serves no inferred rows at all rather than serving tags *plus*
+    a full quota of guesses.
 
     Greedy rather than optimal because the objective changes as items are
     chosen (diversity depends on the partial answer), and because the budget is
@@ -717,8 +795,26 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
     3. See ``router._SEGMENT_CAPS`` for the coarse cap that closes that half, and
     ``taxonomy`` for why leaf paths alone cannot see it.
     """
-    qualifying = [pair for pair in scored if pair[1]["score"] >= floor]
-    if not qualifying:
+    # Split before the floor, not after: a preferred row is exempt from it, so
+    # filtering first and rescuing afterwards would mean reconstructing the set
+    # that was just discarded.
+    wanted = [int(value or 0) for value in (preferred or ()) if int(value or 0) > 0]
+    by_id = {int(pair[0]["id"]): pair for pair in scored}
+    # In the creator's order, and only rows that survived retrieval — a tag whose
+    # listing failed `eligibility` is simply not in `by_id`, which is the correct
+    # outcome and needs no branch of its own.
+    tagged_pairs = []
+    for listing_id in wanted[:tagging.MAX_TAGGED_PER_CONTENT]:
+        pair = by_id.get(listing_id)
+        if pair is not None and pair not in tagged_pairs:
+            tagged_pairs.append(pair)
+    tagged_ids = {int(pair[0]["id"]) for pair in tagged_pairs}
+
+    qualifying = [
+        pair for pair in scored
+        if pair[1]["score"] >= floor and int(pair[0]["id"]) not in tagged_ids
+    ]
+    if not qualifying and not tagged_pairs:
         return []
 
     qualifying.sort(key=lambda pair: pair[1]["score"], reverse=True)
@@ -820,11 +916,28 @@ def _select(scored: list[tuple[dict, dict]], budget: int, floor: float, branch: 
                 best_score = adjusted["score"]
         return best
 
+    # The creator's picks, in the creator's order, before anything is guessed.
+    # Rescored for diversity so the persisted breakdown is still the arithmetic of
+    # the response they landed in — the value does not decide anything here, but a
+    # breakdown that disagrees with the response is the defect `rescore_diversity`
+    # was written to fix and it would be silly to reintroduce it one tier up.
+    for pair in tagged_pairs:
+        if len(chosen) >= budget:
+            break
+        keys = keys_for(pair[0])
+        take(pair, keys, ranking.rescore_diversity(pair[1], diversity_of(keys), weights=weights))
+
     # Reserve at most one slot for exploration, and only when the budget can
     # actually spare it — a single-slot surface (Reels) gives its one slot to
     # the best answer, because a lone chip is the user's entire impression of
     # the feature.
+    #
+    # Not reserved once the creator's tags have already taken the budget: a slot
+    # held back for exploration out of a budget that is already full would just
+    # truncate the response by one.
     explore_slots = 1 if (budget >= 2 and config.exploration_rate() > 0) else 0
+    if len(chosen) >= budget - explore_slots:
+        explore_slots = 0
 
     remaining = list(qualifying)
     while len(chosen) < budget - explore_slots:

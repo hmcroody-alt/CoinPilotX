@@ -114,7 +114,8 @@ from typing import Any, Optional
 
 from . import ranking
 
-#: The creator attached this product to this post. Not producible yet.
+#: The creator attached this product to this post. Produced from
+#: ``pool.SOURCE_TAGGED``, which reads ``tagging.tagged_listing_ids``.
 CREATOR_TAGGED = "creator_tagged"
 
 #: The content on screen matched.
@@ -146,15 +147,31 @@ ALL_RELATIONSHIPS = frozenset({
 })
 
 #: What this package may serve and record. ``SPONSORED`` is absent for
-#: ``promotion.assert_unpaid``'s reason; the other three are absent because
-#: nothing can produce them yet, and admitting them would let a typo'd or hostile
-#: value claim a provenance no code path can create.
-SERVABLE_RELATIONSHIPS = frozenset({CONTEXTUAL, PERSONALIZED, SIMILAR, CATALOGUE})
+#: ``promotion.assert_unpaid``'s reason; the rest are absent because nothing can
+#: produce them yet, and admitting them would let a typo'd or hostile value claim
+#: a provenance no code path can create.
+SERVABLE_RELATIONSHIPS = frozenset({
+    CREATOR_TAGGED, CONTEXTUAL, PERSONALIZED, SIMILAR, CATALOGUE,
+})
 
 #: Declared, intended, and not yet producible. Named as a set so a test can assert
 #: :func:`classify` never returns one, rather than restating the list.
+#:
+#: ``CREATOR_TAGGED`` left this set when ``tagging`` gave it a write path. The two
+#: remaining are not waiting on the same thing, which is worth recording because
+#: they were grouped together for so long that they read as one task:
+#:
+#: * ``COMPLEMENTARY`` needs a product↔product relation ("goes with"), which is a
+#:   different table from the one ``tagging`` added and needs either merchant
+#:   curation or co-purchase data. Prod has no orders at all, so the data-derived
+#:   version cannot be built or evaluated here yet.
+#: * ``PULSEDROP_CURATED`` needs no new table. ``pulsedrop_publications`` already
+#:   carries ``(surface, listing_id, post_id, state)`` — an exact post↔listing edge
+#:   with provenance — so this is a read away, and the only reason it is still
+#:   here is that nothing has wired it. It is *not* blocked on schema, and an
+#:   earlier revision of the delivery report said it was.
 UNIMPLEMENTED_RELATIONSHIPS = frozenset({
-    CREATOR_TAGGED, COMPLEMENTARY, PULSEDROP_CURATED,
+    COMPLEMENTARY, PULSEDROP_CURATED,
 })
 
 #: Retrieval sources that are about the *viewer*. Both are ``pool`` source names;
@@ -162,6 +179,19 @@ UNIMPLEMENTED_RELATIONSHIPS = frozenset({
 #: cannot silently reclassify it — a new source falls through to
 #: :data:`CATALOGUE`, which understates rather than overstates what we know.
 VIEWER_SOURCES = frozenset({"affinity", "followed"})
+
+#: ``pool.SOURCE_TAGGED``, by value, for the reason directly above: this module
+#: does not import ``pool``, so that a source added there cannot silently change
+#: what is recorded here.
+#:
+#: The risk that convention buys is different for this one, though, and worth
+#: naming. A *new* source falling through to :data:`CATALOGUE` understates and is
+#: safe. This name drifting apart from ``pool``'s would silently downgrade every
+#: creator-tagged card to :data:`CATALOGUE` — "the ranker's own choice" — which is
+#: the value that claims the least and therefore raises no eyebrow in a report.
+#: So the duplication is pinned by a test that asserts the two constants are equal
+#: rather than by hoping nobody renames one.
+SOURCE_TAGGED = "tagged"
 
 
 class RelationshipError(ValueError):
@@ -254,6 +284,21 @@ def classify(
         context_offered and relevance >= ranking.CONTEXT_CLAIM_MIN_RELEVANCE
     )
 
+    # Ahead of the context check, and that ordering is the same argument one step
+    # further along. `CONTEXTUAL` beats `PERSONALIZED` so that "matched nothing
+    # about the content" stays answerable; `CREATOR_TAGGED` beats `CONTEXTUAL` so
+    # that "is here because the creator said so" stays answerable. A tag is not a
+    # weaker content match than a text overlap, it is the strongest one there is —
+    # the only edge in the system that is a statement rather than an inference.
+    # Labelling a tagged card `contextual` because its title also matched would
+    # report an inference where a declaration exists, and would make the single
+    # most important question about this feature ("how much of this is creators
+    # and how much is us?") unanswerable from the data.
+    #
+    # It does not weaken §44's audit: a tagged row *did* match the content, so it
+    # is correctly outside the "matched nothing" population that metric counts.
+    if str(candidate_source or "").strip().lower() == SOURCE_TAGGED:
+        return CREATOR_TAGGED
     if matched_context:
         # The same signal, named for what it is related *to*. A product page has
         # no post, so "contextual" there would describe nothing on screen — the

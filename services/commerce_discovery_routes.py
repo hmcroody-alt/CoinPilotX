@@ -602,6 +602,7 @@ def commerce_discovery_serve(surface):
     def handler(cur, conn):
         bot = _bot()
         context = _context_from_request(payload)
+        content_post_id = 0
         if surface == "product_detail":
             # The anchor's own taxonomy replaces the client's description of it.
             # An empty read means the listing is gone, and falling back to the
@@ -609,6 +610,21 @@ def commerce_discovery_serve(surface):
             # server can no longer see.
             context = _anchor_context(cur, anchor_id)
         elif surface in suitability.CONTENT_SURFACES:
+            # Creator-tagged products are keyed by this id. Resolved here, inside
+            # the `CONTENT_SURFACES` branch, and left at 0 everywhere else —
+            # deliberately, because the label a tag earns ("the creator attached
+            # this to this post") is only truthful where a post is on screen.
+            # Messenger and Marketplace have no post, so a `post_id` in their
+            # request body describes nothing the viewer can look at, and honouring
+            # it would put a creator's product in a private conversation under a
+            # claim about content that is not there.
+            #
+            # Read from the body here but *looked up* in the engine, below the
+            # suitability refusal. That ordering is the brief's point and there is
+            # a test for it: a creator tag must not be able to force commerce onto
+            # a post `suitability.assess` refuses, so the refusal has to `return`
+            # before anything resolves a tag.
+            content_post_id = _content_post_id(payload)
             # The whole rule, and why it is two checks rather than one, is in
             # `_content_refusal`'s docstring. It runs before retrieval.
             verdict = _content_refusal(cur, payload, context, surface)
@@ -639,6 +655,7 @@ def commerce_discovery_serve(surface):
             parse_price=bot.parse_price_label_to_cents,
             serialize=bot.pulse_marketplace_listing_payload,
             exclude_listing_ids=(anchor_id,) if anchor_id else (),
+            content_post_id=content_post_id,
         )
         return _json({
             "ok": True,

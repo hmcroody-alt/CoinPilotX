@@ -45039,6 +45039,101 @@ def pulse_attach_music_to_content(cur, *, content_type, content_id, track_id, us
     return {"ok": True, "music": track}
 
 
+#: How many listing references one composer request may even be *considered*.
+#: `tagging.MAX_TAGGED_PER_CONTENT` is the real cap and is enforced per row against
+#: what is already stored; this is only a bound on the loop, so a request carrying
+#: ten thousand ids costs ten reads and not ten thousand.
+PULSE_PRODUCT_TAG_REQUEST_LIMIT = 20
+
+
+def pulse_attach_products_to_content(cur, *, content_type, content_id, listing_ids, user_id):
+    """Attach the creator's own listings to one piece of content.
+
+    Deliberately shaped like :func:`pulse_attach_music_to_content` above, and
+    called from the same places for the same reason. The judgement — may this
+    person point at this product, and is this post already full — lives in
+    ``services.commerce_discovery.tagging``; this function is only the composer's
+    side of it: the loop, the request bound, and the decision about what a failure
+    does to the post.
+
+    That last part is why this wrapper exists at all rather than the call sites
+    invoking ``tagging.attach`` directly. ``attach`` returns refusals but lets
+    database errors propagate, on the grounds that a driver error is not a
+    judgement it can explain and the composer should decide. This is the composer.
+    The decision is: **the post survives.** A product tag that cannot be written is
+    logged and dropped, because a creator who attached a product and lost the whole
+    post has lost more than the tag.
+
+    Returns ``{"ok", "attached", "refused"}``. ``ok`` is true when *every*
+    requested id was attached, so a caller that wants to tell the creator "one of
+    your products could not be tagged" has the material to; none currently does,
+    and the log line is what an operator has in the meantime.
+    """
+    requested: list[int] = []
+    for value in (listing_ids or [])[:PULSE_PRODUCT_TAG_REQUEST_LIMIT]:
+        listing_ref = safe_int(value, 0)
+        if listing_ref > 0 and listing_ref not in requested:
+            requested.append(listing_ref)
+    if not requested:
+        return {"ok": True, "attached": [], "refused": []}
+
+    from services.commerce_discovery import tagging as _cd_tagging
+
+    attached: list[int] = []
+    refused: list[dict] = []
+    for listing_ref in requested:
+        try:
+            outcome = _cd_tagging.attach(
+                cur,
+                content_type=content_type,
+                content_id=content_id,
+                listing_id=listing_ref,
+                user_id=user_id,
+            )
+        except Exception:
+            logging.warning(
+                "PULSE_PRODUCT_TAG_WRITE_FAILED user_id=%s content_type=%s content_id=%s listing_id=%s",
+                user_id, content_type, content_id, listing_ref, exc_info=True,
+            )
+            refused.append({"listing_id": listing_ref, "reason": "write_failed"})
+            continue
+        if outcome.get("ok"):
+            attached.append(listing_ref)
+        else:
+            # Logged at info, not warning. "You can only tag your own products" is
+            # the system working; an operator reading warnings should not have to
+            # filter out every creator who tried.
+            logging.info(
+                "PULSE_PRODUCT_TAG_REFUSED user_id=%s content_type=%s content_id=%s listing_id=%s reason=%s",
+                user_id, content_type, content_id, listing_ref, outcome.get("reason"),
+            )
+            refused.append({"listing_id": listing_ref, "reason": outcome.get("reason")})
+    return {"ok": not refused, "attached": attached, "refused": refused}
+
+
+def pulse_product_tag_ids_from_payload(payload):
+    """Listing ids a composer request is asking to tag, under any of its names.
+
+    Three keys because three clients. ``product_listing_ids`` is what the native
+    composer will send, ``listing_ids`` is the shorter name the web composer's
+    existing marketplace forms already use, and ``product_ids`` is what a reader of
+    the API would guess. Accepting all three costs nothing — every id is checked
+    for ownership regardless of which key carried it — and the alternative is a
+    silently ignored field, which is the failure mode this repo has the most of.
+
+    A single scalar is accepted as a one-element list for the same reason.
+    """
+    payload = payload or {}
+    for key in ("product_listing_ids", "listing_ids", "product_ids"):
+        value = payload.get(key)
+        if value in (None, "", [], ()):
+            continue
+        if isinstance(value, (list, tuple)):
+            return list(value)
+        return [value]
+    return []
+
+
 @webhook_app.route("/api/pulse/music/attach", methods=["POST"])
 def api_pulse_music_attach():
     init_db()
@@ -92194,6 +92289,33 @@ def api_pulse_posts():
                 else:
                     logging.warning("PULSE_POST_MUSIC_ATTACH_BLOCKED user_id=%s post_id=%s track_id=%s", user["user_id"], result.get("post_id"), music_track_id)
                 conn.close()
+            # Products the creator attached to their own post. Its own connection
+            # and its own `try`, both on purpose: the post is already created and
+            # committed by this line, so nothing here may be able to unmake it. A
+            # tag that fails is a missing carousel, not a lost post (§82).
+            product_tag_ids = pulse_product_tag_ids_from_payload(payload)
+            if product_tag_ids:
+                tag_conn = None
+                try:
+                    tag_conn = db()
+                    tag_cur = tag_conn.cursor()
+                    tag_result = pulse_attach_products_to_content(
+                        tag_cur, content_type="post", content_id=result.get("post_id"),
+                        listing_ids=product_tag_ids, user_id=user["user_id"],
+                    )
+                    if tag_result.get("attached"):
+                        tag_conn.commit()
+                except Exception:
+                    logging.warning(
+                        "PULSE_POST_PRODUCT_ATTACH_FAILED user_id=%s post_id=%s",
+                        user["user_id"], result.get("post_id"), exc_info=True,
+                    )
+                finally:
+                    if tag_conn is not None:
+                        try:
+                            tag_conn.close()
+                        except Exception:
+                            pass
             created_post = result.get("post") or {}
             video_media = next((m for m in (created_post.get("media") or []) if str((m or {}).get("media_type") or "").lower() == "video"), None)
             if video_media:
@@ -92631,6 +92753,36 @@ def api_pulse_reels_create():
                 # at.trend_score, 0)`, so a track with a trending row would be ranked on
                 # reel attachments alone while every other track was ranked on all
                 # surfaces: two scales in one ORDER BY. One writer, one counter.
+        # Products the creator attached to their own reel. Written twice when the
+        # reel is shared to the feed, exactly as the music above it is, and for a
+        # reason that is not symmetry: `commerce_discovery` resolves tags by
+        # *post* id on every surface including reels, because that is the id its
+        # route reads from the client. A reel-only row would be unreachable, so the
+        # mirror row is what makes a reel's products actually appear.
+        #
+        # Inside the reel's own transaction rather than on a second connection —
+        # unlike the post path, where the post was already committed by that point.
+        # Here `conn.commit()` is still ahead of us, so a tag written here rolls
+        # back with the reel if the reel fails, which is the correct outcome: there
+        # is no reel for the tag to be attached to. The `try` is still required so
+        # the reverse cannot happen.
+        reel_product_tag_ids = pulse_product_tag_ids_from_payload(payload)
+        if reel_product_tag_ids:
+            try:
+                pulse_attach_products_to_content(
+                    cur, content_type="reel", content_id=reel_id,
+                    listing_ids=reel_product_tag_ids, user_id=user["user_id"],
+                )
+                if share_to_feed and post_id:
+                    pulse_attach_products_to_content(
+                        cur, content_type="post", content_id=post_id,
+                        listing_ids=reel_product_tag_ids, user_id=user["user_id"],
+                    )
+            except Exception:
+                logging.warning(
+                    "PULSE_REEL_PRODUCT_ATTACH_FAILED trace_id=%s user_id=%s reel_id=%s post_id=%s",
+                    trace_id, user["user_id"], reel_id, post_id, exc_info=True,
+                )
         conn.commit()
         conn.close()
         try:
@@ -120181,6 +120333,50 @@ def _init_db_impl():
         ("original_audio_muted", "INTEGER DEFAULT 1"),
         ("audio_start_time", "REAL DEFAULT 0"),
         ("audio_volume", "REAL DEFAULT 1"),
+    ], conn=conn)
+    # Products a creator attached to their own content. Deliberately shaped like
+    # `pulse_content_music` above it — same polymorphic (content_type, content_id)
+    # key, same UNIQUE, same `attached_by_user_id` — because it is the same kind of
+    # thing: an attachment the composer writes and a reader resolves. It is read by
+    # `services/commerce_discovery`, but it is not that package's table: the writer
+    # is the post composer, and making the composer depend on the discovery
+    # package's schema guard to save a post would be the wrong dependency.
+    #
+    # Two deliberate departures from the music shape:
+    #
+    # `seller_user_id` is denormalised, not for speed but for correctness. It is
+    # the seller at *attach* time, which is what the tag was authorised against.
+    # A listing that later changes hands carries an authorisation nobody granted,
+    # and the read path drops the tag when this column stops matching the live
+    # listing. This is the products analogue of `license_snapshot_json`: a snapshot
+    # of the permission, not of the goods.
+    #
+    # There is no price, title or availability snapshot, and that is the opposite
+    # choice to music on purpose. A stale song is still the song; a stale price is
+    # a lie to a buyer. Everything merchandising-related is read live from
+    # `marketplace_listings` on every serve so a sold-out or repriced product
+    # cannot be served from a cache nobody remembers writing.
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS pulse_content_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content_type TEXT,
+        content_id INTEGER,
+        listing_id INTEGER,
+        attached_by_user_id INTEGER,
+        seller_user_id INTEGER,
+        authority TEXT DEFAULT 'owner',
+        created_at TEXT,
+        UNIQUE(content_type, content_id, listing_id)
+    )
+    """)
+    add_columns_if_missing(cur, "pulse_content_products", [
+        ("content_type", "TEXT"),
+        ("content_id", "INTEGER"),
+        ("listing_id", "INTEGER"),
+        ("attached_by_user_id", "INTEGER"),
+        ("seller_user_id", "INTEGER"),
+        ("authority", "TEXT DEFAULT 'owner'"),
+        ("created_at", "TEXT"),
     ], conn=conn)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS pulse_trending_sounds (

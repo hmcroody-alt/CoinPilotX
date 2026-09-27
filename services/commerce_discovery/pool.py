@@ -170,7 +170,13 @@ SOURCE_ROTATION = "rotation"
 #: are asked. Declared so metrics and the explain endpoint can enumerate them
 #: without a viewer who happens to have follows being the only way to discover
 #: that ``followed`` exists.
-CANDIDATE_SOURCES = ("affinity", "followed", "trending", SOURCE_ROTATION)
+#: The creator's own statement about this post. First in the tuple because it is
+#: first in :func:`_sources`, and it is first there because provenance goes to
+#: whichever source found a row: a listing the creator tagged must be labelled
+#: ``tagged`` even when the affinity query would also have returned it.
+SOURCE_TAGGED = "tagged"
+
+CANDIDATE_SOURCES = (SOURCE_TAGGED, "affinity", "followed", "trending", SOURCE_ROTATION)
 
 
 @dataclass(frozen=True)
@@ -365,6 +371,7 @@ def _sources(
     followed_sellers: Sequence[int] = (),
     rotation_offset: int = 0,
     subject_ref: str = "",
+    tagged_listing_ids: Sequence[int] = (),
 ) -> tuple[_Source, ...]:
     """The retrieval questions worth asking about this viewer, in order.
 
@@ -377,8 +384,32 @@ def _sources(
 
     ``rotation`` is unconditional and last. Nothing here can remove it, because a
     viewer whose every targeted source is empty must still get a full pool.
+
+    ``tagged`` is first, and it is the only source here that is not about the
+    viewer at all — it is the creator's statement about the content. It is asked
+    first for the provenance reason above: a tagged listing that the affinity
+    query would also have returned must still read as ``tagged``, because
+    "the creator said so" and "this viewer likes cameras" are not
+    interchangeable explanations, and the second is the one that looks like an ad.
     """
     found: list[_Source] = []
+
+    tagged = _terms(tagged_listing_ids, lambda value: int(value or 0))
+    if tagged:
+        marks = ",".join("?" for _ in tagged)
+        found.append(_Source(
+            name=SOURCE_TAGGED,
+            clause=f"AND l.id IN ({marks})",
+            params=tagged,
+            # No share, so the quota is the whole target — which sounds unbounded
+            # and is not: the id list is already capped by
+            # `tagging.MAX_TAGGED_PER_CONTENT` at the read, so "take everything
+            # you find" finds at most a handful. A fractional share would be
+            # worse than pointless here; it would silently drop the fifth product
+            # a creator deliberately attached in order to honour an arithmetic
+            # rule about viewer personalisation, which this source is not.
+            share=0.0,
+        ))
 
     categories = _terms(interests, lambda value: str(value or "").strip().lower())
     if categories:
@@ -450,6 +481,7 @@ def build(
     exclude_listing_ids: Sequence[int] = (),
     interests: Sequence[str] = (),
     followed_sellers: Sequence[int] = (),
+    tagged_listing_ids: Sequence[int] = (),
 ) -> PoolResult:
     """Eligible, non-cooled-down candidates for one viewer.
 
@@ -465,6 +497,15 @@ def build(
     existed. They are passed in for the same reason the cooldowns are: whether a
     surface may personalise is ``preferences.viewer_policy``'s decision, not this
     module's, and a surface serving a viewer who opted out must pass nothing here.
+
+    ``tagged_listing_ids`` is passed in for a different reason, and the difference
+    is worth keeping: it is not a viewer property at all, and this module is
+    deliberately ignorant of posts. Resolving it here would mean ``pool`` knew
+    about content ids, content types and the attachment table, and — worse — could
+    resolve them *before* ``suitability`` had been asked whether this post may
+    carry commerce at all. The engine looks it up, after the gate, and hands over
+    a list of ids. Empty means no tags, which is the overwhelming majority of
+    posts and is exactly the behaviour that shipped before tagging existed.
     """
     state = exposure or exposure_module.EMPTY
     excluded_ids = frozenset(_int(value) for value in exclude_listing_ids) - {0}
@@ -516,6 +557,7 @@ def build(
         followed_sellers=followed_sellers,
         rotation_offset=rotation_offset,
         subject_ref=getattr(policy, "subject_ref", "") or "",
+        tagged_listing_ids=tagged_listing_ids,
     )
 
     result = EMPTY

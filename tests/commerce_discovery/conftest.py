@@ -36,7 +36,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from services.commerce_discovery import engine, events, pool, preferences, schema, subject
+from services.commerce_discovery import (
+    engine, events, pool, preferences, schema, subject, tagging,
+)
 
 #: Deliberately not "now". A fixed start makes a failure reproducible, and an
 #: hour that is not the hour the suite happens to run in catches code that
@@ -143,6 +145,28 @@ _MARKETPLACE_DDL = (
         followed_public_player_id TEXT,
         created_at TEXT,
         PRIMARY KEY (follower_user_id, followed_user_id)
+    )
+    """,
+    # Creator product tags. Owned by `bot.init_db`, not by
+    # `schema.ensure_schema` — the writer is the post composer, so the discovery
+    # package does not create it. Which means this fixture is a hand-copy of
+    # production DDL and free to drift from it, the exact failure mode that has
+    # bitten this repo before. `test_a_creator_can_tag_their_own_products.py`
+    # closes it: one test parses `bot.py`'s own CREATE TABLE and asserts the
+    # column names match this one, so a column added in production and forgotten
+    # here fails rather than silently making every tagging test a test of an
+    # imaginary table.
+    """
+    CREATE TABLE pulse_content_products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        content_type TEXT,
+        content_id INTEGER,
+        listing_id INTEGER,
+        attached_by_user_id INTEGER,
+        seller_user_id INTEGER,
+        authority TEXT DEFAULT 'owner',
+        created_at TEXT,
+        UNIQUE(content_type, content_id, listing_id)
     )
     """,
 )
@@ -315,6 +339,7 @@ class SimulatedMarketplace:
         context=None,
         session_id="cs_test",
         exclude_listing_ids=(),
+        content_post_id=0,
     ) -> list[dict]:
         return engine.serve(
             self.conn.cursor(),
@@ -326,6 +351,7 @@ class SimulatedMarketplace:
             limit=limit,
             parse_price=parse_price,
             exclude_listing_ids=exclude_listing_ids,
+            content_post_id=content_post_id,
         )
 
     def render(self, placements, *, visible: bool = True) -> None:
@@ -413,6 +439,49 @@ class SimulatedMarketplace:
         cur.execute(
             "INSERT INTO marketplace_saved_products (user_id, listing_id, created_at) VALUES (?,?,?)",
             (self.viewer_id, int(listing_id), subject.iso(self.clock.now)),
+        )
+        self.conn.commit()
+
+    def seller_of(self, listing_id) -> int:
+        """Who owns a listing *now*, read back from the table.
+
+        Read rather than computed from ``1001 + (id-1) % 10`` on purpose: the
+        formula is only true until :meth:`transfer` runs, and a helper that keeps
+        answering the old owner would make the stale-authorisation tests pass by
+        agreeing with the bug.
+        """
+        cur = self.conn.cursor()
+        cur.execute("SELECT seller_user_id FROM marketplace_listings WHERE id=?", (int(listing_id),))
+        row = cur.fetchone()
+        return int((row or {"seller_user_id": 0})["seller_user_id"] or 0)
+
+    def tag(self, listing_id, *, post_id: int, content_type: str = "post", user_id=None) -> dict:
+        """Attach a product to content, as the composer would.
+
+        ``user_id`` defaults to the listing's *current* owner, so the happy path is
+        one argument. A test about refusals passes it explicitly.
+        """
+        actor = self.seller_of(listing_id) if user_id is None else int(user_id)
+        result = tagging.attach(
+            self.conn.cursor(),
+            content_type=content_type,
+            content_id=post_id,
+            listing_id=listing_id,
+            user_id=actor,
+        )
+        self.conn.commit()
+        return result
+
+    def transfer(self, listing_id, new_seller_user_id: int) -> None:
+        """Sell a listing to a different seller.
+
+        The thing `tagging.tagged_listing_ids`' JOIN exists to notice: the tag row
+        still names the old owner, who is the person that actually granted it.
+        """
+        cur = self.conn.cursor()
+        cur.execute(
+            "UPDATE marketplace_listings SET seller_user_id=? WHERE id=?",
+            (int(new_seller_user_id), int(listing_id)),
         )
         self.conn.commit()
 
