@@ -7,17 +7,18 @@ the test could fail. It is long because that is what it is for.
 
 **Status: not deployed.** Nothing in this report is live. The work is committed on the
 local branch `commerce-discovery-audit` in a worktree, and has **not** been pushed, merged,
-or rolled out. The last increment described below is §22, committed as `68e7867f9`; if
-`git log --oneline 68e7867f9..commerce-discovery-audit` prints anything other than this
-report's own tidy-up commit, the branch has moved past what is written here. Read the
-figures below as measurements of that commit, not of whatever is currently checked out.
-(The head is named this way rather than pinned because a pinned head SHA is wrong the
-moment it is written — it cannot name the commit that contains it. The first three
-revisions of this line were all stale by exactly one commit.)
+or rolled out. The last increment described below is §23; the commit before it is
+`1cc3f5317`, so if `git log --oneline 1cc3f5317..commerce-discovery-audit` prints more than
+§23's own commit, the branch has moved past what is written here. Read the figures below as
+measurements of that point, not of whatever is currently checked out. (The head is named
+this way rather than pinned because a pinned head SHA is wrong the moment it is written —
+it cannot name the commit that contains it. The first three revisions of this line were all
+stale by exactly one commit.)
 Committed is not deployed, and the distinction matters
 here: §16 lists changes that alter what feed, reels, post-detail, Messenger, Marketplace
-and product-page users see, with no per-surface kill switch to stage them behind. §16 also
-explains why the rollout decision is not mine to take.
+and product-page users see. As of §23 there is now a per-surface kill switch to stage them
+behind, which is the one thing that makes that order less frightening than it was; §16 still
+explains why the rollout decision itself is not mine to take.
 
 **Scope correction up front.** The mission brief asked for a commerce discovery engine
 to be built. One already existed, live in production across six surfaces. The brief
@@ -1522,3 +1523,104 @@ coverage was a way of never having to make the call.
 
 Verified: 724 package tests and 663 protection tests green; both mutations above reverted,
 `services/commerce_discovery_routes.py` confirmed byte-identical to `HEAD`.
+
+## 23. The rollout was cautious because there was no way to stop it
+
+Every section above this one is an audit finding. This one is a feature, and it is here
+because the audit is what identified it: item 58 of the delivery report had to say that
+turning commerce discovery off on a single surface was a code change, a review and a Railway
+deploy — and Railway variables only reach a container at boot, so even the deploy is slower
+than it sounds.
+
+That was not a footnote in the rollout plan, it *was* the rollout plan. §16's staged order is
+as conservative as it is because each stage changes what feed, reels, post-detail, Messenger,
+Marketplace and product-page users see at once, and the only available undo was shipping
+again. Every stage had to be sized against "what are we willing to un-ship by deploying"
+rather than "what do we want to learn". A switch that is coarser than the thing likely to go
+wrong gets used late, or not at all.
+
+`COMMERCE_DISCOVERY_DISABLED_SURFACES` now takes a comma- or space-separated list of surface
+names, validated against `schema.SURFACES`, read per request. A named surface returns an empty
+placement list — the same outcome as the master switch, scoped — which every client already
+renders as no commerce unit, so nothing on the device needs to change for this to work.
+
+### The switch is free, and the master switch became free with it
+
+The check sits at the top of `_serve`, above `promotion.assert_unpaid`, above
+`schema.ensure_schema(conn)` and above `preferences.viewer_policy(cur, user_id)`. A disabled
+surface costs one environment read and **zero queries**.
+
+That placement exposed something about the switch that already existed. `config.enabled()`
+had exactly one call site — `preferences.py:154`, inside `viewer_policy` — which runs *after*
+the schema guard and takes a cursor. So with discovery globally off, every single request
+still paid for `ensure_schema` and a cursor in order to be told no. Checking both switches in
+one place fixes that as a side effect, and `test_the_master_switch_is_free_too_now` exists so
+the side effect cannot be quietly lost; mutating `surface_enabled` to consult only the
+per-surface list turns it and two others red.
+
+The check is deliberately **silent**. An operator-requested empty list is not an incident, and
+a log line on `feed` would put one on the hottest read path in the product to report that
+something is working as configured.
+
+### A typo leaves the surface serving. That is chosen, and it is the uncomfortable choice
+
+`disabled_surfaces` drops names it does not recognise. So `COMMERCE_DISCOVERY_DISABLED_SURFACES=post-detail`
+disables nothing and post-detail keeps serving — a kill switch failing open, which is the bad
+direction for a kill switch.
+
+It is still the right one, because the alternative is worse in a way that is not symmetric:
+treating an unknown token as "disable everything" turns one typo in a Railway variable into a
+platform-wide commerce outage. There is no third option, because nothing in the process can
+guess which of six surfaces `reel` or `post-detail` was meant to be. So the mitigation is
+loudness rather than cleverness — one `COMMERCE_DISCOVERY_UNKNOWN_DISABLED_SURFACE` warning
+naming the ignored token, the valid set, and `still_serving=1`, emitted once per distinct raw
+value rather than once per request, since this is read on the feed path. Keying the memo by
+the raw string rather than by the bad token means *fixing* the variable is observable too.
+
+`TestATypoFailsOpenLoudly` is where that choice is written down, specifically so it cannot be
+reversed by someone who reads the drop as a bug. Mutating the parser to fail closed turns two
+of its tests red.
+
+### The test that proved the placement did not prove the placement
+
+Thirty-nine tests, and the mutation that matters most is moving the check below
+`ensure_schema`. Run against the first version of the file, that mutation turned **one** test
+red — and not either of the two written to pin the placement.
+
+The reason is the subject of §§19–22 arriving one layer lower than expected. The forbidden
+cursor and connection raised `AssertionError` on contact, as designed, but `schema.ensure_schema`
+has its own `except Exception` at `schema.py:351`: it caught the assertion, logged
+`COMMERCE_DISCOVERY_SCHEMA_FAILED`, and returned `False`. `_serve` then returned `[]` — which
+is precisely what the test was asserting a correctly-disabled surface returns. The conftest
+guard did not save it either, because that guard watches `COMMERCE_DISCOVERY_SERVE_FAILED` and
+the exception never travelled as far as `serve`'s fail-safe.
+
+This is the general hazard of auditing a feature built to three levels of fail-soft (§82): in
+this package, *an exception and a success produce the same observable value*, so any test that
+asserts only the return value is at risk of passing for the wrong reason. §19 found 48 tests
+in that state, §21 found 29 more, and then this section's own tests joined them — which is
+worth recording plainly, because the lesson evidently does not transfer by having been
+written down once.
+
+Fixed by recording contact in a module-level `TOUCHES` list that no intervening `except` can
+reach, and asserting on the record instead of relying on the raise. The assertion lives in the
+`serve_with_nothing` helper, so all five callers pin the placement rather than the two that
+mention it. The mutation now turns 5 tests red.
+
+### Still open
+
+The switch does not suppress the feed's `commerce_suitable` annotation, and should not: the
+annotation is a property of the post, costs no query, and a client with no placements has
+nothing to do with it either way. That is stated in the test file as a deliberate non-property
+so the next reader does not file it.
+
+There is still no per-*viewer* or percentage rollout — this is on/off per surface, which is
+what a rollout needs to be reversible, not what an experiment needs to be measurable. Item 45
+of the delivery report (no experimentation framework wired to commerce) is unchanged, and
+`PulseExperiments` remains shipped-but-inert.
+
+Verified: 763 package tests and 663 protection tests green. Three mutations, each caught by
+the tests that name it: guard below `ensure_schema` (5 red), `surface_enabled` ignoring the
+master switch (3 red), unknown token failing closed (2 red); all three reverted and both
+source files confirmed restored. The fail-soft handler audit reports the same 74 handlers and
+25 unreached as before — the switch adds no `except` (§82's handlers are untouched).

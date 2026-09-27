@@ -77,6 +77,88 @@ def enabled() -> bool:
     return _flag("COMMERCE_DISCOVERY_ENABLED", True)
 
 
+# --- per-surface switches ---------------------------------------------------
+#: Surfaces to stop serving, comma- or space-separated. Empty means all six are
+#: on, which is the current production state.
+#:
+#: This exists because :func:`enabled` is all-or-nothing, and the rollout it has
+#: to support is not. The staged plan in the delivery report moves what feed,
+#: reels, post-detail, Messenger, Marketplace and product-page users see, and
+#: without this the only way to stop one of them is a deploy — so every stage had
+#: to be sized against "what are we willing to un-ship by shipping again". A
+#: surface named here gets the same outcome as the master switch, scoped: an
+#: empty list, which every client already renders as no commerce unit.
+#:
+#: Read per request like every other flag in this module, deliberately. A kill
+#: switch that needs a restart is not a kill switch, it is a deploy with extra
+#: steps.
+SURFACE_KILL_ENV = "COMMERCE_DISCOVERY_DISABLED_SURFACES"
+
+#: Raw values already warned about. Keyed by the raw string rather than by the
+#: bad token, so that *fixing* the variable is observable too, and so a typo
+#: costs one log line per process instead of one per request — this is read on
+#: the feed path.
+_SURFACE_KILL_WARNED: set[str] = set()
+
+
+def disabled_surfaces() -> frozenset[str]:
+    """Surfaces the operator has switched off, validated against the allowlist.
+
+    Unrecognised names are dropped and warned about once. That is the
+    uncomfortable direction and it is chosen rather than defaulted into: a typo
+    means the surface the operator meant to stop **keeps serving**, which is a
+    kill switch failing open. The alternative — treat an unknown token as
+    "disable everything" — turns one typo into a platform-wide commerce outage,
+    and there is no third option, because nothing here can guess which of six
+    surfaces ``reel`` or ``post-detail`` was meant to be.
+
+    So the mitigation is loudness, not cleverness. The warning names the ignored
+    token *and* the valid set, because the two spellings that will actually
+    happen are ``post-detail`` for ``post_detail``, and a plural.
+    """
+    raw = (os.environ.get(SURFACE_KILL_ENV) or "").strip()
+    if not raw:
+        return frozenset()
+
+    # Imported here rather than at module scope only to keep the direction of
+    # the dependency obvious: `schema` does not import `config`, and this is the
+    # one place that would make someone wonder.
+    from . import schema
+
+    known: set[str] = set()
+    unknown: list[str] = []
+    for token in raw.replace(",", " ").split():
+        name = token.strip().lower()
+        if not name:
+            continue
+        if name in schema.SURFACES:
+            known.add(name)
+        else:
+            unknown.append(name)
+
+    if unknown and raw not in _SURFACE_KILL_WARNED:
+        _SURFACE_KILL_WARNED.add(raw)
+        LOGGER.warning(
+            "COMMERCE_DISCOVERY_UNKNOWN_DISABLED_SURFACE ignored=%s still_serving=1 "
+            "valid=%s env=%s",
+            ",".join(sorted(unknown)), ",".join(schema.SURFACES), SURFACE_KILL_ENV,
+        )
+
+    return frozenset(known)
+
+
+def surface_enabled(surface: Any) -> bool:
+    """Whether this surface may be served at all.
+
+    Both switches in one call, so that a caller cannot consult the per-surface
+    one and forget the master — which is the characteristic failure of having
+    two switches for the same thing.
+    """
+    if not enabled():
+        return False
+    return str(surface or "").strip().lower() not in disabled_surfaces()
+
+
 def personalization_enabled() -> bool:
     """Operator-level off switch for the *personalized* half of ranking.
 

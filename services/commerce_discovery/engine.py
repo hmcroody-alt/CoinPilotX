@@ -190,6 +190,20 @@ def _serve(
     if surface not in schema.SURFACES:
         return []
 
+    # Before `ensure_schema`, before `viewer_policy`, before anything that opens
+    # a cursor: a surface an operator has switched off should cost one env read
+    # and no queries. Placed here rather than in `viewer_policy` — which is where
+    # the master switch is checked — because that function is not told which
+    # surface it is resolving for, and giving it one so it could answer this
+    # would make a viewer-scoped decision depend on a surface-scoped one.
+    #
+    # Silent, like the unknown-surface check above it and unlike the fail-safe
+    # below. An operator-requested empty list is not an incident, and logging it
+    # per request on `feed` would put a line on the hottest path in the product
+    # to report that something is working as configured.
+    if not config.surface_enabled(surface):
+        return []
+
     klass = promotion.assert_unpaid(promotion_class)
 
     if not schema.ensure_schema(conn):

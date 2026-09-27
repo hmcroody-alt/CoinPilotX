@@ -181,6 +181,7 @@
     "tests/business_os_finance/test_seller_payout_routes.py",
     "tests/business_os_finance/test_seller_payouts.py",
     "tests/business_os_finance/test_sql_engine_portability.py",
+    "tests/commerce_discovery/test_a_surface_can_be_switched_off.py",
     "tests/commerce_discovery/test_content_suitability.py",
     "tests/commerce_discovery/test_distribution_pipeline.py",
     "tests/commerce_discovery/test_diversity_is_operative.py",

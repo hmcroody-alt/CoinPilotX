@@ -3,20 +3,20 @@
 This answers the 64 items §100 of the brief asks for, in its order and with its numbering.
 
 **Read this with `PULSE_COMMERCE_INTELLIGENCE_REPORT.md`, not instead of it.** That document
-is the evidence: 22 sections, every defect with the measurement that found it and the
+is the evidence: 23 sections, every defect with the measurement that found it and the
 mutation that proved the test could fail. This one is the index — each item below answers
 the question, names the file, and points at the section that proves the answer. Where an
 item is not built, it says so in the first sentence.
 
 **Status: nothing here is deployed.** Branch `commerce-discovery-audit` in a worktree, not
-pushed, not merged. It is also **20 commits behind `origin/main`** as of writing, which is a
+pushed, not merged. It is also **22 commits behind `origin/main`** as of writing, which is a
 rollout input and not a footnote — see item 59.
 
 ### How to regenerate every figure in this report
 
 ```
 cd <worktree>
-.venv/bin/python -m pytest tests/commerce_discovery -q          # 724 pass
+.venv/bin/python -m pytest tests/commerce_discovery -q          # 763 pass
 .venv/bin/python -m pytest tests/protection -q                  # 663 pass
 python3 scripts/protection/measure_commerce_discovery_reachability.py
 python3 scripts/protection/audit_commerce_discovery_failsoft.py
@@ -627,7 +627,8 @@ answers are legitimately no. Making it a gate would buy tests for unreachable br
 
 ## 53. Automated tests
 
-**724 tests in `tests/commerce_discovery/`** (28 files, 9,640 lines) + 663 in
+**763 tests in `tests/commerce_discovery/`** (27 test files plus `conftest.py`, 10,074
+lines) + 663 in
 `tests/protection/`. All files registered in `config/ci_test_manifest.json`, which is
 default-deny and runs one process per file.
 
@@ -694,14 +695,30 @@ it is undefined.
 `COMMERCE_DISCOVERY_TREND_*` tuning keys, all declared in `.env.example` as the
 environment-contract gate requires.
 
-**There is no per-surface kill switch.** Turning discovery off on one surface today is a
-code change. That is the single most important operational fact in this report and it shapes
-all of item 59.
+**`COMMERCE_DISCOVERY_DISABLED_SURFACES` is the per-surface kill switch** (§23). A comma- or
+space-separated list of surface names, validated against `schema.SURFACES`, read per request;
+a named surface returns an empty placement list, which every client already renders as no
+commerce unit. Checked at the top of `engine._serve`, so a disabled surface costs one
+environment read and zero queries — and the master switch became free the same way, having
+previously paid for `schema.ensure_schema` and a cursor in order to say no.
+
+Until §23 there was none, and that absence is what shaped item 59: turning discovery off on
+one surface meant a code change, a review and a Railway deploy, and Railway variables only
+reach a container at boot.
+
+**One sharp edge, deliberate.** An unrecognised name is *dropped*, not treated as "disable
+everything", so a typo leaves that surface **serving**. The alternative turns one typo into a
+platform-wide commerce outage, and nothing can guess whether `post-detail` meant `post_detail`.
+The mitigation is a `COMMERCE_DISCOVERY_UNKNOWN_DISABLED_SURFACE` warning naming the ignored
+token and the valid set, once per distinct value. **Check the logs after setting this variable.**
+
+It is a reversibility switch, not an experiment framework: on/off per surface, no per-viewer
+or percentage rollout (item 45).
 
 ## 59. Rollout status
 
 **Not rolled out. Not pushed. Not merged.** Committed on a local worktree branch, and
-**20 commits behind `origin/main`** — main takes roughly 60 commits/day from parallel
+**22 commits behind `origin/main`** — main takes roughly 60 commits/day from parallel
 sessions, so that gap grows while this sits.
 
 The recommendation, from §16 and unchanged: **do not ship this as one change.** Four stages,
@@ -726,9 +743,17 @@ neither curator counts the other's exposures, so you could not attribute a move 
 impression distribution), and note that the `post_detail` change removes the commerce card
 from **10.0% of live posts (207 of 2,070)**.
 
-**The rollout decision is the product owner's, not mine.** It changes what feed, reels,
-post-detail, Messenger, marketplace and product-page users see, with no per-surface switch
-to stage it behind.
+**Each stage can now be staged behind `COMMERCE_DISCOVERY_DISABLED_SURFACES`** (item 58,
+§23), which changes the character of this plan: a stage that looks wrong on one surface can
+be stopped on that surface in the time it takes a variable to take effect, instead of
+requiring a revert that un-ships it everywhere. Stage 3 in particular — the one that "looks
+like a bug to whoever is watching the graphs" — is much cheaper to attempt when reels can be
+switched off without touching feed. The staged order above is unchanged, but it no longer has
+to be sized against what we are willing to un-ship by deploying.
+
+**The rollout decision is still the product owner's, not mine.** It changes what feed, reels,
+post-detail, Messenger, marketplace and product-page users see. The switch makes it
+reversible; it does not make it mine.
 
 ## 60. Rollback procedure
 
@@ -745,7 +770,7 @@ that a previous version cannot read.
 
 ## 61. Files/components/services changed
 
-58 files, +16,179 / −218 against the merge base — this document included, which is why the
+59 files, +16,859 / −218 against the merge base — this document included, which is why the
 figure moves when it is written. `git diff --stat $(git merge-base HEAD origin/main)..HEAD`
 regenerates it. Breakdown:
 
@@ -768,7 +793,8 @@ regenerates it. Breakdown:
 4. **No inventory check at serve time.** A sold-out product can be served (42).
 5. **No attribution**; events are recorded and never joined to an order (44).
 6. **No experimentation wiring** (45).
-7. **No per-surface kill switch** (58) — an operational limitation, not a feature gap.
+7. **No per-viewer or percentage rollout.** The per-surface kill switch (58, §23) makes the
+   rollout reversible, not measurable — there is no way to serve commerce to 5% of viewers.
 8. **No load test, no visual/device QA, no accessibility pass** (49, 55, 56).
 9. **The two curators share no viewer-level frequency ledger** (32).
 10. **Diversity caps are loosened to a one-seller catalogue** (20) — correct now, wrong
@@ -804,9 +830,11 @@ In this order, and the order is the recommendation:
    products, PulseDrop curation, and any meaningful "Shop this look" — four of the brief's
    named experiences behind one table, modelled on `pulse_content_music`. This is the
    highest-leverage build remaining and it is a day of work, not a quarter.
-3. **Add a per-surface kill switch** before stage 3, not after. Item 58 is the reason the
-   staged rollout is as cautious as it is; fixing it makes every later stage cheaper and it
-   is the smallest possible change to the config module.
+3. ~~**Add a per-surface kill switch** before stage 3, not after.~~ **Done — §23**, and it
+   moved to the top of this list from below it once it was clear that the item making the
+   rollout expensive was cheaper than the rollout. It is left struck through rather than
+   deleted because the ordering is part of the recommendation: the correct first move was not
+   the biggest item, it was the one that made a blocked decision cheap.
 4. **Take the `_listing_stats` observability decision** (51). One word, and it is the
    difference between noticing a global re-ranking and not.
 5. **Then web** — inside the planned `docs/web-rebuild/` work, not beside it, and as a grid
