@@ -96,6 +96,7 @@ async function mountWithStoredLanguage(language: keyof typeof SAVE) {
   const React = require("react");
   const TestRenderer = require("react-test-renderer");
   const { I18nProvider, useI18n } = require("../I18nContext");
+  const { isNamespaceLoaded } = require("../engine");
 
   const samples: Sample[] = [];
   /** `ready` as observed by a child effect on mount — the session-restore slot. */
@@ -128,7 +129,26 @@ async function mountWithStoredLanguage(language: keyof typeof SAVE) {
   }
   expect(samples[samples.length - 1]?.ready).toBe(true);
 
-  return { samples, readyAtFirstEffect: () => readyAtFirstEffect };
+  /**
+   * Drains the work the provider deliberately does *not* await — the extended
+   * tier warms after `ready` precisely so it cannot delay the switch, so a test
+   * that inspects it has to settle past that point rather than assert at
+   * `ready`.
+   */
+  async function settleBackgroundWarming() {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      await TestRenderer.act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+  }
+
+  return {
+    samples,
+    readyAtFirstEffect: () => readyAtFirstEffect,
+    isNamespaceLoaded,
+    settleBackgroundWarming
+  };
 }
 
 describe("i18n launch gate", () => {
@@ -169,6 +189,36 @@ describe("i18n launch gate", () => {
       expect(sample.save).toBe(SAVE.ar);
       expect(sample.direction).toBe("rtl");
     }
+  });
+
+  /**
+   * The extended tier's half of the fallback chain.
+   *
+   * `activateLocale` loads the default catalog alongside the active one, so the
+   * three core namespaces always had an English rung to fall back to. The
+   * extended tier is warmed by a second, separate call, and that call named only
+   * the active language — so for the other nine namespaces, which is 4,273 of
+   * the app's 4,600 keys, there was no English rung at all. A key any one
+   * language had not covered humanized on device instead of rendering English,
+   * which is the exact failure `engine.ts` describes itself as preventing.
+   *
+   * Asserted as residency rather than through a real gap between two shipped
+   * catalogs, for the reason the engine's own fallback tests give: every such
+   * gap is one translation PR away from closing, and the assertion would then
+   * pass for the wrong reason. `messaging` is a plain extended namespace here,
+   * not a special one — the point is that it is not `common`.
+   */
+  it("keeps the English extended tier resident as the fallback for another language", async () => {
+    const { isNamespaceLoaded, settleBackgroundWarming } = await mountWithStoredLanguage("es");
+    await settleBackgroundWarming();
+
+    // The core rung, which already worked.
+    expect(isNamespaceLoaded("es", "common")).toBe(true);
+    expect(isNamespaceLoaded("en", "common")).toBe(true);
+    // The active language's own extended tier, which also already worked.
+    expect(isNamespaceLoaded("es", "messaging")).toBe(true);
+    // The rung that was missing.
+    expect(isNamespaceLoaded("en", "messaging")).toBe(true);
   });
 
   it("renders children before ready so their effects can start", async () => {

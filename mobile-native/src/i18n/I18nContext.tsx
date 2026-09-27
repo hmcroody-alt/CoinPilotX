@@ -150,7 +150,18 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
       setRevision((value) => value + 1);
       // The extended tier is not needed for the first frame, so it loads after
       // the language is live and never delays the switch.
+      //
+      // Both languages, for the same reason `activateLocale` loads the default
+      // locale alongside the active one: the English catalog is what a key the
+      // active language has not covered falls back to. Warming only `active`
+      // here left that fallback resident for the three core namespaces and
+      // absent for the other nine, so an extended-tier key missing from one
+      // language humanized instead of rendering English — the failure the
+      // fallback chain exists to prevent, on 4,273 of the app's 4,600 keys.
       preloadNamespaces(active, EXTENDED_NAMESPACES).catch(() => undefined);
+      if (active !== DEFAULT_LOCALE) {
+        preloadNamespaces(DEFAULT_LOCALE, EXTENDED_NAMESPACES).catch(() => undefined);
+      }
       return active;
     },
     []
