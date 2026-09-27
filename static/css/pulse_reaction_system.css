@@ -204,13 +204,15 @@ display: none !important;
 .post-action-row.pulse-reaction-bar .pulse-reaction-button,
 .feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button,
 .video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button {
-flex: 0 0 auto !important;
+/* 44px is the touch-target floor the pills may shrink to; without flex-shrink the
+   row's min-content width is fixed and the last actions fall outside narrow cards. */
+flex: 0 1 auto !important;
 width: auto !important;
-min-width: 56px !important;
+min-width: 44px !important;
 min-height: 52px !important;
-padding: 6px 10px !important;
+padding: 6px 8px !important;
 display: inline-grid !important;
-grid-template-columns: 24px !important;
+grid-template-columns: minmax(0, 1fr) !important;
 grid-template-rows: 24px 14px !important;
 justify-items: center !important;
 align-items: center !important;
@@ -232,13 +234,18 @@ height: 24px !important;
 font-size: 18px !important;
 }
 
-.post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-label,
-.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-label,
-.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button .reel-action-label {
+/* Also matches an unclassed label span: pulse_desktop_feed.css otherwise drops it into
+   grid-column 2, opening an implicit text-width column that the pill cannot shrink out of. */
+.post-action-row.pulse-reaction-bar .pulse-reaction-button > span:not(.post-action-icon):not(.reel-action-icon):not(.reel-action-meta),
+.feed > .post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button > span:not(.post-action-icon):not(.reel-action-icon):not(.reel-action-meta),
+.video-card-modern.post-card-modern .post-action-row.pulse-reaction-bar .pulse-reaction-button > span:not(.post-action-icon):not(.reel-action-icon):not(.reel-action-meta) {
 grid-column: 1 !important;
 grid-row: 2 !important;
+justify-self: stretch !important;
 font-size: 11px !important;
-max-width: 68px !important;
+min-width: 0 !important;
+max-width: 100% !important;
+text-align: center !important;
 white-space: nowrap !important;
 overflow: hidden !important;
 text-overflow: ellipsis !important;
