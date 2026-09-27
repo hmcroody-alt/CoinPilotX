@@ -63,10 +63,23 @@
 
     <div class="actions">
       {{ app_cta("product", resource_id=listing_id, label="Open in the PulseSoc app") }}
-      <a class="button" href="/login?next={{ product_path }}">Sign in to buy</a>
+      {#
+        This read "Sign in to buy", and signing in led to a page offering Contact
+        Seller, Save and Report -- no way to buy anything. The promise and the
+        next page disagreed, which is the worst shape of that bug: the visitor
+        only finds out after creating an account.
+
+        It now names what signing in actually gets you. Adding to a cart really
+        does happen here -- the signed-in product page posts to
+        /api/pulse/marketplace/cart, the cart is a server-side row set shared
+        with the app, and /pulse/cart renders it. Paying is still the app's job,
+        which the line below states rather than implies.
+      #}
+      <a class="button" href="/login?next={{ product_path }}">Sign in to add to cart</a>
     </div>
     <p class="meta">
-      Buying, messaging the seller and saving this item happen inside PulseSoc.
+      Signed in, you can add this to your cart here and message the seller.
+      Paying happens in the PulseSoc app, where the same cart is waiting.
       Creating an account is free.
     </p>
   </section>
