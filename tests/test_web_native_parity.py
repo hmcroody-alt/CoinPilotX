@@ -68,6 +68,27 @@ def test_closed_parity_gaps_are_removed_from_the_baseline():
     assert not stale, f"Fixed on web — drop from parity_baseline.json: {stale}"
 
 
+def test_the_generated_parity_documents_are_not_stale():
+    """A stale inventory is worse than no inventory.
+
+    ``docs/parity/*.md`` carry a "do not edit by hand, regenerate" banner, and
+    they are what someone reads to answer "what does the web not have yet".
+    Nothing forced them to be regenerated, so they fell three snapshot updates
+    behind and went on claiming 39 native destinations had no web route. All 39
+    existed: `/pulse/dashboard` was serving a 168kB page while the document said
+    it was MISSING. A document in that state does not merely fail to help -- it
+    sends someone to rebuild a page that is already live.
+    """
+    result = subprocess.run(
+        [sys.executable, str(PARITY / "render_reports.py"), "--check"],
+        capture_output=True, text=True, cwd=str(REPO_ROOT),
+    )
+    assert result.returncode == 0, (
+        "docs/parity is out of date with the extractors:\n"
+        f"{result.stderr.strip() or result.stdout.strip()}"
+    )
+
+
 def test_the_matrix_still_classifies_the_primary_destinations():
     # A matcher bug that silently returned MISSING for everything would make
     # the guard above vacuous, so pin destinations known to be served.

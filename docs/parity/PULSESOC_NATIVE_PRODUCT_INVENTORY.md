@@ -3,9 +3,9 @@
 
 # PulseSoc Native Product Inventory
 
-- Screens registered in navigators: **160**
-- `*Screen.tsx` files: **139**
-- Screens with a `pulsesoc.com` deep link: **67**
+- Screens registered in navigators: **162**
+- `*Screen.tsx` files: **141**
+- Screens with a `pulsesoc.com` deep link: **62**
 - Master-navigation destinations: **51**
 
 `linking.ts` sets `prefixes: ["pulsesoc://", "https://pulsesoc.com"]`, so every
@@ -82,7 +82,6 @@ path below is simultaneously a native deep link and a URL the website must answe
 | ActivityInboxWebActivity | `/dashboard/activity` |
 | ActivityInboxWebInbox | `/dashboard/inbox` |
 | BuyerPurchases | `/pulse/purchases` |
-| CapitalGraph | `/pulse/private-office/capital-graph` |
 | ContentPlannerPulseAlias | `/pulse/dashboard/content-planner` |
 | CreatorStudio | `/pulse/creator-studio` |
 | CreatorStudioAlias | `/pulse/creator` |
@@ -115,14 +114,10 @@ path below is simultaneously a native deep link and a URL the website must answe
 | PostSchedulerPulseAlias | `/pulse/dashboard/post-scheduler` |
 | Premium | `/pulse/premium` |
 | Presence | `/pulse/presence` |
-| PrivateBriefings | `/pulse/private-office/briefings` |
-| PrivateConcierge | `/pulse/private-office/concierge` |
-| PrivateDocuments | `/pulse/private-office/documents` |
-| PrivateFacts | `/pulse/private-office/facts` |
+| PrivateMeetings | `/pulse/private-office/meetings` |
 | PrivateOffice | `/pulse/private-office` |
 | PrivateOfficeSecurity | `/pulse/private-office/security` |
 | PrivatePeople | `/pulse/private-office/people` |
-| PrivateShield | `/pulse/private-office/shield` |
 | Profile | `/pulse/profile` |
 | ProfileDetail | `/pulse/profile/:profileKey` |
 | ProfileEdit | `/pulse/profile/edit` |
