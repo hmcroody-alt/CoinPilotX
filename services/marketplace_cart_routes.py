@@ -8,8 +8,12 @@ that flag must stay false — flipping it is a data change, not a UI change.
 Design notes
 ------------
 
-*Storage.* One row per (user, listing) in `marketplace_cart_items`, with the
-price captured at add time (`price_snapshot_minor`). The snapshot is what makes
+*Storage.* One row per (owner, listing) in `marketplace_cart_items`, with the
+price captured at add time (`price_snapshot_minor`). "Owner" rather than "user"
+is the load-bearing word: it is `owner_key`, a non-null string that names either
+an account or a guest, and it exists because a cart keyed on a nullable
+`user_id` has no uniqueness at all for a guest. See
+`services/commerce_identity.py`. The snapshot is what makes
 honest price-change handling possible: a line whose current listing price no
 longer matches its snapshot is returned as `price_changed` and cannot be
 checked out until the buyer confirms the new price (`POST /<line>/confirm-price`
@@ -40,8 +44,9 @@ import os
 import secrets
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
+from services import commerce_identity
 from services import marketplace_cart_web
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
@@ -125,15 +130,54 @@ def _error(message: str, status: int = 400, *, code: str = "", **extra):
     return _json(payload, status)
 
 
-def _require_user():
+#: Whether a shopper with no account may hold a cart. False until guest
+#: *checkout* exists: a cart a guest can fill and cannot check out is a dead end,
+#: and a worse answer than today's honest 401. Flipping this is nearly the whole
+#: of the route-side change, which is the point of resolving the owner through one
+#: function rather than reading `user["user_id"]` at eleven sites.
+#:
+#: Two things outside this file must be settled in the same change, and are named
+#: here so that whoever flips it sees them:
+#:
+#: * `cart_checkout` returns 401 for an owner with no `user_id`, a few lines
+#:   below. Everything downstream of it is keyed on `buyer_user_id`.
+#: * `bot.py:114166` and `bot.py:114542` clear checked-out lines with
+#:   `... AND user_id=?`. Correct for every row the system can produce today,
+#:   because an account's row still carries its `user_id`; it would match nothing
+#:   for a guest and leave paid-for lines sitting in the cart.
+GUEST_CARTS_ENABLED = False
+
+
+def _require_cart_owner(*, minting: bool):
+    """Who this request's cart belongs to, or a refusal.
+
+    Returns ``(owner, error)``. ``owner`` carries the ``owner_key`` every query
+    below is keyed on, plus ``user_id`` — which is ``None`` for a guest, and is
+    still written to the row so that the pre-existing ``UNIQUE(user_id,
+    listing_id)`` and the two ``DELETE``s in ``bot.py`` keep working unchanged for
+    accounts.
+
+    ``minting`` is the read/write distinction: only a write may create a guest
+    identity. See ``commerce_identity.peek_guest_token`` for why a GET must not.
+    """
     try:
-        user = _bot().api_account_user()
+        account = _bot().api_account_user()
     except Exception:
         LOGGER.exception("CART_AUTH_LOOKUP_FAILED")
-        user = None
-    if not user:
+        account = None
+    try:
+        owner_key, user_id = commerce_identity.resolve_cart_owner(
+            account, session, allow_guest=GUEST_CARTS_ENABLED, minting=minting,
+        )
+    except Exception:
+        # An unresolvable owner is a refusal, never a fallback. Keying a cart to
+        # a guessed or shared owner would silently hand one shopper another's
+        # lines, which is worse than a 401 they can act on.
+        LOGGER.exception("CART_OWNER_RESOLUTION_FAILED")
+        owner_key, user_id = None, None
+    if not owner_key:
         return None, _error("Login required.", 401, code="LOGIN_REQUIRED")
-    return user, None
+    return {"owner_key": owner_key, "user_id": user_id, "account": account}, None
 
 
 def _with_db(handler):
@@ -172,6 +216,7 @@ def _ensure_schema(cur) -> None:
         """
         CREATE TABLE IF NOT EXISTS marketplace_cart_items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_key TEXT,
             user_id INTEGER,
             listing_id INTEGER,
             qty INTEGER DEFAULT 1,
@@ -196,6 +241,13 @@ def _ensure_schema(cur) -> None:
         """
     )
     reservation_schema.ensure_reservation_schema(cur, force=True)
+    # `UNIQUE(user_id, listing_id)` above stays, and is now redundant rather than
+    # wrong: for a signed-in shopper it says the same thing as the owner-key index
+    # and costs one more b-tree on a table that is small by construction. Dropping
+    # it would be an `ALTER` on a live table to remove a correct constraint, which
+    # is a worse trade than keeping it. It is only *insufficient*, because it has
+    # no opinion about a row whose `user_id` is NULL — see `services/commerce_identity.py`.
+    commerce_identity.ensure_cart_owner_key(cur)
     _SCHEMA_READY = True
 
 
@@ -371,7 +423,7 @@ def _stripe_payment_intent_data(*, bot, tx_ids: list[int], buyer_id: int,
     return data, bot.seller_destination_account_id(payout)
 
 
-def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
+def _serialize_lines(bot, cur, owner_key: str) -> list[dict]:
     # The cart names the *store* the buyer is buying from, exactly as the product
     # page did. `users` is not joined at all here: with no personal name in the
     # result set there is nothing for a later edit to fall back to by accident.
@@ -388,10 +440,10 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
         FROM marketplace_cart_items c
         LEFT JOIN marketplace_listings l ON l.id = c.listing_id
         LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
-        WHERE c.user_id = ?
+        WHERE c.owner_key = ?
         ORDER BY c.added_at DESC
         """,
-        (user_id,),
+        (owner_key,),
     )
     lines = []
     for row in cur.fetchall():
@@ -529,12 +581,12 @@ def cart_checkout_options():
 def cart_list():
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=False)
     if err:
         return err
 
     def handler(cur, conn):
-        lines = _serialize_lines(bot, cur, int(user["user_id"]))
+        lines = _serialize_lines(bot, cur, owner["owner_key"])
         checkoutable = [l for l in lines if l["state"] == "available"]
         return _json({
             "ok": True,
@@ -556,7 +608,7 @@ def cart_list():
 def cart_add():
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=True)
     if err:
         return err
     payload = request.get_json(silent=True) or {}
@@ -592,14 +644,22 @@ def cart_add():
         if price_minor <= 0:
             return _error("This item is not priced for checkout.", 400, code="ITEM_UNAVAILABLE")
         cur.execute(
-            "SELECT COUNT(*) AS n FROM marketplace_cart_items WHERE user_id=?",
-            (int(user["user_id"]),),
+            "SELECT COUNT(*) AS n FROM marketplace_cart_items WHERE owner_key=?",
+            (owner["owner_key"],),
         )
         if int(dict(cur.fetchone() or {}).get("n") or 0) >= MAX_LINES:
             return _error("Cart is full.", 409, code="CART_FULL")
         now = _now()
         # A duplicate tap must not duplicate the line: the UNIQUE constraint
         # turns the second add into a quantity update.
+        #
+        # The conflict target is `(owner_key, listing_id)`, not `(user_id,
+        # listing_id)`. Both say the same thing for a signed-in shopper, but only
+        # the first says anything at all for a guest: `user_id` is NULL for one,
+        # NULL is not equal to NULL inside a unique index on either engine, so
+        # that target would match nothing and this statement would insert a
+        # second line rather than increment the first — losing the clamp below
+        # with it. `services/commerce_identity.py` is the whole argument.
         #
         # The clamp is a CASE expression, not `MIN(qty + excluded.qty, N)`.
         # `MIN(a, b)` is a SQLite-only scalar — PostgreSQL's `min()` is a
@@ -612,9 +672,9 @@ def cart_add():
         cur.execute(
             """
             INSERT INTO marketplace_cart_items
-                (user_id, listing_id, qty, price_snapshot_minor, currency, added_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, listing_id)
+                (owner_key, user_id, listing_id, qty, price_snapshot_minor, currency, added_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(owner_key, listing_id)
             DO UPDATE SET
                 qty=CASE WHEN marketplace_cart_items.qty + excluded.qty > ?
                          THEN ?
@@ -624,11 +684,12 @@ def cart_add():
                 updated_at=excluded.updated_at
             """,
             (
-                int(user["user_id"]), listing_id, qty, price_minor, currency, now, now,
+                owner["owner_key"], owner["user_id"], listing_id, qty, price_minor,
+                currency, now, now,
                 MAX_QTY_PER_LINE, MAX_QTY_PER_LINE,
             ),
         )
-        lines = _serialize_lines(bot, cur, int(user["user_id"]))
+        lines = _serialize_lines(bot, cur, owner["owner_key"])
         return _json({"ok": True, "lines": lines, "badge_count": badge_count(lines)})
 
     return _with_db(handler)
@@ -638,7 +699,7 @@ def cart_add():
 def cart_update(line_id: int):
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=False)
     if err:
         return err
     payload = request.get_json(silent=True) or {}
@@ -646,8 +707,8 @@ def cart_update(line_id: int):
 
     def handler(cur, conn):
         cur.execute(
-            "UPDATE marketplace_cart_items SET qty=?, updated_at=? WHERE id=? AND user_id=?",
-            (qty, _now(), line_id, int(user["user_id"])),
+            "UPDATE marketplace_cart_items SET qty=?, updated_at=? WHERE id=? AND owner_key=?",
+            (qty, _now(), line_id, owner["owner_key"]),
         )
         if not cur.rowcount:
             return _error("Cart line not found.", 404, code="NOT_FOUND")
@@ -660,14 +721,14 @@ def cart_update(line_id: int):
 def cart_remove(line_id: int):
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=False)
     if err:
         return err
 
     def handler(cur, conn):
         cur.execute(
-            "DELETE FROM marketplace_cart_items WHERE id=? AND user_id=?",
-            (line_id, int(user["user_id"])),
+            "DELETE FROM marketplace_cart_items WHERE id=? AND owner_key=?",
+            (line_id, owner["owner_key"]),
         )
         if not cur.rowcount:
             return _error("Cart line not found.", 404, code="NOT_FOUND")
@@ -681,7 +742,7 @@ def cart_confirm_price(line_id: int):
     """The buyer has seen the new price and accepted it: re-snapshot."""
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=False)
     if err:
         return err
 
@@ -691,9 +752,9 @@ def cart_confirm_price(line_id: int):
             SELECT c.id, c.listing_id, l.price_label, l.currency
             FROM marketplace_cart_items c
             LEFT JOIN marketplace_listings l ON l.id = c.listing_id
-            WHERE c.id=? AND c.user_id=? LIMIT 1
+            WHERE c.id=? AND c.owner_key=? LIMIT 1
             """,
-            (line_id, int(user["user_id"])),
+            (line_id, owner["owner_key"]),
         )
         row = dict(cur.fetchone() or {})
         if not row:
@@ -714,12 +775,12 @@ def cart_confirm_price(line_id: int):
 def cart_validate():
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=False)
     if err:
         return err
 
     def handler(cur, conn):
-        lines = _serialize_lines(bot, cur, int(user["user_id"]))
+        lines = _serialize_lines(bot, cur, owner["owner_key"])
         blocking = [l for l in lines if l["state"] in {"sold", "removed", "restricted"}
                     or l.get("goods_policy", {}).get("decision") != "ALLOWED"]
         needs_confirmation = [l for l in lines if l["state"] == "price_changed"]
@@ -741,9 +802,17 @@ def cart_checkout():
     until confirmed. Reuses the seller_transactions surface line-for-line."""
     bot = _bot()
     bot.init_db()
-    user, err = _require_user()
+    owner, err = _require_cart_owner(minting=False)
     if err:
         return err
+    if owner["user_id"] is None:
+        # Checkout still needs an account, and says so here rather than failing
+        # somewhere inside `seller_transactions`. Everything downstream of this
+        # line — the transaction rows, the reservation rows, the idempotency keys —
+        # is keyed on `buyer_user_id`, and giving a guest a real order means giving
+        # each of those a considered answer, not a NULL. That is the next
+        # increment; this is the honest edge of this one.
+        return _error("Login required.", 401, code="LOGIN_REQUIRED")
     payload = request.get_json(silent=True) or {}
     seller_user_id = int(payload.get("seller_user_id") or 0)
     idempotency_key = str(payload.get("idempotency_key") or "").strip()[:120]
@@ -769,7 +838,7 @@ def cart_checkout():
     native_sheet = payment_mode == "card" and str(payment_mode_raw or "").strip().lower() == "payment_sheet"
 
     def handler(cur, conn):
-        buyer_id = int(user["user_id"])
+        buyer_id = int(owner["user_id"])
         if idempotency_key:
             cur.execute(
                 "SELECT response_json FROM marketplace_cart_checkout_keys WHERE user_id=? AND idempotency_key=? LIMIT 1",
@@ -784,7 +853,7 @@ def cart_checkout():
                 if stored_mode == payment_mode:
                     return _json({**stored_payload, "replayed": True})
 
-        lines = [l for l in _serialize_lines(bot, cur, buyer_id) if l["seller_user_id"] == seller_user_id]
+        lines = [l for l in _serialize_lines(bot, cur, owner["owner_key"]) if l["seller_user_id"] == seller_user_id]
         if not lines:
             return _error("No items from this seller in your cart.", 404, code="NOT_FOUND")
         if bot.ios_native_app_request() and any(l["fulfillment"] == "digital" for l in lines):
@@ -1012,8 +1081,8 @@ def cart_checkout():
             if line_ids:
                 marks = ",".join("?" for _ in line_ids)
                 cur.execute(
-                    f"DELETE FROM marketplace_cart_items WHERE user_id=? AND id IN ({marks})",
-                    [buyer_id, *line_ids],
+                    f"DELETE FROM marketplace_cart_items WHERE owner_key=? AND id IN ({marks})",
+                    [owner["owner_key"], *line_ids],
                 )
             response_payload = marketplace_payment_pause.cash_checkout_payload(
                 ok=True,
