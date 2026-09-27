@@ -50,9 +50,19 @@ REPO = os.path.dirname(os.path.dirname(HERE))
 PICKER = "/static/js/pulse_emoji.js"
 
 _PROBE = r"""
-import json, sys
+import json, re, sys
 sys.path.insert(0, %(repo)r)
 import bot
+
+# A comment naming the picker is not the picker, and a comment describing
+# `data-emoji-for` is not a button. Counting the bare strings let prose satisfy
+# the pairing: a page whose only mention of the runtime is an HTML comment --
+# and `/pulse/messages` carries exactly that comment today, explaining what
+# replaced its hand-written strip -- would pass "the trigger ships with its
+# runtime" while every button on it sat inert. That is the one failure this
+# file exists to catch, so the count has to read tags, not text.
+SCRIPT = re.compile(r"<script[^>]+src=[\"'][^\"']*/static/js/pulse_emoji\.js")
+COMMENT = re.compile(r"<!--.*?-->", re.S)
 
 app = bot.webhook_app
 app.config["SECRET_KEY"] = "emoji-surface-render-test"
@@ -83,12 +93,14 @@ paths = ["/pulse", "/pulse/messages", "/chat/thread/%%d" %% thread_id, "/arena/i
 pages = {}
 for path in paths:
     response = client.get(path)
-    body = response.get_data().decode("utf-8", "replace")
+    raw = response.get_data().decode("utf-8", "replace")
+    body = COMMENT.sub("", raw)
     pages[path] = {
         "status": response.status_code,
         "location": response.headers.get("Location", ""),
-        "bytes": len(body),
-        "picker": body.count("/static/js/pulse_emoji.js"),
+        "bytes": len(raw),
+        "picker": len(SCRIPT.findall(body)),
+        "picker_mentions_in_prose": raw.count("pulse_emoji.js") - len(SCRIPT.findall(body)),
         # Every opt-in shape, counted separately. `data-emoji-for` with no
         # value means "the field in my own form"; with a selector it names one.
         "delegated": body.count("data-emoji-for"),
@@ -191,6 +203,37 @@ def test_the_surfaces_that_were_converted_are_still_converted(probe):
         "arena_page_shell stopped loading the picker, which takes the Arena "
         "chat reply box down with it -- both pages share this shell"
     )
+
+
+def test_the_picker_count_reads_script_tags_and_not_prose(probe):
+    """Keep the hardening above honest by proving it is exercised.
+
+    `/pulse/messages` explains in an HTML comment what replaced its old
+    hand-written emoji strip, and that comment names the picker file. Counting
+    the bare path made that page report two copies -- which would have failed
+    the double-load test below for a page that loads it once, and, far worse,
+    would let a page with nothing but the comment claim its buttons were wired.
+
+    If that comment is ever deleted, this assertion fails. That is the point:
+    it says out loud that the distinction between a tag and a mention is load
+    bearing, so the day the last prose mention disappears someone re-reads this
+    rather than quietly losing the only coverage the separation has.
+
+    Two things keep prose out of the count -- comments are stripped, and the
+    pattern matches a `<script src=>` rather than a filename -- and each is
+    sufficient on its own. So neither can be killed by mutating it alone; only
+    removing both turns this red, which is what was actually verified. They are
+    both kept anyway: the comment strip is what protects the *attribute* counts
+    below, where there is no tag shape to match on.
+    """
+    prose = {p: page["picker_mentions_in_prose"] for p, page in probe["pages"].items()}
+    assert sum(prose.values()) > 0, (
+        "no rendered page mentions pulse_emoji.js outside a <script> tag, so "
+        "the comment stripping in the probe is never exercised and this file "
+        f"cannot prove it counts tags rather than text: {prose}"
+    )
+    for path, page in probe["pages"].items():
+        assert page["picker"] <= 1, path
 
 
 def test_no_page_loads_the_picker_twice(probe):
