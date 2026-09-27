@@ -167,6 +167,39 @@ CREATE TABLE IF NOT EXISTS pulsedrop_runs (
 )
 """
 
+#: The one place a human says "PulseDrop may put this track under a Reel".
+#:
+#: It exists because ``pulse_audio_tracks`` cannot answer that question, and the
+#: reason is visible in its own data: every track in production carries
+#: ``proof_url='artist-upload:<uid>:<timestamp>'`` and ``rights_statement="I
+#: confirm that I own this music or have the legal right to upload it."`` That is
+#: an uploader ticking a box. It is a fine basis for a member attaching a track
+#: to their own Reel — the member carries the risk — and it is not a basis for
+#: the platform's own verified account to synchronise music into commercial
+#: content it earns on, which is a different licence entirely.
+#:
+#: So clearance is a second, explicit act, recorded apart from the upload: who
+#: cleared it, when, and on what grounds. An empty table means PulseDrop's Reels
+#: are silent, which is the resting state and needs no switch to reach.
+#:
+#: Note what is *not* stored here: the title, the artist, the URL, or any
+#: licence flag. Those stay in ``pulse_audio_tracks`` and are re-read at
+#: selection time, so a takedown, a deactivation or a legal hold applied over
+#: there removes the bed here without anybody remembering to.
+_AUDIO_BEDS = """
+CREATE TABLE IF NOT EXISTS pulsedrop_audio_beds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    audio_track_id INTEGER UNIQUE,
+    active INTEGER DEFAULT 1,
+    cleared_by INTEGER DEFAULT 0,
+    clearance_note TEXT DEFAULT '',
+    cleared_at TEXT,
+    revoked_at TEXT,
+    created_at TEXT,
+    updated_at TEXT
+)
+"""
+
 _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_pub_listing ON pulsedrop_publications(listing_id, surface, published_at)",
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_pub_seller ON pulsedrop_publications(seller_user_id, published_at)",
@@ -175,9 +208,10 @@ _INDEXES = (
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_renders_lookup ON pulsedrop_renders(listing_id, composition_version, source_fingerprint)",
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_renders_state ON pulsedrop_renders(state, updated_at)",
     "CREATE INDEX IF NOT EXISTS idx_pulsedrop_runs_started ON pulsedrop_runs(started_at)",
+    "CREATE INDEX IF NOT EXISTS idx_pulsedrop_beds_active ON pulsedrop_audio_beds(active, audio_track_id)",
 )
 
-_TABLES = (_LEASES, _SETTINGS, _PUBLICATIONS, _RENDERS, _RUNS)
+_TABLES = (_LEASES, _SETTINGS, _PUBLICATIONS, _RENDERS, _RUNS, _AUDIO_BEDS)
 
 
 def ensure_schema(conn=None) -> None:

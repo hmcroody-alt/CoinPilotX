@@ -102,11 +102,22 @@ RENDERING = "rendering"
 READY = "ready"
 FAILED = "failed"
 
-#: Reels are muted by default and that is a decision, not an omission. PulseDrop
-#: does not own a music licence, and a seller's own product video may carry
-#: audio they have rights to but PulseSoc does not have rights to redistribute
-#: under its own account. Composed Reels therefore have no audio track at all —
-#: which the surface already supports, because members post silent Reels.
+#: The composed file carries no audio stream, and should not be made to.
+#:
+#: This is not "PulseDrop has no music" — :mod:`services.pulsedrop.audio`
+#: attaches a cleared track to the published Reel. It is a statement about
+#: *where* the music lives. The platform resolves ``audio.attached_audio_url``
+#: per request from the live track row and the clients play it against the
+#: video's clock, so a takedown silences every Reel ever published the moment it
+#: lands. Muxing the same track into the file would mean re-encoding the back
+#: catalogue to honour that takedown, and leaving the audio on the CDN until the
+#: re-encode finished.
+#:
+#: The feed payload also blanks ``attached_audio_url`` whenever
+#: ``audio_baked_in`` is set, so the two are exclusive by construction: flipping
+#: this to True would not produce two tracks, it would silently disable the one
+#: that can be withdrawn. A seller's own video keeps whatever audio it came
+#: with, which is a separate question and not this constant's.
 COMPOSED_HAS_AUDIO = False
 
 
