@@ -1,0 +1,1964 @@
+/*
+ * PulseSoc Marketplace — commerce design system for the web storefront.
+ *
+ * Scope and naming
+ * ----------------
+ * Every selector here is namespaced `mkt-`. That is not decoration: the
+ * `pulse_social_shell()` page in bot.py ships an inline <style> block that
+ * already owns the bare class names a storefront would reach for first —
+ * `.card`, `.grid`, `.pill`, `.actions`, `.nav`, plus element rules on
+ * `button`, `input`, `select` and `img`. Marketplace pages render *inside*
+ * that shell, so an unnamespaced `.card` rule here would silently restyle
+ * the feed, the drawer and every other shell surface on the same page.
+ * The namespace is the only thing keeping this file additive.
+ *
+ * The shell's element-level rules still apply to our markup (they are
+ * lower specificity but they do apply), so a few rules below exist purely
+ * to undo a shell default on a commerce control — those are marked.
+ *
+ * Tokens
+ * ------
+ * Colour, spacing, radius, type, elevation and motion all come from
+ * `pulsesoc-tokens.css`, which the shell links first. Fallbacks are
+ * supplied on every `var()` so that a page which somehow renders without
+ * the token sheet still degrades to the PulseSoc palette rather than to
+ * unstyled white. Spacing is the token sheet's 8px base grid.
+ *
+ * There are no hard-coded brand colours here that are not either a token
+ * or a documented fallback of one.
+ */
+
+/* ---------------------------------------------------------------- *
+ * 0. Shell measure
+ *
+ * The member shell lays its content out as `.layout` — a two-column grid
+ * of `minmax(0,1fr)` plus a 320px social rail ("PulseSoc Intelligence"),
+ * which every page using `pulse_social_shell()` inherits. On a 1440px
+ * viewport that leaves the page 614px once the shell's own 214px desktop
+ * nav rail is also deducted, and `.mkt-grid` is `auto-fill minmax(230px)`,
+ * so 614px fits two product columns. The same route rendered to a signed-
+ * out visitor goes through `public_document()`, has no social rail, and
+ * fits four. Measured, not assumed: the signed-in storefront was a
+ * narrower storefront than the one strangers see, which is backwards for
+ * commerce — the shopper with an account is the one who can buy.
+ *
+ * Reclaiming the rail is the call four other wide surfaces in bot.py
+ * already made for themselves (`creator-studio`, `pulse-music-page`,
+ * `undx-core-page`, `pulse-notifications-page` all collapse `.layout` to
+ * one column). This is that same decision, expressed here rather than in
+ * the shared shell so it cannot affect a page that does not load this
+ * stylesheet, and scoped by `:has(.mkt)` so it cannot affect one that
+ * loads it without rendering a storefront.
+ *
+ * `> aside` is deliberate: it matches only the shell's own rail, which is
+ * a direct child of `.layout`. The storefront's own panels live inside
+ * `.layout > div`, so nothing this file renders can be hidden by it.
+ * ---------------------------------------------------------------- */
+
+body:has(.mkt) .layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+body:has(.mkt) .layout > aside {
+  display: none;
+}
+
+/*
+ * The shell reveals its 214px desktop nav rail at 1100px but keeps `.wrap`
+ * capped at 1180px, so crossing that breakpoint costs the page 232px of
+ * rail and hands back only 184px of measure. Measured on the storefront:
+ * four product columns at a 1024px viewport, three at 1440px — the window
+ * gets bigger and the grid gets smaller. Widening the measure above the
+ * same breakpoint that introduces the rail pays for it, and restores the
+ * signed-in grid to the four columns the public page already showed.
+ *
+ * 1500px is the figure `creator-studio` chose for the same problem, kept
+ * here rather than invented so two wide surfaces in one product do not
+ * disagree about how wide "wide" is.
+ *
+ * Confined to a min-width query on purpose. The shell's own phone rules
+ * live in `@media(max-width:900px)` and set `.wrap{width:100%}`; an
+ * unscoped `body:has(.mkt) .wrap` outranks that on specificity and would
+ * take the full-bleed phone measure away.
+ */
+@media (min-width: 1100px) {
+  body:has(.mkt) .wrap {
+    width: min(100% - 28px, 1500px);
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * 1. Page scaffolding
+ * ---------------------------------------------------------------- */
+
+.mkt {
+  --mkt-gap: var(--spacing-md, 16px);
+  --mkt-card-radius: var(--radius-card, 16px);
+  --mkt-line: var(--border-subtle, rgba(110, 223, 246, 0.22));
+  --mkt-line-strong: var(--border-strong, rgba(110, 223, 246, 0.42));
+  --mkt-muted: var(--text-secondary, #9fb5c0);
+  --mkt-accent: var(--action-primary, #32e6b3);
+  --mkt-accent-2: var(--action-secondary, #61d8ff);
+  --mkt-commerce: var(--domain-intelligence, #9f7cff);
+  /* The neutral plate product photography sits on. Deliberately darker
+   * than the card so a contained image reads as a framed photo rather
+   * than as a hole in the layout. */
+  --mkt-media-plate: #060f1c;
+  display: grid;
+  gap: var(--spacing-lg, 24px);
+  min-width: 0;
+}
+
+/* `hidden` is this storefront's no-JavaScript contract, and it needs an
+ * author rule to keep it.
+ *
+ * The server renders Save, Report listing, Message seller, the two gallery
+ * arrows, the description's "Show more" toggle and the variant stock line
+ * into the DOM already carrying `hidden`; `pulse_marketplace.js` removes the
+ * attribute as it binds each one. A visitor whose script never runs must
+ * therefore never see them, because none of them can do anything. The sort
+ * form's Apply button runs the same contract backwards: the script sets
+ * `hidden` on it once `change` submits the form for you.
+ *
+ * The attribute by itself does not deliver that. `[hidden] { display: none }`
+ * lives in the user-agent stylesheet, which loses to every author
+ * declaration, so any component rule that sets `display` revives the element
+ * it was meant to suppress. Every one of the controls above is `inline-flex`
+ * or `grid` somewhere below, so every one of them was revived. Two of those
+ * were visible in the rendered page and neither looked like a CSS bug:
+ *
+ *   - the product page showed a glowing green availability dot with no words
+ *     beside it -- `.mkt-stock::before` drawing inside an empty `<p>` that
+ *     was supposed to be hidden until a variant was chosen. A green dot is a
+ *     claim about stock, so this was also the catalogue asserting something
+ *     no row had said.
+ *   - the discovery toolbar kept its Apply button after the script had
+ *     already wired the select to auto-submit, leaving a dead control and a
+ *     stretched gap in the row.
+ *
+ * `!important` is deliberate rather than a shortcut. `hidden` is not a style
+ * preference, it is a statement that the element is not part of the page
+ * yet, and no component rule is entitled to outrank it. Scoped to `.mkt` so
+ * it stays this storefront's rule and not a global one. */
+.mkt [hidden] {
+  display: none !important;
+}
+
+.mkt-section {
+  display: grid;
+  gap: var(--mkt-gap);
+  min-width: 0;
+}
+
+/* A visually hidden label that screen readers still announce. Used for
+ * the search field, the sort control and the gallery rail, all of which
+ * are visually self-evident but would otherwise ship unlabelled. */
+.mkt-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* One focus treatment for every interactive element in the storefront.
+ * `:focus-visible` rather than `:focus` so a mouse click on a card does
+ * not leave a ring behind, while keyboard traversal always shows one. */
+.mkt a:focus-visible,
+.mkt button:focus-visible,
+.mkt input:focus-visible,
+.mkt select:focus-visible,
+.mkt summary:focus-visible,
+.mkt [tabindex]:focus-visible {
+  outline: 2px solid var(--border-focus, var(--mkt-accent-2));
+  outline-offset: 2px;
+  border-radius: var(--radius-xs, 8px);
+}
+
+/* ---------------------------------------------------------------- *
+ * 2. Headings and breadcrumbs
+ * ---------------------------------------------------------------- */
+
+.mkt-head {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+.mkt-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+}
+
+.mkt-crumbs li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  min-width: 0;
+}
+
+.mkt-crumbs li + li::before {
+  content: "/";
+  opacity: 0.45;
+  flex: 0 0 auto;
+}
+
+.mkt-crumbs a {
+  color: var(--mkt-muted);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 22ch;
+}
+
+.mkt-crumbs a:hover {
+  color: var(--text-primary, #f2fbff);
+  text-decoration: underline;
+}
+
+.mkt-crumbs [aria-current="page"] {
+  color: var(--text-primary, #f2fbff);
+}
+
+.mkt-title {
+  margin: 0;
+  font-size: var(--font-size-2xl, 28px);
+  line-height: 1.15;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--text-primary, #f2fbff);
+  /* Supplier titles in this catalogue run to ~160 characters. They are
+   * reproduced verbatim (they are the product's real name), so the
+   * heading has to wrap gracefully rather than be rewritten. */
+  overflow-wrap: anywhere;
+}
+
+.mkt-subtitle {
+  margin: 0;
+  color: var(--mkt-muted);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.5;
+}
+
+.mkt-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- *
+ * 3. Category navigation
+ * ---------------------------------------------------------------- */
+
+.mkt-cats {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+.mkt-chiprow {
+  display: flex;
+  gap: var(--spacing-xs, 8px);
+  margin: 0;
+  padding: 0 0 var(--spacing-2xs, 4px);
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  /* Horizontal scroll must not become a vertical clip: the chips carry a
+   * focus ring that would otherwise be cut off at the top edge. */
+  scroll-padding: var(--spacing-2xs, 4px);
+  -webkit-overflow-scrolling: touch;
+}
+
+.mkt-chiprow::-webkit-scrollbar {
+  height: 6px;
+}
+
+.mkt-chiprow::-webkit-scrollbar-thumb {
+  background: var(--mkt-line);
+  border-radius: var(--radius-pill, 999px);
+}
+
+.mkt-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  min-height: 36px;
+  padding: var(--spacing-2xs, 4px) var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(110, 223, 246, 0.06);
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background var(--motion-fast, 88ms) var(--motion-ease, ease),
+    border-color var(--motion-fast, 88ms) var(--motion-ease, ease);
+}
+
+.mkt-chip:hover {
+  background: rgba(110, 223, 246, 0.14);
+  border-color: var(--mkt-line-strong);
+}
+
+.mkt-chip[aria-current="true"],
+.mkt-chip.is-active {
+  background: linear-gradient(135deg, rgba(50, 230, 179, 0.22), rgba(97, 216, 255, 0.18));
+  border-color: var(--mkt-accent);
+  color: var(--text-primary, #f2fbff);
+}
+
+/* The count beside a department name. It is a real row count from the
+ * catalogue, so it is safe to show; it is de-emphasised because it is
+ * secondary to the name. */
+.mkt-chip-count {
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  color: var(--mkt-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mkt-chip[aria-current="true"] .mkt-chip-count,
+.mkt-chip.is-active .mkt-chip-count {
+  color: var(--text-primary, #f2fbff);
+  opacity: 0.8;
+}
+
+/* Second-level (section) chips sit visually subordinate to departments. */
+.mkt-chiprow.is-sub .mkt-chip {
+  min-height: 32px;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mkt-chiprow.is-sub .mkt-chip[aria-current="true"],
+.mkt-chiprow.is-sub .mkt-chip.is-active {
+  background: rgba(159, 124, 255, 0.2);
+  border-color: var(--mkt-commerce);
+}
+
+/* ---------------------------------------------------------------- *
+ * 4. Toolbar — search, sort, applied filters
+ * ---------------------------------------------------------------- */
+
+.mkt-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-xs, 8px);
+  align-items: center;
+  min-width: 0;
+}
+
+.mkt-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+/* `input` is styled by the shell (full width, 10px padding, #081323).
+ * These overrides align it to the token grid and give it a pill shape so
+ * it reads as search rather than as a generic form field. */
+.mkt-search input[type="search"],
+.mkt-search input[type="text"] {
+  min-height: var(--touch-target-min, 48px);
+  padding: var(--spacing-xs, 8px) var(--spacing-md, 16px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-pill, 999px);
+  background: var(--surface-primary, #081323);
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-sm, 14px);
+}
+
+.mkt-search input::placeholder {
+  color: var(--mkt-muted);
+  opacity: 0.85;
+}
+
+.mkt-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+.mkt-sort select {
+  width: auto;
+  min-width: 11rem;
+  min-height: var(--touch-target-min, 48px);
+  padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-xs, 8px);
+  background: var(--surface-raised, #0d1627);
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 700;
+}
+
+/* Applied-filter pills. Each carries its own "remove" link whose href is
+ * the same URL minus that one parameter, so filters stay URL-addressable
+ * and the back button keeps working without any JavaScript. */
+.mkt-applied {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 8px);
+  align-items: center;
+  min-width: 0;
+}
+
+.mkt-applied-label {
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.mkt-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  max-width: 100%;
+  min-height: 32px;
+  padding: var(--spacing-2xs, 4px) var(--spacing-xs, 8px);
+  border: 1px solid var(--mkt-line-strong);
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(159, 124, 255, 0.14);
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mkt-tag-x {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.mkt-tag:hover .mkt-tag-x {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* ---------------------------------------------------------------- *
+ * 5. Media box
+ *
+ * This is the highest-risk component in the storefront: the catalogue is
+ * supplier-imported, so image aspect ratios are arbitrary and unknown at
+ * render time. Three rules make that safe:
+ *
+ *   1. The *box* owns the aspect ratio (`aspect-ratio` on the wrapper),
+ *      so the grid never reflows when an image loads. No CLS.
+ *   2. The *image* is `object-fit: contain`, so nothing is ever stretched
+ *      and nothing is ever cropped through the subject. A tall product
+ *      letterboxes against the plate instead of losing its top and
+ *      bottom.
+ *   3. A skeleton lives behind the image and a failure state in front of
+ *      it, so every one of the three states (pending, loaded, broken) is
+ *      a designed state.
+ * ---------------------------------------------------------------- */
+
+.mkt-media {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--pulse-radius-sm, 12px);
+  background: var(--mkt-media-plate);
+  /* A very soft radial keeps a contained image from floating in a flat
+   * void without tinting the product itself. */
+  background-image: radial-gradient(circle at 50% 30%, rgba(110, 223, 246, 0.08), transparent 62%);
+  isolation: isolate;
+}
+
+.mkt-media.is-wide {
+  aspect-ratio: 4 / 3;
+}
+
+.mkt-media.is-tall {
+  aspect-ratio: 3 / 4;
+}
+
+.mkt-media img {
+  position: relative;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* `contain` is the default everywhere. See the note above: this
+   * catalogue's images are not art-directed, so cropping is destructive.
+   * `.mkt-media.is-cover` exists for the rare surface (a hero strip)
+   * where a full-bleed fill is genuinely wanted. */
+  object-fit: contain;
+  object-position: center;
+  /* Undo the shell's `img{border:1px solid;background:#020817}` rule so
+   * the plate below shows through instead of a second frame. */
+  border: 0;
+  background: transparent;
+  max-height: none;
+  transition: opacity var(--motion-base, 168ms) var(--motion-ease, ease),
+    transform var(--motion-slow, 288ms) var(--motion-ease, ease);
+}
+
+.mkt-media.is-cover img {
+  object-fit: cover;
+}
+
+/* The skeleton. It sits at z-index 1 (behind the image) and is simply
+ * covered up when the image paints, which means no JavaScript is needed
+ * to remove it and it cannot get stuck on screen. */
+.mkt-media::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.03) 0%,
+    rgba(255, 255, 255, 0.08) 42%,
+    rgba(255, 255, 255, 0.03) 68%
+  );
+  background-size: 220% 100%;
+  animation: mkt-shimmer 1.5s var(--motion-ease, ease) infinite;
+}
+
+@keyframes mkt-shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+/* An image that has not decoded yet is transparent, so the skeleton
+ * shows. `data-mkt-loaded` is set by the tiny inline loader script on
+ * `load`; the CSS `:not()` keeps the pre-script state correct too. */
+.mkt-media img:not([data-mkt-loaded]) {
+  opacity: 0;
+}
+
+.mkt-media img[data-mkt-loaded] {
+  opacity: 1;
+}
+
+/* Failure state. Rendered in the markup always, displayed only when the
+ * wrapper is marked broken, so a dead CDN URL produces a labelled plate
+ * instead of a browser's broken-image glyph. */
+.mkt-media-fallback {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: none;
+  place-items: center;
+  padding: var(--spacing-sm, 12px);
+  text-align: center;
+  background: linear-gradient(145deg, rgba(8, 19, 35, 0.96), rgba(4, 9, 17, 0.98));
+  color: var(--mkt-muted);
+  font-size: var(--font-size-xs, 12px);
+  line-height: 1.4;
+}
+
+.mkt-media.is-broken .mkt-media-fallback {
+  display: grid;
+}
+
+.mkt-media.is-broken img,
+.mkt-media.is-broken::before {
+  display: none;
+}
+
+/* A listing with no image at all. Not an error — just an absence, so it
+ * gets the same plate without the alarming copy. */
+.mkt-media.is-empty::before {
+  animation: none;
+  background: none;
+}
+
+.mkt-media.is-empty .mkt-media-fallback {
+  display: grid;
+}
+
+/* ---------------------------------------------------------------- *
+ * 6. Product grid and cards
+ * ---------------------------------------------------------------- */
+
+.mkt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--mkt-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.mkt-grid > li {
+  display: flex;
+  min-width: 0;
+}
+
+/*
+ * Card geometry is uniform by construction, not by luck:
+ *   - the card is a flex column at 100% height of its grid row,
+ *   - the media box has a fixed aspect ratio,
+ *   - the title is clamped to exactly two lines and reserves that height
+ *     whether it needs it or not (`min-height` on the clamp),
+ *   - the text block packs from the top, so every optional field sits at
+ *     a position decided only by the fields *above* it.
+ * So a one-word title and a 160-character title produce cards of
+ * identical height with their prices on the same baseline.
+ *
+ * That last rule replaced a `margin-top:auto` on the price, which pinned
+ * the price *and everything after it* to the bottom of the card. That
+ * aligns prices only while every card in the row carries the same tail
+ * fields: a listing with no stock line has a tail one line shorter, so
+ * its price rendered 42px below its neighbours'. Packing from the top
+ * makes the price baseline depend on the title alone, and the title is
+ * already a fixed height -- so alignment holds no matter which optional
+ * fields any individual listing happens to have data for. The leftover
+ * space collects below the last populated line, where it is invisible.
+ */
+.mkt-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  gap: var(--spacing-xs, 8px);
+  padding: var(--spacing-xs, 8px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--mkt-card-radius);
+  background: var(--surface-raised, linear-gradient(180deg, rgba(17, 29, 50, 0.92), rgba(13, 22, 39, 0.88)));
+  box-shadow: var(--elevation-card, 0 20px 70px rgba(0, 0, 0, 0.24));
+  transition: transform var(--motion-base, 168ms) var(--motion-ease, ease),
+    border-color var(--motion-base, 168ms) var(--motion-ease, ease),
+    box-shadow var(--motion-base, 168ms) var(--motion-ease, ease);
+}
+
+.mkt-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--mkt-line-strong);
+  box-shadow: var(--elevation-overlay, 0 26px 80px rgba(0, 0, 0, 0.34));
+}
+
+.mkt-card:hover .mkt-media img[data-mkt-loaded] {
+  transform: scale(1.025);
+}
+
+/* The whole card is one link. Rather than nesting interactive elements
+ * (which breaks keyboard order and screen-reader output), a single
+ * anchor covers the card via a stretched ::after, and the visible text
+ * stays in normal flow. Anything that must stay separately clickable
+ * (the seller link, Save) is raised above it with z-index. */
+.mkt-card-link {
+  position: static;
+  color: inherit;
+  text-decoration: none;
+  min-width: 0;
+}
+
+.mkt-card-link::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  border-radius: var(--mkt-card-radius);
+}
+
+.mkt-card-link:focus-visible::after {
+  outline: 2px solid var(--border-focus, var(--mkt-accent-2));
+  outline-offset: 2px;
+}
+
+.mkt-card-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  gap: var(--spacing-2xs, 4px);
+  min-width: 0;
+  padding: 0 var(--spacing-2xs, 4px) var(--spacing-2xs, 4px);
+
+  /* The vertical space one price line occupies, named once so the price
+   * rule below and the reserve that stands in for a missing price cannot
+   * drift apart. `--mkt-price-line` is the box itself, and it includes the
+   * padding above the price because the sheet is `box-sizing: border-box`;
+   * `--mkt-price-slot` adds the margin separating it from the metadata and
+   * one `gap`, because a missing price also removes one flex item and so
+   * one of this column's gaps -- leave that term out and the reserve comes
+   * up 4px short, which is worth stating since 4px is small enough to read
+   * as a rounding artefact rather than as a missing term.
+   * The responsive block overrides `--mkt-price-line` alone. */
+  --mkt-price-line: calc(1.2 * var(--font-size-lg, 18px) + var(--spacing-2xs, 4px));
+  --mkt-price-slot: calc(var(--mkt-price-line) + var(--spacing-sm, 12px)
+    + var(--spacing-2xs, 4px));
+}
+
+/* A listing with no price renders no price element -- correct, but it would
+ * otherwise pull its seller name up onto the row where the priced cards
+ * beside it show a price. Handing the slot's height to the title keeps the
+ * metadata rows aligned across a grid row without printing an empty
+ * paragraph to do it. */
+.mkt-card-body.is-unpriced .mkt-card-title {
+  margin-bottom: var(--mkt-price-slot);
+}
+
+.mkt-card-title {
+  margin: 0;
+  /* Two lines, always. `-webkit-line-clamp` is the only cross-browser
+   * mechanism for this and is supported in every engine PulseSoc
+   * targets; `min-height` reserves the second line so cards whose titles
+   * fit on one line do not sit a row shorter. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: calc(2 * 1.35em);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-primary, #f2fbff);
+  overflow-wrap: anywhere;
+}
+
+/* Price is the loudest thing in the card after the photograph: it sits
+ * below the title, above every piece of secondary metadata, at a larger
+ * size and a heavier weight than anything else in the text block. */
+/* Both of these are `<p>`, so an unset margin is not zero -- it is the
+ * user agent's 1em, which is a different number of pixels for the 18px
+ * price than for the 12px stock line. Stating them makes the rhythm
+ * between title, price and metadata a decision rather than a side effect
+ * of each line's font size. */
+.mkt-card-price {
+  margin: 0 0 var(--spacing-sm, 12px);
+  padding-top: var(--spacing-2xs, 4px);
+  min-height: var(--mkt-price-line);
+  font-size: var(--font-size-lg, 18px);
+  font-weight: 900;
+  line-height: 1.2;
+  color: var(--text-primary, #f2fbff);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* A price range ("$15.92 – $51.74") is longer than a single price and
+ * must not wrap mid-range. It is also set two steps smaller, which makes
+ * its line box shorter -- so without the `min-height` above, a card
+ * showing a range would pull its own metadata 2px up relative to the
+ * single-price cards beside it. The reserved height absorbs the
+ * difference so the type size stays a typographic decision and not a
+ * layout one. */
+.mkt-card-price.is-range {
+  font-size: var(--font-size-md, 16px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mkt-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  min-width: 0;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+  line-height: 1.35;
+}
+
+.mkt-card-seller {
+  position: relative;
+  z-index: 2; /* above the card-wide link */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  max-width: 100%;
+  color: var(--mkt-muted);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mkt-card-seller:hover {
+  color: var(--text-primary, #f2fbff);
+  text-decoration: underline;
+}
+
+.mkt-seller-avatar {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill, 999px);
+  object-fit: cover;
+  border: 1px solid var(--mkt-line);
+  background: var(--mkt-media-plate);
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--text-primary, #f2fbff);
+  overflow: hidden;
+}
+
+/* Stock line. Only rendered when the data actually says something; there
+ * is no "In stock" default anywhere in the template. */
+.mkt-card-stock {
+  margin: var(--spacing-xs, 8px) 0 0;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 700;
+  color: var(--mkt-accent);
+}
+
+.mkt-card-stock.is-low {
+  color: #ffc766;
+}
+
+.mkt-card-stock.is-out {
+  color: var(--mkt-muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * 7. Badges
+ *
+ * Every badge in this file corresponds to a column in the database.
+ * There is no styling here for a rating, a review count, a "sold" count,
+ * a shipping promise or a discount percentage, because the catalogue
+ * holds no data that would justify rendering one.
+ * ---------------------------------------------------------------- */
+
+.mkt-badges {
+  position: absolute;
+  z-index: 2;
+  top: var(--spacing-2xs, 4px);
+  left: var(--spacing-2xs, 4px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2xs, 4px);
+  max-width: calc(100% - var(--spacing-md, 16px));
+  pointer-events: none;
+}
+
+.mkt-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  max-width: 100%;
+  padding: 3px var(--spacing-xs, 8px);
+  border-radius: var(--radius-pill, 999px);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 900;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-primary, #f2fbff);
+
+  /* Two layers, and the split matters. `.mkt-badges` is absolutely
+   * positioned over `.mkt-media`, so in production a badge's real backdrop
+   * is a seller-supplied photograph — which may be a white studio shot.
+   * `background-color` is the dark scrim that makes near-white badge text
+   * legible over *any* photograph; `background-image` is the per-variant
+   * hue. Variants set only `--mkt-badge-tint`, so a variant cannot take
+   * the scrim away. They previously used the `background` shorthand, which
+   * replaced both layers and left `is-new` and `is-digital` as a 20% wash
+   * over the photo with no scrim at all. The local QA fixture renders
+   * placeholder plates rather than photographs, so this was invisible to
+   * measurement here and would have shipped. */
+  background-color: rgba(6, 16, 27, 0.72);
+  background-image: linear-gradient(var(--mkt-badge-tint, transparent), var(--mkt-badge-tint, transparent));
+}
+
+/* `featured` — the listings table's own boolean. */
+.mkt-badge.is-featured {
+  background: linear-gradient(135deg, var(--mkt-accent), var(--mkt-accent-2));
+  color: var(--text-on-action, #06101b);
+  border-color: transparent;
+}
+
+/* `new` — derived from a real `published_at`, never from an import
+ * timestamp, and suppressed at page level when it would apply to most of
+ * the page (which makes it a fact about the importer, not the product). */
+.mkt-badge.is-new {
+  --mkt-badge-tint: rgba(50, 230, 179, 0.22);
+  border-color: rgba(50, 230, 179, 0.45);
+}
+
+/* `digital` / `product_type` — a delivery fact, not a marketing claim. */
+.mkt-badge.is-digital {
+  --mkt-badge-tint: rgba(159, 124, 255, 0.26);
+  border-color: rgba(159, 124, 255, 0.5);
+}
+
+/* `is-featured` is the one variant that legitimately replaces both layers:
+ * it is opaque, so it needs no scrim, and it carries dark-on-bright text. */
+.mkt-badge.is-quiet {
+  color: var(--mkt-muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * 8. States — loading, empty, error
+ * ---------------------------------------------------------------- */
+
+.mkt-state {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  justify-items: center;
+  text-align: center;
+  padding: var(--spacing-xl, 32px) var(--spacing-md, 16px);
+  border: 1px dashed var(--mkt-line);
+  border-radius: var(--mkt-card-radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mkt-state h2,
+.mkt-state p {
+  margin: 0;
+  max-width: 46ch;
+}
+
+.mkt-state h2 {
+  font-size: var(--font-size-lg, 18px);
+  color: var(--text-primary, #f2fbff);
+}
+
+.mkt-state p {
+  color: var(--mkt-muted);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.55;
+}
+
+/* An error is not an empty result. It gets its own treatment so a failed
+ * query can never be mistaken for "there are no products". */
+.mkt-state.is-error {
+  border-style: solid;
+  border-color: rgba(255, 128, 128, 0.42);
+  background: rgba(255, 96, 96, 0.08);
+}
+
+.mkt-state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 8px);
+  justify-content: center;
+}
+
+/* Skeleton cards, used for the no-JS-free server render of a slow page
+ * and reusable by any future async grid. */
+.mkt-skeleton {
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--mkt-card-radius);
+  padding: var(--spacing-xs, 8px);
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+}
+
+.mkt-skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-pill, 999px);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.mkt-skeleton-line.is-short {
+  width: 45%;
+}
+
+/* ---------------------------------------------------------------- *
+ * 9. Pagination
+ * ---------------------------------------------------------------- */
+
+.mkt-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs, 8px);
+  padding-top: var(--spacing-xs, 8px);
+}
+
+.mkt-pager a,
+.mkt-pager span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--touch-target-min, 48px);
+  min-height: var(--touch-target-min, 48px);
+  padding: 0 var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-xs, 8px);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary, #f2fbff);
+  font-weight: 800;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mkt-pager a:hover {
+  border-color: var(--mkt-line-strong);
+  background: rgba(110, 223, 246, 0.12);
+}
+
+.mkt-pager [aria-current="page"] {
+  background: linear-gradient(135deg, var(--mkt-accent), var(--mkt-accent-2));
+  color: var(--text-on-action, #06101b);
+  border-color: transparent;
+}
+
+.mkt-pager .is-disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.mkt-pager .mkt-pager-gap {
+  border: 0;
+  background: none;
+  min-width: 1.5rem;
+  color: var(--mkt-muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * 10. Product detail — layout
+ * ---------------------------------------------------------------- */
+
+.mkt-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: var(--spacing-lg, 24px);
+  align-items: start;
+  min-width: 0;
+}
+
+.mkt-detail > * {
+  min-width: 0;
+}
+
+/* The gallery stays put while the long specification list scrolls. */
+.mkt-detail-media {
+  position: sticky;
+  top: var(--spacing-md, 16px);
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+}
+
+.mkt-detail-info {
+  display: grid;
+  gap: var(--spacing-md, 16px);
+}
+
+.mkt-panel {
+  display: grid;
+  gap: var(--spacing-sm, 12px);
+  padding: var(--spacing-md, 16px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--mkt-card-radius);
+  background: var(--surface-raised, rgba(13, 22, 39, 0.88));
+  min-width: 0;
+}
+
+/* The variant form is a child of the panel rather than the panel itself, so
+ * the buyer actions can sit beside it without being inside a GET form they
+ * do not submit. It inherits the panel's rhythm and contributes no chrome. */
+.mkt-panel-form {
+  display: grid;
+  gap: var(--spacing-sm, 12px);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.mkt-panel > h2,
+.mkt-panel > h3 {
+  margin: 0;
+  font-size: var(--font-size-md, 16px);
+  font-weight: 900;
+  color: var(--text-primary, #f2fbff);
+}
+
+/* ---------------------------------------------------------------- *
+ * 11. Product detail — gallery
+ *
+ * Note on this catalogue: every listing currently resolves to exactly one
+ * image, so the thumbnail rail is hidden by default and only appears
+ * when the server actually emits more than one item. The rail is not
+ * "hidden with CSS on a single image" — the markup does not render it —
+ * but `:only-child` handling below keeps the layout correct if a
+ * single-item rail ever does reach the page.
+ * ---------------------------------------------------------------- */
+
+.mkt-gallery {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+.mkt-gallery-stage .mkt-media {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--mkt-card-radius);
+  border: 1px solid var(--mkt-line);
+}
+
+/* Only one slide is in the DOM flow at a time; the others are hidden
+ * from both the viewport and the accessibility tree. */
+.mkt-gallery-slide[hidden] {
+  display: none;
+}
+
+.mkt-gallery-rail {
+  display: flex;
+  gap: var(--spacing-xs, 8px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.mkt-gallery-rail:has(> li:only-child) {
+  display: none;
+}
+
+.mkt-gallery-thumb {
+  flex: 0 0 auto;
+  width: 64px;
+  padding: 0;
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--pulse-radius-sm, 12px);
+  background: var(--mkt-media-plate);
+  cursor: pointer;
+  overflow: hidden;
+  /* Undo the shell's `button{min-height:44px;padding:10px 12px;...}`. */
+  min-height: 0;
+  transition: border-color var(--motion-fast, 88ms) var(--motion-ease, ease);
+}
+
+.mkt-gallery-thumb .mkt-media {
+  border-radius: 0;
+}
+
+.mkt-gallery-thumb[aria-selected="true"],
+.mkt-gallery-thumb.is-active {
+  border-color: var(--mkt-accent);
+  box-shadow: 0 0 0 1px var(--mkt-accent);
+}
+
+.mkt-gallery-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs, 8px);
+}
+
+.mkt-gallery-counter {
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------- *
+ * 12. Product detail — price and purchase
+ * ---------------------------------------------------------------- */
+
+.mkt-price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+.mkt-price-value {
+  font-size: var(--font-size-3xl, 32px);
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  color: var(--text-primary, #f2fbff);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.mkt-price-note {
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+}
+
+.mkt-stock {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 700;
+  color: var(--mkt-accent);
+}
+
+.mkt-stock::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill, 999px);
+  background: currentColor;
+  box-shadow: 0 0 10px currentColor;
+}
+
+.mkt-stock.is-out {
+  color: var(--mkt-muted);
+}
+
+.mkt-stock.is-out::before {
+  box-shadow: none;
+}
+
+/* Option groups. Each group is a fieldset so the group name is announced
+ * with every option, and each option is a real radio input so keyboard
+ * users get native arrow-key traversal inside the group. */
+.mkt-options {
+  display: grid;
+  gap: var(--spacing-sm, 12px);
+}
+
+.mkt-optiongroup {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.mkt-optiongroup legend {
+  padding: 0;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--mkt-muted);
+}
+
+.mkt-optiongroup-chosen {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 700;
+  color: var(--text-primary, #f2fbff);
+}
+
+.mkt-optionlist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 8px);
+  min-width: 0;
+}
+
+.mkt-option {
+  position: relative;
+  display: inline-flex;
+}
+
+/* The radio itself is hidden visually but remains focusable, so the
+ * visible label can carry the focus ring via `:focus-visible + label`. */
+.mkt-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mkt-option label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2xs, 4px);
+  min-height: 40px;
+  padding: var(--spacing-2xs, 4px) var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-xs, 8px);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color var(--motion-fast, 88ms) var(--motion-ease, ease),
+    background var(--motion-fast, 88ms) var(--motion-ease, ease);
+}
+
+.mkt-option label:hover {
+  border-color: var(--mkt-line-strong);
+}
+
+.mkt-option input:checked + label {
+  border-color: var(--mkt-accent);
+  background: rgba(50, 230, 179, 0.16);
+}
+
+.mkt-option input:focus-visible + label {
+  outline: 2px solid var(--border-focus, var(--mkt-accent-2));
+  outline-offset: 2px;
+}
+
+/* An option combination with no purchasable variant behind it is shown
+ * but struck through, so the shopper can see it exists and is gone
+ * rather than watching controls silently disappear. */
+.mkt-option input:disabled + label {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+/* Colour swatches. The hex comes from a name→hex table in
+ * `services/marketplace_web.py`; a value with no known hex renders as a
+ * plain text option instead of a misleading grey dot. */
+.mkt-option.is-color label {
+  padding-left: var(--spacing-xs, 8px);
+}
+
+.mkt-swatch {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-pill, 999px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+/* Buy actions. `.mkt-cta` is deliberately its own class rather than the
+ * shell's `.primary` so the storefront's primary action cannot be
+ * restyled by a change to the feed's buttons. */
+.mkt-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--spacing-xs, 8px);
+  align-items: stretch;
+}
+
+.mkt-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-xs, 8px);
+  min-height: var(--touch-target-min, 48px);
+  padding: var(--spacing-xs, 8px) var(--spacing-lg, 24px);
+  border: 0;
+  border-radius: var(--radius-xs, 8px);
+  background: linear-gradient(135deg, var(--mkt-accent), var(--mkt-accent-2));
+  color: var(--text-on-action, #06101b);
+  font-size: var(--font-size-md, 16px);
+  font-weight: 900;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: var(--elevation-glow, 0 14px 38px rgba(50, 230, 179, 0.24));
+  transition: filter var(--motion-fast, 88ms) var(--motion-ease, ease);
+}
+
+.mkt-cta:hover {
+  filter: brightness(1.06);
+}
+
+.mkt-cta[disabled],
+.mkt-cta[aria-disabled="true"] {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--mkt-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.mkt-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2xs, 4px);
+  min-width: var(--touch-target-min, 48px);
+  min-height: var(--touch-target-min, 48px);
+  padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-xs, 8px);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 800;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.mkt-ghost:hover {
+  border-color: var(--mkt-line-strong);
+  background: rgba(110, 223, 246, 0.1);
+}
+
+.mkt-ghost[aria-pressed="true"] {
+  border-color: var(--mkt-accent);
+  background: rgba(50, 230, 179, 0.16);
+}
+
+.mkt-ghost.is-danger:hover {
+  border-color: rgba(255, 128, 128, 0.5);
+  background: rgba(255, 96, 96, 0.12);
+}
+
+.mkt-secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs, 8px);
+}
+
+/* Owner/admin-only affordance. The visual treatment marks it as a
+ * privileged control; the actual gate is server-side. */
+.mkt-owner-tools {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  padding: var(--spacing-sm, 12px);
+  border: 1px solid rgba(159, 124, 255, 0.4);
+  border-radius: var(--radius-xs, 8px);
+  background: rgba(159, 124, 255, 0.08);
+}
+
+.mkt-owner-tools > p {
+  margin: 0;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+}
+
+/* ---------------------------------------------------------------- *
+ * 13. Product detail — specification table and description
+ *
+ * The supplier feed packs specs into an undelimited `Key: Value` run.
+ * `parse_description()` recovers them into pairs, which render as a real
+ * definition list — not as a wall of prose and not as a fake table.
+ * ---------------------------------------------------------------- */
+
+.mkt-specs {
+  display: grid;
+  grid-template-columns: minmax(6rem, auto) minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  min-width: 0;
+  font-size: var(--font-size-sm, 14px);
+}
+
+.mkt-specs > dt,
+.mkt-specs > dd {
+  margin: 0;
+  padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
+  border-top: 1px solid var(--mkt-line);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.mkt-specs > dt {
+  color: var(--mkt-muted);
+  font-weight: 700;
+  padding-left: 0;
+}
+
+.mkt-specs > dd {
+  color: var(--text-primary, #f2fbff);
+  padding-right: 0;
+}
+
+.mkt-specs > dt:first-of-type,
+.mkt-specs > dt:first-of-type + dd {
+  border-top: 0;
+}
+
+.mkt-prose {
+  margin: 0;
+  color: var(--text-primary, #f2fbff);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.mkt-prose + .mkt-prose {
+  margin-top: var(--spacing-xs, 8px);
+}
+
+/* Supplier notes (shipping caveats, measurement tolerances, machine
+ * translation artefacts). Real content, but demoted behind a disclosure
+ * so it cannot crowd out the canonical product facts. */
+.mkt-notes {
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--radius-xs, 8px);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0;
+}
+
+.mkt-notes > summary {
+  padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
+  cursor: pointer;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 800;
+  color: var(--text-primary, #f2fbff);
+  list-style-position: inside;
+}
+
+.mkt-notes[open] > summary {
+  border-bottom: 1px solid var(--mkt-line);
+}
+
+.mkt-notes-body {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  padding: var(--spacing-sm, 12px);
+  margin: 0;
+  color: var(--mkt-muted);
+  font-size: var(--font-size-xs, 12px);
+  line-height: 1.55;
+  list-style: none;
+}
+
+.mkt-notes-body li {
+  overflow-wrap: anywhere;
+}
+
+/* A long description is clipped with a real "read more" disclosure
+ * rather than a fixed-height fade that hides content from search
+ * engines and from keyboard users. */
+.mkt-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- *
+ * 14. Seller card
+ * ---------------------------------------------------------------- */
+
+.mkt-seller {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--spacing-sm, 12px);
+  align-items: center;
+  min-width: 0;
+}
+
+.mkt-seller-figure {
+  width: 48px;
+  height: 48px;
+  margin: 0;
+  border-radius: var(--pulse-radius-sm, 12px);
+  overflow: hidden;
+  background: var(--mkt-media-plate);
+  border: 1px solid var(--mkt-line);
+  display: grid;
+  place-items: center;
+  font-weight: 900;
+  color: var(--text-primary, #f2fbff);
+}
+
+.mkt-seller-figure img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border: 0;
+  background: transparent;
+}
+
+.mkt-seller-name {
+  display: block;
+  font-weight: 900;
+  color: var(--text-primary, #f2fbff);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.mkt-seller-name:hover {
+  text-decoration: underline;
+}
+
+.mkt-seller-meta {
+  margin: 0;
+  font-size: var(--font-size-xs, 12px);
+  color: var(--mkt-muted);
+  line-height: 1.45;
+}
+
+/* Fulfilment facts. Rendered only when the listing carries a real
+ * `delivery_type` / `refund_policy`; there is no default copy. */
+.mkt-facts {
+  display: grid;
+  gap: var(--spacing-xs, 8px);
+  margin: 0;
+  font-size: var(--font-size-sm, 14px);
+}
+
+.mkt-facts > div {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--spacing-xs, 8px);
+  align-items: start;
+}
+
+.mkt-facts dt {
+  margin: 0;
+  color: var(--mkt-muted);
+  font-weight: 700;
+}
+
+.mkt-facts dd {
+  margin: 0;
+  color: var(--text-primary, #f2fbff);
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- *
+ * 15. Related products
+ * ---------------------------------------------------------------- */
+
+.mkt-related {
+  display: grid;
+  gap: var(--mkt-gap);
+}
+
+.mkt-related > h2 {
+  margin: 0;
+  font-size: var(--font-size-xl, 22px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--text-primary, #f2fbff);
+}
+
+.mkt-related .mkt-grid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+}
+
+/* ---------------------------------------------------------------- *
+ * 16. App CTA and merchant panel
+ *
+ * Both are emitted by the route rather than the renderer: the app CTA
+ * because only the app is allowed to know the deep-link registry, and
+ * the merchant panel because only a request knows whether the viewer
+ * has a seller row. They still have to look like they belong to the
+ * storefront, so their rules live here with everything else.
+ * ---------------------------------------------------------------- */
+
+/* "Prefer the app?" — an addition to the page, never a gate across it.
+ * Styled as a quiet aside rather than a banner: an interstitial that
+ * shouts is the interstitial visitors learn to dismiss without reading,
+ * and the web page it sits on is a complete experience on its own. */
+.mkt-appcta {
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--mkt-card-radius);
+  /* The commerce accent, at banner-weight opacity. Distinguishes this
+   * from a product card without competing with one. */
+  background:
+    linear-gradient(135deg, rgba(159, 124, 255, 0.11), rgba(97, 216, 255, 0.06));
+  padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
+}
+
+.mkt-appcta p {
+  margin: 0;
+  color: var(--mkt-muted);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.5;
+}
+
+.mkt-appcta a {
+  color: var(--text-primary, #f2fbff);
+  font-weight: 800;
+  /* Underlined, not a button. This is one of several ways off the page
+   * and should not out-weigh the product's own primary action. */
+  text-decoration: underline;
+  text-decoration-color: var(--mkt-line-strong);
+  text-underline-offset: 3px;
+  /* 44px of touch target without 44px of visual weight. */
+  display: inline-block;
+  padding: 6px 2px;
+}
+
+.mkt-appcta a:hover {
+  text-decoration-color: var(--mkt-accent-2);
+}
+
+/* The seller-facing panel: apply, await review, or create a product.
+ * Only ever rendered to a signed-in viewer, so it sits below the
+ * catalogue rather than above it — a shopper's first screenful belongs
+ * to products. */
+.mkt-merchant {
+  border: 1px solid var(--mkt-line);
+  border-radius: var(--mkt-card-radius);
+  background: var(--surface-raised, linear-gradient(180deg, rgba(17, 29, 50, 0.92), rgba(13, 22, 39, 0.88)));
+  padding: var(--spacing-md, 16px);
+  display: grid;
+  gap: var(--spacing-sm, 12px);
+}
+
+.mkt-merchant h2 {
+  margin: 0;
+  font-size: var(--font-size-lg, 18px);
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.mkt-merchant p {
+  margin: 0;
+  color: var(--mkt-muted);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.55;
+}
+
+/* `.mkt-actions` is shared with the product page's button row; it is
+ * declared in section 12 and needs nothing extra here beyond allowing
+ * the buttons to fill the width on a narrow screen, which the
+ * responsive section below handles for every `.mkt-actions`. */
+
+/* ---------------------------------------------------------------- *
+ * 17. Responsive
+ *
+ * Breakpoints match the shell's existing ones (900px, 1024px) so the
+ * storefront changes shape at the same moments as the chrome around it.
+ * ---------------------------------------------------------------- */
+
+@media (max-width: 1024px) {
+  .mkt-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mkt-detail-media {
+    position: static;
+  }
+
+  .mkt-gallery-stage .mkt-media {
+    /* A single column gives the gallery the full width; a 1:1 box would
+     * then push the price below the fold on a tablet. */
+    aspect-ratio: 4 / 3;
+  }
+}
+
+@media (max-width: 900px) {
+  .mkt {
+    gap: var(--spacing-md, 16px);
+  }
+
+  .mkt-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mkt-sort {
+    justify-content: space-between;
+  }
+
+  .mkt-sort select {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .mkt-title {
+    font-size: var(--font-size-xl, 22px);
+  }
+
+  .mkt-price-value {
+    font-size: var(--font-size-2xl, 28px);
+  }
+
+  .mkt-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mkt-specs {
+    /* Two columns at 360px wide turns every value into a two-character
+     * ribbon. Stack instead. */
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mkt-specs > dt {
+    padding-bottom: 0;
+    border-top: 1px solid var(--mkt-line);
+  }
+
+  .mkt-specs > dd {
+    padding-top: var(--spacing-2xs, 4px);
+    border-top: 0;
+  }
+
+  .mkt-specs > dt:first-of-type + dd {
+    border-top: 0;
+  }
+}
+
+@media (max-width: 560px) {
+  .mkt-grid {
+    /* Two columns survive down to ~360px because the card's text block
+     * clamps rather than wraps. One column would waste a phone screen on
+     * a browsing surface. */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--spacing-xs, 8px);
+  }
+
+  .mkt-related .mkt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Tracks the smaller phone price size through both consumers at once --
+   * the price's own reserved height and the stand-in reserve an unpriced
+   * card gets -- so neither carries 2px of desktop slack on a phone. */
+  .mkt-card-body {
+    --mkt-price-line: calc(1.2 * var(--font-size-md, 16px) + var(--spacing-2xs, 4px));
+  }
+
+  .mkt-card-price {
+    font-size: var(--font-size-md, 16px);
+  }
+
+  .mkt-card-price.is-range {
+    font-size: var(--font-size-sm, 14px);
+  }
+
+  .mkt-badges {
+    max-width: calc(100% - var(--spacing-xs, 8px));
+  }
+}
+
+/* Restoring this storefront's type scale from the shell's phone display
+ * scale.
+ *
+ * `pulse_mobile_system.css` loads on every PulseSoc page and, under
+ * `max-width: 768px`, sets bare-element sizes with `!important`:
+ *
+ *     h1 { font-size: clamp(30px, 11vw, 46px) !important; ... }
+ *     h2 { font-size: clamp(21px, 7vw, 31px) !important; line-height: 1.08 !important; }
+ *     h3 { font-size: clamp(18px, 5.6vw, 24px) !important; }
+ *
+ * That is the shell's display scale for page and section headings, and it
+ * is right for them -- this page's own `<h1>` takes it deliberately, which
+ * is why no `h1` appears below. It is wrong for headings that are components
+ * rather than document structure. Measured on a 390px viewport before this
+ * block existed:
+ *
+ *     .mkt-card-title    14px intended ->  21.84px   (louder than the price)
+ *     .mkt-panel > h2    16px intended ->  27.3px
+ *     .mkt-merchant h2   18px intended ->  27.3px
+ *     .mkt-related > h2  22px intended ->  27.3px
+ *     .mkt-state h2      18px intended ->  27.3px
+ *
+ * The card title is the serious one: at 21.84px bold it outweighs the 16px
+ * price directly beneath it, inverting the single hierarchy the card exists
+ * to state. The rest merely flatten the page into one size.
+ *
+ * `!important` is the only thing that beats `!important`; between two
+ * important author declarations specificity decides, and every selector here
+ * carries a class (0,1,0 or better) against the shell's bare element
+ * (0,0,1). The query matches the shell's so the override exists only at the
+ * widths where it is contested.
+ *
+ * If the shell ever drops those rules this block becomes inert rather than
+ * wrong: each declaration restates the value the component rule already
+ * sets, so removing the `!important` layer changes nothing. */
+@media (max-width: 768px) {
+  .mkt-card-title {
+    font-size: var(--font-size-sm, 14px) !important;
+  }
+
+  .mkt-panel > h2,
+  .mkt-panel > h3 {
+    font-size: var(--font-size-md, 16px) !important;
+  }
+
+  .mkt-merchant h2,
+  .mkt-state h2 {
+    font-size: var(--font-size-lg, 18px) !important;
+  }
+
+  .mkt-related > h2 {
+    font-size: var(--font-size-xl, 22px) !important;
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * 18. Preference queries
+ * ---------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .mkt *,
+  .mkt *::before,
+  .mkt *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+
+  /* The shimmer is decorative; with motion reduced it becomes a flat
+   * plate rather than a single frozen gradient frame. */
+  .mkt-media::before {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .mkt-card:hover {
+    transform: none;
+  }
+
+  .mkt-card:hover .mkt-media img[data-mkt-loaded] {
+    transform: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .mkt {
+    --mkt-line: rgba(255, 255, 255, 0.5);
+    --mkt-line-strong: #ffffff;
+    --mkt-muted: #d7e7ee;
+  }
+
+  .mkt-badge {
+    background: #04101c;
+    border-color: #ffffff;
+  }
+}
+
+/* Print: a product page is a thing people print or save as PDF to
+ * compare. Drop the chrome, keep the facts. */
+@media print {
+  .mkt-badges,
+  .mkt-gallery-rail,
+  .mkt-gallery-nav,
+  .mkt-actions,
+  .mkt-secondary-actions,
+  .mkt-owner-tools,
+  .mkt-pager,
+  .mkt-chiprow {
+    display: none !important;
+  }
+
+  .mkt-detail {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .mkt-notes[open],
+  .mkt-notes {
+    border: 0;
+  }
+
+  .mkt-clamp {
+    display: block;
+    overflow: visible;
+  }
+}
