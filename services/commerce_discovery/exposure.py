@@ -406,7 +406,14 @@ def rotation_offset(ref: str, *, batch: Optional[int] = None,
 
         catalogue   distinct listings ever fetched   deepest reached
              300              300 (100%)             the whole catalogue
-            2000              374 ( 18.7%)           nothing past row ~585
+            2000              340 ( 17.0%)           nothing past row 585
+
+    Regenerate both rows, and the after figures, with
+    ``scripts/protection/measure_commerce_discovery_reachability.py``. It is the
+    only thing in the repository that produces these numbers; before it existed
+    they were this paragraph and nothing else, and the 2000 row read ``374
+    (18.7%)`` — measured on a tree that also predated the cap, fatigue and signal
+    fixes, and not reproducible from here.
 
     Sixty rotation epochs, four surfaces, impressions recorded so cooldowns
     rotate the head as they are meant to. The shipped defaults make the offset

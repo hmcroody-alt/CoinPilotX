@@ -7,8 +7,15 @@ cameras and 1800 widgets, with a viewer whose only twenty clicks were all on
 cameras, over 60 rotation epochs across three surfaces:
 
     retrieval                       cameras served   catalogue share   lift
-    one blind ordering                   14.1%            10.0%        1.41x
-    one ordering + targeted sources      48.5%            10.0%        4.85x
+    one blind ordering                   11.9%            10.0%        1.19x
+    one ordering + targeted sources      48.4%            10.0%        4.84x
+
+Regenerate that table with
+``scripts/protection/measure_commerce_discovery_reachability.py``, which
+reconstructs the blind-ordering row by re-applying this package's own
+"pre-fix" mutant in a sandbox. The row read ``14.1% / 1.41x`` until the
+reproducer existed; it had been measured against a tree that also predated the
+cap, fatigue and signal fixes.
 
 The affinity term in ``ranking`` was working correctly the whole time. It had
 almost nothing to work on: ``featured DESC, updated_at DESC, id DESC`` is the same
@@ -166,9 +173,9 @@ class TestRetrievalReachesWhatTheViewerCaresAbout:
         total = sum(got.values())
         assert total > 500, "the probe has to actually serve something to measure"
         share = got["cameras"] / total
-        # The catalogue is 10% cameras. Before targeted retrieval this was 14.1%,
-        # i.e. 1.41x chance for someone who had said "cameras" twenty times. The
-        # floor is set at 3x rather than at the measured 4.85x so that a ranking
+        # The catalogue is 10% cameras. Before targeted retrieval this was 11.9%,
+        # i.e. 1.19x chance for someone who had said "cameras" twenty times. The
+        # floor is set at 3x rather than at the measured 4.84x so that a ranking
         # weight change does not fail this test — the claim is "retrieval now
         # reaches the category", not "it reaches it in exactly this proportion".
         assert share > 0.30, f"cameras were {share:.1%} of {total} placements"
