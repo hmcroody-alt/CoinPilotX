@@ -981,6 +981,16 @@
   function updateSummary(postId, key, value) {
     document.querySelectorAll(`[data-summary-${key}="${postId}"]`).forEach(node => {
       node.textContent = compactNumber(value);
+      // The number lives inside the chip; the chip is what gets hidden. Every
+      // count that reaches the page passes through here, so the zero state
+      // cannot drift away from the value it describes.
+      const chip = node.closest(".post-summary-metric");
+      markZero(chip, value);
+      const noun = count(value) === 1 ? chip?.dataset.singular : chip?.dataset.plural;
+      // The label is the chip's last text node, immediately after the number.
+      if (noun && chip?.lastChild?.nodeType === Node.TEXT_NODE) {
+        chip.lastChild.textContent = ` ${noun}`;
+      }
     });
   }
 
@@ -1435,6 +1445,7 @@
       document.createTextNode(" "),
       element("span", "post-reaction-total", `${compactNumber(reactionTotal(post))} Reactions`)
     );
+    markZero(reactions, reactionTotal(post));
     row.appendChild(reactions);
     const metrics = [
       ["comments", post.comments_count || post.comment_count, "Comment", "Comments"],
@@ -1447,11 +1458,35 @@
       const number = element("span", "post-summary-number", compactNumber(value));
       number.dataset[`summary${key[0].toUpperCase()}${key.slice(1)}`] = post.id;
       if (key === "views") number.dataset.postViewCount = post.id;
+      // Carried on the node so `updateSummary` can re-pick the word. The
+      // noun used to be chosen once at render and never revisited, so the
+      // first comment on a post turned the chip into "1 Comments". That was
+      // easy to miss while every chip read zero; now that a chip only appears
+      // once it has a count, one is the number it shows most often.
+      item.dataset.singular = singular;
+      item.dataset.plural = plural;
       item.append(number, document.createTextNode(` ${count(value) === 1 ? singular : plural}`));
+      markZero(item, value);
       row.appendChild(document.createTextNode("    "));
       row.appendChild(item);
     });
     card.appendChild(row);
+  }
+
+  // `pulse_desktop_shell.css:553` hides an engagement chip whose count is zero,
+  // and collapses the whole strip when every chip is. That rule shipped without
+  // this function, so the class it keys on was never written by anyone and the
+  // strip stayed exactly as it was: five pieces of furniture per card reading
+  // "0 Reactions 0 Comments 0 Reposts 0 Shares 0 Saves", which is a row whose
+  // entire content is that nothing has happened yet.
+  //
+  // The chip is hidden, never removed. Both writers find these nodes by
+  // selector, so a chip dropped at render time is a chip that silently stops
+  // updating when the first comment lands; hidden, it comes back the moment the
+  // count leaves zero. Derived from the number at every point the number is
+  // written, so the class cannot disagree with the value beside it.
+  function markZero(node, value) {
+    node?.classList.toggle("is-zero", count(value) === 0);
   }
 
   function renderActions(card, post) {
@@ -1765,6 +1800,7 @@
     if (Object.keys(counts || {}).length) {
       document.querySelectorAll(`[data-post-id="${postId}"] .post-reaction-emojis`).forEach(node => {
         node.textContent = `${reactionEmojis({ reaction_counts: counts })} ${compactNumber(total)} Reactions`;
+        markZero(node, total);
       });
       document.querySelectorAll(`[data-post-like-count="${postId}"]`).forEach(node => {
         node.textContent = compactNumber(total);
@@ -1852,6 +1888,45 @@
       button.classList.toggle("is-disabled", !ready);
       button.setAttribute("aria-disabled", ready ? "false" : "true");
     });
+  }
+
+  // The desktop shell hides the inline comment composer on every feed card
+  // until the card carries `is-commenting` (pulse_desktop_shell.css:588) --
+  // ~80px of always-on chrome per card was the single biggest reason Home read
+  // as a control panel. That rule shipped, but the class that clears it never
+  // did, so on desktop Home the Comment button ran a 480ms glow
+  // (pulse_reaction_system.js:110) and nothing else: the composer was
+  // unreachable and inline commenting was dead. This is the missing half.
+  //
+  // Two renderers produce two attributes for the same button -- the server
+  // template emits `data-open-comments`, the client card builder emits
+  // `data-post-comment` -- and only the second was ever handled. Both route
+  // here so the behaviour cannot depend on which renderer drew the card.
+  function revealCommentComposer(postId, trigger) {
+    if (!postId) return;
+    const card = trigger?.closest?.(
+      ".pulse-feed-post-v3,.post-card-modern,.pulse-status-story-viewer,.reel-card"
+    );
+    // Toggle, not add: the button is the same affordance in both directions,
+    // and a reader who opened a composer by mistake should be able to put it
+    // away with the control they just pressed.
+    const input = document.querySelector(`[data-comment-input="${CSS.escape(String(postId))}"]`);
+    if (card) {
+      const opening = !card.classList.contains("is-commenting");
+      card.classList.toggle("is-commenting", opening);
+      if (!opening) {
+        // Leaving text behind in a box the reader just dismissed would
+        // resurface it silently on the next open. Send state follows.
+        if (input) {
+          input.value = "";
+          updateCommentSendState(postId);
+        }
+        return;
+      }
+    }
+    // `preventScroll` because the composer is at the bottom of a tall card and
+    // the default scroll-into-view jumps the post's own text off screen.
+    input?.focus({ preventScroll: true });
   }
 
   function openLightbox(trigger) {
@@ -2926,9 +3001,12 @@
     }
     const like = event.target.closest("[data-post-like]");
     if (like) return reactToPost(like.dataset.postLike, like, like.dataset.postLikeReaction || "like");
-    const comment = event.target.closest("[data-post-comment]");
+    const comment = event.target.closest("[data-post-comment],[data-open-comments]");
     if (comment) {
-      document.querySelector(`[data-comment-input="${comment.dataset.postComment}"]`)?.focus();
+      revealCommentComposer(
+        comment.dataset.postComment || comment.dataset.openComments,
+        comment
+      );
       return;
     }
     const unavailableAction = event.target.closest("[data-unavailable]");
@@ -2940,11 +3018,30 @@
     if (send) return sendComment(send.dataset.commentSend);
     const emoji = event.target.closest("[data-comment-emoji]");
     if (emoji) {
-      const input = document.querySelector(`[data-comment-input="${emoji.dataset.commentEmoji}"]`);
-      if (input) {
-        input.value = `${input.value || ""}🔥`;
+      // This used to append a hardcoded 🔥 -- one emoji, chosen once by
+      // whoever wrote the line, with no way to pick another. The app has
+      // shipped a full 1,914-emoji picker with search, categories, recents
+      // and skin tones since Stage 1; there is no reason the web comment box
+      // gets one glyph. `window.PulseEmoji` is THE picker for the website
+      // (static/js/pulse_emoji.js) and it reads the same dataset the app does.
+      const postId = emoji.dataset.commentEmoji;
+      const input = document.querySelector(`[data-comment-input="${postId}"]`);
+      if (!input) return;
+      if (window.PulseEmoji) {
+        window.PulseEmoji.open({
+          anchor: emoji,
+          returnFocusTo: input,
+          stayOpenOnSelect: true,
+          label: "Add emoji to your comment",
+          onSelect: glyph => {
+            window.PulseEmoji.insertAtCaret(input, glyph);
+            updateCommentSendState(postId);
+          }
+        });
+      } else {
+        // The picker script is deferred; a click that lands before it parses
+        // should put the caret in the box rather than do nothing at all.
         input.focus();
-        updateCommentSendState(emoji.dataset.commentEmoji);
       }
       return;
     }

@@ -43717,6 +43717,7 @@ __DESKTOP_RIGHT_RAIL__
 </script>
 <script src="/static/js/time.js"></script><script src="/static/js/pulseshell_bridge.js?v=pulseshell-20260630a" defer></script><script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>
 <script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>
+<script src="/static/js/pulse_emoji.js?v=emoji-primitive-20260927a" defer></script>
 <script src="/static/js/pulse_media_picker.js" defer></script>
 <script src="/static/js/pulse_upload_manager.js?v=composer-premium-20260617a"></script>
 __APP_FIRST_LINKS__<script src="/static/js/pulse_search_bridge.js?v=nav-search-20260618a" defer></script>
@@ -44025,7 +44026,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
-            '<script src="/static/js/pulse_home_core.js?v=bottom-dock-scroll-20260719a" defer></script></body>',
+            '<script src="/static/js/pulse_home_core.js?v=emoji-primitive-20260927a" defer></script></body>',
             1,
         )
     if boot_profile == "shell_only":

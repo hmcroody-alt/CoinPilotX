@@ -266,6 +266,46 @@ def _css(name):
         return handle.read()
 
 
+def test_every_class_a_stylesheet_hides_behind_has_a_writer():
+    """A ``:not(.x)`` gate with no code that writes ``.x`` is a dead control.
+
+    The desktop shell hides the inline comment composer on every feed card
+    until the card carries ``is-commenting`` -- ~80px of always-on chrome per
+    card was the single biggest reason Home read as a control panel. The rule
+    shipped; the class that clears it did not. So on desktop Home the Comment
+    button ran a 480ms glow and nothing else: the composer was unreachable and
+    inline commenting was dead on the primary surface. Everything compiled,
+    every test stayed green, and the markup sat right there in the DOM at zero
+    height -- the same failure shape as the rail-link allowlist below, which is
+    why this guard lives beside it.
+
+    Checked as a shape, not as a list of one: any future ``:not(.foo)`` gate in
+    the desktop shell must be paired with something that can write ``.foo``.
+    """
+    shell = re.sub(r"/\*.*?\*/", "", _css("pulse_desktop_shell.css"), flags=re.S)
+    gated = set(re.findall(r":not\(\.([a-z0-9-]+)\)", shell))
+    assert gated, "expected the desktop shell to gate something on a class"
+
+    writers = []
+    js_dir = os.path.join(REPO, "static", "js")
+    for name in sorted(os.listdir(js_dir)):
+        if name.endswith(".js"):
+            with open(os.path.join(js_dir, name), encoding="utf-8") as handle:
+                writers.append(handle.read())
+    with open(os.path.join(REPO, "bot.py"), encoding="utf-8") as handle:
+        writers.append(handle.read())
+    blob = "\n".join(writers)
+
+    # classList.add, toggle, or a class string in a template -- any writer
+    # counts. The point is that SOMETHING can put the class on, not how.
+    orphans = [cls for cls in sorted(gated)
+               if not re.search(r"""["'`][^"'`\n]*\b%s\b""" % re.escape(cls), blob)]
+    assert not orphans, (
+        "pulse_desktop_shell.css hides content behind classes that nothing ever "
+        f"sets, so that content is permanently unreachable: {orphans}"
+    )
+
+
 def test_no_stylesheet_hides_rail_links_by_href():
     """The nine-href allowlist, and any successor to it.
 
