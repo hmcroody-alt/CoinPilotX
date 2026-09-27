@@ -1147,6 +1147,7 @@
         "matches_your_interests": "あなたの好みに基づいて",
         "because_you_viewed": "似た商品を見たため",
         "related_to_this_post": "表示中の投稿に関連",
+        "similar_to_this_product": "この商品と似ている商品",
         "from_sellers_you_follow": "フォロー中の出品者から",
         "trending": "PulseSocで今話題",
         "new_arrival": "マーケットプレイスに新着",
@@ -1188,6 +1189,8 @@
       "module": {
         "recommended_for_you": "あなたへのおすすめ",
         "because_you_viewed": "閲覧履歴から",
+        "similar_to_this_product": "似ている商品",
+        "you_might_also_like": "こちらもおすすめ",
         "trending": "話題の商品",
         "new_arrivals": "新着",
         "from_sellers_you_follow": "フォロー中の出品者から",

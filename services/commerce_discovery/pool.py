@@ -76,6 +76,12 @@ DROP_CODES = (
     "product_cooldown",
     "seller_cooldown",
     "duplicate",
+    # Expected to be 0 or 1 per response rather than a number worth watching: it
+    # counts the product the viewer is already looking at, and only on the pass
+    # where the SQL exclusion list did not already remove it. A sustained
+    # non-zero count means the list is being truncated, which is a signal about
+    # the viewer's cooldown volume rather than about the catalogue.
+    "context_excluded",
 )
 
 
@@ -129,6 +135,7 @@ def build(
     seller_cooldown: Optional[int] = None,
     target: Optional[int] = None,
     rotation_offset: int = 0,
+    exclude_listing_ids: Sequence[int] = (),
 ) -> PoolResult:
     """Eligible, non-cooled-down candidates for one viewer.
 
@@ -139,6 +146,7 @@ def build(
     applying it.
     """
     state = exposure or exposure_module.EMPTY
+    excluded_ids = frozenset(_int(value) for value in exclude_listing_ids) - {0}
     target = int(target or config.candidate_target_size())
     product_cooldown = (
         config.product_cooldown_seconds() if product_cooldown is None else max(0, int(product_cooldown))
@@ -176,6 +184,7 @@ def build(
             seller_cooldown=seller_gap,
             target=target,
             rotation_offset=rotation_offset,
+            excluded_ids=excluded_ids,
         )
         if len(result.rows) >= min(watermark, target):
             break
@@ -194,12 +203,13 @@ def _scan(
     seller_cooldown: int,
     target: int,
     rotation_offset: int,
+    excluded_ids: frozenset = frozenset(),
 ) -> PoolResult:
     """One pass of the batched fetch-and-filter loop, at fixed cooldowns."""
     batch_size = config.candidate_batch_size()
     max_batches = config.candidate_max_batches()
 
-    hard_excluded = _hard_exclusions(policy, state, product_cooldown)
+    hard_excluded = _hard_exclusions(policy, state, product_cooldown, excluded_ids)
 
     accepted: list[dict] = []
     seen_ids: set[int] = set()
@@ -241,6 +251,7 @@ def _scan(
                 product_cooldown=product_cooldown,
                 seller_cooldown=seller_cooldown,
                 seen_ids=seen_ids,
+                excluded_ids=excluded_ids,
             )
             if code:
                 dropped[code] = dropped.get(code, 0) + 1
@@ -269,7 +280,9 @@ def _scan(
     )
 
 
-def _hard_exclusions(policy, state, product_cooldown: int) -> tuple[int, ...]:
+def _hard_exclusions(
+    policy, state, product_cooldown: int, excluded_ids: frozenset = frozenset()
+) -> tuple[int, ...]:
     """Listing ids worth excluding in SQL rather than in Python.
 
     Only the certainties go here — explicitly suppressed products, and products
@@ -281,9 +294,22 @@ def _hard_exclusions(policy, state, product_cooldown: int) -> tuple[int, ...]:
     be near the head of the candidate ordering. The truncated remainder is not
     lost — :func:`_reject` re-checks every row anyway. This is an optimisation,
     never the enforcement.
+
+    ``excluded_ids`` goes first for that reason: a viewer with two hundred
+    cooled-down products would otherwise push the product they are *currently
+    looking at* past the truncation point, and the only thing standing between
+    that and a product page recommending itself would be :func:`_reject`. It
+    would hold — but paying one wasted row per batch for the whole scan to lean
+    on it is a poor trade when the caller has told us the answer up front.
     """
     excluded: list[int] = []
     seen: set[int] = set()
+
+    for listing_id in excluded_ids:
+        key = _int(listing_id)
+        if key and key not in seen:
+            seen.add(key)
+            excluded.append(key)
 
     for listing_id in getattr(policy, "suppressed_listings", ()) or ():
         key = _int(listing_id)
@@ -350,6 +376,7 @@ def _reject(
     product_cooldown: int,
     seller_cooldown: int,
     seen_ids: set,
+    excluded_ids: frozenset = frozenset(),
 ) -> str:
     """``""`` to keep the row, else the drop code.
 
@@ -360,6 +387,12 @@ def _reject(
     listing_id = _int(row.get("id"))
     if not listing_id or listing_id in seen_ids:
         return "duplicate"
+
+    # The authoritative self-exclusion check. The SQL ``NOT IN`` above is an
+    # optimisation that a truncated exclusion list can silently skip; this
+    # cannot be skipped, so a product page can never recommend itself.
+    if listing_id in excluded_ids:
+        return "context_excluded"
 
     if listing_id in (getattr(policy, "suppressed_listings", ()) or ()):
         return "suppressed_listing"

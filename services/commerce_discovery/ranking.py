@@ -65,6 +65,12 @@ NEUTRAL = 0.5
 REASON_MATCHES_INTERESTS = "matches_your_interests"
 REASON_BECAUSE_YOU_VIEWED = "because_you_viewed"
 REASON_CONTEXT = "related_to_this_post"
+#: The same signal as :data:`REASON_CONTEXT`, said truthfully on a product page.
+#: Two codes rather than one generic "related to this" because the reason string
+#: is the user-visible claim, and "related to this post" under a product is a
+#: false statement about what the engine matched on. Which one applies is the
+#: caller's to declare — see ``context_reason`` on :func:`choose_reason`.
+REASON_SIMILAR_PRODUCT = "similar_to_this_product"
 REASON_SELLER_FOLLOWED = "from_sellers_you_follow"
 REASON_TRENDING = "trending"
 REASON_NEW_ARRIVAL = "new_arrival"
@@ -77,6 +83,7 @@ REASON_EXPLORE = "new_to_marketplace"
 REASON_PRIORITY = (
     REASON_BECAUSE_YOU_VIEWED,
     REASON_CONTEXT,
+    REASON_SIMILAR_PRODUCT,
     REASON_SELLER_FOLLOWED,
     REASON_MATCHES_INTERESTS,
     REASON_NEW_ARRIVAL,
@@ -559,6 +566,7 @@ def score_listing(
     parse_iso=None,
     now=None,
     weights: Optional[Mapping[str, float]] = None,
+    context_reason: str = REASON_CONTEXT,
 ) -> dict:
     """``{score, reason, signals, contributions}`` for one listing.
 
@@ -613,6 +621,7 @@ def score_listing(
             stats=stats,
             has_context=bool(context),
             viewed_categories=viewed_categories,
+            context_reason=context_reason,
         ),
         "signals": {k: round(v, 4) for k, v in signals.items()},
         "contributions": {k: round(v, 4) for k, v in contributions.items()},
@@ -628,6 +637,7 @@ def choose_reason(
     stats: Optional[Mapping[str, Any]] = None,
     has_context: bool = False,
     viewed_categories: Sequence[str] = (),
+    context_reason: str = REASON_CONTEXT,
 ) -> str:
     """The most specific *true* explanation, never the most flattering one.
 
@@ -642,7 +652,7 @@ def choose_reason(
     if viewed_categories and _tokens(listing.get("category")) & _tokens(*viewed_categories):
         claims.add(REASON_BECAUSE_YOU_VIEWED)
     if has_context and signals.get("relevance", 0.0) >= 0.6:
-        claims.add(REASON_CONTEXT)
+        claims.add(context_reason if context_reason in REASON_PRIORITY else REASON_CONTEXT)
     try:
         if int(listing.get("seller_user_id") or 0) in followed_sellers:
             claims.add(REASON_SELLER_FOLLOWED)

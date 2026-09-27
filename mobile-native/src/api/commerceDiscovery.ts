@@ -24,7 +24,13 @@ import { pulseApi } from "./pulseApi";
  *    the one error in this system with a legal shape.
  */
 
-export type CommerceSurface = "feed" | "reels" | "messenger" | "marketplace" | "post_detail";
+export type CommerceSurface =
+  | "feed"
+  | "reels"
+  | "messenger"
+  | "marketplace"
+  | "post_detail"
+  | "product_detail";
 
 /** Matches `services/commerce_discovery/promotion.py`. Paid never arrives here. */
 export type CommercePromotionClass = "organic" | "house";
@@ -38,11 +44,17 @@ export type CommercePromotionClass = "organic" | "house";
  * not fail the type-check, it just renders a missing-key placeholder under a
  * product card. Two of them read like abbreviations of themselves
  * (`related_to_this_post`, not `context`); resist tidying them.
+ *
+ * `related_to_this_post` and `similar_to_this_product` are the *same* server
+ * signal under two names, and collapsing them into one code would put the words
+ * "related to this post" under a product page. The server picks which one it has
+ * earned the right to say; the client only renders it.
  */
 export type CommerceReason =
   | "matches_your_interests"
   | "because_you_viewed"
   | "related_to_this_post"
+  | "similar_to_this_product"
   | "from_sellers_you_follow"
   | "trending"
   | "new_arrival"
@@ -267,6 +279,15 @@ export async function fetchCommercePlacements(
     limit?: number;
     /** Used until the server answers — each surface's own local rhythm. */
     cadence?: CommerceCadence;
+    /**
+     * The product being viewed, on `product_detail`.
+     *
+     * Sent instead of a client-described context because the server reads this
+     * listing's own category rather than trusting ours, and uses the id to
+     * exclude the product from its own recommendations. Both are narrowing
+     * operations, which is why sending an id is safe.
+     */
+    listingId?: number;
   } = {}
 ): Promise<CommerceServeResult> {
   const fallbackCadence = options.cadence || EMPTY_RESULT.cadence;
@@ -283,7 +304,8 @@ export async function fetchCommercePlacements(
       body: JSON.stringify({
         context: options.context || {},
         session_id: options.sessionId || "",
-        ...(options.limit === undefined ? {} : { limit: options.limit })
+        ...(options.limit === undefined ? {} : { limit: options.limit }),
+        ...(options.listingId ? { listing_id: options.listingId } : {})
       })
     });
     if (!response?.ok || !Array.isArray(response.placements)) return empty;

@@ -1147,6 +1147,7 @@
         "matches_your_interests": "根据你的喜好",
         "because_you_viewed": "因为你看过类似商品",
         "related_to_this_post": "与你正在浏览的内容相关",
+        "similar_to_this_product": "与此商品相似",
         "from_sellers_you_follow": "来自你关注的卖家",
         "trending": "正在 PulseSoc 上热门",
         "new_arrival": "刚上架的商品",
@@ -1188,6 +1189,8 @@
       "module": {
         "recommended_for_you": "为你推荐",
         "because_you_viewed": "因为你看过",
+        "similar_to_this_product": "相似商品",
+        "you_might_also_like": "你可能也喜欢",
         "trending": "热门商品",
         "new_arrivals": "新品上架",
         "from_sellers_you_follow": "来自你关注的卖家",

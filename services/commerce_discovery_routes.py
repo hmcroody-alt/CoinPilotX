@@ -43,6 +43,7 @@ from threading import Lock
 
 from flask import Blueprint, jsonify, request
 
+from services import db as db_module
 from services.commerce_discovery import config, engine, events, promotion, ranking, schema
 from services.route_auth import auth_required
 
@@ -210,6 +211,56 @@ def _context_from_request(payload: dict) -> dict:
     }
 
 
+def _anchor_listing_id(payload: dict) -> int:
+    """The product the viewer is looking at, on the surfaces that have one.
+
+    Unvalidated on purpose beyond being an integer: this id is only ever used to
+    *remove* a candidate and to look up a row the caller can already see. There
+    is no value a client can send that widens what comes back, which is what
+    makes it safe to accept at all.
+    """
+    try:
+        return max(0, int(payload.get("listing_id") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _anchor_context(cur, listing_id: int) -> dict:
+    """The anchor product's own taxonomy, read from the database.
+
+    Read server-side rather than taken from the request body even though
+    :func:`_context_from_request` would accept the same fields. The difference is
+    that this surface labels its results ``similar_to_this_product``, and a claim
+    of similarity is only true if both sides of the comparison are ours. A client
+    that sent ``category: "watches"`` while displaying a lawnmower would otherwise
+    get a row of watches under the word "similar".
+    """
+    if not listing_id:
+        return {}
+    try:
+        cur.execute(
+            "SELECT category, subcategory FROM marketplace_listings WHERE id=? LIMIT 1",
+            (int(listing_id),),
+        )
+        row = cur.fetchone()
+    except Exception:
+        return {}
+    if not row:
+        return {}
+    # row_values, not tuple(row): a Postgres row is a Mapping, so iterating it
+    # yields column *names* and this whole function would match on the literal
+    # string "category" in production and nowhere else.
+    values = db_module.row_values(row)
+    if len(values) < 2:
+        return {}
+    return {
+        "category": str(values[0] or "")[:80],
+        "subcategory": str(values[1] or "")[:80],
+        "topic": "",
+        "tags": [],
+    }
+
+
 def _request_meta() -> dict:
     """Non-identifying request signals for the event row.
 
@@ -259,16 +310,26 @@ def commerce_discovery_serve(surface):
         # feed sub-request is a retry storm waiting to happen.
         return _empty()
 
+    anchor_id = _anchor_listing_id(payload)
+
     def handler(cur, conn):
         bot = _bot()
+        context = _context_from_request(payload)
+        if surface == "product_detail":
+            # The anchor's own taxonomy replaces the client's description of it.
+            # An empty read means the listing is gone, and falling back to the
+            # body would let the row keep claiming similarity to a product the
+            # server can no longer see.
+            context = _anchor_context(cur, anchor_id)
         placements = engine.serve(
             cur, user["user_id"], surface, conn=conn,
-            context=_context_from_request(payload),
+            context=context,
             session_id=session_id,
             limit=limit,
             promotion_class=promotion.ORGANIC,
             parse_price=bot.parse_price_label_to_cents,
             serialize=bot.pulse_marketplace_listing_payload,
+            exclude_listing_ids=(anchor_id,) if anchor_id else (),
         )
         return _json({
             "ok": True,

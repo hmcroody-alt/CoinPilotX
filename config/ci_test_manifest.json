@@ -184,6 +184,8 @@
     "tests/commerce_discovery/test_distribution_pipeline.py",
     "tests/commerce_discovery/test_eligibility_gates.py",
     "tests/commerce_discovery/test_explain_endpoint.py",
+    "tests/commerce_discovery/test_product_detail_route.py",
+    "tests/commerce_discovery/test_product_detail_surface.py",
     "tests/commerce_discovery/test_promotion_wall.py",
     "tests/commerce_discovery/test_ranking_and_explain.py",
     "tests/commerce_discovery/test_reels_context_matching.py",

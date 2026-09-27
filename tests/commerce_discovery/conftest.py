@@ -266,7 +266,15 @@ class SimulatedMarketplace:
         self.conn.commit()
 
     # -- the loop ------------------------------------------------------------
-    def serve(self, surface: str = "feed", *, limit=None, context=None, session_id="cs_test") -> list[dict]:
+    def serve(
+        self,
+        surface: str = "feed",
+        *,
+        limit=None,
+        context=None,
+        session_id="cs_test",
+        exclude_listing_ids=(),
+    ) -> list[dict]:
         return engine.serve(
             self.conn.cursor(),
             self.viewer_id,
@@ -276,6 +284,7 @@ class SimulatedMarketplace:
             session_id=session_id,
             limit=limit,
             parse_price=parse_price,
+            exclude_listing_ids=exclude_listing_ids,
         )
 
     def render(self, placements, *, visible: bool = True) -> None:
