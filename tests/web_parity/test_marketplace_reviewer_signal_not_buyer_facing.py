@@ -73,11 +73,20 @@ CLEAN_SCORE = 0
 
 ALL_LISTINGS = (RISKY, CLEAN)
 
-#: The pill markup that used to carry it. Matched as a pill rather than as the
+#: The chip markup that used to carry it. Matched as a chip rather than as the
 #: bare word, because both surfaces legitimately serve the sentence "Safety
 #: notice: educational products only" and a substring check for "Safety" would
 #: fail on copy that is fine.
-PILL = re.compile(r"class=['\"]pill['\"]>\s*Safety", re.I)
+#:
+#: Two class families, because the storefront was rebuilt underneath this file.
+#: ``class='pill'`` is what actually shipped the bug and is kept so this stays a
+#: regression test for the thing that happened. ``mkt-badge`` is where a chip
+#: goes today (`marketplace_storefront.badges_html`), and without it these
+#: assertions would have quietly become unfailable: the new markup contains no
+#: ``pill`` class anywhere, so a pattern naming only the old one is satisfied by
+#: construction and would keep passing while a Safety badge sat on the page.
+PILL = re.compile(
+    r"class=['\"][^'\"]*\b(?:pill|mkt-badge)\b[^'\"]*['\"][^>]*>\s*Safety", re.I)
 
 _PROBE = r"""
 import json, re, sys, sqlite3
@@ -121,6 +130,13 @@ grid = client.get("/pulse/marketplace")
 report["grid_status"] = grid.status_code
 grid_body = grid.get_data(as_text=True)
 report["grid_body"] = grid_body
+
+# The storefront's own search, which is now a server-rendered GET against this
+# same route rather than a JavaScript card fed by an API. It runs a different SQL
+# statement than the unfiltered grid, so it is a separate surface to check.
+search_page = client.get("/pulse/marketplace?q=Signal")
+report["search_page_status"] = search_page.status_code
+report["search_page_body"] = search_page.get_data(as_text=True)
 
 pages = {}
 for lid in %(ids)r:
@@ -231,21 +247,38 @@ def test_the_grid_card_prints_no_safety_pill(signal_probe):
         % body[max(0, PILL.search(body).start() - 120):PILL.search(body).end() + 60])
 
 
-def test_the_grid_script_prints_no_safety_pill(signal_probe):
-    """The client-side twin, which is a separate implementation of the same card.
+def test_the_search_results_page_prints_no_safety_pill(signal_probe):
+    """The search-reachable card, which used to be a second implementation.
 
-    These two have drifted before -- the price-label fix had to be applied to
-    both -- so the one that is only reachable through search gets its own
-    assertion rather than riding on the server's.
+    This assertion was originally made against ``marketplaceListingHtml``, an
+    inline JavaScript twin of the grid card that search results were built from.
+    The two had drifted before -- the price-label fix had to be applied to both --
+    so the surface only reachable through search got its own assertion rather
+    than riding on the server's.
+
+    The twin is gone: search is now a server-rendered GET against the same route
+    and therefore the same renderer. The *reason* for a separate assertion is
+    weaker than it was, but it is not gone, because search reaches this page
+    through a different SQL statement than browsing does -- a query that selects
+    columns of its own and could carry the reviewer's number into a card that the
+    unfiltered grid never shows. So the claim is kept and re-aimed at the
+    rendered search results, where a buyer would actually see it.
     """
-    found = re.search(r"function marketplaceListingHtml\(row\)\{[^\n]*",
-                      signal_probe["grid_body"])
-    assert found, (
-        "the client-side marketplace card is no longer on the served page; it "
-        "was renamed, moved, or reformatted onto several lines")
-    assert not PILL.search(found.group(0)), (
-        "the client-side marketplace card still builds a Safety pill, so search "
-        "results would print a reviewer's risk number that the grid does not")
+    assert signal_probe["search_page_status"] == 200, (
+        "the storefront search answered %s" % signal_probe["search_page_status"])
+    body = signal_probe["search_page_body"]
+    for lid in ALL_LISTINGS:
+        assert "Signal listing %d" % lid in body, (
+            "listing %d did not render in the search results, so this assertion "
+            "is about an empty page rather than a buyer surface" % lid)
+    found = PILL.search(body)
+    assert not found, (
+        "the search results still serve a Safety pill: %r"
+        % body[max(0, found.start() - 120):found.end() + 60])
+    assert str(RISKY_SCORE) not in _without_stylesheets(body), (
+        "the risk score %d appears in the search results but not in the "
+        "unfiltered grid, so the search query is selecting a reviewer column the "
+        "browse query does not" % RISKY_SCORE)
 
 
 @pytest.mark.parametrize("listing_id", ALL_LISTINGS)
