@@ -369,7 +369,16 @@ def text_sensitive(post: Mapping[str, Any]) -> Optional[tuple[str, str]]:
     # scanned because on that path they are *client-supplied strings* and this is
     # the only check that sees the wire: a caller that put a bereavement in a
     # subcategory, by bug or on purpose, would otherwise pass unread.
+    #
+    # ``caption`` is the third shape this scan has to serve: a **reel**. A reel is
+    # not a ``pulse_posts`` row — it is a ``pulse_reels`` row joined to one — and
+    # its words live in ``pulse_reels.caption``, which `pulse_reel_payload`
+    # prefers over the post's ``body`` precisely because the body is routinely
+    # empty for a reel. Without this key a reel row would arrive here with its
+    # prose in a field nothing reads, and the scan would answer ``None`` for a
+    # bereavement said out loud in the caption.
     flat = _flat(post.get("title"), post.get("body"), post.get("ai_summary"),
+                 post.get("caption"),
                  post.get("topic"), post.get("category"),
                  post.get("subcategory"), post.get("tags_json"),
                  post.get("tags"))

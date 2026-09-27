@@ -75,17 +75,25 @@ BEREAVEMENT_AS_TRUNCATED = {
 }
 
 
-class PostRows:
-    """A stand-in `cur` holding `pulse_posts` rows, keyed by id.
+class ContentRows:
+    """A stand-in `cur` holding `pulse_posts` and `pulse_reels` rows, keyed by id.
 
     A cursor rather than a monkeypatch of `_content_post`, so the SQL, the column
     list and the tuple-vs-mapping unpacking are all on the path. `execute` records
     the statement it was given, which is how the `deleted_at` filter and the
     absence of `SELECT *` are asserted rather than assumed.
+
+    Both tables are keyed by the **post** id, which is not a convenience: it is
+    the contract. `_content_reel` looks a reel up by `pulse_reels.post_id`
+    precisely so that one wire field cannot be made to read across id spaces, and
+    a fake that keyed reels by their own id would let a mutant swap the query's
+    `WHERE` column and still pass.
     """
 
-    def __init__(self, rows: dict[int, dict] | None = None, *, fail: bool = False):
+    def __init__(self, rows: dict[int, dict] | None = None, *,
+                 reels: dict[int, dict] | None = None, fail: bool = False):
         self.rows = rows or {}
+        self.reels = reels or {}
         self.fail = fail
         self.statements: list[str] = []
         self._pending = None
@@ -94,30 +102,54 @@ class PostRows:
         self.statements.append(sql)
         if self.fail:
             raise RuntimeError("the database is having a bad minute")
-        if "pulse_posts" not in sql:  # pragma: no cover - no other read on this path
-            raise AssertionError(f"unexpected query on this path: {sql}")
-        row = self.rows.get(int(params[0]))
-        # Column order follows the module's own list, which is what the real
-        # query's projection order is. Returned as a tuple: this is the SQLite
+        # Column order follows the module's own lists, which is what the real
+        # queries' projection order is. Returned as a tuple: this is the SQLite
         # shape, and `row_values` is what makes the Postgres shape work too.
-        self._pending = None if row is None else tuple(
-            row.get(name) for name in routes._POST_COLUMNS
-        )
+        if "pulse_reels" in sql:
+            row = self.reels.get(int(params[0]))
+            keys = tuple(key for key, _ in routes._REEL_COLUMNS)
+        elif "pulse_posts" in sql:
+            row = self.rows.get(int(params[0]))
+            keys = routes._POST_COLUMNS
+        else:  # pragma: no cover - no other read on this path
+            raise AssertionError(f"unexpected query on this path: {sql}")
+        self._pending = None if row is None else tuple(row.get(name) for name in keys)
 
     def fetchone(self):
         return self._pending
+
+    @property
+    def tables(self) -> list[str]:
+        """Which table each recorded statement read, in order."""
+        return ["pulse_reels" if "pulse_reels" in sql else "pulse_posts"
+                for sql in self.statements]
 
 
 def post_row(**fields) -> dict:
     """A cleared, unremarkable post, overridden field by field.
 
-    Explicit rather than defaulted inside `PostRows`, because "cleared moderation"
-    is the state that lets the row *pass*, and a helper that supplied it silently
-    would make every test here depend on a default it never states.
+    Explicit rather than defaulted inside `ContentRows`, because "cleared
+    moderation" is the state that lets the row *pass*, and a helper that supplied
+    it silently would make every test here depend on a default it never states.
     """
     base = {"post_type": "post", "moderation_status": "approved", "risk_score": 0,
             "title": "", "body": "", "ai_summary": "",
             "tags_json": "[]", "ai_tags_json": "[]"}
+    base.update(fields)
+    return base
+
+
+def reel_row(**fields) -> dict:
+    """A cleared, unremarkable reel, overridden field by field.
+
+    Deliberately *not* carrying `post_type`, `title`, `body` or `risk_score`: a
+    `pulse_reels` row has none of them, and a fake that quietly supplied them
+    would hide the fact that `assess_adjacency` is being handed a row shape it was
+    written for posts. The absent `risk_score` in particular is the interesting
+    one — it must read as 0 and not as `MAX_CONTENT_RISK + 1`.
+    """
+    base = {"caption": "", "category": "Community",
+            "ai_tags_json": "[]", "moderation_status": "approved"}
     base.update(fields)
     return base
 
@@ -143,14 +175,15 @@ def serve(monkeypatch) -> ServeSpy:
 
 
 @pytest.fixture
-def rows() -> PostRows:
-    """The `pulse_posts` table this module's requests read. Empty by default.
+def rows() -> ContentRows:
+    """The two tables this module's requests read. Both empty by default.
 
-    Empty is the honest default: a request that names no post never reaches it,
-    and a request that names one the table does not hold is a real case with its
-    own test.
+    Empty is the honest default: a request that names no post never reaches them,
+    and a request that names one the tables do not hold is a real case with its
+    own test — two of them, in fact, because an absent post refuses and an absent
+    reel does not.
     """
-    return PostRows()
+    return ContentRows()
 
 
 @pytest.fixture
@@ -162,7 +195,7 @@ def client(monkeypatch, serve, rows):
     # execution order.
     monkeypatch.setattr(routes, "_rate_limited", lambda _ref: False)
     # `handler(cur, conn)` with a cursor that answers one query and no connection.
-    # Still no database: `PostRows` is a dict with an `execute`, so the SQL string
+    # Still no database: `ContentRows` is a dict with an `execute`, so the SQL string
     # and the row unpacking are exercised while nothing is opened.
     monkeypatch.setattr(routes, "_with_db", lambda handler: handler(rows, None))
 
@@ -564,8 +597,8 @@ class TestAFailedReadIsNotAVerdict:
     """
 
     @pytest.fixture
-    def rows(self) -> PostRows:
-        return PostRows(fail=True)
+    def rows(self) -> ContentRows:
+        return ContentRows(fail=True)
 
     def test_a_read_failure_serves_as_before(self, client, serve):
         assert ask(client, "post_detail", BENIGN, post_id=5).get_json()["placements"]
@@ -632,3 +665,211 @@ class TestTheExemptSurfacesDoNotReadAPost:
 
         assert ask(client, surface, BENIGN, post_id=5).get_json()["placements"] == []
         assert not serve.called
+
+
+#: A bereavement said in a *reel caption*, over a post body that is empty.
+#:
+#: This is the ordinary shape, not a contrived one: `pulse_reel_payload` sets
+#: `caption = reel.caption or post.body`, preferring the reel's own words, and the
+#: reel composer writes the caption to `pulse_reels.caption` — so the words the
+#: viewer reads are on the reel and the post row genuinely has nothing in it.
+BEREAVEMENT_CAPTION = (
+    "Posting this one for my dad. We lost him on Tuesday morning and he loved "
+    "this song more than anything. Rest in peace."
+)
+
+
+class TestAReelIsJudgedOnItsCaptionAndNotOnlyOnItsPost:
+    """The reel half of the same gate, and the reason it needs its own read.
+
+    A reel is a `pulse_reels` row joined to a `pulse_posts` row. The post row
+    carries the structural gates; the reel row carries the words. Reading only the
+    post would answer about a `body` the screen may not even be displaying.
+    """
+
+    def test_the_post_row_alone_cannot_see_the_caption(self, client, serve, rows):
+        # The premise, stated as a test rather than as a comment: with the reel
+        # read removed this request is served, because every field the post row
+        # has is empty and the sensitive text is somewhere else entirely.
+        rows.rows[5] = post_row(body="")
+
+        assert suitability.assess_adjacency(rows.rows[5])["permitted"]
+
+    def test_a_bereavement_in_the_caption_refuses_before_retrieval(
+        self, client, serve, rows
+    ):
+        rows.rows[5] = post_row(body="")
+        rows.reels[5] = reel_row(caption=BEREAVEMENT_CAPTION)
+
+        assert ask(client, "reels", None, post_id=5).get_json()["placements"] == []
+        assert not serve.called, (
+            "the reel's caption was read but retrieval still happened, which means "
+            "the verdict is a score penalty and not a refusal"
+        )
+
+    def test_the_caption_is_read_by_the_rule_and_not_by_this_test(self):
+        # `text_sensitive` had no `caption` key before this increment, so the same
+        # text in the same field answered `None`. Pinned directly, because the
+        # route test above would also pass if the phrase were matched out of
+        # `category` or some other field that happens to be scanned.
+        assert suitability.text_sensitive({"caption": BEREAVEMENT_CAPTION})
+        assert suitability.text_sensitive(
+            {"body": "", "caption": BEREAVEMENT_CAPTION}
+        )
+
+    def test_the_reel_is_looked_up_by_its_post_id(self, client, serve, rows):
+        rows.rows[5] = post_row(body="")
+        rows.reels[5] = reel_row(caption=BEREAVEMENT_CAPTION)
+
+        ask(client, "reels", None, post_id=5)
+
+        reel_sql = [sql for sql in rows.statements if "pulse_reels" in sql]
+        assert len(reel_sql) == 1, rows.statements
+        assert "post_id=?" in reel_sql[0], (
+            "keyed on something other than post_id: the reel id and the post id "
+            "are different id spaces whose numbers overlap, so the wrong column "
+            "here reads a stranger's reel"
+        )
+        assert "SELECT *" not in reel_sql[0]
+
+    def test_a_deleted_reel_is_filtered_in_the_query(self, client, rows):
+        rows.rows[5] = post_row()
+        ask(client, "reels", BENIGN, post_id=5)
+
+        reel_sql = next(sql for sql in rows.statements if "pulse_reels" in sql)
+        assert "'deleted'" in reel_sql and "status" in reel_sql
+
+    def test_the_moderation_status_is_not_filtered_away(self, client, rows):
+        # It is the thing being judged. `pulse_reel_payload` withholds only
+        # `blocked`, so a `needs_review` reel is on screen today; filtering on the
+        # payload's predicate here would let exactly that population pass
+        # unexamined.
+        rows.rows[5] = post_row()
+        ask(client, "reels", BENIGN, post_id=5)
+
+        reel_sql = next(sql for sql in rows.statements if "pulse_reels" in sql)
+        assert "!='blocked'" not in reel_sql
+
+    @pytest.mark.parametrize("status", ["needs_review", "pending", "", "rejected"])
+    def test_an_uncleared_reel_refuses_over_a_cleared_post(
+        self, client, serve, rows, status
+    ):
+        # The state the wire cannot see at all: no client sends a reel's
+        # moderation status, and the post's own status is `approved` here.
+        rows.rows[5] = post_row()
+        rows.reels[5] = reel_row(moderation_status=status, caption="new shoes")
+
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"] == []
+        assert not serve.called
+
+    def test_a_declared_category_on_the_reel_refuses(self, client, serve, rows):
+        rows.rows[5] = post_row()
+        rows.reels[5] = reel_row(ai_tags_json='["memorial"]')
+
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"] == []
+        assert not serve.called
+
+    def test_an_absent_reel_row_does_not_refuse(self, client, serve, rows):
+        # A video post with no `pulse_reels` row is legitimate —
+        # `pulse_reel_payload` synthesises one from the post and serves it — so
+        # treating the absence as evidence would black out a real population. The
+        # opposite of the post read, deliberately: there, absence refuses.
+        rows.rows[5] = post_row()
+
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"]
+        assert serve.called
+        assert "pulse_reels" in rows.tables, (
+            "the reel read never happened, so this test proves nothing about how "
+            "an absent row is treated"
+        )
+
+    def test_a_cleared_reel_over_a_cleared_post_is_served(self, client, serve, rows):
+        rows.rows[5] = post_row(body="check out these trainers")
+        rows.reels[5] = reel_row(caption="finally got the new running shoes")
+
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"]
+        assert serve.called
+
+    def test_a_captionless_reel_is_served_on_the_strength_of_its_rows(
+        self, client, serve, rows
+    ):
+        # The `assess`-instead-of-`assess_adjacency` mutant, in the reel's shape: a
+        # reel with no caption and no tags is a large and entirely ordinary
+        # population — `reelContext.ts` returns a bare category for it — and
+        # `assess` would refuse every one of them for having no derivable subject.
+        rows.rows[5] = post_row()
+        rows.reels[5] = reel_row()
+
+        assert ask(client, "reels", None, post_id=5).get_json()["placements"]
+        assert serve.called
+
+    def test_the_inverted_safety_score_is_not_fed_in_as_risk(self, client, serve, rows):
+        # `pulse_reels.safety_score` defaults to 100 and higher is *better*, the
+        # opposite of `pulse_posts.risk_score`. A projection that included it
+        # under the wrong name would refuse every healthy reel, so the column list
+        # must not name it and the assessment must read an absent risk as zero.
+        assert not any("safety_score" in expr for _, expr in routes._REEL_COLUMNS)
+        assert suitability.assess_adjacency(reel_row())["permitted"]
+
+    def test_a_refused_post_never_reaches_the_reel_read(self, client, serve, rows):
+        # Ordering, asserted because it is the cheap direction: a post that has
+        # already refused must not spend a second query to be refused again.
+        rows.rows[5] = post_row(body=BEREAVEMENT_BODY)
+        rows.reels[5] = reel_row()
+
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"] == []
+        assert rows.tables == ["pulse_posts"], rows.statements
+
+    def test_the_other_content_surfaces_do_not_read_a_reel(self, client, serve, rows):
+        # `post_detail` and `feed` are not reels. A reel row attached to the same
+        # post is real data — a reel *is* a post — and reading it there would apply
+        # a reel's moderation state to a screen that is showing the post.
+        rows.rows[5] = post_row()
+        rows.reels[5] = reel_row(caption=BEREAVEMENT_CAPTION)
+
+        for surface in sorted(suitability.CONTENT_SURFACES - {"reels"}):
+            rows.statements.clear()
+            assert ask(client, surface, BENIGN, post_id=5).get_json()["placements"]
+            assert rows.tables == ["pulse_posts"], f"{surface}: {rows.statements}"
+
+
+class TestAFailedReelReadIsNotAVerdictEither:
+    """A reels-only database failure must not black out a judged-clean post."""
+
+    class _PostsOnly(ContentRows):
+        """Answers the post read and fails the reel read.
+
+        Two tables, one of them broken, is the case a single `fail` flag cannot
+        express — and it is the one that matters: `pulse_reels` is the younger
+        table and the two reads are separate queries.
+        """
+
+        def execute(self, sql, params=()):
+            if "pulse_reels" in sql:
+                self.statements.append(sql)
+                raise RuntimeError("the reels table is having a bad minute")
+            super().execute(sql, params)
+
+    @pytest.fixture
+    def rows(self) -> ContentRows:
+        return self._PostsOnly({5: post_row(body="ordinary skate video")})
+
+    def test_the_request_is_served_as_before(self, client, serve, rows):
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"]
+        assert serve.called
+        assert "pulse_reels" in rows.tables
+
+    def test_the_post_row_still_refuses_when_the_reel_read_fails(
+        self, client, serve, rows
+    ):
+        rows.rows[5] = post_row(body=BEREAVEMENT_BODY)
+
+        assert ask(client, "reels", BENIGN, post_id=5).get_json()["placements"] == []
+        assert not serve.called
+
+    def test_the_failure_is_logged_as_a_failure(self, client, caplog):
+        with caplog.at_level("WARNING"):
+            ask(client, "reels", BENIGN, post_id=5)
+
+        assert any("COMMERCE_DISCOVERY_REEL_READ_FAILED" in record.getMessage()
+                   for record in caplog.records)

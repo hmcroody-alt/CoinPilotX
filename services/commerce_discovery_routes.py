@@ -280,11 +280,39 @@ def _anchor_context(cur, listing_id: int) -> dict:
 _POST_COLUMNS = ("post_type", "moderation_status", "risk_score",
                  "title", "body", "ai_summary", "tags_json", "ai_tags_json")
 
+#: The ``pulse_reels`` columns the assessment reads, as ``(key, expression)``.
+#:
+#: A reel is not a ``pulse_posts`` row — it is a ``pulse_reels`` row *joined* to
+#: one — and the half of it that matters here lives on the reel. ``caption`` is
+#: the field a viewer reads: ``pulse_reel_payload`` sets
+#: ``caption = reel.caption or post.body``, preferring the reel's own words
+#: because a reel's post body is routinely empty. Reading only the post row on
+#: this surface would therefore be a half-blind check.
+#:
+#: The two ``COALESCE``es copy ``pulse_reel_payload``'s own convention for the
+#: same columns. Measured against production: all 71 reels are ``approved`` with
+#: no NULLs, so this is convention-following rather than load-bearing — but
+#: ``moderation_status`` is an ``add_columns_if_missing`` addition rather than an
+#: original column, and a NULL read as ``""`` would fail the cleared-states check
+#: and refuse every reel on a database that predates the backfill.
+#:
+#: Deliberately absent: ``safety_score``. It is **inverted** relative to
+#: ``risk_score`` — 100 is the healthy default — so feeding it in under that name
+#: would refuse every good reel and clear every dangerous one. ``post_type``,
+#: ``title``, ``body`` and ``risk_score`` are absent because a reel row has none
+#: of them; they belong to the post row, which is assessed separately.
+_REEL_COLUMNS = (
+    ("caption", "caption"),
+    ("category", "category"),
+    ("ai_tags_json", "ai_tags_json"),
+    ("moderation_status", "COALESCE(moderation_status,'approved')"),
+)
+
 #: Three outcomes, kept distinct because two of them must not be treated alike.
-#: A post that is *gone* is evidence; a post we could not *read* is not.
-_POST_FOUND = "found"
-_POST_ABSENT = "absent"
-_POST_UNREADABLE = "unreadable"
+#: A row that is *gone* is evidence; a row we could not *read* is not.
+_ROW_FOUND = "found"
+_ROW_ABSENT = "absent"
+_ROW_UNREADABLE = "unreadable"
 
 
 def _content_post_id(payload: dict) -> int:
@@ -312,7 +340,7 @@ def _content_post(cur, post_id: int) -> tuple[str, dict]:
     """``(outcome, row)`` for one ``pulse_posts`` row, by id.
 
     Deleted posts are not returned: ``deleted_at IS NULL`` is in the query rather
-    than checked afterwards, so a tombstoned post is :data:`_POST_ABSENT` and
+    than checked afterwards, so a tombstoned post is :data:`_ROW_ABSENT` and
     takes the refusal path with everything else the server cannot see.
 
     Visibility is deliberately *not* filtered. This is not an authorization read
@@ -323,7 +351,7 @@ def _content_post(cur, post_id: int) -> tuple[str, dict]:
     private posts achieved by accident.
     """
     if not post_id:
-        return _POST_ABSENT, {}
+        return _ROW_ABSENT, {}
     try:
         cur.execute(
             "SELECT " + ", ".join(_POST_COLUMNS) +
@@ -332,26 +360,71 @@ def _content_post(cur, post_id: int) -> tuple[str, dict]:
         )
         row = cur.fetchone()
     except Exception:
-        # Not `_POST_ABSENT`. A failed read is not evidence that the post is
+        # Not `_ROW_ABSENT`. A failed read is not evidence that the post is
         # unsuitable, and conflating the two would turn one bad minute on the
         # database into commerce disappearing from every post page — while the
         # posts that genuinely need suppressing carried on being served for as
         # long as the query worked.
         LOGGER.warning("COMMERCE_DISCOVERY_POST_READ_FAILED post_id=%s",
                        post_id, exc_info=True)
-        return _POST_UNREADABLE, {}
+        return _ROW_UNREADABLE, {}
     if not row:
-        return _POST_ABSENT, {}
+        return _ROW_ABSENT, {}
     # row_values, not tuple(row): iterating a Postgres row yields column *names*,
     # so zipping the raw row would build `{"post_type": "post_type", ...}` and the
     # scan would run over this module's own column list in production only.
     values = db_module.row_values(row)
     if len(values) != len(_POST_COLUMNS):
-        return _POST_UNREADABLE, {}
-    return _POST_FOUND, dict(zip(_POST_COLUMNS, values))
+        return _ROW_UNREADABLE, {}
+    return _ROW_FOUND, dict(zip(_POST_COLUMNS, values))
 
 
-def _content_refusal(cur, payload: dict, context: dict) -> Optional[dict]:
+def _content_reel(cur, post_id: int) -> tuple[str, dict]:
+    """``(outcome, row)`` for the ``pulse_reels`` row attached to a post.
+
+    Keyed by ``post_id`` and not by the reel's own id, because ``post_id`` is
+    what the client can be asked for on both surfaces — the id a reel client
+    holds is ``pulse_reels.id``, a different id space from ``pulse_posts.id``, and
+    accepting whichever one a caller felt like sending is how a reel id silently
+    reads a stranger's post. ``pulse_reels.post_id`` is ``UNIQUE``, so this is a
+    single-row lookup on an indexed column, and ``pulse_reel_payload`` already
+    treats it as one.
+
+    ``status`` is filtered here rather than assessed, matching the post read: a
+    deleted reel is :data:`_ROW_ABSENT`. ``moderation_status`` is *not* filtered,
+    because it is the thing being judged — note that ``pulse_reel_payload`` only
+    withholds ``blocked``, so a ``needs_review`` reel is served to viewers today
+    and would pass unexamined if this query filtered on the same predicate the
+    payload does.
+    """
+    if not post_id:
+        return _ROW_ABSENT, {}
+    keys = tuple(key for key, _ in _REEL_COLUMNS)
+    try:
+        cur.execute(
+            "SELECT " + ", ".join(expr for _, expr in _REEL_COLUMNS) +
+            " FROM pulse_reels WHERE post_id=?"
+            " AND COALESCE(status,'active')!='deleted' LIMIT 1",
+            (int(post_id),),
+        )
+        row = cur.fetchone()
+    except Exception:
+        # Same reasoning as the post read, and it matters more here: this table
+        # is younger than the post table and the two reads are separate queries,
+        # so a reels-only failure must not black out a surface the post read was
+        # perfectly able to judge.
+        LOGGER.warning("COMMERCE_DISCOVERY_REEL_READ_FAILED post_id=%s",
+                       post_id, exc_info=True)
+        return _ROW_UNREADABLE, {}
+    if not row:
+        return _ROW_ABSENT, {}
+    values = db_module.row_values(row)
+    if len(values) != len(keys):
+        return _ROW_UNREADABLE, {}
+    return _ROW_FOUND, dict(zip(keys, values))
+
+
+def _content_refusal(cur, payload: dict, context: dict, surface: str) -> Optional[dict]:
     """The verdict that refuses this content request, or ``None`` to serve it.
 
     Called before retrieval, deliberately. A refused request must cost no
@@ -397,6 +470,30 @@ def _content_refusal(cur, payload: dict, context: dict) -> Optional[dict]:
     caption-less post — the same population the wire check deliberately spares.
     This is the same choice ``suitability.annotate`` makes for the feed.
 
+    **The reel**, on ``reels`` only. A reel is a ``pulse_reels`` row joined to a
+    ``pulse_posts`` row, and the words the viewer actually reads are on the reel:
+    ``pulse_reel_payload`` sets ``caption = reel.caption or post.body``. So on
+    that surface the post row alone answers about a field the screen may not even
+    be showing, and a bereavement said in a reel caption over an empty post body
+    would read as a post with nothing in it. Both rows are assessed and **either**
+    may refuse.
+
+    Two rows rather than one merged row, because merging needs a winner for
+    ``moderation_status`` and there is no right answer: a reel cleared over a post
+    that was not, or the reverse, must both refuse, and whichever way the merge
+    resolved would silently discard one of the two states. The cost is that a
+    :data:`suitability.CORROBORATED` match spanning a reel's caption and its
+    post's body is not seen — accepted, and not really a loss, because the caption
+    *replaces* the body in the payload rather than adding to it. The two texts are
+    alternatives, so scanning them apart is what matches the screen.
+
+    An **absent** reel row does not refuse, which is the one place this departs
+    from the post read. A video post with no ``pulse_reels`` row is legitimate —
+    ``pulse_reel_payload`` synthesises one from the post and serves it — so
+    treating the absence as evidence would refuse a real, healthy population. The
+    post row has already been read and judged by that point, so nothing is
+    unexamined; an absent reel adds no text, not an unknown one.
+
     The precedent for reading server-side what the body already offered is
     :func:`_anchor_context`, which replaces a client-described product taxonomy
     with the listing's own for the same reason in a different shape.
@@ -419,10 +516,10 @@ def _content_refusal(cur, payload: dict, context: dict) -> Optional[dict]:
         return None
 
     outcome, row = _content_post(cur, post_id)
-    if outcome == _POST_UNREADABLE:
+    if outcome == _ROW_UNREADABLE:
         return None
 
-    # `_POST_ABSENT` arrives here as an empty row on purpose rather than as its
+    # `_ROW_ABSENT` arrives here as an empty row on purpose rather than as its
     # own branch: `assess_adjacency({})` already answers NO_SUBJECT with "no
     # content was supplied to assess", which is exactly the situation — the
     # client named a post that is deleted, tombstoned, or an id from a table this
@@ -432,7 +529,23 @@ def _content_refusal(cur, payload: dict, context: dict) -> Optional[dict]:
     # requests where it is least trustworthy. The cost of refusing is a missing
     # product row on a screen showing a post our own database says is gone.
     row_verdict = suitability.assess_adjacency(row)
-    return None if row_verdict["permitted"] else row_verdict
+    if not row_verdict["permitted"]:
+        return row_verdict
+
+    if surface != "reels":
+        return None
+
+    # Reached only after the post row cleared, so this can add a refusal but can
+    # never overturn one — which is the whole of "either may refuse" in code.
+    reel_outcome, reel_row = _content_reel(cur, post_id)
+    if reel_outcome != _ROW_FOUND:
+        # Absent *and* unreadable serve, for the two different reasons in the
+        # docstring: an absent reel is a legitimate video post, an unreadable one
+        # is a database we could not ask. Neither is evidence.
+        return None
+
+    reel_verdict = suitability.assess_adjacency(reel_row)
+    return None if reel_verdict["permitted"] else reel_verdict
 
 
 def _request_meta() -> dict:
@@ -498,7 +611,7 @@ def commerce_discovery_serve(surface):
         elif surface in suitability.CONTENT_SURFACES:
             # The whole rule, and why it is two checks rather than one, is in
             # `_content_refusal`'s docstring. It runs before retrieval.
-            verdict = _content_refusal(cur, payload, context)
+            verdict = _content_refusal(cur, payload, context, surface)
             if verdict is not None:
                 # `_empty()`, the same answer opted-out and rate-limited get.
                 # The client has one rendering path and no error branch, so a

@@ -27,6 +27,8 @@
  * empty map means Reels renders exactly what it rendered before the feature
  * existed.
  */
+import fs from "fs";
+import path from "path";
 import { act, renderHook, waitFor } from "@testing-library/react-native";
 import { fetchCommercePlacements, recordCommerceFeedback } from "../../api/commerceDiscovery";
 import type { CommercePlacement, CommerceServeResult } from "../../api/commerceDiscovery";
@@ -251,6 +253,151 @@ describe("useReelsCommerce — §8 context matching", () => {
     expect(fetchPlacements.mock.calls[1][1]?.context).toEqual({
       topic: `about ${refreshed[REELS_LEAD_IN]}`
     });
+  });
+});
+
+/**
+ * Naming the reel, not just describing it.
+ *
+ * `reelCommerceContext` caps every field at 80 characters, so a caption that opens
+ * with a preamble puts the words the suitability rule exists to catch past the cut
+ * — and `moderation_status` is not a field a client sends at all. The id lets the
+ * server read the `pulse_reels` row and judge that instead of this module's
+ * summary of it. The only effect of sending it is that the response may become
+ * empty, so every test here is about the *request*.
+ */
+describe("useReelsCommerce — naming the reel, not just describing it", () => {
+  it("sends the carrying reel's post id alongside its context", async () => {
+    const resolvePostId = jest.fn(() => 31);
+    const resolveContext = jest.fn((reelId: string) => ({ topic: `about ${reelId}` }));
+    const { result } = renderHook(() =>
+      useReelsCommerce({ reelIds: REEL_IDS, resolveContext, resolvePostId })
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    // The same reel both resolvers were asked about — the one the chip lands on.
+    expect(resolvePostId).toHaveBeenCalledWith(CARRIER);
+    expect(resolveContext).toHaveBeenCalledWith(CARRIER);
+    const [, options] = fetchPlacements.mock.calls[0];
+    expect(options?.postId).toBe(31);
+    expect(options?.context).toEqual({ topic: `about ${CARRIER}` });
+  });
+
+  it("sends the id even when the reel has nothing to say about itself", async () => {
+    // The reason this is a second resolver rather than a field on the context: a
+    // reel with no caption and no tags returns a null context, and that is
+    // exactly the reel whose row the server most needs to read for itself.
+    const { result } = renderHook(() =>
+      useReelsCommerce({
+        reelIds: REEL_IDS,
+        resolveContext: () => null,
+        resolvePostId: () => 31
+      })
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    const [, options] = fetchPlacements.mock.calls[0];
+    expect(options?.context).toBeUndefined();
+    expect(options?.postId).toBe(31);
+  });
+
+  it("truncates the caption on the wire but names the reel that carries it", async () => {
+    // The measured shape, in a reel's clothing: the sensitive words are past the
+    // 80-character cut, so the context alone reads as permitted and only the id
+    // can put the real caption in front of the rule.
+    const caption =
+      "Posting this one for my dad. We lost him on Tuesday morning and he loved " +
+      "this song more than anything. Rest in peace.";
+    const { result } = renderHook(() =>
+      useReelsCommerce({
+        reelIds: REEL_IDS,
+        resolveContext: () => ({ topic: caption.slice(0, 80) }),
+        resolvePostId: () => 31
+      })
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    const [, options] = fetchPlacements.mock.calls[0];
+    expect(options?.context?.topic).not.toContain("Rest in peace");
+    expect(options?.postId).toBe(31);
+  });
+
+  it.each([0, undefined, NaN])("omits the id rather than sending %p", async (value) => {
+    // A falsy id must be absent, not zero: the server reads a falsy `post_id` as
+    // "no id", so sending one would be a second spelling of the same thing — and
+    // `Number(undefined)` is NaN, which `JSON.stringify` turns into `null`.
+    const { result } = renderHook(() =>
+      useReelsCommerce({
+        reelIds: REEL_IDS,
+        resolvePostId: () => value as number
+      })
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    expect(fetchPlacements.mock.calls[0][1]).not.toHaveProperty("postId");
+  });
+
+  it("sends no id when the screen passes no resolver at all", async () => {
+    const { result } = renderHook(() => useReelsCommerce({ reelIds: REEL_IDS }));
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+    expect(fetchPlacements.mock.calls[0][1]).not.toHaveProperty("postId");
+  });
+
+  it("does not refetch when the screen rebuilds the id resolver every render", async () => {
+    // Same ref treatment as `resolveContext`, and for the same reason: the screen
+    // closes over the reel list, so this is a new function identity on every
+    // frame of a scroll.
+    const { result, rerender } = renderHook(
+      ({ tick }: { tick: number }) =>
+        useReelsCommerce({ reelIds: REEL_IDS, resolvePostId: () => 30 + tick }),
+      { initialProps: { tick: 0 } }
+    );
+    await waitFor(() => expect(result.current.chipByReelId.size).toBe(1));
+
+    rerender({ tick: 1 });
+    rerender({ tick: 2 });
+
+    expect(fetchPlacements).toHaveBeenCalledTimes(1);
+    expect(fetchPlacements.mock.calls[0][1]?.postId).toBe(30);
+  });
+
+  it("re-asks with the new carrier's id when a refresh moves the slot", async () => {
+    const postIdByReelId: Record<string, number> = { [CARRIER]: 31 };
+    const { result, rerender } = renderHook(
+      ({ ids }: { ids: string[] }) =>
+        useReelsCommerce({
+          reelIds: ids,
+          resolvePostId: (reelId: string) => postIdByReelId[reelId] || 0
+        }),
+      { initialProps: { ids: REEL_IDS } }
+    );
+    await waitFor(() => expect(fetchPlacements).toHaveBeenCalledTimes(1));
+    expect(fetchPlacements.mock.calls[0][1]?.postId).toBe(31);
+
+    const refreshed = ["n1", "n2", ...REEL_IDS];
+    postIdByReelId[refreshed[REELS_LEAD_IN]] = 44;
+    rerender({ ids: refreshed });
+    await waitFor(() => expect(fetchPlacements).toHaveBeenCalledTimes(2));
+    expect(fetchPlacements.mock.calls[1][1]?.postId).toBe(44);
+  });
+
+  it("is what ReelsScreen actually passes, and it passes post_id", () => {
+    // Everything above tests an option nothing is obliged to supply. A hook that
+    // accepts `resolvePostId` and a screen that never passes it leaves all eight
+    // tests above green and ships a build where the server still judges the
+    // 80-character summary. Asserted over source text for the same reason
+    // `reelChipEligibility` does it: the failure is an omission, and an omission
+    // raises nothing at runtime.
+    const screen = fs.readFileSync(
+      path.resolve(__dirname, "..", "..", "screens", "ReelsScreen.tsx"),
+      "utf8"
+    );
+    expect(screen).toMatch(/resolvePostId:\s*resolveCommercePostId/);
+    // `post_id`, not `id`. The map is keyed by `String(reel.id)` — the reel's own
+    // id — and the two id spaces overlap numerically, so reading `.id` here would
+    // send a number that looks perfectly valid and names an unrelated post.
+    expect(screen).toMatch(/resolveCommercePostId\s*=\s*useCallback\([\s\S]{0,200}?\.post_id/);
+    expect(screen).not.toMatch(/resolveCommercePostId\s*=\s*useCallback\([\s\S]{0,200}?get\(reelId\)\?\.id\b/);
   });
 });
 
