@@ -158,6 +158,118 @@ def test_the_vocabulary_still_names_real_functions():
     )
 
 
+def test_the_setup_exclusions_still_name_real_functions():
+    """Guard the guard, for the exclusion set rather than the vocabulary.
+
+    `SETUP_HELPERS` is the list of functions the delegation walk refuses to enter,
+    and it goes stale in the dangerous direction. A vocabulary name that stops
+    naming anything makes the detector blind, and blind reads as `unknown`, which
+    is loud. A setup name that stops naming anything makes the walk cross into
+    schema bootstrap again, and that reads as `admin` on every ungated route:
+    quiet, plausible, and wrong the one way this module promises not to be. Rename
+    `init_db` and nothing else in the tree would notice.
+    """
+    undefined = route_auth.undefined_setup_helpers(ROOT)
+    assert undefined == [], (
+        f"services/route_auth.py excludes helpers from the delegation walk that "
+        f"no longer define anything: {undefined}. Until the names match the tree, "
+        f"the walk can follow schema setup into the owner-admin bootstrap and "
+        f"classify every unauthenticated route as admin."
+    )
+
+
+#: The view this pins the rule against, and the setup chain it reaches. Every one
+#: of these is asserted to still have the shape the test depends on, because the
+#: failure to avoid here is not a red test -- it is this test quietly stopping
+#: reproducing the bug and passing forever.
+_OPEN_VIEW_ENDPOINT = "api_mobile_auth_login"
+_SETUP_ENTRY_POINT = "init_db"
+_SETUP_IMPL = "_init_db_impl"
+_PROVISIONING_HELPER = "ensure_owner_admin_with_cursor"
+
+
+def test_setup_code_cannot_confer_auth_standing():
+    """An open route must not inherit `admin` standing from schema bootstrap.
+
+    Roughly 160 views open with a bare `init_db()`, and `init_db` is module-local
+    to `bot.py` exactly like the private helpers the delegation walk exists to
+    follow. It leads to `_init_db_impl` -- 8,800 lines of DDL -- and from there to
+    `ensure_owner_admin_with_cursor`, which provisions the owner administrator at
+    boot. So one admin-vocabulary *mention* anywhere in that subtree reclassifies
+    every ungated route as `admin` -- and on `main` one already does, so eight
+    endpoints classify `admin` today: `/api/mobile/auth/login`, registration,
+    recovery, password reset, email confirmation, the Brevo webhook and
+    `/reset-password`, the unauthenticated surface entire. An open route
+    presenting as protected is the one outcome `services/route_auth.py` is built
+    never to produce.
+
+    **Pinned by injecting the offending name rather than by asserting today's
+    answer**, though today's answer would also catch it. What triggers the live
+    case is a prose comment at `bot.py:124875` describing an `account_user_id`
+    column, because `_CALL` is a regex over source text and cannot tell a comment
+    from a call. A test keyed to that would go green the day somebody rewords the
+    comment, while the traversal stayed exactly as wrong. Injecting keeps the
+    assertion about the walk refusing to enter setup code, which is the property
+    being defended.
+
+    Which ingredient does the damage is worth knowing, because it is not the
+    obvious one: `_init_db_impl` cannot refuse anybody, so on its own it is only
+    `identity-without-refusal`. What upgrades it is `_caller_refuses` flowing
+    *down* from the view. The route's own rejection of a bad password is what
+    ends up vouching for the bootstrap.
+    """
+    view = bot.app.view_functions.get(_OPEN_VIEW_ENDPOINT)
+    assert view is not None, (
+        f"{_OPEN_VIEW_ENDPOINT} is not registered, so this test is measuring "
+        "nothing. It is a plain bot.py route, not an optional pack -- if it moved "
+        "or was renamed, point this test at another view that is unauthenticated "
+        "by design and opens with init_db()."
+    )
+    view_source = route_auth.view_source(view)
+    assert f"{_SETUP_ENTRY_POINT}(" in view_source, (
+        f"{_OPEN_VIEW_ENDPOINT} no longer calls {_SETUP_ENTRY_POINT}(), so the "
+        "shape under test is gone and this test would pass vacuously. Find "
+        "another view that still opens with it, or delete this test with the "
+        "exclusion set it guards."
+    )
+
+    setup_impl = getattr(bot, _SETUP_IMPL, None)
+    assert setup_impl is not None, (
+        f"bot.{_SETUP_IMPL} no longer exists. Whatever schema bootstrap replaced "
+        f"it needs to be in route_auth.SETUP_HELPERS and named here."
+    )
+    assert f"{_PROVISIONING_HELPER}(" in route_auth.view_source(setup_impl), (
+        f"{_SETUP_IMPL} no longer calls {_PROVISIONING_HELPER}(), which is the "
+        "call that makes admin standing reachable from schema setup at all. This "
+        "test injects that name to reproduce the defect; if the call is gone, the "
+        "injection reproduces nothing and this test is vacuous. Re-point it at "
+        "whatever the bootstrap calls now."
+    )
+
+    # Simulate the one-line change: an admin-vocabulary name appearing inside the
+    # bootstrap. Mutated and restored rather than parameterised, because the
+    # tables are module-level by design -- see the note on _STATE for why nothing
+    # in this file takes fixtures.
+    original = dict(route_auth.IDENTITY_HELPERS)
+    try:
+        route_auth.IDENTITY_HELPERS[_PROVISIONING_HELPER] = route_auth.AUTH_ADMIN
+        kind, evidence = route_auth.classify_view(view)
+    finally:
+        route_auth.IDENTITY_HELPERS.clear()
+        route_auth.IDENTITY_HELPERS.update(original)
+
+    assert kind != route_auth.AUTH_ADMIN, (
+        f"{_OPEN_VIEW_ENDPOINT} classified as {kind} on the strength of schema "
+        f"bootstrap code:\n      {evidence}\n\n"
+        f"/api/mobile/auth/login is unauthenticated by design. The delegation "
+        f"walk crossed into {_SETUP_ENTRY_POINT}(), which every ungated view "
+        f"calls, and took the admin helper it found in the provisioning code "
+        f"underneath as evidence about the request. Setup code establishes state; "
+        f"it never evaluates a caller, and it must not be able to vouch for one. "
+        f"Add the offending helper to route_auth.SETUP_HELPERS."
+    )
+
+
 def test_new_routes_must_declare_their_auth():
     """Default-deny. A route not in the baseline must say what it is."""
     baseline, current = load_baseline(), audit_by_endpoint()
