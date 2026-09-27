@@ -60,6 +60,7 @@ os.environ["BUSINESS_OS_SUPPLIERS_CJ"] = "1"
 os.environ["CJ_ENVIRONMENT_MODE"] = "SANDBOX"
 
 from services import db  # noqa: E402
+from services import marketplace_listing_lifecycle as lifecycle  # noqa: E402
 from services import marketplace_supplier_schema as supplier_schema  # noqa: E402
 from services import marketplace_variants as variants  # noqa: E402
 from services.business_os.suppliers import (  # noqa: E402
@@ -73,6 +74,27 @@ OTHER_OWNER_ID = "4002"
 BUSINESS, STORE, CONNECTION = "biz-a", "store-a", "conn-a"
 OTHER_BUSINESS, OTHER_STORE, OTHER_CONNECTION = "biz-b", "store-b", "conn-b"
 CONTEXT = {"account_status": "active", "access_enabled": True}
+
+
+def assert_released_not_published(status):
+    """The landing state of an import the publish gate refused.
+
+    Every site that calls this used to read ``assert status == "draft"``, and
+    ``draft`` was doing two jobs at once: it was the spelling of "no buyer can
+    reach this", which is the property the test cares about, and it was also a
+    claim on the *merchant's* axis that they had not released the product --
+    which was false, because they had just tapped Import & publish, and which
+    kept 67 production listings out of the moderation queue.
+
+    So this asserts the two separately. The first line is the new behaviour and
+    would fail if the release were dropped; the second is the invariant that was
+    always the point, and it is written against
+    :data:`lifecycle.PUBLIC_STATUSES` rather than against the literal
+    ``"published"`` so that a future status added to that set cannot become
+    buyer-visible here without turning this red.
+    """
+    assert status == lifecycle.REVIEW_READY, status
+    assert status not in lifecycle.PUBLIC_STATUSES, status
 
 
 # ---------------------------------------------------------------------------
@@ -333,8 +355,14 @@ def test_import_creates_the_listing_in_the_merchants_store(provider):
     assert result["published"] is False
 
     listing = rows("SELECT * FROM marketplace_listings")[0]
-    assert listing["status"] == "draft"
+    # Not a draft: the merchant asked for this, the gate declined to finish it,
+    # and those are answers to two different questions. See the helper.
+    assert_released_not_published(listing["status"])
     assert listing["approval_status"] == "pending_review"
+    # And now that both columns say it, a moderator can actually see it. This is
+    # the half the old `draft` silently withheld -- `awaiting_moderation` is a
+    # conjunction, so the seeded `pending_review` above counted for nothing.
+    assert lifecycle.awaiting_moderation(listing) is True
     assert listing["title"] == "Cotton Tee"
     assert listing["seller_user_id"] in (int(OWNER_ID), OWNER_ID)
 

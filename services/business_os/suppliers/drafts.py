@@ -865,6 +865,45 @@ def publish(business_id, store_id, actor_user_id, connection_id, listing_id, *, 
     return result
 
 
+def _release_for_review(cur, listing_id, seller_user_id):
+    """Move an imported listing off ``draft`` and into "the merchant has asked".
+
+    The merchant's action was "Import & publish". That is a release, and it
+    already happened -- so the listing's own axis must say so even when the
+    publish gate declined to finish the job. Leaving it at ``draft`` states the
+    opposite of what the merchant did, and :mod:`services.business_os.marketplace.seller_metrics`
+    says why in its own words: a submitted listing filed under Drafts "would tell
+    them their publish did not work".
+
+    It was not a cosmetic lie either. :data:`lifecycle.MERCHANT_RELEASED_STATUSES`
+    excludes ``draft`` on purpose, so :func:`lifecycle.awaiting_moderation` was
+    false for every one of these rows. They carried ``approval_status =
+    'pending_review'`` -- the column's own ``DEFAULT``, not a claim anybody made
+    -- and no moderator could see them. Measured in production on 2026-09-27:
+    seller 1 held **67** such listings, every one of them reading "pending review"
+    and none of them in any queue. They would have sat there forever, because the
+    only route out was the merchant opening each product and submitting it by
+    hand.
+
+    This does **not** widen what a buyer can reach, and that is the property to
+    check on any edit here. ``review_ready`` is not in
+    :data:`lifecycle.PUBLIC_STATUSES`, so :func:`lifecycle.is_public` is false
+    before and after; the gate still refused, the listing is still unsellable,
+    and the codes saying why still travel to the merchant unmodified. The only
+    thing that changes is the answer to "did the merchant ask" -- from a wrong no
+    to a right yes.
+
+    ``published_at`` is cleared because this is also the landing state for a
+    publish that wrote and did not stick, where the column *was* set. Clearing it
+    unconditionally keeps one function correct for both callers rather than
+    making the caller remember which case it is in.
+    """
+    cur.execute(
+        "UPDATE marketplace_listings SET status=?, published_at=NULL, updated_at=? "
+        "WHERE id=? AND seller_user_id=?",
+        (lifecycle.REVIEW_READY, _iso(), listing_id, int(seller_user_id)))
+
+
 def autopublish(cur, listing_id, seller_user_id, shipping_cents=None) -> dict:
     """Finish a freshly imported listing: run the gate, publish, read it back.
 
@@ -888,6 +927,11 @@ def autopublish(cur, listing_id, seller_user_id, shipping_cents=None) -> dict:
     verdict, result = _publish_core(cur, listing_id, seller_user_id, listing,
                                     shipping_cents)
     if result is None:
+        # Refused, and released anyway. See `_release_for_review`: the gate's
+        # verdict is about whether a buyer may see this, and the merchant's
+        # `status` is about whether they asked. A no to the first is not a no to
+        # the second, and writing it as one is what buried 67 listings.
+        _release_for_review(cur, listing_id, seller_user_id)
         return {"published": False, "problems": verdict["problems"]}
     readback = verify_published(cur, listing_id, seller_user_id)
     if not readback["verified"]:
@@ -898,14 +942,17 @@ def autopublish(cur, listing_id, seller_user_id, shipping_cents=None) -> dict:
         # roll back. The caller is mid-transaction with the listing it just
         # created: a `rollback` here would discard the import as well, so the
         # merchant would lose a product that imported perfectly well over a
-        # publish that did not stick. Writing the row back to `draft` keeps the
-        # import and makes the committed state match what this function is about
-        # to report -- a needs-attention draft. Anything else commits a row
-        # claiming `published` while the merchant is told it is not.
-        cur.execute(
-            "UPDATE marketplace_listings SET status='draft', published_at=NULL, "
-            "updated_at=? WHERE id=? AND seller_user_id=?",
-            (_iso(), listing_id, int(seller_user_id)))
+        # publish that did not stick. Writing the row back keeps the import and
+        # makes the committed state match what this function is about to report.
+        # Anything else commits a row claiming `published` while the merchant is
+        # told it is not.
+        #
+        # Back to `review_ready`, not to `draft`. This branch is the one case
+        # where the merchant is told something they cannot act on
+        # (`PUBLISH_NOT_PERSISTED`), so filing it under their unfinished work
+        # would be doubly wrong: they released it, and the reason it is not live
+        # is ours.
+        _release_for_review(cur, listing_id, seller_user_id)
         return {"published": False, "problems": readback["problems"]}
     return {"published": True, "problems": [], **result}
 

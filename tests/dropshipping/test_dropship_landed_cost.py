@@ -71,7 +71,7 @@ from tests.marketplace_production_listings import seed_production_listings  # no
 from tests.dropshipping.test_dropship_import_pipeline import (  # noqa: E402
     BUSINESS, CONNECTION, CONTEXT, FakeProvider, OTHER_BUSINESS, OTHER_CONNECTION,
     OTHER_OWNER_ID, OTHER_STORE, OWNER_ID, STORE, _seed_connection, _seed_tenancy,
-    cj_product)
+    assert_released_not_published, cj_product)
 
 # That import ran the pipeline module's header, which pointed DATABASE_URL at
 # *its* temp file. db resolves the sqlite path per call, so without this every
@@ -672,8 +672,12 @@ def test_a_listing_that_only_loses_money_once_freight_is_counted_cannot_publish(
     with pytest.raises(SupplierError):
         drafts.publish(BUSINESS, STORE, OWNER_ID, CONNECTION, listing_id,
                        context=CONTEXT)
-    assert rows("SELECT status FROM marketplace_listings WHERE id=?",
-                (listing_id,))[0]["status"] == "draft"
+    # Unchanged by the refusal, and still not a status any buyer query reads.
+    # The import already released it for review; an explicit publish that the
+    # gate turns down does not walk that back.
+    assert_released_not_published(
+        rows("SELECT status FROM marketplace_listings WHERE id=?",
+             (listing_id,))[0]["status"])
 
 
 def test_the_same_listing_publishes_for_a_store_that_declared_no_freight(provider):

@@ -33,13 +33,27 @@ listing and its variants, bind the supplier mapping, then hand the listing to
 An ordinary product comes out ``PUBLISHED``. One that genuinely cannot be sold
 safely comes out ``NEEDS_ATTENTION`` carrying the specific codes that stopped it.
 
+And neither of them comes out a *draft*. "Import & publish" is the merchant
+releasing the product, so the listing's own axis says released either way --
+``published`` when the gate agreed, ``review_ready`` when it did not. A refusal
+is an answer about buyers, not a retraction of what the merchant asked for, and
+writing it as ``draft`` said the opposite: it filed the product under the
+merchant's unfinished work and, because ``draft`` is excluded from
+``lifecycle.MERCHANT_RELEASED_STATUSES``, kept it out of the moderation queue
+too. Seller 1 was holding 67 such rows in production, each one reading
+"pending review" and sitting in no queue at all. :func:`drafts._release_for_review`
+carries the argument in full. The one exception is a store that has turned
+auto-publish *off*: there the merchant has said they want to look first, and a
+draft is exactly what they asked for.
+
 What did *not* change is who decides. :func:`_create_draft_listing` still writes
 ``status='draft'`` as a SQL literal, and this module still contains no publish
 rule of its own: every question about whether a buyer may see something is
 answered by :mod:`drafts`, in the same function the merchant's explicit Publish
-button calls. The insert cannot publish, the gate can, and the gate is one
-implementation shared by both entry points (§32). A refusal is therefore never
-"the importer disagreed with the publisher" -- there is only one publisher.
+button calls. The insert cannot publish, it cannot release either, the gate can,
+and the gate is one implementation shared by both entry points (§32). A refusal
+is therefore never "the importer disagreed with the publisher" -- there is only
+one publisher.
 
 The trust boundary above is unaffected by any of it. Auto-publishing widens what
 the server *does* with supplier facts; it does not widen what the client may
@@ -111,13 +125,19 @@ PUBLISHED = "PUBLISHED"
 #: Nothing was created and nothing was read, so these rows stay in the cart and
 #: write no audit entry. Importing again picks them up.
 DEFERRED = "DEFERRED"
-#: Imported and left as a draft because publishing it would not have been safe.
-#: Carries ``problems`` -- :mod:`drafts`' own validation codes, unmodified -- so
-#: the merchant is told the actual reason rather than "needs attention".
+#: Imported and held back from buyers because publishing it would not have been
+#: safe. Carries ``problems`` -- :mod:`drafts`' own validation codes, unmodified
+#: -- so the merchant is told the actual reason rather than "needs attention".
 #:
 #: Distinct from the refusals above, and the distinction is the merchant's:
 #: ``NO_MEDIA`` and friends mean *nothing was created*, while this means the
 #: product is in their store and is one specific fix away from selling.
+#:
+#: The row lands in ``review_ready``, not ``draft``. It used to land in ``draft``,
+#: which read as "the merchant has not finished with this" about a product they
+#: had just asked to publish -- and, because
+#: ``lifecycle.MERCHANT_RELEASED_STATUSES`` excludes ``draft``, kept it out of the
+#: moderation queue as well. See :func:`drafts._release_for_review`.
 NEEDS_ATTENTION = "NEEDS_ATTENTION"
 
 OUTCOMES = (IMPORTED, ALREADY_EXISTS, PROVIDER_UNAVAILABLE, INVALID_PRODUCT,
@@ -635,7 +655,13 @@ def _import_one(conn, *, seller_user_id, business_id, store_id,
     if not finish["published"]:
         return NEEDS_ATTENTION, {
             **payload,
-            "status": "DRAFT",
+            # `IN_REVIEW`, not `DRAFT`. The gate refused to publish and
+            # `autopublish` released the row anyway (`drafts._release_for_review`),
+            # because the merchant tapped Import & publish and a refusal to go
+            # live is not a retraction of that. Reporting `DRAFT` here would put
+            # the one wrong word back on the wire after the column stopped saying
+            # it.
+            "status": "IN_REVIEW",
             "published": False,
             # `drafts`' own codes, passed through unmodified. Translating them
             # here would give the merchant a second, less precise vocabulary for
