@@ -16,6 +16,8 @@
  * assertion that merely checked the button exists.
  */
 
+import { readFileSync } from "fs";
+import { join } from "path";
 import React from "react";
 import { fireEvent, render } from "@testing-library/react-native";
 
@@ -146,6 +148,34 @@ describe("no other screen gains it", () => {
     expect(getByTestId("global-header-search")).toBeTruthy();
     expect(getByTestId("global-header-activity")).toBeTruthy();
     expect(getByTestId("global-header-profile")).toBeTruthy();
+  });
+});
+
+/**
+ * Everything above renders the header directly and hands it the prop — which is
+ * the only way to test the gating rule, and is exactly why none of it can see
+ * the one failure that actually shipped. The control is placed *by* its handler,
+ * so a Home screen that never passes one renders no button at all while every
+ * assertion above still passes, because each supplies its own.
+ *
+ * Not hypothetical: this slice was built, typechecked, tested green and
+ * installed on a simulator with the handler missing from `HomeScreen`, and the
+ * header had no storefront icon. Reading the source is the cheapest thing that
+ * catches it — rendering `HomeScreen` itself means standing up the feed, the
+ * composer, the drawer and ~20 API mocks to assert one prop.
+ */
+describe("HomeScreen supplies the handler that places it", () => {
+  const source = readFileSync(join(__dirname, "..", "..", "screens", "HomeScreen.tsx"), "utf8");
+
+  it("routes the header to the registered Marketplace tab", () => {
+    expect(source).toMatch(/const openMarketplaceTab = useCallback\(\(\) => navigation\.navigate\("Tabs", \{ screen: "Marketplace" \}\)/);
+  });
+
+  it("threads the handler through every link down to the global header", () => {
+    // HomeScreen → HomeHeader → HomeTopBar → LogiNexusGlobalHeader. Dropping any
+    // one link renders no button, and nothing else in this file would notice.
+    expect(source).toContain("onOpenMarketplace={openMarketplaceTab}");
+    expect(source.match(/onOpenMarketplace=\{onOpenMarketplace\}/g) || []).toHaveLength(2);
   });
 });
 
