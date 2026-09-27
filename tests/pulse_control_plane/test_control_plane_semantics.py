@@ -18,6 +18,7 @@ import datetime
 import functools
 import importlib
 import inspect
+import os
 import pathlib
 import re
 import sqlite3
@@ -1672,13 +1673,26 @@ class TestTheGateBlocksToday:
     def test_the_script_exits_one_when_blocked(self):
         import subprocess
 
+        # Exit 1 is the *blocked* verdict, which the script only reaches with no
+        # migration evidence to read. `--database-url` defaults to `DATABASE_URL`
+        # and then `DATABASE_PUBLIC_URL`, and `read_migrated` is Postgres-only, so
+        # a subprocess that inherits either one takes the read path and answers 3
+        # -- "could not read", deliberately not a blocker. Drop both instead of
+        # relying on their absence: the root conftest pins `DATABASE_URL` for the
+        # whole suite, and even before that an exported one failed this.
+        env = {
+            key: value
+            for key, value in os.environ.items()
+            if key not in ("DATABASE_URL", "DATABASE_PUBLIC_URL")
+        }
         proc = subprocess.run(
             [sys.executable, "scripts/capability_activation_check.py"],
             cwd=str(pathlib.Path(__file__).resolve().parents[2]),
             capture_output=True,
             text=True,
+            env=env,
         )
-        assert proc.returncode == 1
+        assert proc.returncode == 1, f"exit {proc.returncode}, stderr: {proc.stderr}"
         assert "READY: NO" in proc.stdout
 
 
