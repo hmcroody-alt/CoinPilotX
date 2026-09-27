@@ -27,7 +27,10 @@ So this file mints a real access token through `issue_mobile_security_tokens()`
 `_bot`, no injected verifier and no pre-set flag -- and asks the live gate. A
 test that sets the answer cannot fail; this one can.
 
-Run: python3 -m pytest tests/protection/test_native_bearer_write.py
+Run either way -- the protection runner uses the second:
+
+    python3 -m pytest tests/protection/test_native_bearer_write.py
+    python3 tests/protection/test_native_bearer_write.py
 """
 
 from __future__ import annotations
