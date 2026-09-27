@@ -2935,7 +2935,7 @@ def add_pwa_headers(response):
             # React's first paint over nodes React owns.
             spa_isolated = bool(getattr(g, "pulse_spa_response", False))
             gateway_isolated = request.path == "/admin/login" or spa_isolated
-            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js" not in html:
+            if not gateway_isolated and "</body>" in html.lower() and "/static/js/pulse_pwa_install.js?v=cache-sweep-20260927j" not in html:
                 # Bumped when the script's behaviour changes, not on a schedule.
                 # The file is served with a long cache lifetime, so a content
                 # change with the old query string reaches only first-time
@@ -2957,7 +2957,7 @@ def add_pwa_headers(response):
                 html = re.sub(r"</body>", pwa_install_script + "</body>", html, count=1, flags=re.I)
                 response.set_data(html)
                 response.headers.pop("Content-Length", None)
-            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js" not in html:
+            if not gateway_isolated and "</head>" in html.lower() and "/static/js/pulse_i18n.js?v=cache-sweep-20260927j" not in html:
                 i18n_script = '<script src="/static/js/pulse_i18n.js?v=cache-sweep-20260927j" defer></script>'
                 html = re.sub(r"</head>", i18n_script + "</head>", html, count=1, flags=re.I)
                 response.set_data(html)
@@ -44079,7 +44079,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>', "")
     if boot_profile == "core":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
@@ -44089,7 +44089,7 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
     if boot_profile == "shell_only":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
         rendered_html = rendered_html.replace('<script src="/static/js/time.js"></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js" defer></script>', "")
+        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=cache-sweep-20260927j"></script>', "")
     body_class = 'pulse-home-os' if request.path == '/pulse' else ''

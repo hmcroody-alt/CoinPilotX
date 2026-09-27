@@ -77,6 +77,14 @@ CACHE_PINNED_ASSETS = {
         "cache-sweep-20260927j",
         "38a99e03d858dcebb0e5912b74df1cfd96134b75ae0f45a9f3b342b30413d961",
     ),
+    "static/css/pulse_messages_v2.css": (
+        "emoji-primitive-20260927a",
+        "67ab9bbcef3a35510da9f15ea5aaf5cadeb0ac9c5351fcb287c2c0c9a3135b82",
+    ),
+    "static/css/pulse_messenger_media_viewer.css": (
+        "media-viewer-20260704a",
+        "b1ad05102509b862897b01d31ad05ea9a76eeb6349b8f679405009f4f29af53d",
+    ),
     "static/css/pulse_reaction_system.css": (
         "video-action-fit-20260927i",
         "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
@@ -100,6 +108,10 @@ CACHE_PINNED_ASSETS = {
     "static/css/pulsesoc_global_call_overlay.css": (
         "fullscreen-incoming-20260704",
         "816191de56d96455e5e48c8fb25742ec46212c938d4b9fc3afb755d9919a82fc",
+    ),
+    "static/css/pulsesoc_intelligence_center.css": (
+        "20260703c",
+        "d3613426dc60ab4cdb6f20857b704b271007b0f1134dff09c46d903757d2f79f",
     ),
     "static/js/admin_ops_center.js": (
         "opsv2-20260722i",
@@ -129,6 +141,14 @@ CACHE_PINNED_ASSETS = {
         "cache-sweep-20260927j",
         "2b8f78a12d5d938c110234ea9b96f3e0237489234bc4af1995ff3d8dcfca59e3",
     ),
+    "static/js/pulse_messages_v2.js": (
+        "emoji-primitive-20260927a",
+        "ee9be24bd54cbea1ed20c18c09efa7fc6827c51ab90ec45b3076284a9faa94e0",
+    ),
+    "static/js/pulse_messenger_media_viewer.js": (
+        "media-viewer-20260704a",
+        "8773815b3881a23e7fc3a0fd8bdc807c988e0b3c1bd2a501ab6c19ad5a25488b",
+    ),
     "static/js/pulse_pwa_install.js": (
         "cache-sweep-20260927j",
         "1075e13753e32b324ef746a0eb1ba1bf37716b188053bc1e9703a901b63b3a0a",
@@ -140,6 +160,10 @@ CACHE_PINNED_ASSETS = {
     "static/js/pulse_reaction_system.js": (
         "cache-sweep-20260927j",
         "0ce98ae4b1ab16da5578e154253841dd2d7a4b348600a5f7d17701cff9b4ecbb",
+    ),
+    "static/js/pulse_realtime.js": (
+        "web-capacity-20260619a",
+        "bbe5d8fcbfd94c90f299ebd91a17e2fec96aa831ea2945927d5f24d64d53b196",
     ),
     "static/js/pulse_search_bridge.js": (
         "cache-sweep-20260927j",
@@ -157,12 +181,58 @@ CACHE_PINNED_ASSETS = {
         "cache-sweep-20260927j",
         "d6dfa4bd27c573000815964c04e1adf076386c202912454582e4db8230c6b16b",
     ),
+    "static/js/pulsesoc_cart.js": (
+        "web-cart-checkout-20260927b",
+        "32225b5d4d3d004671aab2842464426de2f86ef042b2d5982e75f44bf971b51d",
+    ),
+    "static/js/pulsesoc_intelligence_center.js": (
+        "20260703c",
+        "96f793669f3c28fd7f23469a1b00685d719750cef5ca1094a7fbd9a2db99f595",
+    ),
 }
 
 
 def read(path: str) -> str:
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+TEMPLATES = os.path.join(REPO, "templates")
+# Only an `src=`/`href=` attribute actually delivers a file. The same path also
+# appears in `"..." not in html` dedup guards and in `script[src*="..."]` selectors,
+# which are deliberately token-agnostic and must not be read as a bare-URL delivery.
+ASSET_REF = re.compile(
+    r"""(?:src|href)\s*=\s*['"]"""
+    r"/static/((?:css|js)/[A-Za-z0-9_.-]+\.(?:css|js))(?:\?v=([\w.-]+))?"
+)
+
+
+def _asset_reference_sources() -> "dict[str, dict[str, set[str]]]":
+    """Every `/static/...` css/js reference, mapped path -> token -> where it came from.
+
+    bot.py is not the only place that links these files: `templates/` links them
+    too, and the two drifted. `pulsesoc-tokens.css` was referenced 15 times from
+    templates under a token six weeks older than the one bot.py served, which
+    means two separately-cached copies of one file and no way to bump both at
+    once. A token audit that reads only bot.py cannot see that.
+    """
+    sources: dict[str, dict[str, set[str]]] = {}
+    files = [BOT]
+    for root, _dirs, names in os.walk(TEMPLATES):
+        files.extend(
+            os.path.join(root, n)
+            for n in names
+            if n.endswith((".html", ".jinja", ".j2"))
+        )
+    for path in files:
+        try:
+            text = read(path)
+        except (OSError, UnicodeDecodeError):
+            continue
+        where = os.path.relpath(path, REPO)
+        for rel, token in ASSET_REF.findall(text):
+            sources.setdefault("static/" + rel, {}).setdefault(token or "", set()).add(where)
+    return sources
+
 
 
 def test_no_two_reactions_share_a_glyph():
@@ -393,12 +463,19 @@ def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
     """
     expected_token, expected_digest = CACHE_PINNED_ASSETS[relpath]
 
-    filename = relpath.rsplit("/", 1)[-1]
-    tokens = set(re.findall(re.escape(filename) + r"\?v=([\w.-]+)", read(BOT)))
-    assert tokens, f"{relpath} is no longer served with a ?v= token by bot.py"
+    by_token = _asset_reference_sources().get(relpath, {})
+    assert by_token, f"{relpath} is no longer referenced by bot.py or templates/"
+    untokenized = by_token.get("")
+    assert not untokenized, (
+        f"{relpath} is referenced without any ?v= token from "
+        f"{sorted(untokenized)}. That copy is cached under a bare URL with a "
+        "year-long immutable header, so no token bump can ever replace it."
+    )
+    tokens = set(by_token)
     assert len(tokens) == 1, (
-        f"{relpath} is served under more than one token {sorted(tokens)}; the copies "
-        "would be cached separately and one of them would be stale"
+        f"{relpath} is served under more than one token "
+        + "; ".join(f"{t!r} from {sorted(w)}" for t, w in sorted(by_token.items()))
+        + " -- the copies are cached separately, so bumping one leaves the other stale"
     )
 
     with open(os.path.join(REPO, relpath), "rb") as handle:
@@ -409,12 +486,13 @@ def test_a_changed_asset_must_carry_a_new_cache_token(relpath):
         pytest.fail(
             f"{relpath} changed but still ships as ?v={token}. Every browser that "
             "has already loaded that token keeps its old copy for a year, so this "
-            "change would never reach a returning visitor. Bump the token in bot.py "
+            "change would never reach a returning visitor. Bump the token wherever it "
+            "is referenced, and "
             f"and record the new digest in CACHE_PINNED_ASSETS: {digest}"
         )
     assert (token, digest) == (expected_token, expected_digest), (
         f"{relpath} is pinned to ?v={expected_token} in CACHE_PINNED_ASSETS but "
-        f"bot.py now serves ?v={token}. Update the pin to "
+        f"is now served as ?v={token}. Update the pin to "
         f"({token!r}, {digest!r})."
     )
 
@@ -436,12 +514,8 @@ def test_every_cache_busted_asset_is_pinned():
     Deriving the expected set from bot.py means a newly tokenized asset fails
     here until someone records its digest.
     """
-    served = {
-        "static/" + rel
-        for rel, _token in re.findall(
-            r"/static/((?:css|js)/[A-Za-z0-9_.-]+\.(?:css|js))\?v=([\w.-]+)", read(BOT)
-        )
-    }
+    sources = _asset_reference_sources()
+    served = {path for path, tokens in sources.items() if any(tokens)}
     unpinned = sorted(served - set(CACHE_PINNED_ASSETS))
     assert not unpinned, (
         f"{len(unpinned)} asset(s) are served with a ?v= token but absent from "
@@ -452,6 +526,6 @@ def test_every_cache_busted_asset_is_pinned():
 
     missing = sorted(set(CACHE_PINNED_ASSETS) - served)
     assert not missing, (
-        f"CACHE_PINNED_ASSETS pins {missing}, which bot.py no longer serves with "
+        f"CACHE_PINNED_ASSETS pins {missing}, which nothing serves with "
         "a ?v= token. Drop the entry, or restore the token it is guarding."
     )
