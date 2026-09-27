@@ -351,3 +351,134 @@
 @media (prefers-reduced-motion: reduce) {
   .pulse-emoji-panel { animation: none !important; }
 }
+
+/* ------------------------------------------------------------------ *
+ * The trigger — one appearance for every surface that opens the picker
+ * ------------------------------------------------------------------ *
+ *
+ * "One system, not seven unrelated emoji implementations" has to cover the
+ * button as well as the panel, or twelve surfaces end up with twelve different
+ * emoji buttons opening the same picker.
+ *
+ * Why a wrapper instead of a new grid column: nearly every composer on this
+ * site is a CSS grid with an explicit `grid-template-columns` written for
+ * exactly the children it had -- `minmax(0,1fr) 42px` on .comment-box,
+ * `46px 46px minmax(0,1fr) 48px` on .message-composer, and so on. Appending a
+ * trigger as a new child of any of those pushes it into an implicit second row,
+ * so rolling the primitive out would mean editing seven different column
+ * templates and re-verifying seven layouts. Wrapping the input instead keeps
+ * the composer's own grid untouched: the wrapper occupies the cell the input
+ * already had, and the trigger is positioned inside it. A new surface therefore
+ * ships a wrapper and an attribute, and nothing else.
+ *
+ * The existing per-composer rules are descendant selectors (`.comment-box
+ * input`, `.reel-comment-form input`), so they still reach the input through
+ * the wrapper. Rules written as `>` children of a composer would not, which is
+ * why this is checked per surface rather than assumed.
+ */
+.pulse-emoji-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/* Grid and flex parents both size the wrapper, not the input, so the input has
+   to fill it or a composer that used to stretch its field would collapse. */
+.pulse-emoji-field > input,
+.pulse-emoji-field > textarea {
+  width: 100% !important;
+  /* Room for the trigger. Keeps the caret and the placeholder clear of it.
+     Pinned for the same reason as the trigger's geometry: several composers set
+     the input's padding with `!important`, and text sliding under the button is
+     not a cosmetic defect -- it hides what the user typed. */
+  padding-inline-end: 44px !important;
+}
+
+/* `!important` here is not defensive habit, it is the only thing that works.
+ * Every composer this rolls out to already styles its buttons by element
+ * selector, and several of them shout:
+ *
+ *   .reel-inline-comment button { min-height: 42px !important; ... }
+ *   .reel-comment-form   button { width: 48px; border-radius: 50%; }
+ *   .comment-box         button { width: 42px; min-height: 40px; }
+ *
+ * Those are descendant selectors (0,1,1) and reach straight through the
+ * wrapper, so an unprefixed `.pulse-emoji-trigger` (0,1,0) loses every one of
+ * them and the trigger renders as a second Send button laid over the input --
+ * different geometry on each of twelve surfaces, which is the exact outcome
+ * "one system" exists to prevent. Geometry and paint are therefore pinned; only
+ * the properties a host might legitimately want to theme are left open.
+ */
+.pulse-emoji-field > .pulse-emoji-trigger {
+  position: absolute !important;
+  inset-inline-end: 4px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: 34px !important;
+  min-width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--pe-muted, #9fb5c0);
+  font-size: 19px !important;
+  font-weight: 400 !important;
+  line-height: 1 !important;
+  cursor: pointer;
+  z-index: 2;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+
+/* A textarea grows downward, so a vertically centred trigger drifts away from
+ * the line the user is typing on. Pin it to the last line instead.
+ *
+ * The offset is 22px, not the 4-5px used elsewhere, because a textarea draws a
+ * native resize grip in exactly that corner. At 5px the trigger sat on top of
+ * it and the field could no longer be dragged -- the primitive would have
+ * silently removed a browser affordance from every multi-line composer it
+ * touches. 22px clears the grip (~16px) with margin to spare. The horizontal
+ * inset stays put: `padding-inline-end` already reserves that column for the
+ * full height of the box, so lifting the button keeps it clear of the text.
+ */
+.pulse-emoji-field > textarea ~ .pulse-emoji-trigger {
+  top: auto !important;
+  bottom: 22px !important;
+  transform: none !important;
+}
+
+.pulse-emoji-field > .pulse-emoji-trigger:hover,
+.pulse-emoji-field > .pulse-emoji-trigger:focus-visible {
+  background: var(--pe-raised, rgba(255, 255, 255, .08)) !important;
+  color: var(--pe-text, #f2fbff);
+  transform: translateY(-50%) scale(1.06) !important;
+  outline: none !important;
+}
+
+.pulse-emoji-field > textarea ~ .pulse-emoji-trigger:hover,
+.pulse-emoji-field > textarea ~ .pulse-emoji-trigger:focus-visible {
+  transform: scale(1.06) !important;
+}
+
+.pulse-emoji-field > .pulse-emoji-trigger:focus-visible {
+  box-shadow: 0 0 0 2px var(--pe-accent, #6edff6) !important;
+}
+
+.pulse-emoji-field > .pulse-emoji-trigger[aria-expanded="true"] {
+  background: var(--pe-raised, rgba(255, 255, 255, .08)) !important;
+  color: var(--pe-text, #f2fbff);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-emoji-field > .pulse-emoji-trigger { transition: none !important; }
+  .pulse-emoji-field > .pulse-emoji-trigger:hover,
+  .pulse-emoji-field > .pulse-emoji-trigger:focus-visible { transform: translateY(-50%) !important; }
+  .pulse-emoji-field > textarea ~ .pulse-emoji-trigger:hover,
+  .pulse-emoji-field > textarea ~ .pulse-emoji-trigger:focus-visible { transform: none !important; }
+}
