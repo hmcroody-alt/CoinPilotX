@@ -31,6 +31,40 @@ def _ago(minutes=0, days=0, now=None):
     return ((now or _now()) - timedelta(minutes=minutes, days=days)).strftime(_TS)
 
 
+def _today(minutes_before_now=0, now=None):
+    """A timestamp guaranteed to fall inside ``now``'s own UTC calendar day.
+
+    ``_ago(minutes=...)`` is the wrong tool for any event a detector buckets by
+    calendar day, because subtracting minutes can cross UTC midnight. The
+    baselines in ``identity_detections`` do bucket that way, and deliberately:
+    ``_daily_counts`` builds history from days **1..14** back
+    (``_day(now - timedelta(days=i)) for i in range(1, days + 1)``), so today is
+    excluded from history and counted only by a separate ``_day(now)`` query.
+
+    So an event planted 30 minutes before a ``now`` of 00:12 UTC lands in
+    *yesterday's* history bucket. That does not merely lose the event -- it moves
+    it to the other side of the comparison, inflating the baseline the spike is
+    being measured against while emptying the spike itself.
+
+    Measured on identical code and data:
+    ``test_admin_spike_deviates_and_opens_incident`` failed at a ``now`` of
+    00:30 UTC and passed at 12:30 UTC. For one hour in twenty-four this file
+    asserted the opposite of what it says.
+
+    ``test_normal_cadence_does_not_deviate`` failed worse, by staying green:
+    losing its single "today" login leaves ``deviates`` False, which is what it
+    asserts, so in that hour it went vacuous instead of red -- a test that
+    cannot fail rather than one that does.
+
+    Clamping to the start of the day rather than wrapping is safe here because
+    these call sites care about how many events fall on the day, not about their
+    spacing; the dedupe keys, not the timestamps, keep them distinct.
+    """
+    base = now or _now()
+    day_start = base.replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(base - timedelta(minutes=minutes_before_now), day_start).strftime(_TS)
+
+
 def _ingest(conn, event_type, *, category="AUTH", subject="77", network=None,
             actor="sentinel.ingest", occurred_at=None, dedupe=None, severity="low"):
     events.ingest(events.Event(
@@ -498,7 +532,7 @@ class TestBaselines:
             _ingest(conn, "login_succeeded", subject="56",
                     occurred_at=_ago(days=d, now=now), dedupe=f"un-{d}")
         _ingest(conn, "login_succeeded", subject="56",
-                occurred_at=_ago(60, now=now), dedupe="un-today")
+                occurred_at=_today(60, now=now), dedupe="un-today")
         out = identity_detections.user_login_baseline("56", conn=conn, now=now)
         assert out["baseline_available"] is True
         assert out["deviates"] is False
@@ -513,13 +547,46 @@ class TestBaselines:
                         dedupe=f"ab-{d}-{j}")
         for j in range(30):
             _ingest(conn, "admin_action", category="ADMIN", subject="ops",
-                    actor="admin:7", occurred_at=_ago(minutes=30 + j, now=now),
+                    actor="admin:7", occurred_at=_today(30 + j, now=now),
                     dedupe=f"ab-today-{j}")
         base = identity_detections.admin_baseline("7", conn=conn, now=now)
         assert base["baseline_available"] and base["deviates"]
         result = identity_detections.detect_admin_baseline_deviation(conn=conn, now=now)
         assert len(result["findings"]) == 1
         assert _incident_count(conn, "ADMIN_IDENTITY_ANOMALY") == 1
+
+    def test_a_spike_deviates_at_every_hour_of_the_utc_day(self, conn):
+        """The regression pin for the clock bug ``_today`` exists to fix.
+
+        The test above takes its ``now`` from the wall clock, so it only ever
+        exercises whatever hour CI happens to start in -- and it was green for
+        twenty-three of them. This one walks the boundary on purpose: 00:00 and
+        00:30 are the hours where subtracting thirty minutes leaves the day, and
+        23:30 is the hour where it cannot.
+
+        Asserts on ``admin_baseline`` alone rather than re-running the detector,
+        because the detector opens an incident and the dedupe key is
+        ``(rule, subject, _day(now))`` -- one incident for the whole simulated
+        day, so a loop over hours would assert against the first hour's row.
+        """
+        for hour, minute in ((0, 0), (0, 30), (12, 30), (23, 30)):
+            now = _now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+            admin = f"clock{hour}{minute}"
+            for d in range(1, 7):
+                for j in range(2):
+                    _ingest(conn, "admin_action", category="ADMIN", subject="ops",
+                            actor=f"admin:{admin}", occurred_at=_ago(days=d, now=now),
+                            dedupe=f"cb-{admin}-{d}-{j}")
+            for j in range(30):
+                _ingest(conn, "admin_action", category="ADMIN", subject="ops",
+                        actor=f"admin:{admin}", occurred_at=_today(30 + j, now=now),
+                        dedupe=f"cb-{admin}-today-{j}")
+            base = identity_detections.admin_baseline(admin, conn=conn, now=now)
+            assert base["baseline_available"], f"{hour:02d}:{minute:02d} lost its history"
+            assert base["today_actions"] == 30, (
+                f"{hour:02d}:{minute:02d} counted {base['today_actions']} of 30 "
+                f"events as today; history={base['history_daily_counts']}")
+            assert base["deviates"], f"{hour:02d}:{minute:02d} missed the spike"
 
 
 # ---------------------------------------------------------------------------
