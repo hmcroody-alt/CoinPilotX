@@ -44079,7 +44079,6 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
         rendered_html = rendered_html.replace('<script src="/static/notifications.js?v=sw-consolidation-20260913" defer></script>', "")
     if boot_profile == "core":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace(
             "</body>",
@@ -44089,7 +44088,6 @@ let nearBottom=false;window.addEventListener('scroll',()=>{state.lastUserScrollA
     if boot_profile == "shell_only":
         rendered_html = re.sub(r'<script data-pulse-shell-runtime>.*?</script>', "", rendered_html, count=1, flags=re.S)
         rendered_html = rendered_html.replace('<script src="/static/js/time.js"></script>', "")
-        rendered_html = rendered_html.replace('<script src="/static/js/pulse_environment_engine.js?v=static-bg-20260806a" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_media_picker.js" defer></script>', "")
         rendered_html = rendered_html.replace('<script src="/static/js/pulse_upload_manager.js?v=cache-sweep-20260927j"></script>', "")
     body_class = 'pulse-home-os' if request.path == '/pulse' else ''
