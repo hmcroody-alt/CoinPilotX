@@ -83,13 +83,41 @@ with app.app_context():
     # composer; the page 404s on a thread the signed-in user is not part of.
     thread_id = int(bot.direct_conversation_between(owner, peer))
 
+    # /pulse/post/<id> renders a comment composer, and it is the one converted
+    # surface that builds its own Response instead of going through
+    # `pulse_social_shell`. That is exactly how it shipped a trigger with no
+    # runtime behind it: the shell's <script> tag never reached it, the button
+    # rendered, and clicking it did nothing. The path has to be in this list or
+    # `test_every_rendered_emoji_trigger_ships_with_its_runtime` keeps passing
+    # vacuously on the only page that can fail it that way.
+    now = bot.datetime.now().isoformat()
+    cur.execute(
+        "INSERT INTO pulse_posts (user_id, post_type, body, visibility,"
+        " moderation_status, created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+        (owner, "text", "Emoji surface render probe.", "public", "approved", now, now))
+    post_id = int(cur.lastrowid)
+    conn.commit()
+
 report["thread_id"] = thread_id
+report["post_id"] = post_id
 
 client = app.test_client()
 with client.session_transaction() as session:
     session["account_user_id"] = owner
 
-paths = ["/pulse", "/pulse/messages", "/chat/thread/%%d" %% thread_id, "/arena/inbox"]
+# Every page that renders at least one trigger needs to be here, not just the
+# ones that were already here. A surface absent from this list is a surface
+# none of the assertions below say anything about.
+paths = [
+    "/pulse",
+    "/pulse/messages",
+    "/chat/thread/%%d" %% thread_id,
+    "/arena/inbox",
+    "/pulse/post/%%d" %% post_id,
+    "/pulse/profile/edit",
+    "/pulse/reels",
+    "/pulse/videos",
+]
 pages = {}
 for path in paths:
     response = client.get(path)
@@ -137,9 +165,29 @@ def test_the_probe_rendered_real_pages(probe):
     A rendering test that silently got four redirects would report that no page
     is missing the picker, which is true and useless. Every page below has to
     have answered 200 with a real body.
+
+    The coverage floor is named rather than counted. A bare `len(pages) == N`
+    is satisfied by any N paths, so swapping a converted surface out for an
+    unconverted one keeps it green while quietly removing the only page an
+    assertion below could fail on -- which is how /pulse/post/<id> shipped a
+    trigger with no runtime. Listing the paths means dropping one is a failure.
     """
     pages = probe["pages"]
-    assert len(pages) == 4, pages.keys()
+    required = {
+        "/pulse",
+        "/pulse/messages",
+        "/arena/inbox",
+        "/pulse/post/%d" % probe["post_id"],
+        "/pulse/profile/edit",
+        "/pulse/reels",
+        "/pulse/videos",
+        "/chat/thread/%d" % probe["thread_id"],
+    }
+    assert required <= set(pages), (
+        "the probe stopped rendering "
+        f"{sorted(required - set(pages))}; those surfaces carry emoji triggers, "
+        "so dropping them makes every assertion in this file vacuous for them"
+    )
     for path, page in pages.items():
         assert page["status"] == 200, (
             f"{path} answered {page['status']} -> {page['location'] or 'no redirect'}; "
@@ -269,19 +317,77 @@ def test_an_opted_in_surface_can_actually_resolve_a_field():
     bare = [m.start() for m in re.finditer(r"data-emoji-for(?=[\s>])", source)]
     assert bare, "no valueless data-emoji-for trigger left in bot.py"
     for start in bare:
-        # The enclosing form, as written: back to the nearest <form and forward
-        # to its </form>. These are single-line inline templates, so a window
-        # of the surrounding text is enough and does not need a real parser.
+        # The enclosing scope, as written: back to the nearest opener and forward
+        # to its closer. These are single-line inline templates, so a window of
+        # the surrounding text is enough and does not need a real parser.
         window = source[max(0, start - 4000):start + 4000]
         offset = start - max(0, start - 4000)
-        open_form = window.rfind("<form", 0, offset)
-        close_form = window.find("</form>", offset)
-        assert open_form >= 0 and close_form > offset, (
-            "a valueless data-emoji-for trigger is not inside a <form>, so it "
-            "has nothing to resolve; give it a selector or a [data-emoji-scope]"
+
+        # `closest("form,[data-emoji-scope]")` stops at whichever comes FIRST
+        # walking outward, so this has to consider both and take the nearer.
+        # Checking only <form> would reject two surfaces the primitive handles
+        # correctly -- the live-studio chat composer, which is a <div>, and the
+        # profile-edit Bio field, which is a <label> on a page with no <form> at
+        # all -- both of which carry an explicit [data-emoji-scope] wrapper.
+        candidates = []
+        form_at = window.rfind("<form", 0, offset)
+        if form_at >= 0:
+            candidates.append((form_at, window.find("</form>", offset)))
+        scope_attr = window.rfind("data-emoji-scope", 0, offset)
+        if scope_attr >= 0:
+            tag_at = window.rfind("<", 0, scope_attr)
+            tag = re.match(r"<([a-zA-Z][\w-]*)", window[tag_at:])
+            if tag:
+                candidates.append((tag_at, window.find(f"</{tag.group(1)}>", offset)))
+
+        # Nearest opener wins, mirroring the DOM walk.
+        candidates = [(o, c) for o, c in candidates if o >= 0 and c > offset]
+        assert candidates, (
+            "a valueless data-emoji-for trigger is in neither a <form> nor a "
+            "[data-emoji-scope], so it has nothing to resolve; give it a "
+            f"selector or a scope: {window[max(0, offset - 160):offset + 60]!r}"
         )
-        enclosing = window[open_form:close_form]
+        open_at, close_at = max(candidates, key=lambda pair: pair[0])
+        enclosing = window[open_at:close_at]
         assert re.search(r"<textarea|<input(?![^>]*type=)|<input[^>]*type=\"?text", enclosing), (
-            "a valueless data-emoji-for trigger's form has no text field for "
+            "a valueless data-emoji-for trigger's scope has no text field for "
             f"the picker to write into: {enclosing[:180]!r}"
         )
+
+
+def test_every_route_asks_for_the_same_build_of_the_runtime():
+    """
+    `PICKER` above deliberately ignores the `?v=` token, because bumping it is a
+    routine deploy step. That exemption leaves a gap this test closes: it says
+    nothing about the routes agreeing with *each other*.
+
+    Static assets are served `Cache-Control: public, max-age=31536000,
+    immutable`, so the token is not a hint -- it is the identity of the file a
+    returning browser will use. Six shells embed this script tag, and when they
+    disagree, the routes on the older token keep executing the older runtime
+    forever for anyone who has already visited them. There is no error, no
+    console warning, and a fresh browser looks perfect, so the split is only
+    visible to users who were already here.
+
+    That failure is not hypothetical. Three shells -- the chat thread page, the
+    arena shell, and the /pulse home page -- sat a token behind while the
+    runtime gained its boot-time `ensureStyles()` call. The stylesheet had by
+    then grown the rules that size `.pulse-emoji-trigger`, and only the newer
+    runtime injects it before first open. The older build left every trigger on
+    those three shells drawn by whatever the host page's bare `button` rule
+    said: a full-height bordered block sitting on top of the input, which then
+    silently reflowed the first time the user clicked it.
+    """
+    source = open(os.path.join(REPO, "bot.py"), encoding="utf-8").read()
+    tokens = sorted(set(re.findall(
+        re.escape(PICKER) + r"\?v=([A-Za-z0-9._-]+)", source)))
+    assert tokens, (
+        f"no route requests {PICKER} with a cache token at all; an untokenised "
+        "runtime can never be updated for a returning user"
+    )
+    assert len(tokens) == 1, (
+        f"{PICKER} is requested under {len(tokens)} different cache tokens "
+        f"({tokens}). Because the asset is served `immutable` for a year, every "
+        "route on a stale token is permanently pinned to an older build of the "
+        "runtime for returning visitors. Bump them together."
+    )
