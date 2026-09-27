@@ -699,6 +699,7 @@
     "tests/web_surface/test_open_a_thing_redirects.py",
     "tests/web_surface/test_probe_report.py",
     "tests/web_surface/test_pulse_web_surface.py",
+    "tests/web_surface/test_reaction_catalogue.py",
     "tests/web_surface/test_seller_store_presence_newchat.py",
     "tests/web_surface/test_shell_nav_parity.py",
     "tests/web_surface/test_undx_action_center_page.py"

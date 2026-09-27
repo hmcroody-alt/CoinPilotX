@@ -10,32 +10,17 @@ import re
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from . import db, embed_service, media_service, music_authority, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulsesoc_notification_system, user_context
+from . import db, embed_service, media_service, music_authority, premium_identity_engine, pulse_feed_ranking_engine, pulse_id_service, pulse_moderation_engine, pulse_mutation_audit, pulse_reactions, pulsesoc_notification_system, user_context
 from .discovery_visibility import REQUIRED_USER_COLUMNS, discovery_visible_sql
 from .pulse_ai.content_policy import AUTOMATED_ACCOUNT_TYPE, sanitize_automated_text
 from .schema_guard import run_once_per_process
 
 
-REACTIONS = {
-    "like",
-    "love",
-    "fire",
-    "funny",
-    "wow",
-    "rocket",
-    "clap",
-    "hundred",
-    "target",
-    "smart",
-    "fast_signal",
-    "shield",
-    "scam_alert",
-    "whale",
-    "bullish",
-    "bearish",
-    "elite",
-    "brutal",
-}
+# Derived from the one catalogue rather than restated here. A key that is
+# accepted on the wire but absent from the catalogue has no glyph, and every
+# renderer then has to invent one -- which is exactly how a `whale` reaction
+# came to be displayed as a thumbs-up. See services/pulse_reactions.py.
+REACTIONS = pulse_reactions.REACTIONS
 FEEDS = {
     "for_you",
     "following",
