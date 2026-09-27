@@ -676,6 +676,25 @@ and it is not hypothetical — see the 17 below.
 Live Railway Postgres, read-only, 2026-09-27. 2,069 non-deleted `pulse_posts` rows,
 `assess_adjacency` run over each.
 
+Reproduce with `scripts/measure_commerce_suitability_cost.py`:
+
+```
+railway run --service Postgres python3 scripts/measure_commerce_suitability_cost.py
+```
+
+It is committed rather than quoted for §14's reason — a number nobody can regenerate is
+prose. Two things about it are load-bearing rather than tidy. It imports `_POST_COLUMNS`
+and `_REEL_COLUMNS` from the route module instead of listing the columns again, so it reads
+what the route reads. And it *parses* the four wire caps out of `postContext.ts` and
+`reelContext.ts` at runtime and aborts if it cannot find them, rather than keeping a Python
+copy of a TypeScript constant — which is exactly the client/server divergence this whole
+section is about. The session is opened `readonly=True`, so it cannot write even if a later
+edit tries to.
+
+**The population moves.** Re-running it hours after the table below was taken gave 2,070
+posts, 72 reels and a reel that had not existed at breakfast. The counts here are a
+snapshot; the script is the measurement.
+
 | | Posts |
 | --- | --- |
 | Refused by the **wire** check as shipped | **0** |
@@ -707,19 +726,32 @@ image 37, repost 5, `scam_report` 4 — and all four `scam_report` posts are alr
 so the post type the rule most obviously exists for has no live instance.
 
 **The reels half changes nothing measurable today, and that is worth stating rather than
-implying otherwise.** 71 `pulse_reels` rows, 61 not deleted, all 71 `moderation_status =
-approved` with no NULLs, `safety_score` between 90 and 100. Of the 61, **13** join to a
+implying otherwise.** 72 `pulse_reels` rows, 62 not deleted, all `moderation_status =
+approved` with no NULLs, `safety_score` between 90 and 100. Of the 62, **14** join to a
 live post; the other 48 hang off a tombstoned one, and `pulse_feed_engine.get_post`
 filters `deleted_at IS NULL` and returns `None`, so `pulse_reel_payload` already returns
-nothing for them and they do not render. Across those 13: 0 refused by the post row, 0 by
-the reel row. And `pulse_reels.caption` is currently *always* identical to the post body —
-0 of 39 captioned reels differ — because the composer writes both.
+nothing for them and they do not render. Across those 14: 0 refused by the wire check, 0 by
+the post row, 0 by the reel row.
 
-The caption read is therefore a structural fix against a shape the code explicitly
-supports rather than one the data has produced yet. It becomes load-bearing the moment any
-edit path writes a caption without rewriting the post body, which is the natural way to
-implement caption editing, and at that point the reel a viewer is reading and the row the
-gate judges are two different texts.
+The caption census needed correcting, and the script is what corrected it. An earlier
+hand-written probe counted captions across the whole table and reported "39 captioned, 0
+differing from the post body". Both halves were measuring the wrong population: 40 of 72
+rows carry a caption, but only **1 of the 14 that can render** does, and that one's caption
+*does* differ from its post body. The difference is a single newline where the body has a
+space — so it changes no verdict, because `_flat` collapses every non-word character to one
+space before the phrase search runs — but "0 differ" was wrong, and it was wrong in the
+direction of understating the fix.
+
+Restricting to the renderable population is the correction that matters generally, not just
+here: a count over rows that `pulse_reel_payload` never returns describes a surface no
+viewer sees. The script does the join.
+
+So the caption read remains a structural fix against a shape the code explicitly supports
+rather than one the data has produced a consequence for yet. It becomes load-bearing the
+moment any edit path writes a caption without rewriting the post body, which is the natural
+way to implement caption editing, and at that point the reel a viewer is reading and the row
+the gate judges are two different texts. Reel 77 is that shape already, one newline short of
+mattering.
 
 ### Verification
 
