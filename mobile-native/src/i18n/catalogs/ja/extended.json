@@ -2562,6 +2562,26 @@
       "upcomingBody": "準備中です。公開されるとここに表示されます。",
       "sectionFallbackTitle": "Business OS",
       "sectionFallbackBody": "Business OS のこの部分にはまだページがありません。Business OS に戻って別のセクションを選んでください。"
+    },
+    "pulsedrop": {
+      "label": {
+        "trending": "急上昇",
+        "newDrop": "新着",
+        "popular": "人気",
+        "topPick": "おすすめ",
+        "discovery": "発見"
+      },
+      "availability": {
+        "unavailable": "販売終了",
+        "notPriced": "価格未設定"
+      },
+      "cta": {
+        "viewProduct": "商品を見る"
+      },
+      "seller": {
+        "openSeller": "{{name}}のストアを開く",
+        "visitStore": "ストアを見る"
+      }
     }
   },
   "discovery": {

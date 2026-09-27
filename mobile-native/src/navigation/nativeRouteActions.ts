@@ -71,6 +71,33 @@ function activityRouteCategory(value: string | null): ActivityRouteCategory | un
   return ACTIVITY_ROUTE_CATEGORIES.find((category) => category === normalized);
 }
 
+/**
+ * Segments after `/pulse/merchant/` that are screens, not store ids.
+ *
+ * A mirror of `reserved_ids` on the `store` descriptor in
+ * `services/app_links.py`, which is the authority: it is what stops the server
+ * ever minting a store link that collides with one of these. Each also has its
+ * own entry in `linking.ts`, listed *above* `MerchantProfile` so the cold-start
+ * resolver prefers the screen.
+ *
+ * This list exists because a store id is a slug — `ID_KIND_SLUG` — so
+ * `([^/]+)` is the only honest capture, and it matches these three as happily
+ * as it matches a real store. The failure that produces is the bad kind: not a
+ * dead link but a *wrong screen*, an empty storefront for a seller named
+ * "payouts", with nothing raised. Stripe Connect's return_url is
+ * `/pulse/merchant/payouts`, so that particular collision would have stranded
+ * every seller finishing onboarding.
+ *
+ * Kept as data rather than inlined into the pattern so that the next reserved
+ * word is one line here and one line in `app_links.py`, and so a test can
+ * assert the two lists agree.
+ */
+export const MERCHANT_RESERVED_SEGMENTS = ["apply", "dashboard", "payouts"] as const;
+
+const STORE_PATH = new RegExp(
+  `^/pulse/(?:stores?|business(?:es)?|merchants?)/(?!(?:${MERCHANT_RESERVED_SEGMENTS.join("|")})/?$)([^/]+)/?$`
+);
+
 export type NativeObjectDestination = {
   screen: string;
   params?: Record<string, unknown>;
@@ -88,7 +115,20 @@ export function nativeObjectDestination(routePath: string): NativeObjectDestinat
   const notificationMatch = path.match(/^\/pulse\/notifications\/([1-9]\d*)\/?$/);
   const briefingMatch = path.match(/^\/pulse\/briefings\/([1-9]\d*)\/?$/);
   const eventMatch = path.match(/^\/pulse\/events\/([1-9]\d*)\/?$/);
-  const storeMatch = path.match(/^\/pulse\/(?:stores?|business(?:es)?)\/([^/]+)\/?$/);
+  // `merchant` belongs here because it is the *canonical* spelling, not an alias:
+  // `services/app_links.py` emits `/pulse/merchant/{id}` for every store link the
+  // server produces — share sheets, emails, notifications and the PulseDrop
+  // commerce overlay's seller route all use it. `linking.ts` already maps
+  // `pulse/merchant/:sellerId` to MerchantProfile, so a cold-start universal link
+  // opened the store while an in-app tap on the identical path resolved to null
+  // and did nothing. Two resolvers for one path disagreeing is exactly what the
+  // crypto matcher below is commented against.
+  //
+  // A store id is a slug, not a number (`app_links.py` marks it `ID_KIND_SLUG`),
+  // so the capture cannot be narrowed to digits and the reserved segments have
+  // to be named. See `MERCHANT_RESERVED_SEGMENTS` for which, and why that list
+  // is not written out here.
+  const storeMatch = path.match(STORE_PATH);
   const adMatch = path.match(/^\/pulse\/(?:ads?|advertisements?)\/([1-9]\d*)\/?$/);
   const undxTaskMatch = path.match(/^\/pulse\/(?:undx|ai)\/tasks\/([^/]+)\/?$/);
   const callMatch = path.match(/^\/pulse\/calls\/([^/]+)\/?$/);

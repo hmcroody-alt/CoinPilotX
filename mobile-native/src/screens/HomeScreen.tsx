@@ -53,6 +53,7 @@ import { registerRefreshDestination } from "../navigation/refreshCoordinator";
 import { openNativeRoute } from "../navigation/nativeRouteActions";
 import { AppTabParamList, RootStackParamList } from "../navigation/types";
 import { actionKey, useSocialActionGuard } from "../social/actionGuard";
+import { useCommerceOverlayNavigation } from "../commerce/useCommerceOverlayNavigation";
 import { useAuth } from "../session/auth";
 import { colors } from "../theme/colors";
 import { logiNexus } from "../theme/logiNexus";
@@ -138,6 +139,7 @@ function useHomeAmbientMotionEnabled() {
 
 export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
   const navigation = useNavigation<HomeNavigation>();
+  const commerceNavigation = useCommerceOverlayNavigation(navigation);
   const route = useRoute<RouteProp<AppTabParamList, "Home">>();
   const { authState } = useAuth();
   const isFocused = useIsFocused();
@@ -1064,6 +1066,8 @@ export function HomeScreen({ badges, identity }: HomeScreenProps = {}) {
     return (
       <PostCard
         post={item}
+        onOpenCommerceProduct={commerceNavigation.onOpenCommerceProduct}
+        onOpenCommerceSeller={commerceNavigation.onOpenCommerceSeller}
         busy={guard.isItemBusy(item.id)}
         // §24. Viewability fires all the way through a fling, so without this a
         // hard flick would start and abandon a video per card it passed. No card

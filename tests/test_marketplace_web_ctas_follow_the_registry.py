@@ -405,11 +405,57 @@ def test_the_two_non_anchor_references_are_the_ones_we_think_they_are():
     assert "location.href='/pulse/merchant/dashboard'" in source
 
 
-def test_the_javascript_listing_card_does_not_build_its_own_url():
+def test_no_listing_card_builds_its_own_product_url():
+    """A product link is the registry's answer, wherever the card is built.
+
+    This used to be about one card written in JavaScript inside a script block in
+    `bot.py`, and its positive half named that card's helper,
+    ``marketplaceProductHref``. The card moved: member cards are now built in
+    `services/marketplace_storefront.py`, the script block is gone, and asserting
+    that helper's name would only prove the old card had not come back.
+
+    The two prohibitions are unchanged, because a template literal in a script is
+    still how this goes wrong. The positive half follows the card, and is asserted
+    by *substitution* rather than by reading for a call -- which is the entire
+    point here. ``website_href("product", 42)`` returns `/pulse/marketplace/42`
+    today, character-for-character what a hand-written f-string produces, so a
+    test comparing the two values passes for a module that never consults the
+    registry at all, and would keep passing straight through the `web_equivalent`
+    flip that makes the registry answer `/open/product/42?...` instead. Only
+    substitution can tell a call from a coincidence.
+    """
     source = _bot_source()
     assert "/pulse/marketplace/${" not in source
     assert "/open/product/${" not in source
-    assert "marketplaceProductHref" in source
+
+    from services import marketplace_storefront
+
+    sentinel = "/open/product/__FROM_THE_REGISTRY__"
+    real = app_links.website_href
+    calls = []
+
+    def fake(destination, resource_id=None, source="web"):
+        calls.append((destination, resource_id, source))
+        return sentinel
+
+    app_links.website_href = fake
+    try:
+        answer = marketplace_storefront.product_path(42)
+    finally:
+        app_links.website_href = real
+
+    assert answer == sentinel, (
+        "marketplace_storefront.product_path built %r of its own instead of "
+        "returning what the registry answered. It produces the right URL today, "
+        "and would go on producing it after the registry stopped agreeing."
+        % (answer,))
+    assert calls == [("product", 42, "web")], (
+        "product_path consulted the registry, but not about the `product` "
+        "destination for that listing: %r" % (calls,))
+
+    # And the registry's real answer is still a web path, so the assertions above
+    # are not quietly passing because `product` has already gone app-first.
+    assert real("product", 42, source="web") == "/pulse/marketplace/42"
 
 
 def test_every_documented_exception_is_still_present_in_the_source():
@@ -517,17 +563,37 @@ def test_the_page_offers_exactly_the_app_first_destinations_expected(client, pat
     assert found == PAGES[path]
 
 
-def test_the_grid_ships_the_client_side_product_template(client):
-    """The grid's browser-rendered cards use the registry's shape, not their own.
+def test_the_grid_ships_no_second_card_renderer(client):
+    """The half-landing this caught is now impossible rather than merely absent.
 
-    This is the assertion that caught the half-landing: after the flag flipped,
-    the shell's injected link map followed it and this script did not, so a
-    server-rendered card on the grid linked to the product page while a card the
-    same grid drew from `/api/pulse/marketplace/search` linked to the interstitial.
+    What it caught: after the flag flipped, the shell's injected link map followed
+    it and the grid's inline card script did not, so a server-rendered card linked
+    to the product page while a card the same grid drew from
+    `/api/pulse/marketplace/search` linked to the interstitial. One grid, two
+    renderers, two answers.
+
+    It asserted that the browser-built card carried the registry's *template*,
+    which was the best available check while a second renderer existed. There is
+    no second renderer now -- search is server-rendered from `?q=` by the same
+    function as the grid -- so the stronger claim is available and is the one made
+    here: the page ships no client-side card template of either shape, and no card
+    function for one to be interpolated into.
+
+    Inverting the first assertion is deliberate and is not a relaxation. Presence
+    of the template was only ever a proxy for "the second renderer agrees"; its
+    absence is "there is no second renderer to disagree". The day one reappears
+    this fails, which is what keeps the guarantee structural. That the surviving
+    renderer asks the registry is
+    `test_no_listing_card_builds_its_own_product_url`; that search and the grid
+    emit the identical card is asserted in
+    `tests/web_parity/test_marketplace_price_label_rendering.py`.
     """
     body = render(client, "/pulse/marketplace")
-    assert app_links.website_href_template("product", source="web") in body
     assert app_links.open_interstitial_url_template("product", source="web") not in body
+    assert app_links.website_href_template("product", source="web") not in body
+    assert "marketplaceListingHtml" not in body, (
+        "the grid ships a client-side card renderer again; the server-rendered "
+        "card and this one can now disagree about where a product lives")
 
 
 def test_the_merchant_dashboard_keeps_payouts_on_the_web(approved_merchant):

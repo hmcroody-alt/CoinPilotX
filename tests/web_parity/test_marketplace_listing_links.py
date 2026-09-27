@@ -109,7 +109,6 @@ _PROBE = r"""
 import json, re, sys, sqlite3
 sys.path.insert(0, %(repo)r)
 import bot
-from services import app_links
 
 app = bot.webhook_app
 app.config["SECRET_KEY"] = "marketplace-listing-links-test"
@@ -180,9 +179,21 @@ report["grid"] = {
     "links": sorted(l for l in %(seeded_ids)r
                     if ("href='%%s'" %% bot.app_first_href("product", l)) in grid
                     or ('href="%%s"' %% bot.app_first_href("product", l)) in grid),
-    # The client-rendered card builds the same link from its own row, by
-    # substituting an id into a shape the server built.
-    "js_link": app_links.website_href_template("product", source="web") in grid,
+}
+
+# Searching used to replace the grid in the DOM with cards a client-side twin
+# built, so the twin had to be handed the server's link shape and this file
+# checked that shape was present. Search is now rendered by the server from
+# `?q=`, through the very same card function the grid uses, so the question "do
+# search results keep the link" is asked of the search results themselves
+# instead of a template string left in the page for a script to fill in.
+search = client.get(
+    "/pulse/marketplace?q=Listing+%%d" %% %(public)d).get_data(as_text=True)
+report["search"] = {
+    "shows": ("Listing %%d" %% %(public)d) in search,
+    "links": sorted(l for l in %(seeded_ids)r
+                    if ("href='%%s'" %% bot.app_first_href("product", l)) in search
+                    or ('href="%%s"' %% bot.app_first_href("product", l)) in search),
 }
 
 # The signed-out view of every outcome. A public listing is now readable without
@@ -335,15 +346,37 @@ def test_the_grid_and_the_listing_page_agree_on_who_is_public(marketplace_probe)
         % sorted(grid_shows))
 
 
-def test_the_client_rendered_card_links_to_the_same_place(marketplace_probe):
-    """Search results replace the grid in the DOM, and must keep the link.
+def test_a_search_result_links_to_the_same_place_as_the_grid(marketplace_probe):
+    """Search results must be openable, exactly as browsing results are.
 
-    Without this, a member who searched would lose the ability to open a
-    product that browsing offered — the same page, two behaviours.
+    Without this, a member who searched would lose the ability to open a product
+    that browsing offered — the same page, two behaviours.
+
+    This used to assert that the page carried the link *template* an inline
+    JavaScript twin of the card substituted an id into, because searching
+    replaced the grid in the DOM with cards that twin built. Search is now
+    rendered by the server from ``?q=``, through the same card function as the
+    grid, so the twin is gone and the template with it.
+
+    The property did not go away and is now checked one step closer to the user:
+    against the links in a real search response, rather than against a string a
+    script was trusted to use correctly. That is stricter than before -- a
+    template being present never proved the twin rendered it -- and the third
+    assertion is the one the twin existed to make true, now free.
     """
-    assert marketplace_probe["grid"]["js_link"], (
-        "the client-side marketplace card ships no product link shape, so "
-        "search results are not openable")
+    search = marketplace_probe["search"]
+    # Guarded first, because an empty result set would make everything below
+    # vacuous: a search that silently stopped matching fails here rather than
+    # passing on zero cards.
+    assert search["shows"], (
+        "searching for the public listing's own title returned a page that does "
+        "not contain it, so this test is not looking at a search result")
+    assert search["links"] == [PUBLIC], (
+        "a search result does not link to the listing it shows: expected [%d], "
+        "got %s" % (PUBLIC, search["links"]))
+    assert search["links"] == marketplace_probe["grid"]["links"], (
+        "browsing and searching disagree about where a product opens: grid=%s "
+        "search=%s" % (marketplace_probe["grid"]["links"], search["links"]))
 
 
 def test_the_create_page_still_wins_over_the_id_route(marketplace_probe):

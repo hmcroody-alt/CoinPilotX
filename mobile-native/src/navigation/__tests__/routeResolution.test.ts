@@ -1,6 +1,13 @@
+import fs from "fs";
+import path from "path";
 import { flattenMasterNavigation } from "../masterNavigation";
 import { linking } from "../linking";
-import { canonicalNativeRoute, nativeObjectDestination, openNativeRoute } from "../nativeRouteActions";
+import {
+  canonicalNativeRoute,
+  MERCHANT_RESERVED_SEGMENTS,
+  nativeObjectDestination,
+  openNativeRoute
+} from "../nativeRouteActions";
 
 type NavigateCall = { screen: string; params?: any };
 
@@ -142,5 +149,83 @@ describe("PulseSoc navigation route resolution", () => {
       const handled = calls.length > 0;
       expect({ route: action.route, handled }).toEqual({ route: action.route, handled: true });
     }
+  });
+
+  /**
+   * `/pulse/merchant/<id>` is the canonical store link.
+   *
+   * `services/app_links.py` emits this spelling for every store URL the server
+   * produces, and `linking.ts` maps `pulse/merchant/:sellerId` to MerchantProfile
+   * — so a universal link opened from outside the app has always worked. The
+   * in-app resolver only knew `store`/`business`, so tapping the identical path
+   * inside the app resolved to null and silently did nothing. One path, two
+   * resolvers, two answers.
+   *
+   * The aliases are pinned alongside it because a fix that only handles the
+   * singular is the same bug one rename later.
+   */
+  describe("the canonical merchant path", () => {
+    it.each(["/pulse/merchant/10", "/pulse/merchants/10", "/pulse/store/10", "/pulse/stores/10", "/pulse/business/10"])(
+      "%s opens the storefront",
+      (route) => {
+        expect(nativeObjectDestination(route)).toEqual({
+          screen: "MerchantProfile",
+          params: { sellerId: "10", title: "Business" }
+        });
+      }
+    );
+
+    it("carries a non-numeric seller key through untouched", () => {
+      expect(nativeObjectDestination("/pulse/merchant/acme-co")?.params).toEqual({
+        sellerId: "acme-co",
+        title: "Business"
+      });
+    });
+
+    /**
+     * The reason the matcher needs a lookahead rather than `([^/]+)`. These are
+     * real screens with their own `linking.ts` entries; capturing "apply" as a
+     * seller id would open an empty storefront instead of the seller application
+     * and would break the three entry points `sellerEntryPoints.test.ts` guards.
+     *
+     * `payouts` is the one that already cost something: it is where Stripe
+     * returns a seller at the end of Connect onboarding, and swallowing it as a
+     * slug sent every finishing seller to a blank store.
+     */
+    it.each([
+      "/pulse/merchant/apply",
+      "/pulse/merchant/dashboard",
+      "/pulse/merchant/payouts",
+      "/pulse/merchant",
+      "/pulse/merchant/"
+    ])("%s is not a storefront", (route) => {
+      expect(nativeObjectDestination(route)).toBeNull();
+    });
+
+    it("reserves exactly what app_links.py reserves for the store descriptor", () => {
+      // The list is duplicated across the language boundary because the app
+      // resolves deep links offline and cannot ask the server. Duplication is
+      // fine; *drift* is the bug, and drift is silent — a segment added to the
+      // backend's `reserved_ids` and not here does not fail anything, it just
+      // starts opening the wrong screen. So the copy is pinned to its source.
+      const appLinks = fs.readFileSync(
+        path.resolve(__dirname, "..", "..", "..", "..", "services", "app_links.py"),
+        "utf8"
+      );
+      const store = appLinks.slice(appLinks.indexOf('_d(\n        "store",'));
+      const declared = store.slice(0, store.indexOf("display_name")).match(/reserved_ids=frozenset\(\{([^}]*)\}\)/);
+      expect(declared).not.toBeNull();
+      const backend = (declared as RegExpMatchArray)[1]
+        .split(",")
+        .map((entry) => entry.trim().replace(/^["']|["']$/g, ""))
+        .filter(Boolean);
+      expect([...MERCHANT_RESERVED_SEGMENTS].sort()).toEqual(backend.sort());
+    });
+
+    it("still sends the seller application to its own screen", () => {
+      const { navigation, calls } = makeNavigation();
+      openNativeRoute(navigation, "/pulse/merchant/apply");
+      expect(calls.map((call) => call.screen)).not.toContain("MerchantProfile");
+    });
   });
 });

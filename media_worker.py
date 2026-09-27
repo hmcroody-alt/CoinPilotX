@@ -1349,6 +1349,58 @@ def reconcile_media_availability(limit: int = 10) -> dict:
     return {"checked": checked, "downgraded": downgraded}
 
 
+def pulsedrop_cycle() -> dict:
+    """PulseDrop's render drain and curator tick, isolated from the rest.
+
+    Imported inside the function, and wrapped, for the same reason the optional
+    route packs in ``bot.py`` are: this loop runs every few seconds and
+    everything else in it is media that a member is waiting on. A curator that
+    raises — a schema not yet created, a marketplace column that moved — must
+    not be able to stop a video from being transcoded. PulseDrop going quiet is
+    always recoverable; the media pipeline stopping is not.
+
+    Both halves are cheap on the overwhelming majority of cycles: the kill
+    switch is a memoised settings read, and the lease is one UPDATE that matches
+    no rows until the curator is due.
+    """
+    try:
+        from services.pulsedrop import curator
+
+        return curator.worker_cycle()
+    except Exception as exc:
+        logging.exception("PULSEDROP_CYCLE_FAILED error=%s", exc)
+        return {"outcome": "error", "reason": str(exc)[:200]}
+
+
+#: Outcomes that mean "the curator looked and correctly did nothing". This loop
+#: runs every few seconds, so logging these would bury the cycle log in a line
+#: that never changes — and they are already visible on /admin/pulsedrop and in
+#: the heartbeat metadata, which is where "is it ticking at all" is answered.
+_PULSEDROP_QUIET = frozenset({"not_due", "disabled"})
+
+
+def _log_pulsedrop(outcome) -> None:
+    """Log a PulseDrop cycle that did something, and stay silent otherwise.
+
+    Worth its own line rather than folding into ``MEDIA_WORKER_CYCLE`` because
+    the failure mode PulseDrop actually has is going quiet, and a curator whose
+    every result is a dict nested inside a media log line is a curator nobody
+    notices has stopped publishing. Everything interesting — a publication, a
+    render, a rejection, an error — is rare enough to print.
+    """
+    if not isinstance(outcome, dict):
+        return
+    name = str(outcome.get("outcome") or "").lower()
+    # Renders drain *before* the tick, so a cycle can be ``not_due`` and still
+    # have started, finished or failed an encode. Keying only on the outcome
+    # would hide a failing renderer behind the quietest outcome there is.
+    renders = outcome.get("renders")
+    busy = isinstance(renders, dict) and any(renders.values())
+    if not busy and (not name or name in _PULSEDROP_QUIET):
+        return
+    logging.info("PULSEDROP_CYCLE %s", outcome)
+
+
 def run_cycle() -> dict:
     replay = reconcile_live_replay_backlog(BATCH_SIZE)
     uploads = process_pending_uploads(BATCH_SIZE)
@@ -1359,7 +1411,8 @@ def run_cycle() -> dict:
     cover_sync = process_media_asset_cover_sync(int(os.getenv("MEDIA_WORKER_COVER_SYNC_BATCH", "25")))
     durations = reconcile_stored_video_durations(int(os.getenv("MEDIA_WORKER_DURATION_RECONCILE_BATCH", "25")))
     availability = reconcile_media_availability(int(os.getenv("MEDIA_WORKER_AVAILABILITY_RECONCILE_BATCH", "10")))
-    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "cover_sync": cover_sync, "durations": durations, "availability": availability}
+    pulsedrop = pulsedrop_cycle()
+    return {"replay": replay, "uploads": uploads, "messenger": messenger, "jobs": jobs, "playback": playback, "covers": covers, "cover_sync": cover_sync, "durations": durations, "availability": availability, "pulsedrop": pulsedrop}
 
 
 def main() -> None:
@@ -1386,6 +1439,7 @@ def main() -> None:
             result["dependencies"] = dependency_snapshot()
             bot.record_worker_heartbeat(WORKER_NAME, "healthy", metadata=result)
             logging.info("MEDIA_WORKER_CYCLE uploads=%s jobs=%s", result.get("uploads"), result.get("jobs"))
+            _log_pulsedrop(result.get("pulsedrop"))
         except Exception as exc:
             logging.exception("MEDIA_WORKER_CYCLE_FAILED error=%s", exc)
             try:
