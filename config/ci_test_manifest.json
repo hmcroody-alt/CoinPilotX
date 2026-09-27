@@ -691,6 +691,7 @@
     "tests/web_surface/test_activity_feed.py",
     "tests/web_surface/test_dashboard_module_links.py",
     "tests/web_surface/test_emoji_primitive.py",
+    "tests/web_surface/test_emoji_surfaces_render.py",
     "tests/web_surface/test_intelligence_subsystem_links.py",
     "tests/web_surface/test_messenger_bubble_body.py",
     "tests/web_surface/test_open_a_thing_redirects.py",
