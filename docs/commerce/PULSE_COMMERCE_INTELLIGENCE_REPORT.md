@@ -1,7 +1,7 @@
 # Pulse Commerce Intelligence — delivery report
 
 **Status: not deployed.** Nothing in this report is live. The work is committed on the
-local branch `commerce-discovery-audit` (head `87a2f1b50`) in a worktree, and has **not**
+local branch `commerce-discovery-audit` (head `dc95a6fb5`) in a worktree, and has **not**
 been pushed, merged, or rolled out. Committed is not deployed, and the distinction matters
 here: §16 lists changes that alter what feed, reels, post-detail, Messenger, Marketplace
 and product-page users see, with no per-surface kill switch to stage them behind. §16 also
@@ -16,7 +16,7 @@ it, and the fixes for those defects. Section 3 is an honest ledger of what pre-e
 versus what I added, because the difference is most of the value of this document.
 
 **On the shape of this report.** The brief specified a final report of 41 numbered
-sections. This one has 18. That is a deliberate departure, and the reason is the same
+sections. This one has 19. That is a deliberate departure, and the reason is the same
 reason the engine was not rebuilt: the section list was written on the assumption that
 all of it would be new construction. Roughly two thirds of the headings — embeddings,
 the vector index, the new worker framework, the experimentation platform, the load
@@ -1024,3 +1024,78 @@ both directions on real rows rather than one. `product_detail` records 6/6 `simi
 One new column, `commerce_discovery_placements.relationship`, nullable, no default, not on
 the wire in either direction. No new table, index, flag or env var. No protected audio path
 touched.
+
+## 19. 48 of this report's own tests were green against an engine that could not run
+
+The last section, and the one I least wanted to write, because it is about §§9–11 — the
+sections where this report says the tests are good.
+
+`engine.serve` ends in `except Exception: return []`. That is deliberate and it stays; the
+brief's §82 requires that a post render when commerce fails, and a 500 on the feed because
+a product query broke is exactly the failure mode this package was built to avoid. But the
+fail-safe means a **crash and a decision are the same value to the caller** — an empty
+list — and the majority of this package's assertions are assertions about that value.
+
+So I measured it, by putting `raise TypeError` on `_serve`'s first line so the engine could
+not answer anything at all, and running the package:
+
+| | failed | passed |
+| --- | --- | --- |
+| engine fully broken, before the guard | 110 | **558** |
+| engine fully broken, after the guard | 158 | 522 |
+
+**48 tests were green against an engine that could not run.** Some of the 558 legitimately
+never call `serve` — `ranking`, `relationship`, `schema` and `metrics` have real unit tests
+and those are honestly green. The 48 are the *negative* assertions: the opted-out viewer,
+the reached session cap, the suppressed surface, the empty pool, the wrong surface name.
+Each one asserts that nothing came back, and each one passes exactly as well when nothing
+*could* have come back, because `[] == []`.
+
+This is the same confusion as §18.6 one layer up, and the same one `schema.py`'s own
+docstring describes for a rolled-back `CREATE`: **a shop that is permanently, quietly shut
+is indistinguishable from a shop with nothing to sell.** Every place that confusion appears
+in this system, it appears because something fails soft and nothing downstream can tell
+the difference.
+
+### How it is closed
+
+By reading the signal the fail-safe already emits, rather than by changing the engine. An
+autouse fixture in `tests/commerce_discovery/conftest.py` watches `engine`'s logger for
+`COMMERCE_DISCOVERY_SERVE_FAILED` for the duration of each test, and a
+`pytest_runtest_makereport` wrapper flips a report that *otherwise passed* into a failure
+carrying the exception and its traceback.
+
+What I deliberately did **not** do is add a strict mode that re-raises under test. It is
+the obvious fix and it is the wrong one: it would make the code path the tests exercise
+different from the one production runs, which is the entire subject of §18.6 — a test
+double kinder than production is how two columns reached buyers' phones for as long as they
+did. The guard observes; it does not alter.
+
+Three conditions keep it from becoming noise, each of which is its own test:
+
+- only the `call` phase, so setup and teardown keep their own stories;
+- only a report that otherwise **passed** — a genuinely broken run should not report every
+  failure twice, with the second copy saying less than the first;
+- an opt-out marker, `commerce_serve_may_fail`, for the handful of tests whose subject *is*
+  the fail-safe.
+
+The log prefix is pinned to the engine's real message by driving an actual crash through
+`serve`, so renaming the log line cannot silently disarm 48 tests' worth of rigour. The
+decision is a plain function so it can be tested as one, and the three lines of hook glue
+around it are pinned from source.
+
+The guard fired on its own author the first time the file ran: the test that breaks `serve`
+in order to have a real record to report on came back red, correctly, and now carries the
+marker. That is the least ceremonious available demonstration that it works.
+
+### What this does not fix
+
+It is scoped to `tests/commerce_discovery/`. The route-level tests elsewhere in the tree
+call `serve` through Flask and are not covered; neither is any other fail-soft path in this
+package, and there are several — `_reconciled_value`, `_interest_profile`, the follow-graph
+read, `metrics.observe`. §11a already argues that some fail-soft paths *should* survive
+mutation. The distinction is whether a test can tell that it took one, and for `serve` the
+answer was no for the entire life of this report.
+
+Verified: 680 package tests and 663 protection tests green; the 158/522 mutation above,
+reverted.
