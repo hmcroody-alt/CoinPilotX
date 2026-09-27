@@ -56,6 +56,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Sequence
 
+from services import app_links
 from services import marketplace_web as mw
 
 #: Canonical, stable, human-readable product and listing URLs. These are the
@@ -229,7 +230,25 @@ def payment_policy_line() -> str:
 
 
 def product_path(listing_id: Any) -> str:
-    return f"{BASE_PATH}/{int(listing_id or 0)}"
+    """Where a product card points, taken from the app-link registry.
+
+    Not `f"{BASE_PATH}/{id}"`, though that is exactly what the registry returns
+    today. `services/app_links.py` is the single authority for where a Marketplace
+    button goes, and it holds one fact a literal here cannot: whether `product`
+    has a finished web page at all. While it does, the href is that page; if that
+    ever flips, the same call returns the `/open/product/...` interstitial
+    instead. A literal would keep producing a web path straight through the flip
+    and would go on *working* -- linking members to a page the registry had
+    already decided not to send them to, with nothing failing to say so.
+
+    That is not hypothetical. It happened on this page, between the
+    server-rendered card and its JavaScript twin, which is why the registry grew
+    `website_href_template` for browser-built cards in the first place.
+
+    `app_links` is stdlib-only and imports neither Flask nor `bot`, so taking the
+    dependency keeps the engine bootable in 0.04s and its suite database-free.
+    """
+    return app_links.website_href("product", int(listing_id or 0), source="web")
 
 
 def product_url(listing_id: Any, origin: str = mw.PUBLIC_ORIGIN) -> str:

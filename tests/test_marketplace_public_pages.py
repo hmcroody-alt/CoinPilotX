@@ -607,15 +607,34 @@ class MarketplacePublicIndexPageTestCase(PublicMarketplaceFixture):
     def test_a_signed_in_member_on_the_same_url_gets_the_member_grid_and_no_store(self):
         """Both halves of the branch, and the per-response cache flag.
 
-        The member grid is the surface that carries the session-only buttons, so
-        their presence is what proves the branch went the other way.
+        The member grid is the surface that carries the session-dependent
+        Marketplace panel -- "Sell on PulseSoc", whose three states are seller
+        dashboard, create-a-listing and apply-to-sell -- so its presence is what
+        proves the branch went the other way.
+
+        The marker used to be ``data-contact-seller``, a per-card action button,
+        and those moved to the product page when the member grid was rebuilt. The
+        panel is a better marker for exactly the reason a card button was a worse
+        one: it cannot appear on the anonymous document at all, because it is the
+        part of the page whose content depends on who is asking.
+
+        Both halves are now actually checked. Every assertion here could be
+        satisfied by a page that had simply stopped serving the anonymous branch,
+        so the anonymous response is fetched too and required not to carry the
+        marker.
         """
         self.make_listing()
+
+        anonymous = self.index().get_data(as_text=True)
+        self.assertNotIn("mkt-merchant", anonymous,
+                         "the anonymous document carries the member-only panel, "
+                         "so its presence below proves nothing about the branch")
+
         self.login()
         response = self.index()
         self.assertEqual(response.status_code, 200)
         body = response.get_data(as_text=True)
-        self.assertIn("data-contact-seller", body)
+        self.assertIn("mkt-merchant", body)
         self.assertNotIn('<script type="application/ld+json">', body)
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
 

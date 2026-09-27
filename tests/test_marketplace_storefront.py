@@ -41,6 +41,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
+from services import app_links  # noqa: E402
 from services import marketplace_storefront as sf  # noqa: E402
 from services import marketplace_web as mw  # noqa: E402
 
@@ -443,6 +444,56 @@ def test_a_card_emits_no_empty_element_for_a_field_it_has_no_data_for():
     assert '<div class="mkt-card-meta">' in full
     assert '<p class="mkt-card-price' in full
     assert '<p class="mkt-card-stock' in full
+
+
+def test_a_card_takes_its_product_link_from_the_registry_not_from_a_literal():
+    """Where a card points is `app_links`' decision, not this module's.
+
+    `services/app_links.py` is the single authority on Marketplace
+    destinations, and each `Destination` carries a `web_equivalent` flag. Today
+    `website_href("product", 42, source="web")` returns
+    `/pulse/marketplace/42`; if that flag is ever cleared the same call returns
+    the `/open/product/42` interstitial instead. An f-string here would keep
+    emitting the web path straight through that flip -- and would go on
+    *working*, linking members to a page the registry had already decided not
+    to send them to, with nothing failing to say so.
+
+    Which is why this asserts by substitution rather than by value. A literal
+    produces character-for-character what the registry produces today, so
+    `product_path(42) == "/pulse/marketplace/42"` passes just as happily for a
+    module that never consults the registry at all. Replacing the function and
+    checking both that the sentinel came back *and* that the right arguments
+    went in is the only form of this test that can fail for the right reason.
+    """
+    sentinel = "/open/product/__FROM_THE_REGISTRY__"
+    real = app_links.website_href
+    calls = []
+
+    def fake(destination, resource_id=None, source="web"):
+        calls.append((destination, resource_id, source))
+        return sentinel
+
+    app_links.website_href = fake
+    try:
+        answer = sf.product_path(42)
+        card = sf.product_card(listing(), price=mw.derive_price(listing()))
+    finally:
+        app_links.website_href = real
+
+    assert answer == sentinel, (
+        f"product_path built {answer!r} itself instead of asking the registry"
+    )
+    assert calls and calls[0] == ("product", 42, "web"), (
+        f"asked the registry the wrong question: {calls!r}"
+    )
+    assert f'href="{sentinel}"' in card, (
+        "the card's link did not come through product_path, so the assertion "
+        "above only covers a function nothing calls"
+    )
+
+    # And the real registry still answers with the web path, so a change that
+    # routed members to the interstitial would surface here too.
+    assert real("product", 42, source="web") == "/pulse/marketplace/42"
 
 
 def test_an_unpriced_card_asks_the_stylesheet_to_hold_the_price_slot_open():
