@@ -227,6 +227,7 @@ from telegram.ext import (
 )
 
 from services import (
+    account_email_uniqueness,
     app_links,
     app_promotion,
     auth_subject_guard,
@@ -7017,6 +7018,15 @@ def register_failed_login(email, user_id=0, reason="invalid_credentials"):
         conn.close()
 
 
+#: The one answer a caller gets when the address or phone is already spoken for.
+#: A single constant rather than two literals because the precheck below and the
+#: uniqueness-violation branch after the INSERT have to be *indistinguishable*:
+#: they are the same fact discovered a few milliseconds apart, and a caller who
+#: could tell which one fired would learn that their request raced somebody
+#: else's -- which is to say, that the address is being registered right now.
+ACCOUNT_ALREADY_EXISTS_MESSAGE = "An account already exists for that contact method."
+
+
 def create_account(full_name, email, password, phone="", country="", email_opt_in=False, sms_opt_in=False, username="", age_confirmed=False):
     email = normalize_email(email)
     logging.info("signup normalized email=%s db_engine=%s", mask_email(email), db_service.ENGINE_NAME)
@@ -7033,9 +7043,27 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
     conn = db()
     try:
         cur = conn.cursor()
+        # Before the precheck, because the precheck is only advisory: it is a
+        # SELECT followed by an INSERT, so two concurrent signups for one address
+        # both pass it and both insert. The index is what actually makes the
+        # invariant true; the check below just turns the common case into a civil
+        # answer instead of a caught exception.
+        account_email_uniqueness.ensure_email_identity_index(cur)
         logging.info("database insert precheck for signup email=%s engine=%s", mask_email(email), db_service.ENGINE_NAME)
         if email:
-            cur.execute("SELECT user_id FROM users WHERE lower(email)=lower(?) AND email!='' LIMIT 1", (email,))
+            # Asked with the index's own expression, not an approximation of it.
+            # `email` is already `normalize_email`d -- `.strip().lower()` -- so the
+            # parameter side needs no wrapping, but the *column* side does: a
+            # stored address with stray whitespace would slip past
+            # `lower(email)=lower(?)` and then be caught by the index, turning an
+            # ordinary duplicate into the race branch. Same expression, same
+            # answer.
+            cur.execute(
+                f"SELECT user_id FROM users "
+                f"WHERE {account_email_uniqueness.EMAIL_IDENTITY_EXPRESSION}=? "
+                f"AND {account_email_uniqueness.EMAIL_PRESENT_PREDICATE} LIMIT 1",
+                (email,),
+            )
             duplicate = cur.fetchone()
         else:
             cur.execute("SELECT user_id FROM users WHERE phone=? AND phone!='' LIMIT 1", (phone,))
@@ -7044,7 +7072,7 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             conn.close()
             logging.info("duplicate email detection during signup email=%s", mask_email(email))
             log_auth_event("signup_duplicate", email, status="duplicate", details={"db_engine": db_service.ENGINE_NAME})
-            return None, "An account already exists for that contact method."
+            return None, ACCOUNT_ALREADY_EXISTS_MESSAGE
         if username:
             cur.execute("SELECT user_id FROM users WHERE lower(username)=lower(?) LIMIT 1", (username,))
             if cur.fetchone():
@@ -7131,6 +7159,18 @@ def create_account(full_name, email, password, phone="", country="", email_opt_i
             conn.rollback()
         except Exception:
             pass
+        if db_service.is_unique_violation(exc):
+            # The race the precheck cannot win: another request inserted this
+            # address between our SELECT and our INSERT. Answer exactly as the
+            # precheck would have, because it is the same fact -- and because the
+            # generic branch below says "try again shortly", which for a
+            # uniqueness violation is simply false. Retrying fails forever, and
+            # the user would keep doing it having been told to.
+            logging.info("signup lost the uniqueness race email=%s engine=%s",
+                         mask_email(email), db_service.ENGINE_NAME)
+            log_auth_event("signup_duplicate", email, status="duplicate",
+                           details={"race": True, "db_engine": db_service.ENGINE_NAME})
+            return None, ACCOUNT_ALREADY_EXISTS_MESSAGE
         logging.exception("database transaction rollback during signup email=%s engine=%s error=%s", mask_email(email), db_service.ENGINE_NAME, exc)
         log_auth_event("signup_failed", email, status="failed", details={"error": str(exc)[:500], "db_engine": db_service.ENGINE_NAME})
         return None, "Account creation is temporarily unavailable. Please try again shortly."
@@ -119835,6 +119875,14 @@ def _init_db_impl():
         pulse_id_service.ensure_schema(cur, is_postgres=db_service.IS_POSTGRES)
     except Exception as exc:
         logging.exception("PULSE_ID_SCHEMA_SKIPPED error=%s", exc)
+
+    # Here as well as in `create_account`, so the invariant exists from boot
+    # rather than from whenever somebody next signs up. Safe at this line for the
+    # reason the comment above cares about: `ensure_email_identity_index` catches
+    # everything and returns False, so it cannot truncate the schema the way a
+    # raise here would. `run_once_per_process` makes the signup-path call a no-op
+    # after this one.
+    account_email_uniqueness.ensure_email_identity_index(cur)
 
     ensure_user_presence_schema(cur, conn)
     ensure_mobile_security_session_schema(cur)
