@@ -44,7 +44,9 @@ from threading import Lock
 from flask import Blueprint, jsonify, request
 
 from services import db as db_module
-from services.commerce_discovery import config, engine, events, promotion, ranking, schema
+from services.commerce_discovery import (
+    config, engine, events, promotion, ranking, schema, suitability,
+)
 from services.route_auth import auth_required
 
 LOGGER = logging.getLogger(__name__)
@@ -321,6 +323,58 @@ def commerce_discovery_serve(surface):
             # body would let the row keep claiming similarity to a product the
             # server can no longer see.
             context = _anchor_context(cur, anchor_id)
+        elif surface in suitability.CONTENT_SURFACES:
+            # Before retrieval, deliberately. A refused request must cost no
+            # candidate pool, no exposure-ledger write and no impression token,
+            # and a check placed after scoring would already have paid for all
+            # three. See `suitability.assess_context` for why this is a refusal
+            # rather than a score penalty: on the measured grief post, the more
+            # the sensitive content matched, the *better* it scored, so every
+            # floor in the system cleared.
+            verdict = suitability.assess_context(context)
+
+            # Only SENSITIVE_CONTEXT refuses here, and the narrowness is the
+            # decision rather than an oversight. `assess_context` also answers
+            # NO_SUBJECT, and acting on *that* would be a different and much
+            # larger change: `_context_from_request` returns all four keys
+            # whenever the body carries a `context` object at all, so a reel
+            # whose context is a bare `{"category": "watches"}` — which
+            # `reelContext.ts` returns by design for a reel with no caption and
+            # no tags — reads as NO_SUBJECT while being a perfectly good ranking
+            # signal. Refusing it would switch commerce off for that whole
+            # population to protect nobody.
+            #
+            # A client's omission is not evidence about the content. NO_SUBJECT
+            # is real evidence only when the server derived the context itself
+            # and came back with nothing, which is `assess`'s path, not this one.
+            #
+            # The consequence to be honest about: the feed's real exposure — a
+            # shelf inserted directly under a bereavement — is NOT closed here
+            # and cannot be. `useFeedCommerce.ts` sends no context because the
+            # feed's commerce row is a sibling row *between* posts rather than an
+            # attachment to one, so the server is never told which post it lands
+            # beside. Closing that needs per-post suitability on the feed payload
+            # so the client can decline to insert next to an unsuitable
+            # neighbour. This gate covers the surfaces that describe their
+            # content, and the feed only once it starts describing its own.
+            if verdict["code"] == suitability.SENSITIVE_CONTEXT:
+                # `_empty()`, the same answer opted-out and rate-limited get.
+                # The client has one rendering path and no error branch, so a
+                # refusal is invisible by construction — which is the point: the
+                # viewer of a bereavement post should not be told that commerce
+                # was considered and declined.
+                #
+                # Logged without the content or the matched text. The category
+                # and evidence tier are enough to audit the rule and to notice
+                # if it ever stops firing; the post's words are not ours to put
+                # in a log line.
+                LOGGER.info(
+                    "COMMERCE_DISCOVERY_SUITABILITY_REFUSED "
+                    "surface=%s code=%s category=%s evidence=%s",
+                    surface, verdict["code"], verdict.get("category"),
+                    verdict.get("evidence"),
+                )
+                return _empty()
         placements = engine.serve(
             cur, user["user_id"], surface, conn=conn,
             context=context,
