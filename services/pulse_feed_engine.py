@@ -2263,12 +2263,6 @@ def explain_visibility(post_id, viewer_user_id=None):
 def _empty_intelligence(topic=""):
     return {
         "trending_topics": [],
-        "top_spaces": [
-            {"name": "Scam Watch", "slug": "scam-watch", "heat": 0},
-            {"name": "Educators", "slug": "educators", "heat": 0},
-            {"name": "Alpha Arena", "slug": "alpha-arena", "heat": 0},
-            {"name": "Roast Battle", "slug": "roast-battle", "heat": 0},
-        ],
         "top_posts": [],
         "active_creators": [],
         "scam_warnings": [],
@@ -2351,15 +2345,22 @@ def intelligence_panel(topic=""):
     ]
     conn.close()
     trending = [{"tag": k, "count": v} for k, v in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:8]]
-    top_spaces = [
-        {"name": "Scam Watch", "slug": "scam-watch", "heat": counts.get("scamalert", 0) + counts.get("scam", 0)},
-        {"name": "Alpha Arena", "slug": "alpha-arena", "heat": counts.get("alphaarena", 0) + counts.get("arena", 0)},
-        {"name": "Roast Battle", "slug": "roast-battle", "heat": counts.get("roastbattle", 0) + counts.get("roast", 0)},
-        {"name": "Market Psychology", "slug": "market-psychology", "heat": counts.get("marketpsychology", 0)},
-    ]
+    # ``top_spaces`` was removed here. It was four hardcoded names -- Scam Watch,
+    # Alpha Arena, Roast Battle, Market Psychology -- with slugs that do not exist
+    # in ``PULSE_SPACES`` and a "heat" number counted from hashtags rather than
+    # from anything happening in a space. It rendered as "Alpha Arena · heat 0"
+    # linking to /pulse/spaces/alpha-arena, and that route answers 200 with a
+    # generic "PulseSoc Space / Explore Spaces" stub rather than 404 -- which is
+    # worse than a broken link, because a reader who clicks it gets a page that
+    # looks like the space exists and is simply empty. An invented community, an
+    # invented metric, and navigation that lies on arrival. Its only reader was
+    # ``renderIntel`` in the shell-runtime script, which ``pulse_page_html``
+    # strips for every request that does not pass ``?boot_profile=`` explicitly,
+    # and nothing in ``mobile-native/src`` or ``static/js`` reads the key. The
+    # real communities rail is ``pulse_rail_communities_html``, which reads
+    # ``pulse_space_members``.
     return {
         "trending_topics": trending,
-        "top_spaces": top_spaces,
         "top_posts": top_posts,
         "active_creators": active_creators,
         "scam_warnings": scam_warnings,
