@@ -1,7 +1,10 @@
 # Pulse Commerce Intelligence — delivery report
 
-**Status: not deployed.** Nothing in this report is live. The work sits in a detached
-worktree at `eac871f8e` and has not been committed, pushed, or rolled out. Section 16
+**Status: not deployed.** Nothing in this report is live. The work is committed on the
+local branch `commerce-discovery-audit` (head `87a2f1b50`) in a worktree, and has **not**
+been pushed, merged, or rolled out. Committed is not deployed, and the distinction matters
+here: §16 lists changes that alter what feed, reels, post-detail, Messenger, Marketplace
+and product-page users see, with no per-surface kill switch to stage them behind. §16 also
 explains why the rollout decision is not mine to take.
 
 **Scope correction up front.** The mission brief asked for a commerce discovery engine
@@ -13,7 +16,7 @@ it, and the fixes for those defects. Section 3 is an honest ledger of what pre-e
 versus what I added, because the difference is most of the value of this document.
 
 **On the shape of this report.** The brief specified a final report of 41 numbered
-sections. This one has 17. That is a deliberate departure, and the reason is the same
+sections. This one has 18. That is a deliberate departure, and the reason is the same
 reason the engine was not rebuilt: the section list was written on the assumption that
 all of it would be new construction. Roughly two thirds of the headings — embeddings,
 the vector index, the new worker framework, the experimentation platform, the load
@@ -491,6 +494,12 @@ while believing §6's caps cover the platform. They cover `commerce_discovery`.
 
 ## 13. Why per-row provenance is not persisted
 
+> **Closed by §18** (commit `87a2f1b50`). The blocker below was real and is now removed:
+> `schema.py` has an additive-column path, and per-placement provenance is recorded on a
+> `relationship` column. The section stays because the *diagnosis* is the part worth
+> keeping — a missing schema capability was silently deciding a product question — and
+> because the trap it names still applies to the next column anybody adds.
+
 `candidate_source` exists on every pool row in memory and is exposed in aggregate via
 `PoolResult.sources` and `metrics.observe_sources`. It is deliberately **not** written to
 `commerce_discovery_placements`.
@@ -616,8 +625,39 @@ how much product a feed carries, they share the `feed` and `reels` surfaces, and
 neither counts the other's exposures — so if impression distribution moves you would not
 be able to attribute it. Either is safe alone.
 
-The decision is the user's. **Nothing is pushed or deployed**; §17 adds two further
+The decision is the user's. **Nothing is pushed or deployed**; §§17–18 add further
 increments to the same branch and the same statement covers them.
+
+### What §18 adds to this order
+
+§18 contains two changes with very different risk profiles, and they should not travel
+together.
+
+**Ship the payload strip (§18.6) first, and on its own.** It is the only change in this
+report that is one-way safe: `_buyer_safe` exclusively *removes* keys from a product
+payload, so no client can begin receiving something it did not receive before. Nothing in
+`mobile-native/` or `templates/` reads `seller_risk_score` or `candidate_source` — they
+were never part of a documented response shape, they arrived by accident of a denylist
+serializer — so there is no consumer to break, and the revert is a one-line restoration of
+`serialize(row)`. Against that, the cost of *waiting* is not neutral: until it ships, every
+commerce-discovery card on every surface continues to hand the buyer's device an internal
+risk assessment of a named store and a readout of which retrieval question produced the
+card. It has the best ratio of harm-removed to blast-radius of anything here, and it does
+not depend on the schema change below.
+
+**The `relationship` column (§§18.1–18.5) is additive and invisible.** One nullable `TEXT`
+column on `commerce_discovery_placements`, no default, nothing backfilled — existing rows
+keep `NULL`, which `normalize` already treats as "unknown" rather than silently as
+`catalogue`. It is **not on the wire in either direction**: no client sends it,
+`PIPELINE_ONLY_FIELDS` exists specifically to stop it being returned, and no route reads it
+yet. So it carries no client risk, and its only real failure mode is the schema path
+itself — which is why §18.2's ALTER-after-CREATE ordering and its PostgreSQL translation
+are pinned by tests rather than argued for in prose. It can ship in any of the stages
+above, or between them.
+
+What the column does *not* do is change ranking, eligibility, capping, or what any buyer
+sees. A placement that would have been served before is served now, in the same slot, with
+the same `reason_code`. The column records how it got there; it does not decide.
 
 ## 17. The suitability gate was wired to the wrong text
 
@@ -771,3 +811,216 @@ resolver at all.
 
 No new table, column, index, flag or env var. Two wire fields — `post_id` on the serve
 request, and nothing on the response.
+
+## 18. §6's third axis, and two columns that were leaving the building
+
+Commit `87a2f1b50`. Two independent things, one of which I went looking for and one of
+which found me.
+
+### 18.1 The conflation was real, and it was caused by §13
+
+§6 lists seven relationship types and says they "MUST NOT be silently conflated". Before
+this increment they were. What made it worth writing down is that it was not carelessness —
+**the axis did not exist**, and two others were being mistaken for it:
+
+| axis | question it answers | where it lives |
+| --- | --- | --- |
+| `promotion_class` | who *funded* the card | `promotion.py` |
+| `reason_code` | what the buyer is *told* | `ranking.choose_reason` |
+| `relationship` | **how the product got here** | did not exist |
+
+`reason_code` is derived from *signal thresholds* with no knowledge of which retrieval
+question produced the row. So a listing pulled from the untargeted `rotation` source earned
+`related_to_this_post` whenever its relevance happened to clear 0.6, and was afterwards
+indistinguishable from one retrieved *because* it matched the post. That is the conflation,
+in the column an operator would actually read.
+
+`candidate_source` does know, and `pool.build` stamps it on every row — but
+`metrics.observe_sources` aggregates it to a per-surface count. §13 above records why it
+was never persisted, and the reason is a schema capability rather than a product decision:
+the DDL was `CREATE TABLE IF NOT EXISTS` with no ALTER path, so a new column would apply on
+a fresh database and silently not apply to production. **A missing migration path was
+deciding a product question.** That is the shape worth reporting, more than the fix.
+
+*(I had summarised this package as having aggregated provenance away irrecoverably, inferred
+from `PoolResult.sources: Mapping[str, int]`. Grepping found `pool.py:664` setting
+`row["candidate_source"] = source.name`. The inference was wrong and checking changed the
+design: the gap was persistence, not capture. It also turned out to matter for §18.2.)*
+
+### 18.2 Three pieces
+
+**`schema.py` — an additive-column path.** `_ADDITIVE_COLUMNS` plus `_add_columns(cur)`,
+called from `ensure_schema` **after** the CREATEs. Two decisions in it:
+
+- *No `IS_POSTGRES` branch, and no `information_schema`/`PRAGMA` probe.* I was part-way
+  through writing one — it would have been this package's first engine conditional — before
+  reading `services/db.py:811`. `_translate_alter_table` already rewrites every
+  `ALTER TABLE … ADD COLUMN` into `ADD COLUMN IF NOT EXISTS` on PostgreSQL. SQLite has no
+  such syntax and raises `duplicate column name`, which `_add_columns` treats as success.
+  The dialect layer is real; reimplementing it would have been the defect.
+- *After the CREATEs, never before.* An ALTER against a table the same pass is about to
+  create fails on a fresh database, and on PostgreSQL that failure aborts the transaction
+  and takes the CREATEs with it — a brand-new worker boots with no commerce tables, and
+  `serve` reports that as "no placements". Now pinned by
+  `test_the_alters_run_after_the_creates`.
+- *No `NOT NULL`, no `DEFAULT`.* Rows written before the column existed have no
+  relationship and `NULL` is the honest spelling. A `DEFAULT` would backfill several
+  thousand historical placements with a provenance nobody measured — and `catalogue` is
+  precisely the value that raises no suspicion in a report.
+
+**`relationship.py` — the vocabulary.** All seven of §6's values, `assert_servable` as the
+write gate, and `classify` deriving the value from what retrieval and ranking actually did.
+
+**`engine.py` — the wiring.** Derived in the scoring loop, where `candidate_source` and
+`signals` are both in hand, and carried to `_persist` in a side table keyed by listing id.
+
+### 18.3 An eighth value, flagged rather than decided quietly
+
+§6 enumerates seven types. I added **`catalogue`**. Two of the four live retrieval sources —
+`trending` and `rotation` — are neither about the content nor about the viewer, and §6's
+vocabulary has no name for that. The options were:
+
+1. Map them onto `contextual` or `personalized`. This is the silent conflation §6 forbids,
+   and it would do the most damage to the one audit the axis exists to enable: every
+   untargeted card would count as a contextual match, and "is personalization overriding
+   context?" would answer *no* by construction.
+2. Leave them `""`. Then most placements on a cold viewer carry no relationship, and an
+   empty string reads as a bug rather than as a fact.
+3. Name the case.
+
+Third. Extending the vocabulary to cover a real case is the rule-respecting move; squeezing
+a real case into a name that does not fit is the violation. **Flagged here because §6
+enumerated seven and this is an eighth** — an owner who wants the brief's list held exactly
+should say so, and the change is one constant plus one test.
+
+`creator_tagged`, `complementary` and `pulsedrop_curated` are declared with **no write
+path**, deliberately. Each needs a store this product does not have: a post↔listing relation
+(no such table exists anywhere in the repo — `pulse_content_music` is the nearest shape), a
+complement graph, and a bridge from the other curator, which is off in production and shares
+no ledger with this one. Declaring them now, while nothing depends on them, fixes the wire
+values so the eventual write paths land against a vocabulary instead of inventing one each —
+the alternative is how `creator_tagged`, `creator-tagged` and `tagged_by_creator` end up in
+one column. `classify` never returns one and `assert_servable` refuses them, both pinned, so
+an unbuilt feature cannot report itself as working.
+
+`sponsored` is refused outright, for `promotion.assert_unpaid`'s reason: a sponsored
+placement recorded here would go unbilled *and* inflate organic reach.
+
+### 18.4 The ordering is §44's, and it is the whole audit
+
+A row can be true on two axes at once — retrieved by `affinity` *and* a good match for the
+post. One value gets recorded, and **context wins**.
+
+Not arbitrary. §44 requires that personalization must not override context, and the only way
+to audit that is to ask "how many cards on a content surface matched nothing about the
+content?". For that to have a true answer, `personalized` must mean *the content did not
+match*, not merely "affinity retrieved it". Ordered the other way, an affinity-retrieved
+card that also matched the post counts as personalization winning, and the metric reports a
+violation that did not happen while hiding ones that did.
+
+Both readers of the 0.6 threshold now share `ranking.CONTEXT_CLAIM_MIN_RELEVANCE`, extracted
+from a literal inside `choose_reason`. Two copies would be one edit away from a card
+labelled "Related to this post" whose own audit row says the context never matched — the
+conflation this axis removes, reintroduced one layer down. The test moves the constant and
+asserts *both* readers follow, which `assert x == 0.6` cannot do.
+
+### 18.5 A divergence reachable from the wire
+
+`classify` is gated on whether a contextual claim is **sayable**, not merely on whether a
+context arrived. Three terms, each decided elsewhere: `policy.personalized` (a request can
+carry a context policy forbids using — `serve` passes `context=None` in that case), a
+non-empty context, and `context_reason in REASON_PRIORITY`.
+
+That third term is the interesting one. `messenger` and `marketplace` have **no**
+`CONTEXT_CLAIM` entry, so `choose_reason` will not claim relatedness there — yet
+`commerce_discovery_routes.py:604` hands both a client-supplied context. Without the term, a
+Messenger card would record `contextual` while its own label truthfully claimed nothing of
+the kind. Reachable from the wire today, not hypothetical, and pinned per-surface with the
+guard asserting the surface still has no claim, so the test cannot quietly become vacuous.
+
+### 18.6 Two columns that were already leaving the building
+
+This is the part I did not go looking for, and it is worse than §18.1.
+
+I first stamped the relationship onto the row dict — following `pool.build`'s own precedent
+for `candidate_source`. Before committing I checked whether the row reaches the client.
+`_payload`'s docstring said the product half goes through
+`bot.pulse_marketplace_listing_payload` *because* that serializer strips the reviewer-only
+columns, and that hand-building the payload locally "is the one change that would leak them
+to a buyer's phone".
+
+Half true, in the dangerous direction. The serializer is a **denylist** (`bot.py:58378`):
+
+```python
+item = {key: value for key, value in dict(listing or {}).items()
+        if key not in MARKETPLACE_REVIEWER_ONLY_FIELDS}
+```
+
+It removes the columns *it* knows about. Every column this package invents is unknown to it
+and ships by default. Driven against the real serializer, two were already reaching buyers:
+
+| column | what it is |
+| --- | --- |
+| `seller_risk_score` | `COALESCE(ms.risk_score,0)` (`eligibility.py:128`), for the ranker's seller-reliability signal. An internal risk assessment of a named store. `ranking.EXPLAINABLE_FACTORS` already refuses to publish the *reason* derived from it, on the stated grounds that naming it "publishes an internal assessment of a named store" — the raw number is strictly worse than the reason. |
+| `candidate_source` | which retrieval question produced the card. A free per-card readout of the retrieval strategy. |
+
+**Why no test could see it, which is the part worth keeping.** `conftest`'s
+`SimulatedMarketplace.serve` passes no `serialize`, so every test in the package takes
+`_payload`'s `serialize is None` fallback — and that fallback is a hand-written **allowlist**
+of nine buyer-visible fields. The fixture models the one path that is safe by construction
+and never the one production runs. Reverting the fix leaves **666 tests green** and fails
+only the two new ones. A green suite asserting the inverse of production, again, and this
+time in the direction of a privacy leak rather than a tuning miss.
+
+Fixed with `engine.PIPELINE_ONLY_FIELDS` and `_buyer_safe(row)` applied *before* the
+serializer. Deliberately **not** by widening `MARKETPLACE_REVIEWER_ONLY_FIELDS`: that list
+is shared by every marketplace endpoint, and widening it from inside this package would
+change payloads this mission has not looked at. The columns are ours; the strip belongs here.
+`relationship` is in the list as belt-and-braces and should be unreachable — it is kept off
+the row precisely because `candidate_source` demonstrates what happens to anything put there.
+
+`tests/commerce_discovery/test_pipeline_columns_stay_server_side.py` drives a *pass-through*
+serializer rather than the fixture's, and separately pins by AST that the real serializer
+still opens with a `not in` dict comprehension — so the stand-in cannot drift into flattering
+the engine. It also asserts `seller_risk_score` is still in `CANDIDATE_COLUMNS`, so the guard
+cannot pass because the column stopped being selected.
+
+**Still open, and reported rather than changed.** The same denylist passes several other
+columns to the device that the marketplace's own endpoints also return —
+`seller_verification_status`, `seller_status`, `publication_blocker`, `publication_state`,
+`approval_status`, `inventory_state`. Those are not this package's inventions and not this
+mission's regression, so widening the shared list is an owner decision about the marketplace
+payload contract, not a commerce-discovery fix. Worth an audit; `seller_verification_status`
+and `publication_blocker` are the two I would look at first.
+
+### 18.7 Verification
+
+`tests/commerce_discovery/` + `tests/protection/`: **1,331 passed**, 37 subtests, in 126s.
+The two top-level discovery files: 21 passed, 30 subtests. New: 43 tests in
+`test_relationship_is_recorded.py`, 10 in `test_pipeline_columns_stay_server_side.py`, and
+`test_schema_durability.py` from 7 to 16.
+
+`test_every_ddl_statement_runs` was asserting `len(executed) == len(schema._DDL)`, which the
+additive ALTER made a false negative. Rewritten to containment in *both* directions —
+everything declared runs, and nothing undeclared runs — which is what the count was standing
+in for, plus the ordering and PostgreSQL-translation tests above. Strengthened, not relaxed.
+
+Five mutations, each reverted and the source confirmed restored:
+
+| mutation | result |
+| --- | --- |
+| drop the `context_reason in REASON_PRIORITY` term | 2 red — messenger *and* marketplace record `contextual` against a `new_to_marketplace` label |
+| put the `PERSONALIZED` check before the context check (inverts §44) | 1 red |
+| give `classify` a private `0.6` | 2 red (both threshold tests) |
+| declare `relationship` in the CREATE body only — **the production shape** | 1 red, and **only** in `test_schema_durability.py`; all 43 relationship tests still pass, because SQLite gets the column from the CREATE. The clearest evidence that the durability file is the sole defence against this class. |
+| hand the raw row to the serializer (restore the leak) | 2 red; 666 others green |
+
+Non-vacuity checked directly before trusting any of it. On `feed` with a matching context the
+engine records a *mixed* set — one `contextual`/`related_to_this_post` row beside one
+`catalogue`/`new_to_marketplace` row — so the label-vs-provenance agreement test exercises
+both directions on real rows rather than one. `product_detail` records 6/6 `similar`;
+`messenger` and `marketplace` with a context record `catalogue`.
+
+One new column, `commerce_discovery_placements.relationship`, nullable, no default, not on
+the wire in either direction. No new table, index, flag or env var. No protected audio path
+touched.
