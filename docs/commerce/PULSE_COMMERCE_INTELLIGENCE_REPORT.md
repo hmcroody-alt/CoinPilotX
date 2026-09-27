@@ -415,12 +415,20 @@ both return nothing. Neither system can see the other's history:
   `marketplace_reports`, `users` and `marketplace_sellers` — not one `commerce_discovery`
   table.
 
-They overlap on surface: `schema.SURFACES` includes `feed` and `reels`, and PulseDrop
-publishes signal posts and reels. So one listing can reach one viewer twice in the same
-scroll — once as a `commerce_discovery` product card that increments
-`commerce_discovery_impression_events` and counts against `product_cap` (3), and once as
-a PulseDrop `pulse_posts` row from the system account, which `commerce_discovery` never
-learns about.
+**They overlap in one literal list, which I checked at the render layer rather than
+inferring from the surface names.** `HomeScreen.tsx` calls `useFeedCommerce`, which fetches
+`surface="feed"` placements and hands them to `injectCommerceRows` — the client interleaves
+a `CommerceFeedCard` into the post list roughly once per eight posts (`config.py`'s own
+summary: "a feed unit once per eight posts, one reels chip"). PulseDrop's output is a
+`pulse_posts` row from the system account, i.e. an ordinary post in that same list.
+
+So one listing can reach one viewer twice in the same scroll: once as an injected commerce
+card, which writes `commerce_discovery_impression_events` and counts against `product_cap`
+(3), and once as a PulseDrop post a few rows away, which `commerce_discovery` never learns
+about. On `reels` the shape differs — commerce_discovery attaches a *chip to an existing
+reel* (`ReelsScreen`'s `chipByReelId`, budgeted at one per session) rather than inserting a
+unit — but a PulseDrop reel and a chipped reel are still two sightings of one product with
+one of them uncounted.
 
 **The honest statement of the defect is narrower than "the exposures add up", because
 they are not in the same units.** `product_cap` bounds impressions per viewer; PulseDrop's
