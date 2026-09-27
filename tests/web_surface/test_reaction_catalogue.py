@@ -53,6 +53,10 @@ CACHE_PINNED_ASSETS = {
         "reaction-catalogue-20260927h",
         "401375580f970d043ded8b961b8bb9c583a300a5e63498f2300f46dd2a7c5c00",
     ),
+    "static/css/pulse_reaction_system.css": (
+        "video-action-fit-20260927i",
+        "6ff68ca37cb663b328b315dbdfcd7e63614e2dee96f996946ab2800eb18db50b",
+    ),
 }
 
 
