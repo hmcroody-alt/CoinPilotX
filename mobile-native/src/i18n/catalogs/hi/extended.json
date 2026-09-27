@@ -2904,7 +2904,7 @@
       "signOut": "साइन आउट करें",
       "signOutSubtitle": "सिर्फ़ इसी डिवाइस से साइन आउट करें।",
       "signOutConfirmTitle": "PulseSoc से साइन आउट करें?",
-      "signOutConfirmBody": "आपके दूसरे डिवाइस पर आप साइन इन रहेंगे। इस डिवाइस पर आपके ड्राफ़्ट और डाउनलोड बने रहेंगे।",
+      "signOutConfirmBody": "आपके दूसरे डिवाइस पर आप साइन इन रहेंगे। इस डिवाइस पर सहेजे गए ड्राफ़्ट और डाउनलोड किया गया मीडिया मिटा दिया जाएगा।",
       "signOutEverywhere": "सभी डिवाइस से साइन आउट करें",
       "signOutEverywhereSubtitle": "हर PulseSoc सेशन खत्म कर देता है, यह वाला भी।",
       "signOutEverywhereConfirmTitle": "सभी डिवाइस से साइन आउट करें?",

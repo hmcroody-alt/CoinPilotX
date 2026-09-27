@@ -2879,7 +2879,7 @@
       "signOut": "ログアウト",
       "signOutSubtitle": "この端末だけログアウトします。",
       "signOutConfirmTitle": "PulseSocからログアウトしますか？",
-      "signOutConfirmBody": "他の端末ではログインしたままです。この端末の下書きとダウンロードは保持されます。",
+      "signOutConfirmBody": "他の端末ではログインしたままです。この端末の未投稿の下書きとダウンロード済みメディアは削除されます。",
       "signOutEverywhere": "すべての端末からログアウト",
       "signOutEverywhereSubtitle": "この端末を含む、すべてのPulseSocのセッションを無効にします。",
       "signOutEverywhereConfirmTitle": "すべての端末からログアウトしますか？",

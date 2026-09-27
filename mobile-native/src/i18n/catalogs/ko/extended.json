@@ -2887,7 +2887,7 @@
       "signOut": "로그아웃",
       "signOutSubtitle": "이 기기에서만 로그아웃해요.",
       "signOutConfirmTitle": "PulseSoc에서 로그아웃할까요?",
-      "signOutConfirmBody": "다른 기기에서는 로그인 상태가 유지돼요. 이 기기의 임시저장과 다운로드는 그대로 남아요.",
+      "signOutConfirmBody": "다른 기기에서는 로그인 상태가 유지돼요. 이 기기에 저장된 임시저장 글과 내려받은 미디어는 삭제돼요.",
       "signOutEverywhere": "모든 기기에서 로그아웃",
       "signOutEverywhereSubtitle": "이 기기를 포함한 모든 PulseSoc 세션을 해제해요.",
       "signOutEverywhereConfirmTitle": "모든 기기에서 로그아웃할까요?",

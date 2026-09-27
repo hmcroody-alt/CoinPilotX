@@ -2887,7 +2887,7 @@
       "signOut": "退出登录",
       "signOutSubtitle": "仅退出当前设备。",
       "signOutConfirmTitle": "退出 PulseSoc？",
-      "signOutConfirmBody": "你在其他设备上仍保持登录。此设备上的草稿和下载内容会保留。",
+      "signOutConfirmBody": "你在其他设备上仍保持登录。此设备上未发布的草稿和已下载的媒体将被删除。",
       "signOutEverywhere": "退出所有设备",
       "signOutEverywhereSubtitle": "撤销包括当前设备在内的所有 PulseSoc 会话。",
       "signOutEverywhereConfirmTitle": "退出所有设备？",

@@ -3032,7 +3032,7 @@
       "signOut": "تسجيل الخروج",
       "signOutSubtitle": "تسجيل الخروج من هذا الجهاز فقط.",
       "signOutConfirmTitle": "تسجيل الخروج من PulseSoc؟",
-      "signOutConfirmBody": "ستبقى مسجّل الدخول على أجهزتك الأخرى، وسيتم الاحتفاظ بمسوداتك وتنزيلاتك على هذا الجهاز.",
+      "signOutConfirmBody": "ستبقى مسجّل الدخول على أجهزتك الأخرى، وسيتم حذف المسودات غير المنشورة والوسائط المنزّلة على هذا الجهاز.",
       "signOutEverywhere": "تسجيل الخروج من جميع الأجهزة",
       "signOutEverywhereSubtitle": "يُنهي كل جلسات PulseSoc، بما فيها هذه الجلسة.",
       "signOutEverywhereConfirmTitle": "تسجيل الخروج من جميع الأجهزة؟",

@@ -2904,7 +2904,7 @@
       "signOut": "Abmelden",
       "signOutSubtitle": "Nur auf diesem Gerät abmelden.",
       "signOutConfirmTitle": "Von PulseSoc abmelden?",
-      "signOutConfirmBody": "Auf deinen anderen Geräten bleibst du angemeldet. Deine Entwürfe und Downloads auf diesem Gerät bleiben erhalten.",
+      "signOutConfirmBody": "Auf deinen anderen Geräten bleibst du angemeldet. Nicht gesendete Entwürfe und heruntergeladene Medien auf diesem Gerät werden gelöscht.",
       "signOutEverywhere": "Auf allen Geräten abmelden",
       "signOutEverywhereSubtitle": "Widerruft jede PulseSoc-Sitzung, auch diese.",
       "signOutEverywhereConfirmTitle": "Von allen Geräten abmelden?",
