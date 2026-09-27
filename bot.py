@@ -229,6 +229,7 @@ from telegram.ext import (
 from services import (
     app_links,
     app_promotion,
+    auth_subject_guard,
     brevo_contacts as brevo_contacts_service,
     client_address,
     command_center_client as command_center_client_service,
@@ -3124,6 +3125,130 @@ ABUSE_GUARD_PROTECTED = {
     "/api/create-checkout-session": (8, 300),
     "/api/ai-assistant": (30, 300),
 }
+
+
+# path -> (scope, json/form field names to read the subject from,
+# distinct-subject limit, window seconds). A companion to ABUSE_GUARD_PROTECTED
+# above, not a replacement: that table bounds requests per path, this one bounds
+# how many *different* accounts one client may ask about. The two answer
+# different questions and the account-identity endpoints need this one, because
+# the only shipped client of `/confirmation-status` polls it every 4 seconds
+# about a single address (VerifyEmailStep.tsx: POLL_INTERVAL_MS = 4000) --
+# roughly 75 requests per 300s that a request counter cannot distinguish from 75
+# probes. See services/auth_subject_guard.py for why variety rather than volume
+# is the quantity to bound.
+#
+# GET is included where the route accepts GET. `basic_abuse_guard` is POST/PUT
+# only, which is correct for a form post and is exactly how the enumeration
+# oracle stayed unbounded: `/confirmation-status` answers GET too, so a prober
+# never had to send a method either limiter was watching.
+#
+# WHY THE SCOPE IS AN EXPLICIT COLUMN AND NOT THE PATH
+# ---------------------------------------------------
+# Neither of the two obvious keys is right, in opposite ways.
+#
+# Keying by path alone would hand an enumerator a fresh budget per spelling:
+# `/api/mobile/auth/confirmation-status` and its `/api/pulse` twin are the same
+# handler mounted twice, so alternating the prefix would buy 2x, and adding a
+# third mount point later would silently buy 3x.
+#
+# Keying by actor alone -- which is what shipped first, and what the mutation
+# matrix caught -- conflates endpoints that have deliberately different limits.
+# A client that has legitimately named 8 addresses at `/confirmation-status`
+# (someone who mistyped their own address a few times) would arrive at
+# `/resend-confirmation`, whose limit is 5, already over it, and be refused a
+# resend it never asked for twice. The endpoints have separate limits precisely
+# because they carry separate risks; sharing one counter erases that.
+#
+# So aliases of one endpoint share a scope and distinct endpoints do not, and
+# the grouping is written down rather than inferred from the URL.
+ENUMERATION_GUARD_PROTECTED = {
+    "/api/mobile/auth/confirmation-status": ("confirmation-status", ("email",), 8, 900),
+    "/api/pulse/mobile/auth/confirmation-status": ("confirmation-status", ("email",), 8, 900),
+    "/api/mobile/auth/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
+    "/api/pulse/mobile/auth/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
+    "/resend-confirmation": ("resend-confirmation", ("email",), 5, 900),
+    "/api/mobile/auth/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
+    "/api/pulse/mobile/auth/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
+    "/change-confirmation-email": ("change-confirmation-email", ("old_email", "email"), 5, 900),
+}
+
+#: How much account-confirmation mail one address may receive in one window,
+#: counted across every caller. Per-subject rather than per-client because the
+#: mailbox being filled is the party at risk and the attacker is not it --
+#: rotating source addresses defeats a per-client cap while the mail still
+#: arrives. The client's own cooldown is 30s (VerifyEmailStep.tsx:
+#: RESEND_COOLDOWN_S = 30), so five in fifteen minutes is well clear of anyone
+#: legitimately retrying.
+CONFIRMATION_EMAIL_PER_ADDRESS = (5, 900)
+
+
+def enumeration_guard_subject(fields):
+    """The address this request is asking about, from body or query or form.
+
+    Reads the same shapes the routes themselves read. A request whose subject
+    cannot be found returns "" and is deliberately not counted: filing every
+    malformed request under one shared bucket would let a junk request refuse
+    the next honest one.
+    """
+    payload = request.get_json(silent=True)
+    payload = payload if isinstance(payload, dict) else {}
+    for field in fields:
+        raw = payload.get(field) or request.args.get(field) or request.form.get(field) or ""
+        candidate = normalize_email(clean_html(str(raw)))
+        if candidate:
+            return candidate
+    return ""
+
+
+@webhook_app.before_request
+def account_enumeration_guard():
+    protected = ENUMERATION_GUARD_PROTECTED
+    if request.path not in protected:
+        return None
+    if request.method not in {"GET", "POST", "PUT"}:
+        return None
+    scope, fields, limit, window_seconds = protected[request.path]
+    actor = client_ip_hash()
+    subject = enumeration_guard_subject(fields)
+    # Compose only when there is an actor to compose with. `f"{scope}:{actor}"`
+    # with an empty actor is `"confirmation-status:"` -- non-empty, so it would
+    # sail past the guard's own `_absent(actor)` check and become exactly the
+    # shared bucket that check exists to prevent, with every actorless request in
+    # the fleet spending one budget.
+    refused = auth_subject_guard.distinct_subject_refused(
+        f"{scope}:{actor}" if actor else "", subject, limit, window_seconds)
+    if refused is None:
+        return None
+    # Log the count, never the subject. The point of the endpoint's refusal is
+    # that no observer learns which addresses were asked about, and a log line
+    # naming them would hand that to anyone with log access.
+    logging.warning(
+        "Account enumeration guard triggered path=%s ip_hash=%s subjects=%s limit=%s",
+        request.path, actor, refused.count, refused.limit)
+    # One security_events row per actor per window, not one per refused request.
+    # `security_monitor.record` opens a connection, and the pool is 8+8 with a 3s
+    # timeout -- a DB write on the refusal path would make this guard an
+    # amplifier for precisely the traffic it exists to refuse: hit the cap, and
+    # every further probe costs a connection instead of costing nothing. The
+    # alarm is itself expressed as a per-subject cap of one, reusing the same
+    # primitive rather than adding a second piece of window bookkeeping.
+    # Keyed by scope, not by path, for the same reason the budget is: otherwise
+    # each alias of one endpoint files its own alarm and the row count reads as
+    # more distinct incidents than happened.
+    first_refusal = auth_subject_guard.subject_event_refused(
+        f"enumeration-alarm:{actor}:{scope}", 1, refused.window_seconds)
+    if first_refusal is None:
+        security_monitor.record(
+            "account_enumeration_guard_refused",
+            "high",
+            account_user_id() or 0,
+            actor,
+            request.path,
+            {"distinct_subjects": refused.count, "limit": refused.limit,
+             "window_seconds": refused.window_seconds},
+        )
+    return rate_limit_refusal(request.path, retry_after=refused.retry_after)
 
 
 @webhook_app.before_request
@@ -7431,17 +7556,72 @@ def send_account_confirmation_email(user, source="signup"):
     }
 
 
-def resend_account_confirmation_by_email(email, source="login"):
+#: The one thing an unauthenticated caller is told, whatever the truth is. It has
+#: to read naturally in all four cases it now covers -- no such account, already
+#: confirmed, confirmation re-sent, and send attempted but refused by the mail
+#: provider -- because a caller who can tell those apart can enumerate accounts.
+#: Both shipped consumers display it verbatim and neither branches on it
+#: (VerifyEmailStep.tsx and AccountRecoveryScreen.tsx read only `.message`).
+RESEND_CONFIRMATION_NEUTRAL_MESSAGE = (
+    "If that account still needs confirming, we've sent a fresh link. "
+    "Check your inbox, including spam."
+)
+
+
+def resend_account_confirmation_by_email(email, source="login", *, privileged=False):
+    """Re-send an account confirmation email without saying whether it exists.
+
+    This used to answer three distinguishable things -- "If that account exists
+    and still needs confirmation…" for an unknown address, "This email is
+    already confirmed. You can log in." for a verified one, and "Check your
+    email to confirm your account." for an unverified one -- on three different
+    statuses (200/202/502), with a ``trace_id`` present in only one of them.
+    Any one of those four signals answers "does this person have a PulseSoc
+    account", which is the question Open Commerce §16 turns on: a guest buying
+    with an address that already has an account must complete the purchase
+    without the checkout revealing that the account is there.
+
+    An invalid address still refuses with 400. That is a statement about the
+    syntax of the input, not about the contents of the user table, and
+    ``api_mobile_auth_recover`` already draws the line in the same place and
+    says why.
+
+    ``privileged`` is for the admin console, which reaches this through
+    ``admin_login_required`` and legitimately needs the real outcome and trace
+    id for support work -- an admin can already read the user list, so there is
+    nothing here to withhold from them. It also skips the per-address cap,
+    because "the operator deliberately pressed resend for this customer" is
+    precisely the case where refusing would be the bug.
+    """
     email = normalize_email(email)
     if not email or not is_valid_email(email):
         return {"ok": False, "message": "Enter the email address for your PulseSoc account.", "status": 400}
+    neutral = {"ok": True, "message": RESEND_CONFIRMATION_NEUTRAL_MESSAGE, "status": 200}
+    if not privileged:
+        limit, window_seconds = CONFIRMATION_EMAIL_PER_ADDRESS
+        capped = auth_subject_guard.subject_event_refused(email, limit, window_seconds)
+        if capped is not None:
+            # Same body as a success. A refusal that looked different would
+            # reintroduce the oracle by a side door: only an address with a real
+            # unverified account can accumulate sends, so "you are being
+            # throttled" would itself confirm the account.
+            logging.warning(
+                "Confirmation email per-address cap hit source=%s sends=%s limit=%s",
+                source, capped.count, capped.limit)
+            return dict(neutral)
     user = load_account_by_email(email)
-    if not user:
-        return {"ok": True, "message": "If that account exists and still needs confirmation, PulseSoc will send a confirmation email.", "status": 200}
-    if int(user.get("email_verified") or 0):
-        return {"ok": True, "message": "This email is already confirmed. You can log in.", "status": 200}
+    if not user or int(user.get("email_verified") or 0):
+        return dict(neutral)
     result = send_account_confirmation_email(user, source=source)
     delivery_blocked = "not authorized in brevo" in str(result.get("message") or "").lower()
+    if not privileged:
+        # The delivery failure is real and worth acting on, but the caller is not
+        # who acts on it: `send_account_confirmation_email` has already written
+        # the `verification_email_failed` auth event and the trace id to the
+        # server log, and the admin console reads both. Telling an anonymous
+        # caller would mean only existing unverified accounts can ever see a
+        # 502, which is the oracle again.
+        return dict(neutral)
     return {
         **result,
         "status": 200 if result.get("ok") else 202 if delivery_blocked else 502,
@@ -8007,7 +8187,15 @@ def api_mobile_auth_resend_confirmation():
     payload = request.get_json(silent=True) or {}
     email = normalize_email(clean_html(payload.get("email") or ""))
     result = resend_account_confirmation_by_email(email, source="mobile_resend")
-    return jsonify({"ok": bool(result.get("ok")), "message": result.get("message") or "Check your email to confirm your account.", "trace_id": result.get("trace_id")}), int(result.get("status") or (200 if result.get("ok") else 400))
+    # `trace_id` is coerced to "" rather than passed through. It used to be
+    # present only when a send was actually attempted, so its mere presence
+    # answered "does this address have an unverified account" -- the same oracle
+    # the message collapse closes, leaking through a field the client never reads.
+    return jsonify({
+        "ok": bool(result.get("ok")),
+        "message": result.get("message") or RESEND_CONFIRMATION_NEUTRAL_MESSAGE,
+        "trace_id": "",
+    }), int(result.get("status") or (200 if result.get("ok") else 400))
 
 
 @webhook_app.route("/api/mobile/auth/change-confirmation-email", methods=["POST"])
@@ -8036,12 +8224,18 @@ def api_mobile_auth_confirmation_status():
     if not email or not is_valid_email(email):
         return api_error("Enter the email address for your PulseSoc account.", 400)
     user = load_account_by_email(email)
+    confirmed = bool(user and int(user.get("email_verified") or 0))
+    # `exists` and `email_verified` are gone. `exists` was the larger leak of the
+    # two -- it answered "is there an account here" for *unconfirmed* accounts as
+    # well, which `confirmed` cannot -- and neither field had a reader: the only
+    # caller is VerifyEmailStep.tsx, which reads `result.confirmed` and nothing
+    # else (`email_verified` was a duplicate of `confirmed` computed from the same
+    # expression). `confirmed` itself stays, because the screen exists to wait for
+    # it; that residual signal is what account_enumeration_guard bounds instead.
     return jsonify({
         "ok": True,
-        "exists": bool(user),
-        "email_verified": bool(user and int(user.get("email_verified") or 0)),
-        "confirmed": bool(user and int(user.get("email_verified") or 0)),
-        "message": "Email confirmed." if user and int(user.get("email_verified") or 0) else "Check your email to confirm your account.",
+        "confirmed": confirmed,
+        "message": "Email confirmed." if confirmed else "Check your email to confirm your account.",
     })
 
 
@@ -19088,7 +19282,9 @@ def admin_emails_resend_confirmation():
     if not verify_csrf():
         return admin_page_html("Security Check Failed", "<h1>Security check failed.</h1>", admin), 400
     email = normalize_email(clean_html(request.form.get("email", "")))
-    result = resend_account_confirmation_by_email(email, source="admin_email_page")
+    # privileged: this caller passed admin_login_required and needs the real
+    # outcome for the audit row below. See resend_account_confirmation_by_email.
+    result = resend_account_confirmation_by_email(email, source="admin_email_page", privileged=True)
     log_admin_audit(admin.get("id"), "admin_resend_confirmation_email", "email", mask_email(email), {"ok": bool(result.get("ok")), "trace_id": result.get("trace_id")})
     return redirect("/admin/emails?filter=confirmation")
 
