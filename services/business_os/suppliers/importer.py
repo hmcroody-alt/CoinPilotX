@@ -388,13 +388,19 @@ def _create_draft_listing(cur, seller_user_id, product, *, marketplace_autolist=
     media = [m for m in (product.get("media") or []) if isinstance(m, str)]
     cur.execute(
         "INSERT INTO marketplace_listings "
-        "(seller_user_id, title, description, category, price_label, status, "
+        "(seller_user_id, title, description, category, price_label, price_minor, status, "
         " created_at, updated_at, approval_status, currency, quantity, "
         " delivery_type, product_type, listing_type, cover_image_url, "
         " listing_metadata_json) "
-        "VALUES (?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
+        "VALUES (?,?,?,?,?,?,'draft',?,?,'pending_review',?,?,'physical','physical','',?,?)",
+        # An import arrives unpriced on purpose -- the retail price is decided at
+        # publish, in `drafts.py`, from the offer the merchant accepts. The
+        # literal 0 is written beside the literal "" rather than left NULL so
+        # that the two columns move together at every site that touches either;
+        # they sort identically, and the pairing is what the tripwire test in
+        # tests/test_marketplace_price_minor.py checks for.
         (int(seller_user_id), product.get("title"), product.get("description"),
-         product.get("category"), "", now, now, product.get("currency") or "USD", None,
+         product.get("category"), "", 0, now, now, product.get("currency") or "USD", None,
          media[0] if media else None,
          json.dumps({"source": "dropship", "media": media,
                      "marketplace_autolist": bool(marketplace_autolist)},
