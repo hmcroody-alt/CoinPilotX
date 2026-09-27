@@ -7,6 +7,7 @@ these documents comes from the extractors. Regenerate rather than edit.
 
 from __future__ import annotations
 
+import argparse
 import collections
 import json
 import pathlib
@@ -129,18 +130,48 @@ def matrix_doc(matrix: list[dict]) -> str:
     return "\n".join(body) + "\n"
 
 
-def main() -> int:
+def render() -> dict[str, str]:
     native = run("extract_native_surfaces.py")
     web = run("extract_web_routes.py")
     url_map = json.loads(SNAPSHOT.read_text())
     matrix = run("build_parity_matrix.py", "--url-map", str(SNAPSHOT))["matrix"]
-
-    outputs = {
+    return {
         "PULSESOC_NATIVE_PRODUCT_INVENTORY.md": native_doc(native),
         "PULSESOC_WEB_PRODUCT_INVENTORY.md": web_doc(web, url_map),
         "PULSESOC_WEB_NATIVE_PARITY_MATRIX.md": matrix_doc(matrix),
     }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--check", action="store_true",
+        help="do not write; exit 1 if the committed documents differ from what "
+             "would be rendered now. These documents are read as the answer to "
+             "'what does the web not have yet', so a stale copy sends someone to "
+             "rebuild a page that already exists.")
+    args = parser.parse_args()
+
+    outputs = render()
     target = REPO_ROOT / "docs" / "parity"
+
+    if args.check:
+        stale = []
+        for name, text in outputs.items():
+            path = target / name
+            current = path.read_text(encoding="utf-8") if path.exists() else ""
+            if current != text:
+                stale.append(name)
+        if stale:
+            print(
+                "stale generated documents: " + ", ".join(sorted(stale))
+                + "\nRegenerate with: python scripts/parity/render_reports.py",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"docs/parity: {len(outputs)} documents up to date")
+        return 0
+
     target.mkdir(parents=True, exist_ok=True)
     for name, text in outputs.items():
         (target / name).write_text(text, encoding="utf-8")
