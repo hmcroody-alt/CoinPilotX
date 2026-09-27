@@ -42931,13 +42931,49 @@ def pulse_rail_intelligence_html(intel):
             )
         # `suggested_action` has exactly two values, both derived from whether
         # scam warnings exist, so it is a statement about real state rather than
-        # generated advice. Carried; the energy meter and "community mood" that
-        # sat beside it were not -- see the note in `pulse_desktop_right_rail_html`.
+        # generated advice. The energy meter beside it was not carried: it was
+        # `Math.max(18, Math.min(96, posts_today * 8 + 42))`, a bar whose width
+        # is a restatement of a number already printed above it, floored at 18%
+        # so it never looks empty.
+        #
+        # `community_mood` IS carried, and the first pass here was wrong to drop
+        # it. This is the "Curious" readout -- it is the only word that module
+        # ever showed -- and it is derived, not decorative:
+        # `pulse_feed_engine.intelligence_panel` returns "Protective" when a
+        # `scamalert` tag is trending and "Curious" otherwise, so it reports
+        # whether the community is currently reacting to a scam. Losing it would
+        # have quietly retired the one piece of Pulse Network worth keeping
+        # while the oversized globe card around it was being reduced.
+        #
+        # It rides inside this card rather than standing as its own, which is
+        # what "reduce it into Pulse Intelligence" means: one word next to the
+        # heading instead of an animated globe in the centre column. It inherits
+        # this card's collapse rule, so a mood never appears without the
+        # activity that produced it -- "Curious" on a silent install would be a
+        # mood read off nothing.
         action = str(intel.get("suggested_action") or "").strip()
         action_html = f"<p class='muted'>{html_escape(clean_html(action))}</p>" if action else ""
+        #
+        # The label is a real element rather than a `title=`: `title` is not
+        # announced by most screen readers and never appears on touch, so the
+        # mood would have reached a sighted mouse user and nobody else. Written
+        # plainly inside the span and hidden visually, it reads as "Community
+        # mood: Curious" and the heading above it still reads as its own phrase
+        # rather than running into the word after it.
+        mood = str(intel.get("community_mood") or "").strip()
+        mood_html = (
+            "<span class='home-intel-mood'>"
+            # Leading space matters: these are two flex children, so the source
+            # whitespace between them is dropped and the accessible name came out
+            # as "PulseSoc IntelligenceCommunity mood: Curious". Inside the span
+            # (which sets `white-space: nowrap`) the space survives.
+            "<span class='pulse-shell-sr'> Community mood: </span>"
+            f"{html_escape(clean_html(mood))}</span>"
+            if mood else ""
+        )
         cards += (
             "<section class='desktop-rail-card home-intel-overview'>"
-            "<h3>PulseSoc Intelligence</h3>"
+            f"<h3><span>PulseSoc Intelligence</span>{mood_html}</h3>"
             f"<div class='desktop-rail-stat'>{stats}</div>"
             f"{action_html}"
             "<a class='desktop-rail-more' href='/pulse/premium'>Open Intelligence</a>"
