@@ -50,6 +50,7 @@ import {
   importNeedsReview,
   importSelected,
   isBatchTooLarge,
+  isClientTimeout,
   removeImportCartItem,
   stateForError,
   type DropshippingState,
@@ -256,18 +257,34 @@ export function ImportCartScreen({ route, navigation }: Props) {
       // fallthrough is what a merchant with an over-cap cart used to be told:
       // nothing about what was wrong, and nothing they could act on.
       const overCap = isBatchTooLarge(error);
+      // Also ahead of it, and for a stronger reason than clarity. Every sentence
+      // below asserts that nothing was imported. When *we* stopped waiting, that
+      // assertion is not something this device can know — and production showed
+      // it is usually false: the import finishes and commits. So this branch
+      // reports the one true thing (we stopped watching) and then goes and looks.
+      const unknown = isClientTimeout(error);
       const failure = stateForError(error);
       setRunError(
         overCap
           ? `That's more products than one import can take${
               maxPerImport ? `. Untick some so you're importing ${formatters.count(maxPerImport)} or fewer` : ""
             } — nothing was imported and your cart is unchanged.`
-          : failure === "PROVIDER_UNAVAILABLE"
-            ? "Your supplier didn't respond. Nothing was imported — your cart is unchanged."
-            : failure === "SUPPLIER_DISCONNECTED"
-              ? "Your supplier connection needs attention. Nothing was imported."
-              : "That import didn't run. Nothing was imported and your cart is unchanged."
+          : unknown
+            ? "This import is taking longer than usual, so we stopped waiting — but it's still running on PulseSoc. Your cart below updates as products land. Nothing is lost if you import the rest later."
+            : failure === "PROVIDER_UNAVAILABLE"
+              ? "Your supplier didn't respond. Nothing was imported — your cart is unchanged."
+              : failure === "SUPPLIER_DISCONNECTED"
+                ? "Your supplier connection needs attention. Nothing was imported."
+                : "That import didn't run. Nothing was imported and your cart is unchanged."
       );
+      // The success path reloads; this one has to as well, and for a sharper
+      // reason. The rows the server is still importing leave the cart as it
+      // commits them, so the cart is the merchant's only readout on a run this
+      // app is no longer watching. Left unloaded, the screen keeps showing all
+      // 58 ticked rows under a message about an import in flight, and a second
+      // tap re-sends the ones already done. (Safe — the route is idempotent per
+      // product — but it reads as the app having done nothing.)
+      if (unknown) await load("refresh").catch(() => undefined);
     } finally {
       setImporting(false);
     }
