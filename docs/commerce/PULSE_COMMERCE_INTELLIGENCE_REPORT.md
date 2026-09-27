@@ -1,5 +1,10 @@
 # Pulse Commerce Intelligence — delivery report
 
+**If you want the summary, read `SIGNAL_COMMERCE_DELIVERY_REPORT.md` instead.** That document
+answers the brief's 64 required items in order and points back here for proof. This one is
+the evidence: every defect with the measurement that found it and the mutation that proved
+the test could fail. It is long because that is what it is for.
+
 **Status: not deployed.** Nothing in this report is live. The work is committed on the
 local branch `commerce-discovery-audit` in a worktree, and has **not** been pushed, merged,
 or rolled out. The last increment described below is §22, committed as `68e7867f9`; if
