@@ -740,7 +740,7 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   right: 14px;
   z-index: 9;
   min-height: 46px;
-  min-width: 146px;
+  min-width: 112px;
   border-radius: 999px;
   padding: 8px 16px 8px 8px;
   display: inline-flex;
@@ -2321,10 +2321,13 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
     min-width: 0;
   }
 
+  /* The button is an overlay on the same band as the PULSE NETWORK badge, so on
+     phones it must hug its content -- a width floor here pushed its left edge
+     back over the badge and drew the two labels on top of each other. */
   .pulse-home-os .pulse-radio-launch {
     top: 8px;
     right: 8px;
-    min-width: 112px;
+    min-width: 0;
     min-height: 40px;
     padding: 6px 10px 6px 6px;
     gap: 7px;
@@ -2337,7 +2340,6 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
 
   .pulse-home-os .pulse-radio-launch-label {
     display: block;
-    max-width: 68px;
     font-size: 10px;
   }
 
@@ -2349,6 +2351,21 @@ body.pulse-home-os .pulse-desktop-center .pulse-home-hero.hero.card {
   }
 
   .pulse-home-os .pulse-radio-library {
+    display: none;
+  }
+}
+
+/* Below 360px the badge and a text-labelled launch button cannot share the card's
+   top band: the copy column starts 128px in, the badge needs ~102px of it, and a
+   labelled button needs ~89px more than the ~166px that leaves. The orb alone is
+   42px, which clears the badge by 22px at 320px. aria-label carries the name. */
+@media (max-width: 359px) {
+  .pulse-home-os .pulse-radio-launch {
+    padding: 6px;
+    gap: 0;
+  }
+
+  .pulse-home-os .pulse-radio-launch-label {
     display: none;
   }
 }

@@ -149,7 +149,9 @@ def main() -> int:
     require("pulse_environment_engine.js?v=galactic-city-20260621a" in home_html, "Home loads cache-busted galactic city runtime")
     require("pulse_radio.js?v=pulse-radio-20260623a" in home_html, "Home loads cache-busted Pulse Radio runtime")
     require("data-pulse-radio-toggle" in home_html and "data-pulse-radio-player" in home_html, "Home renders Pulse Radio controls")
-    require("pulse-radio-launch-label" in home_html and "Pulse Radio" in home_html, "Home renders visible Pulse Radio launch label")
+    # Assert the span's own content: "Pulse Radio" also appears in the player
+    # panel below, so a bare substring check passes even with an empty label.
+    require("<span class='pulse-radio-launch-label'>Radio</span>" in home_html, "Home renders visible Pulse Radio launch label")
     for token in ["/pulse/live", "/scam-shield", "/pulse/premium/intelligence", "id=\"pulseComposer\"", "id=\"feed\""]:
         require(token in home_html, f"Home workflow remains wired: {token}")
 
