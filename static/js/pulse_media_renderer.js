@@ -759,12 +759,35 @@
 
   function markAttachedAudioState(wrap, audio, state) {
     if (!wrap) return;
+    const previousState = wrap.dataset.attachedAudioState;
     wrap.dataset.attachedAudioState = state || "idle";
     if (audio) {
       wrap.dataset.attachedAudioCurrentTime = String(Number(audio.currentTime || 0).toFixed(3));
       wrap.dataset.attachedAudioMuted = audio.muted ? "true" : "false";
       wrap.dataset.attachedAudioPaused = audio.paused ? "true" : "false";
     }
+    // Surfaces that draw their own music control -- the feed's track credit, the
+    // Home audio bar -- used to be the only way attached audio could start, so a
+    // button could own its own state. Now that the track can begin on its own,
+    // such a button would sit on the play glyph while the song is audible. This
+    // is the one funnel every state change passes through, so it is where they
+    // can hear about it.
+    //
+    // Only on an actual change: `syncAttachedAudioTime` calls this from
+    // `timeupdate`, several times a second per video.
+    const nextMuted = audio ? !!audio.muted : true;
+    if (previousState === wrap.dataset.attachedAudioState && wrap._pulseAttachedAudioMuted === nextMuted) return;
+    wrap._pulseAttachedAudioMuted = nextMuted;
+    try {
+      wrap.dispatchEvent(new CustomEvent("pulse:attached-audio-state", {
+        bubbles: true,
+        detail: {
+          state: wrap.dataset.attachedAudioState,
+          muted: nextMuted,
+          paused: audio ? !!audio.paused : true,
+        },
+      }));
+    } catch (_) {}
   }
 
   function forceOriginalAudioMuted(video, reason = "attached-audio-priority") {
@@ -841,7 +864,24 @@
       setSoundEnabled(true);
     }
     audio.volume = attachedAudioVolume(wrap);
-    const wantsSound = forceSound || (preferSound && soundEnabled() && attachedAudioUserUnlocked);
+    // The saved sound preference decides this, the same way it decides a plain
+    // video's mute state in `playVisibleVideo` below: try unmuted, fall back to
+    // muted if the browser refuses. Also requiring `attachedAudioUserUnlocked`
+    // was a web-only rule with no counterpart in the app, where
+    // `resolveViewerAudioPlan` returns `shouldPlayMusic` from the metadata alone
+    // and the track simply plays. Worse, the flag is per page load while the
+    // preference it guards is persisted, so a reader who had already chosen
+    // "sound on" was asked to tap a post again after every navigation, and only
+    // ever for posts with attached music -- a video with its own audio track
+    // unmuted itself from the same stored preference.
+    const wantsSound = forceSound || (preferSound && soundEnabled());
+    // An unmuted start that no gesture has authorized yet is a guess: Chrome
+    // grants it on a high media-engagement score, Safari almost never does. It
+    // is allowed to lose, but it must not cost the post its music -- the catch
+    // below restarts the same track muted and in sync, so the song is running
+    // under the visuals and the first gesture can unmute it in place rather than
+    // starting it from the top.
+    const speculative = wantsSound && !forceSound && !attachedAudioUserUnlocked;
     const pendingPlay = attachedAudioPlayPromises.get(audio);
     if (pendingPlay) {
       if (!forceSound || pendingPlay.forceSound) return pendingPlay.promise;
@@ -857,13 +897,22 @@
         return true;
       }
     }
-    audio.muted = !wantsSound;
-    audio.defaultMuted = !wantsSound;
-    audio.toggleAttribute("muted", !wantsSound);
+    // Speculating is only safe on a fresh start, where `play()` returns a
+    // promise that says truthfully whether the browser allowed sound. Flipping
+    // an already-running muted element to unmuted asks the same question with no
+    // way to hear the answer, and Chrome answers it by pausing the element --
+    // so a track that was at least playing silently would go silent for real,
+    // while this function returned true. Leave it muted and let the first
+    // gesture, which arrives with activation, do the unmuting.
+    const applySound = wantsSound && !(speculative && !audio.paused);
+    audio.muted = !applySound;
+    audio.defaultMuted = !applySound;
+    audio.toggleAttribute("muted", !applySound);
     if (!audio.paused) {
       activeAttachedAudio = audio;
-      delete wrap.dataset.attachedAudioError;
+      if (applySound) delete wrap.dataset.attachedAudioError;
       markAttachedAudioState(wrap, audio, audio.muted ? "playing-muted" : "playing");
+      if (audio.muted) showSoundPrompt(wrap, true, true);
       return !audio.muted;
     }
     syncAttachedAudioTime(video, true);
@@ -876,11 +925,30 @@
         activeAttachedAudio = audio;
         delete wrap.dataset.attachedAudioError;
         syncAttachedAudioTime(video, false);
+        // The browser just proved audio is permitted on this page, so every
+        // later post can skip the speculative attempt and start with sound.
+        if (!audio.muted) attachedAudioUserUnlocked = true;
         markAttachedAudioState(wrap, audio, audio.muted ? "playing-muted" : "playing");
         return !audio.muted;
       } catch (error) {
         if (attachedAudioPlayTokens.get(audio) === playToken) {
           audio.muted = true;
+          audio.defaultMuted = true;
+          audio.setAttribute("muted", "");
+          if (speculative) {
+            try {
+              // Muted playback is never gated, so this cannot fail for the
+              // reason the unmuted attempt did; a second failure is a real
+              // media error and falls through to the blocked state below.
+              await audio.play();
+              activeAttachedAudio = audio;
+              delete wrap.dataset.attachedAudioError;
+              syncAttachedAudioTime(video, false);
+              markAttachedAudioState(wrap, audio, "playing-muted");
+              showSoundPrompt(wrap, true, true);
+              return false;
+            } catch (_) {}
+          }
           wrap.dataset.attachedAudioError = `${error?.name || "Error"}: ${error?.message || "Playback blocked"}`;
           markAttachedAudioState(wrap, audio, "blocked");
         }
@@ -1957,6 +2025,37 @@
           repair.textContent = "Check now";
         }, 2200);
       });
+  });
+
+  // Browsers gate unmuted playback on the page having been interacted with, and
+  // they do not care what was interacted with. The app's equivalent of that gate
+  // is a preference, not a per-post permission: once sound is on, the next Reel
+  // plays its music without being asked again. This gives the web the same
+  // shape. The first tap anywhere -- a like, a nav link, the page background --
+  // satisfies the policy, and the post already on screen comes up to sound in
+  // place, instead of sitting silent until the reader finds and taps that post's
+  // own control. Anyone who has turned sound off is not overridden: `soundEnabled`
+  // is checked first, and the tap that turns it back on is handled separately by
+  // the `[data-pulse-media-sound]` branch above.
+  function unlockAttachedAudioOnGesture() {
+    if (attachedAudioUserUnlocked || !soundEnabled()) return;
+    attachedAudioUserUnlocked = true;
+    let video = activeVideo && !activeVideo.paused && hasAttachedAudio(activeVideo) ? activeVideo : null;
+    // Reels manage their own playback and never set `activeVideo`, so fall back
+    // to whatever is actually running.
+    if (!video) {
+      video = Array.from(document.querySelectorAll("video")).find(candidate => !candidate.paused && hasAttachedAudio(candidate)) || null;
+    }
+    if (!video) return;
+    const audio = attachedAudioFor(video);
+    // Already audible, or never started: `playAttachedAudio` handles the second
+    // case on its own schedule, and re-entering it here would fight the pending
+    // play promise.
+    if (!audio || !audio.muted || audio.paused) return;
+    playAttachedAudio(video, true);
+  }
+  ["pointerdown", "touchend", "keydown"].forEach(type => {
+    document.addEventListener(type, unlockAttachedAudioOnGesture, { capture: true, passive: true });
   });
 
   document.addEventListener("pointerdown", seekReelProgress, { passive: true });
