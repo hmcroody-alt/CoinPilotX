@@ -122,6 +122,18 @@ report["grid_status"] = grid.status_code
 grid_body = grid.get_data(as_text=True)
 report["grid_body"] = grid_body
 
+# The same page filtered by `?q=`. This is the surface that used to be built by
+# an inline JavaScript twin of the card and is now server-rendered, and it gets
+# its own capture because "only reachable through search" is exactly the
+# condition under which this leak went unnoticed the first time.
+web_search = client.get("/pulse/marketplace?q=Signal")
+report["web_search_status"] = web_search.status_code
+report["web_search_body"] = web_search.get_data(as_text=True)
+report["web_search_shows"] = {
+    str(lid): ("Signal listing %%d" %% lid) in web_search.get_data(as_text=True)
+    for lid in %(ids)r
+}
+
 pages = {}
 for lid in %(ids)r:
     response = client.get("/pulse/marketplace/%%d" %% lid)
@@ -231,21 +243,35 @@ def test_the_grid_card_prints_no_safety_pill(signal_probe):
         % body[max(0, PILL.search(body).start() - 120):PILL.search(body).end() + 60])
 
 
-def test_the_grid_script_prints_no_safety_pill(signal_probe):
-    """The client-side twin, which is a separate implementation of the same card.
+def test_the_search_results_print_no_safety_pill(signal_probe):
+    """The surface reachable only through search, which drifted from the grid before.
 
-    These two have drifted before -- the price-label fix had to be applied to
-    both -- so the one that is only reachable through search gets its own
-    assertion rather than riding on the server's.
+    This used to read the source of an inline JavaScript twin of the card --
+    ``marketplaceListingHtml`` -- because searching replaced the grid in the DOM
+    with cards that twin built, and the two implementations had already drifted
+    once: the price-label fix had to be applied to both. Search is now rendered
+    by the server from ``?q=`` through the same card function as the grid, so the
+    twin is gone.
+
+    The assertion is kept rather than dropped, and it is now made against the
+    served search response instead of against a line of script source. That is
+    the check the file's own header argues for -- "reading the script source for
+    the absence of a string" passes for a template that never renders the field
+    at all -- and it is what keeps this honest if search ever grows its own
+    renderer again.
     """
-    found = re.search(r"function marketplaceListingHtml\(row\)\{[^\n]*",
-                      signal_probe["grid_body"])
-    assert found, (
-        "the client-side marketplace card is no longer on the served page; it "
-        "was renamed, moved, or reformatted onto several lines")
-    assert not PILL.search(found.group(0)), (
-        "the client-side marketplace card still builds a Safety pill, so search "
-        "results would print a reviewer's risk number that the grid does not")
+    shows = signal_probe["web_search_shows"]
+    # Guarded, because an empty result set would assert nothing at all: the pill
+    # is trivially absent from a page with no cards on it.
+    assert any(shows.values()), (
+        "searching for the seeded listings returned a page containing none of "
+        "them, so this test is not looking at any rendered card: %r" % (shows,))
+    body = signal_probe["web_search_body"]
+    found = PILL.search(body)
+    assert not found, (
+        "marketplace search results serve a Safety pill, printing a reviewer's "
+        "risk number the grid does not: %r"
+        % body[max(0, found.start() - 120):found.end() + 60])
 
 
 @pytest.mark.parametrize("listing_id", ALL_LISTINGS)
