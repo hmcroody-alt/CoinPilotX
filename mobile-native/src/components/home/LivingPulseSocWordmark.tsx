@@ -21,6 +21,20 @@ import { logiNexus } from "../../theme/logiNexus";
  */
 
 const WELCOME_INTERVAL_MS = 10000;
+
+/**
+ * The horizontal space this wordmark occupies and cannot give back.
+ *
+ * `homeBrandSignal` below is `width: 120` — a fixed width, not a maximum — and
+ * the letters are `flexShrink: 0`, so a container narrower than this does not
+ * compress the wordmark, it lets the wordmark overflow into whatever sits beside
+ * it. Exported because the header's action buttons are sized against it
+ * (`navigation/headerActionMetrics.ts`): the number has to be readable from
+ * outside, and it has to be *this* number rather than one measured off a
+ * screenshot, or the two drift the first time the brand row changes.
+ */
+export const PULSESOC_WORDMARK_MIN_WIDTH = 120;
+
 const LETTERS = "PulseSoc".split("");
 const ACCENT_START_INDEX = 5; // "Pulse" | "Soc"
 const PARTICLE_COUNT = 3;
@@ -359,7 +373,7 @@ const styles = StyleSheet.create({
     height: 10,
     justifyContent: "center",
     marginTop: 3,
-    width: 120
+    width: PULSESOC_WORDMARK_MIN_WIDTH
   },
   homeBrandSignalPrimary: {
     backgroundColor: colors.accent,
