@@ -8,8 +8,14 @@ that flag must stay false — flipping it is a data change, not a UI change.
 Design notes
 ------------
 
-*Storage.* One row per (user, listing) in `marketplace_cart_items`, with the
-price captured at add time (`price_snapshot_minor`). The snapshot is what makes
+*Storage.* One row per (user, listing, variant) in `marketplace_cart_items`, with
+the price captured at add time (`price_snapshot_minor`). `variant_id` is `0` when
+the listing has nothing to choose, and a real `marketplace_listing_variants.id`
+when it does — a buyer can hold two sizes of the same shirt as two lines, and the
+snapshot is that variant's own `price_cents` rather than the listing's
+`price_label`. The shape is owned by `services.marketplace_cart_schema`; see its
+docstring for why the original `UNIQUE(user_id, listing_id)` had to be retired
+and what replaced it. The snapshot is what makes
 honest price-change handling possible: a line whose current listing price no
 longer matches its snapshot is returned as `price_changed` and cannot be
 checked out until the buyer confirms the new price (`POST /<line>/confirm-price`
@@ -28,8 +34,9 @@ still grouped per seller because the seller is the unit of settlement.
 
 *Idempotency.* `POST /checkout` accepts an `idempotency_key`. A replayed key
 returns the stored response instead of creating a second session. Duplicate
-add-taps are absorbed by the UNIQUE(user_id, listing_id) constraint: a second
-add updates quantity rather than duplicating the line.
+add-taps are absorbed by the UNIQUE(user_id, listing_id, variant_id) key: a
+second add of the same variant updates quantity rather than duplicating the line,
+while an add of a *different* variant is a different line, which is the point.
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
 from services import marketplace_cart_web
+from services import marketplace_cart_schema as cart_schema
 from services import marketplace_fulfillment
 from services import marketplace_order_fulfillment
 from services import marketplace_listing_lifecycle as listing_lifecycle
@@ -168,21 +176,13 @@ def _ensure_schema(cur) -> None:
     global _SCHEMA_READY
     if _SCHEMA_READY:
         return
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS marketplace_cart_items (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            listing_id INTEGER,
-            qty INTEGER DEFAULT 1,
-            price_snapshot_minor INTEGER DEFAULT 0,
-            currency TEXT DEFAULT 'USD',
-            added_at TEXT,
-            updated_at TEXT,
-            UNIQUE(user_id, listing_id)
-        )
-        """
-    )
+    # The cart table's shape is owned by `marketplace_cart_schema`, not here. It
+    # used to be created inline, which made the whole variant-grained shape
+    # reachable only from a cart route — the same dependency the reservation
+    # schema had to be extracted to break. It also has to *drop* the legacy
+    # two-column unique key, which is engine-specific and far too involved to
+    # sit in the middle of a route module.
+    cart_schema.ensure_cart_schema(cur, force=True)
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS marketplace_cart_checkout_keys (
@@ -235,10 +235,154 @@ def _listing_price_minor(bot, listing: dict) -> tuple[int, str]:
     return int(amount or 0), currency or "USD"
 
 
-def _line_state(line: dict, listing: dict, price_now_minor: int) -> str:
+def _active_variants(cur, listing_id: int) -> list[dict]:
+    """Every active variant row for one listing, newest schema columns included.
+
+    Wrapped rather than inlined because two callers need the same set and they
+    need it to mean the same thing: the one that decides whether a choice is
+    *required*, and the one that decides whether a chosen row is *valid*. If the
+    first counted rows the second would reject, a buyer could be told to choose
+    and then told their choice does not exist.
+    """
+    try:
+        cur.execute(
+            "SELECT * FROM marketplace_listing_variants "
+            "WHERE listing_id=? AND LOWER(COALESCE(status,'active'))='active' "
+            "ORDER BY position, id",
+            (int(listing_id),),
+        )
+        return [dict(row) for row in cur.fetchall()]
+    except Exception:
+        # The table is created by the supplier schema owner, which a database
+        # predating variants may not have run. No variants is the honest answer
+        # for such a database, and it is also the fail-safe one: the add proceeds
+        # as a plain listing line, exactly as it did before this column existed.
+        return []
+
+
+def _load_variant(cur, listing_id: int, variant_id: int) -> dict | None:
+    """The one active variant row belonging to this listing, or ``None``.
+
+    Scoped by ``listing_id`` as well as by id, so a posted ``variant_id`` from
+    another seller's product cannot attach its price to this line. That is the
+    check that makes the price snapshot below trustworthy: the row is not looked
+    up by the id alone and then assumed to belong here.
+    """
+    for row in _active_variants(cur, listing_id):
+        if int(row.get("id") or 0) == int(variant_id):
+            return row
+    return None
+
+
+def _listing_needs_variant(cur, listing_id: int) -> bool:
+    """Would adding this listing without a variant commit the buyer to a guess?
+
+    The server-side twin of ``marketplace_web.requires_variant_choice``, and it
+    calls that function rather than re-implementing its rule. There are three
+    ways a listing requires a choice and the renderer and the route have to agree
+    about all three, or the page offers a button the route refuses — or worse,
+    the route accepts an add the page was right to withhold.
+
+    Answered from the database, not from a request payload, which is what makes
+    it a real check rather than a restatement of what the client claimed.
+    """
+    variants = _active_variants(cur, listing_id)
+    if not variants:
+        return False
+    from services import marketplace_web as mw
+
+    cur.execute(
+        "SELECT price_label, currency FROM marketplace_listings WHERE id=? LIMIT 1",
+        (int(listing_id),),
+    )
+    listing = dict(cur.fetchone() or {})
+    return mw.requires_variant_choice(
+        variants, price=mw.derive_price(listing, variants)
+    )
+
+
+def _variant_options(variant: dict | None) -> list[dict]:
+    """The chosen combination as ``[{name, value}, ...]``, in the seller's order.
+
+    Delegates the parse to ``marketplace_web.parse_variant_options`` rather than
+    reading ``options_json`` here. That function already tolerates the three
+    shapes this column carries in production — a list of pairs, a list of
+    ``{name, value}`` objects, and a flat mapping — and a second parser would
+    have to keep agreeing with it about which of those the product page is
+    displaying. Disagreement would mean the cart naming a different size from
+    the page the buyer picked it on.
+    """
+    if not variant:
+        return []
+    from services import marketplace_web as mw
+
+    return [
+        {"name": name, "value": value}
+        for name, value in mw.parse_variant_options(variant.get("options_json"))
+    ]
+
+
+def _variant_label(variant: dict | None) -> str:
+    """One line a buyer can read: ``Color: Snowflake Blue · Size: M``.
+
+    Empty when there is nothing to say, so a caller renders nothing rather than
+    an empty separator. Nothing here is invented: a variant whose options do not
+    parse yields no label, and the SKU is *not* substituted — a buyer who chose
+    "M" should not be shown "TSH-BLU-M" as though that were their choice.
+    """
+    parts = _variant_options(variant)
+    return " · ".join(f"{p['name']}: {p['value']}" for p in parts if p.get("value"))
+
+
+def _line_price_minor(bot, listing: dict, variant: dict | None) -> tuple[int, str]:
+    """What this line costs *now* — from the variant when it names one.
+
+    The distinction is the whole reason a variant line can exist. `price_label` is
+    a string a human typed against the listing as a whole, and for a listing that
+    sells four sizes at four prices it is at best one of them. A line that names
+    size M has to be re-priced from that row's own `price_cents`, or every such
+    line would read `price_changed` on the very next read — the snapshot taken
+    from the variant would never equal the listing-derived "price now", so the
+    cart would demand confirmation of a change that never happened, forever.
+    """
+    if variant and variant.get("price_cents") is not None:
+        currency = str(variant.get("currency") or listing.get("currency") or "USD").upper()
+        return int(variant["price_cents"]), currency
+    return _listing_price_minor(bot, listing)
+
+
+def _variant_available(variant: dict) -> bool:
+    """Three-valued stock, read the same way `marketplace_web` reads it.
+
+    `UNKNOWN` is not `OUT_OF_STOCK`: a supplier that has not answered yet leaves
+    the variant buyable rather than rendering it sold out. Kept identical to
+    `mw.build_variant_views` on purpose — two different answers to "is this
+    variant in stock" on the display side and the checkout side is how a buyer
+    gets shown "In stock" and then refused at the till.
+    """
+    state = str(variant.get("stock_state") or "UNKNOWN").upper()
+    quantity = variant.get("stock_quantity")
+    if state == "OUT_OF_STOCK":
+        return False
+    return quantity is None or int(quantity) > 0
+
+
+def _line_state(line: dict, listing: dict, price_now_minor: int,
+                variant: dict | None = None) -> str:
     """Derive the per-line state the client renders. Order matters: the states
-    that block checkout hardest are reported first."""
+    that block checkout hardest are reported first.
+
+    `variant` is the row the line names, or `None` for a plain listing line. It
+    adds no new states — the client renders a fixed set — so a variant that has
+    been retired reports as `removed` and one that has sold out reports as `sold`,
+    which is what each of those facts means to the buyer holding the line.
+    """
     if not listing:
+        return "removed"
+    if int(line.get("variant_id") or 0) and not variant:
+        # The line names a variant row that is gone or no longer active. The
+        # listing survives, so this is not `restricted` (that is about who may
+        # sell) — the specific thing the buyer chose has ceased to exist.
         return "removed"
     status = (listing.get("status") or "").lower()
     approval = (listing.get("approval_status") or "").lower()
@@ -248,8 +392,22 @@ def _line_state(line: dict, listing: dict, price_now_minor: int) -> str:
         return "restricted"
     if not listing_lifecycle.inventory_available(listing, int(line.get("qty") or 1)):
         return "sold"
+    # Checked in addition to the listing's own inventory, never instead of it.
+    # The listing quantity is what checkout decrements and reserves against, so
+    # dropping that test would let a variant with stock be bought out of a
+    # listing without any.
+    if variant and not _variant_available(variant):
+        return "sold"
     if price_now_minor != int(line.get("price_snapshot_minor") or 0):
         return "price_changed"
+    # Both low-stock tests sit below `price_changed`, keeping the original
+    # ordering rule: a state that blocks checkout is reported ahead of one that
+    # only warns, so a line that is both re-priced and running low is reported as
+    # the thing the buyer has to act on.
+    if variant is not None:
+        held = variant.get("stock_quantity")
+        if held is not None and int(held) < int(line.get("qty") or 1):
+            return "low_stock"
     if quantity is not None and int(quantity) < int(line.get("qty") or 1):
         return "low_stock"
     return "available"
@@ -379,6 +537,13 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
         f"""
         SELECT c.id AS line_id, c.listing_id, c.qty, c.price_snapshot_minor,
                c.currency AS snapshot_currency, c.added_at,
+               c.variant_id,
+               v.id AS v_id, v.variant_key, v.options_json AS variant_options_json,
+               v.price_cents AS variant_price_cents,
+               v.currency AS variant_currency, v.sku AS variant_sku,
+               v.stock_state AS variant_stock_state,
+               v.stock_quantity AS variant_stock_quantity,
+               v.status AS variant_status,
                l.id AS l_id, l.seller_user_id, l.title, l.price_label,
                l.currency, l.quantity, l.status, l.approval_status,
                l.delivery_type, l.product_type, l.listing_type, l.cover_image_url,
@@ -387,6 +552,13 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
                {seller_identity.store_name_select('ms')}
         FROM marketplace_cart_items c
         LEFT JOIN marketplace_listings l ON l.id = c.listing_id
+        -- Joined on the listing as well as the id. A variant id that belongs to a
+        -- different listing resolves to nothing rather than lending this line
+        -- another product's price, which is the shape a tampered `variant_id`
+        -- would take if `cart_add`'s validation were ever bypassed.
+        LEFT JOIN marketplace_listing_variants v
+               ON v.id = c.variant_id AND v.listing_id = c.listing_id
+              AND LOWER(COALESCE(v.status, 'active')) = 'active'
         LEFT JOIN marketplace_sellers ms ON ms.user_id = l.seller_user_id
         WHERE c.user_id = ?
         ORDER BY c.added_at DESC
@@ -401,12 +573,41 @@ def _serialize_lines(bot, cur, user_id: int) -> list[dict]:
             "status", "approval_status", "seller_status", "delivery_type", "product_type", "listing_type", "cover_image_url",
             "category", "subcategory", "description", "listing_metadata_json",
         )} if row.get("l_id") else {}
-        price_now, currency_now = (_listing_price_minor(bot, listing)
+        # Rebuilt from the `v.`-prefixed aliases rather than passed as the raw row,
+        # because `_line_price_minor` and `_variant_available` read the variant
+        # table's own column names — and the row also carries the *listing's*
+        # `currency` and `status` under those names. Handing them the whole row
+        # would price a variant line from the listing's currency and judge the
+        # variant's stock from the listing's status.
+        variant = {
+            "id": int(row.get("v_id") or 0),
+            "variant_key": row.get("variant_key") or "",
+            "options_json": row.get("variant_options_json"),
+            "price_cents": row.get("variant_price_cents"),
+            "currency": row.get("variant_currency"),
+            "sku": row.get("variant_sku") or "",
+            "stock_state": row.get("variant_stock_state"),
+            "stock_quantity": row.get("variant_stock_quantity"),
+            "status": row.get("variant_status"),
+        } if row.get("v_id") else None
+        price_now, currency_now = (_line_price_minor(bot, listing, variant)
                                    if listing else (0, row.get("snapshot_currency") or "USD"))
-        state = _line_state(row, listing, price_now)
+        state = _line_state(row, listing, price_now, variant)
         lines.append({
             "line_id": int(row["line_id"]),
             "listing_id": int(row["listing_id"] or 0),
+            # `0` and not `None` for a plain line, matching the column's own
+            # sentinel — see `marketplace_cart_schema.NO_VARIANT`. A client can
+            # therefore compare line identities with `==` without having to treat
+            # null and zero as the same thing.
+            "variant_id": int(row.get("variant_id") or 0),
+            "variant_key": (variant or {}).get("variant_key") or "",
+            # What the buyer actually chose, as the seller wrote it. Parsed from
+            # the variant's own `options_json` rather than re-derived from the
+            # listing, so the line names the combination that was picked even
+            # after the listing's option set has moved on.
+            "variant_options": _variant_options(variant),
+            "variant_label": _variant_label(variant),
             "qty": int(row["qty"] or 1),
             "state": state,
             "price_snapshot_minor": int(row["price_snapshot_minor"] or 0),
@@ -562,6 +763,17 @@ def cart_add():
     payload = request.get_json(silent=True) or {}
     listing_id = int(payload.get("listing_id") or 0)
     qty = max(1, min(int(payload.get("qty") or 1), MAX_QTY_PER_LINE))
+    # Absent, null, empty string and 0 all mean "no variant named". Coerced here
+    # rather than in the handler so a non-numeric value is a 400 about the request
+    # instead of a `ValueError` inside the transaction.
+    try:
+        variant_id = int(payload.get("variant_id") or cart_schema.NO_VARIANT)
+    except (TypeError, ValueError):
+        return _error("Choose an option before adding this item.", 400,
+                      code="VARIANT_REQUIRED")
+    if variant_id < 0:
+        return _error("Choose an option before adding this item.", 400,
+                      code="VARIANT_REQUIRED")
     if not listing_id:
         return _error("Choose an item to add.", 400, code="ITEM_UNAVAILABLE")
 
@@ -588,7 +800,38 @@ def cart_add():
                 "SELLER_UNAVAILABLE": "This seller is not accepting orders right now.",
                 "OUT_OF_STOCK": "This item is out of stock.",
             }.get(denial, "This listing is no longer available."), 409, code=denial)
-        price_minor, currency = _listing_price_minor(bot, listing)
+        # --- the variant ---------------------------------------------------
+        # This block is the reason the storefront can offer an add-to-cart button
+        # on a listing with options at all. Until it existed, `POST /cart` took a
+        # `listing_id` and a `qty` and would happily book a line naming no size,
+        # priced from the listing's `price_label` — so `marketplace_web`
+        # withheld the button rather than let the guess through
+        # (`CART_HIDDEN_NEEDS_CHOICE`). The refusal now lives here, where it can
+        # be answered, instead of in a renderer that could only decline.
+        variant = _load_variant(cur, listing_id, variant_id) if variant_id else None
+        if variant_id and not variant:
+            # Named a variant that is not this listing's, or is retired. Not
+            # `ITEM_UNAVAILABLE`: the item is fine, the choice is stale — a buyer
+            # on a page cached from before a reprice should be told to pick again.
+            return _error("That option is no longer available. Choose another.", 409,
+                          code="VARIANT_UNAVAILABLE")
+        if _listing_needs_variant(cur, listing_id) and not variant:
+            # The server's own copy of `marketplace_web.requires_variant_choice`,
+            # asked of the database rather than of a rendered payload. It has to
+            # exist here: a client that posts only a `listing_id` — an older app
+            # build, a script, a stale cached page — must not be able to book the
+            # unnamed line that the whole gate was built to prevent.
+            return _error("Choose an option before adding this item.", 400,
+                          code="VARIANT_REQUIRED")
+        if variant and not _variant_available(variant):
+            return _error("That option is out of stock.", 409, code="OUT_OF_STOCK")
+
+        # Priced from the variant when there is one. `_line_price_minor` is the
+        # same function the cart read uses, so the snapshot taken here and the
+        # "price now" computed on the next read are produced by one expression —
+        # two expressions would make every variant line permanently
+        # `price_changed`.
+        price_minor, currency = _line_price_minor(bot, listing, variant)
         if price_minor <= 0:
             return _error("This item is not priced for checkout.", 400, code="ITEM_UNAVAILABLE")
         cur.execute(
@@ -598,8 +841,15 @@ def cart_add():
         if int(dict(cur.fetchone() or {}).get("n") or 0) >= MAX_LINES:
             return _error("Cart is full.", 409, code="CART_FULL")
         now = _now()
-        # A duplicate tap must not duplicate the line: the UNIQUE constraint
-        # turns the second add into a quantity update.
+        # A duplicate tap must not duplicate the line: the UNIQUE key turns the
+        # second add into a quantity update. The key is three columns wide now, so
+        # "the same line" means the same *variant* — adding M when L is already in
+        # the cart is a new line, and adding M twice is quantity 2.
+        #
+        # The conflict target is spelled from `cart_schema.CONFLICT_COLUMNS` so it
+        # cannot drift from the unique index it infers against. On PostgreSQL a
+        # target with no matching index is an error at *plan* time, so a drift
+        # here would break the first add rather than only a conflicting one.
         #
         # The clamp is a CASE expression, not `MIN(qty + excluded.qty, N)`.
         # `MIN(a, b)` is a SQLite-only scalar — PostgreSQL's `min()` is a
@@ -610,11 +860,11 @@ def cart_add():
         # 500 in production. `services/db.py` has no MIN→LEAST rewrite, so the
         # portable CASE form is what keeps one statement correct on both.
         cur.execute(
-            """
+            f"""
             INSERT INTO marketplace_cart_items
-                (user_id, listing_id, qty, price_snapshot_minor, currency, added_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(user_id, listing_id)
+                (user_id, listing_id, variant_id, qty, price_snapshot_minor, currency, added_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT({", ".join(cart_schema.CONFLICT_COLUMNS)})
             DO UPDATE SET
                 qty=CASE WHEN marketplace_cart_items.qty + excluded.qty > ?
                          THEN ?
@@ -624,7 +874,9 @@ def cart_add():
                 updated_at=excluded.updated_at
             """,
             (
-                int(user["user_id"]), listing_id, qty, price_minor, currency, now, now,
+                int(user["user_id"]), listing_id,
+                int((variant or {}).get("id") or cart_schema.NO_VARIANT),
+                qty, price_minor, currency, now, now,
                 MAX_QTY_PER_LINE, MAX_QTY_PER_LINE,
             ),
         )
@@ -942,6 +1194,19 @@ def cart_checkout():
                  marketplace_quote_service.transaction_metadata(
                      {"title": l["title"], "qty": l["qty"], "cart_line_id": l["line_id"],
                       "payment_method": payment_mode,
+                      # What the buyer chose, recorded on the order itself. Both
+                      # forms, because they answer different questions: the seller
+                      # packing the parcel reads `variant_label`, and anything
+                      # reconciling stock or re-ordering from a supplier needs the
+                      # `variant_id`/`variant_key` that address the row. Omitted
+                      # entirely for a plain listing rather than written as empty
+                      # strings, so a variant-less order carries no field
+                      # suggesting a choice was made and lost.
+                      **({"variant_id": l["variant_id"],
+                          "variant_key": l.get("variant_key") or "",
+                          "variant_label": l.get("variant_label") or "",
+                          "variant_options": l.get("variant_options") or []}
+                         if l.get("variant_id") else {}),
                       # Present only when the sale was allowed without a current
                       # supplier confirmation, which is the case a post-mortem
                       # needs to find. Annotating every order would bury it.
@@ -1052,6 +1317,12 @@ def cart_checkout():
                 "seller_user_id": str(seller_user_id),
                 "cart_line_ids": ",".join(str(l["line_id"]) for l in lines),
                 "listing_ids": ",".join(str(l["listing_id"]) for l in lines),
+                # Positional, like every other list in this dict: the nth entry
+                # belongs to the nth listing id. `0` is the sentinel for a line
+                # with nothing chosen, so the list stays the same length as its
+                # siblings — dropping the zeros would silently shift every
+                # subsequent variant onto the wrong listing.
+                "variant_ids": ",".join(str(l.get("variant_id") or 0) for l in lines),
                 "quantities": ",".join(str(l["qty"]) for l in lines),
                 "fulfillment": ",".join(resolved_lanes),
                 "idempotency_key": idempotency_key,
