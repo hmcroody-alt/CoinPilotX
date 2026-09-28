@@ -10,6 +10,7 @@ def listing(**overrides):
         "seller_status": "approved",
         "product_type": "physical",
         "quantity": 2,
+        "price_label": "$19.99",
     }
     value.update(overrides)
     return value

@@ -319,9 +319,11 @@ def test_a_stockless_product_is_not_held_back_by_quantity(visibility_probe):
 # --------------------------------------------------------------------------
 
 #: A merchant payload as the seller-listings query builds one: no seller columns
-#: at all, because that query never joined `marketplace_sellers`.
+#: at all, because that query never joined `marketplace_sellers`. Every
+#: `marketplace_listings` column it *would* select is present, `price_label`
+#: included, so the only silence these tests exercise is the seller's.
 UNJOINED = {"status": "published", "approval_status": "approved", "quantity": 4,
-            "product_type": "physical"}
+            "product_type": "physical", "price_label": "$40.00"}
 
 
 def test_a_row_without_seller_columns_still_reads_live():
@@ -356,7 +358,7 @@ def test_a_stockless_type_is_never_blocked_by_stock_even_unprojected():
     """
     row = {"status": "published", "approval_status": "approved",
            "seller_status": "approved", "seller_store_name": "Store",
-           "product_type": "digital"}
+           "product_type": "digital", "price_label": "$12.00"}
     assert "quantity" not in row
     assert lifecycle.publication_blocker(row) == ""
     assert lifecycle.is_public(row) is True, (
