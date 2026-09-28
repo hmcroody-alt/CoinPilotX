@@ -95,6 +95,35 @@ const STATUS_COPY: Record<string, string> = {
 };
 
 /**
+ * What stops a buyer reaching a product the merchant already published.
+ *
+ * `status` cannot say any of this. A listing with no stock, or whose seller
+ * account is suspended, or whose storefront was never named, is still `active`
+ * — so the map above calls it "In your store", in green, while no buyer query
+ * returns it. That is the worst shape a failure can take here: the merchant has
+ * nothing left to investigate, because the screen already told them it worked.
+ *
+ * Keyed by the server's `live_blocker`, which is the same rule table buyer
+ * discovery is gated on. The words are this screen's; the verdict never is.
+ */
+const BLOCKER_COPY: Record<string, string> = {
+  in_stock: "Out of stock — buyers can't order it",
+  seller_approved: "Your store is offline — nothing can sell",
+  seller_named: "Name your store before anything can sell"
+};
+
+/**
+ * A blocker this build has no words for is still a blocker.
+ *
+ * Falling back to the status copy would print "In your store" over a product
+ * the server just said was unreachable, which is worse than the bug this exists
+ * to fix: it would be an overstatement the server explicitly contradicted. A
+ * new rule added on the server is unlikely and must degrade to "something is
+ * wrong, open it", never to silence and never to good news.
+ */
+const UNKNOWN_BLOCKER_COPY = "Buyers can't reach this — open it to see why";
+
+/**
  * Sync states the mapping can be in. `null` is not an error — a product that
  * has never synced since import has nothing to report and says nothing.
  */
@@ -165,6 +194,12 @@ export function DropshippingProductsScreen({ route, navigation }: Props) {
       }).length,
     [rows]
   );
+
+  // Counted from the server's verdict, not from anything read off `status`.
+  // A pill per row is not enough on its own: the merchant who needs this is the
+  // one with a hundred products, and sixty warnings scattered down a list
+  // nobody scrolls is the same as no warning at all.
+  const blockedCount = useMemo(() => rows.filter((row) => row.liveBlocker).length, [rows]);
 
   const stateBlock = stateOwnsScreen(state) ? (
     <DropshippingStateView
@@ -256,6 +291,18 @@ export function DropshippingProductsScreen({ route, navigation }: Props) {
               </Text>
             ) : null}
 
+            {/* Shown on every filter, unlike the two notes above. Those name a
+                population the merchant can go and look at; this one names
+                products that are sitting inside "Published" looking finished,
+                so the filter they are hiding behind is exactly the one where
+                the warning is most needed. */}
+            {state === "READY" && blockedCount > 0 ? (
+              <Text style={styles.blockedNote}>
+                {formatters.count(blockedCount)} are published but buyers can't reach them. Open
+                one to see what's holding it back.
+              </Text>
+            ) : null}
+
             {stateBlock ? <View style={styles.block}>{stateBlock}</View> : null}
           </View>
         }
@@ -292,13 +339,18 @@ function ProductRow({
   const status = row.status.toLowerCase();
   const isDraft = status === "draft";
   const syncNote = row.syncState ? SYNC_COPY[row.syncState.toUpperCase()] : "";
+  // The blocker wins the pill when there is one. It is only ever set on a row
+  // whose status already reads "In your store", so this replaces a claim that
+  // is wrong rather than hiding one that is right.
+  const blocked = row.liveBlocker ? BLOCKER_COPY[row.liveBlocker] || UNKNOWN_BLOCKER_COPY : "";
+  const statusLabel = blocked || STATUS_COPY[status] || row.status;
 
   return (
     <Pressable
       style={styles.row}
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${row.title || "Untitled product"}, ${STATUS_COPY[status] || row.status}`}
+      accessibilityLabel={`${row.title || "Untitled product"}, ${statusLabel}`}
     >
       {/* No placeholder art. An empty tile is honest about a product whose
           supplier images were all rejected; a stock photo is not. */}
@@ -316,8 +368,17 @@ function ProductRow({
         <View style={styles.rowMetaLine}>
           <ProviderBadge provider={row.provider} />
           <View style={[styles.statusPill, isDraft ? styles.statusPillDraft : styles.statusPillLive]}>
-            <Text style={[styles.statusText, isDraft ? styles.statusTextDraft : styles.statusTextLive]}>
-              {STATUS_COPY[status] || row.status}
+            <Text
+              style={[
+                styles.statusText,
+                blocked
+                  ? styles.statusTextBlocked
+                  : isDraft
+                    ? styles.statusTextDraft
+                    : styles.statusTextLive
+              ]}
+            >
+              {statusLabel}
             </Text>
           </View>
         </View>
@@ -353,6 +414,7 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12, fontWeight: "600", color: storeLight.text.primary },
   chipTextActive: { color: storeLight.cta.text },
   draftNote: { fontSize: 12, color: storeLight.text.muted, lineHeight: 17 },
+  blockedNote: { fontSize: 12, color: storeLight.status.warning, lineHeight: 17, fontWeight: "600" },
   row: {
     flexDirection: "row",
     gap: 12,
@@ -374,6 +436,10 @@ const styles = StyleSheet.create({
   statusText: { fontSize: 10, fontWeight: "700" },
   statusTextDraft: { color: storeLight.text.muted },
   statusTextLive: { color: storeLight.status.success },
+  // Warning, not success and not muted. A blocked product is neither healthy
+  // nor merely unfinished, and it is the one state on this list the merchant
+  // has to be able to find by scanning.
+  statusTextBlocked: { color: storeLight.status.warning },
   rowCost: { fontSize: 12, color: storeLight.text.muted },
   rowWarning: { fontSize: 11, fontWeight: "600", color: storeLight.status.warning },
   rowUpdated: { fontSize: 11, color: storeLight.text.muted }

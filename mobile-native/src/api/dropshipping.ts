@@ -1839,6 +1839,21 @@ export type ImportedProductRow = {
   attention: RevisionAttention[];
   supplierCostCents: number | null;
   providerProductId: string | null;
+  /**
+   * Why a buyer cannot reach a product whose own two columns say they should,
+   * as the server's rule key — `in_stock`, `seller_approved`, `seller_named`.
+   *
+   * `null` for every row that is not both published and approved, which is not
+   * a claim that those rows are reachable: a draft is already labelled a draft,
+   * and this field has nothing to add. It answers only the surprising question
+   * — published, approved, and still unreachable.
+   *
+   * A key, not prose, and never re-derived here. `status` is on this row and
+   * looks like it could answer the same question; it cannot, and a second
+   * reading of "published" living on the client is the drift the server's rule
+   * table exists to end.
+   */
+  liveBlocker: string | null;
 };
 
 function normalizeImportedRow(raw: Record<string, unknown>): ImportedProductRow {
@@ -1854,7 +1869,8 @@ function normalizeImportedRow(raw: Record<string, unknown>): ImportedProductRow 
     syncState: textOrNull(raw.sync_state),
     attention: revisionAttention(raw.attention),
     supplierCostCents: centsOrNull(raw.supplier_cost_cents),
-    providerProductId: textOrNull(raw.provider_product_id)
+    providerProductId: textOrNull(raw.provider_product_id),
+    liveBlocker: textOrNull(raw.live_blocker)
   };
 }
 
