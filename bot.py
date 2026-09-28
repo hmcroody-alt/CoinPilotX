@@ -40830,6 +40830,29 @@ def account_security_notification_redirect():
     return redirect("/dashboard/account/security", code=302)
 
 
+# `linking.ts` declares the root Saved screen as bare `saved`, alongside the tab
+# screen's `pulse/saved`, and its `prefixes` include https://pulsesoc.com -- so
+# the app both opens and *mints* https://pulsesoc.com/saved. On the web that URL
+# landed on `/<slug>`, which is the SEO topic-page rule and answers anything it
+# does not recognise with nine bytes of plain-text "Not found". Not a shell, not
+# a login wall: a bare 404 for a URL the product hands out.
+#
+# It reads as covered from the outside, which is why it lasted. The parity matrix
+# scores `/saved` PARITY because `/<slug>` *matches* it -- a rule existing is not
+# the same as a page being served, and that distinction is invisible to any check
+# that stops at the url_map.
+#
+# Werkzeug orders by specificity rather than registration, so this literal wins
+# over `/<slug>` wherever it is declared; it sits here to be read next to the
+# other alias above.
+@webhook_app.route("/saved", methods=["GET"])
+def saved_deep_link_alias():
+    user = require_account()
+    if not user:
+        return redirect(url_for("login_page", next=request.path))
+    return redirect("/pulse/saved", code=302)
+
+
 # Declared ahead of the `<path:status_id>` rule below purely so the two are read
 # together; Werkzeug orders by specificity, not by registration, so the literal
 # wins either way. Without it the rule below swallowed this path and treated
