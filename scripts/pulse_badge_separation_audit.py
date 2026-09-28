@@ -13,6 +13,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# The seeding below writes to coinpilotx.db directly, but the audit then calls
+# `notification_service.pulse_badge_counts`, which opens its own connection
+# through services/db.py - so against a remote DATABASE_URL this reads production
+# and reports a failure that is really a misconfiguration.
+require_local_database("pulse_badge_separation_audit")
+
 
 def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
