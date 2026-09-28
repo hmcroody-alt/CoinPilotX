@@ -36,6 +36,15 @@ import tempfile
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, REPO)
 
+from scripts.local_database_guard import require_local_database  # noqa: E402
+
+# `main()` redirects DATABASE_URL to a temporary sqlite file, but it imports
+# `services.undx_agent_policy` first, and that import chain reaches
+# services/db.py - which resolves the DSN once and, on PostgreSQL, builds the
+# engine there and then. The later assignment would be ignored, and
+# `INSERT OR IGNORE INTO users` would land on user_id 7 of a real database.
+require_local_database("undx_read_qa_run")
+
 #: The account the QA run belongs to. Matches the harness so the capability's own
 #: cohort gate is satisfied by the same id the test suite uses.
 QA_USER_ID = 7
