@@ -43,6 +43,24 @@ axis still says pending) is reported and never repaired, for the mirror-image
 reason: its fix is ``status``, and writing that here would publish a listing
 whose merchant never released it.
 
+The imports that were never released
+------------------------------------
+A second class, found the same way and stranded for the same reason on the other
+axis. A supplier import that the publish gate declined was written as
+``draft``, and ``draft`` is not a released state, so ``awaiting_moderation`` is
+false and no reviewer ever sees it. The merchant did release it — they pressed
+"Import & publish" on a store with auto-publish on — and the only exit was them
+opening each product and submitting it by hand. Measured in production on
+2026-09-27: one seller held 67 of these.
+
+``drafts.autopublish`` now writes ``review_ready`` on a refusal, which fixes
+every future import and moves none of these. So this sweep repairs them, writing
+``status='review_ready'``: released, still not public, still undecided. It will
+not touch a draft it cannot prove was released — the evidence is a
+``marketplace_product_sources`` row *and* the store's ``auto_publish``, because
+a store that turned auto-publish off asked to hold its imports as drafts and is
+entitled to have them left alone.
+
 §41 is also checked here: duplicate ledger rows for one ``(reviewer,
 idempotency key)``. The unique index makes new ones impossible, which is exactly
 why the old ones need finding — an index added after the fact cleans up nothing.
@@ -76,6 +94,68 @@ def _duplicate_decisions(cur) -> list:
     return [dict(row) for row in cur.fetchall()]
 
 
+def _autopublish_stores(cur) -> set:
+    """``(business_id, store_id)`` for every store whose imports publish on sight.
+
+    The second half of the ``IMPORTED_BUT_NEVER_RELEASED`` evidence, and the half
+    that keeps the sweep honest. A store that turned auto-publish *off* asked to
+    look at its imports before anything moved, so its drafts are drafts in the
+    ordinary sense and nothing here may touch them. Absent policy row means the
+    default, which is on — the same default :mod:`store_policy` applies.
+
+    Returns an empty set when the table does not exist yet, which makes the
+    unreleased-import pass a no-op rather than an error on a database that has
+    never had a supplier connected.
+    """
+    try:
+        cur.execute("SELECT business_id, store_id, auto_publish "
+                    "FROM business_os_store_import_policy")
+    except Exception:
+        return set()
+    stores = set()
+    for row in cur.fetchall():
+        record = dict(row)
+        if int(record.get("auto_publish") or 0):
+            stores.add((record.get("business_id"), record.get("store_id")))
+    return stores
+
+
+def _unreleased_imports(cur) -> list:
+    """Drafts that an import already released, with the evidence attached.
+
+    Returns [] when the import tables are absent. Each row carries
+    ``imported_under_autopublish``, which is what lets
+    :func:`review.zombie_reason` classify it — that flag is computed here,
+    against the store's policy, and never inferred from the listing.
+    """
+    autopublish = _autopublish_stores(cur)
+    try:
+        cur.execute(
+            f"""SELECT l.id, l.seller_user_id, l.title, l.status, l.approval_status,
+                       l.created_at, s.business_id, s.store_id
+                  FROM marketplace_listings l, marketplace_product_sources s
+                 WHERE {review.unreleased_import_sql('l', 's')}
+                 ORDER BY l.id"""
+        )
+    except Exception:
+        return []
+    rows = []
+    seen = set()
+    for raw in cur.fetchall():
+        row = dict(raw)
+        listing_id = int(row.get("id") or 0)
+        # A listing can carry more than one source row. Sweeping it twice is
+        # harmless but would double-count in the report, and the report is the
+        # thing an operator reads to decide whether to run --apply.
+        if listing_id in seen:
+            continue
+        seen.add(listing_id)
+        row["imported_under_autopublish"] = (
+            (row.get("business_id"), row.get("store_id")) in autopublish)
+        rows.append(row)
+    return rows
+
+
 def audit(apply_changes: bool = False, limit: int = 0) -> dict:
     conn = db_service.connect()
     cur = conn.cursor()
@@ -91,6 +171,10 @@ def audit(apply_changes: bool = False, limit: int = 0) -> dict:
             ORDER BY l.id"""
     )
     candidates = [dict(row) for row in cur.fetchall()]
+    # Appended rather than queried together: the unreleased-import class needs a
+    # join the predicate above cannot carry, and its evidence column is computed
+    # in Python against the store's policy.
+    candidates.extend(_unreleased_imports(cur))
 
     requeued: list = []
     reported: list = []
@@ -114,11 +198,19 @@ def audit(apply_changes: bool = False, limit: int = 0) -> dict:
             record["reason"] = record["reason"] + " (over --limit, not touched)"
             reported.append(record)
             continue
+        record["repair"] = {k: v for k, v in repair.items() if k != "reason"}
         requeued.append(record)
         if apply_changes:
+            # Whichever column the repair names, and only that one. Built from
+            # the dict rather than hardcoded because the two zombie classes are
+            # repaired on opposite axes -- `approval_status` for a blank
+            # moderation state, `status` for an import that was never released --
+            # and a hardcoded column would have silently written the wrong one.
+            columns = [k for k in repair if k != "reason"]
+            assignments = ", ".join(f"{name}=?" for name in columns)
             cur.execute(
-                "UPDATE marketplace_listings SET approval_status=? WHERE id=?",
-                (repair["approval_status"], record["listing_id"]),
+                f"UPDATE marketplace_listings SET {assignments} WHERE id=?",
+                tuple(repair[name] for name in columns) + (record["listing_id"],),
             )
 
     if apply_changes and requeued:

@@ -78,7 +78,23 @@ CREATE TABLE IF NOT EXISTS marketplace_review_batches (
     created_at TEXT,
     completed_at TEXT
 );
+CREATE TABLE IF NOT EXISTS marketplace_product_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    listing_id INTEGER,
+    seller_user_id INTEGER,
+    business_id TEXT,
+    store_id TEXT,
+    supplier_connection_id TEXT,
+    external_product_id TEXT
+);
+CREATE TABLE IF NOT EXISTS business_os_store_import_policy (
+    business_id TEXT,
+    store_id TEXT,
+    auto_publish INTEGER NOT NULL DEFAULT 1
+);
 """
+
+STORE = "mkt-seller:90402"
 
 
 class ReviewZombieBackfillTestCase(unittest.TestCase):
@@ -95,6 +111,8 @@ class ReviewZombieBackfillTestCase(unittest.TestCase):
         conn = db_service.connect()
         conn.execute("DELETE FROM marketplace_listings")
         conn.execute("DELETE FROM marketplace_review_batches")
+        conn.execute("DELETE FROM marketplace_product_sources")
+        conn.execute("DELETE FROM business_os_store_import_policy")
         conn.commit()
         conn.close()
 
@@ -139,6 +157,30 @@ class ReviewZombieBackfillTestCase(unittest.TestCase):
             f"SELECT id FROM marketplace_listings l WHERE {rv.queue_sql('l')}").fetchall()}
         conn.close()
         return found
+
+    def imported_draft(self, *, auto_publish=1, approval=lifecycle.PENDING_REVIEW):
+        """A product the merchant imported and the publish gate declined.
+
+        Both halves of the evidence, because either one alone is a different
+        listing: the ``marketplace_product_sources`` row is what makes it an
+        import rather than something the seller typed, and ``auto_publish`` is
+        what makes ``draft`` the gate's word rather than the merchant's.
+        """
+        listing_id = self.insert(lifecycle.DRAFT, approval)
+        conn = db_service.connect()
+        conn.execute(
+            "INSERT INTO marketplace_product_sources "
+            "(listing_id, seller_user_id, business_id, store_id, supplier_connection_id, "
+            " external_product_id) VALUES (?,?,?,?,?,?)",
+            (listing_id, SELLER, STORE, STORE, "conn-1", f"ext-{listing_id}"))
+        conn.execute(
+            "INSERT INTO business_os_store_import_policy (business_id, store_id, auto_publish) "
+            "SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM business_os_store_import_policy "
+            "WHERE business_id=? AND store_id=?)",
+            (STORE, STORE, auto_publish, STORE, STORE))
+        conn.commit()
+        conn.close()
+        return listing_id
 
     # -- classification --------------------------------------------------------
 
@@ -273,6 +315,138 @@ class ReviewZombieBackfillTestCase(unittest.TestCase):
         self.assertEqual(result["needs_human_decision_count"], 1)
         self.assertEqual(result["needs_human_decision"][0]["reason"],
                          rv.APPROVED_BUT_UNRELEASED)
+
+    # -- the imports that were never released ----------------------------------
+    #
+    # The mirror of everything above, on the other axis. `drafts.autopublish`
+    # used to write `draft` when the publish gate declined an import, so
+    # `awaiting_moderation` was false for the same reason an unfinished
+    # product's is -- except this merchant pressed "Import & publish". One
+    # production seller held 67 of these on 2026-09-27, each reading "pending
+    # review" and sitting in no queue. The code fix moves none of them.
+
+    def test_an_imported_draft_is_stranded_only_when_the_release_is_evidenced(self):
+        """The evidence is not on the listing, and must not be guessed from it.
+
+        This is the property that keeps the narrow rule narrow: the very same row
+        is a zombie or an ordinary draft depending on a join the classifier does
+        not get to do, so a caller holding only a listing row gets the safe
+        answer.
+        """
+        row = {"status": lifecycle.DRAFT, "approval_status": lifecycle.PENDING_REVIEW}
+        self.assertIsNone(rv.zombie_reason(row))
+        self.assertIsNone(rv.zombie_repair(row))
+
+        evidenced = dict(row, imported_under_autopublish=True)
+        self.assertEqual(rv.zombie_reason(evidenced), rv.IMPORTED_BUT_NEVER_RELEASED)
+
+    def test_repairing_an_unreleased_import_releases_it_without_publishing_it(self):
+        """The safety half. `review_ready` is not a status any buyer query reads,
+        so the sweep hands the product to a reviewer and to nobody else."""
+        repair = rv.zombie_repair({
+            "status": lifecycle.DRAFT,
+            "approval_status": lifecycle.PENDING_REVIEW,
+            "imported_under_autopublish": True,
+        })
+        self.assertEqual(repair["status"], lifecycle.REVIEW_READY)
+        self.assertNotIn(repair["status"], lifecycle.PUBLIC_STATUSES)
+        # And it decides nothing, which is the rule the other class obeys too.
+        self.assertNotIn("approval_status", repair)
+
+    def test_a_decided_import_is_not_reopened(self):
+        """A rejected import is a finished conversation. Re-releasing it would put
+        a product a reviewer already turned down back at the top of their queue."""
+        for approval in (lifecycle.APPROVED, lifecycle.REJECTED,
+                         lifecycle.CHANGES_REQUESTED):
+            self.assertIsNone(rv.zombie_reason({
+                "status": lifecycle.DRAFT,
+                "approval_status": approval,
+                "imported_under_autopublish": True,
+            }), approval)
+
+    def test_the_sweep_finds_an_unreleased_import_and_makes_it_reviewable(self):
+        """End to end, and ending at the queue rather than at the column."""
+        stranded = self.imported_draft()
+        self.assertEqual(self.in_queue(), set(),
+                         "fixture is not stranded, so this proves nothing")
+
+        result = sweep.audit(apply_changes=True)
+
+        self.assertEqual(result["requeued_count"], 1)
+        self.assertEqual(result["requeued"][0]["reason"], rv.IMPORTED_BUT_NEVER_RELEASED)
+        self.assertEqual(self.in_queue(), {stranded})
+        row = self.rows()[stranded]
+        self.assertEqual(row["status"], lifecycle.REVIEW_READY)
+        self.assertNotIn(row["status"], lifecycle.PUBLIC_STATUSES)
+        self.assertTrue(lifecycle.awaiting_moderation(row))
+        self.assertIsNone(rv.block_reason(row, rv.APPROVE, reviewer_id=REVIEWER))
+
+    def test_a_store_that_turned_auto_publish_off_keeps_its_drafts(self):
+        """It asked to look before anything moved. These drafts are drafts."""
+        held = self.imported_draft(auto_publish=0)
+        result = sweep.audit(apply_changes=True)
+        self.assertEqual(result["requeued_count"], 0)
+        self.assertEqual(self.rows()[held]["status"], lifecycle.DRAFT)
+        self.assertEqual(self.in_queue(), set())
+
+    def test_a_hand_written_draft_is_never_swept(self):
+        """No source row, so no import, so no release to restore. A seller's own
+        unfinished product must not appear in a reviewer's backlog.
+
+        A *real* import sits beside it deliberately. With the sources table empty
+        this test passes no matter what the predicate does -- a cross join over
+        nothing returns nothing -- so it would have been a guard that could not
+        fail. The imported row is what makes a dropped join observable: it gives
+        the broken predicate a source row to pair the typed draft with.
+        """
+        typed = self.insert(lifecycle.DRAFT, lifecycle.PENDING_REVIEW)
+        imported = self.imported_draft()
+
+        result = sweep.audit(apply_changes=True)
+
+        self.assertEqual(result["requeued_count"], 1)
+        self.assertEqual(result["requeued"][0]["listing_id"], imported)
+        self.assertEqual(self.rows()[typed]["status"], lifecycle.DRAFT)
+        self.assertEqual(self.in_queue(), {imported})
+
+    def test_repairing_the_imports_is_idempotent(self):
+        self.imported_draft()
+        self.imported_draft()
+        first = sweep.audit(apply_changes=True)
+        second = sweep.audit(apply_changes=True)
+        self.assertEqual(first["requeued_count"], 2)
+        self.assertEqual(second["requeued_count"], 0)
+
+    def test_a_listing_with_two_source_rows_is_counted_once(self):
+        """The report is what an operator reads before running --apply, so a
+        double-counted row is a number they cannot act on."""
+        listing_id = self.imported_draft()
+        conn = db_service.connect()
+        conn.execute(
+            "INSERT INTO marketplace_product_sources "
+            "(listing_id, seller_user_id, business_id, store_id, supplier_connection_id) "
+            "VALUES (?,?,?,?,?)",
+            (listing_id, SELLER, STORE, STORE, "conn-2"))
+        conn.commit()
+        conn.close()
+        result = sweep.audit(apply_changes=False)
+        self.assertEqual(result["requeued_count"], 1)
+
+    def test_the_two_classes_are_repaired_on_their_own_axes_in_one_run(self):
+        """The reason the UPDATE is built from the repair dict. One hardcoded
+        column would have written `review_ready` into `approval_status`, or a
+        blank moderation state into `status`."""
+        blank = self.insert(lifecycle.PUBLISHED, "")
+        imported = self.imported_draft()
+
+        sweep.audit(apply_changes=True)
+
+        rows = self.rows()
+        self.assertEqual(rows[blank]["approval_status"], lifecycle.PENDING_REVIEW)
+        self.assertEqual(rows[blank]["status"], lifecycle.PUBLISHED)
+        self.assertEqual(rows[imported]["status"], lifecycle.REVIEW_READY)
+        self.assertEqual(rows[imported]["approval_status"], lifecycle.PENDING_REVIEW)
+        self.assertEqual(self.in_queue(), {blank, imported})
 
     # -- §41 -------------------------------------------------------------------
 

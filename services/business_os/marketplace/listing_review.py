@@ -528,6 +528,21 @@ UNKNOWN_REVIEW_STATE = "UNKNOWN_REVIEW_STATE"
 #: :func:`zombie_repair`.
 APPROVED_BUT_UNRELEASED = "APPROVED_BUT_UNRELEASED"
 
+#: The mirror of :data:`MISSING_REVIEW_STATE`, on the other axis: the moderation
+#: column is fine and the *merchant* column is the one lying. A supplier import
+#: the publish gate declined was written as ``draft``, so
+#: :func:`_lifecycle.awaiting_moderation` is false for the same reason an
+#: unfinished product's is — except this merchant did release it. They pressed
+#: "Import & publish" on a store with auto-publish on; the gate said no to the
+#: *buyer* question and the import recorded that as a no to the *merchant* one.
+#:
+#: This reason only ever fires when the caller supplies
+#: ``imported_under_autopublish``, which is not a column on the listing — it is
+#: the join to ``marketplace_product_sources`` plus the store's policy. A
+#: ``draft`` row on its own is still not a zombie and must not become one: see
+#: :func:`zombie_reason`.
+IMPORTED_BUT_NEVER_RELEASED = "IMPORTED_BUT_NEVER_RELEASED"
+
 #: Every value either axis may legitimately hold on the moderation side. A row
 #: outside this set is not "some other state", it is a row no code path in this
 #: application can act on.
@@ -554,12 +569,26 @@ def zombie_reason(listing: Mapping[str, Any]) -> Optional[str]:
     every unfinished product a seller ever started into the moderation queue —
     the reviewer's backlog would fill with listings whose own authors are not
     done with them.
+
+    The one exception is a draft the caller can *prove* was released, by passing
+    ``imported_under_autopublish``. That evidence is deliberately not derived
+    here: it is a join this function does not get to do, so the narrow rule above
+    stays the default for every caller that only has a listing row. See
+    :data:`IMPORTED_BUT_NEVER_RELEASED`.
     """
     if not listing:
         return None
     status = _lifecycle.normalized(listing.get("status"))
     approval = _lifecycle.normalized(listing.get("approval_status"))
 
+    if (status == _lifecycle.DRAFT
+            and approval in _lifecycle.AWAITING_DECISION_STATES
+            and listing.get("imported_under_autopublish")):
+        # Checked before the release gate below, because `draft` is precisely
+        # what that gate rejects. The approval column is required to already be
+        # an awaiting state so this cannot reopen a decided listing: a rejected
+        # import stays rejected.
+        return IMPORTED_BUT_NEVER_RELEASED
     if status not in _lifecycle.MERCHANT_RELEASED_STATUSES:
         # Not released. Whatever the approval column says, no seller is being
         # told this is in review and no reviewer is missing work.
@@ -592,10 +621,23 @@ def zombie_repair(listing: Mapping[str, Any]) -> Optional[dict]:
     ``APPROVED_BUT_UNRELEASED`` returns ``None`` for the mirror-image reason.
     Its fix is on the merchant axis, and writing ``status='published'`` here
     would publish a listing whose merchant never released it.
+
+    ``IMPORTED_BUT_NEVER_RELEASED`` *is* repaired, and on that same merchant
+    axis, which is worth being explicit about because the paragraph above
+    refuses exactly that. Two things make it a different act. The write is
+    ``review_ready``, not ``published`` — it is not in
+    :data:`_lifecycle.PUBLIC_STATUSES`, so no buyer reaches the listing before a
+    reviewer does, and that is the property to re-check on any edit here. And
+    the release is not being inferred from the row looking complete: it is
+    evidenced by the import, which is the merchant pressing "Import & publish".
+    The verdict is still nobody's to invent — ``approval_status`` is left
+    untouched, which is why the repair dict names one column either way.
     """
     reason = zombie_reason(listing)
     if reason in (MISSING_REVIEW_STATE, UNKNOWN_REVIEW_STATE):
         return {"approval_status": _lifecycle.PENDING_REVIEW, "reason": reason}
+    if reason == IMPORTED_BUT_NEVER_RELEASED:
+        return {"status": _lifecycle.REVIEW_READY, "reason": reason}
     return None
 
 
@@ -614,6 +656,28 @@ def zombie_sql(alias: str = "l") -> str:
     awaiting = "', '".join(sorted(_lifecycle.AWAITING_DECISION_STATES))
     return (f"LOWER(COALESCE({alias}.status,'')) IN ('{released}') "
             f"AND LOWER(COALESCE({alias}.approval_status,'')) NOT IN ('{awaiting}')")
+
+
+def unreleased_import_sql(alias: str = "l", source: str = "s") -> str:
+    """The other half of the sweep: drafts that an import already released.
+
+    Separate from :func:`zombie_sql` rather than folded into it because the two
+    cannot share a FROM clause. This one is only true of a row that *joins* —
+    the evidence is a ``marketplace_product_sources`` row, so a caller has to
+    bring that table, and a predicate that silently assumed the join would match
+    every hand-written draft in the catalogue.
+
+    Bounded by ``status='draft'`` on the merchant axis and an awaiting state on
+    the moderation axis, so it cannot return a decided listing. Callers must
+    still re-check each row through :func:`zombie_reason` with
+    ``imported_under_autopublish`` set — the store-policy half of the evidence is
+    not in this predicate, because it lives in another table entirely and a
+    store that chose to hold its imports as drafts must not be swept.
+    """
+    awaiting = "', '".join(sorted(_lifecycle.AWAITING_DECISION_STATES))
+    return (f"LOWER(COALESCE({alias}.status,'')) = '{_lifecycle.DRAFT}' "
+            f"AND LOWER(COALESCE({alias}.approval_status,'')) IN ('{awaiting}') "
+            f"AND {source}.listing_id = {alias}.id")
 
 
 def duplicate_decision_sql(alias: str = "b") -> str:
