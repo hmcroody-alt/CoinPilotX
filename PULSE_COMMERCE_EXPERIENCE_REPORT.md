@@ -592,3 +592,202 @@ before calling this shippable, and neither is something I can do from here:
 2. **The remaining §5 items** — the anonymous PDP and the pricing convergence
    behind it, both SEO-visible and both wanting their own pass rather than being
    tacked onto this one.
+
+---
+
+## 10. Addendum — palette parity with the app
+
+Added after the deploy above, on the instruction *"make the web marketplace share
+same colors as the app marketplace"*, clarified as *"the web should copy the
+app."* That clarification settles the direction and the whole section follows from
+it: **the app is the authority and the web is what changes.** Where they
+disagreed, the CSS was wrong by definition.
+
+### 10.1 What "share the same colours" turned out to mean
+
+Not a tuning. The two surfaces were opposite polarities.
+
+PulseSoc is a dark app with exactly **one** deliberately light surface, and it is
+the Store. `mobile-native/src/theme/storeLight.ts` is a separate theme from
+`colors.ts` for that reason, and it says so in its own header. The web storefront
+was dark, inheriting `pulsesoc-tokens.css` like every other page.
+
+So there was no value to nudge. Copying the app meant inverting the polarity of a
+shipped surface: **#EAEDED page, white cards, near-black type.** That is a visible
+change to something already in production, which is the one thing in this addendum
+worth a human look before it ships — see §10.6.
+
+The important consequence is that `colors.ts` and `pulsesoc-tokens.css` are
+**irrelevant** to this surface. The authority is `storeLight.ts` +
+`marketplaceLight.ts`, and nothing else.
+
+### 10.2 Mechanism
+
+38 `--store-*` tokens, transcribed from the two native theme files, declared **on
+`.mkt`** rather than on `:root`. Custom properties inherit, so declaring the dark
+sheet's semantic names (`--text-primary`, `--surface-raised`, `--border-subtle`, …)
+in that same block shadows them for the subtree — which flips all 433 `var()`
+references in the stylesheet without touching one of them and without a single
+specificity change. Nothing outside `.mkt` moves.
+
+One trap cost real time and is now documented in the stylesheet: **a custom
+property that aliases another resolves where it is declared, not where it is
+read.** `pulsesoc-tokens.css` declares `--muted: var(--text-secondary, …)` on
+`:root`, so that `var()` computes *at `:root`* against the dark value. Shadowing
+`--text-secondary` on `.mkt` does not reach it. The alias itself has to be
+re-declared. Verified live rather than reasoned about: `--muted` → `#565959`,
+`--line` → `#d5d9d9`, `color-scheme: light`.
+
+### 10.3 The finding: a token can be right and still be wrong
+
+This is the part worth keeping.
+
+After the inversion, all 38 tokens matched the app exactly and 111 tests passed.
+Then I rendered the pages and measured them, and `.mkt-card-stock` — the **"In
+stock"** line, the most load-bearing two words on a product card — was at
+**2.25:1**, the worst contrast on the discovery page and well under the 4.5:1
+floor.
+
+Nothing was going to catch it, because *the value was never wrong.* Only the use
+was. `.mkt-card-stock` read `--mkt-accent` → `storeLight.accent.brandOnLight`,
+and the native theme defines that colour for one job, in its own words: the
+active tab underline drawn on a white card. **A 2px stroke.** A mint that is
+perfectly visible as a rule does not survive being reused as type.
+
+The app already had the right answer and had documented it: `storeLight.status.
+success` is commented *"In stock, store open, positive trend"* and measures
+**5.11:1** on the card. The two sibling states, `.is-low` and `.is-out`, were
+already reading `status.warning` / `status.neutral` — the base state was the odd
+one out. So the fix recovered the app's existing vocabulary rather than inventing
+one.
+
+| Site | Was | Now |
+|---|---|---|
+| `.mkt-card-stock` (card "In stock") | `--mkt-accent`, 2.25:1 | `--store-status-success`, 5.11:1 |
+| `.mkt-stock` (PDP "In stock") | `--mkt-accent` | `--store-status-success` (dot is `currentColor`, so text and dot cannot drift) |
+| `.mkt-cart-link:hover` | `--mkt-accent` | mint on the stroke, `status.success` on the label |
+| `.mkt-add[data-mkt-added]` | `--mkt-accent` | same split |
+| `.mkt-cta[data-mkt-added]` | `--mkt-accent` | same split |
+
+Four sites, one cause. On `--store-select-fill` the same pair measures 2.02:1
+before and 4.59:1 after.
+
+**The general shape:** a polarity inversion does not break token *values*, it
+breaks the *role assumptions* baked into where each value is used. A token-parity
+suite compares values and is structurally blind to this. That is why this was
+found by rendering and measuring, and not by a green suite.
+
+### 10.4 Gates
+
+`tests/test_marketplace_light_parity.py` (new, 467 lines, 7 tests). Five hold the
+transcription: every `--store-*` token is checked against the native value it
+claims to come from, a token belonging to neither theme file has to be declared as
+a deliberate web-only derivation, `EXPECTED_TOKEN_COUNT` makes a 39th token a
+failure, and polarity gets its own assertion — because transcription equality
+would *not* notice the storefront going dark if the native theme went dark too.
+
+The suite also defends itself against the failure mode that afflicts the older
+native-parity gates: they read their theme file with a flat regex for string
+literals, so a key whose value stops being a literal is **dropped from the
+comparison rather than failing it** — the gate keeps passing while checking less.
+Not hypothetical here: `accent.brand`, `badge.featuredText` and the whole `cta`
+object are all reference-valued, i.e. both halves of the primary CTA. This file
+resolves references and then asserts it resolved those specific keys.
+
+Two more tests encode §10.3 as a rule about **where** a value may appear, which is
+the thing no value comparison can express:
+
+- a stroke-only token (`--store-accent-on-light`, `--mkt-accent`) may never paint
+  text — `color` or `-webkit-text-fill-color`;
+- and the token that rule points authors *at* is itself held above 4.5:1 on the
+  card, so the ban cannot pass while sending everybody at an equally unreadable
+  green.
+
+Both strip CSS comments before scanning, which is not optional: the stylesheet's
+own prose names the banned tokens and quotes `color: var(--mkt-accent)` outright,
+so a raw-text scan would read the explanation as the thing it warns about. Same
+trap `_strip_comments` exists for on the theme side, and the same one that let a
+literal `:root` inside a comment swallow a block in
+`tests/web_parity/test_design_tokens.py`.
+
+### 10.5 Mutation proof
+
+`scripts/protection/mutate_marketplace_light_parity.py` (new, 368 lines).
+**9 of 9 mutations killed by the test that was supposed to kill them**, exit 0.
+
+It never writes repo source: the stylesheet is copied into a `TemporaryDirectory`,
+mutated there, and the module's `CSS_PATH` is repointed at the copy — so there is
+no restore step to get wrong, and a killed process leaves the checkout clean.
+Confirmed: `pulse_marketplace.css` is byte-identical after a full run.
+
+Three of its guards earned their place during the run rather than in theory:
+
+- **The anchor-count check fired for real.** The obvious anchor for the stock-line
+  mutation matched **twice**, because the PDP's `.mkt-stock` is deliberately the
+  same two declarations as the card's. The run reported `DRIFTED` and failed
+  instead of mutating both rules and crediting the result to one. Re-anchored on
+  the selector.
+- **A mutation for `-webkit-text-fill-color`**, which has no call site in the
+  stylesheet — so that half of the rule's property tuple was asserted by nothing.
+  An unexercised branch in a guard is indistinguishable from a typo in it; this
+  mutation is the only thing that tells them apart.
+- **Coverage is default-deny.** `TARGETED` must name every `test_*` in the parity
+  module, so adding an eighth test without a mutation for it fails the harness
+  (verified by removing one: exit 2, names the uncovered test). A mutation killed
+  by a *neighbouring* test is also reported as a failure, not a pass — that is a
+  coverage hole wearing a green mask.
+
+Baseline-green is checked before any mutation and aborts with exit 2 if the suite
+is already red, rather than reporting results that could not mean anything.
+
+### 10.6 Verification and state
+
+Rendered both pages with no server, no database and no auth, by calling
+`marketplace_storefront` directly — the module imports neither Flask nor `bot`,
+which is what made this possible and is worth preserving.
+
+Contrast swept over every text node in the `.mkt` subtree, with translucent
+colours flattened over their real backdrop first (an alpha text colour measured
+against an opaque plate reports a ratio nobody sees) and forced `[data-mkt-added]`
+states included:
+
+| Surface | Checked | Failing |
+|---|---|---|
+| Discovery | 16 | **0** |
+| Product | 19 | **0** |
+
+Badges, worst case over a white studio photo: `is-featured` 12.18:1, `is-new`
+5.10:1, `is-quiet` 7.42:1 (**2.67:1** before this pass), `is-digital` 11.89:1.
+
+| File | Result |
+|---|---|
+| `test_marketplace_light_parity.py` | 7 passed (**new**) |
+| `test_marketplace_storefront.py` | 104 passed |
+| `web_parity/test_design_tokens.py` | 65 passed |
+| `scripts/ops/native_theme_parity_gate.py` | exit 0 — 8 palettes × 23 colours, 8 metrics, the `dark` appearance pin |
+| `scripts/ops/web_token_authority_gate.py` | exit 0 — 23 values against `colors.ts`, 6 shared token names |
+| `mutate_marketplace_light_parity.py` | 9/9 killed |
+
+The `?v=` cache token is `storefront-20260928b` and the recorded CSS digest is
+`fd62405f07d9`, matching disk. Static assets are served `immutable` for a year, so
+a reused token ships an undeliverable fix — the digest is re-recorded as the last
+edit before every commit.
+
+### 10.7 Found and deliberately not fixed
+
+`.mkt-media-fallback` is opaque, `inset: 0`, `z-index: 3`; `.mkt-badges` is
+`z-index: 2`. **Badges are invisible on every photoless listing.** Traced to
+`5ba4af157` via `git log -S`, confirmed pre-existing and already on `main`.
+
+Real, cheap, and I had the harness open — but it is a stacking-order defect and
+this is a colour commit. Spawned as its own task with a self-contained brief
+rather than bundled here.
+
+### 10.8 Still for you
+
+Everything in §10 is static rendering and measurement. **Nothing has been looked
+at by a human**, and the one change that most wants human eyes is the polarity
+inversion itself: the web marketplace becomes light. It is what "copy the app"
+means and the app is unambiguous about it, but it is a visible change to a shipped
+surface and you should see it before it reaches users. Rendered screenshots are
+available.

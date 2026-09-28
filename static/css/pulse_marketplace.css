@@ -7,25 +7,50 @@
  * `pulse_social_shell()` page in bot.py ships an inline <style> block that
  * already owns the bare class names a storefront would reach for first —
  * `.card`, `.grid`, `.pill`, `.actions`, `.nav`, plus element rules on
- * `button`, `input`, `select` and `img`. Marketplace pages render *inside*
- * that shell, so an unnamespaced `.card` rule here would silently restyle
- * the feed, the drawer and every other shell surface on the same page.
- * The namespace is the only thing keeping this file additive.
+ * `button`, `input`, `select`, `textarea`, `p`, `small`, `a` and `h1`.
+ * Marketplace pages render *inside* that shell, so an unnamespaced `.card`
+ * rule here would silently restyle the feed, the drawer and every other
+ * shell surface on the same page. The namespace is the only thing keeping
+ * this file additive.
  *
  * The shell's element-level rules still apply to our markup (they are
  * lower specificity but they do apply), so a few rules below exist purely
  * to undo a shell default on a commerce control — those are marked.
  *
+ * Two things that list deliberately does NOT include, because the audit
+ * behind it found them absent: the shell paints no `img` rule, and neither
+ * do any of the eight stylesheets it links. Do not add an "undo" for one.
+ * The shell's own dark defaults are reached instead by re-declaring its
+ * `--muted` and `--line` aliases on `.mkt` (see that block), because those
+ * two are the only aliases any rule matching inside this subtree reads.
+ *
  * Tokens
  * ------
- * Colour, spacing, radius, type, elevation and motion all come from
- * `pulsesoc-tokens.css`, which the shell links first. Fallbacks are
- * supplied on every `var()` so that a page which somehow renders without
- * the token sheet still degrades to the PulseSoc palette rather than to
- * unstyled white. Spacing is the token sheet's 8px base grid.
+ * Spacing, radius, type and motion come from `pulsesoc-tokens.css`, which
+ * the shell links first. Spacing is that sheet's 8px base grid.
  *
- * There are no hard-coded brand colours here that are not either a token
- * or a documented fallback of one.
+ * COLOUR DOES NOT. The storefront is light, because the native app's
+ * storefront is light, and it resolves its palette from a `--store-*` block
+ * declared on `.mkt` further down — transcribed from
+ * `mobile-native/src/theme/storeLight.ts` and `marketplaceLight.ts`. That
+ * block also shadows the dark semantic names (`--text-primary`,
+ * `--surface-raised`, `--border-subtle`, …) for the subtree, which is why
+ * rules below can keep using them and still resolve light. The long comment
+ * on `.mkt` explains why the app makes this one surface an exception to a
+ * dark-theme app, and `tests/test_marketplace_light_parity.py` fails if the
+ * transcription drifts from the native file.
+ *
+ * Fallbacks are supplied on every `var()`, and they are LIGHT values. A dark
+ * fallback here is a bug even though it cannot fire today: it can only
+ * become reachable by someone deleting a declaration from the `.mkt` block,
+ * and at that moment it would paint near-white text onto a white card.
+ *
+ * There are no hard-coded brand colours here that are not either a token or
+ * a documented fallback of one. Three families of literal remain on purpose
+ * and each says so at its site: the badge scrim and its white hairline (a
+ * badge is drawn over a seller's photograph, so its contrast partner is
+ * near-black, not the card), the colour-swatch rings, and the low-alpha
+ * washes derived from `text.primary`.
  */
 
 /* ---------------------------------------------------------------- *
@@ -91,19 +116,233 @@ body:has(.mkt) .layout > aside {
  * 1. Page scaffolding
  * ---------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------- *
+ * The storefront palette is the NATIVE app's, and the native app's
+ * storefront is light.
+ *
+ * This file used to resolve its colour from `pulsesoc-tokens.css` — the
+ * dark blue-graphite layer that mirrors `mobile-native/src/theme/colors.ts`
+ * — on the reasonable assumption that the app is a dark-theme app and the
+ * web should match it. That assumption is true of every other surface and
+ * false of this one. `mobile-native/src/theme/storeLight.ts:1` states the
+ * exception in its own opening lines: "PulseSoc is a dark-theme app. This
+ * is the one surface that is deliberately light, because it is a dense
+ * data-management screen where hairline borders and white cards do more
+ * work than the dark chrome does elsewhere."
+ *
+ * Every marketplace screen in the app paints from it —
+ * `MarketplaceScreen.tsx` and `MarketplaceProductScreen.tsx` both set
+ * `root: { backgroundColor: storeLight.bg.page }`, a #EAEDED page carrying
+ * #FFFFFF cards and #0F1111 text. So the web storefront and the app
+ * storefront were not two tunings of one palette that had drifted apart;
+ * they were opposite polarities. No amount of substituting a dark token
+ * for a dark hex would have closed that, which is why this block replaces
+ * the resolution source rather than adjusting the values it resolved to.
+ *
+ * Values below are transcribed from `storeLight.ts` and `marketplaceLight.ts`
+ * and must stay equal to them. `tests/test_marketplace_light_parity.py`
+ * fails if either side moves, so the transcription is checked rather than
+ * trusted — the native file is the authority and this is its copy.
+ *
+ * Two consequences worth stating, because both look like bugs otherwise:
+ *
+ *   - The tokens are redeclared ON `.mkt`, not on `:root`. The shell in
+ *     bot.py links `pulsesoc-tokens.css` on every HTML page (and
+ *     `pulse_inject_design_tokens` splices it in where no link exists), so
+ *     the dark semantic names are always defined and always inherited.
+ *     Overriding them here is a scoped shadow: storefront markup resolves
+ *     light, the surrounding feed / drawer / bottom-nav keep resolving
+ *     dark, and no other page can be reached by an edit to this file. It
+ *     also means the ~330 `var()` references already in this file flip
+ *     polarity without being touched, which is the only reason a change
+ *     this broad is reviewable.
+ *
+ *   - The shell chrome stays dark, and that is parity rather than a seam.
+ *     The app's storefront supplies its OWN near-black header
+ *     (`storeLight.bg.headerFrom` #0B0B0C) above its light page, so
+ *     near-black chrome over a light catalogue is what the app already
+ *     looks like. The web shell's dark topbar and bottom nav land in the
+ *     same relationship.
+ * ---------------------------------------------------------------- */
+
 .mkt {
+  /* -- storeLight.bg -- */
+  --store-bg-page: #eaeded;
+  --store-bg-card: #ffffff;
+  --store-bg-header: #0b0b0c;
+  --store-bg-strip: #141518;
+  --store-bg-warning: #fcf5ee;
+  --store-bg-skeleton: #e6e9ea;
+  /* -- storeLight.border -- */
+  --store-border-hairline: #d5d9d9;
+  --store-border-secondary: #adb1b8;
+  --store-border-warning: #f0d8b6;
+  /* -- storeLight.text -- */
+  --store-text-primary: #0f1111;
+  --store-text-muted: #565959;
+  --store-text-link: #0a7050;
+  --store-text-link-active: #08553f;
+  --store-text-on-dark: #ffffff;
+  --store-text-on-dark-muted: #c7cdd3;
+  /* -- storeLight.status -- */
+  --store-status-success: #067d62;
+  --store-status-warning: #c7511f;
+  --store-status-error: #b12704;
+  /* -- storeLight.accent. `brand` is a mint that all but vanishes as a rule
+   * or a 1px border on #ffffff; `brandOnLight` is the same green one step
+   * deeper and is what the native file reserves for accents drawn on a
+   * card. Web has more hairlines than the app does, so `brandOnLight` is
+   * the default accent here and `brand` is kept for fills. -- */
+  --store-accent-brand: #2ee6a8;
+  --store-accent-on-light: #22c48d;
+  --store-accent-star: #ffa41c;
+  /* -- storeLight.cta (STORE_CTA_PULSESOC) -- */
+  --store-cta-from: #2ee6a8;
+  --store-cta-to: #22c48d;
+  --store-cta-text: #04231a;
+  /* -- storeLight.select -- */
+  --store-select-fill: #e8f6f1;
+  --store-select-border: #189669;
+  /* Low-alpha washes.
+   *
+   * The dark storefront used `rgba(255, 255, 255, 0.02 .. 0.24)` in roughly
+   * twenty places to lift a surface a step off its background. That idiom
+   * only works when the background is dark; on #eaeded and #ffffff a white
+   * wash is either invisible or, over the page grey, brighter than the card
+   * it is supposed to sit inside. The inversion is the same gesture in the
+   * other direction — `text.primary` at the same alphas — so these are the
+   * one family of values here NOT transcribed from the native file: the app
+   * builds these steps from opaque greys (`bg.skeleton`, `select.disabled`)
+   * because React Native has no cascade to blend against. A translucent
+   * wash is the web expression of the same intent and keeps the rules
+   * composable over both the page and the card.
+   */
+  --store-wash-faint: rgba(15, 17, 17, 0.03);
+  --store-wash-soft: rgba(15, 17, 17, 0.05);
+  --store-wash: rgba(15, 17, 17, 0.08);
+  --store-wash-strong: rgba(15, 17, 17, 0.16);
+  /* -- marketplaceLight.savedSearch.from — the app's "this is a banner,
+   * not a product" wash. -- */
+  --store-banner-from: #eef7f4;
+  /* -- marketplaceLight.badge -- */
+  --store-badge-featured-bg: #0b0b0c;
+  --store-badge-featured-text: #2ee6a8;
+  --store-badge-new-bg: #067d62;
+  --store-badge-new-text: #ffffff;
+  --store-badge-sold-overlay: rgba(11, 11, 12, 0.85);
+  /* A translucent form of the same near-black, for the badge scrim. See
+   * `.mkt-badge` for why a badge is the one storefront surface that must
+   * stay dark on a light page: its real backdrop is a seller's photograph,
+   * not the card. The app reaches the same conclusion — every badge plate
+   * in `marketplaceLight.badge` is near-black or a near-black overlay. */
+  --store-badge-scrim: rgba(11, 11, 12, 0.82);
+
+  /* An error wash built from `status.error`, for the one panel that needs a
+   * tinted fill rather than just red text. */
+  --store-error-wash: rgba(177, 39, 4, 0.08);
+
+  /* Elevation.
+   *
+   * The dark layer's card shadow is `0 20px 70px rgba(0,0,0,0.24)` — a
+   * deep, wide black bloom that reads as depth against #050910 and as
+   * grime against #ffffff. The native storefront carries no shadow at all:
+   * `storeLight.ts:1` says hairline borders "do more work than the dark
+   * chrome does elsewhere", and the card styles pair `bg.card` with
+   * `border.hairline` and stop. These keep a much shallower lift so the
+   * grid still has a sense of stacking on hover, without inventing a
+   * depth the app does not have.
+   */
+  --elevation-card: 0 1px 2px rgba(15, 17, 17, 0.06);
+  --elevation-overlay: 0 6px 16px rgba(15, 17, 17, 0.12);
+  /* The dark CTA threw a mint glow (`0 14px 38px rgba(50,230,179,0.24)`).
+   * A coloured glow on a light page looks like a rendering artefact, and
+   * the app's CTA has none. */
+  --elevation-glow: 0 1px 2px rgba(15, 17, 17, 0.1);
+
+  /* Shadow the inherited dark semantics. Every one of these names is
+   * defined by `pulsesoc-tokens.css` as part of the dark layer; the
+   * storefront needs the same *meanings* against a light page. */
+  --surface-primary: var(--store-bg-page);
+  --surface-raised: var(--store-bg-card);
+  --text-primary: var(--store-text-primary);
+  --text-secondary: var(--store-text-muted);
+  --text-on-action: var(--store-cta-text);
+  --border-subtle: var(--store-border-hairline);
+  --border-strong: var(--store-border-secondary);
+  /* 3.75:1 on the card — the native file picked this value precisely
+   * because the mint CTA green measures 2.25:1 there and would leave a
+   * focus ring invisible to a low-vision shopper. */
+  --border-focus: var(--store-select-border);
+  --action-primary: var(--store-accent-on-light);
+  --action-secondary: var(--store-accent-brand);
+
+  /* The two aliases the member shell declares for itself, restated here.
+   *
+   * `pulse_social_shell` (bot.py:48452) opens with
+   * `:root{--line:var(--border-subtle,…);--muted:var(--text-secondary,…)}`.
+   * Shadowing `--border-subtle` and `--text-secondary` above does NOT reach
+   * them: a custom property's value is computed on the element that declares
+   * it, so `--muted` was already resolved against `:root`'s dark
+   * `--text-secondary` and what inherits down into this subtree is the
+   * finished dark grey. The alias itself has to be re-declared.
+   *
+   * `--muted` is not cosmetic. The shell styles `p,.muted,small{color:
+   * var(--muted)}`, and the storefront renders three unclassed `<p>`
+   * elements, so without this line they paint #9fb5c0 on the #eaeded page —
+   * 1.82:1, well under the 4.5:1 body-text floor. The store's own muted grey
+   * measures 6.27:1 there.
+   *
+   * Only these two are restated because only these two are reachable: of the
+   * four aliases the shell declares, `--cyan` and `--green` appear in no rule
+   * that can match inside `.mkt`. Every element-level rule the shell applies
+   * to this subtree (`p,.muted,small`, `button,.button`,
+   * `input,select,textarea`, `textarea`, `a`, `h1`) uses `--muted` or
+   * `--line` and nothing else. Adding the other two would be decoration. */
+  --muted: var(--store-text-muted);
+  --line: var(--store-border-hairline);
+
+  /* `:root` carries `color-scheme:dark`, which is what tells the UA to render
+   * the sort `<select>`'s native dropdown, the scrollbars and any form-control
+   * chrome dark. Those are painted by the platform, not by the rules above,
+   * so a token cannot reach them — the subtree has to declare its own scheme
+   * or a light storefront opens a black dropdown list. */
+  color-scheme: light;
+
   --mkt-gap: var(--spacing-md, 16px);
   --mkt-card-radius: var(--radius-card, 16px);
-  --mkt-line: var(--border-subtle, rgba(110, 223, 246, 0.22));
-  --mkt-line-strong: var(--border-strong, rgba(110, 223, 246, 0.42));
-  --mkt-muted: var(--text-secondary, #9fb5c0);
-  --mkt-accent: var(--action-primary, #32e6b3);
-  --mkt-accent-2: var(--action-secondary, #61d8ff);
-  --mkt-commerce: var(--domain-intelligence, #9f7cff);
-  /* The neutral plate product photography sits on. Deliberately darker
-   * than the card so a contained image reads as a framed photo rather
-   * than as a hole in the layout. */
-  --mkt-media-plate: #060f1c;
+  --mkt-line: var(--store-border-hairline);
+  --mkt-line-strong: var(--store-border-secondary);
+  --mkt-muted: var(--store-text-muted);
+  --mkt-accent: var(--store-accent-on-light);
+  --mkt-accent-2: var(--store-accent-brand);
+  /* Was `--domain-intelligence`, a #9f7cff purple. The business surfaces
+   * are locked to black / white / green and the app's storefront carries no
+   * purple at all — `marketplaceLight.badge.featuredBg` is the near-black
+   * plate, so a distinguishing border becomes that. */
+  --mkt-commerce: var(--store-badge-featured-bg);
+  /* The neutral plate product photography sits on. On the dark storefront
+   * this was #060f1c, one step DARKER than the card so a contained image
+   * read as a framed photo rather than a hole. The app inverts the same
+   * intent: `galleryImage`/`cardImage` sit on `storeLight.bg.skeleton`,
+   * one step darker than #ffffff. */
+  --mkt-media-plate: var(--store-bg-skeleton);
+
+  /* The light page itself. `.mkt` is the storefront's outermost element, so
+   * painting it here is what turns the content column light while leaving
+   * the shell around it alone. Without this the cards would be white
+   * islands floating on the shell's dark gradient. */
+  background: var(--store-bg-page);
+  color: var(--store-text-primary);
+  /* The light page needs its own inset, because `.mkt` is now a surface
+   * rather than a transparent pass-through: without it the first card sits
+   * flush against the edge of the colour change. The negative inline margin
+   * pushes the slab back out to the shell's own gutter so the storefront
+   * reads as a page that happens to be light rather than as one more card
+   * floating on the feed's dark background. That is the relationship the app
+   * has, where `bg.page` is the window and the cards sit inside it. */
+  padding: var(--spacing-md, 16px);
+  margin-inline: calc(-1 * var(--spacing-md, 16px));
+  border-radius: var(--pulse-radius-sm, 12px);
   display: grid;
   gap: var(--spacing-lg, 24px);
   min-width: 0;
@@ -225,12 +464,12 @@ body:has(.mkt) .layout > aside {
 }
 
 .mkt-crumbs a:hover {
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   text-decoration: underline;
 }
 
 .mkt-crumbs [aria-current="page"] {
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
 }
 
 /* The heading and the cart link share one row. `align-items: flex-start`
@@ -255,16 +494,21 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-2xs, 4px) var(--spacing-sm, 12px);
   border: 1px solid var(--mkt-line-strong);
   border-radius: 999px;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   text-decoration: none;
   font-size: var(--font-size-xs, 12px);
   font-weight: 700;
   white-space: nowrap;
 }
 
+/* Mint on the stroke, the deeper green on the label. That split is the app's:
+ * `accent.brandOnLight` is defined for a rule drawn on a white card and is
+ * only 2.25:1 as type, while `status.success` is 5.11:1 and is what the native
+ * file reaches for whenever a green has to be *read*. Every `[data-mkt-added]`
+ * rule below follows the same pairing. */
 .mkt-cart-link:hover {
   border-color: var(--mkt-accent);
-  color: var(--mkt-accent);
+  color: var(--store-status-success);
 }
 
 .mkt-cart-link:focus-visible {
@@ -279,7 +523,7 @@ body:has(.mkt) .layout > aside {
   padding: 0 var(--spacing-2xs, 4px);
   border-radius: 999px;
   background: var(--mkt-accent);
-  color: #04120c;
+  color: var(--store-cta-text);
   text-align: center;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
@@ -298,7 +542,7 @@ body:has(.mkt) .layout > aside {
   line-height: 1.15;
   font-weight: 900;
   letter-spacing: -0.01em;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   /* Supplier titles in this catalogue run to ~160 characters. They are
    * reproduced verbatim (they are the product's real name), so the
    * heading has to wrap gracefully rather than be rewritten. */
@@ -358,8 +602,9 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-2xs, 4px) var(--spacing-sm, 12px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-pill, 999px);
-  background: rgba(110, 223, 246, 0.06);
-  color: var(--text-primary, #f2fbff);
+  /* `marketplaceLight.chip`: white plate, primary text, hairline. */
+  background: var(--store-bg-card);
+  color: var(--store-text-primary);
   font-size: var(--font-size-sm, 14px);
   font-weight: 700;
   text-decoration: none;
@@ -369,15 +614,21 @@ body:has(.mkt) .layout > aside {
 }
 
 .mkt-chip:hover {
-  background: rgba(110, 223, 246, 0.14);
+  background: var(--store-select-fill);
   border-color: var(--mkt-line-strong);
 }
 
+/* `marketplaceLight.chip.activeBg` / `.activeText` — a filled near-black
+ * plate with white text, not a tinted wash. This is the one place the app's
+ * chip rail states a stronger opinion than the dark web storefront did: a
+ * selected department is the same near-black as the FEATURED badge and the
+ * app's own header, so selection reads as a solid object rather than as a
+ * slightly brighter version of the thing beside it. */
 .mkt-chip[aria-current="true"],
 .mkt-chip.is-active {
-  background: linear-gradient(135deg, rgba(50, 230, 179, 0.22), rgba(97, 216, 255, 0.18));
-  border-color: var(--mkt-accent);
-  color: var(--text-primary, #f2fbff);
+  background: var(--store-badge-featured-bg);
+  border-color: var(--store-badge-featured-bg);
+  color: var(--store-text-on-dark);
 }
 
 /* The count beside a department name. It is a real row count from the
@@ -390,10 +641,13 @@ body:has(.mkt) .layout > aside {
   font-variant-numeric: tabular-nums;
 }
 
+/* The active chip is a near-black plate now, so the count on it takes the
+ * on-dark text. Inheriting `--text-primary` here would have painted #0f1111
+ * onto #0b0b0c and silently deleted the number. */
 .mkt-chip[aria-current="true"] .mkt-chip-count,
 .mkt-chip.is-active .mkt-chip-count {
-  color: var(--text-primary, #f2fbff);
-  opacity: 0.8;
+  color: var(--store-text-on-dark-muted);
+  opacity: 1;
 }
 
 /* Second-level (section) chips sit visually subordinate to departments. */
@@ -401,13 +655,26 @@ body:has(.mkt) .layout > aside {
   min-height: 32px;
   font-size: var(--font-size-xs, 12px);
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--store-wash-faint);
 }
 
+/* A selected *section* deliberately does not repeat the department's
+ * near-black: the two rows are a hierarchy, and painting both selections
+ * the same colour flattens it. The deeper CTA green fills that role while
+ * staying inside the black/white/green vocabulary the business surfaces are
+ * locked to. Its text is the CTA's own paired text colour, which the native
+ * file keeps travelling with the fill precisely so contrast stays correct. */
 .mkt-chiprow.is-sub .mkt-chip[aria-current="true"],
 .mkt-chiprow.is-sub .mkt-chip.is-active {
-  background: rgba(159, 124, 255, 0.2);
-  border-color: var(--mkt-commerce);
+  background: var(--store-accent-on-light);
+  border-color: var(--store-accent-on-light);
+  color: var(--store-cta-text);
+}
+
+.mkt-chiprow.is-sub .mkt-chip[aria-current="true"] .mkt-chip-count,
+.mkt-chiprow.is-sub .mkt-chip.is-active .mkt-chip-count {
+  color: var(--store-cta-text);
+  opacity: 0.75;
 }
 
 /* ---------------------------------------------------------------- *
@@ -438,8 +705,8 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-xs, 8px) var(--spacing-md, 16px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-pill, 999px);
-  background: var(--surface-primary, #081323);
-  color: var(--text-primary, #f2fbff);
+  background: var(--surface-primary, #eaeded);
+  color: var(--text-primary, #0f1111);
   font-size: var(--font-size-sm, 14px);
 }
 
@@ -462,8 +729,8 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-xs, 8px);
-  background: var(--surface-raised, #0d1627);
-  color: var(--text-primary, #f2fbff);
+  background: var(--surface-raised, #ffffff);
+  color: var(--text-primary, #0f1111);
   font-size: var(--font-size-sm, 14px);
   font-weight: 700;
 }
@@ -494,10 +761,14 @@ body:has(.mkt) .layout > aside {
   max-width: 100%;
   min-height: 32px;
   padding: var(--spacing-2xs, 4px) var(--spacing-xs, 8px);
-  border: 1px solid var(--mkt-line-strong);
+  /* An applied filter is a selection, so it wears `storeLight.select` —
+   * the wash and border the native file already uses to say "this one is
+   * picked", rather than the purple it used to borrow from the social
+   * palette. */
+  border: 1px solid var(--store-select-border);
   border-radius: var(--radius-pill, 999px);
-  background: rgba(159, 124, 255, 0.14);
-  color: var(--text-primary, #f2fbff);
+  background: var(--store-select-fill);
+  color: var(--store-text-primary);
   font-size: var(--font-size-xs, 12px);
   font-weight: 700;
   text-decoration: none;
@@ -509,13 +780,13 @@ body:has(.mkt) .layout > aside {
   width: 18px;
   height: 18px;
   border-radius: var(--radius-pill, 999px);
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--store-wash);
   font-size: 12px;
   line-height: 1;
 }
 
 .mkt-tag:hover .mkt-tag-x {
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--store-wash-strong);
 }
 
 /* ---------------------------------------------------------------- *
@@ -544,9 +815,14 @@ body:has(.mkt) .layout > aside {
   overflow: hidden;
   border-radius: var(--pulse-radius-sm, 12px);
   background: var(--mkt-media-plate);
-  /* A very soft radial keeps a contained image from floating in a flat
-   * void without tinting the product itself. */
-  background-image: radial-gradient(circle at 50% 30%, rgba(110, 223, 246, 0.08), transparent 62%);
+  /* The dark storefront lit the plate with a soft cyan radial so a
+   * contained image did not float in a flat void. The app does the
+   * opposite and is right to: `cardImage` and `galleryImage` are a flat
+   * `storeLight.bg.skeleton`. On a light plate a tint is not atmosphere,
+   * it is a colour cast that lands on white-background product photography
+   * — which is most of a supplier-imported catalogue — and reads as the
+   * photo being the wrong colour rather than the plate being lit. Flat. */
+  background-image: none;
   isolation: isolate;
 }
 
@@ -570,8 +846,14 @@ body:has(.mkt) .layout > aside {
    * where a full-bleed fill is genuinely wanted. */
   object-fit: contain;
   object-position: center;
-  /* Undo the shell's `img{border:1px solid;background:#020817}` rule so
-   * the plate below shows through instead of a second frame. */
+  /* Stay transparent and unframed so `--mkt-media-plate` on the wrapper is
+   * what shows through, rather than the image drawing a second frame inside
+   * the one the wrapper already has.
+   *
+   * These are belt-and-braces, not a fix for a known rule: neither
+   * `pulse_social_shell` nor any of the eight stylesheets it links paints
+   * `img` at all. They matter while an image is still loading or has failed,
+   * when the UA's own broken-image chrome would otherwise sit on the plate. */
   border: 0;
   background: transparent;
   max-height: none;
@@ -593,9 +875,9 @@ body:has(.mkt) .layout > aside {
   inset: 0;
   background: linear-gradient(
     100deg,
-    rgba(255, 255, 255, 0.03) 0%,
-    rgba(255, 255, 255, 0.08) 42%,
-    rgba(255, 255, 255, 0.03) 68%
+    var(--store-wash-faint) 0%,
+    var(--store-wash) 42%,
+    var(--store-wash-faint) 68%
   );
   background-size: 220% 100%;
   animation: mkt-shimmer 1.5s var(--motion-ease, ease) infinite;
@@ -632,8 +914,8 @@ body:has(.mkt) .layout > aside {
   place-items: center;
   padding: var(--spacing-sm, 12px);
   text-align: center;
-  background: linear-gradient(145deg, rgba(8, 19, 35, 0.96), rgba(4, 9, 17, 0.98));
-  color: var(--mkt-muted);
+  background: var(--store-bg-skeleton);
+  color: var(--store-text-muted);
   font-size: var(--font-size-xs, 12px);
   line-height: 1.4;
 }
@@ -709,8 +991,8 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-xs, 8px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--mkt-card-radius);
-  background: var(--surface-raised, linear-gradient(180deg, rgba(17, 29, 50, 0.92), rgba(13, 22, 39, 0.88)));
-  box-shadow: var(--elevation-card, 0 20px 70px rgba(0, 0, 0, 0.24));
+  background: var(--surface-raised, #ffffff);
+  box-shadow: var(--elevation-card, 0 1px 2px rgba(15, 17, 17, 0.06));
   transition: transform var(--motion-base, 168ms) var(--motion-ease, ease),
     border-color var(--motion-base, 168ms) var(--motion-ease, ease),
     box-shadow var(--motion-base, 168ms) var(--motion-ease, ease);
@@ -719,7 +1001,7 @@ body:has(.mkt) .layout > aside {
 .mkt-card:hover {
   transform: translateY(-2px);
   border-color: var(--mkt-line-strong);
-  box-shadow: var(--elevation-overlay, 0 26px 80px rgba(0, 0, 0, 0.34));
+  box-shadow: var(--elevation-overlay, 0 6px 16px rgba(15, 17, 17, 0.12));
 }
 
 .mkt-card:hover .mkt-media img[data-mkt-loaded] {
@@ -798,7 +1080,7 @@ body:has(.mkt) .layout > aside {
   font-size: var(--font-size-sm, 14px);
   font-weight: 700;
   line-height: 1.35;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   overflow-wrap: anywhere;
 }
 
@@ -817,7 +1099,7 @@ body:has(.mkt) .layout > aside {
   font-size: var(--font-size-lg, 18px);
   font-weight: 900;
   line-height: 1.2;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -862,7 +1144,7 @@ body:has(.mkt) .layout > aside {
 }
 
 .mkt-card-seller:hover {
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   text-decoration: underline;
 }
 
@@ -878,21 +1160,35 @@ body:has(.mkt) .layout > aside {
   place-items: center;
   font-size: 10px;
   font-weight: 900;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   overflow: hidden;
 }
 
 /* Stock line. Only rendered when the data actually says something; there
- * is no "In stock" default anywhere in the template. */
+ * is no "In stock" default anywhere in the template.
+ *
+ * All three states are `status.*`, not the brand accent. That is the app's
+ * vocabulary: `storeLight.status.success` is commented "In stock, store open,
+ * positive trend", and `.is-low` / `.is-out` below were already reading
+ * `status.warning` / `status.neutral` -- the base state was the odd one out.
+ *
+ * It mattered more than a naming slip. The base state read `--mkt-accent`
+ * (`storeLight.accent.brandOnLight`, #22c48d), which the native file defines
+ * for "the active tab underline ... drawn on a white card" -- a 2px rule, not
+ * text. As a 12px bold label on `bg.card` it measured 2.25:1, below the 4.5:1
+ * floor and the worst contrast on the discovery page. `status.success` is the
+ * app's answer and measures 5.11:1 on the same card. A mint that reads fine as
+ * a stroke does not survive being reused as type; that is the general shape of
+ * every bug this light inversion surfaced. */
 .mkt-card-stock {
   margin: var(--spacing-xs, 8px) 0 0;
   font-size: var(--font-size-xs, 12px);
   font-weight: 700;
-  color: var(--mkt-accent);
+  color: var(--store-status-success);
 }
 
 .mkt-card-stock.is-low {
-  color: #ffc766;
+  color: var(--store-status-warning);
 }
 
 .mkt-card-stock.is-out {
@@ -921,10 +1217,16 @@ body:has(.mkt) .layout > aside {
   flex: 1 1 auto;
   min-width: 0;
   padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
-  border: 1px solid var(--mkt-line-strong);
+  /* The app fills this one. `MarketplaceScreen.tsx` styles `cardCta` as
+   * `backgroundColor: storeLight.accent.brandOnLight` with
+   * `cardCtaText: { color: storeLight.cta.text }` — a solid green button on
+   * every grid card, not the outlined secondary this used to be. Copying
+   * the app means copying that emphasis: adding to cart from the grid is a
+   * primary action there. */
+  border: 1px solid transparent;
   border-radius: var(--radius-sm, 10px);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-primary, #f2fbff);
+  background: var(--store-accent-on-light);
+  color: var(--store-cta-text);
   font: inherit;
   font-size: var(--font-size-xs, 12px);
   font-weight: 700;
@@ -934,8 +1236,8 @@ body:has(.mkt) .layout > aside {
 }
 
 .mkt-add:hover {
-  border-color: var(--mkt-accent);
-  color: var(--mkt-accent);
+  background: var(--store-text-link);
+  color: var(--store-text-on-dark);
 }
 
 .mkt-add:focus-visible {
@@ -952,7 +1254,7 @@ body:has(.mkt) .layout > aside {
 
 .mkt-add[data-mkt-added] {
   border-color: var(--mkt-accent);
-  color: var(--mkt-accent);
+  color: var(--store-status-success);
 }
 
 /* The variant-choice link, which is an `<a>` wearing `.mkt-add` so the action
@@ -1012,8 +1314,13 @@ body:has(.mkt) .layout > aside {
   overflow: hidden;
   text-overflow: ellipsis;
   backdrop-filter: blur(8px);
+  /* White hairline and white text, deliberately NOT the light theme's
+   * `--border-subtle` / `--text-primary`. A badge is drawn on the scrim
+   * below, not on the card, so its contrast partner is near-black. Piping
+   * the light tokens through here would have put #0f1111 text on an
+   * #0b0b0c plate. */
   border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--text-primary, #f2fbff);
+  color: var(--store-text-on-dark);
 
   /* Two layers, and the split matters. `.mkt-badges` is absolutely
    * positioned over `.mkt-media`, so in production a badge's real backdrop
@@ -1026,35 +1333,64 @@ body:has(.mkt) .layout > aside {
    * over the photo with no scrim at all. The local QA fixture renders
    * placeholder plates rather than photographs, so this was invisible to
    * measurement here and would have shipped. */
-  background-color: rgba(6, 16, 27, 0.72);
+  background-color: var(--store-badge-scrim);
   background-image: linear-gradient(var(--mkt-badge-tint, transparent), var(--mkt-badge-tint, transparent));
 }
 
-/* `featured` — the listings table's own boolean. */
+/* `featured` — the listings table's own boolean.
+ *
+ * `marketplaceLight.badge.featuredBg` / `.featuredText`: an opaque
+ * near-black plate carrying brand-green text. The native file documents
+ * arriving here from the reference design's yellow-on-navy, and notes that
+ * the plate is now "the same near-black as `storeLight.bg.headerFrom`, so a
+ * FEATURED badge and the header it sits under are one colour rather than
+ * two dark blues." Opaque, so it needs no scrim. */
 .mkt-badge.is-featured {
-  background: linear-gradient(135deg, var(--mkt-accent), var(--mkt-accent-2));
-  color: var(--text-on-action, #06101b);
+  background-color: var(--store-badge-featured-bg);
+  background-image: none;
+  color: var(--store-badge-featured-text);
   border-color: transparent;
 }
 
 /* `new` — derived from a real `published_at`, never from an import
  * timestamp, and suppressed at page level when it would apply to most of
  * the page (which makes it a fact about the importer, not the product). */
+/* `marketplaceLight.badge.newBg` / `.newText`: solid success green, white
+ * text. Opaque like `is-featured`, so the scrim is dropped the same way. */
 .mkt-badge.is-new {
-  --mkt-badge-tint: rgba(50, 230, 179, 0.22);
-  border-color: rgba(50, 230, 179, 0.45);
+  background-color: var(--store-badge-new-bg);
+  background-image: none;
+  color: var(--store-badge-new-text);
+  border-color: transparent;
 }
 
-/* `digital` / `product_type` — a delivery fact, not a marketing claim. */
+/* `digital` / `product_type` — a delivery fact, not a marketing claim.
+ *
+ * The app has no digital badge to copy, so this is the one badge whose
+ * treatment is derived rather than transcribed. It was a #9f7cff purple
+ * borrowed from the social palette, which the black/white/green lock on
+ * business surfaces rules out. It keeps the scrim (so it stays a tint over
+ * a photograph, matching the "delivery fact, not marketing claim" framing
+ * above) and takes the brand mint, which distinguishes it from both the
+ * opaque near-black `is-featured` and the opaque deep-green `is-new`. */
 .mkt-badge.is-digital {
-  --mkt-badge-tint: rgba(159, 124, 255, 0.26);
-  border-color: rgba(159, 124, 255, 0.5);
+  --mkt-badge-tint: rgba(46, 230, 168, 0.26);
+  border-color: rgba(46, 230, 168, 0.5);
 }
 
-/* `is-featured` is the one variant that legitimately replaces both layers:
- * it is opaque, so it needs no scrim, and it carries dark-on-bright text. */
+/* `is-quiet` is the *fallback*, not a decoration: `_BADGE_CLASS.get(key,
+ * "is-quiet")` in `marketplace_storefront.py` hands it to every badge key
+ * the map does not know, so it is the variant most likely to appear and the
+ * one least likely to be looked at.
+ *
+ * It keeps the scrim and only softens the text, which means its contrast
+ * partner is the near-black plate — NOT the card. `--mkt-muted` is the
+ * light theme's #565959 and measures 2.67:1 there, so using it would have
+ * dimmed the fallback badge to the edge of illegibility on every card. This
+ * is the same trap `.mkt-chip-count` hit: inside a badge, "muted" has to
+ * mean muted-on-dark. `storeLight.text.onDarkMuted` is that value. */
 .mkt-badge.is-quiet {
-  color: var(--mkt-muted);
+  color: var(--store-text-on-dark-muted);
 }
 
 /* ---------------------------------------------------------------- *
@@ -1069,7 +1405,7 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-xl, 32px) var(--spacing-md, 16px);
   border: 1px dashed var(--mkt-line);
   border-radius: var(--mkt-card-radius);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--store-wash-faint);
 }
 
 .mkt-state h2,
@@ -1080,7 +1416,7 @@ body:has(.mkt) .layout > aside {
 
 .mkt-state h2 {
   font-size: var(--font-size-lg, 18px);
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
 }
 
 .mkt-state p {
@@ -1093,8 +1429,8 @@ body:has(.mkt) .layout > aside {
  * query can never be mistaken for "there are no products". */
 .mkt-state.is-error {
   border-style: solid;
-  border-color: rgba(255, 128, 128, 0.42);
-  background: rgba(255, 96, 96, 0.08);
+  border-color: var(--store-status-error);
+  background: var(--store-error-wash);
 }
 
 .mkt-state-actions {
@@ -1117,7 +1453,7 @@ body:has(.mkt) .layout > aside {
 .mkt-skeleton-line {
   height: 12px;
   border-radius: var(--radius-pill, 999px);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--store-bg-skeleton);
 }
 
 .mkt-skeleton-line.is-short {
@@ -1147,8 +1483,8 @@ body:has(.mkt) .layout > aside {
   padding: 0 var(--spacing-sm, 12px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-xs, 8px);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary, #f2fbff);
+  background: var(--store-bg-card);
+  color: var(--store-text-primary);
   font-weight: 800;
   text-decoration: none;
   font-variant-numeric: tabular-nums;
@@ -1156,12 +1492,12 @@ body:has(.mkt) .layout > aside {
 
 .mkt-pager a:hover {
   border-color: var(--mkt-line-strong);
-  background: rgba(110, 223, 246, 0.12);
+  background: var(--store-select-fill);
 }
 
 .mkt-pager [aria-current="page"] {
   background: linear-gradient(135deg, var(--mkt-accent), var(--mkt-accent-2));
-  color: var(--text-on-action, #06101b);
+  color: var(--text-on-action, #04231a);
   border-color: transparent;
 }
 
@@ -1212,7 +1548,7 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-md, 16px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--mkt-card-radius);
-  background: var(--surface-raised, rgba(13, 22, 39, 0.88));
+  background: var(--surface-raised, #ffffff);
   min-width: 0;
 }
 
@@ -1234,7 +1570,7 @@ body:has(.mkt) .layout > aside {
   margin: 0;
   font-size: var(--font-size-md, 16px);
   font-weight: 900;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
 }
 
 /* ---------------------------------------------------------------- *
@@ -1365,7 +1701,7 @@ body:has(.mkt) .layout > aside {
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: -0.02em;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -1375,13 +1711,16 @@ body:has(.mkt) .layout > aside {
   color: var(--mkt-muted);
 }
 
+/* The PDP's stock line. Same token as `.mkt-card-stock` and for the same
+ * reason -- see the note there. The dot is `currentColor`, so this single
+ * declaration moves the text and the dot together and they cannot drift. */
 .mkt-stock {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-2xs, 4px);
   font-size: var(--font-size-sm, 14px);
   font-weight: 700;
-  color: var(--mkt-accent);
+  color: var(--store-status-success);
 }
 
 .mkt-stock::before {
@@ -1431,7 +1770,7 @@ body:has(.mkt) .layout > aside {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 700;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
 }
 
 .mkt-optionlist {
@@ -1466,8 +1805,8 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-2xs, 4px) var(--spacing-sm, 12px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-xs, 8px);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text-primary, #f2fbff);
+  background: var(--store-bg-card);
+  color: var(--store-text-primary);
   font-size: var(--font-size-sm, 14px);
   font-weight: 700;
   cursor: pointer;
@@ -1481,7 +1820,7 @@ body:has(.mkt) .layout > aside {
 
 .mkt-option input:checked + label {
   border-color: var(--mkt-accent);
-  background: rgba(50, 230, 179, 0.16);
+  background: var(--store-select-fill);
 }
 
 .mkt-option input:focus-visible + label {
@@ -1510,8 +1849,8 @@ body:has(.mkt) .layout > aside {
   width: 18px;
   height: 18px;
   border-radius: var(--radius-pill, 999px);
-  border: 1px solid rgba(255, 255, 255, 0.4);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(15, 17, 17, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
 }
 
 /* Buy actions. `.mkt-cta` is deliberately its own class rather than the
@@ -1533,13 +1872,18 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-xs, 8px) var(--spacing-lg, 24px);
   border: 0;
   border-radius: var(--radius-xs, 8px);
-  background: linear-gradient(135deg, var(--mkt-accent), var(--mkt-accent-2));
-  color: var(--text-on-action, #06101b);
+  /* `STORE_CTA_PULSESOC`: mint into the deeper green, in that order. The
+   * dark storefront ran the pair the other way round (accent → accent-2);
+   * the native constant is `{ from: "#2EE6A8", to: "#22C48D" }` and its
+   * `text` travels with it, which is the property the native file calls out
+   * as the reason contrast stays correct if the pair is ever swapped. */
+  background: linear-gradient(135deg, var(--store-cta-from), var(--store-cta-to));
+  color: var(--store-cta-text);
   font-size: var(--font-size-md, 16px);
   font-weight: 900;
   text-decoration: none;
   cursor: pointer;
-  box-shadow: var(--elevation-glow, 0 14px 38px rgba(50, 230, 179, 0.24));
+  box-shadow: var(--elevation-glow, 0 1px 2px rgba(15, 17, 17, 0.1));
   transition: filter var(--motion-fast, 88ms) var(--motion-ease, ease);
 }
 
@@ -1549,7 +1893,7 @@ body:has(.mkt) .layout > aside {
 
 .mkt-cta[disabled],
 .mkt-cta[aria-disabled="true"] {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--store-bg-skeleton);
   color: var(--mkt-muted);
   box-shadow: none;
   cursor: not-allowed;
@@ -1569,16 +1913,19 @@ body:has(.mkt) .layout > aside {
  * The fill is dropped rather than kept, because the label now reports a fact
  * ("In cart") instead of offering an action, and leaving it as the loudest
  * thing on the page sends the buyer to press it again. The mint survives as
- * the border and the text, so the row keeps its height and the state is still
- * legible without colour alone carrying it -- the word changes too.
+ * the border, and the label takes `status.success`, so the row keeps its
+ * height and the state is still legible without colour alone carrying it --
+ * the word changes too. The two greens are not a mismatch: `select.fill` is a
+ * pale mint, and the mint accent over it is 2.02:1, which is a stroke's
+ * contrast and not a word's. See `.mkt-cart-link:hover`.
  *
  * The outline is an inset shadow and not a `border`, because `.mkt-cta` is
  * `border: 0` and adding one here would grow the button by 2px at the moment
  * it settles, nudging everything below it. */
 .mkt-cta[data-mkt-added] {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--store-select-fill);
   box-shadow: inset 0 0 0 1px var(--mkt-accent);
-  color: var(--mkt-accent);
+  color: var(--store-status-success);
 }
 
 .mkt-ghost {
@@ -1591,8 +1938,8 @@ body:has(.mkt) .layout > aside {
   padding: var(--spacing-xs, 8px) var(--spacing-sm, 12px);
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-xs, 8px);
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--text-primary, #f2fbff);
+  background: var(--store-bg-card);
+  color: var(--text-primary, #0f1111);
   font-size: var(--font-size-sm, 14px);
   font-weight: 800;
   text-decoration: none;
@@ -1601,17 +1948,17 @@ body:has(.mkt) .layout > aside {
 
 .mkt-ghost:hover {
   border-color: var(--mkt-line-strong);
-  background: rgba(110, 223, 246, 0.1);
+  background: var(--store-select-fill);
 }
 
 .mkt-ghost[aria-pressed="true"] {
   border-color: var(--mkt-accent);
-  background: rgba(50, 230, 179, 0.16);
+  background: var(--store-select-fill);
 }
 
 .mkt-ghost.is-danger:hover {
-  border-color: rgba(255, 128, 128, 0.5);
-  background: rgba(255, 96, 96, 0.12);
+  border-color: var(--store-status-error);
+  background: var(--store-error-wash);
 }
 
 .mkt-secondary-actions {
@@ -1626,9 +1973,9 @@ body:has(.mkt) .layout > aside {
   display: grid;
   gap: var(--spacing-xs, 8px);
   padding: var(--spacing-sm, 12px);
-  border: 1px solid rgba(159, 124, 255, 0.4);
+  border: 1px solid var(--store-border-secondary);
   border-radius: var(--radius-xs, 8px);
-  background: rgba(159, 124, 255, 0.08);
+  background: var(--store-wash-soft);
 }
 
 .mkt-owner-tools > p {
@@ -1671,7 +2018,7 @@ body:has(.mkt) .layout > aside {
 }
 
 .mkt-specs > dd {
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   padding-right: 0;
 }
 
@@ -1682,7 +2029,7 @@ body:has(.mkt) .layout > aside {
 
 .mkt-prose {
   margin: 0;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   font-size: var(--font-size-sm, 14px);
   line-height: 1.6;
   overflow-wrap: anywhere;
@@ -1698,7 +2045,7 @@ body:has(.mkt) .layout > aside {
 .mkt-notes {
   border: 1px solid var(--mkt-line);
   border-radius: var(--radius-xs, 8px);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--store-wash-faint);
   padding: 0;
 }
 
@@ -1707,7 +2054,7 @@ body:has(.mkt) .layout > aside {
   cursor: pointer;
   font-size: var(--font-size-sm, 14px);
   font-weight: 800;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   list-style-position: inside;
 }
 
@@ -1764,7 +2111,7 @@ body:has(.mkt) .layout > aside {
   display: grid;
   place-items: center;
   font-weight: 900;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
 }
 
 .mkt-seller-figure img {
@@ -1778,7 +2125,7 @@ body:has(.mkt) .layout > aside {
 .mkt-seller-name {
   display: block;
   font-weight: 900;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   text-decoration: none;
   overflow-wrap: anywhere;
 }
@@ -1818,7 +2165,7 @@ body:has(.mkt) .layout > aside {
 
 .mkt-facts dd {
   margin: 0;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   overflow-wrap: anywhere;
 }
 
@@ -1836,7 +2183,7 @@ body:has(.mkt) .layout > aside {
   font-size: var(--font-size-xl, 22px);
   font-weight: 900;
   letter-spacing: -0.01em;
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
 }
 
 .mkt-related .mkt-grid {
@@ -1860,10 +2207,12 @@ body:has(.mkt) .layout > aside {
 .mkt-appcta {
   border: 1px solid var(--mkt-line);
   border-radius: var(--mkt-card-radius);
-  /* The commerce accent, at banner-weight opacity. Distinguishes this
-   * from a product card without competing with one. */
-  background:
-    linear-gradient(135deg, rgba(159, 124, 255, 0.11), rgba(97, 216, 255, 0.06));
+  /* Distinguishes this from a product card without competing with one.
+   * `marketplaceLight.savedSearch` is the app's equivalent gesture — a
+   * banner that is not a product — and it is a vertical wash from #EEF7F4
+   * into white rather than a tinted accent gradient. Same idea, and it
+   * sheds the purple the business surfaces do not allow. */
+  background: linear-gradient(180deg, var(--store-banner-from), var(--store-bg-card));
   padding: var(--spacing-sm, 12px) var(--spacing-md, 16px);
 }
 
@@ -1875,7 +2224,7 @@ body:has(.mkt) .layout > aside {
 }
 
 .mkt-appcta a {
-  color: var(--text-primary, #f2fbff);
+  color: var(--text-primary, #0f1111);
   font-weight: 800;
   /* Underlined, not a button. This is one of several ways off the page
    * and should not out-weigh the product's own primary action. */
@@ -1898,7 +2247,7 @@ body:has(.mkt) .layout > aside {
 .mkt-merchant {
   border: 1px solid var(--mkt-line);
   border-radius: var(--mkt-card-radius);
-  background: var(--surface-raised, linear-gradient(180deg, rgba(17, 29, 50, 0.92), rgba(13, 22, 39, 0.88)));
+  background: var(--surface-raised, #ffffff);
   padding: var(--spacing-md, 16px);
   display: grid;
   gap: var(--spacing-sm, 12px);
@@ -2101,7 +2450,7 @@ body:has(.mkt) .layout > aside {
   /* The shimmer is decorative; with motion reduced it becomes a flat
    * plate rather than a single frozen gradient frame. */
   .mkt-media::before {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--store-wash-soft);
   }
 
   .mkt-card:hover {
@@ -2113,15 +2462,24 @@ body:has(.mkt) .layout > aside {
   }
 }
 
+/* High contrast. This block used to push the hairlines towards white and the
+ * muted text towards a pale cyan, which is the correct direction on a dark
+ * page and exactly backwards on a light one — it would have washed the
+ * borders out of existence for the readers who asked for more contrast. On
+ * #eaeded the hairlines darken towards the text colour and the muted grey
+ * goes to full primary. */
 @media (prefers-contrast: more) {
   .mkt {
-    --mkt-line: rgba(255, 255, 255, 0.5);
-    --mkt-line-strong: #ffffff;
-    --mkt-muted: #d7e7ee;
+    --mkt-line: rgba(15, 17, 17, 0.55);
+    --mkt-line-strong: var(--store-text-primary);
+    --mkt-muted: var(--store-text-primary);
   }
 
+  /* The badge is the exception here too: it is drawn on a photograph over a
+   * near-black scrim, so "more contrast" means a fully opaque plate and a
+   * white hairline, not a darker line. */
   .mkt-badge {
-    background: #04101c;
+    background-color: var(--store-badge-featured-bg);
     border-color: #ffffff;
   }
 }

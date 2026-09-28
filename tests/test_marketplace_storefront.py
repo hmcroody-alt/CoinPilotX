@@ -647,27 +647,87 @@ def test_a_badge_variant_tints_the_scrim_instead_of_replacing_it():
 
     Variants now set only `--mkt-badge-tint`; the scrim lives on
     `background-color`, which a tint cannot reach.
+
+    What this asserts is the *invariant*, not the palette. The scrim's value
+    moved from a literal `rgba(6,16,27,.72)` to `--store-badge-scrim` when the
+    storefront went light, and pinning the old literal here would have failed
+    for a change that kept the badge exactly as legible. The property that
+    actually prevents the bug is structural: a variant may be tint-only (and
+    keep the scrim) or fully opaque (and supply its own plate), but it may
+    never be *translucent over no scrim*, which is the state that put badge
+    text at 1.03:1 over a white studio photograph.
     """
     with open(os.path.join(ROOT, "static/css/pulse_marketplace.css"), encoding="utf-8") as handle:
         css = handle.read()
-    base = re.search(r"\n\.mkt-badge\s*\{(.*?)\}", css, re.S)
+    base = re.search(r"\n\.mkt-badge\s*\{(.*?)\n\}", css, re.S)
     assert base, "the base badge rule vanished; this test is measuring nothing"
-    assert "background-color: rgba(6, 16, 27" in base.group(1), "the scrim is gone"
+    # The scrim is still a `background-color` (a tint sets `background-image`,
+    # so it structurally cannot reach this), and it is still near-opaque.
+    scrim = re.search(r"background-color:\s*var\((--[a-z-]*scrim)\)", base.group(1))
+    assert scrim, (
+        "the base badge no longer sets its scrim via `background-color`; a "
+        "variant's tint can now replace the plate")
+    scrim_value = re.search(
+        re.escape(scrim.group(1)) + r"\s*:\s*([^;]+);", css)
+    assert scrim_value, f"{scrim.group(1)} is referenced but never defined"
+    alpha = re.search(r"rgba\([^)]*,\s*([0-9.]+)\s*\)", scrim_value.group(1))
+    assert alpha and float(alpha.group(1)) >= 0.8, (
+        "the badge scrim is no longer opaque enough to carry near-white text "
+        f"over an arbitrary photograph: {scrim_value.group(1).strip()}")
+    assert "--mkt-badge-tint" in base.group(1), (
+        "the base rule no longer renders the per-variant tint layer")
 
-    for variant in ("is-new", "is-digital"):
-        rule = re.search(r"\.mkt-badge\.%s\s*\{(.*?)\}" % variant, css, re.S)
-        assert rule, f"{variant} vanished; this test is measuring nothing"
-        body = rule.group(1)
-        assert "--mkt-badge-tint" in body, f"{variant} no longer tints"
+    # Every variant, classified. `tint` keeps the scrim; `opaque` replaces it
+    # with a solid plate of its own. Nothing is allowed to be neither.
+    tint = {"is-digital"}
+    opaque = {"is-featured", "is-new"}
+    # `is-quiet` is the `_BADGE_CLASS` fallback and only recolours text, so it
+    # inherits the scrim untouched -- it sets no background at all.
+    text_only = {"is-quiet"}
+
+    found = set(re.findall(r"\.mkt-badge\.(is-[a-z-]+)\s*\{", css))
+    assert found == tint | opaque | text_only, (
+        "the badge variant set changed; classify the new one as tint-only, "
+        f"opaque or text-only before this test can guard it: {found}")
+
+    for variant in sorted(found):
+        body = re.search(
+            r"\.mkt-badge\.%s\s*\{(.*?)\n\}" % variant, css, re.S).group(1)
+        # The shorthand is the exact mechanism of the original bug: it resets
+        # `background-image` *and* `background-color` in one go.
         assert not re.search(r"(?<!-)\bbackground\s*:", body), (
-            f"{variant} sets the `background` shorthand again, which drops the "
-            "scrim and makes the badge illegible over a light photograph")
+            f"{variant} sets the `background` shorthand, which drops the scrim "
+            "and makes the badge illegible over a light photograph")
 
-    # `is-featured` is opaque and carries dark text, so it may replace both
-    # layers -- asserted so the loop above is not silently widened to include it.
-    featured = re.search(r"\.mkt-badge\.is-featured\s*\{(.*?)\}", css, re.S)
-    assert featured and "background: linear-gradient" in featured.group(1)
-    assert "--text-on-action" in featured.group(1)
+        if variant in tint:
+            assert "--mkt-badge-tint" in body, f"{variant} no longer tints"
+            assert "background-color" not in body, (
+                f"{variant} is tint-only but sets a background-color, so it is "
+                "painting over the scrim it is supposed to sit on")
+        elif variant in opaque:
+            # Opaque variants may drop the scrim, but only by being genuinely
+            # opaque -- a hex or a fully-opaque token, never an rgba() wash.
+            assert "background-image: none" in body, (
+                f"{variant} is opaque but leaves the tint layer live")
+            colour = re.search(r"background-color:\s*([^;]+);", body)
+            assert colour, f"{variant} is opaque but sets no plate"
+            ref = re.match(r"var\((--[a-z-]+)\)", colour.group(1).strip())
+            assert ref, (
+                f"{variant} should take its plate from a --store-* token, got "
+                f"{colour.group(1).strip()}")
+            resolved = re.search(re.escape(ref.group(1)) + r"\s*:\s*([^;]+);", css)
+            assert resolved, f"{ref.group(1)} is referenced but never defined"
+            assert "rgba" not in resolved.group(1), (
+                f"{variant} drops the scrim for a translucent plate "
+                f"({resolved.group(1).strip()}) -- that is the original bug")
+        else:
+            assert "background" not in body, (
+                f"{variant} is meant to recolour text only")
+            # And its text colour must be an on-dark one, because it is sitting
+            # on the scrim rather than on the light card.
+            assert "on-dark" in body, (
+                f"{variant} keeps the dark scrim, so a light-theme text token "
+                "here would be near-invisible; use an on-dark token")
 
 
 def test_a_video_does_not_autoplay_or_preload():
@@ -1515,12 +1575,12 @@ def test_the_panel_survives_a_row_that_answers_nothing():
 #: Update these *and* the token in the same commit. See the docstring on
 #: `CSS_HREF` for why the pair has to move together.
 ASSET_DIGESTS = {
-    "static/css/pulse_marketplace.css": "0a2a55aa23e4",
+    "static/css/pulse_marketplace.css": "fd62405f07d9",
     "static/js/pulse_marketplace.js": "d2d20c58cd87",
 }
 
 #: The token those digests were recorded against.
-ASSET_TOKEN = "storefront-20260928a"
+ASSET_TOKEN = "storefront-20260928b"
 
 
 def test_editing_a_storefront_asset_forces_its_cache_token_to_move():
