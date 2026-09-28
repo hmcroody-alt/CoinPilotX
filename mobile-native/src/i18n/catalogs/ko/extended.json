@@ -1354,7 +1354,9 @@
         "paused": "일시중지됨",
         "draft": "임시저장",
         "rejected": "거부됨"
-      }
+      },
+      "dropshipping": "가져온 상품",
+      "dropshippingCopy": "공급업체에서 가져온 상품입니다. 아직 검토를 기다리는 상품도 포함됩니다."
     },
     "orders": {
       "title": "주문",

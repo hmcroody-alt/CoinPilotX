@@ -1354,7 +1354,9 @@
         "paused": "已暂停",
         "draft": "草稿",
         "rejected": "已拒绝"
-      }
+      },
+      "dropshipping": "已导入的商品",
+      "dropshippingCopy": "你从供应商导入的商品，包括仍在等待审核的商品。"
     },
     "orders": {
       "title": "订单",

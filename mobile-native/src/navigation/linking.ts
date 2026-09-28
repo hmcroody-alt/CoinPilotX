@@ -201,6 +201,24 @@ export const linking: LinkingOptions<RootStackParamList> = {
           sellerId: String
         }
       },
+      /**
+       * The dropshipping hub.
+       *
+       * `Dropshipping` and its eight sibling routes were registered in
+       * `AppNavigator` but named by no link and reached by no button, so a
+       * merchant who imported products could not open the screen that lists
+       * them. The one `navigate("Dropshipping")` call in the app lives in
+       * `StoreDashboardScreen`, which is itself registered nowhere — a dead
+       * entry point inside a dead screen.
+       *
+       * The hub, not `DropshippingProducts`, because the products screen
+       * requires a `connectionId` and no merchant knows theirs. The hub takes no
+       * params, resolves the active connection itself, and falls back to the
+       * suppliers list when there is none — so this URL leads somewhere useful
+       * whether or not a supplier is connected. The siblings stay unlinked for
+       * that same reason: their ids belong in a tap, not in a URL.
+       */
+      Dropshipping: "pulse/dropshipping",
       BuyerOrders: {
         path: "pulse/orders",
         parse: {

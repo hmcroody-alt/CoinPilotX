@@ -1354,7 +1354,9 @@
         "paused": "一時停止中",
         "draft": "下書き",
         "rejected": "却下"
-      }
+      },
+      "dropshipping": "インポートした商品",
+      "dropshippingCopy": "サプライヤーからインポートした商品です。審査待ちのものも含まれます。"
     },
     "orders": {
       "title": "注文",
