@@ -82,8 +82,14 @@ BASE_PATH = "/pulse/marketplace"
 #: `pulse_marketplace.js` and the option-group rules in `pulse_marketplace.css`
 #: and left the token alone. Every visitor who had loaded a storefront page since
 #: #84 would have kept the pre-variant script.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260928a"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260928a"
+#:
+#: `20260928a` shipped the dark storefront. `20260928b` inverts the palette to
+#: match the native app's light Store, which is a whole-page colour change: a
+#: browser holding the previous CSS would paint the new light-page markup with
+#: dark-page rules — white text on a white card — so this is precisely the bump
+#: the comment above exists to force.
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260928b"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260928b"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.

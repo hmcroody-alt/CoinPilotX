@@ -458,6 +458,7 @@
     "tests/test_marketplace_native_payment_sheet.py",
     "tests/test_marketplace_price_minor.py",
     "tests/test_marketplace_order_lane.py",
+    "tests/test_marketplace_light_parity.py",
     "tests/test_marketplace_price_label_parity.py",
     "tests/test_marketplace_public_pages.py",
     "tests/test_marketplace_seo.py",
