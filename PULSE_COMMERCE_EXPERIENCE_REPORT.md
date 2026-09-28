@@ -164,6 +164,50 @@ controls at all. Rewritten to require the attribute inside an element's opening
 tag, and the endpoint assertion rewritten as the chain it now is: the page loads
 the script, the script posts to the endpoint.
 
+### 3.6 A reused cache token would have shipped the picker dead — mine
+
+Caught *after* the merge to `main`, by checking whether the work was live rather
+than whether it had landed. It had landed; it would not have worked.
+
+This branch rewrote `static/js/pulse_marketplace.js` (+69 lines — the variant
+resolver, the button enable/disable, the `0` sentinel on the POST) and
+`static/css/pulse_marketplace.css` (+59 — the option-group rules), and left
+`CSS_HREF`/`JS_SRC` pointing at `?v=storefront-20260927a`. That token was
+introduced by **#84**, which was already deployed — `git merge-base --is-ancestor`
+confirms it against the previous production commit. Live headers on that URL:
+
+```
+cache-control: public, max-age=31536000, immutable
+```
+
+`immutable` means a browser holding that URL does not revalidate for a year; it
+does not ask, so the origin never gets the chance to serve the new bytes. Every
+visitor who had loaded a storefront page since #84 would have got **fresh server
+HTML against the pre-variant script** — the picker renders, the radios do nothing,
+the add button never re-enables, because the code that enables it is the code that
+did not arrive. That reads as a broken feature, not a stale cache, which is what
+makes it worse than shipping nothing.
+
+Fixed by bumping both to `storefront-20260928a` (both, and to the *same* value —
+one page loads both, and a half-bumped pair hands new CSS to a browser running old
+JS). The `CSS_HREF` docstring now carries the reason.
+
+Then gated, because I had just demonstrated the convention does not survive
+contact with me. `tests/test_marketplace_storefront.py` gained two tests: one
+records a sha256 prefix of each asset and fails when the bytes move without the
+token, one asserts both URLs carry the token the digests were recorded against so
+the two halves cannot drift. A digest is the only honest trigger — mtimes and git
+queries both pass on a fresh clone, and asserting the token merely *exists* is
+exactly what let the reuse through. Both verified by mutation: editing the asset
+fails the first, reverting the token fails the second.
+
+One trap worth recording from that mutation run. Restoring the file appeared not
+to work — the suite kept failing on the old token while the file on disk plainly
+held the new one. The two tokens are the same byte length, and the restore landed
+in the same second as the mutation, so Python's `(mtime, size)` staleness check on
+`__pycache__` passed and it reused bytecode compiled from the mutated source. Any
+same-length edit inside one second is invisible to that check.
+
 ## 4. The structural gap — variant selection now reaches the cart
 
 **This was the mission chain's terminus. It is closed.** The subsection below

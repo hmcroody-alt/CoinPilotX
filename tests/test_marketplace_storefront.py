@@ -1502,3 +1502,71 @@ def test_the_panel_survives_a_row_that_answers_nothing():
     html = sf.fulfilment_html({})
     assert "Delivery and payment" in html
     assert "mkt-facts" not in html, "an empty definition list is still a visible gap"
+
+
+# --- asset cache tokens -----------------------------------------------------
+#
+# These two live here rather than in a protection suite because the thing they
+# guard is a constant in `marketplace_storefront`, and the cost of getting it
+# wrong is silent: the fix deploys, the origin serves the new bytes, and the
+# browsers that needed it never ask for them.
+
+#: sha256 prefixes of the two assets whose URLs carry a hand-bumped `?v=`.
+#: Update these *and* the token in the same commit. See the docstring on
+#: `CSS_HREF` for why the pair has to move together.
+ASSET_DIGESTS = {
+    "static/css/pulse_marketplace.css": "0a2a55aa23e4",
+    "static/js/pulse_marketplace.js": "d2d20c58cd87",
+}
+
+#: The token those digests were recorded against.
+ASSET_TOKEN = "storefront-20260928a"
+
+
+def test_editing_a_storefront_asset_forces_its_cache_token_to_move():
+    """The gate for a bug this branch actually shipped.
+
+    `pulse_marketplace.js` gained the variant resolver and `pulse_marketplace.css`
+    the option-group rules, and the token stayed at `storefront-20260927a` -- which
+    #84 had already deployed. Both files are served `max-age=31536000, immutable`,
+    so a returning visitor keeps the old script for a year and never revalidates.
+    The page then renders a picker whose radios do nothing and an add button that
+    nothing re-enables, which looks like a broken feature rather than a stale
+    cache.
+
+    A digest is the only honest trigger here. Comparing mtimes or asking git
+    would pass on a fresh clone, and asserting the token merely *exists* is what
+    let the reuse through. When this fails, do both halves: bump `CSS_HREF` and
+    `JS_SRC`, then record the new digests and token below.
+    """
+    import hashlib
+
+    stale = []
+    for relative, expected in ASSET_DIGESTS.items():
+        path = os.path.join(ROOT, relative)
+        actual = hashlib.sha256(
+            open(path, "rb").read()).hexdigest()[:len(expected)]
+        if actual != expected:
+            stale.append(f"{relative}: recorded {expected}, on disk {actual}")
+    assert not stale, (
+        "a versioned storefront asset changed without its cache token being "
+        "bumped:\n  " + "\n  ".join(stale) + "\n"
+        f"Bump CSS_HREF/JS_SRC off {ASSET_TOKEN!r} in "
+        "services/marketplace_storefront.py, then update ASSET_DIGESTS and "
+        "ASSET_TOKEN here to match."
+    )
+
+
+def test_both_asset_urls_carry_the_token_the_digests_were_recorded_against():
+    """Keeps the two halves of the test above from drifting apart.
+
+    Without this, someone could bump the token, forget the digests, and the
+    digest test would go on guarding a token that is no longer served -- or
+    update the digests without bumping the token, which is the original bug
+    wearing a green suite.
+    """
+    assert f"?v={ASSET_TOKEN}" in sf.CSS_HREF, sf.CSS_HREF
+    assert f"?v={ASSET_TOKEN}" in sf.JS_SRC, sf.JS_SRC
+    # Same token on both, because one page loads both and a half-bumped pair
+    # gives the new CSS to a browser still running the old JS.
+    assert sf.CSS_HREF.split("?v=")[1] == sf.JS_SRC.split("?v=")[1]

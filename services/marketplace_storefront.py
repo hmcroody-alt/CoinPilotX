@@ -67,8 +67,23 @@ BASE_PATH = "/pulse/marketplace"
 
 #: Asset versions are bumped by hand, matching the convention every other
 #: stylesheet link in `bot.py` uses.
-CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260927a"
-JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260927a"
+#:
+#: Bump these in the same commit as any edit to either file. They are served
+#: `cache-control: public, max-age=31536000, immutable`, so a browser that has
+#: already fetched a given `?v=` will not revalidate it for a year — it does not
+#: ask, and the origin never gets the chance to answer. Reusing a token ships
+#: fresh server HTML against stale JavaScript, which is worse than shipping
+#: nothing: the variant picker renders, the radios do nothing, and the add button
+#: stays disabled because the code that enables it is the code that did not
+#: arrive.
+#:
+#: `20260927a` did exactly that. It was introduced by #84 and deployed, so
+#: production had served it; this branch then rewrote the variant resolver in
+#: `pulse_marketplace.js` and the option-group rules in `pulse_marketplace.css`
+#: and left the token alone. Every visitor who had loaded a storefront page since
+#: #84 would have kept the pre-variant script.
+CSS_HREF = "/static/css/pulse_marketplace.css?v=storefront-20260928a"
+JS_SRC = "/static/js/pulse_marketplace.js?v=storefront-20260928a"
 
 #: Cards per grid page. Mirrors `marketplace_web.PAGE_SIZE` so pagination maths
 #: has one source.
