@@ -61,7 +61,21 @@ export type PulseCommerceProduct = {
   /** Formatted by the server in the listing's own currency. Never re-format it. */
   price_label: string;
   currency: string;
-  image_url: string;
+  /**
+   * The product photo. `cover_image_url` is the key the server emits -- see
+   * `_product` in `services/pulsedrop/hydration.py`.
+   *
+   * This type declared `image_url` and nothing else until 2026-09-28, and
+   * `CommerceOverlay` read that name, so the card rendered its empty
+   * placeholder for every product PulseDrop has ever published. Nothing caught
+   * it: the fixtures in `__tests__` invented the field name along with the
+   * value, so the suite was green against a payload shape the server does not
+   * send. Both names are carried now, `cover_image_url` first, because the
+   * spelling is what was wrong and not the intent.
+   */
+  cover_image_url: string;
+  /** Legacy alias. Read as a fallback; never emitted by this server. */
+  image_url?: string;
   /** The four fields `marketplacePurchaseBlock` reads, so it can be run here. */
   buyer_visible: boolean;
   inventory_state: string;
@@ -69,12 +83,26 @@ export type PulseCommerceProduct = {
   product_type: string;
   /** The server's own verdict, in the same vocabulary. See `commerceBlock`. */
   denial_code: MarketplacePurchaseBlock | "REMOVED" | "";
-  route: string;
-  screen: string;
+  /**
+   * No `route` or `screen` here.
+   *
+   * This block declared both as required `string` until 2026-09-28 and
+   * `_product` in `services/pulsedrop/hydration.py` has never emitted either --
+   * the destination for the product lives on `cta`, and the destination for the
+   * merchant lives on `seller`. Nothing read them, so nothing broke, but a
+   * required field the wire does not carry is a type that promises a `string`
+   * where there is an `undefined`: the next caller to write
+   * `navigate(product.route)` gets a crash the compiler told them was
+   * impossible. `tests/pulse_commerce/test_commerce_card_parity.py` now checks
+   * every required field here against a real `hydration.overlay()` payload.
+   */
 };
 
 export type PulseCommerceSeller = {
-  seller_user_id: number;
+  /** ``_seller`` emits ``user_id``. The merchant's id, never the publisher's. */
+  user_id: number;
+  /** The name this block used to declare. Kept so an older payload still types. */
+  seller_user_id?: number;
   store_name: string;
   username: string;
   route: string;
