@@ -545,9 +545,42 @@ than the test passing on forever defending a phantom.
 
 ---
 
-### Next decision for you
+### Deployed
 
-Committed on `pulse-commerce-experience`, rebased onto `origin/main`.
+Merged to `main` as a fast-forward, which Railway auto-deploys. Three commits:
+the variant path, the PostgreSQL verification, the cache-token fix.
+
+What is actually live, as distinct from what landed:
+
+- **The code is live.** `pulsesoc.com` serves 200 on a fresh boot, and
+  `pulse_marketplace.js?v=storefront-20260928a` returns the 26,546 bytes that
+  contain the variant resolver. Note what that does *not* prove: the query string
+  is ignored by the file server, so a 200 there only shows the new bytes are on
+  the origin, not that the deployed HTML asks for them under the new token. The
+  page that would prove it is member-only (below). The constant has one emitter —
+  `CSS_HREF`/`JS_SRC` in `marketplace_storefront`, verified by grep as the only
+  two references in the repo — so the remaining risk is deployment, not wiring.
+- **The cart migration has not run yet, by design.** `ensure_cart_schema` is
+  invoked from `_ensure_schema`, which is lazy and per worker, and `cart_list`
+  checks authentication before it. So it fires on the first signed-in cart
+  request. Production's table right now still has the pre-migration shape — and
+  that shape is worth recording, because it is an exact match for verification
+  **scenario 1**: the legacy key present as a table constraint named
+  `marketplace_cart_items_user_id_listing_id_key`, which is the same name that
+  scenario reported dropping. Prod also holds **6 real cart rows** and 1,894
+  variant rows, so the line-id-preservation and backfill checks in §4.4 were not
+  hypothetical. I did not hand-run the DDL: it is idempotent, it is covered, and
+  running a migration manually on a live money-path table is a larger risk than
+  letting the code that was tested do it.
+- **The variant picker could not be verified from outside.** In production the
+  whole `marketplace_storefront` surface is member-only — both
+  `/pulse/marketplace` and `/pulse/marketplace/<id>` branch on authentication and
+  serve an older public shell to anonymous visitors, which is the §5 item below.
+  Fetched anonymously, both pages carry **zero** `mkt-` classes. That confirms the
+  §5 gap rather than contradicting it, but it does mean the only eyes that can
+  confirm the picker works are signed-in ones. Hence item 1.
+
+### Next decision for you
 
 §4 is closed, so the chain has no dead end left in it. Two things I would want
 before calling this shippable, and neither is something I can do from here:
