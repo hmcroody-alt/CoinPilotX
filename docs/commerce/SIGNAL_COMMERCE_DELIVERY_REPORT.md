@@ -3,13 +3,13 @@
 This answers the 64 items §100 of the brief asks for, in its order and with its numbering.
 
 **Read this with `PULSE_COMMERCE_INTELLIGENCE_REPORT.md`, not instead of it.** That document
-is the evidence: 24 sections, every defect with the measurement that found it and the
+is the evidence: 26 sections, every defect with the measurement that found it and the
 mutation that proved the test could fail. This one is the index — each item below answers
 the question, names the file, and points at the section that proves the answer. Where an
 item is not built, it says so in the first sentence.
 
 **Status: nothing here is deployed.** Branch `commerce-discovery-audit` in a worktree, not
-pushed, not merged. It is **23 commits ahead of and 32 behind `origin/main`** as of writing,
+pushed, not merged. It is **26 commits ahead of and 42 behind `origin/main`** as of writing,
 which is a rollout input and not a footnote — see item 59. That gap grows on its own:
 `origin/main` takes roughly 60 commits a day from parallel sessions.
 
@@ -17,15 +17,21 @@ which is a rollout input and not a footnote — see item 59. That gap grows on i
 
 ```
 cd <worktree>
-.venv/bin/python -m pytest tests/commerce_discovery -q          # 858 pass
+.venv/bin/python -m pytest tests/commerce_discovery -q          # 861 pass
 .venv/bin/python -m pytest tests/protection -q                  # 663 pass
 python3 scripts/protection/measure_commerce_discovery_reachability.py
 python3 scripts/protection/audit_commerce_discovery_failsoft.py
 python3 scripts/protection/prove_commerce_discovery_sources.py
 python3 scripts/protection/prove_commerce_discovery_fatigue.py
 python3 scripts/protection/prove_commerce_discovery_value_tiers.py
-python3 scripts/protection/creator_tagging_mutation_matrix.py    # 20/20 killed
+python3 scripts/protection/creator_tagging_mutation_matrix.py    # 23/23 killed
 python3 scripts/measure_commerce_suitability_cost.py
+
+# The mobile client. Jest, so run from mobile-native, and note that `verify`
+# typechecks — the mutation matrix below cannot, because jest transpiles
+# without typechecking and will stay green through a type error.
+cd mobile-native && npm run verify                              # 9,477 pass, 542 suites
+cd .. && python3 scripts/protection/composer_product_picker_mutation_matrix.py   # 16/16 killed
 ```
 
 The venv is the main checkout's (`/Users/hmcherie/Desktop/CoinPilotX/.venv`); this worktree
@@ -45,9 +51,9 @@ fatigue that did not escalate, 70.8% of the catalogue unreachable, retrieval tha
 viewer-blind), the **suitability gate the brief's §13/§14 asked for and that did not exist
 in any form**, a **payload leak** closed, the **creator-tagging write path** (the one relation
 that genuinely did not exist anywhere), and — the largest single body of work — the **mutation
-harnesses and fail-soft audit** that established the tests can actually fail. Two things the
-brief asked for remain **not built**: web, and the composer UI that would let a creator
-actually use tagging.
+harnesses and fail-soft audit** that established the tests can actually fail, and the
+**composer UI on iOS/Android** that lets a creator actually use tagging. One thing the brief
+asked for remains **not built**: the web client, which has no commerce discovery of any kind.
 
 ---
 
@@ -485,9 +491,10 @@ should land inside rather than beside.
 
 ## 30. Creator workflow
 
-**Server side built, client side not.** The relation table now exists (item 7), so the
-sentence this section used to carry — "there is nothing to build a workflow over" — is no
-longer true.
+**Built end to end on mobile. Web is the gap.** This section has now been rewritten twice,
+which is itself the honest record: it began as "there is nothing to build a workflow over",
+became "server side built, client side not" when the relation table landed (item 7), and is
+now a working creator flow on iOS/Android with no web equivalent.
 
 What a client can do today: send `product_listing_ids` (or `listing_ids`, or `product_ids` —
 three keys because three clients, and every id is ownership-checked regardless of which one
@@ -500,23 +507,47 @@ reel is the correct outcome. A reel that is shared to the feed gets its products
 the mirror post as well, because the mirror row is what makes a reel's products actually
 appear — the same thing `pulse_attach_music_to_content` does for a track.
 
-**What is missing is the UI**, and it is now missing more narrowly than when this line was
-first written. No composer screen sends any of the three keys yet, and the multipart/form post
-path does not carry them at all — only the JSON path does. So the feature is still reachable
-by an API client and by nothing a user can tap. That is the honest status and it is
-deliberately not hidden behind "built".
+**The mobile UI now exists.** `GET /api/pulse/commerce/discovery/taggable-products` answers the
+question a composer has to ask before it can render anything — which of my listings are there,
+and which of them will actually be shown if I tag them — and it answers the second half
+explicitly rather than by filtering, so the creator is told *why* a product is refused instead
+of watching it silently not appear. §25 of the evidence report is the whole argument, including
+why a tag can succeed and still never serve. Three client pieces implement it:
 
-What changed is that the *server* side of the picker now exists too.
-`GET /api/pulse/commerce/discovery/taggable-products` answers the question a composer has to
-ask before it can render anything — which of my listings are there, and which of them will
-actually be shown if I tag them — and it answers the second half explicitly rather than by
-filtering, so the creator is told *why* a product is refused instead of watching it silently
-not appear. §25 of the evidence report is the whole argument, including why a tag can succeed
-and still never serve. The remaining client work is three named things:
-`product_listing_ids` added to `createPost`'s field whitelist in
-`mobile-native/src/api/feed.ts:290` (which drops unlisted keys silently), a
-`taggableProducts.ts` client, and the picker itself in `HomePulseComposer.tsx` — where the
-three publish paths already thread `music_track_id` as the precedent to copy.
+- **`src/api/taggableProducts.ts`** — the one read in the commerce layer whose errors are *not*
+  swallowed. Its sibling `commerceDiscovery.ts` promises the opposite in its own header, and is
+  right to: on a viewer surface `[]` means "no products here". Here `[]` means "you have no
+  products to tag" — a claim about the seller's own store — so returning it after a failed query
+  tells a seller with forty listings that they have none. `serves` is *derived* from
+  `blocked_reason` rather than read alongside it, because the alternative is two sources of
+  truth for one fact whose disagreement shows a product as fine while printing why it is broken
+  underneath. An unrecognised code becomes `unknown_reason` rather than the raw wire string,
+  since the server can extend `INELIGIBLE_CODES` while installed clients keep running.
+- **`src/commerce/TaggableProductPicker.tsx`** — a `LoadState` union rather than two booleans,
+  deliberately: `loading`/`error` as flags admits a fourth state that means nothing and makes
+  "show empty" an inference from the absence of two other things, which is exactly how an error
+  comes to render as an empty store. A listing that will not serve is **shown, labelled and
+  still selectable** — filtering it out is the intuitive design and it is the bug, because a
+  product missing from your own picker teaches you nothing while one labelled "Needs a cover
+  photo" tells you what to fix. Selectable because `eligibility.gate()` runs per serve request,
+  verified in `pool.py` where the tagged source is a clause on a query whose `WHERE` is
+  `candidate_sql()`: a tag on a listing that is blocked today starts serving the moment the
+  listing is fixed, so disabling the row would discard a true statement the seller is entitled
+  to make, to protect them from a condition that is temporary and theirs to clear. Both limits
+  come off the wire; the tests assert the cap from the *response* and never against a literal 5.
+- **`HomePulseComposer.tsx`** — `product_listing_ids` added to `createPost`'s field whitelist,
+  state lifted to the composer so dismissing the sheet does not discard a selection, ids
+  persisted in and re-sanitised out of the saved draft (it is JSON off disk, so a truncated or
+  hand-edited draft can hold anything, and a `NaN` would serialise to `null` and be refused
+  server-side for the wrong reason), and a mode switch that cannot carry tags **clears them and
+  says so**.
+
+That last one is worth the sentence. The first version called `setNote(...)`, which is written
+to a status panel that mounts only when there is an error, a recovered draft, a failed publish
+or queued media — none of which is true in the common case of tagging a product and then
+switching to Reel. So the message announcing a silent loss was itself silently lost. It is now a
+standalone element with its own testID and a module constant shared by both render sites, and a
+test asserts it rather than trusting it.
 
 Refusals a client must render: `not_listing_owner` (the common one, and it is the system
 working — logged at info, not warning), `listing_not_found`, `too_many_products`,
@@ -748,9 +779,14 @@ answers are legitimately no. Making it a gate would buy tests for unreachable br
 
 ## 53. Automated tests
 
-**858 tests in `tests/commerce_discovery/`** (29 test files plus `conftest.py`, 11,554
-lines) + 663 in `tests/protection/` — 1,521 in one run. All files registered in
+**861 tests in `tests/commerce_discovery/`** (29 test files plus `conftest.py`, 11,666
+lines) + 663 in `tests/protection/` — 1,524 in one run. All files registered in
 `config/ci_test_manifest.json`, which is default-deny and runs one process per file.
+
+Plus, on the client, **35 tests in three new jest files** — `taggableProducts.test.ts` (15),
+`TaggableProductPicker.test.tsx` (12) and `HomePulseComposer.productTags.test.tsx` (8) — inside
+`mobile-native`'s 9,477. The manifest does not cover these and does not need to: it is a
+Python-only gate, and `npm run verify` runs the whole jest tree rather than a declared list.
 
 The count is not the point. This is:
 
@@ -890,37 +926,48 @@ that a previous version cannot read.
 
 ## 61. Files/components/services changed
 
-63 files, +19,979 / −224 against the merge base — this document included, which is why the
+82 files, +22,524 / −231 against the merge base — this document included, which is why the
 figure moves when it is written. `git diff --stat $(git merge-base HEAD origin/main)..HEAD`
-regenerates it. Breakdown:
+regenerates it, and note the **merge base**: `git diff origin/main` compares tips instead and
+reports every file `origin/main` has added since as a *deletion* on this branch. It printed
+"188 files, −21,693" that way while nothing here deleted anything. Breakdown:
 
 - **`services/commerce_discovery/`** — 19 modules, 5 of them new (`content`, `relationship`,
   `suitability`, `taxonomy`, `tagging`); +3,953 / −160.
 - **`services/commerce_discovery_routes.py`** — +488 / −5. Seven endpoints; the seventh
   (`/taggable-products`) is the creator's side and the only one that writes nothing while
   answering a question about writes.
-- **`bot.py`** — +212 / −0: item 5's annotate call and its guard, item 30's composer write
-  path on the post and reel create routes, and the `pulse_content_products` DDL.
-- **`tests/commerce_discovery/`** — 29 files, 19 new; +8,890 / −17.
-- **`scripts/protection/`** — 8 new harnesses, +2,216; **`scripts/`** — 1
+- **`bot.py`** — +246 / −0: item 5's annotate call and its guard, item 30's composer write
+  path on the post and reel create routes, the multipart branch's tag-id parse, and the
+  `pulse_content_products` DDL.
+- **`tests/commerce_discovery/`** — 30 files, 19 new; +9,002 / −17.
+- **`scripts/protection/`** — 9 new harnesses, +2,649; **`scripts/`** — 1
   (`measure_commerce_suitability_cost.py`, +382).
-- **`mobile-native/src/`** — +911 / −42 (items 26, 27, 29). **No composer work** — item 30.
-- **`config/ci_test_manifest.json`** — +19 (every new test file; the gate is default-deny).
+- **`mobile-native/src/`** — 29 files, +2,529 / −49 (items 26, 27, 29 **and 30**: the picker,
+  its API client, the composer wiring, three jest files and 11 i18n catalogs).
+- **`config/ci_test_manifest.json`** — +19 (every new *Python* test file; the gate is
+  default-deny and does not cover jest).
 - **`.env.example`** — +76 (item 58; the env-contract gate requires every new `os.getenv`).
-- **`docs/commerce/`** — +2,832 across both documents.
+- **`docs/commerce/`** — +3,180 across both documents.
 
 ## 62. Known limitations
 
 1. **No web commerce discovery at all** (28).
-2. **Creator tagging has no UI** (7, 30). The server accepts tags, ownership-checks them,
-   serves them ahead of the scorer, and now also tells a composer which of the creator's
-   products will actually be shown (§25) — but no composer screen sends or reads any of it,
-   and the multipart/form post path does not carry the ids at all. So the feature is
-   reachable by an API client and by nothing a user can tap. `COMPLEMENTARY` is still
+2. **Creator tagging has a UI on mobile only** (7, 30). The server accepts tags,
+   ownership-checks them, serves them ahead of the scorer, tells a composer which of the
+   creator's products will actually be shown (§25), and an iOS/Android composer now sends and
+   reads all of it (§26). The multipart/form path carries the ids too, as of the fix in §26.
+   What is missing is **web**: there is no web composer picker, so on that client the feature
+   remains reachable by an API call and by nothing a user can tap. `COMPLEMENTARY` is still
    genuinely blocked on a product↔product relation; `PULSEDROP_CURATED` never was (32).
    Related, and not fixed by the picker: a creator who tags an ineligible listing through
    the raw API still gets a clean `ok:true` and a product that never appears. The picker
    makes that knowable *before* posting; it does not make the write path warn about it.
+   Also unchanged: tags live on the **feed-post payload only**. Reels and statuses are
+   different server contracts, and `createReel` mirrors its post onto the feed separately, so
+   threading tags through there without first deciding which of the two rows owns them is how
+   you get a tag that exists twice and is revoked once. That is a deliberate omission with a
+   decision behind it, not an oversight.
 3. **No multimodal understanding.** "Shop this look" is text matching (10).
 4. **No inventory check at serve time.** A sold-out product can be served (42).
 5. **No attribution**; events are recorded and never joined to an order (44).
@@ -979,15 +1026,40 @@ In this order, and the order is the recommendation:
    decide whether the multipart/form post path should carry `product_listing_ids` too, or
    whether the client should always use the JSON path when tagging.
 
-   The server half of that is now done and the item is smaller than it was.
-   `GET /taggable-products` (§25) gives the picker its data, including a `serves` boolean and
-   a `blocked_reason` per listing, so the screen does not have to re-derive eligibility and
-   must not try. Three concrete things remain, all client-side: `product_listing_ids` in the
-   `createPost` whitelist (`mobile-native/src/api/feed.ts:290` — an unlisted key is dropped
-   with no error, which would present as "tagging silently does nothing"), a
-   `taggableProducts.ts` client, and the picker in `HomePulseComposer.tsx`. The multipart
-   question is still open and is a real decision, not a detail: a creator attaching an image
-   *and* tagging a product is the ordinary case, not the exotic one.
+   **This is now built on iOS/Android.** `GET /taggable-products` (§25) gives the picker its
+   data, including a `serves` boolean and a `blocked_reason` per listing, so the screen does
+   not re-derive eligibility and must not try. All three client pieces landed: the
+   `product_listing_ids` key in the `createPost` whitelist (`mobile-native/src/api/feed.ts`
+   — an unlisted key is dropped with no error, which is why the composer tests assert the
+   *argument to `createPost`* rather than that it was called), the `taggableProducts.ts`
+   client, and `src/commerce/TaggableProductPicker.tsx` wired into `HomePulseComposer.tsx`.
+   35 tests across three files, all 16 mutations killed — §26.
+
+   **The multipart question turned out not to be a decision. It was a defect, and it is
+   fixed.** I had recorded it as an open product question — whether the multipart post path
+   should carry `product_listing_ids` or whether a tagging client should always use the JSON
+   path. Checking rather than assuming dissolved it in both directions:
+
+   * *There is no multipart path on mobile.* `createPost` is JSON-only and takes `media_ids`;
+     media is uploaded separately and referenced by id. A creator attaching an image posts
+     `post_type: "image"` through the same JSON call, carrying its tags. Media and tags
+     already coexist, so the case I called "the ordinary case" was never at risk.
+   * *The multipart branch of the route was silently dropping tags.* `POST /api/pulse/posts`
+     rebuilds `payload` as a **six-key dict literal** from named form fields — the same
+     whitelist shape as `createPost` on the client, and with the same consequence: a key the
+     literal does not name is gone before `pulse_product_tag_ids_from_payload` runs. That
+     helper accepts three key names "because three clients", and its docstring calls
+     `listing_ids` the name "the web composer's existing marketplace forms already use". The
+     one client that posts multipart was the one client whose alias could not reach it.
+
+   Fixed in `bot.py`, and the fix handles **both** form encodings, because a picker built from
+   checkboxes submits one field name repeatedly and `form.get` returns only the first value —
+   a *partial* silent loss, which is harder to notice than a total one. Three new structural
+   tests in `test_a_creator_can_tag_their_own_products.py`, and three new mutations in
+   `creator_tagging_mutation_matrix.py` (now 23), one of which asserts the helper's key list
+   and the form branch's key list cannot drift apart — that being the same defect one alias
+   later. This is the fifth instance in this mission of a success and a silent failure sharing
+   one observable, and the second where the whitelist was the mechanism.
 3. ~~**Add a per-surface kill switch** before stage 3, not after.~~ **Done — §23**, and it
    moved to the top of this list from below it once it was clear that the item making the
    rollout expensive was cheaper than the rollout. It is left struck through rather than
@@ -1054,6 +1126,26 @@ test had been locating its `handler` node by taking the first one in the module 
 only by accident until a third route added one. Neither was a wrong claim. Both were right
 claims held in place by a proxy that could not survive the file growing.
 
-This branch adds **eight harnesses** to `scripts/protection/` (which holds twelve in total).
+This branch adds **nine harnesses** to `scripts/protection/` (which holds thirteen in total).
 They are slower than reading and they are the only part of this delivery I would defend
 without qualification.
+
+The ninth is `composer_product_picker_mutation_matrix.py`, and it exists for a reason worth
+stating plainly: the three new client files went green on their **first** run — 35 tests, no
+iteration — and a suite that has never been red has not demonstrated it can be. It drives
+`npx jest` rather than pytest and covers 16 controls across the API client, the picker and the
+composer. All 16 are killed.
+
+None of the mutation matrices are wired into CI, and that is deliberate rather than an
+omission. `run_protection_suite.py` discovers `tests/protection/test_*.py`; these harnesses
+*write to real source files* and restore them in a `finally`. Running that unattended against
+a shared checkout — which this repo has, dirty, with parallel sessions in it — trades a proof
+for a hazard. They are run by hand, and the command for each is in the regeneration block at
+the top of this document.
+
+One caveat that cost a real bug here: **a jest mutation matrix cannot see a type error.** Jest
+transpiles through babel and does not typecheck, so all 16 mutations were killed while
+`tsc --noEmit` was failing on one of the new test files (a hand-written mock prop shape that
+had drifted from the component's actual props). `npm run verify` caught it; the matrix could
+not have. The fix was to type the mock from the component's own exported props type, so the
+next drift is a compile error rather than an `undefined` at runtime.

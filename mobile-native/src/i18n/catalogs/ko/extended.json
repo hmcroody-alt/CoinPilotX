@@ -1196,6 +1196,31 @@
         "from_sellers_you_follow": "팔로우하는 판매자의 상품",
         "new_to_marketplace": "마켓플레이스의 새 상품",
         "popular": "인기 상품"
+      },
+      "tagging": {
+        "open": "상품 태그",
+        "title": "내 상품",
+        "subtitle": "이 게시물과 관련된 상품을 선택하세요",
+        "cap": "게시물당 최대 {{max}}개",
+        "selected": "{{max}}개 중 {{selected}}개 선택됨",
+        "loading": "상품을 불러오는 중…",
+        "empty": "아직 상품이 없습니다",
+        "emptyHint": "마켓플레이스에 등록한 상품이 여기에 표시됩니다.",
+        "error": "상품을 불러올 수 없습니다",
+        "errorHint": "상품이 없다는 뜻은 아닙니다. 다시 시도해 주세요.",
+        "retry": "다시 시도",
+        "wontShow": "표시되지 않음",
+        "wontShowHint": "태그할 수 있지만 문제가 해결될 때까지 구매자에게 표시되지 않습니다.",
+        "done": "완료",
+        "blocked": {
+          "not_purchasable": "구매할 수 없음",
+          "no_cover_image": "대표 사진이 필요합니다",
+          "no_resolvable_price": "가격이 필요합니다",
+          "moderation_flagged": "검토 중",
+          "listing_risk": "표시 대상이 아닙니다",
+          "seller_risk": "내 스토어는 표시 대상이 아닙니다",
+          "unknown_reason": "지금은 표시할 수 없습니다"
+        }
       }
     },
     "marketplace": {

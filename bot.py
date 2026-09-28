@@ -92247,6 +92247,39 @@ def api_pulse_posts():
                 if not result.get("ok"):
                     raise ValueError(result.get("message") or "File upload failed.")
                 media_ids.append(result.get("media", {}).get("id"))
+            # Listing ids this form post is tagging.
+            #
+            # Parsed here because `payload` below is a literal whitelist, not a
+            # view of `request.form`: a key this dict does not name is gone before
+            # `pulse_product_tag_ids_from_payload` is ever called. That helper
+            # accepts three names, and its docstring says `listing_ids` is there
+            # for "the web composer's existing marketplace forms" — the one client
+            # that posts multipart, and so the one client whose tags this branch
+            # discarded with no error on either side.
+            #
+            # Two encodings, both real. A picker built from checkboxes submits the
+            # same field name repeatedly, where `form.get` returns the first value
+            # and silently loses the rest; a picker built from a hidden field
+            # submits one JSON or comma-joined string, where passing the raw value
+            # through would reach the attach path as a single unparseable id and be
+            # refused for the wrong reason. Ids are not validated here — ownership
+            # is re-checked per id at attach time regardless of which key or
+            # encoding carried them.
+            product_listing_ids = []
+            for key in ("product_listing_ids", "listing_ids", "product_ids"):
+                values = [value for value in form.getlist(key) if str(value).strip()]
+                if not values:
+                    continue
+                if len(values) > 1:
+                    product_listing_ids = [str(value).strip() for value in values]
+                    break
+                raw = str(values[0]).strip()
+                try:
+                    parsed = json.loads(raw)
+                    product_listing_ids = parsed if isinstance(parsed, list) else [parsed]
+                except Exception:
+                    product_listing_ids = [x.strip() for x in raw.split(",") if x.strip()]
+                break
             payload = {
                 "body": form.get("body") or form.get("message") or "",
                 "title": form.get("title") or "",
@@ -92254,6 +92287,7 @@ def api_pulse_posts():
                 "tags": tags,
                 "visibility": form.get("visibility") or "public",
                 "media_ids": media_ids,
+                "product_listing_ids": product_listing_ids,
             }
         else:
             payload = request.get_json(silent=True)

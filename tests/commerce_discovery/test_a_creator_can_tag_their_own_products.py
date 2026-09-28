@@ -927,3 +927,115 @@ class TestTheFixtureIsTheTableProductionHas:
         source = (REPO / "services/commerce_discovery/schema.py").read_text()
         assert tagging.TABLE not in source
         assert tagging.TABLE not in schema.TABLES if hasattr(schema, "TABLES") else True
+
+
+class TestAFormPostReachesTheHelperToo:
+    """`pulse_product_tag_ids_from_payload` accepts three key names "because
+    three clients" — and for one of them the keys were unreachable.
+
+    `POST /api/pulse/posts` has two branches. The JSON one hands
+    `request.get_json()` to the helper directly, so any of its three names
+    arrives. The multipart/urlencoded one *rebuilds* `payload` as a dict literal
+    from named form fields, and that literal did not name the tag ids at all — so
+    a form post's tags were dropped before the helper ran, with no error on either
+    side. The helper's own docstring calls `listing_ids` the name "the web
+    composer's existing marketplace forms already use", which makes the client the
+    alias exists for precisely the client that could not use it.
+
+    These are structural rather than behavioural because the route is in `bot.py`,
+    where `import bot` runs `init_db()` at module scope. The claim is about which
+    keys the branch reads, which is visible in the source, so the cost of a live
+    request buys nothing here.
+
+    Parsed with `ast` and never indexed back to a line: `bot.py` contains raw
+    U+2028, which `str.splitlines()` treats as a break and `ast` does not, so any
+    node-to-source-line mapping in this file would be off by a growing amount.
+    """
+
+    @staticmethod
+    def _bot_tree():
+        return ast.parse((REPO / "bot.py").read_text())
+
+    @staticmethod
+    def _alias_tuple(function: ast.FunctionDef) -> list[str]:
+        """The key names a `for key in (...)` loop in `function` walks."""
+        for node in ast.walk(function):
+            if isinstance(node, ast.For) and isinstance(node.iter, ast.Tuple):
+                names = [
+                    element.value for element in node.iter.elts
+                    if isinstance(element, ast.Constant) and isinstance(element.value, str)
+                ]
+                if "product_listing_ids" in names:
+                    return names
+        return []
+
+    def _function(self, name: str) -> ast.FunctionDef:
+        tree = self._bot_tree()
+        found = [
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef) and node.name == name
+        ]
+        assert len(found) == 1, f"expected exactly one {name} in bot.py, found {len(found)}"
+        return found[0]
+
+    def test_the_form_branch_names_the_tag_ids_in_its_payload(self):
+        route = self._function("api_pulse_posts")
+        # The rebuilt payload, identified by two keys only it has, so this does
+        # not depend on it being the only dict literal in the route.
+        literals = [
+            node for node in ast.walk(route)
+            if isinstance(node, ast.Dict)
+            and {
+                key.value for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            } >= {"post_type", "media_ids", "visibility"}
+        ]
+        assert len(literals) == 1, (
+            f"found {len(literals)} candidate rebuilt payloads in api_pulse_posts; "
+            "this test can no longer tell which one the form branch uses"
+        )
+        keys = {
+            key.value for key in literals[0].keys
+            if isinstance(key, ast.Constant) and isinstance(key.value, str)
+        }
+        assert "product_listing_ids" in keys, (
+            "the multipart branch of POST /api/pulse/posts rebuilds its payload "
+            "without the tag ids, so every product a form-based composer tags is "
+            f"discarded before pulse_product_tag_ids_from_payload runs. Keys: {sorted(keys)}"
+        )
+
+    def test_the_form_branch_reads_every_name_the_helper_accepts(self):
+        """The two lists are the same claim written twice, so they can drift.
+
+        Adding a fourth alias to the helper is a one-line change that would look
+        complete and would work on the JSON path only — the same defect this class
+        exists for, one alias later.
+        """
+        helper_names = self._alias_tuple(self._function("pulse_product_tag_ids_from_payload"))
+        assert helper_names, "pulse_product_tag_ids_from_payload no longer walks a tuple of key names"
+        form_names = self._alias_tuple(self._function("api_pulse_posts"))
+        assert form_names == helper_names, (
+            "the multipart branch and the payload helper disagree about which key "
+            f"names carry tag ids. Helper accepts {helper_names}; the form branch "
+            f"reads {form_names}. A name in the first list and not the second is "
+            "accepted on the JSON path and silently dropped on the form path."
+        )
+
+    def test_the_form_branch_does_not_lose_a_repeated_field(self):
+        """A checkbox picker submits one name many times.
+
+        `form.get` returns the first value of a repeated field and discards the
+        rest, which would present as "only the first product I ticked was tagged"
+        — a partial silent loss, which is harder to notice than a total one.
+        """
+        route = self._function("api_pulse_posts")
+        reads = [
+            ast.unparse(node) for node in ast.walk(route)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "getlist"
+        ]
+        assert any("key" in read for read in reads), (
+            "the form branch reads its tag ids with form.get rather than "
+            f"form.getlist, so a repeated field keeps only its first value. getlist calls: {reads}"
+        )

@@ -48,6 +48,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 
+BOT = "bot.py"
 TAGGING = "services/commerce_discovery/tagging.py"
 ENGINE = "services/commerce_discovery/engine.py"
 RELATIONSHIP = "services/commerce_discovery/relationship.py"
@@ -325,6 +326,49 @@ MUTATIONS = [
         old="        limit = max(1, min(TAGGABLE_PAGE_MAX, int(request.args.get(\"limit\") or TAGGABLE_PAGE_MAX)))",
         new="        limit = max(1, int(request.args.get(\"limit\") or TAGGABLE_PAGE_MAX))",
         suites=[PICKER],
+    ),
+    # The composer's own request, in `bot.py`. These three were added after a
+    # `product_listing_ids` key reached `createPost` on the native client and the
+    # multipart branch of the same route was found to drop it — the defect these
+    # mutations restore, not a hypothetical one.
+    dict(
+        name="form-post-payload-omits-the-tag-ids",
+        control=(
+            "The multipart branch of POST /api/pulse/posts rebuilds `payload` as a "
+            "dict literal, so a key it does not name never reaches "
+            "`pulse_product_tag_ids_from_payload`. Omitting the tag ids discards "
+            "every product a form-based composer tags, with no error on either side."
+        ),
+        path=BOT,
+        old='                "product_listing_ids": product_listing_ids,\n',
+        new="",
+        suites=[TAGS],
+    ),
+    dict(
+        name="form-and-helper-key-names-drift",
+        control=(
+            "The helper's accepted key names and the form branch's read names are "
+            "the same claim written twice. A name added to one and not the other is "
+            "accepted on the JSON path and silently dropped on the form path."
+        ),
+        path=BOT,
+        # Adds a fourth alias to the helper only. Anchored on the preceding line
+        # because the helper's own `for` line is a substring of the form branch's.
+        old='    payload = payload or {}\n    for key in ("product_listing_ids", "listing_ids", "product_ids"):',
+        new='    payload = payload or {}\n    for key in ("product_listing_ids", "listing_ids", "product_ids", "tagged_listing_ids"):',
+        suites=[TAGS],
+    ),
+    dict(
+        name="form-post-keeps-only-the-first-ticked-product",
+        control=(
+            "Tag ids are read with `form.getlist`. A checkbox picker submits one "
+            "field name repeatedly and `form.get` returns only its first value, so "
+            "this is a partial silent loss — harder to notice than a total one."
+        ),
+        path=BOT,
+        old="                values = [value for value in form.getlist(key) if str(value).strip()]",
+        new="                values = [value for value in [form.get(key)] if str(value).strip()]",
+        suites=[TAGS],
     ),
 ]
 

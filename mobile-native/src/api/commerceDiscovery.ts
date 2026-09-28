@@ -154,9 +154,15 @@ function mapCadence(raw: RawCadence | undefined, fallback: CommerceCadence): Com
   };
 }
 
-const API_PREFIX = "/api/pulse/commerce/discovery";
+export const API_PREFIX = "/api/pulse/commerce/discovery";
 
-type RawProduct = {
+/**
+ * Exported so `taggableProducts.ts` maps the *same* wire shape instead of
+ * declaring a second one. Both endpoints live behind `API_PREFIX` and both
+ * serialize a listing through `bot.pulse_marketplace_listing_payload`, so a
+ * divergence between two client-side product types could only ever be a bug.
+ */
+export type RawProduct = {
   id?: number;
   listing_id?: number;
   title?: string;
@@ -193,7 +199,15 @@ type RawPlacement = {
   price_currency?: string;
 };
 
-function mapProduct(raw: RawProduct | undefined): CommerceProduct {
+/**
+ * Public for the same reason `engine.buyer_safe` is public server-side: a second
+ * caller appeared, and the choice was between exporting this or copying it. The
+ * copy is the worse option — `listing_id ?? id` and
+ * `cover_image_url || image_url` are compatibility fallbacks for a wire shape
+ * that varies by endpoint, and two copies drift silently because each one looks
+ * correct on the payload its author happened to test against.
+ */
+export function mapProduct(raw: RawProduct | undefined): CommerceProduct {
   const product = raw || {};
   return {
     listingId: Number(product.listing_id ?? product.id) || 0,

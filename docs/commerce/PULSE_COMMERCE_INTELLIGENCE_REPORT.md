@@ -2037,16 +2037,168 @@ when someone adds a second thing.
 
 ### Verified
 
-858 package tests and 663 protection tests green (1,521 in one run). 20 of 20 mutations
-killed, zero survivors. The new test file is registered in `config/ci_test_manifest.json` —
-the gate is default-deny, so an unlisted test file does not run in CI and would have made
-every figure in this section unverifiable by anyone but me.
+**861** package tests and 663 protection tests green. **23 of 23** mutations killed, zero
+survivors. (Both figures grew by 3 after this section was written: the three form-post tests
+and their three mutations, below.) The new test file is registered in
+`config/ci_test_manifest.json` — the gate is default-deny, so an unlisted test file does not
+run in CI and would have made every figure in this section unverifiable by anyone but me.
+
+### Built after this section was written — §26
+
+The client landed on iOS/Android: the `product_listing_ids` key added to `createPost`'s
+whitelist, a `taggableProducts.ts` client, and `TaggableProductPicker.tsx` wired into
+`HomePulseComposer.tsx`. 35 tests across three files, 16 mutations, all killed. §26 is the
+write-up.
+
+The open "multipart or JSON" question resolved into **a defect rather than a decision**, in
+both directions: there is no multipart path on mobile at all (`createPost` is JSON-only and
+takes `media_ids`, so media and tags already coexist on one call), and the multipart branch of
+`POST /api/pulse/posts` was *silently discarding* tags, because it rebuilds its payload as a
+six-key dict literal — the same whitelist mechanism as the client bug in the paragraph this one
+replaces, at the other end of the same request. Fixed, with three structural tests and three
+new mutations (matrix now 23/23). §26.
 
 ### Still not built
 
-The client. `mobile-native/src/api/feed.ts:290` `createPost` **whitelists** the fields it
-forwards, so `product_listing_ids` is silently dropped today — which would present to a
-developer as "the server ignores my tags." That, a `taggableProducts.ts` client, and the picker
-in `HomePulseComposer.tsx` are the remaining work, and the open question is whether the
-multipart/form post path should carry the ids or whether a tagging client always uses the JSON
-path. Delivery report item 30 and §64 rec 2.
+The **web** client, which has no commerce discovery of any kind — not this feature, the whole
+engine. It belongs inside the planned `docs/web-rebuild/` work rather than beside it. Delivery
+report item 30 and §64 rec 5.
+
+---
+
+## 26. The composer, and a suite that had never been red
+
+§25 ended by saying the client was the remaining work and naming three files. This section is
+what building them found. It is the fifth instance in this mission of the same shape — **a
+success and a silent failure producing the same observable** — and this time two of the five
+were in my own work, caught by tests I wrote against my own implementation.
+
+### The mechanism, twice, at both ends of one request
+
+`createPost` builds its request body from an **explicit whitelist**, not a spread of its
+payload:
+
+```ts
+body: JSON.stringify({
+  body: payload.body || "",
+  ...
+  product_listing_ids: payload.product_listing_ids || []
+})
+```
+
+A field absent from that literal is dropped on the client, arrives as an absent key, and is
+read by the server as "no products". The post publishes. The creator sees success. Nothing
+logs. There is no symptom anywhere. That is why the composer tests assert **the argument to
+`createPost`** and never that it was called, and why one of them asserts the boring case —
+`product_listing_ids: []` when nothing was tagged. "No products" is a statement, not an
+absence: an omitted key and an empty list are identical to the server, which makes an omitted
+key indistinguishable from the whitelist bug.
+
+Having written that down, I checked whether the same mechanism existed on the server. It did.
+`POST /api/pulse/posts` has two branches; the multipart/urlencoded one **rebuilds** `payload`
+as a six-key dict literal from named form fields:
+
+```python
+payload = {
+    "body": form.get("body") or form.get("message") or "",
+    "title": form.get("title") or "",
+    "post_type": post_type,
+    "tags": tags,
+    "visibility": form.get("visibility") or "public",
+    "media_ids": media_ids,
+}
+```
+
+`pulse_product_tag_ids_from_payload(payload)` runs later, against *that* dict — never against
+`request.form`. So a form post's tag ids were gone before the helper existed in the call stack.
+The helper accepts three key names, and its own docstring says `listing_ids` is there for "the
+web composer's existing marketplace forms". **The one client that posts multipart was the one
+client whose alias could not reach it.** The generosity was unreachable for exactly the caller
+it was written for.
+
+The fix parses the ids in that branch and handles **both** form encodings. A picker built from
+checkboxes submits one field name repeatedly, where `form.get` returns the first value and
+discards the rest — a *partial* silent loss, which is harder to notice than a total one. A
+picker built from a hidden field submits one JSON or comma-joined string, where passing the raw
+value through would reach the attach path as a single unparseable id and be refused for the
+wrong reason. Ownership is re-checked per id at attach time regardless of which key or encoding
+carried them, so nothing here is a trust boundary.
+
+Three structural tests, in `test_a_creator_can_tag_their_own_products.py` rather than a new
+file, so no CI manifest entry is needed. Structural rather than behavioural because the route
+is in `bot.py`, where `import bot` runs `init_db()` at module scope; the claim is about which
+keys the branch reads, which is visible in the source, so a live request buys nothing. The
+third of them is the one I would keep if I could keep only one: it asserts that **the helper's
+key list and the form branch's key list are equal**, because those are one claim written twice
+and a fourth alias added to one and not the other is this same defect, one alias later.
+
+### Two things my own tests caught in my own fix
+
+**The notice announcing a silent loss was itself silent.** Only the feed-post path carries
+tags; reels and statuses are different server contracts. Tags left in state through a switch to
+Reel would be dropped at publish with no message — the same silent-success shape this whole
+endpoint exists to remove. So switching modes clears them and says so. My first version said so
+with `setNote(...)`, and the status panel that renders a note mounts only when
+`hasActiveComposerState` holds:
+
+```ts
+const hasActiveComposerState = Boolean(error || draftRecovered || lastFailedPublish || media.items.length);
+```
+
+None of those is true in the ordinary case of tagging a product and then tapping Reel. The
+message was written to a string nobody rendered. I rejected `setError` — it overstates an
+advisory and renders red — and rejected refactoring `hasActiveComposerState`, which is
+unrelated behaviour and out of scope. Instead: a `productTagsCleared` flag, a standalone
+element with its own testID, and a module constant shared by both render sites so they cannot
+drift. The notice is also **retired** when the creator switches back to Feed, because left up it
+would read as a claim about the mode they are now in.
+
+**Two mutations would have survived, and I found that before running the matrix.** Enumerating
+the controls I intended to prove — rather than reading the tests I had already written — turned
+up `recovered-draft-loses-its-tags` and `draft-ids-trusted-off-disk` with **no observer**. A
+recovered draft that drops its tags is a pure silent loss: the creator reopens it, sees their
+text, and publishes a post they believe is tagged. Both got tests before the matrix ever ran.
+This is §11a used in the direction it is actually useful — the value of enumerating mutations is
+mostly in the enumeration, not the run.
+
+### Why the matrix exists at all
+
+The three client files went green on their **first** run. 35 tests, no iteration. Per §14 that
+is a symptom rather than a result: a suite that has never been red has not demonstrated it can
+be. `scripts/protection/composer_product_picker_mutation_matrix.py` drives `npx jest` and
+covers 16 controls — 4 in the API client, 6 in the picker, 6 in the composer. **All 16 killed**,
+no anchor drift, each by the test written for it.
+
+One entry is not hypothetical. `notice-is-only-a-note` restores the `setNote`-only version, and
+it is recorded in the harness header as having been the real implementation.
+
+The suites are named narrowly per mutation for a reason worth stating: the picker's test file
+mocks the API client, so a client-side mutation cannot be killed there. A matrix that ran every
+suite for every mutation would report kills that prove nothing about the file under mutation.
+
+### The limit of a jest mutation matrix
+
+**It cannot see a type error.** Jest transpiles through babel and does not typecheck. All 16
+mutations were killed while `tsc --noEmit` was failing — one of the new test files declared its
+mock's props as a hand-written inline shape, which had drifted from the component's actual
+props (`onClose` was missing, and a test called it). Every runtime assertion passed; the type
+was simply wrong.
+
+`npm run verify` caught it. The matrix could not have, and neither could running jest at any
+verbosity. Two things follow. First, the earlier "`npx tsc --noEmit` clean" in my own notes was
+a claim about a run that predated these files, and I had carried it forward as though it still
+held — a stale verification is worse than none, because it is quoted with confidence. Second,
+the fix is not "remember to run tsc": it is to type the mock from the component's own exported
+props type, so the next drift is a compile error in CI rather than an `undefined` at runtime.
+
+### Verified
+
+- `mobile-native`: `npm run verify` — typecheck, i18n (100% across 11 locales, gated), and
+  **9,477 tests / 542 suites** green.
+- `composer_product_picker_mutation_matrix.py` — **16/16 killed**.
+- `creator_tagging_mutation_matrix.py` — **23/23 killed** (20 before this section, plus the
+  three form-post mutations above).
+- `tests/commerce_discovery` — **861 pass**; `tests/protection` — **663 pass**.
+- `scripts/realtime_audio_change_gate.py --base origin/main --head HEAD` — no protected
+  real-time audio path changed. Run after committing, since the gate reads a committed diff and
+  would vacuously pass on an uncommitted one.
