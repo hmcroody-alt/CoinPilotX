@@ -1211,6 +1211,32 @@
         "from_sellers_you_follow": "Von Verkäufern, denen du folgst",
         "new_to_marketplace": "Neu im Marketplace",
         "popular": "Beliebt"
+      },
+      "tagging": {
+        "open": "Produkte markieren",
+        "title": "Deine Produkte",
+        "subtitle": "Wähle, worum es in diesem Beitrag geht",
+        "cap": "Bis zu {{max}} pro Beitrag",
+        "selected": "{{selected}} von {{max}} ausgewählt",
+        "loading": "Deine Produkte werden geladen…",
+        "empty": "Du hast noch keine Produkte",
+        "emptyHint": "Produkte, die du im Marketplace anbietest, erscheinen hier.",
+        "error": "Wir konnten deine Produkte nicht laden",
+        "errorHint": "Das heißt nicht, dass du keine hast. Bitte versuche es erneut.",
+        "retry": "Erneut versuchen",
+        "wontShow": "Wird nicht angezeigt",
+        "wontShowHint": "Du kannst es markieren, aber Käufer sehen es erst, wenn das behoben ist.",
+        "done": "Fertig",
+        "blocked": {
+          "not_purchasable": "Nicht kaufbar",
+          "no_cover_image": "Benötigt ein Titelbild",
+          "no_resolvable_price": "Benötigt einen Preis",
+          "moderation_flagged": "Wird geprüft",
+          "listing_risk": "Nicht zur Anzeige berechtigt",
+          "seller_risk": "Dein Shop ist nicht zur Anzeige berechtigt",
+          "unknown_reason": "Kann derzeit nicht angezeigt werden"
+        },
+        "cleared": "Produktmarkierungen entfernt: nur Feed-Beiträge enthalten sie."
       }
     },
     "marketplace": {

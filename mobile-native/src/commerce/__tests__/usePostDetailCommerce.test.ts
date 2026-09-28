@@ -236,6 +236,85 @@ describe("usePostDetailCommerce — the context", () => {
   });
 });
 
+describe("usePostDetailCommerce — naming the post, not just describing it", () => {
+  /**
+   * The context is a summary and the id is the post.
+   *
+   * `postCommerceContext` caps every field at 80 characters, which is right for a
+   * free-text field arriving over a wire and wrong as the only thing the server
+   * gets to judge. Measured on a bereavement post that opens with a paragraph of
+   * thanks — the ordinary shape of one — the full body reads SENSITIVE_CONTEXT and
+   * the eighty characters that reach the server read PERMITTED. `post_type`,
+   * `moderation_status` and `risk_score` are not on the wire at all.
+   *
+   * So the id goes too, and these tests are about it being *unconditional*. A
+   * suitability input that is sent only when some other field happens to be
+   * present is a suitability input that is absent exactly when the content is
+   * hardest to read.
+   */
+  const BEREAVEMENT =
+    "Thank you all so much for the kind words these past few days, it has meant " +
+    "more to us than I can say. We lost my father on Tuesday morning. Rest in peace dad.";
+
+  it("sends the post id alongside the context", async () => {
+    const { result } = renderHook(() => usePostDetailCommerce({ post: post() }));
+    expect(fetchPlacements.mock.calls[0][1]?.postId).toBe(12);
+    await waitFor(() => expect(result.current.placement?.placementId).toBe("p1"));
+  });
+
+  it("sends the id even when the post has no readable subject", async () => {
+    // The pairing that matters. `context` is omitted here — a blank post has no
+    // topic — and the id must not be omitted with it. A photo with no caption is
+    // the commonest post on the platform, and the row is the only thing that can
+    // say whether it is a memorial.
+    const { result } = renderHook(() => usePostDetailCommerce({ post: post({ body: "  " }) }));
+    const options = fetchPlacements.mock.calls[0][1];
+    expect(options && "context" in options).toBe(false);
+    expect(options?.postId).toBe(12);
+    await waitFor(() => expect(result.current.placement?.placementId).toBe("p1"));
+  });
+
+  it("sends the id for the post whose text was truncated past the evidence", async () => {
+    // The measured case, end to end on this side: what reaches the wire as a
+    // ranking signal is a thank-you note, and the id is what lets the server read
+    // the rest. The assertion on `topic` is not incidental — it records that the
+    // truncation is still happening, because the day it stops this test should be
+    // re-read rather than quietly passing for a new reason.
+    const { result } = renderHook(() =>
+      usePostDetailCommerce({ post: post({ id: 31, post_id: 31, body: BEREAVEMENT }) })
+    );
+    const options = fetchPlacements.mock.calls[0][1];
+    expect(options?.context?.topic).toBe(BEREAVEMENT.slice(0, 80));
+    expect(options?.context?.topic).not.toContain("father");
+    expect(options?.postId).toBe(31);
+    await waitFor(() => expect(result.current.placement?.placementId).toBe("p1"));
+  });
+
+  it("re-asks with the new id when the screen shows a different post", async () => {
+    const { result, rerender } = renderHook(
+      ({ post: current }: { post: PulsePost }) => usePostDetailCommerce({ post: current }),
+      { initialProps: { post: post() } }
+    );
+    await waitFor(() => expect(result.current.placement?.placementId).toBe("p1"));
+
+    fetchPlacements.mockResolvedValue(served([placement("p9")]));
+    rerender({ post: post({ id: 13, post_id: 13 }) });
+
+    await waitFor(() => expect(result.current.placement?.placementId).toBe("p9"));
+    expect(fetchPlacements.mock.calls[1][1]?.postId).toBe(13);
+  });
+
+  it("prefers post_id over id when the payload carries both", async () => {
+    // `pulse_feed_engine` emits both and they are the same number, but a repost
+    // wrapper is a shape where they diverge, and the server reads `pulse_posts`.
+    const { result } = renderHook(() =>
+      usePostDetailCommerce({ post: { ...post(), post_id: 88, id: 12 } })
+    );
+    expect(fetchPlacements.mock.calls[0][1]?.postId).toBe(88);
+    await waitFor(() => expect(result.current.placement?.placementId).toBe("p1"));
+  });
+});
+
 describe("usePostDetailCommerce — the master switch", () => {
   it("sends nothing when the viewer has turned discovery off", () => {
     // The server half of this is `post_detail` being a member of

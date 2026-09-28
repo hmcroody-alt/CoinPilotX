@@ -7,10 +7,13 @@ import { ComposerMusicTrack, suggestComposerMusic } from "../api/composerMusic";
 import { composerMusicTrackFromPulseMusic, consumePulseMusicSelection } from "../api/music";
 import { CreateReelPayload, createReel, listReels, PulseReel } from "../api/reels";
 import { createStatus } from "../api/status";
+import { TaggableProductPicker } from "../commerce/TaggableProductPicker";
 import { consumeCreateCameraCaptureResult, CreateComposerMode } from "../create/createComposerHandoff";
 import { ComposerDraftInput } from "../create/draftToContentModel";
 import { PreviewPublishResult, stashPreviewHandoff } from "../create/previewHandoff";
 import { resolvePreviewStop, resolvePreviewToggle } from "../create/musicPreviewLifecycle";
+import { formatNumber } from "../i18n/format";
+import { useTranslation } from "../i18n/I18nContext";
 import { LogiNexusPanel } from "./LogiNexus";
 import { ComposerMediaQueue } from "../media/ComposerMediaQueue";
 import { NativeMediaAsset, NativeMediaUploadResult, uploadResultMediaId } from "../media/nativeMediaUpload";
@@ -54,12 +57,59 @@ const PRODUCTION_CREATION_ROUTES = [
   { label: "Question", route: "/pulse/questions", icon: "?" }
 ];
 const VISIBILITY: Visibility[] = ["public", "followers", "private"];
+
+/**
+ * Said when a mode switch drops tags the creator had chosen.
+ *
+ * A constant because it is rendered in two places — the status panel's note and
+ * the standalone notice below it — and those two must not drift. The panel is
+ * not enough on its own: it only mounts when `hasActiveComposerState` holds, so
+ * a `setNote` call in a composer with no error, no recovered draft and no media
+ * is written to a string nobody renders. That is how this message was invisible
+ * when it was first added, which is the same silent-loss shape the product tags
+ * themselves exist to eliminate.
+ *
+ * The shared constant is the *key*, not the English. It was the literal until
+ * both render sites were translated; shipping it as a literal would have been a
+ * third instance of this file's own failure mode, because neither gate can see
+ * it — `validate-i18n` only compares each catalogue against `en` and says
+ * nothing about strings that never became keys, and a module-scope `const` is
+ * not a JSX literal, so it reads as ordinary code. It passed both gates while
+ * being the one untranslated sentence in the feature.
+ */
+const PRODUCT_TAGS_CLEARED_KEY = "commerce:discovery.tagging.cleared";
+
+/**
+ * Which composer modes may carry marketplace product tags.
+ *
+ * Only the feed-post publish path sends `product_listing_ids`; reels and
+ * statuses go to different server contracts, and `createReel` mirrors its own
+ * post onto the feed separately — threading tags through there without first
+ * deciding which of the two rows owns them produces a tag that exists twice and
+ * is revoked once.
+ *
+ * `scam_report` is excluded deliberately even though it shares the post path. It
+ * is a warning about a fraud, and attaching a shoppable product to one is a
+ * product decision with a plausible wrong answer, so it is not one to make
+ * silently by inheriting the route.
+ */
+function modeCarriesProductTags(mode: ComposerMode) {
+  return mode === "post" || mode === "poll";
+}
 type HomeComposerDraft = {
   body: string;
   mode: ComposerMode;
   visibility: Visibility;
   topic: string;
   musicTrack?: ComposerMusicTrack | null;
+  /**
+   * Tagged marketplace listings survive a draft recovery for the same reason the
+   * music track does: dropping them would be a silent loss the creator has no
+   * way to notice, and they would publish a post they believe is tagged. Stale
+   * ids are safe — the server ownership-checks every one and refuses the ones
+   * that no longer qualify without failing the post.
+   */
+  productListingIds?: number[];
   savedAt: string;
   mediaItems?: Array<{ id: string; asset: NativeMediaAsset; result: NativeMediaUploadResult | null }>;
   failedPublish?: FailedPublish | null;
@@ -89,6 +139,13 @@ type FailedStatusPublish = {
 type FailedPublish = FailedPostPublish | FailedReelPublish | FailedStatusPublish;
 
 export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpenRoute, onOpenPreview, identity, initiallyExpanded = false, initialMode = "post", captureReturnNonce = "", shareHandoffNonce = "" }: Props) {
+  /**
+   * The rest of this composer still ships hardcoded English. The commerce
+   * strings do not, because the picker they open is translated in all eleven
+   * locales and a translated sheet behind an English button reads as a bug. The
+   * remaining labels here are a separate, larger debt.
+   */
+  const { t } = useTranslation();
   const [mode, setMode] = useState<ComposerMode>("post");
   const [body, setBody] = useState("");
   const [visibility, setVisibility] = useState<Visibility>("public");
@@ -98,6 +155,23 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   const [musicLoading, setMusicLoading] = useState(false);
   const [showMusic, setShowMusic] = useState(false);
   const [previewingTrackId, setPreviewingTrackId] = useState("");
+  /**
+   * Which of the creator's own listings this post is about.
+   *
+   * Held here rather than inside the picker so that closing the sheet does not
+   * discard the choice, and so the publish payload has one source. Ids only —
+   * the titles and prices belong to the picker's fetch, and caching them here
+   * would mean publishing against a snapshot of a catalogue that has moved.
+   */
+  const [productListingIds, setProductListingIds] = useState<number[]>([]);
+  const [showProducts, setShowProducts] = useState(false);
+  /**
+   * Whether to keep telling the creator their tags were dropped by a mode
+   * switch. Its own flag rather than a `note` string because the status panel
+   * that renders notes is conditional on unrelated state — see
+   * `PRODUCT_TAGS_CLEARED_KEY`.
+   */
+  const [productTagsCleared, setProductTagsCleared] = useState(false);
   const [note, setNote] = useState("Ready to publish.");
   const [error, setError] = useState("");
   const [publishing, setPublishing] = useState(false);
@@ -116,7 +190,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
   const media = useComposerMediaQueue({ contextType: "pulse", contextId: "native-draft", target: "feed", destination: "feed", mode: "post" });
   const characters = body.length;
   const selectedMode = useMemo(() => ALL_MODES.find((item) => item.key === mode) || PRIMARY_MODES[0], [mode]);
-  const hasDraft = Boolean(body || topic || musicTrack || media.items.length || visibility !== "public" || mode !== "post");
+  const hasDraft = Boolean(body || topic || musicTrack || productListingIds.length || media.items.length || visibility !== "public" || mode !== "post");
   const avatarLabel = identityInitials(identity);
 
   useEffect(() => {
@@ -131,6 +205,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         setVisibility(draft.visibility);
         setTopic(draft.topic);
         setMusicTrack(draft.musicTrack || null);
+        setProductListingIds(draft.productListingIds || []);
         setLastFailedPublish(draft.failedPublish || null);
         if (draft.mediaItems?.length) media.restore(draft.mediaItems);
         else if (draft.mediaAsset) {
@@ -236,6 +311,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         visibility,
         topic,
         musicTrack,
+        productListingIds,
         savedAt: new Date().toISOString(),
         mediaItems: media.items.map((item) => ({ id: item.id, asset: item.asset, result: item.result })),
         failedPublish: lastFailedPublish
@@ -243,7 +319,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       AsyncStorage.setItem(DRAFT_KEY, JSON.stringify(draft)).catch(() => undefined);
     }, 350);
     return () => clearTimeout(timer);
-  }, [body, hasDraft, lastFailedPublish, media.items, mode, musicTrack, topic, visibility]);
+  }, [body, hasDraft, lastFailedPublish, media.items, mode, musicTrack, productListingIds, topic, visibility]);
 
   /**
    * Pre-flight validation shared by the direct publish path and the preview
@@ -346,7 +422,13 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
         media_ids: mediaIds,
         tags,
         music_track_id: musicTrack?.id || "",
-        ...attachedMusicPublishFields(musicTrack)
+        ...attachedMusicPublishFields(musicTrack),
+        // Only the feed path carries tags today. The reel and status payloads
+        // above are different server contracts, and `createReel` mirrors its
+        // post onto the feed separately — threading tags through there without
+        // deciding which of the two rows owns them is how you get a tag that
+        // exists twice and is revoked once.
+        product_listing_ids: productListingIds
       });
       setLastFailedPublish({ kind: "post", payload, startedAt: new Date().toISOString() });
       const response = await createPost(payload);
@@ -462,6 +544,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     setMusicTrack(null);
     setMusicOptions([]);
     setShowMusic(false);
+    setProductListingIds([]);
+    setShowProducts(false);
+    setProductTagsCleared(false);
     setMode("post");
     setVisibility("public");
     setLastFailedPublish(null);
@@ -482,6 +567,7 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
       visibility,
       topic,
       musicTrack,
+      productListingIds,
       savedAt: new Date().toISOString(),
       mediaItems: media.items.map((item) => ({ id: item.id, asset: item.asset, result: item.result })),
       failedPublish: lastFailedPublish
@@ -510,6 +596,9 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     setMusicTrack(null);
     setMusicOptions([]);
     setShowMusic(false);
+    setProductListingIds([]);
+    setShowProducts(false);
+    setProductTagsCleared(false);
     setMode("post");
     setVisibility("public");
     setLastFailedPublish(null);
@@ -576,6 +665,20 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
     setNote(ALL_MODES.find((item) => item.key === nextMode)?.note || "Ready to publish.");
     if (nextMode === "reel" && (media.items.length !== 1 || media.items[0]?.asset.mediaType !== "video")) {
       setNote("Reels need a video. Use Video or Reel Camera to record one.");
+    }
+    // Said out loud rather than dropped at publish. Leaving the ids in state
+    // through a mode switch would publish a reel the creator believes is tagged
+    // and never tell them otherwise — the same silent success this whole path
+    // exists to eliminate.
+    if (!modeCarriesProductTags(nextMode) && productListingIds.length) {
+      setProductListingIds([]);
+      setShowProducts(false);
+      setNote(t(PRODUCT_TAGS_CLEARED_KEY));
+      setProductTagsCleared(true);
+    } else if (modeCarriesProductTags(nextMode)) {
+      // Switching back to a mode that can carry tags retires the notice; leaving
+      // it up would read as a claim about the mode the creator is now in.
+      setProductTagsCleared(false);
     }
   }
 
@@ -709,6 +812,15 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
             setTopic(next);
             setNote(next ? "Topic tag added." : "Topic tag cleared.");
           }} />
+          {modeCarriesProductTags(mode) ? (
+            <ComposerAction
+              testID="home-composer-tag-products"
+              label={productListingIds.length ? `${t("commerce:discovery.tagging.open")} (${formatNumber(productListingIds.length)})` : t("commerce:discovery.tagging.open")}
+              icon="◇"
+              selected={productListingIds.length > 0}
+              onPress={() => { setShowProducts(true); setError(""); setProductTagsCleared(false); }}
+            />
+          ) : null}
           {SECONDARY_MODES.map((item) => <ComposerAction key={item.key} label={item.label} icon={item.icon} selected={mode === item.key} onPress={() => selectMode(item.key)} />)}
           {PRODUCTION_CREATION_ROUTES.map((item) => <ComposerAction key={item.label} label={item.label} icon={item.icon} onPress={() => onOpenRoute(item.route)} />)}
           <ComposerAction label="Dismiss" icon="⌄" onPress={() => { Keyboard.dismiss(); setShowTools(false); }} />
@@ -736,6 +848,28 @@ export function HomePulseComposer({ onCreated, onOpenCamera, onOpenMusic, onOpen
             <Pressable accessibilityRole="button" style={styles.musicUtility} onPress={() => onOpenMusic(mode === "status" ? "status" : mode === "reel" ? "reel" : "post")}><Text style={styles.musicUtilityText}>Open full library</Text></Pressable>
           </View>
         </View>
+      ) : null}
+      {/* Stands on its own rather than relying on the status panel, which mounts
+          only when there is an error, a recovered draft, a failed publish or
+          queued media — none of which is true in the common case where a
+          creator tags a product and then switches to Reel. */}
+      {productTagsCleared ? (
+        <View testID="home-composer-product-tags-cleared" accessibilityLiveRegion="polite" style={styles.productNotice}>
+          <Text style={styles.productNoticeText}>{t(PRODUCT_TAGS_CLEARED_KEY)}</Text>
+        </View>
+      ) : null}
+      {/* Mounted only while open so the fetch fires on open rather than on every
+          composer mount — a creator who never taps the button never asks the
+          server for their catalogue. The picker's own effect keys off `visible`,
+          so this also makes reopening it a refetch, which is what you want after
+          the creator has gone and added the cover photo it told them about. */}
+      {showProducts ? (
+        <TaggableProductPicker
+          visible
+          selectedIds={productListingIds}
+          onChange={setProductListingIds}
+          onClose={() => setShowProducts(false)}
+        />
       ) : null}
       <View style={styles.publishRow}>
         <Text testID="home-composer-counter" style={[styles.counter, characters > MAX_BODY * 0.9 && styles.counterWarning]}>{characters.toLocaleString()}/{MAX_BODY.toLocaleString()}</Text>
@@ -802,6 +936,14 @@ function buildCreatePayload(payload: {
   original_audio_muted?: boolean;
   audio_start_time?: number;
   audio_volume?: number;
+  /**
+   * Marketplace listings this post is about. Present in this type for the same
+   * reason every other field is: `createPost` builds its request body from an
+   * explicit whitelist, so a field this function does not declare is dropped
+   * silently on the way out and the symptom is "the server ignores my tags"
+   * rather than a compile error.
+   */
+  product_listing_ids?: number[];
 }) {
   return payload;
 }
@@ -832,6 +974,13 @@ function normalizeDraft(raw: HomeComposerDraft) {
     visibility,
     topic: String(raw.topic || "").slice(0, 40),
     musicTrack: raw.musicTrack?.id ? raw.musicTrack : null,
+    // Re-validated rather than trusted: this came back off disk as JSON, so a
+    // partially-written or hand-edited draft can put anything in the array, and
+    // a `NaN` reaching the payload would be sent as `null` and refused server-
+    // side for the wrong reason. Deduped because the server stores a set.
+    productListingIds: Array.from(
+      new Set((Array.isArray(raw.productListingIds) ? raw.productListingIds : []).map(Number).filter((id) => Number.isFinite(id) && id > 0))
+    ),
     savedAt: String(raw.savedAt || ""),
     failedPublish: normalizeFailedPublish(raw.failedPublish),
     mediaItems: Array.isArray(raw.mediaItems)
@@ -1433,6 +1582,20 @@ const styles = createThemedStyles(() => ({
     fontSize: 12,
     fontWeight: "900",
     textAlign: "center"
+  },
+  productNotice: {
+    backgroundColor: logiNexus.colors.home.surfaceGlass,
+    borderColor: logiNexus.colors.home.borderSubtle,
+    borderRadius: logiNexus.radius.medium,
+    borderWidth: 1,
+    marginTop: 8,
+    padding: 8
+  },
+  productNoticeText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
   },
   statusPanel: {
     backgroundColor: logiNexus.colors.home.surfaceGlass,

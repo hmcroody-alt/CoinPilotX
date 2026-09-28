@@ -1211,6 +1211,32 @@
         "from_sellers_you_follow": "De vendeurs que vous suivez",
         "new_to_marketplace": "Nouveau sur Marketplace",
         "popular": "Populaire"
+      },
+      "tagging": {
+        "open": "Taguer des produits",
+        "title": "Vos produits",
+        "subtitle": "Choisissez le sujet de cette publication",
+        "cap": "Jusqu'à {{max}} par publication",
+        "selected": "{{selected}} sur {{max}} sélectionnés",
+        "loading": "Chargement de vos produits…",
+        "empty": "Vous n'avez pas encore de produits",
+        "emptyHint": "Les produits que vous mettez en vente sur Marketplace apparaissent ici.",
+        "error": "Nous n'avons pas pu charger vos produits",
+        "errorHint": "Cela ne veut pas dire que vous n'en avez aucun. Veuillez réessayer.",
+        "retry": "Réessayer",
+        "wontShow": "Ne sera pas affiché",
+        "wontShowHint": "Vous pouvez le taguer, mais les acheteurs ne le verront pas tant que ce n'est pas corrigé.",
+        "done": "Terminé",
+        "blocked": {
+          "not_purchasable": "Non disponible à l'achat",
+          "no_cover_image": "Nécessite une photo de couverture",
+          "no_resolvable_price": "Nécessite un prix",
+          "moderation_flagged": "En cours d'examen",
+          "listing_risk": "Non éligible à l'affichage",
+          "seller_risk": "Votre boutique n'est pas éligible à l'affichage",
+          "unknown_reason": "Impossible à afficher pour le moment"
+        },
+        "cleared": "Tags produits supprimés : seules les publications du fil les conservent."
       }
     },
     "marketplace": {

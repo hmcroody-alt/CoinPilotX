@@ -1211,6 +1211,32 @@
         "from_sellers_you_follow": "De vendedores que você segue",
         "new_to_marketplace": "Novo no Marketplace",
         "popular": "Popular"
+      },
+      "tagging": {
+        "open": "Marcar produtos",
+        "title": "Seus produtos",
+        "subtitle": "Escolha o assunto desta publicação",
+        "cap": "Até {{max}} por publicação",
+        "selected": "{{selected}} de {{max}} selecionados",
+        "loading": "Carregando seus produtos…",
+        "empty": "Você ainda não tem produtos",
+        "emptyHint": "Os produtos que você anuncia no Marketplace aparecem aqui.",
+        "error": "Não conseguimos carregar seus produtos",
+        "errorHint": "Isso não significa que você não tenha nenhum. Tente novamente.",
+        "retry": "Tentar novamente",
+        "wontShow": "Não será exibido",
+        "wontShowHint": "Você pode marcá-lo, mas os compradores não o verão até que isso seja corrigido.",
+        "done": "Concluído",
+        "blocked": {
+          "not_purchasable": "Não disponível para compra",
+          "no_cover_image": "Precisa de uma foto de capa",
+          "no_resolvable_price": "Precisa de um preço",
+          "moderation_flagged": "Em análise",
+          "listing_risk": "Não elegível para exibição",
+          "seller_risk": "Sua loja não está elegível para exibição",
+          "unknown_reason": "Não pode ser exibido agora"
+        },
+        "cleared": "Marcações de produtos removidas: apenas as publicações do feed as incluem."
       }
     },
     "marketplace": {

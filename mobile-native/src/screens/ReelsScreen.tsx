@@ -287,11 +287,26 @@ export function ReelsScreen({ route, navigation }: Props) {
     (reelId: string) => reelCommerceContext(reelsByIdRef.current.get(reelId)),
     []
   );
+  /**
+   * The same reel, named rather than described — see `resolvePostId`'s docstring.
+   *
+   * `post_id`, not `id`. The map is keyed by `String(reel.id)`, which is
+   * `pulse_reels.id`, and the server keys its row read on `pulse_posts.id`; the
+   * two id spaces overlap numerically, so passing the key back would read an
+   * unrelated post and judge this reel by it. `PulseReel.post_id` is optional in
+   * the type, and 0 is the hook's "not known", which degrades to the
+   * context-only check rather than to a wrong answer.
+   */
+  const resolveCommercePostId = useCallback(
+    (reelId: string) => Number(reelsByIdRef.current.get(reelId)?.post_id || 0),
+    []
+  );
   const commerce = useReelsCommerce({
     reelIds: commerceReelIds,
     enabled: signedIn && !callSession.sessionActive,
     refreshToken: commerceRefreshToken,
-    resolveContext: resolveCommerceContext
+    resolveContext: resolveCommerceContext,
+    resolvePostId: resolveCommercePostId
   });
   /**
    * The chip for one reel, or null — which is the answer for all but one reel.
